@@ -203,9 +203,44 @@ class FormSelect<T> extends FormItem {
     final result = await SelectModal.open<T>(
       context,
       items: items,
-      labelBuilder: labelBuilder,
-      subtitleBuilder: subtitleBuilder,
-      leadingBuilder: leadingBuilder,
+      itemBuilder: (item) {
+        final label = labelBuilder(item);
+        final subtitle = subtitleBuilder?.call(item);
+        final leading = leadingBuilder?.call(item);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              if (leading != null) ...[
+                leading,
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (subtitle != null)
+                      Text(
+                        subtitle,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0x80FFFFFF),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
       selectedValue: _value,
       prompt: label ?? key,
     );

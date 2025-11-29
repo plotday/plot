@@ -1,12 +1,10 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:drift/drift.dart' show Value;
 
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
-import 'package:plot/command/command.dart';
-import 'package:plot/analytics/analytics.dart';
 import 'package:plot/style/layout.dart';
-import 'list_tile.dart';
 import 'text_field.dart';
 import 'modal.dart';
 import 'logging.dart';
@@ -17,9 +15,7 @@ import 'logging.dart';
 class SelectModal<T> extends Modal {
   SelectModal({
     required this.items,
-    required this.labelBuilder,
-    this.subtitleBuilder,
-    this.leadingBuilder,
+    required this.itemBuilder,
     this.selectedValue,
     this.prompt = 'Search',
     super.key,
@@ -27,25 +23,18 @@ class SelectModal<T> extends Modal {
          padding: const EdgeInsets.all(0),
          builder: (_) => _SelectModal<T>(
            items: items,
-           labelBuilder: labelBuilder,
-           subtitleBuilder: subtitleBuilder,
-           leadingBuilder: leadingBuilder,
+           itemBuilder: itemBuilder,
            selectedValue: selectedValue,
            prompt: prompt,
          ),
        );
 
   /// Function to fetch items, optionally filtered by search text.
+  /// All filtering should happen in this callback.
   final Future<List<T>> Function(String? search) items;
 
-  /// Function to build the display label for an item.
-  final String Function(T) labelBuilder;
-
-  /// Optional function to build a subtitle for an item.
-  final String Function(T)? subtitleBuilder;
-
-  /// Optional function to build a leading widget for an item.
-  final Widget Function(T)? leadingBuilder;
+  /// Function to build the widget for an item.
+  final Widget Function(T) itemBuilder;
 
   /// The currently selected value (will be highlighted in the list).
   final T? selectedValue;
@@ -58,17 +47,13 @@ class SelectModal<T> extends Modal {
   static Future<Value<T>> open<T>(
     BuildContext context, {
     required Future<List<T>> Function(String? search) items,
-    required String Function(T) labelBuilder,
-    String Function(T)? subtitleBuilder,
-    Widget Function(T)? leadingBuilder,
+    required Widget Function(T) itemBuilder,
     T? selectedValue,
     String prompt = 'Search',
   }) async {
     final result = await SelectModal<T>(
       items: items,
-      labelBuilder: labelBuilder,
-      subtitleBuilder: subtitleBuilder,
-      leadingBuilder: leadingBuilder,
+      itemBuilder: itemBuilder,
       selectedValue: selectedValue,
       prompt: prompt,
     ).show<T>(context);
@@ -80,17 +65,13 @@ class SelectModal<T> extends Modal {
 class _SelectModal<T> extends StatefulWidget {
   const _SelectModal({
     required this.items,
-    required this.labelBuilder,
-    this.subtitleBuilder,
-    this.leadingBuilder,
+    required this.itemBuilder,
     this.selectedValue,
     required this.prompt,
   });
 
   final Future<List<T>> Function(String? search) items;
-  final String Function(T) labelBuilder;
-  final String Function(T)? subtitleBuilder;
-  final Widget Function(T)? leadingBuilder;
+  final Widget Function(T) itemBuilder;
   final T? selectedValue;
   final String prompt;
 
@@ -109,13 +90,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   void initState() {
     super.initState();
     _initItems();
-    _controller.addListener(_initItems);
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    _controller.removeListener(_initItems);
     _controller.dispose();
     super.dispose();
   }
@@ -137,10 +116,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         _filteredItems = itemsList;
 
         // Find the selected item's index to highlight it
-        if (widget.selectedValue != null && _controller.text.isEmpty) {
+        if (widget.selectedValue != null) {
           final selectedIndex = itemsList.indexWhere((item) {
-            return widget.labelBuilder(item) ==
-                widget.labelBuilder(widget.selectedValue as T);
+            return item == widget.selectedValue;
           });
           if (selectedIndex >= 0) {
             _highlightedIndex = selectedIndex;
@@ -253,6 +231,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           autofocus: true,
                           label: "${widget.prompt}...",
                           focusNode: focusNode,
+                          onChanged: (text) => _initItems(),
                         ),
                       ),
                     ),
@@ -267,24 +246,20 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         }
 
                         final item = _filteredItems[index];
-                        final label = widget.labelBuilder(item);
-                        final subtitle = widget.subtitleBuilder?.call(item);
-                        final leading = widget.leadingBuilder?.call(item);
-
-                        // Create a simple action for the ListTile
-                        final action = _SelectItemCommand<T>(
-                          title: label,
-                          subtitle: subtitle,
-                          leading: leading,
-                          onSelect: () => _selectItem(item),
-                        );
 
                         return MouseRegion(
                           onEnter: (_) => listController.setHovered(index),
                           onExit: (_) => listController.setHovered(null),
-                          child: ListTile(
-                            command: action,
-                            selected: index == _highlightedIndex,
+                          child: GestureDetector(
+                            onTap: () => _selectItem(item),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: index == _highlightedIndex
+                                    ? const Color(0x10FFFFFF)
+                                    : null,
+                              ),
+                              child: widget.itemBuilder(item),
+                            ),
                           ),
                         );
                       },
@@ -298,41 +273,5 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         );
       },
     );
-  }
-}
-
-/// Simple command for selecting an item in SelectModal
-class _SelectItemCommand<T> extends Command {
-  _SelectItemCommand({
-    required super.title,
-    super.subtitle,
-    this.leading,
-    required this.onSelect,
-  }) : super(
-         eventObject: EventObject.dialog,
-         eventAction: EventAction.selected,
-       );
-
-  final Widget? leading;
-  final VoidCallback onSelect;
-
-  @override
-  Widget? buildBody(BuildContext context) {
-    if (leading != null) {
-      return Row(
-        children: [
-          leading!,
-          const SizedBox(width: 8),
-          Expanded(child: Text(title, overflow: TextOverflow.ellipsis)),
-        ],
-      );
-    }
-    return null;
-  }
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    onSelect();
-    return const CommandDone();
   }
 }

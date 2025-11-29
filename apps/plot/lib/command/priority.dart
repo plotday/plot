@@ -253,7 +253,15 @@ class NewPriority extends ShowForm {
                     label: 'Color',
                     initialValue: null,
                     hasInitialValue: true,
-                    items: (_) async => [null, ...ThemeColor.options],
+                    items: (search) async => [null, ...ThemeColor.options]
+                        .where(
+                          (c) =>
+                              search == null ||
+                              (c?.label.toLowerCase() ?? 'inherit').startsWith(
+                                search.toLowerCase(),
+                              ),
+                        )
+                        .toList(),
                     labelBuilder: (c) => c?.label ?? 'Inherit',
                     leadingBuilder: (c) =>
                         ColorDot(color: c ?? defaultParent.displayColor),
@@ -351,9 +359,17 @@ class EditPriorityCommand extends ShowForm {
                         ? (priority.color ?? const ThemeColor.defaultColor())
                         : priority.color,
                     hasInitialValue: true,
-                    items: (_) async => isRoot
-                        ? ThemeColor.options
-                        : [null, ...ThemeColor.options],
+                    items: (search) async =>
+                        (isRoot
+                                ? ThemeColor.options
+                                : [null, ...ThemeColor.options])
+                            .where(
+                              (c) =>
+                                  search == null ||
+                                  (c?.label.toLowerCase() ?? 'inherit')
+                                      .startsWith(search.toLowerCase()),
+                            )
+                            .toList(),
                     labelBuilder: (c) => c?.label ?? 'Inherit',
                     leadingBuilder: (c) => ColorDot(
                       color:

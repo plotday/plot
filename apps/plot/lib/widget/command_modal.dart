@@ -82,19 +82,17 @@ class _CommandModalContentState extends State<_CommandModalContent> {
   final List<Widget Function(BuildContext)> _navigationStack = [];
   String? _error;
   bool _isDisposed = false;
+  int _highlightedIndex = 0;
 
   @override
   void initState() {
     super.initState();
-
     _initCommands();
-    _controller.addListener(_initCommands);
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    _controller.removeListener(_initCommands);
     _scrollController.dispose();
     super.dispose();
   }
@@ -114,6 +112,7 @@ class _CommandModalContentState extends State<_CommandModalContent> {
           _error = 'No matches';
         }
         _filteredCommandGroups = commandsList;
+        _highlightedIndex = 0;
       });
     } catch (e, t) {
       log.warning('Error initializing commands', e, t);
@@ -123,6 +122,15 @@ class _CommandModalContentState extends State<_CommandModalContent> {
         });
       }
     }
+  }
+
+  void _moveHighlight(int offset) {
+    setState(() {
+      final totalCount = _allCommandsCount();
+      if (totalCount == 0) return;
+
+      _highlightedIndex = (_highlightedIndex + offset).clamp(0, totalCount - 1);
+    });
   }
 
   int _allCommandsCount() {
@@ -251,9 +259,6 @@ class _CommandModalContentState extends State<_CommandModalContent> {
 
     return ListViewSelector(
       key: ValueKey(totalCommandCount),
-      autoActivateKeyboard: hasPhysicalKeyboard() && totalCommandCount > 0,
-      initialFocusedIndex: hasPhysicalKeyboard() && totalCommandCount > 0 ? 0 : null,
-      scrollController: _scrollController,
       onActivate: (index) => _executeCommand(_getCommandAtIndex(index)),
       builder: (context, listController) {
         // Set bounds for the controller
@@ -272,18 +277,15 @@ class _CommandModalContentState extends State<_CommandModalContent> {
             actions: {
               MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
                 onInvoke: (intent) {
-                  listController.moveFocus(intent.offset);
+                  _moveHighlight(intent.offset);
                   return KeyEventResult.handled;
                 },
               ),
               ActivateListSelectionIntent:
                   CallbackAction<ActivateListSelectionIntent>(
                     onInvoke: (intent) {
-                      final index = listController.focusedIndex ??
-                                   listController.lastFocusedIndex ??
-                                   0;
                       if (_allCommandsCount() > 0) {
-                        _executeCommand(_getCommandAtIndex(index));
+                        _executeCommand(_getCommandAtIndex(_highlightedIndex));
                         return KeyEventResult.handled;
                       }
                       return KeyEventResult.ignored;
@@ -310,6 +312,7 @@ class _CommandModalContentState extends State<_CommandModalContent> {
                                 autofocus: true,
                                 label: "${widget.commands.prompt}…",
                                 focusNode: focusNode,
+                                onChanged: (_) => _initCommands(),
                               ),
                             ),
                           ),
@@ -383,7 +386,7 @@ class _CommandModalContentState extends State<_CommandModalContent> {
                               ListTile(
                                 command: command,
                                 body: body,
-                                focusNode: listController.getFocusNode(index),
+                                selected: index == _highlightedIndex,
                               ),
                             ],
                           ),
