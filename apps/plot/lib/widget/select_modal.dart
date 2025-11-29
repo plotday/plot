@@ -34,6 +34,7 @@ class SelectModal<T> extends Modal {
     this.selectedValue,
     this.prompt = 'Search',
     this.onSelect,
+    this.initialItems,
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
@@ -43,6 +44,7 @@ class SelectModal<T> extends Modal {
            selectedValue: selectedValue,
            prompt: prompt,
            onSelect: onSelect,
+           initialItems: initialItems,
          ),
        );
 
@@ -66,6 +68,9 @@ class SelectModal<T> extends Modal {
   final Future<bool> Function(BuildContext context, T item, String searchText)?
   onSelect;
 
+  /// Pre-fetched items for empty search to avoid empty list on first build.
+  final List<SelectGroup<T>>? initialItems;
+
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
@@ -77,12 +82,26 @@ class SelectModal<T> extends Modal {
     Future<bool> Function(BuildContext context, T item, String searchText)?
     onSelect,
   }) async {
+    // Pre-fetch items for empty search to avoid empty list on first build
+    List<SelectGroup<T>>? initialItems;
+    try {
+      initialItems = await items(null);
+    } catch (e, t) {
+      log.warning('Error pre-fetching items', e, t);
+      // Continue anyway - the modal will handle the error state
+    }
+
+    if (!context.mounted) {
+      return Value.absent();
+    }
+
     final result = await SelectModal<T>(
       items: items,
       itemBuilder: itemBuilder,
       selectedValue: selectedValue,
       prompt: prompt,
       onSelect: onSelect,
+      initialItems: initialItems,
     ).show<T>(context);
 
     return result;
@@ -96,6 +115,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.selectedValue,
     required this.prompt,
     this.onSelect,
+    this.initialItems,
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
@@ -104,6 +124,7 @@ class _SelectModal<T> extends StatefulWidget {
   final String prompt;
   final Future<bool> Function(BuildContext context, T item, String searchText)?
   onSelect;
+  final List<SelectGroup<T>>? initialItems;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
@@ -113,6 +134,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   List<SelectGroup<T>> _groups = [];
+  List<SelectGroup<T>>? _emptySearchCache;
   String? _error;
   bool _isDisposed = false;
   int _highlightedIndex = 0;
@@ -120,7 +142,16 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   void initState() {
     super.initState();
-    _initItems();
+    // If initial items are provided, use them immediately to avoid empty list
+    if (widget.initialItems != null) {
+      _groups = widget.initialItems!
+          .where((group) => group.items.isNotEmpty)
+          .toList();
+      _emptySearchCache = _groups;
+      _updateHighlightedIndex();
+    } else {
+      _initItems();
+    }
   }
 
   @override
@@ -131,12 +162,55 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     super.dispose();
   }
 
+  /// Updates the highlighted index to match the selected value if present.
+  void _updateHighlightedIndex() {
+    if (widget.selectedValue != null) {
+      int currentIndex = 0;
+      bool found = false;
+
+      for (final group in _groups) {
+        for (final item in group.items) {
+          if (item == widget.selectedValue) {
+            _highlightedIndex = currentIndex;
+            found = true;
+            break;
+          }
+          currentIndex++;
+        }
+        if (found) break;
+      }
+
+      if (!found) {
+        _highlightedIndex = 0;
+      }
+    } else {
+      _highlightedIndex = 0;
+    }
+  }
+
   void _initItems() async {
     try {
       setState(() {
         _error = null;
       });
       final searchText = _controller.text.isEmpty ? null : _controller.text;
+
+      // Use cached results for empty search if available
+      if (searchText == null && _emptySearchCache != null) {
+        setState(() {
+          _groups = _emptySearchCache!;
+          final totalItems = _groups.fold<int>(
+            0,
+            (sum, group) => sum + group.items.length,
+          );
+          if (totalItems == 0) {
+            _error = 'No matches';
+          }
+          _updateHighlightedIndex();
+        });
+        return;
+      }
+
       final groupsList = await widget.items(searchText);
 
       if (_isDisposed) return;
@@ -144,6 +218,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       setState(() {
         // Filter out groups with empty items
         _groups = groupsList.where((group) => group.items.isNotEmpty).toList();
+
+        // Cache results for empty search
+        if (searchText == null) {
+          _emptySearchCache = _groups;
+        }
 
         // Calculate total items across all groups
         final totalItems = _groups.fold<int>(
@@ -155,29 +234,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
           _error = 'No matches';
         }
 
-        // Find the selected item's index to highlight it
-        if (widget.selectedValue != null) {
-          int currentIndex = 0;
-          bool found = false;
-
-          for (final group in _groups) {
-            for (final item in group.items) {
-              if (item == widget.selectedValue) {
-                _highlightedIndex = currentIndex;
-                found = true;
-                break;
-              }
-              currentIndex++;
-            }
-            if (found) break;
-          }
-
-          if (!found) {
-            _highlightedIndex = 0;
-          }
-        } else {
-          _highlightedIndex = 0;
-        }
+        // Update highlighted index to match selected value
+        _updateHighlightedIndex();
       });
     } catch (e, t) {
       log.warning('Error loading items', e, t);
