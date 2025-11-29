@@ -18,10 +18,14 @@ class CommandModal {
   final BuildContext rootContext;
 
   Future<CommandReturn> run(BuildContext context) async {
+    final baseCommandList = await commands.list();
+    if (!context.mounted) return CommandSkipped();
     final result = await SelectModal.open<Command>(
       context,
       items: (search) async {
-        final commandsList = await commands.list(search: search);
+        final commandsList = (search == null || search.isEmpty)
+            ? baseCommandList
+            : await commands.list(search: search);
         return commandsList
             .map(
               (cg) => SelectGroup<Command>(

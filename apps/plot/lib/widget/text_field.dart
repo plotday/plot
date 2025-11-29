@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/widget/modal.dart';
 
 enum TextFieldStyle { outline, ghost }
 
@@ -152,6 +153,8 @@ class EditableArea extends StatefulWidget {
 
 class EditableAreaState extends State<EditableArea> {
   final FocusNode _focusNode = FocusNode();
+  ValueNotifier<int>? _modalStackNotifier;
+  int? _previousStackDepth;
 
   @override
   void initState() {
@@ -168,7 +171,55 @@ class EditableAreaState extends State<EditableArea> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // Listen to modal stack changes to restore focus when this modal becomes visible again
+    if (widget.autofocus) {
+      try {
+        final modalProvider = ModalProvider.of(context);
+        final notifier = modalProvider.modalStackNotifier;
+
+        // Remove old listener if it exists
+        if (_modalStackNotifier != null && _modalStackNotifier != notifier) {
+          _modalStackNotifier!.removeListener(_onModalStackChanged);
+        }
+
+        // Add new listener if needed
+        if (_modalStackNotifier != notifier) {
+          _modalStackNotifier = notifier;
+          _previousStackDepth = notifier.value;
+          _modalStackNotifier!.addListener(_onModalStackChanged);
+        }
+      } catch (e) {
+        // ModalProvider not available in this context
+      }
+    }
+  }
+
+  void _onModalStackChanged() {
+    final currentDepth = _modalStackNotifier!.value;
+
+    // If the stack depth decreased (modal was popped) and we don't have focus, request it
+    if (_previousStackDepth != null &&
+        currentDepth < _previousStackDepth! &&
+        !_focusNode.hasFocus &&
+        widget.autofocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_focusNode.hasFocus) {
+          _focusNode.requestFocus();
+        }
+      });
+    }
+
+    _previousStackDepth = currentDepth;
+  }
+
+  @override
   void dispose() {
+    if (_modalStackNotifier != null) {
+      _modalStackNotifier!.removeListener(_onModalStackChanged);
+    }
     _focusNode.dispose();
     super.dispose();
   }
