@@ -126,7 +126,7 @@ class _ModalProviderState extends State<ModalProvider> {
           actions: {
             DismissIntent: CallbackAction<DismissIntent>(
               onInvoke: (intent) {
-                pop(dialogContext, Value<T>.absent());
+                dismiss(dialogContext, Value<T>.absent());
                 return null;
               },
             ),
@@ -262,6 +262,32 @@ class _ModalProviderState extends State<ModalProvider> {
     }
   }
 
+  void dismiss(BuildContext context, Value<dynamic> value) {
+    if (_modalStack.isEmpty) return;
+
+    final stackItem = _modalStack.removeLast();
+    // Check if this is the last modal BEFORE completing the completer,
+    // because completing may trigger a cascade of pops that empties the stack
+    final shouldCloseDialog = _modalStack.isEmpty;
+
+    // Complete with absent value - this may synchronously trigger more pops
+    stackItem.completeAbsent();
+
+    // Only close dialog if WE are the one that emptied the stack,
+    // not if a cascaded pop already closed it
+    if (shouldCloseDialog) {
+      final modalContext = _rootContextKey.currentContext ?? context;
+      final navigator = Navigator.of(modalContext);
+      if (navigator.canPop()) {
+        navigator.pop(value);
+      } else {
+        log.warning('Cannot pop - navigator says canPop is false');
+      }
+    } else if (_modalStack.isNotEmpty) {
+      _notifyStackChanged();
+    }
+  }
+
   Future<void> popAll(BuildContext context) async {
     while (_modalStack.isNotEmpty) {
       final stackItem = _modalStack.removeLast();
@@ -311,6 +337,10 @@ class _ModalProviderInherited extends InheritedWidget {
 
   void pop<T>(BuildContext context, Value<T> result) {
     state.pop<T>(context, result);
+  }
+
+  void dismiss(BuildContext context, Value<dynamic> value) {
+    state.dismiss(context, value);
   }
 
   Future<void> popAll(BuildContext context) {
