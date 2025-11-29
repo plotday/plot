@@ -3,7 +3,6 @@ export 'package:forui/forui.dart';
 
 export 'activity.dart';
 export 'alert.dart';
-export 'animated_command_row.dart';
 export 'badge.dart';
 export 'bidirectional_list.dart';
 export 'button.dart';
