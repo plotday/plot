@@ -430,19 +430,16 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                   if (hasPhysicalKeyboard())
                     EditableArea(
                       position: EditableAreaPosition.top,
-                      padding: false,
+                      padding: true,
                       autofocus: true,
-                      builder: (context, focusNode) => Padding(
-                        padding: widgetPadding,
-                        child: TextField(
-                          maxLines: 1,
-                          style: TextFieldStyle.ghost,
-                          controller: _controller,
-                          autofocus: true,
-                          label: "${widget.prompt}...",
-                          focusNode: focusNode,
-                          onChanged: (text) => _initItems(),
-                        ),
+                      builder: (context, focusNode) => TextField(
+                        maxLines: 1,
+                        style: TextFieldStyle.ghost,
+                        controller: _controller,
+                        autofocus: true,
+                        label: "${widget.prompt}...",
+                        focusNode: focusNode,
+                        onChanged: (text) => _initItems(),
                       ),
                     ),
                   if (errorBox != null) errorBox,
