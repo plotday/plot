@@ -36,10 +36,10 @@ class PlotIcon {
   static const previous = FontAwesomeIcons.arrowUpToLine;
 
   // Tags
-  static const now = FontAwesomeIcons.play;
+  static const now = FontAwesomeIcons.circlePlay;
   static const todo = FontAwesomeIcons.inbox;
   static const later = FontAwesomeIcons.clock;
-  static const done = FontAwesomeIcons.badgeCheck;
+  static const done = FontAwesomeIcons.check;
   static const pinned = FontAwesomeIcons.thumbtackAngle;
   static const archived = FontAwesomeIcons.boxArchive;
   static const urgent = FontAwesomeIcons.sirenOn;

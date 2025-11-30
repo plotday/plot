@@ -118,6 +118,22 @@ FButtonStyles buildButtonStyles(
       ),
     ),
     // ignore: unused_result
+    outline: baseStyles.outline.copyWith(
+      // ignore: unused_result
+      decoration: FWidgetStateMap({
+        WidgetState.any: BoxDecoration(
+          borderRadius: borderRadius,
+          border: Border.all(
+            color: colourScheme.colours.muted.withOpacity(0.4).toColor(),
+            width: 1,
+          ),
+          color: colourScheme.colours.highlight
+              .withLightness(colourScheme.brightness == .light ? 0.78 : 0.48)
+              .toColor(),
+        ),
+      }),
+    ),
+    // ignore: unused_result
     ghost: baseStyles.ghost.copyWith(
       // ignore: unused_result
       contentStyle: baseStyles.ghost.contentStyle.copyWith(

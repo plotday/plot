@@ -92,10 +92,10 @@ class _ActivityWidgetState extends State<ActivityWidget> {
           ],
         ],
       ),
-      trailing: ActivityTags(activity: widget.activity),
+      trailing: ActivityTags(activity: widget.activity, reverse: true),
       trailingCommands: [
-        ...activitySecondaryCommands(widget.activity).take(3),
         ShowActivityCommands(widget.activity),
+        ...activitySecondaryCommands(widget.activity).toList().reversed,
       ],
       revealTrailingCommands: true,
       selected: widget.selected,
@@ -133,13 +133,17 @@ class _ActivityWidgetState extends State<ActivityWidget> {
 }
 
 class ActivityTags extends StatelessWidget {
-  const ActivityTags({required this.activity, super.key});
+  const ActivityTags({required this.activity, this.reverse = false, super.key});
 
   final Activity activity;
+  final bool reverse;
 
   @override
   Widget build(BuildContext context) {
-    final relevantTags = Tag.getAll().where((tag) => activity.hasTag(tag));
+    var relevantTags = Tag.getAll().where((tag) => activity.hasTag(tag));
+    if (reverse) {
+      relevantTags = relevantTags.toList().reversed;
+    }
 
     return Wrap(
       spacing: 4,
@@ -147,11 +151,13 @@ class ActivityTags extends StatelessWidget {
       children: relevantTags.map((tag) {
         final hasTag = activity.hasTag(tag);
         final key = ValueKey(Object.hash(activity.id, tag.id));
-        return Button.icon(
-          ToggleActivityTag(activity, tag),
-          key: key,
-          selected: hasTag,
-        );
+
+        // Use FinishActivity when clicking Tag.now on a "doNow" activity
+        final command = tag == Tag.now && hasTag
+            ? FinishActivity(activity)
+            : ToggleActivityTag(activity, tag);
+
+        return Button.icon(command, key: key, selected: hasTag);
       }).toList(),
     );
   }
@@ -264,7 +270,7 @@ class _ActivityDetailWidgetState extends State<ActivityDetailWidget> {
                     ),
                     if (_showCommands)
                       ...[
-                        ...activitySecondaryCommands(widget.activity).take(3),
+                        ...activitySecondaryCommands(widget.activity),
                         ShowActivityCommands(widget.activity, open: false),
                       ].asMap().entries.map(
                         (entry) => Button.icon(entry.value),

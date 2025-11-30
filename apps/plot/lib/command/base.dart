@@ -52,6 +52,7 @@ abstract class Command {
     required this.eventAction,
     this.subtitle,
     this.icon,
+    this.hoverIcon,
     this.shortcut,
     this.on,
   });
@@ -61,6 +62,7 @@ abstract class Command {
   final EventAction eventAction;
   final String? subtitle;
   final IconData? icon;
+  final IconData? hoverIcon;
   final ShortcutActivator? shortcut;
   // state for toggle actions
   final bool? on;
@@ -79,6 +81,7 @@ class CommandWrapper extends Command {
     this.command, {
     Future<CommandReturn> Function(Command command, BuildContext context)? run,
     Value<IconData?> icon = const Value<IconData?>.absent(),
+    Value<IconData?> hoverIcon = const Value<IconData?>.absent(),
     String? title,
   }) : _run = run,
        super(
@@ -87,6 +90,7 @@ class CommandWrapper extends Command {
          eventAction: command.eventAction,
          subtitle: command.subtitle,
          icon: icon.or(command.icon),
+         hoverIcon: hoverIcon.or(command.hoverIcon),
          shortcut: command.shortcut,
        );
 

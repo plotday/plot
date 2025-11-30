@@ -7,7 +7,7 @@ import 'spinner.dart';
 
 enum ButtonStyle { primary, secondary, ghost }
 
-class Button extends StatelessWidget {
+class Button extends StatefulWidget {
   const Button(
     this.command, {
     this.loading = false,
@@ -57,16 +57,23 @@ class Button extends StatelessWidget {
   final Command command;
 
   @override
+  State<Button> createState() => _ButtonState();
+}
+
+class _ButtonState extends State<Button> {
+  bool _isHovered = false;
+
+  @override
   Widget build(BuildContext context) {
     FBaseButtonStyle Function(FButtonStyle) fStyle;
-    if (selected) {
+    if (widget.selected) {
       fStyle = (baseStyle) {
-        final selectedStyle = switch (style) {
+        final selectedStyle = switch (widget.style) {
           ButtonStyle.primary => context.theme.buttonStyles.primary,
           ButtonStyle.secondary => context.theme.buttonStyles.outline,
           ButtonStyle.ghost => context.theme.buttonStyles.ghost,
         };
-        return selectedStyle.copyWith(
+        var result = selectedStyle.copyWith(
           // ignore: unused_result
           contentStyle: selectedStyle.contentStyle.copyWith(
             textStyle: selectedStyle.contentStyle.textStyle.map(
@@ -86,47 +93,93 @@ class Button extends StatelessWidget {
             ),
           ),
         );
+
+        // Apply circular border radius for icon buttons
+        if (widget.iconOnly) {
+          result = result.copyWith(
+            decoration: result.decoration.map(
+              (decoration) =>
+                  decoration.copyWith(borderRadius: BorderRadius.circular(999)),
+            ),
+          );
+        }
+
+        return result;
       };
     } else {
-      fStyle = switch (style) {
+      fStyle = switch (widget.style) {
         ButtonStyle.primary => FButtonStyle.primary(),
         ButtonStyle.secondary => FButtonStyle.outline(),
         ButtonStyle.ghost => FButtonStyle.ghost(),
       };
+
+      // Apply circular border radius for icon buttons
+      if (widget.iconOnly) {
+        fStyle = (baseStyle) {
+          final unselectedStyle = switch (widget.style) {
+            ButtonStyle.primary => context.theme.buttonStyles.primary,
+            ButtonStyle.secondary => context.theme.buttonStyles.outline,
+            ButtonStyle.ghost => context.theme.buttonStyles.ghost,
+          };
+
+          return unselectedStyle.copyWith(
+            decoration: unselectedStyle.decoration.map(
+              (decoration) =>
+                  decoration.copyWith(borderRadius: BorderRadius.circular(999)),
+            ),
+          );
+        };
+      }
     }
 
-    final onPress = enabled ? () => context.run(command) : null;
-    final button = PlatformBuilder(
-      builder: (_) {
-        final icon = command.icon;
-        return iconOnly
-            ? FButton.icon(
-                style: fStyle,
-                onPress: onPress,
-                child: icon != null
-                    ? Icon(icon, size: 12)
-                    : Text(
-                        command.title,
-                        style: context.theme.typography.base.copyWith(
-                          height: 1,
-                          textBaseline: TextBaseline.ideographic,
+    final onPress = widget.enabled ? () => context.run(widget.command) : null;
+
+    final button = MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: PlatformBuilder(
+        builder: (_) {
+          // Determine which icon to show
+          var icon = widget.command.icon;
+
+          if (widget.command.hoverIcon != null && _isHovered) {
+            // Use hover icon when hovering and hoverIcon is specified
+            icon = widget.command.hoverIcon;
+          }
+
+          return widget.iconOnly
+              ? FButton.icon(
+                  style: fStyle,
+                  onPress: onPress,
+                  child: icon != null
+                      ? Icon(icon, size: 15)
+                      : Text(
+                          widget.command.title,
+                          style: context.theme.typography.base.copyWith(
+                            height: 1,
+                            textBaseline: TextBaseline.ideographic,
+                          ),
                         ),
-                      ),
-              )
-            : FButton(
-                style: fStyle,
-                onPress: onPress,
-                prefix: icon != null ? Icon(icon, size: 12) : null,
-                child: Text(command.title),
-              );
-      },
+                )
+              : FButton(
+                  style: fStyle,
+                  onPress: onPress,
+                  prefix: icon != null ? Icon(icon, size: 15) : null,
+                  child: Text(widget.command.title),
+                );
+        },
+      ),
     );
 
+    return _wrapButton(button);
+  }
+
+  Widget _wrapButton(Widget button) {
     final stack = Stack(
       alignment: Alignment.center,
       children: [
-        Opacity(opacity: loading ? 0.0 : 1.0, child: button),
-        if (loading) Spinner(),
+        Opacity(opacity: widget.loading ? 0.0 : 1.0, child: button),
+        if (widget.loading) Spinner(),
       ],
     );
 
@@ -134,14 +187,15 @@ class Button extends StatelessWidget {
 
     result = FTooltip(
       tipBuilder: (context, controller) {
-        if (command.subtitle != null && command.subtitle!.isNotEmpty) {
+        if (widget.command.subtitle != null &&
+            widget.command.subtitle!.isNotEmpty) {
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(command.title),
+              Text(widget.command.title),
               Text(
-                command.subtitle!,
+                widget.command.subtitle!,
                 style: context.theme.typography.sm.copyWith(
                   color: context.theme.colors.mutedForeground,
                 ),
@@ -149,12 +203,12 @@ class Button extends StatelessWidget {
             ],
           );
         }
-        return Text(command.title);
+        return Text(widget.command.title);
       },
       child: result,
     );
 
-    if (!expand) {
+    if (!widget.expand) {
       result = Row(mainAxisSize: MainAxisSize.min, children: [result]);
     }
 

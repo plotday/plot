@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/analytics.dart';
@@ -310,6 +311,7 @@ abstract class _UpdateActivityCommand extends Command {
     required super.eventObject,
     required super.eventAction,
     super.icon,
+    super.hoverIcon,
   }) : onUpdate = onUpdate ?? ((activity) => activity.save());
 
   final Activity activity;
@@ -367,7 +369,8 @@ class FinishActivity extends _UpdateActivityCommand {
         title: 'Finish',
         eventObject: EventObject.activity,
         eventAction: EventAction.finished,
-        icon: PlotIcon.done,
+        icon: activity.doNow ? FontAwesomeIcons.circle : PlotIcon.done,
+        hoverIcon: activity.doNow ? FontAwesomeIcons.circleCheck : null,
       );
 
   @override
@@ -581,17 +584,11 @@ class ShowActivityCommands extends ShowCommands {
       );
 }
 
-Command activityPrimaryCommand(Activity activity) => switch (activity) {
-  _ when PinActivity._isPinned(activity) => PinActivity(activity),
-  _ when activity.todo => FinishActivity(activity),
-  _ when activity.done => MarkActivityIncomplete(activity),
-  _ => StartActivity(activity),
-};
-
 List<Command> activitySecondaryCommands(Activity activity) => [
+  if (!activity.todo) StartActivity(activity),
   if (activity.path.isRoot) PickScheduleActivity(activity),
+  if (!activity.doNow) FinishActivity(activity),
   if (!PinActivity._isPinned(activity)) PinActivity(activity),
-  ArchiveActivity(activity),
 ];
 
 // Focus navigation intents and actions for list items

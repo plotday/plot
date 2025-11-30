@@ -634,9 +634,9 @@ class Activity extends Equatable implements Comparable<Activity> {
       ),
     ]);
     doneQuery.where(a.archivedAt.isNull() & a.doneAt.isNotNull());
-    final doneCountStream = doneQuery
-        .watch()
-        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+    final doneCountStream = doneQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
 
     // COUNT query for Tag.now
     final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
@@ -660,8 +660,9 @@ class Activity extends Equatable implements Comparable<Activity> {
                   (a.endAt.isNull() | a.endAt.isBiggerOrEqualValue(now)) &
                   a.startOn.isNull())),
     );
-    final nowCountStream =
-        nowQuery.watch().map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+    final nowCountStream = nowQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
 
     // COUNT query for Tag.later
     final laterQuery = Store.get.selectOnly(a)..addColumns([a.id]);
@@ -683,9 +684,9 @@ class Activity extends Equatable implements Comparable<Activity> {
               // DateTime-based scheduling: startAt > now
               (a.startAt.isBiggerThanValue(now) & a.startOn.isNull())),
     );
-    final laterCountStream = laterQuery
-        .watch()
-        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+    final laterCountStream = laterQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
 
     // COUNT query for Tag.archived
     final archivedQuery = Store.get.selectOnly(a)..addColumns([a.id]);
@@ -698,9 +699,9 @@ class Activity extends Equatable implements Comparable<Activity> {
       ),
     ]);
     archivedQuery.where(a.archivedAt.isNotNull());
-    final archivedCountStream = archivedQuery
-        .watch()
-        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+    final archivedCountStream = archivedQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
 
     return Rx.combineLatest5(
       tagsQuery.watch(),
@@ -737,9 +738,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         if (archivedCount > 0) tagCounts[Tag.archived] = archivedCount;
 
         // Convert to list of (Tag, count) and sort by count descending
-        final result =
-            tagCounts.entries.map((e) => (e.key, e.value)).toList()
-              ..sort((a, b) => b.$2.compareTo(a.$2));
+        final result = tagCounts.entries.map((e) => (e.key, e.value)).toList()
+          ..sort((a, b) => b.$2.compareTo(a.$2));
 
         return result;
       },
@@ -777,9 +777,9 @@ class Activity extends Equatable implements Comparable<Activity> {
           (a.path.equalsValue(activityPath) |
               a.path.likeExp(Constant(activityPathLike))),
     );
-    final doneCountStream = doneQuery
-        .watch()
-        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+    final doneCountStream = doneQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
 
     // COUNT query for Tag.now
     final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
@@ -797,8 +797,9 @@ class Activity extends Equatable implements Comparable<Activity> {
                   (a.endAt.isNull() | a.endAt.isBiggerOrEqualValue(now)) &
                   a.startOn.isNull())),
     );
-    final nowCountStream =
-        nowQuery.watch().map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+    final nowCountStream = nowQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
 
     // COUNT query for Tag.later
     final laterQuery = Store.get.selectOnly(a)..addColumns([a.id]);
@@ -814,9 +815,9 @@ class Activity extends Equatable implements Comparable<Activity> {
               // DateTime-based scheduling: startAt > now
               (a.startAt.isBiggerThanValue(now) & a.startOn.isNull())),
     );
-    final laterCountStream = laterQuery
-        .watch()
-        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+    final laterCountStream = laterQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
 
     // COUNT query for Tag.archived
     final archivedQuery = Store.get.selectOnly(a)..addColumns([a.id]);
@@ -825,9 +826,9 @@ class Activity extends Equatable implements Comparable<Activity> {
           (a.path.equalsValue(activityPath) |
               a.path.likeExp(Constant(activityPathLike))),
     );
-    final archivedCountStream = archivedQuery
-        .watch()
-        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+    final archivedCountStream = archivedQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
 
     return Rx.combineLatest5(
       tagsQuery.watch(),
@@ -864,9 +865,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         if (archivedCount > 0) tagCounts[Tag.archived] = archivedCount;
 
         // Convert to list of (Tag, count) and sort by count descending
-        final result =
-            tagCounts.entries.map((e) => (e.key, e.value)).toList()
-              ..sort((a, b) => b.$2.compareTo(a.$2));
+        final result = tagCounts.entries.map((e) => (e.key, e.value)).toList()
+          ..sort((a, b) => b.$2.compareTo(a.$2));
 
         return result;
       },
@@ -1439,7 +1439,18 @@ class Activity extends Equatable implements Comparable<Activity> {
   RecurrenceRule? get recurrenceRule => _activity.recurrenceRule;
   List<DateTime>? get recurrenceExdates => _activity.recurrenceExdates;
   List<DateTime>? get recurrenceDates => _activity.recurrenceDates;
-  Map<Tag, List<Uuid>> get tags => _tags?.tags ?? const {};
+  Map<Tag, List<Uuid>> get tags => {
+    ...Map.fromEntries(
+      [
+        Tag.now,
+        Tag.later,
+        Tag.done,
+        Tag.archived,
+      ].where((tag) => hasTag(tag)).map((tag) => MapEntry(tag, [authorId])),
+    ),
+    ...(_tags?.tags ?? const {}),
+  };
+
   List<Link> get links => _activity.links ?? const [];
   bool get unread => _activity.unread;
   bool? get unreadUpdated => _activity.unreadUpdated;
@@ -1545,6 +1556,15 @@ class Activity extends Equatable implements Comparable<Activity> {
     Value<List<Link>?> links = const Value.absent(),
   }) {
     final now = DateTime.now();
+
+    // If an action is incomplete and unscheduled, convert it to a note
+    if (this.type == .action &&
+        type != .event &&
+        at.or(this.at) == null &&
+        on.or(this.on) == null &&
+        doneAt.or(this.doneAt) == null) {
+      type = .note;
+    }
 
     // Update root activity if any root-specific fields are changing
     var activity = _activity;
@@ -1854,14 +1874,14 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   bool hasTag(Tag tag) {
     switch (tag) {
-      case Tag.archived:
-        return archivedAt != null;
       case Tag.now:
         return doNow;
-      case Tag.done:
-        return done;
       case Tag.later:
         return doLater;
+      case Tag.done:
+        return done;
+      case Tag.archived:
+        return archivedAt != null;
       default:
         final currentTags = tags;
         final users = currentTags[tag];

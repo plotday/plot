@@ -22,6 +22,7 @@ import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/util/async.dart';
+import 'package:plot/util/value.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/broadcast.dart';
@@ -321,7 +322,8 @@ class Store extends _$Store {
         if (pendingValue is Value) {
           // If pending is absent or explicitly null, set it to 2
           if (!pendingValue.present || pendingValue.value == null) {
-            finalData = companion.copyWith(pending: const Value(2)) as Insertable<DATA>;
+            finalData =
+                companion.copyWith(pending: const Value(2)) as Insertable<DATA>;
           }
         }
       } catch (_) {
@@ -351,7 +353,8 @@ class Store extends _$Store {
           if (pendingValue is Value) {
             // If pending is absent or explicitly null, set it to 2
             if (!pendingValue.present || pendingValue.value == null) {
-              return companion.copyWith(pending: const Value(2)) as Insertable<DATA>;
+              return companion.copyWith(pending: const Value(2))
+                  as Insertable<DATA>;
             }
           }
         } catch (_) {
