@@ -55,12 +55,6 @@ Plot Twists are smart automations that connect, organize, and prioritize your wo
   - Memory and state management
   - Performance optimization
 
-- **[Advanced Topics](ADVANCED.md)** - Complex patterns and techniques
-  - Multi-twist coordination
-  - Error handling
-  - Debugging and logging
-  - Security best practices
-
 ## API Reference
 
 Explore the complete API documentation using the navigation on the left:
@@ -86,9 +80,9 @@ Check out these examples to get started:
 ```typescript
 import {
   ActivityType,
-  Twist,
   type Priority,
   type ToolBuilder,
+  Twist,
 } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
 
@@ -111,7 +105,7 @@ export default class WelcomeTwist extends Twist<WelcomeTwist> {
 ### Calendar Sync Twist
 
 ```typescript
-import { type Activity, Twist, type ToolBuilder } from "@plotday/twister";
+import { type Activity, type ToolBuilder, Twist } from "@plotday/twister";
 import { Network } from "@plotday/twister/tools/network";
 import { Plot } from "@plotday/twister/tools/plot";
 

@@ -1,4 +1,4 @@
-import type { Activity, ActivityLink } from "../index";
+import type { ActivityLink, NewActivityWithNotes } from "../index";
 
 /**
  * Represents successful calendar authorization.
@@ -89,7 +89,7 @@ export interface SyncOptions {
  *     }
  *   }
  *
- *   async onCalendarEvent(activity: Activity) {
+ *   async onCalendarEvent(activity: NewActivityWithNotes) {
  *     // Step 4: Process synced events
  *     await this.plot.createActivity(activity);
  *   }
@@ -138,7 +138,9 @@ export interface CalendarTool {
    * @returns Promise that resolves when sync setup is complete
    * @throws When auth token is invalid or calendar doesn't exist
    */
-  startSync<TCallback extends (activity: Activity, ...args: any[]) => any>(
+  startSync<
+    TCallback extends (activity: NewActivityWithNotes, ...args: any[]) => any
+  >(
     authToken: string,
     calendarId: string,
     callback: TCallback,

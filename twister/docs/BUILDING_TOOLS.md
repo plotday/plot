@@ -61,7 +61,7 @@ export class HelloTool extends Tool<HelloTool> {
 ### Using Your Tool
 
 ```typescript
-import { twist, type ToolBuilder } from "@plotday/twister";
+import { type ToolBuilder, twist } from "@plotday/twister";
 
 import { HelloTool } from "./tools/hello";
 
@@ -417,16 +417,20 @@ export class GitHubTool extends Tool<GitHubTool> {
       await this.tools.plot.createActivity({
         type: ActivityType.Action,
         title: issue.title,
-        note: issue.body,
         meta: {
           github_issue_id: issue.id.toString(),
           github_number: issue.number.toString(),
         },
-        links: [
+        notes: [
           {
-            type: ActivityLinkType.external,
-            title: "View on GitHub",
-            url: issue.html_url,
+            note: issue.body,
+            links: [
+              {
+                type: ActivityLinkType.external,
+                title: "View on GitHub",
+                url: issue.html_url,
+              },
+            ],
           },
         ],
       });
@@ -437,20 +441,45 @@ export class GitHubTool extends Tool<GitHubTool> {
     request: WebhookRequest,
     context: { priorityId: string }
   ): Promise<void> {
-    const { action, issue } = request.body;
+    const { action, issue, comment } = request.body;
 
     if (action === "opened") {
-      // Create new activity for new issue
+      // Create new activity for new issue with initial Note
       await this.tools.plot.createActivity({
         type: ActivityType.Action,
         title: issue.title,
         meta: {
           github_issue_id: issue.id.toString(),
         },
+        notes: [
+          {
+            note: issue.body || "No description provided",
+            links: [
+              {
+                type: ActivityLinkType.external,
+                title: "View on GitHub",
+                url: issue.html_url,
+              },
+            ],
+          },
+        ],
       });
+    } else if (action === "created" && comment) {
+      // Add comment as Note to existing Activity
+      const activity = await this.tools.plot.getActivityBySource({
+        github_issue_id: issue.id.toString(),
+      });
+
+      if (activity) {
+        await this.tools.plot.createNote({
+          activity: { id: activity.id },
+          note: comment.body,
+          // author could be set if you have user mapping
+        });
+      }
     } else if (action === "closed") {
       // Mark activity as done
-      const activity = await this.tools.plot.getActivityByMeta({
+      const activity = await this.tools.plot.getActivityBySource({
         github_issue_id: issue.id.toString(),
       });
 
@@ -583,7 +612,7 @@ describe("GitHubTool", () => {
 Test your tool with a real twist:
 
 ```typescript
-import { twist, type ToolBuilder } from "@plotday/twister";
+import { type ToolBuilder, twist } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
 
 import { GitHubTool } from "./github-tool";
@@ -823,5 +852,4 @@ async getIssues(): Promise<GitHubIssue[]> {
 ## Next Steps
 
 - **[Built-in Tools Guide](TOOLS_GUIDE.md)** - Learn from built-in tool patterns
-- **[Advanced Topics](ADVANCED.md)** - Complex tool patterns
 - **API Reference** - Explore the Tool class API

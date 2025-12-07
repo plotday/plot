@@ -1,11 +1,13 @@
 import {
   type Activity,
+  type ActivityCommon,
   type ActivityLink,
   ActivityLinkType,
   type ActorId,
   ConferencingProvider,
-  type NewActivity,
+  type NewActivityWithNotes,
   type NewContact,
+  type NewNote,
   Tag,
   Tool,
   type ToolBuilder,
@@ -28,11 +30,12 @@ import {
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
+
 import {
   GraphApi,
+  type SyncState,
   syncOutlookCalendar,
   transformOutlookEvent,
-  type SyncState,
 } from "./graph-api";
 
 /**
@@ -229,7 +232,7 @@ export class OutlookCalendar
   }
 
   async startSync<
-    TCallback extends (activity: Activity, ...args: any[]) => any
+    TCallback extends (activity: NewActivityWithNotes, ...args: any[]) => any
   >(
     authToken: string,
     calendarId: string,
@@ -380,8 +383,7 @@ export class OutlookCalendar
             if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
               const contacts: NewContact[] = outlookEvent.attendees
                 .filter(
-                  (att) =>
-                    att.emailAddress?.address && att.type !== "resource"
+                  (att) => att.emailAddress?.address && att.type !== "resource"
                 )
                 .map((att) => ({
                   email: att.emailAddress!.address!,
@@ -440,30 +442,21 @@ export class OutlookCalendar
               }
             }
 
-            // Add tags to the activity
-            if (tags && Object.keys(tags).length > 0) {
-              activity.tags = tags;
-            }
-
-            // Add mentions to the activity (all invitees)
-            if (actorIds.length > 0) {
-              activity.mentions = actorIds;
-            }
-
             // Build links array for videoconferencing and calendar links
             const links: ActivityLink[] = [];
 
+            // Add conferencing link if available
             if (outlookEvent.onlineMeeting?.joinUrl) {
-              const provider = detectConferencingProvider(
-                outlookEvent.onlineMeeting.joinUrl
-              );
               links.push({
                 type: ActivityLinkType.conferencing,
                 url: outlookEvent.onlineMeeting.joinUrl,
-                provider,
+                provider: detectConferencingProvider(
+                  outlookEvent.onlineMeeting.joinUrl
+                ),
               });
             }
 
+            // Add calendar link
             if (outlookEvent.webLink) {
               links.push({
                 type: ActivityLinkType.external,
@@ -472,14 +465,36 @@ export class OutlookCalendar
               });
             }
 
-            if (links.length > 0) {
-              activity.links = links;
+            // Create note with description and/or links
+            const notes: NewNote[] = [];
+            const hasDescription =
+              outlookEvent.body?.content &&
+              outlookEvent.body.content.trim().length > 0;
+            const hasLinks = links.length > 0;
+
+            if (hasDescription || hasLinks) {
+              notes.push({
+                activity: { id: "" }, // Will be filled in by the API
+                note: hasDescription ? outlookEvent.body!.content! : null,
+                links: hasLinks ? links : null,
+                noteType:
+                  outlookEvent.body?.contentType === "html" ? "html" : "text",
+              });
             }
 
+            // Build NewActivityWithNotes from the transformed activity
+            const activityWithNotes: NewActivityWithNotes = {
+              ...activity,
+              tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
+              notes,
+            };
+
             // Call the event callback
-            const callbackToken = await this.get<string>("event_callback_token");
+            const callbackToken = await this.get<string>(
+              "event_callback_token"
+            );
             if (callbackToken) {
-              await this.run(callbackToken as any, activity);
+              await this.run(callbackToken as any, activityWithNotes);
             }
           } catch (error) {
             console.error(`Error processing event ${outlookEvent.id}:`, error);
@@ -583,18 +598,20 @@ export class OutlookCalendar
   }
 
   async onActivityUpdated(
-    activity: Activity,
+    activity: ActivityCommon,
     changes?: {
-      previous: Activity;
+      previous: ActivityCommon;
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
     }
   ): Promise<void> {
     if (!changes) return;
+    // Cast to Activity to access Activity-specific fields
+    const activityFull = activity as Activity;
     // Only process calendar events
     if (
-      !activity.meta?.source ||
-      !activity.meta.source.startsWith("outlook-calendar:")
+      !activityFull.meta?.source ||
+      !activityFull.meta.source.startsWith("outlook-calendar:")
     ) {
       return;
     }
@@ -605,7 +622,8 @@ export class OutlookCalendar
     const skipChanged =
       Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
     const undecidedChanged =
-      Tag.Undecided in changes.tagsAdded || Tag.Undecided in changes.tagsRemoved;
+      Tag.Undecided in changes.tagsAdded ||
+      Tag.Undecided in changes.tagsRemoved;
 
     if (!attendChanged && !skipChanged && !undecidedChanged) {
       return; // No RSVP-related tag changes
@@ -614,7 +632,8 @@ export class OutlookCalendar
     // Determine new RSVP status based on current tags
     const hasAttend =
       activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
-    const hasSkip = activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
+    const hasSkip =
+      activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
     const hasUndecided =
       activity.tags?.[Tag.Undecided] && activity.tags[Tag.Undecided].length > 0;
 
@@ -654,8 +673,8 @@ export class OutlookCalendar
     }
 
     // Extract calendar info from metadata
-    const eventId = activity.meta.id;
-    const calendarId = activity.meta.calendarId;
+    const eventId = activityFull.meta.id;
+    const calendarId = activityFull.meta.calendarId;
 
     if (!eventId || !calendarId) {
       console.warn("Missing event or calendar ID in activity metadata");
@@ -712,8 +731,7 @@ export class OutlookCalendar
     const attendees = event.attendees || [];
     const userAttendee = attendees.find(
       (att: any) =>
-        att.emailAddress?.address?.toLowerCase() ===
-        userEmail.toLowerCase()
+        att.emailAddress?.address?.toLowerCase() === userEmail.toLowerCase()
     );
 
     if (userAttendee && userAttendee.status?.response === status) {

@@ -43,29 +43,43 @@ import { ActivityLinkType, ActivityType } from "@plotday/twister";
 // Create a note
 await this.tools.plot.createActivity({
   type: ActivityType.Note,
-  title: "Meeting notes",
-  note: "Discussed Q1 planning",
-});
-
-// Create a task
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
-  title: "Review pull request #123",
-  links: [
+  title: "Q1 Planning Meeting Notes",
+  notes: [
     {
-      type: ActivityLinkType.external,
-      title: "View PR",
-      url: "https://github.com/org/repo/pull/123",
+      note: "Discussed goals for Q1 and assigned action items.",
     },
   ],
 });
 
-// Create an event
+// Create a task with a note containing links
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Review pull request #123",
+  notes: [
+    {
+      note: "Please review the changes and provide feedback",
+      links: [
+        {
+          type: ActivityLinkType.external,
+          title: "View PR",
+          url: "https://github.com/org/repo/pull/123",
+        },
+      ],
+    },
+  ],
+});
+
+// Create an event with description in a note
 await this.tools.plot.createActivity({
   type: ActivityType.Event,
   title: "Team standup",
   start: new Date("2025-02-01T10:00:00Z"),
   end: new Date("2025-02-01T10:30:00Z"),
+  notes: [
+    {
+      note: "Daily standup meeting to sync on progress",
+    },
+  ],
 });
 ```
 
@@ -77,10 +91,10 @@ await this.tools.plot.updateActivity(activity.id, {
   doneAt: new Date(),
 });
 
-// Update title and note
+// Update title and preview
 await this.tools.plot.updateActivity(activity.id, {
   title: "Updated title",
-  note: "Additional information",
+  preview: "Additional information",
 });
 
 // Reschedule event
@@ -127,10 +141,96 @@ await this.tools.plot.createActivity({
 });
 
 // Later, find by meta
-const activity = await this.tools.plot.getActivityByMeta({
+const activity = await this.tools.plot.getActivityBySource({
   github_pr_id: "123",
 });
 ```
+
+### Creating and Managing Notes
+
+#### Creating Notes on New Activities
+
+**Best Practice:** Always create Activities with at least one initial Note containing detailed information. The `title` and `preview` are short summaries that may be truncated—detailed content should go in Notes.
+
+```typescript
+// ✅ Recommended - Activity with initial Note
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Customer feedback: Login issues",
+  preview: "User reports problems with SSO authentication",
+  meta: { source: "support-ticket:12345" },
+  notes: [
+    {
+      note: "Customer reported:\n\n\"I'm unable to log in using Google SSO. The page redirects but then shows an error 'Invalid state parameter'.\"\n\nPriority: High\nAffected users: ~15 reports",
+      links: [
+        {
+          type: ActivityLinkType.external,
+          title: "View Support Ticket",
+          url: "https://support.example.com/tickets/12345",
+        },
+      ],
+    },
+  ],
+});
+```
+
+#### Adding Notes to Existing Activities
+
+**Best Practice:** For related content (email threads, chat conversations, workflows), add Notes to the existing Activity rather than creating new Activities.
+
+```typescript
+// Add a new Note to an existing Activity
+await this.tools.plot.createNote({
+  activity: { id: activity.id },
+  note: "Update: Engineering team has identified the root cause. Fix will be deployed in the next release.",
+  links: [
+    {
+      type: ActivityLinkType.external,
+      title: "View PR Fix",
+      url: "https://github.com/org/repo/pull/789",
+    },
+  ],
+});
+```
+
+#### Pattern: Email Threads and Conversations
+
+Keep all messages in a thread or conversation within a single Activity:
+
+```typescript
+async handleEmailThread(thread: EmailThread) {
+  // Check if Activity exists for this thread
+  const existing = await this.tools.plot.getActivityBySource({
+    email_thread_id: thread.id,
+  });
+
+  if (existing) {
+    // Add new messages as Notes
+    for (const message of thread.newMessages) {
+      await this.tools.plot.createNote({
+        activity: { id: existing.id },
+        note: message.body,
+        author: message.sender,
+      });
+    }
+  } else {
+    // Create new Activity with initial Note
+    const firstMessage = thread.messages[0];
+    await this.tools.plot.createActivity({
+      type: ActivityType.Note,
+      title: thread.subject,
+      preview: firstMessage.body.substring(0, 100),
+      meta: { email_thread_id: thread.id },
+      notes: thread.messages.map((msg) => ({
+        note: msg.body,
+        author: msg.sender,
+      })),
+    });
+  }
+}
+```
+
+**Why this matters:** A conversation with 20 messages should be one Activity with 20 Notes, not 20 separate Activities. This keeps the workspace organized and provides better context.
 
 ---
 
@@ -267,15 +367,22 @@ async activate(priority: Pick<Priority, "id">) {
     authCallback
   );
 
-  // Create activity with auth link
+  // Create activity with auth link in a note
   await this.tools.plot.createActivity({
     type: ActivityType.Note,
     title: "Connect your Google Calendar",
-    links: [{
-      type: ActivityLinkType.auth,
-      title: "Connect Google",
-      url: authLink
-    }]
+    notes: [
+      {
+        note: "Click below to connect your Google account",
+        links: [
+          {
+            type: ActivityLinkType.auth,
+            title: "Connect Google",
+            url: authLink,
+          },
+        ],
+      },
+    ],
   });
 }
 
@@ -780,7 +887,11 @@ async triageEmail(emailContent: string) {
     await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: `URGENT: ${response.output.summary}`,
-      note: `Actions:\n${response.output.suggestedActions.join("\n")}`
+      notes: [
+        {
+          note: `Actions:\n${response.output.suggestedActions.join("\n")}`,
+        },
+      ],
     });
   }
 }
@@ -792,5 +903,4 @@ async triageEmail(emailContent: string) {
 
 - **[Building Custom Tools](BUILDING_TOOLS.md)** - Create your own reusable tools
 - **[Runtime Environment](RUNTIME.md)** - Understanding execution constraints
-- **[Advanced Topics](ADVANCED.md)** - Complex patterns and techniques
 - **API Reference** - Explore detailed API docs in the sidebar

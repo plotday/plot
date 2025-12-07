@@ -110,9 +110,9 @@ Edit `src/index.ts` to add your twist logic:
 import {
   type Activity,
   ActivityType,
-  Twist,
   type Priority,
   type ToolBuilder,
+  Twist,
 } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
 
@@ -219,12 +219,16 @@ Now that you have a basic twist running, explore:
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request",
-  note: "Check the new authentication flow",
-  links: [
+  notes: [
     {
-      type: ActivityLinkType.external,
-      title: "View PR",
-      url: "https://github.com/org/repo/pull/123",
+      note: "Please review the authentication changes and ensure they follow security best practices",
+      links: [
+        {
+          type: ActivityLinkType.external,
+          title: "View PR",
+          url: "https://github.com/org/repo/pull/123",
+        },
+      ],
     },
   ],
 });
@@ -252,6 +256,68 @@ await this.runTask(callback, {
   runAt: new Date("2025-02-01T10:00:00Z"),
 });
 ```
+
+### Best Practices
+
+#### Always Include Notes with Activities
+
+**Important:** Always create Activities with at least one initial Note. The `title` and `preview` are brief summaries that may be truncated in the UI. Detailed information should go in Notes.
+
+```typescript
+// ✅ Good - Activity with detailed Note
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Deploy v2.0",
+  notes: [
+    {
+      note: "Deployment checklist:\n- Run database migrations\n- Update environment variables\n- Deploy backend services\n- Deploy frontend\n- Run smoke tests",
+      links: [
+        {
+          type: ActivityLinkType.external,
+          title: "Deployment Guide",
+          url: "https://docs.example.com/deploy",
+        },
+      ],
+    },
+  ],
+});
+
+// ❌ Bad - No detailed information
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Deploy v2.0",
+  // Missing Notes with context and steps
+});
+```
+
+#### Add Notes to Existing Activities for Related Content
+
+For conversations, email threads, or workflows, add Notes to the existing Activity instead of creating new Activities:
+
+```typescript
+// Check if Activity exists
+const existing = await this.tools.plot.getActivityBySource({
+  conversation_id: conversationId,
+});
+
+if (existing) {
+  // Add to existing Activity
+  await this.tools.plot.createNote({
+    activity: { id: existing.id },
+    note: newMessage.text,
+  });
+} else {
+  // Create new Activity with initial Note
+  await this.tools.plot.createActivity({
+    type: ActivityType.Note,
+    title: "New conversation",
+    meta: { conversation_id: conversationId },
+    notes: [{ note: newMessage.text }],
+  });
+}
+```
+
+See [Core Concepts - Best Practices](CORE_CONCEPTS.md#best-practices-for-activities-and-notes) for more details.
 
 ## Need Help?
 

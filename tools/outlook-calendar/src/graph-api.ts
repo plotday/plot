@@ -24,6 +24,7 @@ export type OutlookEvent = {
     timeZone: string;
   };
   isAllDay?: boolean;
+  isCancelled?: boolean;
   type?: "singleInstance" | "occurrence" | "exception" | "seriesMaster";
   seriesMasterId?: string;
   recurrence?: {
@@ -71,7 +72,13 @@ export type OutlookEvent = {
   attendees?: Array<{
     type?: "required" | "optional" | "resource";
     status?: {
-      response?: "none" | "organizer" | "tentativelyAccepted" | "accepted" | "declined" | "notResponded";
+      response?:
+        | "none"
+        | "organizer"
+        | "tentativelyAccepted"
+        | "accepted"
+        | "declined"
+        | "notResponded";
       time?: string;
     };
     emailAddress?: {
@@ -198,9 +205,10 @@ export class GraphApi {
     id: string;
     expirationDateTime: string;
   }> {
-    const resource = calendarId === "primary"
-      ? "/me/events"
-      : `/me/calendars/${calendarId}/events`;
+    const resource =
+      calendarId === "primary"
+        ? "/me/events"
+        : `/me/calendars/${calendarId}/events`;
 
     const body = {
       changeType: "created,updated,deleted",
@@ -270,7 +278,9 @@ export function fromMsDate(dateValue?: {
   if (dateValue.timeZone && dateValue.timeZone !== "UTC") {
     // For simplicity, we're assuming UTC in the API call (via Prefer header)
     // If timezone handling is needed, implement proper conversion here
-    console.warn(`Non-UTC timezone ${dateValue.timeZone} may need special handling`);
+    console.warn(
+      `Non-UTC timezone ${dateValue.timeZone} may need special handling`
+    );
   }
 
   // Ensure the date string ends with Z for UTC
@@ -297,7 +307,9 @@ export function toDateString(dateValue?: {
 /**
  * Parse RRULE from Microsoft Graph recurrence pattern
  */
-export function parseOutlookRRule(recurrence: OutlookEvent["recurrence"]): string | undefined {
+export function parseOutlookRRule(
+  recurrence: OutlookEvent["recurrence"]
+): string | undefined {
   if (!recurrence) return undefined;
 
   const pattern = recurrence.pattern;
@@ -359,14 +371,20 @@ export function parseOutlookRRule(recurrence: OutlookEvent["recurrence"]): strin
   }
 
   // Add BYMONTH for yearly recurrence
-  if ((pattern?.type === "absoluteYearly" || pattern?.type === "relativeYearly") && pattern.month) {
+  if (
+    (pattern?.type === "absoluteYearly" ||
+      pattern?.type === "relativeYearly") &&
+    pattern.month
+  ) {
     rrule += `;BYMONTH=${pattern.month}`;
   }
 
   // Add UNTIL or COUNT from range
   if (range?.type === "endDate" && range.endDate) {
     // Convert date to RRULE format (YYYYMMDD or YYYYMMDDTHHmmssZ)
-    const endDate = range.endDate.replace(/[-:]/g, "").replace(/\.\d{3}Z?$/, "Z");
+    const endDate = range.endDate
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}Z?$/, "Z");
     rrule += `;UNTIL=${endDate}`;
   } else if (range?.type === "numbered" && range.numberOfOccurrences) {
     rrule += `;COUNT=${range.numberOfOccurrences}`;
@@ -381,7 +399,9 @@ export function parseOutlookRRule(recurrence: OutlookEvent["recurrence"]): strin
  * Exception dates are represented as separate exception events with type="exception".
  * This function exists for API compatibility but returns empty array.
  */
-export function parseOutlookExDates(_recurrence?: OutlookEvent["recurrence"]): Date[] {
+export function parseOutlookExDates(
+  _recurrence?: OutlookEvent["recurrence"]
+): Date[] {
   // Microsoft Graph represents exceptions as separate events, not as EXDATE
   // Exception events have type="exception" and seriesMasterId pointing to the master event
   return [];
@@ -392,7 +412,9 @@ export function parseOutlookExDates(_recurrence?: OutlookEvent["recurrence"]): D
  * Note: Microsoft Graph doesn't support RDATE in the recurrence pattern.
  * This function exists for API compatibility but returns empty array.
  */
-export function parseOutlookRDates(_recurrence?: OutlookEvent["recurrence"]): Date[] {
+export function parseOutlookRDates(
+  _recurrence?: OutlookEvent["recurrence"]
+): Date[] {
   // Microsoft Graph doesn't support RDATE in recurrence patterns
   return [];
 }
@@ -400,7 +422,9 @@ export function parseOutlookRDates(_recurrence?: OutlookEvent["recurrence"]): Da
 /**
  * Parse recurrence end date/time from Microsoft Graph recurrence
  */
-export function parseOutlookRecurrenceEnd(recurrence?: OutlookEvent["recurrence"]): Date | string | null {
+export function parseOutlookRecurrenceEnd(
+  recurrence?: OutlookEvent["recurrence"]
+): Date | string | null {
   if (!recurrence?.range) return null;
 
   const range = recurrence.range;
@@ -422,7 +446,9 @@ export function parseOutlookRecurrenceEnd(recurrence?: OutlookEvent["recurrence"
 /**
  * Parse recurrence count from Microsoft Graph recurrence
  */
-export function parseOutlookRecurrenceCount(recurrence?: OutlookEvent["recurrence"]): number | null {
+export function parseOutlookRecurrenceCount(
+  recurrence?: OutlookEvent["recurrence"]
+): number | null {
   if (!recurrence?.range) return null;
 
   const range = recurrence.range;
@@ -459,14 +485,23 @@ export function transformOutlookEvent(
     ? toDateString(event.end) || null
     : fromMsDate(event.end) || null;
 
+  // Handle cancelled events differently
+  const isCancelled = event.isCancelled === true;
+
   // Create base activity
   const activity: NewActivity = {
-    type: isAllDay ? ActivityType.Note : ActivityType.Event,
-    title: event.subject || null,
-    note: event.body?.content || null,
-    noteType: event.body?.contentType === "html" ? "html" : "text",
-    start,
-    end,
+    type: isCancelled
+      ? ActivityType.Note
+      : isAllDay
+      ? ActivityType.Note
+      : ActivityType.Event,
+    title: isCancelled
+      ? event.subject
+        ? `Cancelled: ${event.subject}`
+        : "Cancelled Event"
+      : event.subject || null,
+    start: isCancelled ? null : start,
+    end: isCancelled ? null : end,
     meta: {
       source: `outlook-calendar:${event.id}`,
       id: event.id,
@@ -474,6 +509,9 @@ export function transformOutlookEvent(
       webLink: event.webLink,
       onlineMeetingUrl: event.onlineMeeting?.joinUrl,
       iCalUId: event.iCalUId,
+      isCancelled: event.isCancelled,
+      originalStart: start,
+      originalEnd: end,
     },
   };
 
@@ -507,7 +545,11 @@ export function transformOutlookEvent(
   }
 
   // Handle exception events (modifications to recurring event instances)
-  if (event.type === "exception" && event.seriesMasterId && event.originalStart) {
+  if (
+    event.type === "exception" &&
+    event.seriesMasterId &&
+    event.originalStart
+  ) {
     // This is a modified instance of a recurring event
     const originalStartDate = new Date(event.originalStart);
     activity.occurrence = originalStartDate;
@@ -539,15 +581,17 @@ export async function syncOutlookCalendar(
     url = state.state;
   } else if (state.state) {
     // We have a delta token, append it to the URL
-    const resource = calendarId === "primary"
-      ? "/me/events"
-      : `/me/calendars/${calendarId}/events`;
+    const resource =
+      calendarId === "primary"
+        ? "/me/events"
+        : `/me/calendars/${calendarId}/events`;
     url = `https://graph.microsoft.com/v1.0${resource}/delta?$deltatoken=${state.state}`;
   } else {
     // Initial sync - use delta query without token
-    const resource = calendarId === "primary"
-      ? "/me/events"
-      : `/me/calendars/${calendarId}/events`;
+    const resource =
+      calendarId === "primary"
+        ? "/me/events"
+        : `/me/calendars/${calendarId}/events`;
 
     const params: string[] = [];
 

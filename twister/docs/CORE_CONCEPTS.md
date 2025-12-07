@@ -34,7 +34,7 @@ A twist is a class that:
 ### Twist Anatomy
 
 ```typescript
-import { Twist, type Priority, type ToolBuilder } from "@plotday/twister";
+import { type Priority, type ToolBuilder, Twist } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
 
 export default class MyTwist extends Twist<MyTwist> {
@@ -240,36 +240,39 @@ type Activity = {
   id: string; // Unique identifier
   type: ActivityType; // Note, Task, or Event
   title: string | null; // Display title
-  note: string | null; // Additional details
+  preview: string | null; // Brief preview text
   start: Date | null; // Event start time
   end: Date | null; // Event end time
   doneAt: Date | null; // Task completion time
-  links: ActivityLink[]; // Action links
   tags: Record<Tag, ActorId[]>; // Tag assignments
   // ... and more
 };
 ```
 
-### Activity Links
+### Activity Notes
 
-Links enable user interaction with activities:
+Activities can have multiple Notes attached to them. Notes contain detailed content and links:
 
 ```typescript
-import { ActivityLinkType } from "@plotday/twister";
-
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Fix bug #123",
-  links: [
+  preview: "Critical bug affecting login flow",
+  notes: [
     {
-      type: ActivityLinkType.external,
-      title: "View Issue",
-      url: "https://github.com/org/repo/issues/123",
-    },
-    {
-      type: ActivityLinkType.callback,
-      title: "Mark as Fixed",
-      callback: await this.callback("markAsFixed", "123"),
+      note: "Users are unable to log in with SSO. Error occurs in auth middleware.",
+      links: [
+        {
+          type: ActivityLinkType.external,
+          title: "View Issue",
+          url: "https://github.com/org/repo/issues/123",
+        },
+        {
+          type: ActivityLinkType.callback,
+          title: "Mark as Fixed",
+          callback: await this.callback("markAsFixed", "123"),
+        },
+      ],
     },
   ],
 });
@@ -280,6 +283,101 @@ await this.tools.plot.createActivity({
 - **external** - Opens URL in browser
 - **auth** - Initiates OAuth flow
 - **callback** - Triggers twist method when clicked
+- **conferencing** - Video conferencing links (Zoom, Meet, Teams, etc.)
+
+### Best Practices for Activities and Notes
+
+#### Always Create Activities with an Initial Note
+
+**In most cases, an Activity should be created with at least one initial Note.** The Activity's `title` and `preview` are just short summaries that may be truncated in the UI. Detailed information, context, and links should always go in Notes.
+
+```typescript
+// ✅ GOOD - Activity with detailed Note
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Review PR #456",
+  preview: "New authentication feature",
+  notes: [
+    {
+      note: "Please review the OAuth 2.0 implementation. Key changes include:\n- Token refresh logic\n- Session management\n- Error handling for expired tokens",
+      links: [
+        {
+          type: ActivityLinkType.external,
+          title: "View PR",
+          url: "https://github.com/org/repo/pull/456",
+        },
+      ],
+    },
+  ],
+});
+
+// ❌ BAD - Relying only on title and preview
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title:
+    "Review PR #456 - OAuth implementation with token refresh and session management",
+  preview: "New authentication feature with detailed changes",
+  // Missing Notes with full context
+});
+```
+
+**Why?** The title may be truncated when viewing Activity Notes, and detailed information is essential for understanding the full context.
+
+#### Add Notes to Existing Activities for Related Content
+
+**Wherever possible, related messages should be added to an existing Activity rather than creating a new Activity.** This keeps conversations, workflows, and related information together.
+
+**Use this pattern for:**
+
+- **Email threads** - All messages in a thread as Notes on one Activity
+- **Chat conversations** - All messages in a channel or thread as Notes
+- **Workflows** - All steps in an end-to-end process as Notes
+- **Document collaboration** - All comments and updates as Notes
+- **Issue tracking** - All comments and status updates as Notes
+
+```typescript
+// ✅ GOOD - Add to existing Activity
+async onNewMessage(message: Message, threadId: string) {
+  // Find existing activity for this thread
+  const activity = await this.tools.plot.getActivityBySource({
+    thread_id: threadId,
+  });
+
+  if (activity) {
+    // Add new message as a Note
+    await this.tools.plot.createNote({
+      activity: { id: activity.id },
+      note: message.text,
+      author: message.author,
+    });
+  } else {
+    // Create new Activity with initial Note
+    await this.tools.plot.createActivity({
+      type: ActivityType.Note,
+      title: message.subject || "New conversation",
+      preview: message.text.substring(0, 100),
+      meta: { thread_id: threadId },
+      notes: [
+        {
+          note: message.text,
+        },
+      ],
+    });
+  }
+}
+
+// ❌ BAD - Creating separate Activity for each message
+async onNewMessage(message: Message, threadId: string) {
+  // This creates clutter - each message becomes its own Activity
+  await this.tools.plot.createActivity({
+    type: ActivityType.Note,
+    title: `Message from ${message.author}`,
+    preview: message.text,
+  });
+}
+```
+
+**Why?** Grouping related content keeps the user's workspace organized and provides better context. A chat conversation with 20 messages should be one Activity with 20 Notes, not 20 separate Activities.
 
 ---
 
@@ -490,4 +588,3 @@ await this.tools.plot.createActivity({
 - **[Built-in Tools Guide](TOOLS_GUIDE.md)** - Learn about Plot, Store, AI, and more
 - **[Building Custom Tools](BUILDING_TOOLS.md)** - Create reusable tools
 - **[Runtime Environment](RUNTIME.md)** - Understand execution constraints
-- **[Advanced Topics](ADVANCED.md)** - Complex patterns and techniques

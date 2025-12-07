@@ -7,6 +7,7 @@ import {
   ActorType,
   Tag,
   type ToolBuilder,
+  type Note,
 } from "@plotday/twister";
 import { AI, type AIMessage } from "@plotday/twister/tools/ai";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
@@ -18,6 +19,8 @@ export default class ChatTwist extends Twist<ChatTwist> {
       plot: build(Plot, {
         activity: {
           access: ActivityAccess.Respond,
+        },
+        note: {
           intents: [
             {
               description: "Respond to general questions and requests",
@@ -34,8 +37,11 @@ export default class ChatTwist extends Twist<ChatTwist> {
     };
   }
 
-  async responsd(activity: Activity) {
-    const previousActivities = await this.tools.plot.getThread(activity);
+  async responsd(note: Note) {
+    const activity = note.activity;
+
+    // Get all notes in this activity (conversation history)
+    const previousNotes = await this.tools.plot.getNotes(activity);
 
     // Add Thinking tag to indicate processing has started
     await this.tools.plot.updateActivity({
@@ -48,20 +54,30 @@ export default class ChatTwist extends Twist<ChatTwist> {
     const messages: AIMessage[] = [
       {
         role: "system",
-        content: `You are an AI assistant inside of a productivity app. 
+        content: `You are an AI assistant inside of a productivity app.
 You respond helpfully to user requests.
 You can also create tasks, but should only do so when the user explicitly asks you to.`,
       },
-      ...previousActivities
-        .filter((a) => a.note ?? a.title)
+      // Include activity title as context
+      ...(activity.title
+        ? [
+            {
+              role: "user" as const,
+              content: activity.title,
+            },
+          ]
+        : []),
+      // Include all previous notes in the conversation
+      ...previousNotes
+        .filter((n: Note) => n.note)
         .map(
-          (prevActivity) =>
+          (prevNote: Note) =>
             ({
               role:
-                prevActivity.author.type === ActorType.Twist
+                prevNote.author.type === ActorType.Twist
                   ? "assistant"
                   : "user",
-              content: (prevActivity.note ?? prevActivity.title)!,
+              content: prevNote.note!,
             } satisfies AIMessage)
         ),
     ];
@@ -70,7 +86,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
       message: Type.Object({
         note: Type.String({ description: "Response to the user's prompt" }),
         title: Type.String({
-          description: "Short title for the response notee",
+          description: "Short title for the response note",
         }),
       }),
       action_items: Type.Optional(
@@ -100,19 +116,34 @@ You can also create tasks, but should only do so when the user explicitly asks y
       outputSchema: schema,
     });
 
+    type ActionItem = {
+      title: string;
+      note?: string;
+    };
+
+    // Note: For now, creating activities without parent relationship
+    // Once Note API is available, responses should become Notes
     await Promise.all([
       this.tools.plot.createActivity({
         title: response.output!.message.title,
-        note: response.output!.message.note,
-        parent: activity,
+        notes: [
+          {
+            note: response.output!.message.note,
+          },
+        ],
         priority: activity.priority,
         type: activity.type,
       }),
-      ...(response.output!.action_items?.map((item: any) =>
+      ...(response.output!.action_items?.map((item: ActionItem) =>
         this.tools.plot.createActivity({
           title: item.title,
-          note: item.note,
-          parent: activity,
+          notes: item.note
+            ? [
+                {
+                  note: item.note,
+                },
+              ]
+            : undefined,
           priority: activity.priority,
           type: ActivityType.Action,
           start: new Date(),
