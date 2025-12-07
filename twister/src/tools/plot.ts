@@ -1,6 +1,5 @@
 import {
   type Activity,
-  type ActivityMeta,
   type ActivityUpdate,
   type Actor,
   type ActorId,
