@@ -248,7 +248,45 @@ export type Activity = ActivityCommon & {
   title: string | null;
   /** The type of activity (Note, Task, or Event) */
   type: ActivityType;
-  /** Who this activity note is assigned to */
+  /**
+   * The actor assigned to this activity.
+   *
+   * **For actions (tasks):** An assignee is required. If not explicitly provided when creating
+   * an action, the assignee will default to the user who installed the twist (the twist owner).
+   *
+   * **For notes and events:** Assignee is optional and typically null.
+   *
+   * @example
+   * ```typescript
+   * // Create action with explicit assignee
+   * const task: NewActivity = {
+   *   type: ActivityType.Action,
+   *   title: "Review PR #123",
+   *   assignee: {
+   *     id: userId as ActorId,
+   *     type: ActorType.User,
+   *     name: "Alice"
+   *   }
+   * };
+   *
+   * // Create action with auto-assignment (defaults to twist owner)
+   * const task: NewActivity = {
+   *   type: ActivityType.Action,
+   *   title: "Follow up on email"
+   *   // assignee will be set automatically to twist owner
+   * };
+   *
+   * // Update assignee
+   * await plot.updateActivity({
+   *   id: activityId,
+   *   assignee: {
+   *     id: newUserId as ActorId,
+   *     type: ActorType.User,
+   *     name: "Bob"
+   *   }
+   * });
+   * ```
+   */
   assignee: Actor | null;
   /** Timestamp when the activity was marked as complete. Null if not completed. */
   doneAt: Date | null;
@@ -403,6 +441,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "end"
       | "doneAt"
       | "title"
+      | "assignee"
       | "draft"
       | "private"
       | "meta"
