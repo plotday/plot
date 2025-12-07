@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.22.0
+
+### Changed
+
+- BREAKING: Refactored Activity and Note types for clarity and type safety. ([#67](https://github.com/plotday/plot/pull/67) [`2aa5b8f`](https://github.com/plotday/plot/commit/2aa5b8fe57fe785bdc41f8347e62ba4beab0c3c5))
+
 ## 0.21.0
 
 ### Changed

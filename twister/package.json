@@ -1,6 +1,6 @@
 {
   "name": "@plotday/twister",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Plot Twist Creator - Build intelligent Twists that organize and prioritize your activities",
   "packageManager": "pnpm@10.18.3",
   "type": "module",
