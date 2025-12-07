@@ -6,21 +6,25 @@ import {
   type ActorId,
   ITool,
   type NewActivity,
+  type NewActivityWithNotes,
   type NewContact,
+  type NewNote,
   type NewPriority,
+  type Note,
+  type NoteUpdate,
   type Priority,
   type Tag,
 } from "..";
 
 export enum ActivityAccess {
   /**
-   * Create new Activity on a thread where the twist was mentioned.
-   * Add/remove tags on Activity where the twist was mentioned.
+   * Create new Note on an Activity where the twist was mentioned.
+   * Add/remove tags on Activity or Note where the twist was mentioned.
    */
   Respond,
   /**
-   * Create new, top-level Activity.
-   * Create new Activity in a thread the twist created.
+   * Create new Activity.
+   * Create new Note in an Activity the twist created.
    * All Respond permissions.
    */
   Create,
@@ -51,13 +55,13 @@ export enum ContactAccess {
  * Intent handler for activity mentions.
  * Defines how the twist should respond when mentioned in an activity.
  */
-export type ActivityIntentHandler = {
+export type NoteIntentHandler = {
   /** Human-readable description of what this intent handles */
   description: string;
   /** Example phrases or activity content that would match this intent */
   examples: string[];
   /** The function to call when this intent is matched */
-  handler: (activity: Activity) => Promise<void>;
+  handler: (note: Note) => Promise<void>;
 };
 
 /**
@@ -94,31 +98,33 @@ export type ActivityIntentHandler = {
  */
 export abstract class Plot extends ITool {
   static readonly Options: {
-    /**
-     * Activity event callbacks.
-     */
     activity?: {
-      access?: ActivityAccess;
-
       /**
-       * Called when an activity is updated.
+       * Capability to create Notes and modify tags.
+       */
+      access?: ActivityAccess;
+      /**
+       * Called when an activity created by this twist is updated.
+       * This is often used to implement two-way sync with an external system.
        *
        * @param activity - The updated activity
        * @param changes - Optional changes object containing the previous version and tag modifications
        */
       updated?: (
         activity: Activity,
-        changes?: {
+        changes: {
           previous: Activity;
           tagsAdded: Record<Tag, ActorId[]>;
           tagsRemoved: Record<Tag, ActorId[]>;
         }
       ) => Promise<void>;
-
+    };
+    note?: {
       /**
-       * Intent handlers for activity mentions.
-       * When an activity mentions this twist, the system will match the activity
-       * content against these intent descriptions and call the matching handler.
+       * Respond to mentions in notes.
+       *
+       * When a note mentions this twist, the system will match the note
+       * content against these intents and call the matching handler.
        *
        * @example
        * ```typescript
@@ -133,7 +139,7 @@ export abstract class Plot extends ITool {
        * }]
        * ```
        */
-      intents?: ActivityIntentHandler[];
+      intents?: NoteIntentHandler[];
     };
     priority?: {
       access?: PriorityAccess;
@@ -154,7 +160,9 @@ export abstract class Plot extends ITool {
    * @returns Promise resolving to the complete created activity
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createActivity(activity: NewActivity): Promise<Activity>;
+  abstract createActivity(
+    activity: NewActivity | NewActivityWithNotes
+  ): Promise<Activity>;
 
   /**
    * Creates multiple activities in a single batch operation.
@@ -167,7 +175,9 @@ export abstract class Plot extends ITool {
    * @returns Promise resolving to array of created activities
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createActivities(activities: NewActivity[]): Promise<Activity[]>;
+  abstract createActivities(
+    activities: (NewActivity | NewActivityWithNotes)[]
+  ): Promise<Activity[]>;
 
   /**
    * Updates an existing activity in the Plot system.
@@ -224,30 +234,121 @@ export abstract class Plot extends ITool {
   abstract updateActivity(activity: ActivityUpdate): Promise<void>;
 
   /**
-   * Retrieves all activities in the same thread as the specified activity.
+   * Retrieves all notes within an activity.
    *
-   * A thread consists of related activities linked through parent-child
-   * relationships or other associative connections. This is useful for
-   * finding conversation histories or related task sequences.
+   * Notes are detailed entries within an activity, ordered by creation time.
+   * Each note can contain markdown content, links, and other detailed information
+   * related to the parent activity.
    *
-   * @param activity - The activity whose thread to retrieve
-   * @returns Promise resolving to array of activities in the thread
+   * @param activity - The activity whose notes to retrieve
+   * @returns Promise resolving to array of notes in the activity
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getThread(activity: Activity): Promise<Activity[]>;
+  abstract getNotes(activity: Activity): Promise<Note[]>;
 
   /**
-   * Finds an activity by its metadata.
+   * Creates a new note in an activity.
+   *
+   * Notes provide detailed content within an activity, supporting markdown,
+   * links, and other rich content. The note will be automatically assigned
+   * an ID and author information based on the current execution context.
+   *
+   * @param note - The note data to create
+   * @returns Promise resolving to the complete created note
+   *
+   * @example
+   * ```typescript
+   * // Create a note with content
+   * await this.plot.createNote({
+   *   activity: { id: "activity-123" },
+   *   note: "Discussion notes from the meeting...",
+   *   noteType: "markdown"
+   * });
+   *
+   * // Create a note with links
+   * await this.plot.createNote({
+   *   activity: { id: "activity-456" },
+   *   note: "Meeting recording available",
+   *   links: [{
+   *     type: ActivityLinkType.external,
+   *     title: "View Recording",
+   *     url: "https://example.com/recording"
+   *   }]
+   * });
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createNote(note: NewNote): Promise<Note>;
+
+  /**
+   * Creates multiple notes in a single batch operation.
+   *
+   * This method efficiently creates multiple notes at once, which is
+   * more performant than calling createNote() multiple times individually.
+   * All notes are created with the same author and access control rules.
+   *
+   * @param notes - Array of note data to create
+   * @returns Promise resolving to array of created notes
+   *
+   * @example
+   * ```typescript
+   * // Create multiple notes in one batch
+   * await this.plot.createNotes([
+   *   {
+   *     activity: { id: "activity-123" },
+   *     note: "First message in thread"
+   *   },
+   *   {
+   *     activity: { id: "activity-123" },
+   *     note: "Second message in thread"
+   *   }
+   * ]);
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createNotes(notes: NewNote[]): Promise<Note[]>;
+
+  /**
+   * Updates an existing note in the Plot system.
+   *
+   * Only the fields provided in the update object will be modified - all other fields
+   * remain unchanged. This enables partial updates without needing to fetch and resend
+   * the entire note object.
+   *
+   * @param note - The note update containing the ID and fields to change
+   * @returns Promise that resolves when the update is complete
+   *
+   * @example
+   * ```typescript
+   * // Update note content
+   * await this.plot.updateNote({
+   *   id: "note-123",
+   *   note: "Updated content with more details"
+   * });
+   *
+   * // Add tags to a note
+   * await this.plot.updateNote({
+   *   id: "note-456",
+   *   twistTags: {
+   *     [Tag.Important]: true
+   *   }
+   * });
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract updateNote(note: NoteUpdate): Promise<void>;
+
+  /**
+   * Finds an activity by its meta.source.
    *
    * This method enables lookup of activities that were created from external
    * systems, using the metadata to locate the corresponding Plot activity.
-   * Useful for preventing duplicate imports and maintaining sync state.
    *
-   * @param meta - The activity metadata to search for
+   * @param source - The meta.source value to search for
    * @returns Promise resolving to the matching activity or null if not found
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getActivityByMeta(meta: ActivityMeta): Promise<Activity | null>;
+  abstract getActivityBySource(source: string): Promise<Activity | null>;
 
   /**
    * Creates a new priority in the Plot system.

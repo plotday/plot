@@ -549,5 +549,4 @@ async longOperation() {
 ## Next Steps
 
 - **[Built-in Tools Guide](TOOLS_GUIDE.md)** - Learn about Store and Tasks tools
-- **[Advanced Topics](ADVANCED.md)** - Complex patterns and techniques
 - **[Core Concepts](CORE_CONCEPTS.md)** - Understanding the twist architecture

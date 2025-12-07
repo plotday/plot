@@ -6,6 +6,7 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
+  type NewActivityWithNotes,
   type Priority,
   type ToolBuilder,
   Twist,
@@ -167,9 +168,13 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     const connectActivity = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect messaging to create tasks",
-      note: "I'll analyze your message threads and create tasks when action is needed.",
       start: new Date(),
-      links: [slackAuthLink],
+      notes: [
+        {
+          note: "I'll analyze your message threads and create tasks when action is needed.",
+          links: [slackAuthLink],
+        },
+      ],
     });
 
     // Store for parent relationship
@@ -198,11 +203,13 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       const channels = await tool.getChannels(authResult.authToken);
 
       if (channels.length === 0) {
-        await this.tools.plot.createActivity({
-          type: ActivityType.Note,
-          note: `No channels found for ${provider}.`,
-          parent: await this.getOnboardingActivity(),
-        });
+        const activity = await this.getOnboardingActivity();
+        if (activity) {
+          await this.tools.plot.createNote({
+            activity,
+            note: `No channels found for ${provider}.`,
+          });
+        }
         return;
       }
 
@@ -214,11 +221,13 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       );
     } catch (error) {
       console.error(`Failed to fetch channels for ${provider}:`, error);
-      await this.tools.plot.createActivity({
-        type: ActivityType.Note,
-        note: `Failed to connect to ${provider}. Please try again.`,
-        parent: await this.getOnboardingActivity(),
-      });
+      const activity = await this.getOnboardingActivity();
+      if (activity) {
+        await this.tools.plot.createNote({
+          activity,
+          note: `Failed to connect to ${provider}. Please try again.`,
+        });
+      }
     }
   }
 
@@ -255,14 +264,14 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     }
 
     // Create the channel selection activity
-    await this.tools.plot.createActivity({
-      type: ActivityType.Action,
-      title: `Which ${provider} channels should I monitor?`,
-      note: "Select channels where you want tasks created from actionable messages.",
-      start: new Date(),
-      links,
-      parent: await this.getOnboardingActivity(),
-    });
+    const activity = await this.getOnboardingActivity();
+    if (activity) {
+      await this.tools.plot.createNote({
+        activity,
+        note: `Which ${provider} channels should I monitor?`,
+        links,
+      });
+    }
   }
 
   async onChannelSelected(
@@ -300,21 +309,25 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
       console.log(`Started monitoring ${provider} channel: ${channelName}`);
 
-      await this.tools.plot.createActivity({
-        type: ActivityType.Note,
-        note: `Now monitoring #${channelName} for actionable threads`,
-        parent: await this.getOnboardingActivity(),
-      });
+      const activity = await this.getOnboardingActivity();
+      if (activity) {
+        await this.tools.plot.createNote({
+          activity,
+          note: `Now monitoring #${channelName} for actionable threads`,
+        });
+      }
     } catch (error) {
       console.error(
         `Failed to start monitoring channel ${channelName}:`,
         error
       );
-      await this.tools.plot.createActivity({
-        type: ActivityType.Note,
-        note: `Failed to monitor #${channelName}. Please try again.`,
-        parent: await this.getOnboardingActivity(),
-      });
+      const activity = await this.getOnboardingActivity();
+      if (activity) {
+        await this.tools.plot.createNote({
+          activity,
+          note: `Failed to monitor #${channelName}. Please try again.`,
+        });
+      }
     }
   }
 
@@ -323,20 +336,20 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   // ============================================================================
 
   async onMessageThread(
-    thread: Activity[],
+    thread: NewActivityWithNotes,
     provider: MessageProvider,
     channelId: string
   ): Promise<void> {
-    if (thread.length === 0) return;
+    if (!thread.notes || thread.notes.length === 0) return;
 
-    const threadId = thread[0].meta?.source as string;
+    const threadId = thread.meta?.source as string;
     if (!threadId) {
       console.warn("Thread has no source meta, skipping");
       return;
     }
 
     console.log(
-      `Processing thread: ${threadId} with ${thread.length} messages`
+      `Processing thread: ${threadId} with ${thread.notes.length} messages`
     );
 
     // Check if we already have a task for this thread
@@ -366,7 +379,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     await this.createTaskFromThread(thread, analysis, provider, channelId);
   }
 
-  private async analyzeThread(thread: Activity[]): Promise<{
+  private async analyzeThread(thread: NewActivityWithNotes): Promise<{
     needsTask: boolean;
     taskTitle: string | null;
     taskNote: string | null;
@@ -397,11 +410,9 @@ DO NOT create tasks for:
 
 If a task is needed, create a clear, actionable title that describes what the user needs to do.`,
       },
-      ...thread.map((activity, idx) => ({
+      ...thread.notes.map((note, idx) => ({
         role: "user" as const,
-        content: `[Message ${idx + 1}] ${activity.author?.name || "User"}: ${
-          activity.note || activity.title || "(empty message)"
-        }`,
+        content: `[Message ${idx + 1}] User: ${note.note || "(empty message)"}`,
       })),
     ];
 
@@ -466,7 +477,7 @@ If a task is needed, create a clear, actionable title that describes what the us
   }
 
   private async createTaskFromThread(
-    thread: Activity[],
+    thread: NewActivityWithNotes,
     analysis: {
       needsTask: boolean;
       taskTitle: string | null;
@@ -476,8 +487,7 @@ If a task is needed, create a clear, actionable title that describes what the us
     provider: MessageProvider,
     channelId: string
   ): Promise<void> {
-    const rootMessage = thread[0];
-    const threadId = rootMessage.meta?.source as string;
+    const threadId = thread.meta?.source as string;
 
     // Get channel name for context
     const configs = await this.getChannelConfigs();
@@ -486,17 +496,37 @@ If a task is needed, create a clear, actionable title that describes what the us
     );
     const channelName = channelConfig?.channelName || channelId;
 
+    // Check if task already exists for this thread
+    const taskSource = `message-tasks:${threadId}`;
+    const existingActivity = await this.tools.plot.getActivityBySource(
+      taskSource
+    );
+    if (existingActivity) {
+      console.log(`Task with source ${taskSource} already exists`);
+      // Store the mapping and return
+      await this.storeThreadTask(threadId, existingActivity.id);
+      return;
+    }
+
     // Create task activity
     const task = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title:
-        analysis.taskTitle || rootMessage.title || "Action needed from message",
-      note: analysis.taskNote
-        ? `${analysis.taskNote}\n\n---\nFrom #${channelName}`
-        : `From #${channelName}`,
+        analysis.taskTitle || thread.title || "Action needed from message",
       start: new Date(),
+      notes: analysis.taskNote
+        ? [
+            {
+              note: `${analysis.taskNote}\n\n---\nFrom #${channelName}`,
+            },
+          ]
+        : [
+            {
+              note: `From #${channelName}`,
+            },
+          ],
       meta: {
-        source: `message-tasks:${threadId}`,
+        source: taskSource,
         originalThreadId: threadId,
         provider,
         channelId,
@@ -513,11 +543,11 @@ If a task is needed, create a clear, actionable title that describes what the us
   }
 
   private async checkThreadForCompletion(
-    thread: Activity[],
+    thread: NewActivityWithNotes,
     taskInfo: ThreadTask
   ): Promise<void> {
     // Only check the last few messages for completion signals
-    const recentMessages = thread.slice(-3);
+    const recentMessages = thread.notes.slice(-3);
 
     // Build a simple prompt to check for completion
     const messages: AIMessage[] = [
@@ -534,11 +564,9 @@ Look for signals like:
 
 Return true only if there's clear evidence the task is done.`,
       },
-      ...recentMessages.map((activity) => ({
+      ...recentMessages.map((note) => ({
         role: "user" as const,
-        content: `${activity.author?.name || "User"}: ${
-          activity.note || activity.title || ""
-        }`,
+        content: `User: ${note.note || ""}`,
       })),
     ];
 

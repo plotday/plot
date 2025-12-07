@@ -1,5 +1,11 @@
-import type { NewActivity } from "@plotday/twister";
-import { ActivityLinkType, ActivityType } from "@plotday/twister";
+import { ActivityType } from "@plotday/twister";
+import type {
+  ActivityWithNotes,
+  Actor,
+  ActorId,
+  ActorType,
+  Note,
+} from "@plotday/twister";
 
 export type GmailLabel = {
   id: string;
@@ -235,6 +241,47 @@ export function parseEmailAddress(headerValue: string): EmailAddress {
 }
 
 /**
+ * Converts an EmailAddress to an Actor.
+ */
+function emailAddressToActor(emailAddress: EmailAddress): Actor {
+  return {
+    id: `contact:${emailAddress.email}` as ActorId,
+    type: 2 as ActorType, // ActorType.Contact
+    email: emailAddress.email,
+    name: emailAddress.name,
+  };
+}
+
+/**
+ * Parses multiple email addresses from a header value (comma-separated).
+ */
+function parseEmailAddresses(headerValue: string | null): Actor[] {
+  if (!headerValue) return [];
+
+  return headerValue
+    .split(",")
+    .map((addr) => addr.trim())
+    .filter((addr) => addr.length > 0)
+    .map((addr) => emailAddressToActor(parseEmailAddress(addr)));
+}
+
+/**
+ * Parses email addresses and returns just the ActorIds for mentions.
+ */
+function parseEmailAddressIds(headerValue: string | null): ActorId[] {
+  if (!headerValue) return [];
+
+  return headerValue
+    .split(",")
+    .map((addr) => addr.trim())
+    .filter((addr) => addr.length > 0)
+    .map((addr) => {
+      const parsed = parseEmailAddress(addr);
+      return `contact:${parsed.email}` as ActorId;
+    });
+}
+
+/**
  * Gets a specific header value from a message
  */
 function getHeader(message: GmailMessage, name: string): string | null {
@@ -320,114 +367,104 @@ function extractAttachments(
 }
 
 /**
- * Transforms a Gmail thread into an array of Activities
- * The first message is the parent, subsequent messages are replies
+ * Transforms a Gmail thread into an ActivityWithNotes structure.
+ * The subject becomes the Activity title, and each email becomes a Note.
  */
-export function transformGmailThread(thread: GmailThread): NewActivity[] {
-  if (!thread.messages || thread.messages.length === 0) return [];
-
-  const activities: NewActivity[] = [];
-  const parentMessage = thread.messages[0];
-
-  // Extract key headers
-  const from = getHeader(parentMessage, "From");
-  const subject = getHeader(parentMessage, "Subject");
-  const to = getHeader(parentMessage, "To");
-  const cc = getHeader(parentMessage, "Cc");
-
-  // Parse sender
-  const sender = from ? parseEmailAddress(from) : null;
-
-  // Extract body
-  const body = extractBody(parentMessage.payload);
-
-  // Create parent activity
-  const parentActivity: NewActivity = {
-    type: ActivityType.Action,
-    title: subject || parentMessage.snippet || "Email",
-    note: body || parentMessage.snippet,
-    noteType: "text",
-    start: new Date(parseInt(parentMessage.internalDate)),
-    meta: {
-      source: `gmail:${thread.id}:${parentMessage.id}`,
-      threadId: thread.id,
-      messageId: parentMessage.id,
-      from: sender,
-      to,
-      cc,
-      labels: parentMessage.labelIds,
-    },
-  };
-
-  // Initialize links array
-  parentActivity.links = [];
-
-  // Add Gmail URL as action link
-  parentActivity.links.push({
-    type: ActivityLinkType.external,
-    title: "Open in Gmail",
-    url: `https://mail.google.com/mail/u/0/#inbox/${thread.id}`,
-  });
-
-  // Add attachments as links
-  const attachments = extractAttachments(parentMessage);
-  attachments.forEach((att) => {
-    parentActivity.links!.push({
-      type: ActivityLinkType.external,
-      title: `Attachment: ${att.filename}`,
-      url: att.url,
-    });
-  });
-
-  activities.push(parentActivity);
-
-  // Create activities for replies (messages after the first)
-  for (let i = 1; i < thread.messages.length; i++) {
-    const message = thread.messages[i];
-    const replyFrom = getHeader(message, "From");
-    const replySender = replyFrom ? parseEmailAddress(replyFrom) : null;
-    const replyBody = extractBody(message.payload);
-
-    const replyActivity: NewActivity = {
-      type: ActivityType.Action,
-      title: `Re: ${subject || "Email"}`,
-      note: replyBody || message.snippet,
-      noteType: "text",
-      start: new Date(parseInt(message.internalDate)),
-      parent: { id: `gmail:${thread.id}:${parentMessage.id}` },
-      meta: {
-        source: `gmail:${thread.id}:${message.id}`,
-        threadId: thread.id,
-        messageId: message.id,
-        from: replySender,
-        labels: message.labelIds,
-      },
+export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
+  if (!thread.messages || thread.messages.length === 0) {
+    // Return empty structure for invalid threads
+    return {
+      id: `gmail:${thread.id}` as any,
+      type: ActivityType.Note,
+      author: { id: "system" as ActorId, type: 1 as ActorType, name: null },
+      title: null,
+      assignee: null,
+      doneAt: null,
+      start: null,
+      end: null,
+      recurrenceUntil: null,
+      recurrenceCount: null,
+      priority: null as any,
+      recurrenceRule: null,
+      recurrenceExdates: null,
+      recurrenceDates: null,
+      recurrence: null,
+      occurrence: null,
+      meta: null,
+      mentions: null,
+      tags: null,
+      draft: false,
+      private: false,
+      notes: [],
     };
-
-    // Initialize links array
-    replyActivity.links = [];
-
-    // Add Gmail URL as action link
-    replyActivity.links.push({
-      type: ActivityLinkType.external,
-      title: "Open in Gmail",
-      url: `https://mail.google.com/mail/u/0/#inbox/${thread.id}`,
-    });
-
-    // Add attachments as links
-    const replyAttachments = extractAttachments(message);
-    replyAttachments.forEach((att) => {
-      replyActivity.links!.push({
-        type: ActivityLinkType.external,
-        title: `Attachment: ${att.filename}`,
-        url: att.url,
-      });
-    });
-
-    activities.push(replyActivity);
   }
 
-  return activities;
+  const parentMessage = thread.messages[0];
+  const subject = getHeader(parentMessage, "Subject");
+
+  // Create Activity
+  const activity: ActivityWithNotes = {
+    id: `gmail:${thread.id}` as any,
+    type: ActivityType.Note,
+    author: { id: "system" as ActorId, type: 1 as ActorType, name: null },
+    title: subject || "Email",
+    assignee: null,
+    doneAt: null,
+    start: new Date(parseInt(parentMessage.internalDate)),
+    end: null,
+    recurrenceUntil: null,
+    recurrenceCount: null,
+    priority: null as any,
+    recurrenceRule: null,
+    recurrenceExdates: null,
+    recurrenceDates: null,
+    recurrence: null,
+    occurrence: null,
+    meta: {
+      source: `gmail:${thread.id}`,
+      threadId: thread.id,
+      historyId: thread.historyId,
+    },
+    mentions: null,
+    tags: null,
+    draft: false,
+    private: false,
+    notes: [],
+  };
+
+  // Create Notes for all messages (including first)
+  for (const message of thread.messages) {
+    const from = getHeader(message, "From");
+    const to = getHeader(message, "To");
+    const cc = getHeader(message, "Cc");
+
+    const sender = from ? parseEmailAddress(from) : null;
+    if (!sender) continue; // Skip messages without sender
+
+    const body = extractBody(message.payload);
+
+    // Combine to and cc for mentions
+    const mentions: ActorId[] = [
+      ...parseEmailAddressIds(to),
+      ...parseEmailAddressIds(cc),
+    ];
+
+    const note: Note = {
+      id: `gmail:${thread.id}:${message.id}` as any,
+      activity: activity,
+      author: emailAddressToActor(sender),
+      note: body || message.snippet,
+      links: null,
+      mentions: mentions.length > 0 ? mentions : null,
+      tags: null,
+      draft: false,
+      private: false,
+    };
+
+    activity.notes.push(note);
+  }
+
+  return activity;
 }
 
 /**

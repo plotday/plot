@@ -1,5 +1,11 @@
-import type { NewActivity, ActorId } from "@plotday/twister";
 import { ActivityType } from "@plotday/twister";
+import type {
+  ActivityWithNotes,
+  Actor,
+  ActorId,
+  ActorType,
+  Note,
+} from "@plotday/twister";
 
 export type SlackChannel = {
   id: string;
@@ -80,7 +86,9 @@ export class SlackApi {
     });
 
     if (!response.ok) {
-      throw new Error(`Slack API error: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `Slack API error: ${response.status} ${response.statusText}`
+      );
     }
 
     const data = await response.json();
@@ -185,96 +193,144 @@ function parseUserMentions(text: string): string[] {
 }
 
 /**
- * Converts Slack markdown to plain text for better readability
+ * Parses user mentions and returns ActorIds for the mentions field.
  */
-function formatSlackText(text: string): string {
-  return text
-    // Convert user mentions
-    .replace(/<@([A-Z0-9]+)>/g, "@$1")
-    // Convert channel mentions
-    .replace(/<#([A-Z0-9]+)\|([^>]+)>/g, "#$2")
-    // Convert links
-    .replace(/<(https?:\/\/[^|>]+)\|([^>]+)>/g, "$2 ($1)")
-    .replace(/<(https?:\/\/[^>]+)>/g, "$1")
-    // Convert bold
-    .replace(/\*([^*]+)\*/g, "**$1**")
-    // Convert italic
-    .replace(/_([^_]+)_/g, "*$1*")
-    // Convert strikethrough
-    .replace(/~([^~]+)~/g, "~~$1~~")
-    // Convert code
-    .replace(/`([^`]+)`/g, "`$1`");
+function parseUserMentionIds(text: string): ActorId[] {
+  const userIds = parseUserMentions(text);
+  return userIds.map((userId) => `slack:${userId}` as ActorId);
 }
 
 /**
- * Transforms a Slack message thread into an array of Activities
- * The first message is the parent, subsequent messages are replies
+ * Converts a Slack user ID to an Actor.
+ */
+function slackUserToActor(userId: string): Actor {
+  return {
+    id: `slack:${userId}` as ActorId,
+    type: 2 as ActorType, // ActorType.Contact
+    name: null,
+  };
+}
+
+/**
+ * Converts Slack markdown to plain text for better readability
+ */
+function formatSlackText(text: string): string {
+  return (
+    text
+      // Convert user mentions
+      .replace(/<@([A-Z0-9]+)>/g, "@$1")
+      // Convert channel mentions
+      .replace(/<#([A-Z0-9]+)\|([^>]+)>/g, "#$2")
+      // Convert links
+      .replace(/<(https?:\/\/[^|>]+)\|([^>]+)>/g, "$2 ($1)")
+      .replace(/<(https?:\/\/[^>]+)>/g, "$1")
+      // Convert bold
+      .replace(/\*([^*]+)\*/g, "**$1**")
+      // Convert italic
+      .replace(/_([^_]+)_/g, "*$1*")
+      // Convert strikethrough
+      .replace(/~([^~]+)~/g, "~~$1~~")
+      // Convert code
+      .replace(/`([^`]+)`/g, "`$1`")
+  );
+}
+
+/**
+ * Transforms a Slack message thread into an ActivityWithNotes structure.
+ * The first message snippet becomes the Activity title, and each message becomes a Note.
  */
 export function transformSlackThread(
   messages: SlackMessage[],
   channelId: string
-): NewActivity[] {
-  if (messages.length === 0) return [];
-
-  const activities: NewActivity[] = [];
+): ActivityWithNotes {
   const parentMessage = messages[0];
-  const threadTs = parentMessage.thread_ts || parentMessage.ts;
 
-  // Create parent activity
-  const parentActivity: NewActivity = {
-    type: ActivityType.Action,
-    title: formatSlackText(parentMessage.text).substring(0, 100) || "Slack message",
-    note: formatSlackText(parentMessage.text),
-    noteType: "markdown",
+  if (!parentMessage) {
+    // Return empty structure for invalid threads
+    return {
+      id: `slack:${channelId}:empty` as any,
+      type: ActivityType.Note,
+      author: { id: "system" as ActorId, type: 1 as ActorType, name: null },
+      title: "Empty thread",
+      assignee: null,
+      doneAt: null,
+      start: null,
+      end: null,
+      recurrenceUntil: null,
+      recurrenceCount: null,
+      priority: null as any,
+      recurrenceRule: null,
+      recurrenceExdates: null,
+      recurrenceDates: null,
+      recurrence: null,
+      occurrence: null,
+      meta: null,
+      mentions: null,
+      tags: null,
+      draft: false,
+      private: false,
+      notes: [],
+    };
+  }
+
+  const threadTs = parentMessage.thread_ts || parentMessage.ts;
+  const firstText = formatSlackText(parentMessage.text);
+  const title = firstText.substring(0, 50) || "Slack message";
+
+  // Create Activity
+  const activity: ActivityWithNotes = {
+    id: `slack:${channelId}:${threadTs}` as any,
+    type: ActivityType.Note,
+    author: { id: "system" as ActorId, type: 1 as ActorType, name: null },
+    title,
+    assignee: null,
+    doneAt: null,
     start: new Date(parseFloat(parentMessage.ts) * 1000),
+    end: null,
+    recurrenceUntil: null,
+    recurrenceCount: null,
+    priority: null as any,
+    recurrenceRule: null,
+    recurrenceExdates: null,
+    recurrenceDates: null,
+    recurrence: null,
+    occurrence: null,
     meta: {
-      source: `slack:${channelId}:${parentMessage.ts}`,
-      channelId,
-      messageTs: parentMessage.ts,
-      threadTs,
-      userId: parentMessage.user || parentMessage.bot_id,
-      reactions: parentMessage.reactions,
+      source: `slack:${channelId}:${threadTs}`,
+      channelId: channelId,
+      threadTs: threadTs,
     },
+    mentions: null,
+    tags: null,
+    draft: false,
+    private: false,
+    notes: [],
   };
 
-  // Add user mentions
-  const mentions = parseUserMentions(parentMessage.text);
-  if (mentions.length > 0) {
-    parentActivity.mentions = mentions as ActorId[];
-  }
+  // Create Notes for all messages (including first)
+  for (const message of messages) {
+    const userId = message.user || message.bot_id;
+    if (!userId) continue; // Skip messages without user
 
-  activities.push(parentActivity);
+    const text = formatSlackText(message.text);
+    const mentions = parseUserMentionIds(message.text);
 
-  // Create activities for replies
-  for (let i = 1; i < messages.length; i++) {
-    const reply = messages[i];
-    const replyActivity: NewActivity = {
-      type: ActivityType.Action,
-      title: formatSlackText(reply.text).substring(0, 100) || "Reply",
-      note: formatSlackText(reply.text),
-      noteType: "markdown",
-      start: new Date(parseFloat(reply.ts) * 1000),
-      parent: { id: `slack:${channelId}:${parentMessage.ts}` }, // Link to parent
-      meta: {
-        source: `slack:${channelId}:${reply.ts}`,
-        channelId,
-        messageTs: reply.ts,
-        threadTs,
-        userId: reply.user || reply.bot_id,
-        reactions: reply.reactions,
-      },
+    const note: Note = {
+      id: `slack:${channelId}:${message.ts}` as any,
+      activity: activity,
+      author: slackUserToActor(userId),
+      note: text,
+      links: null,
+      mentions: mentions.length > 0 ? mentions : null,
+      tags: null,
+      draft: false,
+      private: false,
     };
 
-    // Add user mentions for reply
-    const replyMentions = parseUserMentions(reply.text);
-    if (replyMentions.length > 0) {
-      replyActivity.mentions = replyMentions as ActorId[];
-    }
-
-    activities.push(replyActivity);
+    activity.notes.push(note);
   }
 
-  return activities;
+  return activity;
 }
 
 /**
@@ -322,7 +378,11 @@ export async function syncSlackChannel(
   for (const [threadTs, messagesInThread] of threadMap.entries()) {
     const parentMessage = messagesInThread.find((m) => m.ts === threadTs);
 
-    if (parentMessage && parentMessage.reply_count && parentMessage.reply_count > 0) {
+    if (
+      parentMessage &&
+      parentMessage.reply_count &&
+      parentMessage.reply_count > 0
+    ) {
       // Fetch all replies for this thread
       const replies = await api.getThreadReplies(state.channelId, threadTs);
       threads.push([parentMessage, ...replies]);

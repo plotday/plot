@@ -1,6 +1,6 @@
 import {
-  type Activity,
   type ActivityLink,
+  type ActivityWithNotes,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -18,7 +18,11 @@ import {
   Integrations,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { ActivityAccess, ContactAccess, Plot } from "@plotday/twister/tools/plot";
+import {
+  ActivityAccess,
+  ContactAccess,
+  Plot,
+} from "@plotday/twister/tools/plot";
 
 import {
   GmailApi,
@@ -74,10 +78,15 @@ import {
  *     }
  *   }
  *
- *   async onGmailThread(thread: Activity[]) {
- *     // Process Gmail email threads
- *     for (const message of thread) {
- *       await this.plot.createActivity(message);
+ *   async onGmailThread(thread: ActivityWithNotes) {
+ *     // Process Gmail email thread
+ *     // Each thread is an Activity with Notes for each email
+ *     console.log(`Email thread: ${thread.title}`);
+ *     console.log(`${thread.notes.length} messages`);
+ *
+ *     // Access individual messages as Notes
+ *     for (const note of thread.notes) {
+ *       console.log(`From: ${note.author.email}, To: ${note.mentions?.join(", ")}`);
  *     }
  *   }
  * }
@@ -190,7 +199,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   }
 
   async startSync<
-    TCallback extends (thread: Activity[], ...args: any[]) => any
+    TCallback extends (thread: ActivityWithNotes, ...args: any[]) => any
   >(
     authToken: string,
     channelId: string,
@@ -371,51 +380,59 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   private async processEmailThreads(
     threads: GmailThread[],
     channelId: string,
-    authToken: string
+    _authToken: string
   ): Promise<void> {
+    const callbackToken = await this.get<string>(
+      `thread_callback_token_${channelId}`
+    );
+
+    if (!callbackToken) {
+      console.error("No callback token found for channel", channelId);
+      return;
+    }
+
     for (const thread of threads) {
       try {
-        // Transform Gmail thread to Activity array
-        const activities = transformGmailThread(thread);
+        // Transform Gmail thread to ActivityWithNotes
+        const activityThread = transformGmailThread(thread);
 
-        if (activities.length === 0) continue;
+        if (activityThread.notes.length === 0) continue;
 
-        // Extract email addresses from all messages and create contacts
-        const emailAddresses = new Set<string>();
+        // Extract unique actors from notes for contact creation
+        const actorMap = new Map<string, { email: string; name?: string }>();
 
-        for (const activity of activities) {
-          const meta = activity.meta as any;
-          if (meta?.from?.email) {
-            emailAddresses.add(meta.from.email);
+        for (const note of activityThread.notes) {
+          // Add author
+          if (note.author.email) {
+            actorMap.set(note.author.email, {
+              email: note.author.email,
+              name: note.author.name || undefined,
+            });
+          }
+
+          // Add mentioned actors
+          if (note.mentions) {
+            for (const mentionId of note.mentions) {
+              // Extract email from ActorId (format: "contact:email@example.com")
+              const email = mentionId.replace("contact:", "");
+              if (email !== mentionId) {
+                // Only add if it's actually a contact: ID
+                actorMap.set(email, {
+                  email,
+                  name: undefined,
+                });
+              }
+            }
           }
         }
 
-        // Create contacts for all unique email addresses
-        if (emailAddresses.size > 0) {
-          const contacts = Array.from(emailAddresses).map((email) => {
-            // Try to find the name from the activity meta
-            const activity = activities.find(
-              (act: any) => act.meta?.from?.email === email
-            );
-            const name = (activity?.meta as any)?.from?.name || null;
-
-            return {
-              email,
-              name: name || undefined,
-            };
-          });
-
-          await this.tools.plot.addContacts(contacts);
+        // Create contacts for all unique actors
+        if (actorMap.size > 0) {
+          await this.tools.plot.addContacts(Array.from(actorMap.values()));
         }
 
-        // Call parent callback with the thread
-        const callbackToken = await this.get<string>(
-          `thread_callback_token_${channelId}`
-        );
-        if (callbackToken) {
-          // Pass activities as-is - the callback will handle conversion if needed
-          await this.run(callbackToken as any, activities);
-        }
+        // Call parent callback with single thread
+        await this.run(callbackToken as any, activityThread);
       } catch (error) {
         console.error(`Failed to process Gmail thread ${thread.id}:`, error);
         // Continue processing other threads

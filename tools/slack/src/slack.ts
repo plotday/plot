@@ -1,14 +1,13 @@
 import {
-  type Activity,
   type ActivityLink,
-  type NewActivity,
+  type ActivityWithNotes,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
 import {
   type MessageChannel,
-  type MessagingAuth,
   type MessageSyncOptions,
+  type MessagingAuth,
   type MessagingTool,
 } from "@plotday/twister/common/messaging";
 import { type Callback } from "@plotday/twister/tools/callbacks";
@@ -98,11 +97,11 @@ import {
  *     }
  *   }
  *
- *   async onSlackThread(thread: Activity[]) {
- *     // Process Slack message threads
- *     for (const message of thread) {
- *       await this.plot.createActivity(message);
- *     }
+ *   async onSlackThread(thread: ActivityWithNotes) {
+ *     // Process Slack message thread
+ *     // thread contains the Activity with thread.notes containing each message
+ *     console.log(`Thread: ${thread.title}`);
+ *     console.log(`${thread.notes.length} messages`);
  *   }
  * }
  * ```
@@ -132,15 +131,15 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     // Bot scopes for workspace-level "Add to Slack" installation
     // These are the scopes the bot token will have
     const slackScopes = [
-      "channels:history",    // Read messages in public channels
-      "channels:read",       // View basic channel info
-      "groups:history",      // Read messages in private channels (if bot is added)
-      "groups:read",         // View basic private channel info
-      "users:read",          // View users in workspace
-      "users:read.email",    // View user email addresses
-      "chat:write",          // Send messages as the bot
-      "im:history",          // Read direct messages with the bot
-      "mpim:history",        // Read group direct messages
+      "channels:history", // Read messages in public channels
+      "channels:read", // View basic channel info
+      "groups:history", // Read messages in private channels (if bot is added)
+      "groups:read", // View basic private channel info
+      "users:read", // View users in workspace
+      "users:read.email", // View user email addresses
+      "chat:write", // Send messages as the bot
+      "im:history", // Read direct messages with the bot
+      "mpim:history", // Read group direct messages
     ];
 
     // Generate opaque token for authorization
@@ -188,7 +187,9 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     console.log("Got Slack channels", channels);
 
     return channels
-      .filter((channel: SlackChannel) => channel.is_member && !channel.is_archived)
+      .filter(
+        (channel: SlackChannel) => channel.is_member && !channel.is_archived
+      )
       .map((channel: SlackChannel) => ({
         id: channel.id,
         name: channel.name,
@@ -198,7 +199,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   }
 
   async startSync<
-    TCallback extends (thread: Activity[], ...args: any[]) => any
+    TCallback extends (thread: ActivityWithNotes, ...args: any[]) => any
   >(
     authToken: string,
     channelId: string,
@@ -314,11 +315,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       const result = await syncSlackChannel(api, state);
 
       if (result.threads.length > 0) {
-        await this.processMessageThreads(
-          result.threads,
-          channelId,
-          authToken
-        );
+        await this.processMessageThreads(result.threads, channelId, authToken);
         console.log(
           `Synced ${result.threads.length} threads in batch ${batchNumber} for channel ${channelId}`
         );
@@ -359,24 +356,45 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     authToken: string
   ): Promise<void> {
     const api = await this.getApi(authToken);
+    const callbackToken = await this.get<string>(
+      `thread_callback_token_${channelId}`
+    );
+
+    if (!callbackToken) {
+      console.error("No callback token found for channel", channelId);
+      return;
+    }
 
     for (const thread of threads) {
       try {
-        // Transform Slack thread to Activity array
-        const activities = transformSlackThread(thread, channelId);
+        // Transform Slack thread to ActivityWithNotes
+        const activityThread = transformSlackThread(thread, channelId);
 
-        if (activities.length === 0) continue;
+        if (activityThread.notes.length === 0) continue;
 
-        // Create contacts for all mentioned users
-        const allMentions = activities.flatMap((act) => act.mentions || []);
-        const uniqueUserIds = [
-          ...new Set(
-            allMentions.map((mention: any) => mention.id as string)
-          ),
-        ];
+        // Extract unique Slack user IDs from notes
+        const userIdSet = new Set<string>();
+
+        for (const note of activityThread.notes) {
+          // Add author if it's a Slack user
+          if (note.author.id.startsWith("slack:")) {
+            const userId = note.author.id.replace("slack:", "");
+            userIdSet.add(userId);
+          }
+
+          // Add mentioned users
+          if (note.mentions) {
+            for (const mentionId of note.mentions) {
+              if (mentionId.startsWith("slack:")) {
+                const userId = mentionId.replace("slack:", "");
+                userIdSet.add(userId);
+              }
+            }
+          }
+        }
 
         // Fetch user info and create contacts
-        for (const userId of uniqueUserIds) {
+        for (const userId of userIdSet) {
           const user = await api.getUser(userId);
           if (user && user.profile?.email) {
             await this.tools.plot.addContacts([
@@ -391,14 +409,8 @@ export class Slack extends Tool<Slack> implements MessagingTool {
           }
         }
 
-        // Call parent callback with the thread
-        const callbackToken = await this.get<string>(
-          `thread_callback_token_${channelId}`
-        );
-        if (callbackToken) {
-          // Pass activities as-is - the callback will handle conversion if needed
-          await this.run(callbackToken as any, activities);
-        }
+        // Call parent callback with single thread
+        await this.run(callbackToken as any, activityThread);
       } catch (error) {
         console.error(`Failed to process thread:`, error);
         // Continue processing other threads

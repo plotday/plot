@@ -15,7 +15,8 @@
     "src/tools/store.ts",
     "src/tools/tasks.ts",
     "src/common/calendar.ts",
-    "src/utils/types.ts"
+    "src/utils/types.ts",
+    "src/utils/hash.ts"
   ],
   "out": "dist/docs",
   "tsconfig": "./tsconfig.json",
@@ -39,8 +40,7 @@
     "docs/TOOLS_GUIDE.md",
     "docs/BUILDING_TOOLS.md",
     "docs/CLI_REFERENCE.md",
-    "docs/RUNTIME.md",
-    "docs/ADVANCED.md"
+    "docs/RUNTIME.md"
   ],
   "name": "Creating Plot Twists",
   "includeVersion": false,

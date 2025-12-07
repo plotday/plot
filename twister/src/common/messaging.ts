@@ -1,4 +1,4 @@
-import type { Activity, ActivityLink } from "../index";
+import type { ActivityLink, NewActivityWithNotes } from "../index";
 
 /**
  * Represents a successful messaging service authorization.
@@ -43,7 +43,8 @@ export interface MessageSyncOptions {
 /**
  * Base interface for email and chat integration tools.
  *
- * All synced messages/emails are converted to Activity.
+ * All synced messages/emails are converted to ActivityWithNotes objects.
+ * Each email thread or chat conversation becomes an Activity with Notes for each message.
  */
 export interface MessagingTool {
   /**
@@ -71,18 +72,20 @@ export interface MessagingTool {
   /**
    * Begins synchronizing messages from a specific channel.
    *
-   * Messages are converted to an array of Activity represent the email/chat thread.
-   * The meta.source is unique and stable per message. The meta.source of the first
-   * Activity in the thread can be used as a thread identifier.
+   * Email threads and chat conversations are converted to ActivityWithNotes objects.
+   * Each object contains an Activity (with subject/title) and Notes array (one per message).
+   * The Activity.id can be used as a stable conversation identifier.
    *
    * @param authToken - Authorization token for access
    * @param channelId - ID of the channel (e.g., channel, inbox) to sync
-   * @param callback - Function receiving (activity, ...extraArgs) for each synced message/thread
+   * @param callback - Function receiving (thread, ...extraArgs) for each synced conversation
    * @param options - Optional configuration for limiting the sync scope (e.g., time range)
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
    */
-  startSync<TCallback extends (thread: Activity[], ...args: any[]) => any>(
+  startSync<
+    TCallback extends (thread: NewActivityWithNotes, ...args: any[]) => any
+  >(
     authToken: string,
     channelId: string,
     callback: TCallback,

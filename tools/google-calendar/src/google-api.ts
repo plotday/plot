@@ -312,19 +312,28 @@ export function transformGoogleEvent(
     ? new Date(event.end?.dateTime)
     : null; // Timed events use Date objects
 
+  // Handle cancelled events differently
+  const isCancelled = event.status === "cancelled";
+
   const activity: NewActivity = {
-    type: isAllDay ? ActivityType.Note : ActivityType.Event,
-    title: event.summary || null,
-    note: event.description || null,
-    noteType: "html",
-    start,
-    end,
+    type: isCancelled ? ActivityType.Note : (isAllDay ? ActivityType.Note : ActivityType.Event),
+    title: isCancelled
+      ? `Cancelled: ${event.summary || "Event"}`
+      : event.summary || null,
+    start: isCancelled ? null : start,
+    end: isCancelled ? null : end,
     meta: {
       source: `google-calendar:${event.id}`,
       id: event.id,
       calendarId: calendarId,
       htmlLink: event.htmlLink,
       hangoutLink: event.hangoutLink,
+      status: event.status,
+      originalStart: isCancelled ? start : undefined,
+      originalEnd: isCancelled ? end : undefined,
+      description: isCancelled
+        ? `This event was cancelled.\n\n${event.description || ""}`
+        : event.description || null,
     },
   };
 

@@ -1,11 +1,13 @@
 import {
   type Activity,
+  type ActivityCommon,
   type ActivityLink,
   ActivityLinkType,
   type ActorId,
   ConferencingProvider,
-  type NewActivity,
+  type NewActivityWithNotes,
   type NewContact,
+  type NewNote,
   Tag,
   Tool,
   type ToolBuilder,
@@ -30,10 +32,10 @@ import {
 } from "@plotday/twister/tools/plot";
 
 import {
-  extractConferencingLinks,
   GoogleApi,
   type GoogleEvent,
   type SyncState,
+  extractConferencingLinks,
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
@@ -98,7 +100,7 @@ import {
  *     }
  *   }
  *
- *   async onCalendarEvent(activity: Activity, context: any) {
+ *   async onCalendarEvent(activity: NewActivityWithNotes, context: any) {
  *     // Process Google Calendar events
  *     await this.plot.createActivity(activity);
  *   }
@@ -227,7 +229,7 @@ export class GoogleCalendar
   }
 
   async startSync<
-    TCallback extends (activity: Activity, ...args: any[]) => any
+    TCallback extends (activity: NewActivityWithNotes, ...args: any[]) => any
   >(
     authToken: string,
     calendarId: string,
@@ -450,7 +452,7 @@ export class GoogleCalendar
 
             if (userAttendee) {
               // Find the user's ActorId from the contacts we just created
-              const userActorId = actorIds.find((actorId, index) => {
+              const userActorId = actorIds.find((_actorId, index) => {
                 const attendee = event.attendees![index];
                 return (
                   attendee.self === true ||
@@ -513,17 +515,29 @@ export class GoogleCalendar
               });
             }
 
-            const activity: NewActivity = {
+            // Create note with description and/or links
+            const notes: NewNote[] = [];
+            const description = activityData.meta?.description || event.description;
+            const hasDescription = description && description.trim().length > 0;
+            const hasLinks = links.length > 0;
+
+            if (hasDescription || hasLinks) {
+              notes.push({
+                activity: { id: "" }, // Will be filled in by the API
+                note: hasDescription ? description : null,
+                links: hasLinks ? links : null,
+                noteType: "text",
+              });
+            }
+
+            const activity: NewActivityWithNotes = {
               type: activityData.type,
               start: activityData.start || null,
               end: activityData.end || null,
               recurrenceUntil: activityData.recurrenceUntil || null,
               recurrenceCount: activityData.recurrenceCount || null,
               doneAt: null,
-              note: activityData.note || null,
               title: activityData.title || null,
-              parent: null,
-              links: links.length > 0 ? links : null,
               recurrenceRule: activityData.recurrenceRule || null,
               recurrenceExdates: activityData.recurrenceExdates || null,
               recurrenceDates: activityData.recurrenceDates || null,
@@ -531,7 +545,7 @@ export class GoogleCalendar
               occurrence: null,
               meta: activityData.meta ?? null,
               tags,
-              mentions: actorIds.length > 0 ? actorIds : null,
+              notes,
             };
 
             await this.run(callbackToken as any, activity);
@@ -561,23 +575,72 @@ export class GoogleCalendar
 
     const callbackToken = await this.get<string>("event_callback_token");
     if (callbackToken && activityData.type) {
-      const activity: NewActivity = {
+      // Build links array for videoconferencing and calendar links
+      const links: ActivityLink[] = [];
+      const seenUrls = new Set<string>();
+
+      // Extract all conferencing links (Zoom, Teams, Webex, etc.)
+      const conferencingLinks = extractConferencingLinks(event);
+      for (const link of conferencingLinks) {
+        if (!seenUrls.has(link.url)) {
+          seenUrls.add(link.url);
+          links.push({
+            type: ActivityLinkType.conferencing,
+            url: link.url,
+            provider: link.provider,
+          });
+        }
+      }
+
+      // Add Google Meet link from hangoutLink if not already added
+      if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
+        seenUrls.add(event.hangoutLink);
+        links.push({
+          type: ActivityLinkType.conferencing,
+          url: event.hangoutLink,
+          provider: ConferencingProvider.googleMeet,
+        });
+      }
+
+      // Add calendar link
+      if (event.htmlLink) {
+        links.push({
+          type: ActivityLinkType.external,
+          title: "View in Calendar",
+          url: event.htmlLink,
+        });
+      }
+
+      // Create note with description and/or links
+      const notes: NewNote[] = [];
+      const description = activityData.meta?.description || event.description;
+      const hasDescription = description && description.trim().length > 0;
+      const hasLinks = links.length > 0;
+
+      if (hasDescription || hasLinks) {
+        notes.push({
+          activity: { id: "" }, // Will be filled in by the API
+          note: hasDescription ? description : null,
+          links: hasLinks ? links : null,
+          noteType: "text",
+        });
+      }
+
+      const activity: NewActivityWithNotes = {
         type: activityData.type,
         start: activityData.start || null,
         end: activityData.end || null,
         recurrenceUntil: activityData.recurrenceUntil || null,
         recurrenceCount: activityData.recurrenceCount || null,
         doneAt: null,
-        note: activityData.note || null,
         title: activityData.title || null,
-        parent: null,
-        links: null,
         recurrenceRule: null,
         recurrenceExdates: null,
         recurrenceDates: null,
         recurrence: null, // Would need to find master activity
         occurrence: new Date(originalStartTime),
         meta: activityData.meta ?? null,
+        notes,
       };
 
       await this.run(callbackToken as any, activity);
@@ -668,18 +731,20 @@ export class GoogleCalendar
   }
 
   async onActivityUpdated(
-    activity: Activity,
+    activity: ActivityCommon,
     changes?: {
-      previous: Activity;
+      previous: ActivityCommon;
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
     }
   ): Promise<void> {
     if (!changes) return;
+    // Cast to Activity to access Activity-specific fields
+    const activityFull = activity as Activity;
     // Only process calendar events
     if (
-      !activity.meta?.source ||
-      !activity.meta.source.startsWith("google-calendar:")
+      !activityFull.meta?.source ||
+      !activityFull.meta.source.startsWith("google-calendar:")
     ) {
       return;
     }
@@ -690,7 +755,8 @@ export class GoogleCalendar
     const skipChanged =
       Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
     const undecidedChanged =
-      Tag.Undecided in changes.tagsAdded || Tag.Undecided in changes.tagsRemoved;
+      Tag.Undecided in changes.tagsAdded ||
+      Tag.Undecided in changes.tagsRemoved;
 
     if (!attendChanged && !skipChanged && !undecidedChanged) {
       return; // No RSVP-related tag changes
@@ -699,7 +765,8 @@ export class GoogleCalendar
     // Determine new RSVP status based on current tags
     const hasAttend =
       activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
-    const hasSkip = activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
+    const hasSkip =
+      activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
     const hasUndecided =
       activity.tags?.[Tag.Undecided] && activity.tags[Tag.Undecided].length > 0;
 
@@ -739,8 +806,8 @@ export class GoogleCalendar
     }
 
     // Extract calendar info from metadata
-    const eventId = activity.meta.id;
-    const calendarId = activity.meta.calendarId;
+    const eventId = activityFull.meta.id;
+    const calendarId = activityFull.meta.calendarId;
 
     if (!eventId || !calendarId) {
       console.warn("Missing event or calendar ID in activity metadata");

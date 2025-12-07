@@ -214,7 +214,6 @@ export type ActivityMeta = {
  *   type: ActivityType.Action,
  *   title: "Review budget proposal",
  *   author: { id: "user-1", name: "John Doe", type: ActorType.User },
- *   end: null,
  *   priority: { id: "work", title: "Work" },
  *   // ... other fields
  * };
@@ -229,17 +228,30 @@ export type ActivityMeta = {
  * };
  * ```
  */
-export type Activity = {
+export type ActivityCommon = {
   /** Unique identifier for the activity */
   id: string;
-  /** The type of activity (Note, Task, or Event) */
-  type: ActivityType;
   /** Information about who created the activity */
   author: Actor;
+  /** Whether this activity is in draft state (not shown in do now view) */
+  draft: boolean;
+  /** Whether this activity is private (only visible to author) */
+  private: boolean;
+  /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
+  tags: Partial<Record<Tag, ActorId[]>> | null;
+  /** Array of actor IDs (users, contacts, or twists) mentioned in this activity via @-mentions */
+  mentions: ActorId[] | null;
+};
+
+export type Activity = ActivityCommon & {
   /** The display title/summary of the activity */
   title: string | null;
-  /** Primary content for the activity */
-  note: string | null;
+  /** The type of activity (Note, Task, or Event) */
+  type: ActivityType;
+  /** Who this activity note is assigned to */
+  assignee: Actor | null;
+  /** Timestamp when the activity was marked as complete. Null if not completed. */
+  doneAt: Date | null;
   /**
    * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
@@ -266,14 +278,6 @@ export type Activity = {
    * Null for non-recurring activities or indefinite recurrence.
    */
   recurrenceCount: number | null;
-  /** Timestamp when the activity was marked as complete. Null if not completed. */
-  doneAt: Date | null;
-  /** Reference to a parent activity for creating hierarchical relationships */
-  parent: Activity | null;
-  /** For nested activities in a thread, references the top-level activity of that thread */
-  threadRoot?: Activity;
-  /** Array of interactive links attached to the activity */
-  links: Array<ActivityLink> | null;
   /** The priority context this activity belongs to */
   priority: Priority;
   /** Recurrence rule in RFC 5545 RRULE format (e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR") */
@@ -286,7 +290,7 @@ export type Activity = {
    * For recurring event exceptions, points to the root recurring activity.
    * Used when an individual occurrence of a recurring event is modified.
    */
-  recurrence: Activity | null;
+  recurrence: ActivityCommon | null;
   /**
    * For recurring event exceptions, the original occurrence date being overridden.
    * Used to identify which occurrence of a recurring event this exception replaces.
@@ -294,10 +298,14 @@ export type Activity = {
   occurrence: Date | null;
   /** Metadata about the activity, typically from an external system that created it */
   meta: ActivityMeta | null;
-  /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
-  tags: Partial<Record<Tag, ActorId[]>> | null;
-  /** Array of actor IDs (users, contacts, or twists) mentioned in this activity via @-mentions */
-  mentions: ActorId[] | null;
+};
+
+export type ActivityWithNotes = Activity & {
+  notes: Note[];
+};
+
+export type NewActivityWithNotes = NewActivity & {
+  notes: Omit<NewNote, "activity">[];
 };
 
 /**
@@ -373,22 +381,7 @@ export type PickPriorityConfig = {
  * ```
  */
 export type NewActivity = Pick<Activity, "type"> &
-  Partial<
-    Omit<
-      Activity,
-      "id" | "author" | "type" | "parent" | "priority" | "threadRoot"
-    > & {
-      parent?: Pick<Activity, "id"> | null;
-
-      /**
-       * Format of the note content. Determines how the note is processed:
-       * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
-       * - 'markdown': Already in markdown format (default, no conversion)
-       * - 'html': HTML content that will be converted to markdown
-       */
-      noteType?: NoteType;
-    }
-  > &
+  Partial<Omit<Activity, "id" | "author" | "type" | "priority" | "mentions">> &
   (
     | {
         /** Explicit priority (required when specified) - disables automatic priority matching */
@@ -409,29 +402,18 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "start"
       | "end"
       | "doneAt"
-      | "note"
       | "title"
+      | "draft"
+      | "private"
       | "meta"
-      | "links"
       | "recurrenceRule"
       | "recurrenceDates"
       | "recurrenceExdates"
       | "recurrenceUntil"
       | "recurrenceCount"
       | "occurrence"
-      | "mentions"
     >
   > & {
-    parent?: Pick<Activity, "id"> | null;
-
-    /**
-     * Format of the note content. Determines how the note is processed:
-     * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
-     * - 'markdown': Already in markdown format (default, no conversion)
-     * - 'html': HTML content that will be converted to markdown
-     */
-    noteType?: NoteType;
-
     /**
      * Full tags object from Activity. Maps tag ID to array of actor IDs who added that tag.
      * Only allowed for activities created by the twist.
@@ -443,6 +425,67 @@ export type ActivityUpdate = Pick<Activity, "id"> &
      * Add or remove the twist's tags.
      * Maps tag ID to boolean: true = add tag, false = remove tag.
      * This is allowed on all activities the twist has access to.
+     */
+    twistTags?: Partial<Record<Tag, boolean>>;
+  };
+
+/**
+ * Represents a note within an activity.
+ *
+ * Notes contain the detailed content (note text, links) associated with an activity.
+ * They are always ordered by creation time within their parent activity.
+ */
+export type Note = Omit<ActivityCommon, "type"> & {
+  /** The parent activity this note belongs to */
+  activity: Activity;
+  /** Primary content for the note (markdown) */
+  note: string | null;
+  /** Array of interactive links attached to the note */
+  links: Array<ActivityLink> | null;
+};
+
+/**
+ * Type for creating new notes.
+ *
+ * Requires the activity reference, with all other fields optional.
+ */
+export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
+  /** Reference to the parent activity (required) */
+  activity: Pick<ActivityCommon, "id">;
+
+  /**
+   * Format of the note content. Determines how the note is processed:
+   * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
+   * - 'markdown': Already in markdown format (default, no conversion)
+   * - 'html': HTML content that will be converted to markdown
+   */
+  noteType?: NoteType;
+};
+
+/**
+ * Type for updating existing notes.
+ */
+export type NoteUpdate = Pick<Note, "id"> &
+  Partial<Pick<Note, "draft" | "private" | "note" | "links" | "mentions">> & {
+    /**
+     * Format of the note content. Determines how the note is processed:
+     * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
+     * - 'markdown': Already in markdown format (default, no conversion)
+     * - 'html': HTML content that will be converted to markdown
+     */
+    noteType?: NoteType;
+
+    /**
+     * Full tags object from Note. Maps tag ID to array of actor IDs who added that tag.
+     * Only allowed for notes created by the twist.
+     * Use twistTags instead for adding/removing the twist's tags on other notes.
+     */
+    tags?: Partial<Record<Tag, ActorId[]>>;
+
+    /**
+     * Add or remove the twist's tags.
+     * Maps tag ID to boolean: true = add tag, false = remove tag.
+     * This is allowed on all notes the twist has access to.
      */
     twistTags?: Partial<Record<Tag, boolean>>;
   };
