@@ -290,7 +290,7 @@ export type Activity = ActivityCommon & {
    * For recurring event exceptions, points to the root recurring activity.
    * Used when an individual occurrence of a recurring event is modified.
    */
-  recurrence: ActivityCommon | null;
+  recurrence: Activity | null;
   /**
    * For recurring event exceptions, the original occurrence date being overridden.
    * Used to identify which occurrence of a recurring event this exception replaces.
@@ -451,7 +451,7 @@ export type Note = Omit<ActivityCommon, "type"> & {
  */
 export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
   /** Reference to the parent activity (required) */
-  activity: Pick<ActivityCommon, "id">;
+  activity: Pick<Activity, "id">;
 
   /**
    * Format of the note content. Determines how the note is processed:
