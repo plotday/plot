@@ -453,7 +453,7 @@ export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
       id: `gmail:${thread.id}:${message.id}` as any,
       activity: activity,
       author: emailAddressToActor(sender),
-      note: body || message.snippet,
+      content: body || message.snippet,
       links: null,
       mentions: mentions.length > 0 ? mentions : null,
       tags: null,

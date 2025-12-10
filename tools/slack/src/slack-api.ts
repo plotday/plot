@@ -319,7 +319,7 @@ export function transformSlackThread(
       id: `slack:${channelId}:${message.ts}` as any,
       activity: activity,
       author: slackUserToActor(userId),
-      note: text,
+      content: text,
       links: null,
       mentions: mentions.length > 0 ? mentions : null,
       tags: null,

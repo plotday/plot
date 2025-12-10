@@ -524,7 +524,7 @@ export class GoogleCalendar
             if (hasDescription || hasLinks) {
               notes.push({
                 activity: { id: "" }, // Will be filled in by the API
-                note: hasDescription ? description : null,
+                content: hasDescription ? description : null,
                 links: hasLinks ? links : null,
                 noteType: "text",
               });
@@ -620,7 +620,7 @@ export class GoogleCalendar
       if (hasDescription || hasLinks) {
         notes.push({
           activity: { id: "" }, // Will be filled in by the API
-          note: hasDescription ? description : null,
+          content: hasDescription ? description : null,
           links: hasLinks ? links : null,
           noteType: "text",
         });

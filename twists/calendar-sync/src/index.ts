@@ -106,7 +106,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       end: null,
       notes: [
         {
-          note: "Connect a calendar account to get started. You can connect as many as you like.",
+          content: "Connect a calendar account to get started. You can connect as many as you like.",
           links: [googleAuthLink, outlookAuthLink],
         },
       ],
@@ -197,7 +197,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       activity.meta = {
         ...activity.meta,
         // Add a hash so we can add a new note if it changes
-        descriptionHash: quickHash(activity.notes[0]?.note ?? ""),
+        descriptionHash: quickHash(activity.notes[0]?.content ?? ""),
       };
     }
 
@@ -314,12 +314,12 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
     // Check for description changes
     if (
       existing.meta &&
-      existing.meta.descriptionHash !== quickHash(incoming.notes[0]?.note ?? "")
+      existing.meta.descriptionHash !== quickHash(incoming.notes[0]?.content ?? "")
     ) {
-      updatedDescription = incoming.notes[0]?.note ?? undefined;
+      updatedDescription = incoming.notes[0]?.content ?? undefined;
       updates.meta = {
         ...(incoming.meta ?? existing.meta),
-        descriptionHash: quickHash(incoming.notes[0]?.note ?? ""),
+        descriptionHash: quickHash(incoming.notes[0]?.content ?? ""),
       };
       hasChanges = true;
     }
@@ -339,7 +339,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       // Add a new note with the updated description
       await this.tools.plot.createNote({
         activity: { id: existing.id },
-        note: `*Calendar description updated*: ${updatedDescription}`,
+        content: `*Calendar description updated*: ${updatedDescription}`,
       });
     }
   }
@@ -378,7 +378,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
         if (activity) {
           await this.tools.plot.createNote({
             activity,
-            note: `I couldn't find any calendars for that account.`,
+            content: `I couldn't find any calendars for that account.`,
           });
         } else {
           console.warn("No parent activity found for no calendars note");
@@ -437,7 +437,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       start: new Date(),
       notes: [
         {
-          note: `Which ${providerName} calendars you'd like to sync?`,
+          content: `Which ${providerName} calendars you'd like to sync?`,
           links,
         },
       ],
@@ -478,7 +478,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       }
       await this.tools.plot.createNote({
         activity,
-        note: `Reading your ${calendarName} calendar.`,
+        content: `Reading your ${calendarName} calendar.`,
       });
     } catch (error) {
       console.error(

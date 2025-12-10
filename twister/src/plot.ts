@@ -203,7 +203,7 @@ export type ActivityMeta = {
  * const task: Activity = {
  *   type: ActivityType.Note,
  *   title: "New campaign brainstorming ideas",
- *   note: "We could rent a bouncy castle...",
+ *   content: "We could rent a bouncy castle...",
  *   author: { id: "user-1", name: "John Doe", type: ActorType.User },
  *   priority: { id: "work", title: "Work" },
  *   // ... other fields
@@ -406,7 +406,7 @@ export type PickPriorityConfig = {
  * const newNote: NewActivity = {
  *   type: ActivityType.Note,
  *   title: "Meeting notes",
- *   note: "Discussed Q4 roadmap..."
+ *   content: "Discussed Q4 roadmap..."
  *   // Defaults to pickPriority: { content: true }
  * };
  *
@@ -478,7 +478,7 @@ export type Note = Omit<ActivityCommon, "type"> & {
   /** The parent activity this note belongs to */
   activity: Activity;
   /** Primary content for the note (markdown) */
-  note: string | null;
+  content: string | null;
   /** Array of interactive links attached to the note */
   links: Array<ActivityLink> | null;
 };
@@ -505,7 +505,7 @@ export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
  * Type for updating existing notes.
  */
 export type NoteUpdate = Pick<Note, "id"> &
-  Partial<Pick<Note, "draft" | "private" | "note" | "links" | "mentions">> & {
+  Partial<Pick<Note, "draft" | "private" | "content" | "links" | "mentions">> & {
     /**
      * Format of the note content. Determines how the note is processed:
      * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)

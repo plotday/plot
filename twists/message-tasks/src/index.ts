@@ -171,7 +171,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       start: new Date(),
       notes: [
         {
-          note: "I'll analyze your message threads and create tasks when action is needed.",
+          content: "I'll analyze your message threads and create tasks when action is needed.",
           links: [slackAuthLink],
         },
       ],
@@ -207,7 +207,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
         if (activity) {
           await this.tools.plot.createNote({
             activity,
-            note: `No channels found for ${provider}.`,
+            content: `No channels found for ${provider}.`,
           });
         }
         return;
@@ -225,7 +225,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       if (activity) {
         await this.tools.plot.createNote({
           activity,
-          note: `Failed to connect to ${provider}. Please try again.`,
+          content: `Failed to connect to ${provider}. Please try again.`,
         });
       }
     }
@@ -268,7 +268,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     if (activity) {
       await this.tools.plot.createNote({
         activity,
-        note: `Which ${provider} channels should I monitor?`,
+        content: `Which ${provider} channels should I monitor?`,
         links,
       });
     }
@@ -313,7 +313,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       if (activity) {
         await this.tools.plot.createNote({
           activity,
-          note: `Now monitoring #${channelName} for actionable threads`,
+          content: `Now monitoring #${channelName} for actionable threads`,
         });
       }
     } catch (error) {
@@ -325,7 +325,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       if (activity) {
         await this.tools.plot.createNote({
           activity,
-          note: `Failed to monitor #${channelName}. Please try again.`,
+          content: `Failed to monitor #${channelName}. Please try again.`,
         });
       }
     }
@@ -412,7 +412,7 @@ If a task is needed, create a clear, actionable title that describes what the us
       },
       ...thread.notes.map((note, idx) => ({
         role: "user" as const,
-        content: `[Message ${idx + 1}] User: ${note.note || "(empty message)"}`,
+        content: `[Message ${idx + 1}] User: ${note.content || "(empty message)"}`,
       })),
     ];
 
@@ -517,12 +517,12 @@ If a task is needed, create a clear, actionable title that describes what the us
       notes: analysis.taskNote
         ? [
             {
-              note: `${analysis.taskNote}\n\n---\nFrom #${channelName}`,
+              content: `${analysis.taskNote}\n\n---\nFrom #${channelName}`,
             },
           ]
         : [
             {
-              note: `From #${channelName}`,
+              content: `From #${channelName}`,
             },
           ],
       meta: {
@@ -566,7 +566,7 @@ Return true only if there's clear evidence the task is done.`,
       },
       ...recentMessages.map((note) => ({
         role: "user" as const,
-        content: `User: ${note.note || ""}`,
+        content: `User: ${note.content || ""}`,
       })),
     ];
 

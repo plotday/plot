@@ -1,13 +1,12 @@
 import { Type } from "typebox";
 
 import {
-  type Activity,
   ActivityType,
-  Twist,
   ActorType,
+  type Note,
   Tag,
   type ToolBuilder,
-  type Note,
+  Twist,
 } from "@plotday/twister";
 import { AI, type AIMessage } from "@plotday/twister/tools/ai";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
@@ -29,7 +28,7 @@ export default class ChatTwist extends Twist<ChatTwist> {
                 "Can you help me plan my day?",
                 "Write me a summary of this article",
               ],
-              handler: this.responsd,
+              handler: this.respond,
             },
           ],
         },
@@ -37,7 +36,7 @@ export default class ChatTwist extends Twist<ChatTwist> {
     };
   }
 
-  async responsd(note: Note) {
+  async respond(note: Note) {
     const activity = note.activity;
 
     // Get all notes in this activity (conversation history)
@@ -69,15 +68,13 @@ You can also create tasks, but should only do so when the user explicitly asks y
         : []),
       // Include all previous notes in the conversation
       ...previousNotes
-        .filter((n: Note) => n.note)
+        .filter((n: Note) => n.content)
         .map(
           (prevNote: Note) =>
             ({
               role:
-                prevNote.author.type === ActorType.Twist
-                  ? "assistant"
-                  : "user",
-              content: prevNote.note!,
+                prevNote.author.type === ActorType.Twist ? "assistant" : "user",
+              content: prevNote.content!,
             } satisfies AIMessage)
         ),
     ];
@@ -128,7 +125,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
         title: response.output!.message.title,
         notes: [
           {
-            note: response.output!.message.note,
+            content: response.output!.message.note,
           },
         ],
         priority: activity.priority,
@@ -140,7 +137,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
           notes: item.note
             ? [
                 {
-                  note: item.note,
+                  content: item.note,
                 },
               ]
             : undefined,
