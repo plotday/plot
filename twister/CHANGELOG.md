@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.23.0
+
+### Added
+
+- Update Activity assignee ([`f0cda95`](https://github.com/plotday/plot/commit/f0cda95e9bda28d503557ff2149da47ebbb27f14))
+
+### Changed
+
+- BREAKING: Note content field renamed for clarity ([`e66e968`](https://github.com/plotday/plot/commit/e66e968776c67afd376354317d94656b773b2d9f))
+
 ## 0.22.0
 
 ### Changed

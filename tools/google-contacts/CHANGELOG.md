@@ -1,5 +1,13 @@
 # @plotday/tool-google-contacts
 
+## 0.3.0
+
+### Changed
+
+- BREAKING: Note content field renamed for clarity ([`e66e968`](https://github.com/plotday/plot/commit/e66e968776c67afd376354317d94656b773b2d9f))
+- Updated dependencies:
+- @plotday/twister@0.23.0
+
 ## 0.2.6
 
 ### Changed
