@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.23.1
+
+### Changed
+
+- Tightened tag types. ([`4c73a88`](https://github.com/plotday/plot/commit/4c73a88c94fd5e75f35ab707b6975638296110d3))
+
 ## 0.23.0
 
 ### Added
