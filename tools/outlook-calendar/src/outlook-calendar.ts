@@ -415,7 +415,7 @@ export class OutlookCalendar
 
               if (userAttendee) {
                 // Find the user's ActorId from the contacts we just created
-                const userActorId = actorIds.find((actorId, index) => {
+                const userActorId = actorIds.find((_actorId, index) => {
                   const attendee = outlookEvent.attendees![index];
                   return (
                     attendee.emailAddress?.address?.toLowerCase() ===
@@ -475,7 +475,7 @@ export class OutlookCalendar
             if (hasDescription || hasLinks) {
               notes.push({
                 activity: { id: "" }, // Will be filled in by the API
-                note: hasDescription ? outlookEvent.body!.content! : null,
+                content: hasDescription ? outlookEvent.body!.content! : null,
                 links: hasLinks ? links : null,
                 noteType:
                   outlookEvent.body?.contentType === "html" ? "html" : "text",
