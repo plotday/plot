@@ -6,8 +6,11 @@ export { Tag } from "./tag";
 /**
  * Represents a unique user, contact, or twist in Plot.
  *
- * Note contacts (i.e. people not using Plot) are also represented by ActorIds. They may be
- * people interacting with other connected services (e.g. an email sender or event attendee).
+ * ActorIds are used throughout Plot for:
+ * - Activity authors and assignees
+ * - Tag creators (actor_id in activity_tag/note_tag)
+ * - Mentions in activities and notes
+ * - Any entity that can perform actions in Plot
  */
 export type ActorId = string & { readonly __brand: "ActorId" };
 
@@ -190,6 +193,8 @@ export type ActivityMeta = {
   [key: string]: any;
 };
 
+export type Tags = { [K in Tag]?: ActorId[] };
+
 /**
  * Represents a complete activity within the Plot system.
  *
@@ -238,7 +243,7 @@ export type ActivityCommon = {
   /** Whether this activity is private (only visible to author) */
   private: boolean;
   /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
-  tags: Partial<Record<Tag, ActorId[]>> | null;
+  tags: Tags | null;
   /** Array of actor IDs (users, contacts, or twists) mentioned in this activity via @-mentions */
   mentions: ActorId[] | null;
 };
@@ -458,7 +463,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
      * Only allowed for activities created by the twist.
      * Use twistTags instead for adding/removing the twist's tags on other activities.
      */
-    tags?: Partial<Record<Tag, ActorId[]>>;
+    tags?: { [K in Tag]?: ActorId[] };
 
     /**
      * Add or remove the twist's tags.
@@ -505,7 +510,9 @@ export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
  * Type for updating existing notes.
  */
 export type NoteUpdate = Pick<Note, "id"> &
-  Partial<Pick<Note, "draft" | "private" | "content" | "links" | "mentions">> & {
+  Partial<
+    Pick<Note, "draft" | "private" | "content" | "links" | "mentions">
+  > & {
     /**
      * Format of the note content. Determines how the note is processed:
      * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
@@ -519,7 +526,7 @@ export type NoteUpdate = Pick<Note, "id"> &
      * Only allowed for notes created by the twist.
      * Use twistTags instead for adding/removing the twist's tags on other notes.
      */
-    tags?: Partial<Record<Tag, ActorId[]>>;
+    tags?: { [K in Tag]?: ActorId[] };
 
     /**
      * Add or remove the twist's tags.
