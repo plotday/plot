@@ -24,8 +24,6 @@ export enum Tag {
   Twist = 109,
   Star = 110,
   Idea = 111,
-  Attachment = 112,
-  Link = 113,
 
   // Count tags
   Yes = 1000,
