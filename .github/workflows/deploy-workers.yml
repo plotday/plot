@@ -96,6 +96,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
           CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
+          POSTHOG_PROJECT: op://$ENV/PostHog/username
+          POSTHOG_CLI_KEY: op://$ENV/PostHog/sourcemaps/credential
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
