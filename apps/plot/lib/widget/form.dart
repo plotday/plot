@@ -151,12 +151,12 @@ class FormSelect<T> extends FormItem {
     T? initialValue,
     this.onChanged,
     bool hasInitialValue = false,
-  })  : assert(
-          labelBuilder != null || titleBuilder != null,
-          'Must provide either labelBuilder or titleBuilder',
-        ),
-        _value = initialValue,
-        _hasValue = hasInitialValue || initialValue != null;
+  }) : assert(
+         labelBuilder != null || titleBuilder != null,
+         'Must provide either labelBuilder or titleBuilder',
+       ),
+       _value = initialValue,
+       _hasValue = hasInitialValue || initialValue != null;
 
   /// Function to fetch items, optionally filtered by search text.
   final Future<List<T>> Function(String? search) items;
@@ -442,7 +442,10 @@ class FormInfo extends FormItem {
     bool enabled = true,
     FocusNode? focusNode,
   }) {
-    return builder(context);
+    return Padding(
+      padding: .symmetric(horizontal: 12),
+      child: builder(context),
+    );
   }
 }
 

@@ -165,7 +165,10 @@ class EditTwistCommand extends ShowCommands {
           StaticCommandGroup(
             infoBuilder: (context) =>
                 TwistDetails(twist: matchingTwist, priority: loadedPriority),
-            commands: [RemoveTwist(priorityTwist)],
+            commands: [
+              ArchiveActivitiesCreatedByTwist(priorityTwist),
+              RemoveTwist(priorityTwist),
+            ],
           ),
         ],
       );
@@ -298,6 +301,106 @@ class RemoveTwist extends Command {
     } catch (e, t) {
       log.warning('Failed to remove twist', e, t);
       return CommandMessage('Failed to remove twist', isError: true);
+    }
+  }
+}
+
+class ArchiveActivitiesCreatedByTwist extends ShowForm {
+  ArchiveActivitiesCreatedByTwist(this.twist)
+    : super(
+        title: 'Archive Activities',
+        icon: PlotIcon.archived,
+        form: (context) => _buildForm(context, twist),
+      );
+
+  final PriorityTwist twist;
+
+  static Future<FormData> _buildForm(
+    BuildContext context,
+    PriorityTwist twist,
+  ) async {
+    // Query the count of activities created by this twist
+    final count = await _getActivityCount(twist.id);
+
+    return FormData(
+      title: 'Archive Activities Created by Twist',
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'info',
+              builder: (context) => SelectableText(
+                count == 0
+                    ? 'No activities were created by this twist.'
+                    : count == 1
+                    ? '1 activity was created by this twist and will be archived.'
+                    : '$count activities were created by this twist and will be archived.',
+                style: context.theme.typography.base,
+              ),
+            ),
+            if (count > 0)
+              FormButton(
+                key: 'archive',
+                command: _ArchiveActivitiesCommand(twist, count),
+                onSubmit: (context, values) async {
+                  final command = _ArchiveActivitiesCommand(twist, count);
+                  if (!context.mounted) {
+                    return const CommandSkipped();
+                  }
+                  return await command.run(context);
+                },
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static Future<int> _getActivityCount(Uuid priorityTwistId) async {
+    try {
+      final result =
+          await Base.client
+                  .from('user_activity')
+                  .select('id')
+                  .eq('created_by', priorityTwistId.toString())
+                  .isFilter('archived_at', null)
+              as List<dynamic>;
+
+      return result.length;
+    } catch (e, t) {
+      log.warning('Failed to count activities', e, t);
+      return 0;
+    }
+  }
+}
+
+class _ArchiveActivitiesCommand extends Command {
+  _ArchiveActivitiesCommand(this.twist, this.count)
+    : super(
+        title: 'Archive Activities',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.archived,
+      );
+
+  final PriorityTwist twist;
+  final int count;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      // Execute bulk archive operation
+      await Base.client
+          .from('activity')
+          .update({'archived_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('created_by', twist.id.toString())
+          .isFilter('archived_at', null);
+
+      return CommandMessage(
+        count == 1 ? '1 activity archived' : '$count activities archived',
+      );
+    } catch (e, t) {
+      log.warning('Failed to archive activities', e, t);
+      return CommandMessage('Failed to archive activities', isError: true);
     }
   }
 }
