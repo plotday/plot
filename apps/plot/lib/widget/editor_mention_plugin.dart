@@ -17,11 +17,12 @@ class CommittedEditorMentionAttribution extends NamedAttribution {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is CommittedEditorMentionAttribution &&
+          super == other &&
           priorityTwistId == other.priorityTwistId &&
           username == other.username);
 
   @override
-  int get hashCode => Object.hash(priorityTwistId, username);
+  int get hashCode => Object.hash(super.hashCode, priorityTwistId, username);
 }
 
 /// A request to insert an editor mention at the current caret position

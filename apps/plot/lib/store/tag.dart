@@ -36,18 +36,27 @@ enum Tag {
     type: TagType.compute,
     shortcodes: ['archive', 'file_cabinet'],
   ),
+  attachment(
+    5,
+    PlotIcon.attachment,
+    'Attachment',
+    type: TagType.compute,
+
+    addable: false,
+  ),
+  link(6, PlotIcon.link, 'Link', type: TagType.compute, addable: false),
 
   // Toggle tags
   pinned(100, PlotIcon.pinned, 'Pinned', shortcodes: ['pushpin']),
-  urgent(101, PlotIcon.urgent, 'Urgent', shortcodes: ['rotating_light']),
-  todo(102, PlotIcon.todo, 'To-do', shortcodes: ['todo', 'inbox_tray']),
-  goal(103, PlotIcon.goal, 'Goal', shortcodes: ['goal', 'dart']),
+  inbox(102, PlotIcon.todo, 'Inbox', shortcodes: ['todo', 'inbox_tray']),
   decision(
     104,
     PlotIcon.decision,
     'Decision',
     shortcodes: ['decision', 'thinking_face'],
   ),
+  goal(103, PlotIcon.goal, 'Goal', shortcodes: ['goal', 'dart']),
+  urgent(101, PlotIcon.urgent, 'Urgent', shortcodes: ['rotating_light']),
   waiting(
     105,
     PlotIcon.waiting,
@@ -57,16 +66,9 @@ enum Tag {
   blocked(106, PlotIcon.blocked, 'Blocked', shortcodes: ['blocked', 'x']),
   warning(107, PlotIcon.warning, 'Warning', shortcodes: ['warning']),
   question(108, PlotIcon.question, 'Question', shortcodes: ['question']),
-  twist(109, PlotIcon.twist, 'Twist', shortcodes: ['twist']),
+  twist(109, PlotIcon.twist, 'Twist', shortcodes: ['twist'], addable: false),
   star(110, PlotIcon.star, 'Star', shortcodes: ['star']),
   idea(111, PlotIcon.idea, 'Idea', shortcodes: ['idea', 'bulb', 'lightbulb']),
-  attachment(
-    112,
-    PlotIcon.attachment,
-    'Attachment',
-    shortcodes: ['attachment', 'paperclip'],
-  ),
-  link(113, PlotIcon.link, 'Link', shortcodes: ['link']),
 
   // Count tags
   yes(
@@ -202,6 +204,7 @@ enum Tag {
   final IconData icon;
   final String name;
   final TagType type;
+  final bool addable;
   final List<String> shortcodes;
   final bool _hidden;
 
@@ -210,11 +213,14 @@ enum Tag {
     this.icon,
     this.name, {
     this.type = TagType.toggle,
+    this.addable = true,
     this.shortcodes = const [],
   }) : _hidden = false;
 
   // Get all tags
-  static List<Tag> getAll() => Tag.values.where((tag) => !tag._hidden).toList();
+  static List<Tag> getAll({bool onlyAddable = false}) => Tag.values
+      .where((tag) => !tag._hidden && (!onlyAddable || tag.addable))
+      .toList();
 
   // Get tag by id or icon
   static Tag? get({int? id, IconData? icon}) {
@@ -229,18 +235,17 @@ enum Tag {
   String toString() => name;
 }
 
-class ActivityTagsConverter
-    extends TypeConverter<Map<Tag, List<Uuid>>?, String?>
+class TagsConverter extends TypeConverter<Map<Tag, List<ActorId>>?, String?>
     with
         JsonTypeConverter2<
-          Map<Tag, List<Uuid>>?,
+          Map<Tag, List<ActorId>>?,
           String?,
           Map<String, dynamic>?
         > {
-  const ActivityTagsConverter();
+  const TagsConverter();
 
   @override
-  Map<Tag, List<Uuid>>? fromSql(String? fromDb) {
+  Map<Tag, List<ActorId>>? fromSql(String? fromDb) {
     if (fromDb == null) return null;
     try {
       final json = jsonDecode(fromDb) as Map<String, dynamic>?;
@@ -253,7 +258,7 @@ class ActivityTagsConverter
   }
 
   @override
-  String? toSql(Map<Tag, List<Uuid>>? value) {
+  String? toSql(Map<Tag, List<ActorId>>? value) {
     if (value == null) return null;
     try {
       return jsonEncode(toJson(value));
@@ -264,15 +269,15 @@ class ActivityTagsConverter
   }
 
   @override
-  Map<Tag, List<Uuid>>? fromJson(Map<String, dynamic>? json) {
+  Map<Tag, List<ActorId>>? fromJson(Map<String, dynamic>? json) {
     if (json == null) return null;
-    final Map<Tag, List<Uuid>> result = {};
+    final Map<Tag, List<ActorId>> result = {};
 
     for (final entry in json.entries) {
       try {
         final id = int.parse(entry.key);
         final userIds = (entry.value as List<dynamic>)
-            .map((dynamic id) => Uuid.fromString(id as String))
+            .map((dynamic id) => ActorId.fromString(id as String))
             .toList();
 
         final tag = Tag.get(id: id);
@@ -291,7 +296,7 @@ class ActivityTagsConverter
   }
 
   @override
-  Map<String, dynamic>? toJson(Map<Tag, List<Uuid>>? value) {
+  Map<String, dynamic>? toJson(Map<Tag, List<ActorId>>? value) {
     if (value == null) return null;
     try {
       final Map<String, List<String>> result = {};

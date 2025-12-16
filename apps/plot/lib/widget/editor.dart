@@ -10,13 +10,119 @@ import 'package:follow_the_leader/follow_the_leader.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/api/twist_api.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/state/theme.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'sliver.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
 import 'editor_mention_popover.dart';
+
+/// Information about a mention extracted from markdown
+class _MentionInfo {
+  const _MentionInfo({required this.name, required this.priorityTwistId});
+
+  final String name;
+  final String priorityTwistId;
+}
+
+/// Extract mention info from markdown before preprocessing
+List<_MentionInfo> _extractMentions(String markdown) {
+  final mentions = <_MentionInfo>[];
+  final mentionPattern = RegExp(
+    r'\[([^\]]+)\]\(#@([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)',
+  );
+
+  for (final match in mentionPattern.allMatches(markdown)) {
+    mentions.add(
+      _MentionInfo(
+        name: match.group(1) ?? '',
+        priorityTwistId: match.group(2) ?? '',
+      ),
+    );
+  }
+
+  return mentions;
+}
+
+/// Preprocess markdown to convert mention formats to plain names for display
+String _preprocessMarkdown(String markdown) {
+  // Convert [Name](#@UUID) format to just Name (no @ prefix)
+  String processed = markdown.replaceAllMapped(
+    RegExp(
+      r'\[([^\]]+)\]\(#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)',
+    ),
+    (match) => match.group(1) ?? '',
+  );
+
+  // Also handle old [#@UUID] format (in case there's old data)
+  processed = processed.replaceAllMapped(
+    RegExp(
+      r'\[#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\]',
+    ),
+    (match) => 'mention', // Generic fallback for old format without name
+  );
+
+  return processed;
+}
+
+/// Find and add attributions for a mention in a document
+void _addMentionAttributions(MutableDocument document, _MentionInfo mention) {
+  for (int i = 0; i < document.nodeCount; i++) {
+    final node = document.getNodeAt(i);
+    if (node is! TextNode) continue;
+
+    final text = node.text.toPlainText();
+    int searchIndex = 0;
+
+    while (true) {
+      final index = text.indexOf(mention.name, searchIndex);
+      if (index == -1) break;
+
+      // Add attribution for this occurrence
+      final attribution = CommittedEditorMentionAttribution(
+        priorityTwistId: mention.priorityTwistId,
+        username: mention.name,
+      );
+
+      // Create a copy of the text and add the attribution
+      final newText = node.text.copy();
+      newText.addAttribution(
+        attribution,
+        SpanRange(index, index + mention.name.length - 1),
+      );
+
+      document.replaceNodeById(
+        node.id,
+        ParagraphNode(id: node.id, text: newText, metadata: node.metadata),
+      );
+
+      searchIndex = index + mention.name.length;
+      break; // Only attribute first occurrence per node
+    }
+  }
+}
+
+/// Deserialize markdown with mentions into a MutableDocument
+MutableDocument _deserializeMarkdownWithMentions(String markdown) {
+  // Extract mentions before preprocessing
+  final mentions = _extractMentions(markdown);
+
+  // Preprocess markdown to remove mention syntax
+  final preprocessed = _preprocessMarkdown(markdown);
+
+  // Deserialize to base document
+  final baseDocument = deserializeMarkdownToDocument(preprocessed);
+  final document = MutableDocument(nodes: baseDocument.toList());
+
+  // Add mention attributions
+  for (final mention in mentions) {
+    _addMentionAttributions(document, mention);
+  }
+
+  return document;
+}
 
 class Editor extends StatefulWidget {
   const Editor({
@@ -27,6 +133,7 @@ class Editor extends StatefulWidget {
     this.focusNode,
     this.twists = const [],
     this.shrinkWrap = true,
+    this.initialContent,
     super.key,
   });
 
@@ -37,6 +144,7 @@ class Editor extends StatefulWidget {
   final FocusNode? focusNode;
   final List<PriorityTwist> twists;
   final bool shrinkWrap;
+  final String? initialContent;
 
   @override
   State<Editor> createState() => EditorState();
@@ -58,6 +166,8 @@ class EditorState extends State<Editor> {
   final OverlayPortalController _mentionOverlayController =
       OverlayPortalController();
   bool _showMentionPopoverAbove = false;
+  final GlobalKey<EditorMentionPopoverState> _mentionPopoverKey =
+      GlobalKey<EditorMentionPopoverState>();
 
   /// Returns the appropriate gesture mode based on the current platform
   DocumentGestureMode get _gestureMode {
@@ -157,7 +267,14 @@ class EditorState extends State<Editor> {
   @override
   void initState() {
     super.initState();
-    _document = MutableDocument.empty();
+
+    // Initialize document with content if provided
+    if (widget.initialContent != null && widget.initialContent!.isNotEmpty) {
+      _document = _deserializeMarkdownWithMentions(widget.initialContent!);
+    } else {
+      _document = MutableDocument.empty();
+    }
+
     _document.addListener(_onDocumentChanged);
     _composer = MutableDocumentComposer();
     _editorFocusNode = widget.focusNode ?? FocusNode();
@@ -178,7 +295,44 @@ class EditorState extends State<Editor> {
     );
     _mentionLeaderLink = LeaderLink();
 
-    clear();
+    // Don't call clear() if we have initial content
+    if (widget.initialContent == null || widget.initialContent!.isEmpty) {
+      clear();
+    }
+  }
+
+  @override
+  void didUpdateWidget(Editor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Update document if initialContent changed from empty to non-empty
+    if (oldWidget.initialContent != widget.initialContent &&
+        widget.initialContent != null &&
+        widget.initialContent!.isNotEmpty) {
+      // Only update if document is currently empty (avoid overwriting user edits)
+      if (_document.nodeCount == 1 &&
+          _document.getNodeAt(0) is ParagraphNode &&
+          (_document.getNodeAt(0) as ParagraphNode).text.toPlainText().isEmpty) {
+        // Deserialize new content
+        final newDocument = _deserializeMarkdownWithMentions(widget.initialContent!);
+
+        // Replace document nodes by removing all and inserting new ones
+        setState(() {
+          // Remove all existing nodes (working backwards to avoid index issues)
+          for (int i = _document.nodeCount - 1; i >= 0; i--) {
+            final node = _document.getNodeAt(i);
+            if (node != null) {
+              _document.deleteNode(node.id);
+            }
+          }
+
+          // Insert all nodes from new document
+          for (final node in newDocument.toList()) {
+            _document.insertNodeAt(_document.nodeCount, node);
+          }
+        });
+      }
+    }
   }
 
   @override
@@ -256,7 +410,7 @@ class EditorState extends State<Editor> {
               ],
               stylesheet: _buildStylesheet(context, isDark),
               selectionStyle: SelectionStyles(
-                selectionColor: context.theme.colors.primary,
+                selectionColor: context.theme.colors.primaryForeground,
               ),
               componentBuilders: [
                 if (widget.hint != null)
@@ -271,6 +425,7 @@ class EditorState extends State<Editor> {
               ],
               keyboardActions: [
                 if (_isEmpty) _bubbleArrowKeys,
+                _handleMentionPopoverNavigation,
                 _shiftEnterToInsertBlockNewline,
                 _handlePunctuationAfterMention,
                 _handleBackspaceOverMention,
@@ -289,9 +444,13 @@ class EditorState extends State<Editor> {
 
   void submit(bool alt) {
     final md = _serializeWithMentions(_document);
-    if (md.trim().isEmpty) return;
     widget.onSubmitted?.call(md, alt: alt);
     clear();
+  }
+
+  /// Get the current editor content as markdown
+  String serialize() {
+    return _serializeWithMentions(_document);
   }
 
   /// Builds a leader overlay at the caret position for the mention popover to follow
@@ -312,6 +471,53 @@ class EditorState extends State<Editor> {
         }
       },
     );
+  }
+
+  /// Keyboard action that handles navigation when mention popover is visible
+  DocumentKeyboardAction get _handleMentionPopoverNavigation {
+    return ({
+      required SuperEditorContext editContext,
+      required KeyEvent keyEvent,
+    }) {
+      if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+        return ExecutionInstruction.continueExecution;
+      }
+
+      // Only handle keys when mention is being composed
+      if (_mentionDetector.composingMention == null) {
+        return ExecutionInstruction.continueExecution;
+      }
+
+      // Get the popover state
+      final popoverState = _mentionPopoverKey.currentState;
+      if (popoverState == null) {
+        return ExecutionInstruction.continueExecution;
+      }
+
+      // Handle navigation keys
+      switch (keyEvent.logicalKey) {
+        case LogicalKeyboardKey.arrowUp:
+          popoverState.navigateUp();
+          return ExecutionInstruction.haltExecution;
+
+        case LogicalKeyboardKey.arrowDown:
+          popoverState.navigateDown();
+          return ExecutionInstruction.haltExecution;
+
+        case LogicalKeyboardKey.enter:
+        case LogicalKeyboardKey.numpadEnter:
+        case LogicalKeyboardKey.tab:
+          popoverState.selectCurrent();
+          return ExecutionInstruction.haltExecution;
+
+        case LogicalKeyboardKey.escape:
+          popoverState.cancel();
+          return ExecutionInstruction.haltExecution;
+
+        default:
+          return ExecutionInstruction.continueExecution;
+      }
+    };
   }
 
   @override
@@ -346,15 +552,26 @@ class EditorState extends State<Editor> {
       return const SizedBox.shrink();
     }
 
+    // Sort twists by most-recently-used
+    final localPrefs = context.read<LocalPreferencesBloc>();
+    final sortedTwists = localPrefs.sortByMentionMru(
+      widget.twists,
+      (twist) => twist.id.toString(),
+    );
+
     return EditorMentionPopover(
+      key: _mentionPopoverKey,
       editorFocusNode: _editorFocusNode,
       leaderLink: _mentionLeaderLink,
-      twists: widget.twists,
+      twists: sortedTwists,
       composingText: mentionBeingComposed.text,
       showAbove: _showMentionPopoverAbove,
       onAgentSelected: (twist) {
+        // Record mention usage for MRU sorting
+        localPrefs.recordMentionUsage(twist.id.toString());
+
         _mentionDetector.completeMention(
-          priorityTwistId: twist.id,
+          priorityTwistId: twist.id.toString(),
           username: twist.name,
         );
         _editorFocusNode.requestFocus();
@@ -496,63 +713,14 @@ class MentionLeaderLayerBuilder implements SuperEditorLayerBuilder {
 
 class Viewer extends StatefulWidget {
   Viewer({required this.markdown, super.key})
-    : _mentions = _extractMentions(markdown),
-      document = deserializeMarkdownToDocument(_preprocessMarkdown(markdown));
+    : document = deserializeMarkdownToDocument(_preprocessMarkdown(markdown));
 
   final String markdown;
   // final void Function()? onTap;
   final Document document;
-  final List<_MentionInfo> _mentions;
-
-  /// Extract mention info before preprocessing
-  static List<_MentionInfo> _extractMentions(String markdown) {
-    final mentions = <_MentionInfo>[];
-    final mentionPattern = RegExp(
-      r'\[([^\]]+)\]\(#@([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)',
-    );
-
-    for (final match in mentionPattern.allMatches(markdown)) {
-      mentions.add(
-        _MentionInfo(
-          name: match.group(1) ?? '',
-          priorityTwistId: match.group(2) ?? '',
-        ),
-      );
-    }
-
-    return mentions;
-  }
-
-  /// Preprocess markdown to convert mention formats to plain names for display
-  static String _preprocessMarkdown(String markdown) {
-    // Convert [Name](#@UUID) format to just Name (no @ prefix)
-    String processed = markdown.replaceAllMapped(
-      RegExp(
-        r'\[([^\]]+)\]\(#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)',
-      ),
-      (match) => match.group(1) ?? '',
-    );
-
-    // Also handle old [#@UUID] format (in case there's old data)
-    processed = processed.replaceAllMapped(
-      RegExp(
-        r'\[#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\]',
-      ),
-      (match) => 'mention', // Generic fallback for old format without name
-    );
-
-    return processed;
-  }
 
   @override
   ViewerState createState() => ViewerState();
-}
-
-class _MentionInfo {
-  const _MentionInfo({required this.name, required this.priorityTwistId});
-
-  final String name;
-  final String priorityTwistId;
 }
 
 class ViewerState extends State<Viewer> {
@@ -580,57 +748,7 @@ class ViewerState extends State<Viewer> {
 
   /// Create document with mention attributions
   MutableDocument _createDocumentWithMentions() {
-    final baseDocument = deserializeMarkdownToDocument(
-      Viewer._preprocessMarkdown(widget.markdown),
-    );
-    final document = MutableDocument(
-      nodes: baseDocument
-          .toList(), // Document implements Iterable<DocumentNode>
-    );
-
-    // Add attributions for mentions
-    for (final mention in widget._mentions) {
-      _addMentionAttributions(document, mention);
-    }
-
-    return document;
-  }
-
-  /// Find and add attributions for a mention in the document
-  void _addMentionAttributions(MutableDocument document, _MentionInfo mention) {
-    for (int i = 0; i < document.nodeCount; i++) {
-      final node = document.getNodeAt(i);
-      if (node is! TextNode) continue;
-
-      final text = node.text.toPlainText();
-      int searchIndex = 0;
-
-      while (true) {
-        final index = text.indexOf(mention.name, searchIndex);
-        if (index == -1) break;
-
-        // Add attribution for this occurrence
-        final attribution = CommittedEditorMentionAttribution(
-          priorityTwistId: mention.priorityTwistId,
-          username: mention.name,
-        );
-
-        // Create a copy of the text and add the attribution
-        final newText = node.text.copy();
-        newText.addAttribution(
-          attribution,
-          SpanRange(index, index + mention.name.length - 1),
-        );
-
-        document.replaceNodeById(
-          node.id,
-          ParagraphNode(id: node.id, text: newText, metadata: node.metadata),
-        );
-
-        searchIndex = index + mention.name.length;
-        break; // Only attribute first occurrence per node
-      }
-    }
+    return _deserializeMarkdownWithMentions(widget.markdown);
   }
 
   @override
@@ -659,7 +777,7 @@ class ViewerState extends State<Viewer> {
         // selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
         selectionStyle: SelectionStyles(
-          selectionColor: context.theme.colors.primary,
+          selectionColor: context.theme.colors.primaryForeground,
         ),
         // contentTapDelegateFactory: (context) =>
         //     ViewerTapHandler(context.document, onTap: widget.onTap),
@@ -684,7 +802,7 @@ TextStyle _inlineTextStyler(
   // Style composing editor mentions (being typed)
   if (attributions.contains(editorMentionComposingAttribution)) {
     style = style.copyWith(
-      color: const Color(0xFF2563EB), // Blue color for composing mentions
+      color: context.theme.colors.primary,
       fontWeight: FontWeight.w500,
     );
   }
@@ -695,7 +813,7 @@ TextStyle _inlineTextStyler(
       .firstOrNull;
   if (committedMention != null) {
     style = style.copyWith(
-      color: const Color(0xFF059669), // Green color for committed mentions
+      color: context.theme.colors.primary,
       fontWeight: FontWeight.w600,
       decoration: TextDecoration.none,
     );

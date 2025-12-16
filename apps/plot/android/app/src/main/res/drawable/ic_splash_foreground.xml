@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <!-- Logo scaled and centered to fit within safe zone (66 dp diameter circle) -->
+  <!-- translateX shifted right for optical centering due to logo's left-heavy visual weight -->
+  <group android:scaleX="0.189" android:scaleY="0.189" android:translateX="33" android:translateY="30">
+    <path android:fillColor="#239870" android:pathData="M 150.47,77.890001 H 79 V 250 H 63.19 V 62.090002 h 87.28 a 30.59,30.59 0 0 1 30.58,30.589999 v 0 A 30.58,30.58 0 0 1 150.47,123.26 H 94.78 v -15.79 h 55.69 a 14.79,14.79 0 0 0 0,-29.579999 z m 45.53,14.79 A 45.42,45.42 0 0 1 150.63,138.05 H 94.78 v 15.8 h 55.81 a 61.17,61.17 0 0 0 61.17,-61.169999 v 0 A 61.17,61.17 0 0 0 150.59,31.510002 H 31.6 V 250 H 47.39 V 47.310002 h 103.2 A 45.42,45.42 0 0 1 196,92.680001 Z M 149.47,5.4007303e-7 H 0 V 250 H 15.8 V 15.800002 H 149.47 A 76.88,76.88 0 0 1 203.83,147 76.37,76.37 0 0 1 149.47,169.52 H 94.78 v 15.8 h 54.69 a 92.68,92.68 0 0 0 92.68,-92.679999 v 0 A 92.67,92.67 0 0 0 149.47,5.4007303e-7 Z"/>
+  </group>
+</vector>

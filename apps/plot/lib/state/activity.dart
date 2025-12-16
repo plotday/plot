@@ -13,6 +13,7 @@ part 'activity_state.dart';
 class ActivityBloc extends Cubit<ActivityState> {
   ActivityBloc({required Activity activity})
     : _subscriptions = [],
+      _tagsSubscription = null,
       super(ActivityState(activity: activity)) {
     _loadActivity();
   }
@@ -21,19 +22,19 @@ class ActivityBloc extends Cubit<ActivityState> {
     final newShowArchived = !state.showArchived;
     log.info('Toggling showArchived to $newShowArchived');
     emit(state.copyWith(showArchived: newShowArchived));
-    _loadActivities();
+    _loadNotes();
   }
 
   void updateFilter(List<Tag> filter) {
     log.info('Updating filter to $filter');
     emit(state.copyWith(filter: filter));
-    _loadActivities();
+    _loadNotes();
   }
 
   void updateSearch(String search) {
     log.info('Updating search to "$search"');
     emit(state.copyWith(search: search));
-    _loadActivities();
+    _loadNotes();
   }
 
   @override
@@ -41,32 +42,49 @@ class ActivityBloc extends Cubit<ActivityState> {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
+    _tagsSubscription?.cancel();
     return super.close();
   }
 
-  Future<void> save(Activity activity) async {
-    await activity.save();
+  Future<void> save(Note note) async {
+    await note.save();
   }
 
-  Future<void> add(Activity activity) async {
-    emit(
-      state.copyWith(
-        // Create a new draft
-        draft: Activity(
-          priority: state.activity.priority,
-          parent: state.activity,
-          draft: true,
-        ),
-      ),
+  /// Updates the draft note optimistically and saves it to the database.
+  /// This provides instant UI updates while persisting changes.
+  Future<void> updateDraft(Note draft) async {
+    emit(state.copyWith(draft: draft));
+    await draft.save();
+  }
+
+  /// Adds a note by converting the current draft to a non-draft.
+  /// Creates a fresh draft note for the activity afterward.
+  Future<void> add(Note note) async {
+    // Convert the draft to a non-draft
+    note = note.copyWith(draft: false);
+    await note.save();
+
+    // Create fresh draft for the activity (in-memory only, will be saved when content is added)
+    final newDraft = Note(
+      id: Uuid.generate(),
+      activityId: state.activity.id,
+      authorId: Base.actorId,
+      draft: true,
+      private: false,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
     );
-    activity = activity.copyWith(draft: false);
-    await activity.save();
+    // Don't save empty draft - it will be saved when content is added via updateDraft()
+    emit(state.copyWith(draft: newDraft));
   }
 
   void _loadActivity() {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
+
+    // Load draft note from database
+    _loadDraftNote();
 
     _subscriptions.add(
       Activity.watchOne(state.activity.id).listen((watchedActivity) {
@@ -75,65 +93,100 @@ class ActivityBloc extends Cubit<ActivityState> {
       }),
     );
 
-    _loadActivities();
+    // Watch tags for the activity
+    _tagsSubscription?.cancel();
+    _tagsSubscription = Note.watchTagsForActivity(state.activity.id).listen((
+      tags,
+    ) {
+      // Calculate tag suggestions: common tags first, then all other tags
+      const actionTags = [Tag.now, Tag.done, Tag.later, Tag.archived];
+
+      // Common tags (excluding action tags)
+      final commonTagsFiltered = tags
+          .where(
+            (tagData) => !actionTags.contains(tagData.$1) && tagData.$1.addable,
+          )
+          .map((tagData) => tagData.$1)
+          .toList();
+
+      // All tags excluding action tags and common tags
+      final commonTagSet = commonTagsFiltered.toSet();
+      final otherTags = Tag.getAll(onlyAddable: true)
+          .where(
+            (tag) => !actionTags.contains(tag) && !commonTagSet.contains(tag),
+          )
+          .toList();
+
+      // Combine: common tags first, then other tags
+      final tagSuggestions = [...commonTagsFiltered, ...otherTags];
+
+      emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
+    });
+
+    _loadNotes();
   }
 
-  void _loadActivities() {
-    log.info('Getting activities for ${state.activity.path}');
+  /// Loads draft note from database for the current activity
+  Future<void> _loadDraftNote() async {
+    final existingDraft = await Note.getDraftByActivity(state.activity.id);
+    if (existingDraft != null) {
+      emit(state.copyWith(draft: existingDraft));
+    }
+  }
+
+  void _loadNotes() {
+    log.info('Getting notes for activity ${state.activity.id}');
 
     _subscriptions.add(
-      Activity.watch(
-        priorityId: state.activity.priority.id,
-        path: state.activity.path,
-        deleted: state.showArchived,
+      Note.watch(
+        state.activity.id,
+        archived: state.showArchived,
+        draft: false,
         filter: state.filter.isNotEmpty ? state.filter : null,
         search: state.search.isNotEmpty ? state.search : null,
-      ).listen((activities) {
-        // Sort activities by creation/completion date in reverse chronological order
-        final sortedActivities = List<Activity>.from(activities);
-        sortedActivities.sort((a, b) {
-          final aDate = a.doneAt ?? a.createdAt;
-          final bDate = b.doneAt ?? b.createdAt;
-          return bDate.compareTo(aDate); // Reverse chronological order
-        });
+      ).listen((notes) {
+        // Sort notes by creation date in reverse chronological order (newest first)
+        final sortedNotes = List<Note>.from(notes);
+        sortedNotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-        // Group activities by date for headers
-        final groupedActivities = <ActivityDateGroup>[];
+        // Group notes by date for headers
+        final groupedNotes = <NoteDateGroup>[];
         Date? currentDate;
-        List<Activity> currentGroup = [];
+        List<Note> currentGroup = [];
 
-        for (final activity in sortedActivities) {
-          final activityDate = (activity.doneAt ?? activity.createdAt).toDate();
+        for (final note in sortedNotes) {
+          final noteDate = note.createdAt.toDate();
 
-          if (currentDate != activityDate) {
+          if (currentDate != noteDate) {
             // Save previous group if it exists
             if (currentDate != null && currentGroup.isNotEmpty) {
-              groupedActivities.add(
-                ActivityDateGroup(date: currentDate, activities: currentGroup),
+              groupedNotes.add(
+                NoteDateGroup(date: currentDate, notes: currentGroup),
               );
             }
 
             // Start new group
-            currentDate = activityDate;
-            currentGroup = [activity];
+            currentDate = noteDate;
+            currentGroup = [note];
           } else {
-            currentGroup.add(activity);
+            currentGroup.add(note);
           }
         }
 
         // Add the last group
         if (currentDate != null && currentGroup.isNotEmpty) {
-          groupedActivities.add(
-            ActivityDateGroup(date: currentDate, activities: currentGroup),
+          groupedNotes.add(
+            NoteDateGroup(date: currentDate, notes: currentGroup),
           );
         }
 
-        emit(state.copyWith(activityGroups: groupedActivities));
+        emit(state.copyWith(noteGroups: groupedNotes));
       }),
     );
   }
 
   final List<StreamSubscription<void>> _subscriptions;
+  StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
 }
 
 class ActivityBlocProvider extends StatefulWidget {

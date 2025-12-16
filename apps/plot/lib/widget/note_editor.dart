@@ -1,0 +1,170 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import 'package:plot/store/store.dart';
+import 'package:plot/state/activity.dart';
+import 'package:plot/state/priority.dart';
+import 'package:plot/widget/widget.dart';
+import 'package:plot/command/command.dart';
+
+class NoteEditor extends StatefulWidget {
+  const NoteEditor({required this.draft, this.expand = false, super.key});
+
+  final Note draft;
+  final bool expand;
+
+  @override
+  State<NoteEditor> createState() => NoteEditorState();
+}
+
+class NoteEditorState extends State<NoteEditor> {
+  final GlobalKey<EditorState> _editorKey = GlobalKey<EditorState>();
+  final GlobalKey<EditableAreaState> _editableAreaKey =
+      GlobalKey<EditableAreaState>();
+  bool _isEmpty = true;
+  String _lastSavedContent = '';
+  FocusNode? _currentFocusNode;
+
+  /// Request focus on the editor
+  void focus() {
+    _editableAreaKey.currentState?.focus();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _lastSavedContent = widget.draft.content ?? '';
+  }
+
+  @override
+  void didUpdateWidget(NoteEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.draft.content != oldWidget.draft.content) {
+      _lastSavedContent = widget.draft.content ?? '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _currentFocusNode?.removeListener(_onFocusChange);
+    super.dispose();
+  }
+
+  @override
+  void deactivate() {
+    // Save draft when navigating away
+    final editorState = _editorKey.currentState;
+    if (editorState != null) {
+      final content = editorState.serialize();
+      _saveDraftNote(content);
+    }
+    super.deactivate();
+  }
+
+  void _onFocusChange() {
+    if (_currentFocusNode != null && !_currentFocusNode!.hasFocus) {
+      // Focus lost (blur) - save draft
+      final editorState = _editorKey.currentState;
+      if (editorState != null) {
+        final content = editorState.serialize();
+        _saveDraftNote(content);
+      }
+    }
+  }
+
+  Future<void> _saveDraftNote(String content) async {
+    // Only save if content has changed
+    if (content == _lastSavedContent) return;
+
+    final activityBloc = context.read<ActivityBloc>();
+    final normalizedContent = content.trim().isEmpty ? null : content;
+
+    // Only save if:
+    // 1. Content is not empty, OR
+    // 2. Content was cleared (draft had content before, now doesn't)
+    final hadContent = _lastSavedContent.trim().isNotEmpty;
+    final hasContent = normalizedContent != null;
+
+    if (hasContent || hadContent) {
+      final updatedDraft = widget.draft.copyWith(content: normalizedContent);
+      await activityBloc.updateDraft(updatedDraft);
+      _lastSavedContent = content;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<PriorityBloc, PriorityState>(
+      builder: (context, state) {
+        return EditableArea(
+          key: _editableAreaKey,
+          position: EditableAreaPosition.bottom,
+          builder: (context, focusNode) {
+            // Set up focus listener once
+            if (_currentFocusNode != focusNode) {
+              _currentFocusNode?.removeListener(_onFocusChange);
+              _currentFocusNode = focusNode;
+              _currentFocusNode?.addListener(_onFocusChange);
+            }
+
+            final editor = Editor(
+              key: _editorKey,
+              hint: 'Add a note',
+              autofocus: true,
+              focusNode: focusNode,
+              twists: state.twists,
+              shrinkWrap: !widget.expand,
+              initialContent: widget.draft.content,
+              onChange: (value) {
+                setState(() {
+                  _isEmpty = value.trim().isEmpty;
+                });
+              },
+              onSubmitted: (body, {bool alt = false}) async {
+                await context.run(AddNote(finalizeDraft(body)));
+              },
+            );
+            return Column(
+              mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 8,
+              children: [
+                if (widget.expand)
+                  Expanded(
+                    key: const ValueKey('editor_expanded'),
+                    child: editor,
+                  )
+                else
+                  editor,
+                // Bottom bar - stays at bottom, above keyboard
+                Row(
+                  children: [
+                    const Spacer(),
+                    // Right side: Save button
+                    Button.icon(
+                      CommandWrapper(
+                        AddNote(Future.value(widget.draft)),
+                        run: (action, context) async {
+                          _editorKey.currentState?.submit(false);
+                          return const CommandDone();
+                        },
+                      ),
+                      style: ButtonStyle.primary,
+                      enabled: !_isEmpty,
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<Note> finalizeDraft(String body) async {
+    return widget.draft.copyWith(
+      content: body.isEmpty ? null : body,
+      draft: false,
+    );
+  }
+}

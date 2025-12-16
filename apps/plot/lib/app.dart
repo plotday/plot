@@ -1,5 +1,6 @@
 import 'package:plot/state/root_provider.dart';
 import 'package:plot/state/theme.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:flutter/material.dart' as material;
@@ -20,8 +21,11 @@ class App extends StatefulWidget {
 class AppState extends State<App> {
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => ThemeBloc(),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(create: (_) => ThemeBloc()),
+        BlocProvider(create: (_) => LocalPreferencesBloc()),
+      ],
       child: Directionality(
         textDirection: TextDirection.ltr,
         child: ColourScheme(
@@ -50,6 +54,9 @@ class AppState extends State<App> {
                         builder: (theme, darkTheme) =>
                             material.MaterialApp.router(
                               title: 'Plot',
+                              localizationsDelegates:
+                                  FLocalizations.localizationsDelegates,
+                              supportedLocales: FLocalizations.supportedLocales,
                               theme: theme,
                               darkTheme: darkTheme,
                               routerConfig: routerConfig,
@@ -57,6 +64,9 @@ class AppState extends State<App> {
                       ),
                       macOSBuilder: (context) => macos.MacosApp.router(
                         title: 'Plot',
+                        localizationsDelegates:
+                            FLocalizations.localizationsDelegates,
+                        supportedLocales: FLocalizations.supportedLocales,
                         theme:
                             (context.colour.brightness == Brightness.light
                                     ? macos.MacosThemeData.light()
@@ -84,8 +94,11 @@ class ErrorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => ThemeBloc(),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(create: (_) => ThemeBloc()),
+        BlocProvider(create: (_) => LocalPreferencesBloc()),
+      ],
       child: PlatformBuilder(
         builder: (context) => material.MaterialApp(
           home: ColourScheme(

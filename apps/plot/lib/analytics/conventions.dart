@@ -88,6 +88,7 @@ enum EventCategory {
 /// Common event objects
 enum EventObject {
   activity('activity'),
+  note('note'),
   priority('priority'),
   twist('twist'),
   tag('tag'),
@@ -118,6 +119,7 @@ enum EventAction {
   finished('finished'),
   scheduled('scheduled'),
   rescheduled('rescheduled'),
+  unscheduled('unscheduled'),
   pinned('pinned'),
   unpinned('unpinned'),
   tagged('tagged'),

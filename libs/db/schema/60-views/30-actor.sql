@@ -47,10 +47,10 @@ CREATE OR REPLACE FUNCTION public.actor (activity)
         actor.id = $1.author_id
 $function$;
 
-CREATE OR REPLACE FUNCTION public.actor (user_activity)
-    RETURNS SETOF actor ROWS 1
+CREATE OR REPLACE FUNCTION public.actor (note)
+    RETURNS SETOF actor
     LANGUAGE sql
-    STABLE
+    STABLE ROWS 1
     AS $function$
     SELECT
         actor.*
@@ -58,5 +58,32 @@ CREATE OR REPLACE FUNCTION public.actor (user_activity)
         actor
     WHERE
         actor.id = $1.author_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.actor (user_activity)
+    RETURNS SETOF actor
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        actor.*
+    FROM
+        actor
+    WHERE
+        actor.id = $1.author_id
+$function$;
+
+-- Computed relationship for activity assignee
+CREATE OR REPLACE FUNCTION public.assignee (activity)
+    RETURNS SETOF actor
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        actor.*
+    FROM
+        actor
+    WHERE
+        actor.id = $1.assignee_id
 $function$;
 

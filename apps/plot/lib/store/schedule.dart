@@ -10,7 +10,7 @@ class Schedule extends Equatable {
   static Stream<Schedule> watch(
     DateRange range, {
     Priority? context,
-    bool? deleted = false,
+    bool? archived = false,
     List<Tag>? filter,
     String? search,
   }) {
@@ -21,7 +21,7 @@ class Schedule extends Equatable {
           ? ScheduledDay._watchToday(
               today,
               context: context,
-              deleted: deleted,
+              archived: archived,
               filter: filter,
               search: search,
             )
@@ -32,7 +32,7 @@ class Schedule extends Equatable {
           range,
           today,
           context: context,
-          deleted: deleted,
+          archived: archived,
           filter: filter,
           search: search,
         ),
@@ -40,9 +40,9 @@ class Schedule extends Equatable {
         Activity.watchPrevious(
           range.start,
           context: context,
-          deleted: deleted,
+          archived: archived,
         ).map((activity) => activity?.agendaAt.toDate()),
-        Activity.watchNext(range.end, context: context, deleted: deleted).map((
+        Activity.watchNext(range.end, context: context, archived: archived).map((
           activity,
         ) {
           return activity?.agendaAt.toDate();
@@ -51,8 +51,8 @@ class Schedule extends Equatable {
           final result = Map<Date, ScheduledDay>.from(rangeMap);
           // Only include today if it has events or activities and we have a schedule
           if (todaySchedule != null &&
-              (todaySchedule.events.isNotEmpty ||
-                  todaySchedule.activities.isNotEmpty)) {
+              (todaySchedule.scheduled.isNotEmpty ||
+                  todaySchedule.unscheduled.isNotEmpty)) {
             result[today] = todaySchedule;
           }
           final sortedEntries = result.entries.toList()
@@ -92,11 +92,18 @@ class Schedule extends Equatable {
           return Schedule(days: days, previous: previous, next: next);
         },
       ).distinct().doOnData((schedule) {
-        log.fine("Range = $range, Previous = ${schedule.previous}, Next = ${schedule.next}");
+        log.fine(
+          "Range = $range, Previous = ${schedule.previous}, Next = ${schedule.next}",
+        );
       });
     });
   }
 
+  /// Tightens next/previous activity with next/previous recurrence.
+  ///
+  /// When reverse=true, searches backwards from range.start to find the latest previous
+  /// occurrence. When reverse=false, searches forwards from range.end to find the earliest
+  /// next occurrence. Stops early if the boundary is already within a week of the range edge.
   static Date? _tightenNextWithOccurrences(
     Date? next, {
     required Map<Date, ScheduledDay> days,
@@ -104,7 +111,7 @@ class Schedule extends Equatable {
     bool reverse = false,
   }) {
     for (final day in days.values) {
-      for (final activity in [...day.events, ...day.activities]) {
+      for (final activity in [...day.scheduled, ...day.unscheduled]) {
         // Stop if boundary is within a week of range boundaries
         if (reverse) {
           // For previous: stop if boundary is within a week of range start
@@ -142,7 +149,7 @@ class Schedule extends Equatable {
     DateRange range,
     Date today, {
     Priority? context,
-    bool? deleted = false,
+    bool? archived = false,
     List<Tag>? filter,
     String? search,
   }) {
@@ -150,8 +157,7 @@ class Schedule extends Equatable {
       Activity.watch(
         range: range,
         priorityPath: context?.path,
-        depth: 0,
-        deleted: deleted,
+        archived: archived,
         filter: filter,
         search: search,
       ),
@@ -159,10 +165,22 @@ class Schedule extends Equatable {
       (List<Activity> allActivities, Priority defaultPriority) {
         Map<Date, ScheduledDay> days = {};
 
+        // Filter activities: include all events, but only non-events matching context
+        final filteredActivities = allActivities.where((activity) {
+          // Always include events
+          if (activity.type == ActivityType.event) return true;
+
+          // For non-events, only include if they match the context
+          if (context == null) return true; // No context filter
+
+          final activityPath = activity.priority.path;
+          return activityPath == context.path ||
+                 activityPath.isChild(context.path);
+        }).toList();
+
         // Group activities by date
         Map<Date, List<Activity>> activitiesByDate = {};
-        Map<Date, List<Activity>> eventsByDate = {};
-        for (final activity in allActivities) {
+        for (final activity in filteredActivities) {
           final activityDate = activity.agendaAt.toDate();
           // Skip today if it's in the range - it will be handled by _watchToday
           if (activityDate == today) continue;
@@ -173,7 +191,7 @@ class Schedule extends Equatable {
         }
 
         // Combine all unique dates and create ScheduledDay objects
-        final allDates = {...eventsByDate.keys, ...activitiesByDate.keys};
+        final allDates = activitiesByDate.keys;
         for (final date in allDates) {
           final dayActivities = activitiesByDate[date] ?? [];
 
@@ -186,7 +204,7 @@ class Schedule extends Equatable {
 
         return days;
       },
-    );
+    ).distinct();
   }
 
   const Schedule({
@@ -211,7 +229,7 @@ class ScheduledDay extends Equatable {
   static Stream<ScheduledDay> _watchToday(
     Date today, {
     Priority? context,
-    bool? deleted = false,
+    bool? archived = false,
     List<Tag>? filter,
     String? search,
   }) {
@@ -219,8 +237,7 @@ class ScheduledDay extends Equatable {
       Activity.watch(
         range: today.toDateRange(),
         priorityPath: context?.path,
-        depth: 0,
-        deleted: deleted,
+        archived: archived,
         filter: filter,
         search: search,
       ),
@@ -233,31 +250,53 @@ class ScheduledDay extends Equatable {
         final defaultPriority = result.$2;
         final now = DateTime.now();
         final currentEvent = allActivities.any(
-          (a) => a.at?.includes(now) == true,
+          (a) => a.type == ActivityType.event && a.at?.includes(now) == true,
         );
         DateTime? expiry;
         if (currentEvent) {
           // Expire every minute on the minute
           expiry = now + Duration(seconds: 60 - now.second);
         } else {
-          // Find the earliest event start or end following now
+          // Find the earliest event start or end following now (including boundary moments)
           expiry = allActivities.fold(
             null,
-            (DateTime? next, Activity a) =>
-                a.at?.start?.isAfter(now) == true &&
-                    (next == null || next.isAfter(a.at!.start!))
-                ? a.at!.start
-                : a.at?.end?.isAfter(now) == true &&
-                      (next == null || next.isAfter(a.at!.end!))
-                ? a.at!.end
-                : next,
+            (DateTime? next, Activity a) {
+              // Check event start (after now or at same moment for boundary)
+              if (a.at?.start != null &&
+                  (a.at!.start!.isAfter(now) ||
+                      a.at!.start!.isAtSameMomentAs(now)) &&
+                  (next == null || next.isAfter(a.at!.start!))) {
+                return a.at!.start;
+              }
+              // Check event end (after now or at same moment for boundary)
+              if (a.at?.end != null &&
+                  (a.at!.end!.isAfter(now) ||
+                      a.at!.end!.isAtSameMomentAs(now)) &&
+                  (next == null || next.isAfter(a.at!.end!))) {
+                return a.at!.end;
+              }
+              return next;
+            },
           );
         }
 
         List<Activity> dayActivities = [];
         for (final activity in allActivities) {
           if (activity.agendaAt.toDate() == today) {
-            dayActivities.add(activity);
+            // Include all events, but only non-events matching context
+            if (activity.type == ActivityType.event) {
+              dayActivities.add(activity);
+            } else if (context == null) {
+              // No context filter
+              dayActivities.add(activity);
+            } else {
+              // For non-events, only include if they match the context
+              final activityPath = activity.priority.path;
+              if (activityPath == context.path ||
+                  activityPath.isChild(context.path)) {
+                dayActivities.add(activity);
+              }
+            }
           }
         }
 
@@ -273,65 +312,29 @@ class ScheduledDay extends Equatable {
     );
   }
 
-  ScheduledDay._({
+  const ScheduledDay._({
     required this.date,
-    required List<Activity> activities,
-    required Priority defaultPriority,
-  }) : activities = List.unmodifiable(activities.where((a) => a.at == null)),
-       events = _addGaps(
-         date,
-         activities.where((a) => a.at != null).toList(),
-         defaultPriority,
-       );
-
-  static List<Activity> _addGaps(
-    Date date,
-    List<Activity> activities,
-    Priority defaultPriority,
-  ) {
-    List<Activity> eventsWithGaps = [];
-    Activity? previous;
-    for (final activity in activities) {
-      // Handle gap between activities
-      if (activity.at!.start?.isAfter(previous?.at?.end ?? date.toStart()) ==
-          true) {
-        eventsWithGaps.add(
-          Activity(
-            type: ActivityType.event,
-            priority: defaultPriority,
-            at: DateTimeRange(
-              previous?.at?.start ?? date.toStart(),
-              activity.at!.start!,
-            ),
-            draft: true,
-          ),
-        );
-      }
-      eventsWithGaps.add(activity);
-      previous = activity;
-    }
-    // Handle gap after last activity
-    if (previous == null || previous.at?.end?.isBefore(date.toEnd()) != false) {
-      eventsWithGaps.add(
-        Activity(
-          type: ActivityType.event,
-          priority: defaultPriority,
-          at: DateTimeRange(previous?.at?.end ?? date.toStart(), date.toEnd()),
-          draft: true,
-        ),
-      );
-    }
-    return eventsWithGaps;
-  }
+    required this.activities,
+    // defaultPriority parameter kept for backward compatibility but no longer used
+    // since gaps are now computed in PriorityState._makeAgenda
+    Priority? defaultPriority,
+  });
 
   final Date date;
-  final List<Activity> events;
   final List<Activity> activities;
 
+  /// Events for the day (excluding gaps).
+  List<Activity> get scheduled =>
+      List.unmodifiable(activities.where((a) => a.type == .event));
+
+  /// Everything but events.
+  List<Activity> get unscheduled =>
+      List.unmodifiable(activities.where((a) => a.type != .event));
+
   Activity getAt(DateTime time) {
-    return events.firstWhere((e) => e.at?.includes(time) == true);
+    return scheduled.firstWhere((e) => e.at?.includes(time) == true);
   }
 
   @override
-  List<Object> get props => [date, events, activities];
+  List<Object> get props => [date, scheduled, unscheduled];
 }

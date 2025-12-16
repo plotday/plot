@@ -83,12 +83,13 @@ class CommandWrapper extends Command {
     Value<IconData?> icon = const Value<IconData?>.absent(),
     Value<IconData?> hoverIcon = const Value<IconData?>.absent(),
     String? title,
+    Value<String?> subtitle = const Value<String?>.absent(),
   }) : _run = run,
        super(
          title: title ?? command.title,
          eventObject: command.eventObject,
          eventAction: command.eventAction,
-         subtitle: command.subtitle,
+         subtitle: subtitle.or(command.subtitle),
          icon: icon.or(command.icon),
          hoverIcon: hoverIcon.or(command.hoverIcon),
          shortcut: command.shortcut,
@@ -188,8 +189,37 @@ extension BuildContextCommandExtension on BuildContext {
         errorMessage = result.message;
       }
 
-      // TODO show toast for CommandMessage
-      if (result is CommandRoute) {
+      if (result is CommandMessage) {
+        if (result.isError) {
+          final colors = theme.colors;
+          showFToast(
+            context: this,
+            alignment: FToastAlignment.topEnd,
+            title: const Text('Error'),
+            description: Text(result.message),
+            duration: const Duration(seconds: 5),
+            style: (style) => style.copyWith(
+              decoration: style.decoration.copyWith(color: colors.destructive),
+              iconStyle: style.iconStyle.copyWith(
+                color: colors.destructiveForeground,
+              ),
+              titleTextStyle: style.titleTextStyle.copyWith(
+                color: colors.destructiveForeground,
+              ),
+              descriptionTextStyle: style.descriptionTextStyle.copyWith(
+                color: colors.destructiveForeground,
+              ),
+            ),
+          );
+        } else {
+          showFToast(
+            context: this,
+            alignment: FToastAlignment.topEnd,
+            title: Text(result.message),
+            duration: const Duration(seconds: 3),
+          );
+        }
+      } else if (result is CommandRoute) {
         await result.go(this);
       }
     } catch (e, stackTrace) {
@@ -239,11 +269,12 @@ extension BuildContextCommandExtension on BuildContext {
 }
 
 abstract class CommandGroup {
-  CommandGroup({this.title, this.subtitle, this.infoBuilder});
+  CommandGroup({this.title, this.subtitle, this.infoBuilder, this.shortcut});
 
   final String? title;
   final String? subtitle; // count
   final Widget Function(BuildContext)? infoBuilder;
+  final ShortcutActivator? shortcut;
 
   Future<List<Command>> list({String? search});
 
@@ -284,6 +315,7 @@ class StaticCommandGroup extends CommandGroup {
     super.title,
     super.subtitle,
     super.infoBuilder,
+    super.shortcut,
     required this.commands,
   });
 
@@ -326,6 +358,7 @@ class Commands {
             title: group.title,
             subtitle: group.subtitle,
             infoBuilder: group.infoBuilder,
+            shortcut: group.shortcut,
             commands: matchingCommands,
           ),
         );
@@ -352,29 +385,61 @@ class CommandScopeState extends State<CommandScope> {
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: widget.commands.expand((group) => group.commands).fold(
-        <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
-              Commands(
-                prompt: 'Run a command',
-                groups: CommandRegistry.of(context).commands,
-              ).show(context),
-        },
-        (bindings, command) => command.shortcut == null
-            ? bindings
-            : {
-                ...bindings,
-                command.shortcut!: () {
-                  try {
-                    context.run(command);
-                  } catch (e, t) {
-                    log.warning('Error running command', e, t);
-                    rethrow;
-                  }
+    // Collect shortcuts from individual commands
+    final commandBindings = widget.commands
+        .expand((group) => group.commands)
+        .fold<Map<ShortcutActivator, VoidCallback>>(
+          {},
+          (bindings, command) => command.shortcut == null
+              ? bindings
+              : {
+                  ...bindings,
+                  command.shortcut!: () {
+                    try {
+                      context.run(command);
+                    } catch (e, t) {
+                      log.warning('Error running command', e, t);
+                      rethrow;
+                    }
+                  },
                 },
-              },
-      ),
+        );
+
+    // Collect shortcuts from command groups
+    final groupBindings = widget.commands
+        .fold<Map<ShortcutActivator, VoidCallback>>(
+          {},
+          (bindings, group) => group.shortcut == null
+              ? bindings
+              : {
+                  ...bindings,
+                  group.shortcut!: () {
+                    try {
+                      // Open CommandModal with only this group's commands
+                      Commands(
+                        prompt: group.title ?? 'Run a command',
+                        groups: [group],
+                      ).show(context);
+                    } catch (e, t) {
+                      log.warning('Error opening command group', e, t);
+                      rethrow;
+                    }
+                  },
+                },
+        );
+
+    return CallbackShortcuts(
+      bindings: {
+        // Global Cmd+K to open all commands
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
+            Commands(
+              prompt: 'Run a command',
+              groups: CommandRegistry.of(context).commands,
+            ).show(context),
+        // Merge command shortcuts and group shortcuts
+        ...commandBindings,
+        ...groupBindings,
+      },
       child: widget.child,
     );
   }

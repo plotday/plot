@@ -19,7 +19,7 @@ const ToolSchema: z.ZodType<{
 );
 
 const DatabaseUpdateRequestSchema = z.object({
-  type: z.enum(["activity", "priority", "session"]),
+  type: z.enum(["activity", "priority", "session", "note", "priority_twist"]),
   event: z.enum(["created", "updated", "deleted"]),
   item: ItemSchema,
   previous: ItemSchema.optional(),

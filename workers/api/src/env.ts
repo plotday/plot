@@ -8,6 +8,7 @@ import { type Storage } from "./state/storage";
 import { type Usage } from "./state/usage";
 import {
   type ActivityItem,
+  type NoteItem,
   type PriorityItem,
   type SessionItem,
   type UpdateItem,
@@ -16,7 +17,7 @@ import {
 export type TwistEnvironment = "personal" | "private" | "review" | "public";
 
 export type UpdateMessage = {
-  type: "activity" | "priority" | "session";
+  type: "activity" | "priority" | "session" | "note" | "priority_twist";
   event?: "created" | "updated" | "deleted";
   item: UpdateItem;
   previous?: UpdateItem;
@@ -36,6 +37,11 @@ export type UpdateMessage = {
 export type ActivityUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
   type: "activity";
   item: ActivityItem;
+};
+
+export type NoteUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
+  type: "note";
+  item: NoteItem;
 };
 
 export type PriorityUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {

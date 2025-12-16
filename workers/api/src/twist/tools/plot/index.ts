@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@plotday/db";
 import {
   type Activity,
   type ActivityMeta,
@@ -5,7 +6,10 @@ import {
   type Actor,
   type ActorId,
   type NewActivity,
+  type NewActivityWithNotes,
   type NewPriority,
+  type Note,
+  type NoteUpdate,
   type Priority,
 } from "@plotday/twister/plot";
 import {
@@ -14,10 +18,9 @@ import {
   type Plot as IPlot,
   PriorityAccess,
 } from "@plotday/twister/tools/plot";
-import type { SupabaseClient } from "@plotday/db";
 
 import type { Bindings } from "../../../env";
-import { type ActivityItem } from "../../../types";
+import { type ActivityItem, type NoteItem } from "../../../types";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
 import { AI } from "../ai";
@@ -26,6 +29,7 @@ import * as activityOps from "./activity";
 import * as contactsOps from "./contacts";
 import {
   buildActivityFromDbRecord,
+  buildNoteFromDbRecord,
   calculateTagsAdded,
   calculateTagsRemoved,
 } from "./db";
@@ -34,6 +38,52 @@ import * as priorityOps from "./priority";
 
 export type PlotOptions = typeof IPlot.Options;
 
+/**
+ * Worker-level cache for activity metadata to avoid database queries.
+ * This cache persists across HTTP requests within the same worker instance,
+ * allowing dispatch() to cache data that updateActivity() can later use.
+ *
+ * Key format: `${activityId}:${priorityTwistId}`
+ * Entries expire after 30 seconds to prevent unbounded growth.
+ */
+const ACTIVITY_METADATA_CACHE = new Map<
+  string,
+  {
+    created_by: string | null;
+    mentions: string[] | null;
+    priority_id: string;
+    triggering_note_mentions?: string[] | null;
+    timestamp: number;
+  }
+>();
+
+const CACHE_TTL_MS = 30_000; // 30 seconds
+
+/**
+ * Cleans up expired entries from the worker-level cache.
+ * Called periodically to prevent memory leaks.
+ */
+function cleanupExpiredCacheEntries(): void {
+  const now = Date.now();
+  for (const [key, value] of ACTIVITY_METADATA_CACHE.entries()) {
+    if (now - value.timestamp > CACHE_TTL_MS) {
+      ACTIVITY_METADATA_CACHE.delete(key);
+    }
+  }
+}
+
+/**
+ * Getter for the worker-level activity metadata cache.
+ * Exported to allow other modules (e.g., activity.ts) to access the cache.
+ */
+export function getActivityCache() {
+  return ACTIVITY_METADATA_CACHE;
+}
+
+export type DispatchItem =
+  | { itemType: "activity"; item: ActivityItem; previous?: ActivityItem }
+  | { itemType: "note"; item: NoteItem; previous?: NoteItem };
+
 export class Plot extends Tool implements IPlot {
   public supabase: SupabaseClient;
   public priorityId: string;
@@ -41,6 +91,7 @@ export class Plot extends Tool implements IPlot {
   public plotOptions?: typeof IPlot.Options;
   public env?: Bindings;
   public ai: AI;
+  private _actor?: Actor;
 
   /**
    * Returns permissions required by this Plot tool instance.
@@ -51,20 +102,20 @@ export class Plot extends Tool implements IPlot {
     const perms: ToolPermission[] = [];
 
     if (options?.activity) {
-      // Can create new threads
+      // Can create new activities
       if (options.activity.access === ActivityAccess.Create) {
         perms.push({
           domain: "plot",
-          entity: "thread:new",
+          entity: "activity:new",
           flags: ["write"],
         });
       }
 
-      // Can respond in threads where mentioned
-      if (options.activity.intents?.length) {
+      // Can respond in activities where mentioned
+      if (options.note?.intents?.length) {
         perms.push({
           domain: "plot",
-          entity: "thread:mentioned",
+          entity: "activity:mentioned",
           flags: ["read", "write", "update"],
         });
       }
@@ -124,57 +175,126 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Dispatches activity events to configured callbacks.
+   * Gets the Actor for this twist, fetching and caching it on first access.
+   * @returns The Actor object for the twist
+   */
+  async getActor(): Promise<Actor> {
+    if (!this._actor) {
+      const { data, error } = await this.supabase
+        .from("actor")
+        .select("id, name, type, email")
+        .eq("id", this.priorityTwistId)
+        .single();
+
+      if (error || !data) {
+        throw new Error(
+          `Failed to fetch twist actor: ${error?.message ?? "Actor not found"}`
+        );
+      }
+
+      this._actor = {
+        id: data.id as ActorId,
+        type: data.type as any,
+        name: data.name ?? null,
+        email: data.email ?? undefined,
+      };
+    }
+
+    return this._actor;
+  }
+
+  /**
+   * Dispatches activity and note events to configured callbacks.
    *
-   * @param item - Raw activity database record
-   * @param previous - Previous activity database record (null for creates)
+   * @param dispatchItem - Discriminated union containing either activity or note data
    * @returns Array of callbacks to invoke in twist worker (empty array if none)
    */
   async dispatch(
-    item: ActivityItem,
-    previous?: ActivityItem
+    dispatchItem: DispatchItem
   ): Promise<Array<{ optionPath: string[]; args: any[] }>> {
     if (!this.plotOptions) return [];
 
     const callbacks: Array<{ optionPath: string[]; args: any[] }> = [];
 
-    // Determine if this is an update or create
-    const isUpdate = !!previous;
+    // Handle note items
+    if (dispatchItem.itemType === "note") {
+      const { item, previous } = dispatchItem;
+      const isUpdate = !!previous;
 
-    // Build the current activity
-    const currentActivity = buildActivityFromDbRecord(item);
+      // Cache the triggering note's mentions with the parent activity
+      // This allows validation to check if the twist was mentioned in the note
+      // that triggered the callback, even if the activity's calculated mentions
+      // field hasn't been updated yet (race condition)
+      const cacheKey = `${item.activity_id}:${this.priorityTwistId}`;
+      const existing = ACTIVITY_METADATA_CACHE.get(cacheKey);
 
-    // Dispatch intent matching if twist was mentioned in this thread
-    const isMentioned = [
-      ...(currentActivity.mentions ?? []),
-      ...(currentActivity.threadRoot?.mentions ?? []),
-    ].includes(this.priorityTwistId);
-    if (isMentioned && !isUpdate) {
-      const result = await intentOps.handleIntent(this, currentActivity);
-      if (result) {
-        callbacks.push(result);
+      ACTIVITY_METADATA_CACHE.set(cacheKey, {
+        created_by: existing?.created_by ?? null,
+        mentions: existing?.mentions ?? null,
+        priority_id: existing?.priority_id ?? item.priority_id,
+        triggering_note_mentions: item.mentions,
+        timestamp: Date.now(),
+      });
+
+      // Build the current note
+      const currentNote = buildNoteFromDbRecord(item);
+
+      // Dispatch intent matching if twist was mentioned in this note and it's a create
+      const isMentioned = (currentNote.mentions ?? []).includes(
+        this.priorityTwistId
+      );
+      if (isMentioned && !isUpdate) {
+        const result = await intentOps.handleIntent(this, currentNote);
+        if (result) {
+          callbacks.push(result);
+        }
       }
     }
 
-    // Only dispatch activity.updated for updates (not creates) of activities created by this twist
-    const createdByThisTwist =
-      (item.created_by ?? item.author_id) === this.priorityTwistId;
-    if (createdByThisTwist && isUpdate) {
-      // Build the previous activity and changes object
-      const previousActivity = buildActivityFromDbRecord(previous);
-      const changes = {
-        previous: previousActivity,
-        tagsAdded: calculateTagsAdded(item.tags, previous.tags),
-        tagsRemoved: calculateTagsRemoved(item.tags, previous.tags),
-      };
+    // Handle activity items
+    if (dispatchItem.itemType === "activity") {
+      const { item, previous } = dispatchItem;
+      const isUpdate = !!previous;
 
-      // Check if activity.updated callback exists
-      const callback = this.plotOptions?.activity?.updated;
-      if (typeof callback === "function") {
-        callbacks.push({
-          optionPath: ["activity", "updated"],
-          args: [currentActivity, changes],
-        });
+      // Cache activity data in worker-level cache to avoid database queries
+      // in subsequent RPC calls (e.g., when twist callback calls updateActivity)
+      const cacheKey = `${item.id}:${this.priorityTwistId}`;
+      const cacheData = {
+        created_by: item.created_by ?? item.author_id,
+        mentions: item.mentions,
+        priority_id: item.priority_id,
+        timestamp: Date.now(),
+      };
+      ACTIVITY_METADATA_CACHE.set(cacheKey, cacheData);
+
+      // Periodically clean up expired entries
+      if (ACTIVITY_METADATA_CACHE.size > 100) {
+        cleanupExpiredCacheEntries();
+      }
+
+      // Build the current activity
+      const currentActivity = buildActivityFromDbRecord(item);
+
+      // Only dispatch activity.updated for updates (not creates) of activities created by this twist
+      const createdByThisTwist =
+        (item.created_by ?? item.author_id) === this.priorityTwistId;
+      if (createdByThisTwist && isUpdate) {
+        // Build the previous activity and changes object
+        const previousActivity = buildActivityFromDbRecord(previous);
+        const changes = {
+          previous: previousActivity,
+          tagsAdded: calculateTagsAdded(item.tags, previous.tags),
+          tagsRemoved: calculateTagsRemoved(item.tags, previous.tags),
+        };
+
+        // Check if activity.updated callback exists
+        const callback = this.plotOptions?.activity?.updated;
+        if (typeof callback === "function") {
+          callbacks.push({
+            optionPath: ["activity", "updated"],
+            args: [currentActivity, changes],
+          });
+        }
       }
     }
 
@@ -315,86 +435,20 @@ export class Plot extends Tool implements IPlot {
    * - Activities in a thread where the twist was mentioned require Respond permission
    * - Activities in a thread created by the twist require Create permission
    */
-  async validateActivityCreateAccess(activity: {
-    parent?: { id: string } | null;
-  }): Promise<void> {
-    // If no parent, this is a top-level activity - requires Create
-    if (!activity.parent) {
-      this.requireActivityAccess(ActivityAccess.Create);
-      return;
-    }
-
-    // Fetch the parent activity and thread root (if parent is not root) to check permissions
-    const { data: parentActivity, error } = await this.supabase
-      .from("activity")
-      .select("id, author_id, mentions, path")
-      .eq("id", activity.parent.id)
-      .single();
-
-    if (error || !parentActivity) {
-      throw new Error(`Parent activity not found: ${activity.parent.id}`);
-    }
-
-    // Determine if parent is the thread root or if we need to fetch the root
-    const pathSegments = String(parentActivity.path).split(".");
-    const isParentRoot = pathSegments.length === 1;
-
-    // Get thread root author_id and mentions
-    let threadRootAuthorId: string;
-    let threadRootMentions: string[];
-
-    if (isParentRoot) {
-      // Parent is the thread root
-      threadRootAuthorId = parentActivity.author_id;
-      threadRootMentions = parentActivity.mentions || [];
-    } else {
-      // Fetch the thread root
-      const rootPath = pathSegments[0];
-      const { data: threadRoot, error: threadError } = await this.supabase
-        .from("activity")
-        .select("id, author_id, mentions")
-        .eq("path", rootPath)
-        .single();
-
-      if (threadError || !threadRoot) {
-        throw new Error(`Failed to fetch thread root`);
-      }
-
-      threadRootAuthorId = threadRoot.author_id;
-      threadRootMentions = threadRoot.mentions || [];
-    }
-
-    // Check if the thread root was created by this twist
-    if (threadRootAuthorId === this.priorityTwistId) {
-      return;
-    }
-
-    // Check if any activity in the thread mentions the twist
-    if (
-      Array.isArray(threadRootMentions) &&
-      threadRootMentions.includes(this.priorityTwistId)
-    ) {
-      // Twist was mentioned in the thread - requires Respond
-      this.requireActivityAccess(ActivityAccess.Respond);
-      return;
-    }
-
-    // Twist not mentioned and didn't create the thread
-    throw new Error(
-      `Cannot create activity in thread: twist was not mentioned and did not create the thread`
-    );
+  async validateActivityCreateAccess(_activity: NewActivity): Promise<void> {
+    this.requireActivityAccess(ActivityAccess.Create);
   }
 
   /**
-   * Validates that the twist has permission to update an activity.
-   * - Activities where the twist was mentioned require Respond permission
-   * - Activities in a thread created by the twist require Create permission
+   * Validates that the twist has permission to create a note.
+   * - Notes on activities where the twist was mentioned require Respond permission
+   * - Notes on activities created by the twist require Create permission
    */
-  async validateActivityUpdateAccess(activityId: string): Promise<void> {
-    // Fetch the activity to check author, mentions, and thread
+  async validateNoteCreateAccess(activityId: string): Promise<void> {
+    // Fetch the parent activity to check permissions
     const { data: activity, error } = await this.supabase
-      .from("activity")
-      .select("id, author_id, mentions, path")
+      .from("activity_x")
+      .select("id, author_id, created_by, mentions")
       .eq("id", activityId)
       .single();
 
@@ -402,68 +456,103 @@ export class Plot extends Tool implements IPlot {
       throw new Error(`Activity not found: ${activityId}`);
     }
 
-    // Check if activity mentions the twist
+    // Check if the activity was created by this twist
+    if (activity.created_by === this.priorityTwistId) {
+      return;
+    }
+
+    // Check if the activity mentions the twist
     if (
-      activity.mentions &&
       Array.isArray(activity.mentions) &&
       activity.mentions.includes(this.priorityTwistId)
+    ) {
+      // Twist was mentioned in the activity - requires Respond
+      this.requireActivityAccess(ActivityAccess.Respond);
+      return;
+    }
+
+    // Twist not mentioned and didn't create the activity
+    throw new Error(
+      `Cannot create note on activity: twist was not mentioned and did not create the activity`
+    );
+  }
+
+  /**
+   * Validates that the twist has permission to update an activity.
+   * - Activities where the twist was mentioned require Respond permission
+   * - Activities created by the twist require Create permission
+   *
+   * @param activityId - The activity ID to validate access for
+   * @param cachedData - Optional cached data to avoid database query
+   */
+  async validateActivityUpdateAccess(
+    activityId: string,
+    cachedData?: { created_by: string | null; mentions: string[] | null }
+  ): Promise<void> {
+    let created_by: string | null;
+    let mentions: string[] | null;
+
+    // Check worker-level cache first, then optional parameter, then query database
+    const cacheKey = `${activityId}:${this.priorityTwistId}`;
+    const workerCached = ACTIVITY_METADATA_CACHE.get(cacheKey);
+    const cached = cachedData ?? workerCached;
+
+    if (cached) {
+      created_by = cached.created_by;
+      mentions = cached.mentions;
+    } else {
+      // Fetch the activity to check author and mentions
+      const { data: activity, error } = await this.supabase
+        .from("activity_x")
+        .select("id, author_id, created_by, mentions")
+        .eq("id", activityId)
+        .single();
+
+      if (error || !activity) {
+        throw new Error(`Activity not found: ${activityId}`);
+      }
+
+      created_by = activity.created_by;
+      mentions = activity.mentions;
+    }
+
+    // Check if the activity was created by this twist
+    if (created_by === this.priorityTwistId) {
+      this.requireActivityAccess(ActivityAccess.Create);
+      return;
+    }
+
+    // Check if activity mentions the twist
+    if (
+      mentions &&
+      Array.isArray(mentions) &&
+      mentions.includes(this.priorityTwistId)
     ) {
       this.requireActivityAccess(ActivityAccess.Respond);
       return;
     }
 
-    // Determine if activity is the thread root or if we need to fetch the root
-    const pathSegments = String(activity.path).split(".");
-    const isActivityRoot = pathSegments.length === 1;
-
-    // Get thread root author_id and mentions
-    let threadRootAuthorId: string;
-    let threadRootMentions: string[];
-
-    if (isActivityRoot) {
-      // Activity is the thread root
-      threadRootAuthorId = activity.author_id;
-      threadRootMentions = activity.mentions || [];
-    } else {
-      // Fetch the thread root
-      const rootPath = pathSegments[0];
-      const { data: threadRoot, error: threadError } = await this.supabase
-        .from("activity")
-        .select("id, author_id, mentions")
-        .eq("path", rootPath)
-        .single();
-
-      if (threadError || !threadRoot) {
-        throw new Error(`Failed to fetch thread root`);
-      }
-
-      threadRootAuthorId = threadRoot.author_id;
-      threadRootMentions = threadRoot.mentions || [];
-    }
-
-    // Check if the thread root was created by this twist
-    if (threadRootAuthorId === this.priorityTwistId) {
-      this.requireActivityAccess(ActivityAccess.Create);
-      return;
-    }
-
-    // Check if any activity in the thread mentions the twist
-    // (thread root mentions are propagated from all children via trigger)
+    // Check if triggering note mentioned the twist
+    // This handles race conditions where a note with a mention triggers a callback
+    // but the activity's calculated mentions field hasn't been updated yet
     if (
-      Array.isArray(threadRootMentions) &&
-      threadRootMentions.includes(this.priorityTwistId)
+      workerCached?.triggering_note_mentions &&
+      Array.isArray(workerCached.triggering_note_mentions) &&
+      workerCached.triggering_note_mentions.includes(this.priorityTwistId)
     ) {
       this.requireActivityAccess(ActivityAccess.Respond);
       return;
     }
 
     throw new Error(
-      `Cannot update activity: twist was not mentioned and did not create the thread`
+      `Cannot update activity: twist was not mentioned and did not create the activity`
     );
   }
 
   // Activity operations
-  async createActivity(activity: NewActivity): Promise<Activity> {
+  async createActivity(
+    activity: NewActivity | NewActivityWithNotes
+  ): Promise<Activity> {
     return activityOps.createActivity(this, activity);
   }
 
@@ -471,12 +560,12 @@ export class Plot extends Tool implements IPlot {
     return activityOps.updateActivity(this, activity);
   }
 
-  async getThread(activity: Activity): Promise<Activity[]> {
-    return activityOps.getThread(this, activity);
-  }
-
   async getActivityByMeta(meta: ActivityMeta): Promise<Activity | null> {
     return activityOps.getActivityByMeta(this, meta);
+  }
+
+  async getActivityBySource(source: string): Promise<Activity | null> {
+    return activityOps.getActivityByMeta(this, { source });
   }
 
   async createActivities(activities: NewActivity[]): Promise<Activity[]> {
@@ -497,5 +586,22 @@ export class Plot extends Tool implements IPlot {
 
   async getActors(ids: ActorId[]): Promise<Actor[]> {
     return contactsOps.getActors(this, ids);
+  }
+
+  // Note operations
+  async getNotes(activity: Activity): Promise<Note[]> {
+    return activityOps.getNotes(this, activity);
+  }
+
+  async createNote(note: Omit<Note, "id" | "author">): Promise<Note> {
+    return activityOps.createNote(this, note);
+  }
+
+  async createNotes(notes: Omit<Note, "id" | "author">[]): Promise<Note[]> {
+    return activityOps.createNotes(this, notes);
+  }
+
+  async updateNote(note: NoteUpdate): Promise<void> {
+    return activityOps.updateNote(this, note);
   }
 }

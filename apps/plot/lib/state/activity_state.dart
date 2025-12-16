@@ -4,48 +4,72 @@ part of 'activity.dart';
 class ActivityState extends Equatable {
   ActivityState({
     required this.activity,
-    Activity? draft,
-    List<ActivityDateGroup> activityGroups = const [],
+    Note? draft,
+    List<NoteDateGroup> noteGroups = const [],
     this.showArchived = false,
     List<Tag> filter = const [],
     this.search = '',
-  }) : activityGroups = activityGroups.isNotEmpty
-           ? List.unmodifiable(activityGroups)
-           : activityGroups,
+    List<(Tag, int)> tags = const [],
+    List<Tag> tagSuggestions = const [],
+  }) : noteGroups = noteGroups.isNotEmpty
+           ? List.unmodifiable(noteGroups)
+           : noteGroups,
        filter = filter.isNotEmpty ? List.unmodifiable(filter) : filter,
+       tags = tags.isNotEmpty ? List.unmodifiable(tags) : tags,
+       tagSuggestions = tagSuggestions.isNotEmpty
+           ? List.unmodifiable(tagSuggestions)
+           : tagSuggestions,
        draft =
            draft ??
-           Activity(priority: activity.priority, parent: activity, draft: true);
+           Note(
+             id: Uuid.generate(),
+             activityId: activity.id,
+             authorId: Base.actorId,
+             draft: true,
+             private: false,
+             createdAt: DateTime.now(),
+             updatedAt: DateTime.now(),
+           );
 
   final Activity activity;
-  final Activity draft;
-  final List<ActivityDateGroup> activityGroups;
+  final Note draft;
+  final List<NoteDateGroup> noteGroups;
   final bool showArchived;
   final List<Tag> filter;
   final String search;
+  final List<(Tag, int)> tags;
+  final List<Tag> tagSuggestions;
 
   ActivityState copyWith({
     Priority? context,
     Activity? activity,
-    Activity? draft,
-    List<ActivityDateGroup>? activityGroups,
+    Note? draft,
+    List<NoteDateGroup>? noteGroups,
     bool? showArchived,
     List<Tag>? filter,
     String? search,
+    List<(Tag, int)>? tags,
+    List<Tag>? tagSuggestions,
   }) {
     return ActivityState(
       activity: activity ?? this.activity,
       draft: draft ?? this.draft,
-      activityGroups: activityGroups != null
-          ? (activityGroups.isNotEmpty
-                ? List.unmodifiable(activityGroups)
-                : activityGroups)
-          : this.activityGroups,
+      noteGroups: noteGroups != null
+          ? (noteGroups.isNotEmpty ? List.unmodifiable(noteGroups) : noteGroups)
+          : this.noteGroups,
       showArchived: showArchived ?? this.showArchived,
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
       search: search ?? this.search,
+      tags: tags != null
+          ? (tags.isNotEmpty ? List.unmodifiable(tags) : tags)
+          : this.tags,
+      tagSuggestions: tagSuggestions != null
+          ? (tagSuggestions.isNotEmpty
+                ? List.unmodifiable(tagSuggestions)
+                : tagSuggestions)
+          : this.tagSuggestions,
     );
   }
 
@@ -53,15 +77,17 @@ class ActivityState extends Equatable {
   List<Object?> get props => [
     activity,
     draft,
-    activityGroups,
+    noteGroups,
     showArchived,
     filter,
     search,
+    tags,
+    tagSuggestions,
   ];
 
   @override
   String toString() {
-    return 'ActivityState(activity: ${activity.title}, draft: $draft, activityGroups: ${activityGroups.length}, showArchived: $showArchived, filter: $filter, search: $search)';
+    return 'ActivityState(activity: ${activity.title}, draft: $draft, noteGroups: ${noteGroups.length}, showArchived: $showArchived, filter: $filter, search: $search, tags: ${tags.length})';
   }
 }
 
@@ -83,3 +109,18 @@ class ActivityDateGroup extends Equatable {
   }
 }
 
+class NoteDateGroup extends Equatable {
+  NoteDateGroup({required this.date, required List<Note> notes})
+    : notes = notes.isNotEmpty ? List.unmodifiable(notes) : notes;
+
+  final Date date;
+  final List<Note> notes;
+
+  @override
+  List<Object?> get props => [date, notes];
+
+  @override
+  String toString() {
+    return 'NoteDateGroup(date: $date, notes: ${notes.length})';
+  }
+}

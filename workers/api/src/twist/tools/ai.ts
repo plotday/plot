@@ -245,6 +245,8 @@ export class AI extends Tool implements IAI {
    * Generate embeddings for text using Cloudflare Workers AI.
    * Returns a 384-dimensional vector for semantic similarity search.
    *
+   * Retries up to 2 times (3 total attempts) with a 3-second total timeout.
+   *
    * @param text - The text to embed
    * @returns Promise resolving to a 384-dimension number array
    */
@@ -253,13 +255,52 @@ export class AI extends Tool implements IAI {
       throw new Error("Cannot embed empty text");
     }
 
-    // Use Workers AI binding directly for embeddings
-    const response = (await this.workersAI.run("@cf/baai/bge-small-en-v1.5", {
-      text,
-    })) as { data: number[][] };
+    const maxAttempts = 3;
+    const totalTimeoutMs = 3000;
+    const startTime = Date.now();
+    let lastError: Error | undefined;
 
-    // Response should contain the embedding array
-    return response.data[0];
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Check if we've exceeded the total timeout
+      const elapsedTime = Date.now() - startTime;
+      if (elapsedTime >= totalTimeoutMs) {
+        throw new Error(
+          `Embedding generation timed out after ${elapsedTime}ms (max: ${totalTimeoutMs}ms). Last error: ${lastError?.message || "unknown"}`
+        );
+      }
+
+      try {
+        // Use Workers AI binding directly for embeddings
+        const response = (await this.workersAI.run(
+          "@cf/baai/bge-small-en-v1.5",
+          {
+            text,
+          }
+        )) as { data: number[][] };
+
+        // Response should contain the embedding array
+        return response.data[0];
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // If this isn't the last attempt and we have time left, retry with a short delay
+        if (attempt < maxAttempts) {
+          const elapsedBeforeDelay = Date.now() - startTime;
+          const remainingTime = totalTimeoutMs - elapsedBeforeDelay;
+
+          if (remainingTime > 100) {
+            // Only delay if we have at least 100ms left
+            const delayMs = Math.min(100 * attempt, remainingTime - 50); // Exponential backoff, but leave some time
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+        }
+      }
+    }
+
+    // All attempts failed
+    throw new Error(
+      `Failed to generate embedding after ${maxAttempts} attempts: ${lastError?.message || "unknown error"}`
+    );
   }
 
   /**

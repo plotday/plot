@@ -33,7 +33,7 @@ export async function addContacts(
 
   const result = await plot.supabase
     .from("contact")
-    .upsert(contactsToUpsert, { onConflict: "user_id,email" })
+    .upsert(contactsToUpsert, { onConflict: "email" })
     .select("id, email, name, user_id");
 
   if (result.error) {

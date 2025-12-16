@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/analytics/analytics.dart';
+import 'package:plot/app_info.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/base.dart';
@@ -22,13 +23,14 @@ final appearanceCommands = StaticCommandGroup(
 );
 
 final settingsCommands = StaticCommandGroup(
-  title: 'Settings',
-  commands: [ChangeAppearance()],
+  title: 'App',
+  shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
+  commands: [ManageTwists(), ChangeAppearance(), CopyVersion(), SignOut()],
 );
 
-final accountCommands = StaticCommandGroup(
-  title: 'Account',
-  commands: [SignOut()],
+final signedOutSettingsCommands = StaticCommandGroup(
+  title: 'App',
+  commands: [ChangeAppearance(), CopyVersion()],
 );
 
 class ShowSettings extends ShowCommands {
@@ -39,7 +41,7 @@ class ShowSettings extends ShowCommands {
         commands: (context) => Future.value(
           Commands(groups: [settingsCommands], prompt: 'Settings'),
         ),
-        shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
+        shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
       );
 }
 
@@ -118,6 +120,28 @@ class ChangeTheme extends Command {
     } catch (e, t) {
       log.warning("Change theme failed", e, t);
       return CommandMessage('Failed to change theme', isError: true);
+    }
+  }
+}
+
+class CopyVersion extends Command {
+  CopyVersion()
+    : super(
+        title: 'Version',
+        subtitle: AppInfo.versionString,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+        icon: FontAwesomeIcons.clipboard,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: AppInfo.versionString));
+      return CommandMessage('Version copied to clipboard');
+    } catch (e, t) {
+      log.warning("Copy version failed", e, t);
+      return CommandMessage('Failed to copy version', isError: true);
     }
   }
 }

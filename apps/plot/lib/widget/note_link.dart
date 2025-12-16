@@ -7,13 +7,9 @@ import 'package:plot/widget/auth_button.dart';
 import 'package:plot/api/api.dart' as api;
 import 'logging.dart';
 
-/// Widget that displays a single activity link with appropriate styling based on type
-class ActivityLinkWidget extends StatelessWidget {
-  const ActivityLinkWidget({
-    required this.link,
-    this.onAuthComplete,
-    super.key,
-  });
+/// Widget that displays a single note link with appropriate styling based on type
+class NoteLinkWidget extends StatelessWidget {
+  const NoteLinkWidget({required this.link, this.onAuthComplete, super.key});
 
   final Link link;
   final VoidCallback? onAuthComplete;
@@ -52,17 +48,29 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: FButtonStyle.primary(),
+      style: FButtonStyle.secondary(),
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
-      child: _isLoading
-          ? SizedBox(width: 16, height: 16, child: FCircularProgress())
-          : Text(widget.link.title),
+      suffix: _isLoading
+          ? FCircularProgress(
+              style:
+                  FCircularProgressStyle.inherit(
+                    colors: context.theme.colors,
+                    // ignore: unused_result
+                  ).copyWith(
+                    iconStyle: IconThemeData(
+                      color: context.theme.colors.foreground,
+                      size: 15,
+                    ),
+                  ),
+            )
+          : null,
+      child: Text(widget.link.title),
     );
   }
 
   Future<void> _handleTap() async {
-    final callbackToken = widget.link.token;
+    final callbackToken = widget.link.callback;
 
     setState(() {
       _isLoading = true;
@@ -96,7 +104,12 @@ class ExternalLinkButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FButton(onPress: () => _handleTap(), child: Text(link.title));
+    return FButton(
+      style: FButtonStyle.secondary(),
+      mainAxisSize: MainAxisSize.min,
+      onPress: () => _handleTap(),
+      child: Text(link.title),
+    );
   }
 
   void _handleTap() {
@@ -118,7 +131,12 @@ class ConferencingLinkButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FButton(onPress: () => _handleTap(), child: Text(_getTitle()));
+    return FButton(
+      style: FButtonStyle.secondary(),
+      mainAxisSize: MainAxisSize.min,
+      onPress: () => _handleTap(),
+      child: Text(_getTitle()),
+    );
   }
 
   String _getTitle() {
@@ -144,52 +162,5 @@ class ConferencingLinkButton extends StatelessWidget {
     } catch (e, t) {
       log.warning('Failed to launch URL: $url', e, t);
     }
-  }
-}
-
-/// Widget that displays all links for an activity with proper type-based rendering
-class ActivityLinksList extends StatelessWidget {
-  const ActivityLinksList({
-    required this.activity,
-    this.onAuthComplete,
-    super.key,
-  });
-
-  final Activity activity;
-  final VoidCallback? onAuthComplete;
-
-  @override
-  Widget build(BuildContext context) {
-    if (activity.links.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final widgets = activity.links.map((link) {
-      // Use stable, content-based keys instead of hashCode
-      final Key key;
-      if (link.type == LinkType.auth) {
-        final authLink = link as AuthLink;
-        key = ValueKey('auth_${authLink.callback}');
-        return AuthButton.authorize(
-          key: key,
-          link: authLink,
-          onAuth: onAuthComplete,
-        );
-      } else if (link.type == LinkType.callback) {
-        final callbackLink = link as CallbackLink;
-        key = ValueKey('callback_${callbackLink.token}');
-        return CallbackLinkButton(key: key, link: callbackLink);
-      } else if (link.type == LinkType.conferencing) {
-        final conferencingLink = link as ConferencingLink;
-        key = ValueKey('conferencing_${conferencingLink.url}');
-        return ConferencingLinkButton(key: key, link: conferencingLink);
-      } else {
-        final externalLink = link as ExternalLink;
-        key = ValueKey('external_${externalLink.url}');
-        return ExternalLinkButton(key: key, link: externalLink);
-      }
-    }).toList();
-
-    return Wrap(spacing: 8, runSpacing: 8, children: widgets);
   }
 }

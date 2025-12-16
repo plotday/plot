@@ -1,6 +1,6 @@
 import 'store.dart';
 
-CREATE VIEW priority_children AS
+CREATE VIEW IF NOT EXISTS priority_children AS
 SELECT
     p.id,
     c.id AS child_id
@@ -8,7 +8,7 @@ FROM
     priorities p
     JOIN priorities c ON c.path LIKE p.path || '%';
 
-CREATE VIEW priority_ancestry AS
+CREATE VIEW IF NOT EXISTS priority_ancestry AS
 WITH RECURSIVE ancestors (
     priority_id,
     path,
@@ -42,7 +42,8 @@ SELECT
     priority_id,
     json_group_array (a.title) AS titles,
     json_group_array (lower(substr(hex (a.id), 1, 8) || '-' || substr(hex (a.id), 9, 4) || '-' || substr(hex (a.id), 13, 4) || '-' || substr(hex (a.id), 17, 4) || '-' || substr(hex (a.id), 21, 12))) AS ancestors,
-    json_group_array (a.color) AS colors
+    json_group_array (a.color) AS colors,
+    MIN(a.top_order) AS min_ancestor_top_order
 FROM
     ancestors an
     LEFT JOIN priorities a ON a.path = an.ancestor_path
@@ -51,7 +52,7 @@ GROUP BY
 ORDER BY
     priority_id;
 
-CREATE VIEW latest_priorities AS
+CREATE VIEW IF NOT EXISTS latest_priorities AS
 SELECT
     priority_id,
     MAX("end") AS at

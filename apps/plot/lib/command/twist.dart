@@ -4,10 +4,9 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'command.dart';
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/api/twist_api.dart';
-import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/twist_details.dart';
 import 'logging.dart';
 
 /// Formats twist name with environment label if not public
@@ -20,110 +19,143 @@ String _formatTwistName(String name, String environment) {
 }
 
 class ManageTwists extends ShowCommands {
-  ManageTwists(Priority priority)
+  ManageTwists([Priority? priority])
     : super(
         title: 'Manage Twists',
         icon: PlotIcon.twist,
         commands: (context) => _getTwistCommands(priority),
       );
 
-  static Future<Commands> _getTwistCommands(Priority priority) async {
+  static Future<Commands> _getTwistCommands(Priority? priority) async {
+    final defaultPriority = priority ?? await Priority.getDefault();
     final results = await Future.wait([
-      TwistApi.getTwistsForPriority(priority),
-      TwistApi.getAllTwists(priority),
+      priority != null
+          ? PriorityTwist.get(priority: priority, includeAncestors: false)
+          : PriorityTwist.get(),
+      TwistApi.getAllTwists(defaultPriority),
     ]);
-
     final priorityTwists = results[0] as List<PriorityTwist>;
     final allTwists = results[1] as List<Twist>;
 
     final editCommands = priorityTwists
-        .map((twist) => EditTwistCommand(priority, twist))
+        .map((twist) => EditTwistCommand(twist, priority: priority))
         .toList();
 
-    final viewCommands = allTwists
-        .map(
-          (twist) =>
-              ViewTwistDetailsCommand(priority, twist, isInstalled: false),
-        )
+    final addCommands = allTwists
+        .map((twist) => AddTwistForm(twist, defaultPriority: priority))
         .toList();
 
     return Commands(
       groups: [
         StaticCommandGroup(title: 'Active Twists', commands: editCommands),
-        StaticCommandGroup(title: 'Available Twists', commands: viewCommands),
-      ],
-    );
-  }
-}
-
-class ViewTwistDetailsCommand extends ShowCommands {
-  ViewTwistDetailsCommand(
-    this.priority,
-    this.twist, {
-    required this.isInstalled,
-    this.priorityTwist,
-  }) : super(
-         title: _formatTwistName(twist.name, twist.environment),
-         icon: PlotIcon.twist,
-         commands: (context) =>
-             _getDetailCommands(priority, twist, isInstalled, priorityTwist),
-       );
-
-  final Priority priority;
-  final Twist twist;
-  final bool isInstalled;
-  final PriorityTwist? priorityTwist;
-
-  static Future<Commands> _getDetailCommands(
-    Priority priority,
-    Twist twist,
-    bool isInstalled,
-    PriorityTwist? priorityTwist,
-  ) async {
-    final commands = <Command>[];
-
-    if (isInstalled && priorityTwist != null) {
-      commands.add(RemoveTwist(priorityTwist));
-    } else {
-      commands.add(AddTwist(priority, twist));
-    }
-
-    return Commands(
-      groups: [
-        StaticCommandGroup(
-          infoBuilder: (context) => TwistDetails(twist: twist),
-          commands: commands,
-        ),
+        StaticCommandGroup(title: 'Available Twists', commands: addCommands),
       ],
     );
   }
 }
 
 class EditTwistCommand extends ShowCommands {
-  EditTwistCommand(this.priority, this.priorityTwist)
-    : super(
+  EditTwistCommand(this.priorityTwist, {Priority? priority})
+    : _priority = priority,
+      super(
         title: _formatTwistName(
           priorityTwist.name,
           priorityTwist.twistEnvironment,
         ),
         icon: PlotIcon.settings,
-        commands: (context) => _getTwistCommands(priority, priorityTwist),
+        commands: (context) => _getTwistCommands(priorityTwist, priority),
       );
 
-  final Priority priority;
   final PriorityTwist priorityTwist;
+  final Priority? _priority;
+
+  @override
+  Widget buildBody(BuildContext context) {
+    // Load priority to show path
+    return FutureBuilder<Priority?>(
+      future: _priority != null
+          ? Future.value(_priority)
+          : Priority.getOne(priorityTwist.priorityId),
+      builder: (context, snapshot) {
+        final priority = snapshot.data;
+        if (priority == null) {
+          return Text(
+            _formatTwistName(
+              priorityTwist.name,
+              priorityTwist.twistEnvironment,
+            ),
+            style: context.theme.typography.base,
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _formatTwistName(
+                priorityTwist.name,
+                priorityTwist.twistEnvironment,
+              ),
+              style: context.theme.typography.base,
+            ),
+            if (priority.ancestorsLabel() != null) ...[
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      priority.ancestorsLabel()!,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.theme.typography.sm.copyWith(
+                        color: context.theme.colors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    Priority.separator,
+                    style: context.theme.typography.sm.copyWith(
+                      color: context.theme.colors.mutedForeground,
+                    ),
+                  ),
+                  Flexible(
+                    child: Text(
+                      priority.title,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.theme.typography.sm.copyWith(
+                        color: context.theme.colors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else
+              Text(
+                priority.title,
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.colors.mutedForeground,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 
   static Future<Commands> _getTwistCommands(
-    Priority priority,
     PriorityTwist priorityTwist,
+    Priority? priority,
   ) async {
     // Fetch the full Twist data to show details
     try {
+      // Load priority if not provided
+      final loadedPriority =
+          priority ?? await Priority.getOne(priorityTwist.priorityId);
+
       // Fetch all twists to find the matching one
-      final allTwists = await TwistApi.getAllTwists(priority);
+      final allTwists = await TwistApi.getAllTwists(loadedPriority);
       final matchingTwist = allTwists.firstWhere(
         (a) =>
-            a.id == priorityTwist.twistId &&
+            a.id == priorityTwist.twistId.toString() &&
             a.environment == priorityTwist.twistEnvironment,
         orElse: () => throw Exception('Twist not found'),
       );
@@ -131,7 +163,8 @@ class EditTwistCommand extends ShowCommands {
       return Commands(
         groups: [
           StaticCommandGroup(
-            infoBuilder: (context) => TwistDetails(twist: matchingTwist),
+            infoBuilder: (context) =>
+                TwistDetails(twist: matchingTwist, priority: loadedPriority),
             commands: [RemoveTwist(priorityTwist)],
           ),
         ],
@@ -151,14 +184,72 @@ class EditTwistCommand extends ShowCommands {
   }
 }
 
+class AddTwistForm extends ShowForm {
+  AddTwistForm(this.twist, {Priority? defaultPriority})
+    : super(
+        title: 'Add ${_formatTwistName(twist.name, twist.environment)}',
+        icon: PlotIcon.twist,
+        form: (context) => _buildForm(context, twist, defaultPriority),
+      );
+
+  final Twist twist;
+
+  static Future<FormData> _buildForm(
+    BuildContext context,
+    Twist twist,
+    Priority? defaultPriority,
+  ) async {
+    // Get default priority from context
+    final nowBloc = context.read<NowBloc>();
+    final currentPriority = nowBloc.state is NowLoaded
+        ? (nowBloc.state as NowLoaded).priority
+        : null;
+    final initialPriority =
+        defaultPriority ?? currentPriority ?? await Priority.getDefault();
+
+    return FormData(
+      title: 'Add ${_formatTwistName(twist.name, twist.environment)}',
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'info',
+              builder: (context) => TwistDetails(twist: twist),
+            ),
+            FormSelect<Priority>(
+              key: 'priority',
+              label: 'Priority',
+              initialValue: initialPriority,
+              items: (search) =>
+                  Priority.get(order: PriorityOrder.nested, search: search),
+              titleBuilder: (p) => p.title,
+              subtitleBuilder: (p) => p.ancestorsLabel(),
+            ),
+            FormButton(
+              key: 'add',
+              command: AddTwist(initialPriority, twist),
+              onSubmit: (context, values) async {
+                final selectedPriority = values['priority'] as Priority;
+                final command = AddTwist(selectedPriority, twist);
+                if (!context.mounted) {
+                  return const CommandSkipped();
+                }
+                return await command.run(context);
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class AddTwist extends Command {
   AddTwist(this.priority, this.twist)
     : super(
-        title: 'Add ${_formatTwistName(twist.name, twist.environment)}',
-        subtitle: twist.description ?? 'Add this twist to priority',
+        title: 'Add Twist',
         eventObject: EventObject.twist,
         eventAction: EventAction.added,
-        icon: PlotIcon.twist,
       );
 
   final Priority priority;
@@ -173,20 +264,12 @@ class AddTwist extends Command {
         twistEnvironment: twist.environment,
       );
 
-      // Reload twists in PriorityBloc
-      if (context.mounted) {
-        await context.read<PriorityBloc>().reloadTwists();
-      }
-
       return CommandMessage(
         'Twist "${_formatTwistName(twist.name, twist.environment)}" added successfully',
       );
     } catch (e, t) {
       log.warning('Failed to add twist', e, t);
-      return CommandMessage(
-        'Failed to add twist: ${e.toString()}',
-        isError: true,
-      );
+      return CommandMessage('Failed to add twist', isError: true);
     }
   }
 }
@@ -207,21 +290,14 @@ class RemoveTwist extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await TwistApi.removeTwist(twist.id);
-
-      // Reload twists in PriorityBloc
-      if (context.mounted) {
-        await context.read<PriorityBloc>().reloadTwists();
-      }
+      await TwistApi.removeTwist(twist.id.toString());
 
       return CommandMessage(
         'Twist "${_formatTwistName(twist.name, twist.twistEnvironment)}" removed successfully',
       );
-    } catch (e) {
-      return CommandMessage(
-        'Failed to remove twist: ${e.toString()}',
-        isError: true,
-      );
+    } catch (e, t) {
+      log.warning('Failed to remove twist', e, t);
+      return CommandMessage('Failed to remove twist', isError: true);
     }
   }
 }

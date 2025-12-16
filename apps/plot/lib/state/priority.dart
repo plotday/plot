@@ -6,10 +6,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/util/async.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/page/loading.dart';
-import 'package:plot/api/twist_api.dart';
-import 'package:plot/state/theme.dart';
+import 'package:plot/state/now.dart';
 import 'logging.dart';
 
 part 'priority_state.dart';
@@ -17,7 +17,9 @@ part 'priority_state.dart';
 class PriorityBloc extends Cubit<PriorityState> {
   PriorityBloc({required Priority priority, Activity? activity})
     : _subscriptions = [],
+      _activitySubscription = null,
       _agendaSubscription = null,
+      _tagsSubscription = null,
       super(PriorityState(context: priority, activity: activity)) {
     _loadPriority();
   }
@@ -129,13 +131,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
+    _activitySubscription?.cancel();
     _agendaSubscription?.cancel();
+    _tagsSubscription?.cancel();
     return super.close();
   }
 
   PriorityId get currentId => state.context.id;
 
-  void setPriority(Priority newPriority) {
+  Future<void> setPriority(Priority newPriority) async {
     if (state.context.id == newPriority.id) return;
 
     log.info(
@@ -147,15 +151,22 @@ class PriorityBloc extends Cubit<PriorityState> {
       subscription.cancel();
     }
     _subscriptions.clear();
+    _activitySubscription?.cancel();
     _agendaSubscription?.cancel();
+    _tagsSubscription?.cancel();
 
-    // Update state with new priority
-    emit(
-      state.copyWith(
-        context: newPriority,
-        draft: Activity(priority: newPriority, draft: true),
-      ),
-    );
+    // Load or create draft for new priority
+    final existingDraft = await Activity.getDraftByPriority(newPriority.id);
+    final newDraft =
+        existingDraft ?? Activity(priority: newPriority, draft: true);
+    if (existingDraft != null) {
+      log.fine("Loaded existing draft: $existingDraft");
+    } else {
+      log.fine("Created new draft: $newDraft");
+    }
+
+    // Set target priority without changing context (delay context update until data loads)
+    emit(state.copyWith(targetPriority: Value(newPriority), draft: newDraft));
 
     // Reload with new priority
     _loadPriority();
@@ -166,16 +177,38 @@ class PriorityBloc extends Cubit<PriorityState> {
       return;
     }
     emit(state.copyWith(activity: Value(activity)));
+
+    // Manage activity subscription
+    if (activity != null) {
+      _loadActivity(activity);
+    } else {
+      _activitySubscription?.cancel();
+      _activitySubscription = null;
+    }
   }
 
   /// Resets the draft to a new empty activity for the current priority.
   /// This should be called when navigating to create a new activity.
+  /// Reuses the existing draft ID to minimize archived drafts.
   void resetDraft() {
-    emit(
-      state.copyWith(
-        draft: Activity(priority: state.context, draft: true),
-      ),
+    final clearedDraft = state.draft.copyWith(
+      type: ActivityType
+          .note, // Default to note type (doesn't require scheduling)
+      title: const Value(null),
+      at: const Value(null),
+      on: const Value(null),
+      duration: const Value(null),
+      assigneeId: null,
+      preview: const Value(null),
     );
+    emit(state.copyWith(draft: clearedDraft));
+  }
+
+  /// Updates the draft activity optimistically and saves it to the database.
+  /// This provides instant UI updates while persisting changes.
+  Future<void> updateDraft(Activity draft) async {
+    emit(state.copyWith(draft: draft));
+    await draft.save();
   }
 
   /// Gets an agenda item relative to the current activity by offset.
@@ -202,7 +235,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Find current activity index in agendaItems
     int currentIndex = -1;
     for (int i = 0; i < state.agendaItems.length; i++) {
-      final activity = state.agendaItems[i].iff<Activity>(activity: (a) => a);
+      final activity = state.agendaItems[i].when<Activity?>(
+        header: (header) => null,
+        activity: (agendaActivity) => agendaActivity.activity,
+      );
       if (activity?.id == state.activity!.id) {
         currentIndex = i;
         break;
@@ -215,12 +251,12 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Helper to check if an item matches the filter criteria
     bool matchesFilter(AgendaItem item) {
-      return item.iff<bool>(
-            activity: (_) => includeActivity,
-            priority: (_) => includePriority,
-            date: (_) => includeDate,
-          ) ==
-          true;
+      return item.when<bool>(
+        activity: (agendaActivity) => includeActivity,
+        header: (header) =>
+            (header.date != null && includeDate) ||
+            (header.date == null && includePriority),
+      );
     }
 
     // Find the furthest valid item in the direction of offset
@@ -256,21 +292,67 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   void _loadPriority() {
+    final priorityToLoad = state.targetPriority ?? state.context;
+
+    // Load draft from database if this is initial load
+    if (state.targetPriority == null) {
+      _loadDraft(priorityToLoad);
+    }
+
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
     _subscriptions.add(
-      Priority.watchOne(state.context.id).listen((priority) {
+      Priority.watchOne(priorityToLoad.id).listen((priority) {
         log.fine('Priority updated');
-        emit(state.copyWith(context: priority));
+        // Only update context if not switching priorities (targetPriority is null)
+        if (state.targetPriority == null) {
+          emit(state.copyWith(context: priority));
+        }
       }),
     );
     if (state.activity != null) {
       _loadActivity(state.activity!);
     }
 
-    // Load twists for the priority
-    _loadTwists();
+    // Watch tags for the priority
+    _tagsSubscription?.cancel();
+    _tagsSubscription = Activity.watchTagsForPriority(priorityToLoad.path)
+        .listen((tags) {
+          // Calculate tag suggestions: common tags first, then all other tags
+          const actionTags = [Tag.now, Tag.done, Tag.later, Tag.archived];
+
+          // Common tags (excluding action tags)
+          final commonTagsFiltered = tags
+              .where(
+                (tagData) =>
+                    !actionTags.contains(tagData.$1) && tagData.$1.addable,
+              )
+              .map((tagData) => tagData.$1)
+              .toList();
+
+          // All tags excluding action tags and common tags
+          final commonTagSet = commonTagsFiltered.toSet();
+          final otherTags = Tag.getAll(onlyAddable: true)
+              .where(
+                (tag) =>
+                    !actionTags.contains(tag) && !commonTagSet.contains(tag),
+              )
+              .toList();
+
+          // Combine: common tags first, then other tags
+          final tagSuggestions = [...commonTagsFiltered, ...otherTags];
+
+          emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
+        });
+
+    // Watch twists for the priority (including ancestors)
+    _subscriptions.add(
+      PriorityTwist.watch(priority: priorityToLoad).listen((twists) {
+        log.fine('Priority twists updated: ${twists.length} twists');
+        emit(state.copyWith(twists: twists));
+      }),
+    );
 
     _loadSchedule(
       state.range ??
@@ -285,65 +367,63 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
-  Future<void> _loadTwists() async {
-    try {
-      final twists = await TwistApi.getTwistsForPriority(state.context);
-      log.info(
-        'Loaded ${twists.length} twists for priority ${state.context.title}',
-      );
-      if (isClosed) return;
-      emit(state.copyWith(twists: twists));
-    } catch (e, t) {
-      log.warning('Failed to load twists for priority', e, t);
-    }
-  }
-
-  /// Public method to reload twists - can be called from actions
-  Future<void> reloadTwists() async {
-    await _loadTwists();
-  }
-
   void _loadActivity(Activity activity) {
+    // Cancel existing activity subscription
+    _activitySubscription?.cancel();
+
     // Watch the activity
-    _subscriptions.add(
-      Activity.watchOne(activity.id).listen((watchedActivity) {
-        log.fine('Activity updated');
-        emit(state.copyWith(activity: Value(watchedActivity)));
-      }),
-    );
+    _activitySubscription = Activity.watchOne(activity.id).listen((
+      watchedActivity,
+    ) {
+      log.fine('Activity updated');
+      emit(state.copyWith(activity: Value(watchedActivity)));
+    });
+  }
+
+  /// Loads draft from database for the given priority
+  Future<void> _loadDraft(Priority priority) async {
+    final existingDraft = await Activity.getDraftByPriority(priority.id);
+    if (existingDraft != null) {
+      emit(state.copyWith(draft: existingDraft));
+    }
   }
 
   Future<void> save(Activity activity) async {
     await activity.save();
   }
 
+  /// Adds an activity by converting the current draft to a non-draft.
+  /// Creates a fresh draft for the priority afterward.
   Future<void> add(Activity activity) async {
-    emit(
-      state.copyWith(
-        // Create a new draft
-        draft: Activity(priority: state.context, draft: true),
-      ),
-    );
+    // Convert the draft to a non-draft
     activity = activity.copyWith(draft: false);
     await activity.save();
+
+    // Create fresh draft for the priority
+    final newDraft = Activity(priority: state.context, draft: true);
+    await newDraft.save();
+    emit(state.copyWith(draft: newDraft));
   }
 
   Future<void> _loadSchedule(BoundedDateRange range, {Date? firstDate}) {
+    final priorityToLoad = state.targetPriority ?? state.context;
+
     log.fine('Loading schedule (${range.start} to ${range.end})');
     _agendaSubscription?.cancel();
 
     // Ensure the new range overlaps with the previous one by at least one day
-    // Find the first and last DateAgendaItem in the current agenda items
+    // Find the first and last AgendaHeaderItem with date in the current agenda items
     var overlappingIndex =
         state.range == null || range.start == state.range?.start
         ? -1
         : state.agendaItems.indexWhere(
-            (item) => item.iff(date: (date) => true) == true,
+            (item) => item is AgendaHeaderItem && item.date != null,
           );
     Date? overlappingDate;
     if (overlappingIndex != -1) {
-      overlappingDate = state.agendaItems[overlappingIndex].iff(
-        date: (date) => date,
+      overlappingDate = state.agendaItems[overlappingIndex].when<Date?>(
+        header: (header) => header.date,
+        activity: (activity) => null,
       );
       if (overlappingDate != null && !range.includes(overlappingDate)) {
         if (overlappingDate >= range.end) {
@@ -355,10 +435,11 @@ class PriorityBloc extends Cubit<PriorityState> {
           );
         } else {
           overlappingIndex = state.agendaItems.lastIndexWhere(
-            (item) => item.iff(date: (date) => true) == true,
+            (item) => item is AgendaHeaderItem && item.date != null,
           );
-          overlappingDate = state.agendaItems[overlappingIndex].iff(
-            date: (date) => date,
+          overlappingDate = state.agendaItems[overlappingIndex].when<Date?>(
+            header: (header) => header.date,
+            activity: (activity) => null,
           );
           if (overlappingDate != null && !range.includes(overlappingDate)) {
             log.fine('Extending $range to include $overlappingDate');
@@ -373,70 +454,97 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
 
     log.fine(
-      'Getting activities for priprity ${state.context.id} in range $range',
+      'Getting activities for priority ${priorityToLoad.id} in range $range',
     );
 
     // Create a completer to signal when the first result arrives
     final completer = Completer<void>();
 
+    // Schedule.watch() uses distinct() to filter duplicate data emissions.
+    // However, PriorityState._makeAgenda() performs time-dependent calculations
+    // using DateTime.now() for "now" indicator placement and event transitions.
+    // We need to re-evaluate every minute to ensure these calculations use
+    // fresh time values, even when the underlying schedule data hasn't changed.
     _agendaSubscription =
         Schedule.watch(
-          range,
-          context: state.context,
-          deleted: state.showArchived,
-          filter: state.filter.isNotEmpty ? state.filter : null,
-          search: state.search.isNotEmpty ? state.search : null,
-        ).debounceTime(const Duration(milliseconds: 100)).listen((schedule) {
-          // Calculate the new first index based on date overlap
-          int first = state.first;
-          if (overlappingIndex != -1) {
-            final newScheduleItems = PriorityState._makeAgenda(
-              schedule.days,
-              context: state.context,
-            );
-            final newIndex = newScheduleItems.indexWhere(
-              (item) => item.when(
-                date: (date) => date == overlappingDate,
-                priority: (priority) => false,
-                activity: (activity) => false,
-              ),
-            );
-            log.fine(
-              'First was $first, overlappingIndex is $overlappingIndex, newIndex is $newIndex newFirst = ${first + overlappingIndex - newIndex}',
-            );
-            if (newIndex != -1) {
-              first += overlappingIndex - newIndex;
-            }
-            // The listener may trigger multiple times, but we only want to adjust first once
-            overlappingIndex = -1;
-          }
+              range,
+              context: priorityToLoad,
+              archived: state.showArchived,
+              filter: state.filter.isNotEmpty ? state.filter : null,
+              search: state.search.isNotEmpty ? state.search : null,
+            )
+            .transform(
+              ExpiringStreamTransformer((schedule) {
+                // Re-evaluate every minute on the minute to update time-dependent UI
+                final now = DateTime.now();
+                final expiry = now.add(
+                  Duration(
+                    seconds: 60 - now.second,
+                    milliseconds: -now.millisecond,
+                  ),
+                );
+                return ExpiringResult(value: schedule, expiry: expiry);
+              }),
+            )
+            .debounceTime(const Duration(milliseconds: 100))
+            .listen((schedule) {
+              // Calculate the new first index based on date overlap
+              int first = state.first;
+              if (overlappingIndex != -1) {
+                final newScheduleItems = PriorityState._makeAgenda(
+                  schedule.days,
+                  context: priorityToLoad,
+                );
+                final newIndex = newScheduleItems.indexWhere(
+                  (item) => item.when<bool>(
+                    header: (header) => header.date == overlappingDate,
+                    activity: (activity) => false,
+                  ),
+                );
+                log.fine(
+                  'First was $first, overlappingIndex is $overlappingIndex, newIndex is $newIndex newFirst = ${first + overlappingIndex - newIndex}',
+                );
+                if (newIndex != -1) {
+                  first += overlappingIndex - newIndex;
+                }
+                // The listener may trigger multiple times, but we only want to adjust first once
+                overlappingIndex = -1;
+              }
 
-          log.fine(
-            'Schedule updated (${range.start} to ${range.end}, first=$first, count=${schedule.days.length}, previous=${schedule.previous}, next=${schedule.next})',
-          );
+              log.fine(
+                'Schedule updated (${range.start} to ${range.end}, first=$first, count=${schedule.days.length}, previous=${schedule.previous}, next=${schedule.next})',
+              );
 
-          emit(
-            state.copyWith(
-              range: range,
-              schedule: schedule.days,
-              first: first,
-              firstDate: firstDate,
-              previous: Value(schedule.previous),
-              next: Value(schedule.next),
-            ),
-          );
+              emit(
+                state.copyWith(
+                  // If switching priorities, update context atomically with new agenda
+                  context: state.targetPriority,
+                  range: range,
+                  schedule: schedule.days,
+                  first: first,
+                  firstDate: firstDate,
+                  previous: Value(schedule.previous),
+                  next: Value(schedule.next),
+                  // Clear targetPriority after switching
+                  targetPriority: state.targetPriority != null
+                      ? const Value(null)
+                      : const Value.absent(),
+                ),
+              );
 
-          // Complete the future on first result
-          if (!completer.isCompleted) {
-            completer.complete();
-          }
-        });
+              // Complete the future on first result
+              if (!completer.isCompleted) {
+                completer.complete();
+              }
+            });
 
     return completer.future;
   }
 
   final List<StreamSubscription<void>> _subscriptions;
+  StreamSubscription<void>? _activitySubscription;
   StreamSubscription<void>? _agendaSubscription;
+  StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
 }
 
 class PriorityBlocProvider extends StatefulWidget {
@@ -479,7 +587,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
               // Update theme hue when priority is first loaded
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
-                  context.read<ThemeBloc>().setPriorityColor(priority.displayColor);
+                  context.read<NowBloc>().setContext(priority);
                 }
               });
               return PriorityBloc(priority: priority);
@@ -491,22 +599,18 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     super.didUpdateWidget(oldWidget);
 
     if (widget.priority != null && widget.priority != oldWidget.priority) {
-      final themeBloc = context.read<ThemeBloc>();
       _bloc.then((bloc) {
         final priority = widget.priority;
         if (priority == null) return;
         bloc.setPriority(priority);
-        // Update theme hue when priority changes
-        themeBloc.setPriorityColor(priority.displayColor);
+        // Theme will be updated when new agenda loads (in _loadSchedule)
       });
     } else if (widget.priorityId != null &&
         widget.priorityId != oldWidget.priorityId) {
-      final themeBloc = context.read<ThemeBloc>();
       _bloc.then((bloc) async {
         final priority = await Priority.getOne(widget.priorityId!);
         bloc.setPriority(priority);
-        // Update theme color when priority changes
-        themeBloc.setPriorityColor(priority.displayColor);
+        // Theme will be updated when new agenda loads (in _loadSchedule)
       });
     }
   }

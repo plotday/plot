@@ -15,12 +15,15 @@ import type {
   Contact,
   Priority,
   Activity,
+  Note,
   GeneratedContact,
   GeneratedPriority,
   GeneratedPrioritySettings,
   GeneratedPriorityUser,
   GeneratedActivity,
   GeneratedActivityTag,
+  GeneratedNote,
+  GeneratedNoteTag,
   RefMap,
   ValidationError,
 } from "./types.js";
@@ -310,18 +313,68 @@ function validateActivity(
     }
   }
 
-  // Validate children recursively
-  if (activity.children) {
-    for (let i = 0; i < activity.children.length; i++) {
-      validateActivity(
-        activity.children[i],
-        `${path}.children[${i}]`,
-        activityRefs,
-        priorityRefs,
+  // Validate notes
+  if (activity.notes) {
+    for (let i = 0; i < activity.notes.length; i++) {
+      validateNote(
+        activity.notes[i],
+        `${path}.notes[${i}]`,
         contactRefs,
         errors,
-        true, // isChild
       );
+    }
+  }
+}
+
+function validateNote(
+  note: Note,
+  path: string,
+  contactRefs: Set<string>,
+  errors: ValidationError[],
+) {
+  // Validate author_ref
+  if (
+    note.author_ref &&
+    note.author_ref !== "user" &&
+    !contactRefs.has(note.author_ref)
+  ) {
+    errors.push({
+      path: `${path}.author_ref`,
+      message: `Unknown author_ref: ${note.author_ref}`,
+    });
+  }
+
+  // Validate mentions
+  if (note.mentions) {
+    for (const mention of note.mentions) {
+      if (mention !== "user" && !contactRefs.has(mention)) {
+        errors.push({
+          path: `${path}.mentions`,
+          message: `Unknown mention: ${mention}`,
+        });
+      }
+    }
+  }
+
+  // Validate tags
+  if (note.tags) {
+    for (const tagName of Object.keys(note.tags)) {
+      if (!ALL_TAGS.includes(tagName as any)) {
+        errors.push({
+          path: `${path}.tags.${tagName}`,
+          message: `Unknown tag: ${tagName}`,
+        });
+      }
+
+      const actors = note.tags[tagName];
+      for (const actor of actors) {
+        if (actor !== "user" && !contactRefs.has(actor)) {
+          errors.push({
+            path: `${path}.tags.${tagName}`,
+            message: `Unknown actor: ${actor}`,
+          });
+        }
+      }
     }
   }
 }
@@ -353,6 +406,8 @@ function generateSQL(data: SeedData): string {
   const priorityUsers: GeneratedPriorityUser[] = [];
   const activities: GeneratedActivity[] = [];
   const activityTags: GeneratedActivityTag[] = [];
+  const notes: GeneratedNote[] = [];
+  const noteTags: GeneratedNoteTag[] = [];
 
   // Process contacts
   if (data.contacts) {
@@ -385,13 +440,12 @@ function generateSQL(data: SeedData): string {
     }
   }
 
-  // Process activities (recursive)
+  // Process activities (with notes)
   let activityOrder = Date.now();
   if (data.activities) {
     for (const activity of data.activities) {
       activityOrder = processActivity(
         activity,
-        null,
         userId,
         baseDate,
         activityOrder,
@@ -400,6 +454,8 @@ function generateSQL(data: SeedData): string {
         activityIdMap,
         activities,
         activityTags,
+        notes,
+        noteTags,
       );
     }
   }
@@ -478,14 +534,14 @@ function generateSQL(data: SeedData): string {
   if (activities.length > 0) {
     lines.push("-- Activities");
     lines.push(
-      "INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, path, \"order\", draft, private, title, note, at, \"on\", duration, done_at, recurrence_rule, archived_at, links, mentions, created_at, updated_at)",
+      "INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, \"order\", draft, private, title, preview, at, \"on\", duration, done_at, recurrence_rule, archived_at, mentions, created_at, updated_at)",
     );
     lines.push("VALUES");
     for (let i = 0; i < activities.length; i++) {
       const a = activities[i];
       const comma = i < activities.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(a.id)}, ${sqlString(a.author_id)}, ${sqlString(a.created_by)}, ${sqlString(a.assignee_id)}, ${sqlString(a.priority_id)}, ${sqlString(a.type)}, ${sqlString(a.path)}, ${a.order}, ${a.draft}, ${a.private}, ${sqlString(a.title)}, ${sqlString(a.note)}, ${a.at ? sqlString(a.at) : "NULL"}, ${a.on ? sqlString(a.on) : "NULL"}, ${a.duration ? sqlString(a.duration) : "NULL"}, ${sqlString(a.done_at)}, ${sqlString(a.recurrence_rule)}, ${sqlString(a.archived_at)}, ${a.links ? sqlString(a.links) : "NULL"}, ${a.mentions ? a.mentions : "NULL"}, NOW(), NOW())${comma}`,
+        `  (${sqlString(a.id)}, ${sqlString(a.author_id)}, ${sqlString(a.created_by)}, ${sqlString(a.assignee_id)}, ${sqlString(a.priority_id)}, ${sqlString(a.type)}, ${a.order}, ${a.draft}, ${a.private}, ${sqlString(a.title)}, ${sqlString(a.preview)}, ${a.at ? sqlString(a.at) : "NULL"}, ${a.on ? sqlString(a.on) : "NULL"}, ${a.duration ? sqlString(a.duration) : "NULL"}, ${sqlString(a.done_at)}, ${sqlString(a.recurrence_rule)}, ${sqlString(a.archived_at)}, ${a.mentions ? a.mentions : "NULL"}, NOW(), NOW())${comma}`,
       );
     }
     lines.push("");
@@ -503,6 +559,40 @@ function generateSQL(data: SeedData): string {
       const comma = i < activityTags.length - 1 ? "," : ";";
       lines.push(
         `  (${sqlString(at.actor_id)}, ${sqlString(at.activity_id)}, ${at.tag_id}, ${sqlString(at.occurrence)}, NOW())${comma}`,
+      );
+    }
+    lines.push("");
+  }
+
+  // Notes
+  if (notes.length > 0) {
+    lines.push("-- Notes");
+    lines.push(
+      "INSERT INTO note (id, activity_id, author_id, created_by, draft, private, note, links, mentions, created_at, updated_at)",
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < notes.length; i++) {
+      const n = notes[i];
+      const comma = i < notes.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(n.id)}, ${sqlString(n.activity_id)}, ${sqlString(n.author_id)}, ${sqlString(n.created_by)}, ${n.draft}, ${n.private}, ${sqlString(n.note)}, ${n.links ? sqlString(n.links) : "NULL"}, ${n.mentions ? n.mentions : "NULL"}, NOW(), NOW())${comma}`,
+      );
+    }
+    lines.push("");
+  }
+
+  // Note tags
+  if (noteTags.length > 0) {
+    lines.push("-- Note tags");
+    lines.push(
+      "INSERT INTO note_tag (actor_id, note_id, tag_id, updated_at)",
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < noteTags.length; i++) {
+      const nt = noteTags[i];
+      const comma = i < noteTags.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(nt.actor_id)}, ${sqlString(nt.note_id)}, ${nt.tag_id}, NOW())${comma}`,
       );
     }
     lines.push("");
@@ -582,7 +672,6 @@ function processPriority(
 
 function processActivity(
   activity: Activity,
-  parentPath: string | null,
   userId: string,
   baseDate: string,
   order: number,
@@ -591,17 +680,13 @@ function processActivity(
   activityIdMap: RefMap<string>,
   outActivities: GeneratedActivity[],
   outTags: GeneratedActivityTag[],
-  parentPriorityId: string | null = null,
+  outNotes: GeneratedNote[],
+  outNoteTags: GeneratedNoteTag[],
 ): number {
   const id = generateUUID();
   if (activity.ref) {
     activityIdMap[activity.ref] = id;
   }
-
-  // Generate path
-  const path = parentPath
-    ? `${parentPath}.${generateRandomPath(4)}`
-    : generateRandomPath(12);
 
   // Resolve refs
   const authorId = activity.author_ref
@@ -610,17 +695,11 @@ function processActivity(
   const assigneeId = activity.assignee_ref
     ? contactIdMap[activity.assignee_ref]
     : null;
-  // Children inherit parent's priority if not specified
-  const priorityId = activity.priority_ref
-    ? priorityIdMap[activity.priority_ref]
-    : parentPriorityId!;
+  const priorityId = priorityIdMap[activity.priority_ref];
 
   // Parse schedule
   const at = activity.at ? parseTimestampRange(baseDate, activity.at) : null;
   const on = activity.on ? parseDateRange(baseDate, activity.on) : null;
-
-  // Parse links
-  const links = activity.links ? JSON.stringify(activity.links) : null;
 
   // Parse mentions
   const mentions = activity.mentions
@@ -634,12 +713,11 @@ function processActivity(
     assignee_id: assigneeId,
     priority_id: priorityId,
     type: activity.type,
-    path,
     order: order++,
     draft: activity.draft ?? false,
     private: activity.private ?? false,
     title: activity.title ?? null,
-    note: activity.note ?? null,
+    preview: null, // Preview can be set to null for now
     at,
     on,
     duration: activity.duration ?? null,
@@ -650,7 +728,6 @@ function processActivity(
     archived_at: activity.archived_at
       ? parseDateOffset(baseDate, activity.archived_at).toISOString()
       : null,
-    links,
     mentions,
   });
 
@@ -670,26 +747,72 @@ function processActivity(
     }
   }
 
-  // Process children
-  if (activity.children) {
-    for (const child of activity.children) {
-      order = processActivity(
-        child,
-        path,
+  // Process notes
+  if (activity.notes) {
+    for (const note of activity.notes) {
+      processNote(
+        note,
+        id,
         userId,
-        baseDate,
-        order,
         contactIdMap,
-        priorityIdMap,
-        activityIdMap,
-        outActivities,
-        outTags,
-        priorityId, // Children inherit parent's priority
+        outNotes,
+        outNoteTags,
       );
     }
   }
 
   return order;
+}
+
+function processNote(
+  note: Note,
+  activityId: string,
+  userId: string,
+  contactIdMap: RefMap<string>,
+  outNotes: GeneratedNote[],
+  outNoteTags: GeneratedNoteTag[],
+) {
+  const id = generateUUID();
+
+  // Resolve refs
+  const authorId = note.author_ref
+    ? contactIdMap[note.author_ref]
+    : userId;
+
+  // Parse links
+  const links = note.links ? JSON.stringify(note.links) : null;
+
+  // Parse mentions
+  const mentions = note.mentions
+    ? `{${note.mentions.map((ref) => sqlString(contactIdMap[ref])).join(",")}}`
+    : null;
+
+  outNotes.push({
+    id,
+    activity_id: activityId,
+    author_id: authorId,
+    created_by: userId,
+    draft: note.draft ?? false,
+    private: note.private ?? false,
+    content: note.content ?? null,
+    links,
+    mentions,
+  });
+
+  // Process tags
+  if (note.tags) {
+    for (const [tagName, actors] of Object.entries(note.tags)) {
+      const tagId = TAG_IDS[tagName];
+      for (const actorRef of actors) {
+        const actorId = contactIdMap[actorRef];
+        outNoteTags.push({
+          actor_id: actorId,
+          note_id: id,
+          tag_id: tagId,
+        });
+      }
+    }
+  }
 }
 
 // ============================================================================

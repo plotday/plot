@@ -1,6 +1,6 @@
 part of 'store.dart';
 
-/// FTS5 virtual table for full-text search on Activity title and note fields.
+/// FTS5 virtual table for full-text search on Activity title field.
 /// This is a placeholder - the actual FTS5 table is created via custom SQL in migration.
 @DataClassName('ActivityFtsRow')
 class ActivityFts extends Table {
@@ -8,7 +8,6 @@ class ActivityFts extends Table {
   BlobColumn get activityId => blob().map(const UuidConverter())();
   // Searchable text columns
   TextColumn get title => text()();
-  TextColumn get note => text()();
 
   @override
   String? get tableName => 'activity_fts';
@@ -18,12 +17,16 @@ class ActivityFts extends Table {
     // Drop the regular table that Drift created and replace with FTS5 virtual table
     await db.customStatement('DROP TABLE IF EXISTS activity_fts');
 
+    // Drop existing triggers if they exist
+    await db.customStatement('DROP TRIGGER IF EXISTS activity_fts_insert');
+    await db.customStatement('DROP TRIGGER IF EXISTS activity_fts_update');
+    await db.customStatement('DROP TRIGGER IF EXISTS activity_fts_delete');
+
     // Create FTS5 virtual table with porter stemming for better search
     await db.customStatement('''
       CREATE VIRTUAL TABLE activity_fts USING fts5(
         activity_id UNINDEXED,
         title,
-        note,
         tokenize = 'porter ascii'
       )
     ''');
@@ -32,8 +35,8 @@ class ActivityFts extends Table {
     await db.customStatement('''
       CREATE TRIGGER activity_fts_insert AFTER INSERT ON activities
       BEGIN
-        INSERT INTO activity_fts(activity_id, title, note)
-        VALUES (NEW.id, COALESCE(NEW.title, ''), COALESCE(NEW.note, ''));
+        INSERT INTO activity_fts(activity_id, title)
+        VALUES (NEW.id, COALESCE(NEW.title, ''));
       END
     ''');
 
@@ -42,8 +45,7 @@ class ActivityFts extends Table {
       CREATE TRIGGER activity_fts_update AFTER UPDATE ON activities
       BEGIN
         UPDATE activity_fts
-        SET title = COALESCE(NEW.title, ''),
-            note = COALESCE(NEW.note, '')
+        SET title = COALESCE(NEW.title, '')
         WHERE activity_id = NEW.id;
       END
     ''');
@@ -58,8 +60,8 @@ class ActivityFts extends Table {
 
     // Populate FTS5 table with existing activities
     await db.customStatement('''
-      INSERT INTO activity_fts(activity_id, title, note)
-      SELECT id, COALESCE(title, ''), COALESCE(note, '')
+      INSERT INTO activity_fts(activity_id, title)
+      SELECT id, COALESCE(title, '')
       FROM activities
     ''');
   }

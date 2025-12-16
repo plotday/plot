@@ -88,13 +88,14 @@ FButtonStyles buildButtonStyles(
           border: colourScheme.brightness == .light
               ? Border.all(
                   color: colourScheme.colours.highlight
-                      .withLightness(0.69)
+                      .withLightness(0.86)
                       .toColor(),
                   width: 1,
                 )
               : null,
           color: colourScheme.colours.highlight
-              .withLightness(colourScheme.brightness == .light ? 0.70 : 0.55)
+              .withChroma(0.2)
+              .withLightness(colourScheme.brightness == .light ? 0.96 : 0.55)
               .toColor(),
         ),
         WidgetState.any: BoxDecoration(
@@ -102,14 +103,12 @@ FButtonStyles buildButtonStyles(
           border: colourScheme.brightness == .light
               ? Border.all(
                   color: colourScheme.colours.highlight
-                      .withLightness(0.77)
+                      .withLightness(0.86)
                       .toColor(),
                   width: 1,
                 )
               : null,
-          color: colourScheme.colours.highlight
-              .withLightness(colourScheme.brightness == .light ? 0.78 : 0.48)
-              .toColor(),
+          color: colourScheme.colours.highlight.toColor(),
         ),
       }),
       // ignore: unused_result
@@ -136,8 +135,18 @@ FButtonStyles buildButtonStyles(
     // ignore: unused_result
     ghost: baseStyles.ghost.copyWith(
       // ignore: unused_result
+      decoration: FWidgetStateMap({
+        WidgetState.any: BoxDecoration(
+          borderRadius: borderRadius,
+          border: Border.all(
+            color: Color(0x00000000), // Transparent border
+            width: 2,
+          ),
+        ),
+      }),
+      // ignore: unused_result
       contentStyle: baseStyles.ghost.contentStyle.copyWith(
-        padding: widgetPadding,
+        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         textStyle: FWidgetStateMap({
           WidgetState.hovered | WidgetState.pressed: typography.base.copyWith(
             color: colourScheme.foreground,

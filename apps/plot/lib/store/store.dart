@@ -3,12 +3,12 @@ import 'dart:math';
 
 import 'dart:convert';
 import 'package:flutter/widgets.dart' show IconData;
+import 'package:logging/logging.dart';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:collection/collection.dart';
 import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
-import 'package:remove_markdown/remove_markdown.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:equatable/equatable.dart';
 import 'package:rrule/rrule.dart';
@@ -24,13 +24,13 @@ import 'package:plot/util/list.dart';
 import 'package:plot/util/async.dart';
 import 'package:plot/util/value.dart';
 import 'package:plot/api/api.dart' as api;
-import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
 import 'enums.dart';
 import 'types.dart';
 import 'logging.dart';
+import 'sync_entity.dart';
 
 export 'package:plot/util/value.dart';
 export 'package:plot/util/time.dart';
@@ -42,13 +42,18 @@ export 'schedule.dart';
 export 'enums.dart';
 
 part 'sync.dart';
+part 'sync_orchestrator.dart';
 part 'actor.dart';
 part 'priority.dart';
-part 'activity_link.dart';
+part 'priority_twist.dart';
+part 'link.dart';
 part 'activity.dart';
+part 'note.dart';
 part 'activity_exception.dart';
 part 'activity_tags.dart';
+part 'note_tags.dart';
 part 'activity_fts.dart';
+part 'note_fts.dart';
 part 'session.dart';
 part 'tag.dart';
 
@@ -91,13 +96,6 @@ mixin UuidTable on Table {
 
   @override
   Set<Column> get primaryKey => {id};
-}
-
-enum PullType {
-  initial, // pull first page on initial pull
-  more, // pull the next page
-  updates, // pull updates since last pull
-  all, // pull all
 }
 
 /// A table in the remote database that can be synced with the local database.
@@ -153,7 +151,18 @@ abstract class BaseTable {
     if (limit != null) {
       query2 = query2.limit(limit!);
     }
-    final rows = await query2;
+
+    // Execute query with auth error detection
+    late final List<Map<String, dynamic>> rows;
+    try {
+      rows = await query2;
+    } catch (e) {
+      if (Store._isAuthError(e)) {
+        await Store._handleAuthError();
+      }
+      rethrow;
+    }
+
     DateTimeRange? returnRange;
     if (range != null) {
       returnRange = range;
@@ -182,25 +191,31 @@ abstract class BaseTable {
     return Base.client.from(table).select();
   }
 
+  /// Applies created_at boundary filters for pagination (PullType.more).
+  /// Uses exclusive bounds (gt/lt) to avoid fetching duplicate rows.
+  ///
+  /// For descending order (newest first):
+  /// - range.start: lower bound (older items) → created_at > start
+  /// - range.end: upper bound (newer items) → created_at < end
+  ///
+  /// For ascending order (oldest first):
+  /// - range.start: lower bound (older items) → created_at > start
+  /// - range.end: upper bound (newer items) → created_at < end
   PostgrestFilterBuilder<T2> filterRange<T2>(
     PostgrestFilterBuilder<T2> query,
     DateTimeRange? range,
   ) {
     if (range == null) return query;
 
-    DateTime? from = range.start;
-    DateTime? to = range.end;
+    final from = range.start;
+    final to = range.end;
 
-    if (!ascending) {
-      final tmp = from;
-      from = to;
-      to = tmp;
-    }
+    // Apply exclusive bounds to avoid duplicates
     if (from != null) {
-      query = query.gte(order, from.toIso8601String());
+      query = query.gt(order, from.toIso8601String());
     }
     if (to != null) {
-      query = query.lte(order, to.toIso8601String());
+      query = query.lt(order, to.toIso8601String());
     }
     return query;
   }
@@ -215,17 +230,25 @@ abstract class BaseTable {
 
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
-    final id = rows.first['id'];
-    if (id is int) {
-      for (final row in rows) {
-        final id = row['id'] as Object;
-        final rest = Map<String, dynamic>.from(row)..remove('id');
-        await Base.client.from(writeTable ?? table).update(rest).eq('id', id);
+
+    try {
+      final id = rows.first['id'];
+      if (id is int) {
+        for (final row in rows) {
+          final id = row['id'] as Object;
+          final rest = Map<String, dynamic>.from(row)..remove('id');
+          await Base.client.from(writeTable ?? table).update(rest).eq('id', id);
+        }
+      } else if (upsertAsUpdate) {
+        await Base.client.from(writeTable ?? table).insert(rows.toList());
+      } else {
+        await Base.client.from(writeTable ?? table).upsert(rows.toList());
       }
-    } else if (upsertAsUpdate) {
-      await Base.client.from(writeTable ?? table).insert(rows.toList());
-    } else {
-      await Base.client.from(writeTable ?? table).upsert(rows.toList());
+    } catch (e) {
+      if (Store._isAuthError(e)) {
+        await Store._handleAuthError();
+      }
+      rethrow;
     }
   }
 }
@@ -235,10 +258,14 @@ abstract class BaseTable {
     SyncStates,
     Actors,
     Priorities,
+    PriorityTwists,
     Activities,
+    Notes,
     ActivityFts,
+    NoteFts,
     ActivityExceptions,
     ActivityTags,
+    NoteTags,
     Sessions,
   ],
   include: {'priority.drift'},
@@ -264,9 +291,12 @@ class Store extends _$Store {
 
   static Future<void> stop() async {
     if (Injector.appInstance.exists<Store>()) {
-      await get.close();
+      // Get reference before removing from injector
+      final store = get;
+      // Remove singleton reference BEFORE closing to prevent access during transition
+      Injector.appInstance.removeByKey<Store>();
+      await store.close();
     }
-    Injector.appInstance.removeByKey<Store>();
     _currentUserId = null;
   }
 
@@ -297,15 +327,65 @@ class Store extends _$Store {
         // New user or no local data - need to sync before app can be used
         await inst._waitForNetworkConnectivity();
         await inst._startSync();
-        assert(await Priority.hasDefault(), "No default priority");
+
+        // If no default priority exists after sync, sign out the user
+        if (!await Priority.hasDefault()) {
+          log.warning("No default priority after sync - signing out user");
+          try {
+            await Base.client.auth.signOut();
+          } catch (e, stackTrace) {
+            log.warning("Error during no-priority sign-out", e, stackTrace);
+          }
+          return; // Exit early since sign-out will trigger UserBloc state change
+        }
       }
     });
+  }
+
+  /// Checks if an error is an authentication failure (401 or JWT expired)
+  /// Note: 403 (Forbidden) means user is authenticated but not authorized,
+  /// so it should NOT trigger sign-out
+  static bool _isAuthError(dynamic error) {
+    // Check for PostgrestException (from Supabase database operations)
+    if (error is PostgrestException) {
+      return error.code == 'PGRST301' || // JWT expired
+          error.code == 'PGRST302' || // JWT invalid
+          error.details?.toString().toLowerCase().contains('unauthorized') ==
+              true;
+    }
+
+    // Check for generic exceptions with 401 status code (not 403)
+    if (error is Exception) {
+      final message = error.toString().toLowerCase();
+      return message.contains('401') || message.contains('unauthorized');
+    }
+
+    return false;
+  }
+
+  /// Handles authentication errors by signing out the user
+  /// This triggers the auth state change listener which will update UserBloc
+  static Future<void> _handleAuthError() async {
+    log.warning("Authentication failure detected - signing out user");
+    try {
+      await Base.client.auth.signOut();
+    } catch (e, stackTrace) {
+      log.warning("Error during auth failure sign-out", e, stackTrace);
+    }
   }
 
   BroadcastClient? _broadcastClient;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
   bool _isOnline = false;
+
+  // Adaptive batch debouncer for sync requests per table
+  late final BatchDebouncer<String> _syncDebouncer = BatchDebouncer(
+    maxInitialMs: 200,
+    maxSubsequentMs: 500,
+    waitMs: 250,
+    onBatch: _handleTableSync,
+  );
 
   Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
@@ -463,7 +543,7 @@ class Store extends _$Store {
                 );
               } catch (e, stackTrace) {
                 log.warning(
-                  "Error pushing ${baseTable.toBase(data)} to ${baseTable.table}",
+                  "Error pushing ${baseTable.toBase(data)} to ${baseTable.writeTable ?? baseTable.table}",
                   e,
                   stackTrace,
                 );
@@ -492,58 +572,235 @@ class Store extends _$Store {
 
   /// Pulls data from the remote database and syncs it to the local store.
   ///
-  /// [type] determines the pull behavior:
-  /// - [PullType.initial]: Fetches the first page (respects baseTable.limit) when
-  ///   no sync state exists. Returns null if already initialized.
-  /// - [PullType.more]: Fetches the next page (respects baseTable.limit) of older
-  ///   data. Returns null if no more data or if the requested range is already fetched.
-  /// - [PullType.updates]: Fetches all new/updated items since last sync. Loops
-  ///   internally until all updates are pulled, ignoring baseTable.limit.
-  /// - [PullType.all]: Fetches all data without pagination.
+  /// ## Sync State Management
+  /// The sync state tracks two orthogonal concerns:
+  /// - `pulledAt`: Timestamp of last update check (microseconds since epoch)
+  ///   - Used by: PullType.initial, PullType.updates
+  ///   - Purpose: Track when we last checked for new/updated items
+  /// - `last`: Pagination boundary timestamp (microseconds since epoch, based on created_at)
+  ///   - Used by: PullType.more
+  ///   - Purpose: Track the oldest/newest item we've synced for pagination
   ///
-  /// [range] optionally specifies a date range to pull. For descending tables
-  /// (like activities), range should be in chronological order (oldest, newest).
-  /// For ascending tables, range should also be in chronological order (oldest, newest).
+  /// ## Pull Types
+  /// - [PullType.initial]: First-time setup pull
+  ///   - Behavior: Fetches initial data (respects baseTable.limit)
+  ///   - Updates: Sets pulledAt (to max updated_at or now if no rows)
+  ///   - Ignores: last (doesn't read or write)
+  ///   - Skip: If pulledAt already exists
   ///
-  /// Returns:
-  /// - `null` if nothing was pulled (skipped, early exit, or no data)
-  /// - `(DateTime?, DateTime?)` tuple representing the range that was pulled:
-  ///   - For descending tables: `(oldest_value, null)` representing "from oldest to now"
-  ///   - For ascending tables: `(null, newest_value)` representing "from beginning to newest"
+  /// - [PullType.more]: Pagination pull (typically for activities)
+  ///   - Behavior: Fetches next page using created_at boundaries
+  ///   - Updates: Sets last (to oldest/newest created_at depending on sort order)
+  ///   - Ignores: pulledAt (doesn't read or write)
+  ///   - For descending: Fetches items older than current last
+  ///   - For ascending: Fetches items newer than current last
   ///
-  /// The returned range can be used to synchronize related tables to ensure they
-  /// cover the exact same data range.
+  /// - [PullType.updates]: Incremental update pull
+  ///   - Behavior: Fetches items with updated_at > pulledAt
+  ///   - Updates: Sets pulledAt (to max updated_at)
+  ///   - Ignores: last (doesn't read or write)
+  ///   - Loops internally until all updates are fetched
+  ///
+  /// ## Parameters
+  /// - [range]: Optional date range tuple (start, end)
+  ///   - For PullType.more: Represents the calendar date range to filter by
+  ///   - For PullType.updates: Not supported (throws ArgumentError)
+  ///
+  /// ## Returns
+  /// - `null`: Nothing was pulled (skipped, early exit, or no data)
+  /// - `(DateTime?, DateTime?)`: Range that was pulled (based on created_at)
+  ///   - For descending: `(oldest, null)` = "from oldest onwards"
+  ///   - For ascending: `(null, newest)` = "from beginning to newest"
+  /// Pulls initial data or updates for an entity.
+  ///
+  /// When [initial] is true, performs an initial pull (fetches first page).
+  /// When [initial] is false, fetches updates since last pull (incremental sync).
+  ///
+  /// Optional [range] parameter filters by date range (for calendar filtering).
+  /// Note: range is not supported for update pulls (initial=false).
+  ///
+  /// Updates only the pulledAt timestamp in sync state.
+  /// Use [pullMore] for pagination.
   Future<(DateTime?, DateTime?)?>
   pull<TABLE extends SyncableTable, DATA extends DataClass>(
-    PullType type,
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
+    bool initial = false,
     (DateTime?, DateTime?)? range,
   }) async {
-    log.fine("pull($type, ${baseTable.table}, range: $range)");
+    log.fine("pull(initial: $initial, ${baseTable.table}, range: $range)");
 
-    // PullType.updates doesn't support range parameter
-    if (type == PullType.updates && range != null) {
-      throw ArgumentError('PullType.updates does not support range parameter');
+    // Update pulls don't support range parameter
+    if (!initial && range != null) {
+      throw ArgumentError('Update pulls do not support range parameter');
     }
 
-    final paged =
-        [PullType.initial, PullType.more].contains(type) && range == null;
-    if (paged && !hasMore(baseTable)) {
-      return null;
-    }
     final entity = baseTable.fullName;
     final syncState = await (select(
       syncStates,
     )..where((row) => row.entity.equals(entity))).getSingleOrNull();
-    if (type == PullType.initial && syncState != null) {
-      return null;
-    }
-    if (type == PullType.updates && syncState?.pulledAt == null) {
+
+    // Initial pull: Skip if pulledAt already exists
+    if (initial && syncState?.pulledAt != null) {
       return null;
     }
 
-    // Adjust range to exclude already-synced data
+    // Update pull: Skip if pulledAt doesn't exist (must do initial first)
+    if (!initial && syncState?.pulledAt == null) {
+      return null;
+    }
+
+    // Fetch items with updated_at > pulledAt (for updates only)
+    final pulledAtMicros = !initial ? syncState?.pulledAt : null;
+    final updatedSince = pulledAtMicros != null
+        ? DateTime.fromMicrosecondsSinceEpoch(pulledAtMicros, isUtc: true)
+        : null;
+
+    // For updates, loop until all updates are fetched
+    var totalRows = 0;
+    var more = false;
+    DateTime? lastUpdated;
+    var upsertedInLoop = false;
+
+    do {
+      DateTimeRange? requestRange;
+      if (range != null) {
+        requestRange = DateTimeRange(range.$1, range.$2);
+      }
+      // For updates, don't set requestRange - only use updatedSince filter
+
+      log.fine("Requesting range $requestRange");
+      var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
+          .get(range: requestRange, updatedSince: updatedSince));
+      final from = newRange?.start?.toString();
+      final to = newRange?.end?.toString();
+      more = batchMore;
+      if (batchLastUpdated != null) {
+        lastUpdated = batchLastUpdated;
+      }
+
+      if (baseRows.isNotEmpty) {
+        log.info("Pulled ${baseRows.length} rows from ${baseTable.table}");
+      } else {
+        log.fine(
+          "Pulling ${baseRows.length} rows from ${baseTable.table} (initial: $initial, from: $from, to: $to, more: $more)",
+        );
+      }
+      final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
+        try {
+          return [baseTable.fromBase(r)];
+        } catch (e, stackTrace) {
+          log.warning(
+            "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
+            e,
+            stackTrace,
+          );
+          return [];
+        }
+      });
+
+      await batch((batch) {
+        batch.insertAllOnConflictUpdate(table, storeRows);
+      });
+
+      totalRows += baseRows.length;
+
+      // Set _noMore for range-extending pulls (initial only, not for updates)
+      if (!more && initial) {
+        _noMore.add(entity);
+        log.fine("No more data for entity $entity (initial: $initial)");
+      }
+
+      if (lastUpdated != null) {
+        final lastUpdatedMicros = lastUpdated.toUtc().microsecondsSinceEpoch;
+
+        // Update pulledAt only (preserve 'last' for pagination)
+        await into(syncStates).insert(
+          SyncStatesCompanion.insert(
+            entity: entity,
+            pulledAt: Value(lastUpdatedMicros),
+          ),
+          onConflict: DoUpdate(
+            (old) => SyncStatesCompanion(
+              entity: Value(entity),
+              pulledAt: Value(lastUpdatedMicros),
+              // Preserve existing 'last' value
+            ),
+          ),
+        );
+        upsertedInLoop = true;
+      }
+    } while (!initial && more);
+
+    if (totalRows > 0) {
+      log.info("Synced ${baseTable.name}: $totalRows rows");
+    }
+
+    // Skip final upsert if we already upserted in the loop
+    if (!upsertedInLoop) {
+      // Set pulledAt for initial pull even if no rows (marks entity as initialized)
+      if (initial) {
+        final nowMicros = DateTime.now().toUtc().microsecondsSinceEpoch;
+        await into(syncStates).insert(
+          SyncStatesCompanion.insert(
+            entity: entity,
+            pulledAt: Value(nowMicros),
+          ),
+          onConflict: DoUpdate(
+            (old) => SyncStatesCompanion(
+              entity: Value(entity),
+              pulledAt: Value(nowMicros),
+              // Preserve existing 'last' value
+            ),
+          ),
+        );
+      }
+    }
+
+    // Return the range that was pulled
+    // For descending tables, syncState.last is the oldest boundary
+    // Return (oldest, null) to represent the range from oldest onwards
+    final finalSyncState = await (select(
+      syncStates,
+    )..where((row) => row.entity.equals(entity))).getSingleOrNull();
+
+    if (finalSyncState?.last != null) {
+      final lastDateTime = DateTime.fromMicrosecondsSinceEpoch(
+        finalSyncState!.last!,
+        isUtc: true,
+      );
+      return (lastDateTime, null);
+    }
+
+    return null;
+  }
+
+  /// Pulls the next page of data for pagination.
+  ///
+  /// Updates only the 'last' timestamp in sync state (pagination boundary).
+  /// Supports optional [range] parameter for calendar date filtering.
+  Future<(DateTime?, DateTime?)?>
+  pullMore<TABLE extends SyncableTable, DATA extends DataClass>(
+    TableInfo<TABLE, DATA> table,
+    BaseTable baseTable, {
+    (DateTime?, DateTime?)? range,
+  }) async {
+    log.fine("pullMore(${baseTable.table}, range: $range)");
+
+    final entity = baseTable.fullName;
+    final syncState = await (select(
+      syncStates,
+    )..where((row) => row.entity.equals(entity))).getSingleOrNull();
+
+    // Check if we have more data to fetch (for paged pulls without range)
+    final paged = range == null;
+    if (paged && !hasMore(baseTable)) {
+      return null;
+    }
+
+    // Adjust range to exclude already-synced data (pagination)
+    // For descending order (like activities): synced range is [last, +∞)
+    // For ascending order: synced range is (-∞, last]
     if (range != null && syncState?.last != null) {
       final (rangeFrom, rangeTo) = range;
       final lastSyncedMicros = syncState!.last!;
@@ -561,10 +818,10 @@ class Store extends _$Store {
           );
           return null;
         }
-        // Adjust rangeFrom to exclude overlap - add 1 microsecond to avoid duplicate
-        range = (lastSynced.add(const Duration(microseconds: 1)), rangeTo);
+        // Adjust rangeFrom to exclude overlap - use exclusive bound (gt not gte)
+        range = (lastSynced, rangeTo);
       } else {
-        // For descending order, synced range is [last, ∞)
+        // For descending order, synced range is [last, +∞)
         // Check if entire range is already synced
         if (rangeFrom != null && !rangeFrom.isBefore(lastSynced)) {
           log.fine(
@@ -572,11 +829,8 @@ class Store extends _$Store {
           );
           return null;
         }
-        // Adjust rangeTo to exclude overlap - subtract 1 microsecond to avoid duplicate
-        range = (
-          rangeFrom,
-          lastSynced.subtract(const Duration(microseconds: 1)),
-        );
+        // Adjust rangeTo to exclude overlap - use exclusive bound (lt not lte)
+        range = (rangeFrom, lastSynced);
       }
 
       // After adjustment, check if range is still valid
@@ -591,177 +845,98 @@ class Store extends _$Store {
       }
     }
 
-    // For PullType.all: pull all rows on first pull (syncState?.pulledAt == null),
-    // then only pull updates on subsequent pulls (syncState?.pulledAt != null)
-    final pulledAtMicros =
-        (type == PullType.updates ||
-            (type == PullType.all && syncState?.pulledAt != null))
-        ? syncState?.pulledAt
-        : null;
-    // Convert microseconds to DateTime for baseTable.get()
-    final updatedSince = pulledAtMicros != null
-        ? DateTime.fromMicrosecondsSinceEpoch(pulledAtMicros, isUtc: true)
-        : null;
-
-    // For PullType.updates, loop until all updates are fetched
     var totalRows = 0;
-    var currentLast = syncState?.last != null
-        ? DateTime.fromMicrosecondsSinceEpoch(
-            syncState!.last!,
-            isUtc: true,
-          ).toString()
-        : null;
     var more = false;
     DateTime? lastUpdated;
-    var upsertedInLoop = false;
 
-    do {
-      DateTimeRange? requestRange;
-      if (range != null) {
-        requestRange = DateTimeRange(range.$1, range.$2);
-      } else if (currentLast != null) {
-        final currentLastDateTime = DateTime.parse(currentLast);
-        final useAsFrom =
-            (baseTable.ascending && type == PullType.more) ||
-            (!baseTable.ascending && type == PullType.updates);
-        final useAsTo =
-            (baseTable.ascending && type == PullType.updates) ||
-            (!baseTable.ascending && type == PullType.more);
-
-        if (useAsFrom) {
-          requestRange = DateTimeRange(currentLastDateTime, null);
-        } else if (useAsTo) {
-          requestRange = DateTimeRange(null, currentLastDateTime);
-        }
-      }
-
-      log.fine("Requesting range $requestRange");
-      var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
-          .get(range: requestRange, updatedSince: updatedSince));
-      final from = newRange?.start?.toString();
-      final to = newRange?.end?.toString();
-      more = batchMore;
-      if (batchLastUpdated != null) {
-        lastUpdated = batchLastUpdated;
-      }
-
-      if (baseRows.isNotEmpty) {
-        log.info("Pulled ${baseRows.length} rows from ${baseTable.table}");
+    DateTimeRange? requestRange;
+    if (range != null) {
+      requestRange = DateTimeRange(range.$1, range.$2);
+    } else if (syncState?.last != null) {
+      // For pagination, use created_at range to fetch older data
+      final currentLast = DateTime.fromMicrosecondsSinceEpoch(
+        syncState!.last!,
+        isUtc: true,
+      );
+      if (baseTable.ascending) {
+        // Ascending: fetch data after currentLast
+        requestRange = DateTimeRange(currentLast, null);
       } else {
-        log.fine(
-          "Pulling ${baseRows.length} rows from ${baseTable.table} (type: $type, from: $from, to: $to, more: $more)",
+        // Descending: fetch data before currentLast
+        requestRange = DateTimeRange(null, currentLast);
+      }
+    }
+
+    log.fine("Requesting range $requestRange");
+    var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
+        .get(range: requestRange, updatedSince: null));
+    final from = newRange?.start?.toString();
+    final to = newRange?.end?.toString();
+    more = batchMore;
+    if (batchLastUpdated != null) {
+      lastUpdated = batchLastUpdated;
+    }
+
+    if (baseRows.isNotEmpty) {
+      log.info("Pulled ${baseRows.length} rows from ${baseTable.table}");
+    } else {
+      log.fine(
+        "Pulling ${baseRows.length} rows from ${baseTable.table} (from: $from, to: $to, more: $more)",
+      );
+    }
+    final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
+      try {
+        return [baseTable.fromBase(r)];
+      } catch (e, stackTrace) {
+        log.warning(
+          "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
+          e,
+          stackTrace,
+        );
+        return [];
+      }
+    });
+    await batch((batch) {
+      batch.insertAllOnConflictUpdate(table, storeRows);
+    });
+
+    totalRows += baseRows.length;
+
+    // Set _noMore for range-extending pulls
+    if (!more) {
+      _noMore.add(entity);
+      log.fine("No more data for entity $entity");
+    }
+
+    if (lastUpdated != null) {
+      // Update 'last' only (pagination boundary)
+      // Use created_at of first row for the pagination boundary
+      if (baseRows.isNotEmpty) {
+        final firstRowCreatedAt = DateTime.parse(
+          baseRows.first[baseTable.order] as String,
+        );
+        final createdAtMicros = firstRowCreatedAt
+            .toUtc()
+            .microsecondsSinceEpoch;
+
+        await into(syncStates).insert(
+          SyncStatesCompanion.insert(
+            entity: entity,
+            last: Value(createdAtMicros),
+          ),
+          onConflict: DoUpdate(
+            (old) => SyncStatesCompanion(
+              entity: Value(entity),
+              last: Value(createdAtMicros),
+              // Preserve existing 'pulledAt' value
+            ),
+          ),
         );
       }
-      final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
-        try {
-          return [baseTable.fromBase(r)];
-        } catch (e, stackTrace) {
-          log.warning(
-            "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
-            e,
-            stackTrace,
-          );
-          return [];
-        }
-      });
-      await batch((batch) {
-        batch.insertAllOnConflictUpdate(table, storeRows);
-      });
-
-      totalRows += baseRows.length;
-
-      // Only set _noMore for range-extending pulls (initial/more), not for updates
-      if (!more && type != PullType.updates) {
-        _noMore.add(entity);
-        log.fine("No more data for entity $entity (type: $type)");
-      }
-
-      if (lastUpdated != null) {
-        // For PullType.updates: only update pulledAt (last update timestamp)
-        // For PullType.initial/more: update both pulledAt and last (range boundary)
-        final lastMicros = lastUpdated.toUtc().microsecondsSinceEpoch;
-
-        if (type == PullType.updates) {
-          await into(syncStates).insert(
-            SyncStatesCompanion.insert(
-              entity: entity,
-              pulledAt: Value(lastMicros),
-              // Don't update 'last' for updates - it tracks range boundary, not update timestamp
-            ),
-            onConflict: DoUpdate(
-              (old) => SyncStatesCompanion(
-                entity: Value(entity),
-                pulledAt: Value(lastMicros),
-                // Preserve existing 'last' value
-              ),
-            ),
-          );
-        } else {
-          // For initial/more: update both pulledAt and last
-          await into(syncStates).insert(
-            SyncStatesCompanion.insert(
-              entity: entity,
-              pulledAt: Value(lastMicros),
-              last: Value(lastMicros),
-            ),
-            onConflict: DoUpdate(
-              (old) => SyncStatesCompanion(
-                entity: Value(entity),
-                pulledAt: Value(lastMicros),
-                last: Value(lastMicros),
-              ),
-            ),
-          );
-        }
-        upsertedInLoop = true;
-      }
-
-      // Update currentLast for next iteration
-      if (type == PullType.updates && more && to != null) {
-        currentLast = to;
-      }
-    } while (type == PullType.updates && more);
+    }
 
     if (totalRows > 0) {
       log.info("Synced ${baseTable.name}: $totalRows rows");
-    }
-
-    // Skip final upsert if we already upserted in the loop
-    if (!upsertedInLoop && lastUpdated != null) {
-      // Convert DateTime to microseconds since epoch for storage
-      final pulledAtMicrosToStore = lastUpdated.toUtc().microsecondsSinceEpoch;
-
-      if (type == PullType.updates) {
-        await into(syncStates).insert(
-          SyncStatesCompanion.insert(
-            entity: entity,
-            pulledAt: Value(pulledAtMicrosToStore),
-            // Don't update 'last' for updates
-          ),
-          onConflict: DoUpdate(
-            (old) => SyncStatesCompanion(
-              entity: Value(entity),
-              pulledAt: Value(pulledAtMicrosToStore),
-              // Preserve existing 'last' value
-            ),
-          ),
-        );
-      } else {
-        await into(syncStates).insert(
-          SyncStatesCompanion.insert(
-            entity: entity,
-            pulledAt: Value(pulledAtMicrosToStore),
-            last: Value(pulledAtMicrosToStore),
-          ),
-          onConflict: DoUpdate(
-            (old) => SyncStatesCompanion(
-              entity: Value(entity),
-              pulledAt: Value(pulledAtMicrosToStore),
-              last: Value(pulledAtMicrosToStore),
-            ),
-          ),
-        );
-      }
     }
 
     // Return the range that was pulled
@@ -789,21 +964,17 @@ class Store extends _$Store {
 
   Future<void> _syncAll() async {
     try {
-      await Actor.pull();
-      if (!await Priority.push()) {
-        log.warning("Priority push failed during _syncAll");
-      }
-      await Priority.pull();
-      if (!await Activity.push()) {
-        log.warning("Activity push failed during _syncAll");
-      }
-      await Activity.pullInitial();
-      await Activity.pull();
-      if (!await Session.push()) {
-        log.warning("Session push failed during _syncAll");
-      }
-      await Session.pull();
+      // Use orchestrator for dependency-aware sync
+      // This pulls all entities (parents→children), then pushes all (children→parents)
+      await SyncOrchestrator.instance.syncAll();
     } catch (e, stackTrace) {
+      // Check if this is an auth error - if so, sign out
+      if (_isAuthError(e)) {
+        log.warning("Auth error during sync", e, stackTrace);
+        await _handleAuthError();
+        rethrow; // Stop sync on auth errors
+      }
+      // Network errors and other issues are logged but don't stop the app
       log.warning("Error during _syncAll", e, stackTrace);
     }
   }
@@ -818,6 +989,13 @@ class Store extends _$Store {
           }
           await Priority.pull();
           break;
+        case 'priority_twist':
+          if (!await PriorityTwist.push()) {
+            log.warning("PriorityTwist push failed during table sync");
+          }
+          await PriorityTwist.pullInitial();
+          await PriorityTwist.pullUpdates();
+          break;
         case 'activity':
           if (!await Activity.push()) {
             log.warning("Activity push failed during table sync");
@@ -829,6 +1007,13 @@ class Store extends _$Store {
             log.warning("Session push failed during table sync");
           }
           await Session.pull();
+          break;
+        case 'note':
+          if (!await Note.push()) {
+            log.warning("Note push failed during table sync");
+          }
+          await Note.pullInitial();
+          await Note.pullUpdates();
           break;
         default:
           log.warning("Unknown table update for $table");
@@ -853,7 +1038,7 @@ class Store extends _$Store {
       return;
     }
 
-    await _handleTableSync(table);
+    _syncDebouncer(table);
   }
 
   Future<bool> _hasNetworkConnectivity() async {
@@ -961,7 +1146,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 152;
+  int get schemaVersion => 179;
 
   @override
   MigrationStrategy get migration {
@@ -969,6 +1154,19 @@ class Store extends _$Store {
       onCreate: (Migrator m) async {
         await m.createAll();
         await ActivityFts.createTable(m.database);
+        await NoteFts.createTable(m.database);
+
+        // Create unique partial indexes for draft constraints
+        await m.database.customStatement(
+          'CREATE UNIQUE INDEX idx_activity_unique_draft_per_priority '
+          'ON activities (priority_id) '
+          'WHERE draft = 1 AND archived_at IS NULL',
+        );
+        await m.database.customStatement(
+          'CREATE UNIQUE INDEX idx_note_unique_draft_per_activity '
+          'ON notes (activity_id) '
+          'WHERE draft = 1 AND archived_at IS NULL',
+        );
       },
       onUpgrade: (Migrator m, int from, int to) async {
         // For schema version 141, completely rebuild the database
@@ -997,6 +1195,19 @@ class Store extends _$Store {
 
         await m.createAll();
         await ActivityFts.createTable(db);
+        await NoteFts.createTable(db);
+
+        // Create unique partial indexes for draft constraints
+        await db.customStatement(
+          'CREATE UNIQUE INDEX idx_activity_unique_draft_per_priority '
+          'ON activities (priority_id) '
+          'WHERE draft = 1 AND archived_at IS NULL',
+        );
+        await db.customStatement(
+          'CREATE UNIQUE INDEX idx_note_unique_draft_per_activity '
+          'ON notes (activity_id) '
+          'WHERE draft = 1 AND archived_at IS NULL',
+        );
       },
     );
   }
@@ -1006,6 +1217,10 @@ class Store extends _$Store {
     _unsubscribeFromUpdates();
     _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
+
+    // Cancel all pending debounce timers
+    _syncDebouncer.dispose();
+
     await super.close();
   }
 

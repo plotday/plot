@@ -13,7 +13,7 @@ COMMENT ON COLUMN "public"."activity_tag"."occurrence" IS 'Original occurrence d
 
 ALTER TABLE "public"."activity_tag" ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX ON "public"."activity_tag" (activity_id, tag_id)
+CREATE INDEX idx_activity_tag_activity_id ON "public"."activity_tag" (activity_id, tag_id)
 WHERE
     archived_at IS NULL;
 

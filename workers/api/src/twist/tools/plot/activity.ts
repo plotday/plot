@@ -1,19 +1,45 @@
 import TurndownService from "turndown";
 
+import { type Database, safeQuery } from "@plotday/db";
 import {
   type Activity,
+  type ActivityLink,
   type ActivityMeta,
   ActivityType,
   type ActivityUpdate,
+  type ActorId,
+  ActorType,
+  type CreateActivityOptions,
+  type CreateNoteOptions,
   type NewActivity,
+  type NewActivityWithNotes,
+  type NewNote,
+  type Note,
+  type NoteUpdate,
   type PickPriorityConfig,
+  type Tag,
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
-import { type Database, safeQuery } from "@plotday/db";
 
 import { fromDbActivity } from "./converters";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";
+
+/**
+ * Converts ActorType enum to database actor type string.
+ */
+function actorTypeToString(type: ActorType): string {
+  switch (type) {
+    case ActorType.User:
+      return "user";
+    case ActorType.Contact:
+      return "contact";
+    case ActorType.Twist:
+      return "priority_twist";
+    default:
+      return "user";
+  }
+}
 
 /**
  * Converts note content to Markdown based on the specified noteType.
@@ -74,32 +100,76 @@ function convertNoteToMarkdown(
   }
 }
 
+/**
+ * Creates a preview string from markdown content.
+ * Strips markdown formatting, newlines, and truncates to 100 characters.
+ *
+ * @param markdown - The markdown content to create a preview from
+ * @returns A plain text preview (max 100 characters) or null if input is empty
+ */
+function createPreviewFromMarkdown(
+  markdown: string | null | undefined
+): string | null {
+  if (!markdown) return null;
+
+  let preview = markdown;
+
+  // Strip markdown formatting
+  // Remove code blocks
+  preview = preview.replace(/```[\s\S]*?```/g, "");
+  preview = preview.replace(/`[^`]+`/g, "");
+
+  // Remove headers
+  preview = preview.replace(/^#+\s+/gm, "");
+
+  // Remove links but keep link text
+  preview = preview.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+  // Remove images
+  preview = preview.replace(/!\[([^\]]*)\]\([^)]+\)/g, "");
+
+  // Remove bold/italic
+  preview = preview.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  preview = preview.replace(/(\*|_)(.*?)\1/g, "$2");
+
+  // Remove strikethrough
+  preview = preview.replace(/~~(.*?)~~/g, "$1");
+
+  // Remove blockquotes
+  preview = preview.replace(/^>\s+/gm, "");
+
+  // Remove horizontal rules
+  preview = preview.replace(/^[-*_]{3,}$/gm, "");
+
+  // Remove list markers
+  preview = preview.replace(/^[\s]*[-*+]\s+/gm, "");
+  preview = preview.replace(/^[\s]*\d+\.\s+/gm, "");
+
+  // Replace multiple newlines with single space
+  preview = preview.replace(/\n+/g, " ");
+
+  // Replace multiple spaces with single space
+  preview = preview.replace(/\s+/g, " ");
+
+  // Trim whitespace
+  preview = preview.trim();
+
+  // Truncate to 100 characters
+  if (preview.length > 100) {
+    preview = preview.substring(0, 100).trim() + "…";
+  }
+
+  return preview || null;
+}
+
 export async function createActivity(
   plot: Plot,
-  activity: NewActivity
+  activity: NewActivity | NewActivityWithNotes,
+  options?: CreateActivityOptions
 ): Promise<Activity> {
   // Handle activity exceptions differently
   if (activity.recurrence && activity.occurrence) {
-    return createActivityException(plot, activity);
-  }
-
-  // Handle path generation based on parentId
-  let parent;
-  if (activity.parent) {
-    // Look up parent activity to get its path and priority
-    const parentResult = await plot.supabase
-      .from("activity")
-      .select("path, priority_id")
-      .eq("id", activity.parent.id)
-      .single();
-
-    if (parentResult.error) {
-      throw new Error(`Parent activity not found`);
-    }
-
-    parent = parentResult.data;
-  } else {
-    parent = null;
+    return createActivityException(plot, activity, options);
   }
 
   // Determine target priority, handling pickPriority for similarity-based selection
@@ -135,19 +205,31 @@ export async function createActivity(
 
     // Generate embedding if content is in config
     if (pickPriorityConfig.content !== undefined) {
-      const textToEmbed = [activity.title, activity.note]
+      const firstNote =
+        "notes" in activity && activity.notes?.[0]?.content
+          ? activity.notes[0].content
+          : null;
+      const textToEmbed = [activity.title, firstNote]
         .filter(Boolean)
-        .join(" ");
+        .join("\n");
 
       if (textToEmbed.trim().length > 0) {
-        embedding = await plot.ai.embed(textToEmbed);
+        try {
+          embedding = await plot.ai.embed(textToEmbed);
+        } catch (error) {
+          console.warn(
+            `Failed to generate embedding for pickPriority, falling back to default priority: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+          // embedding remains null, will use default priority logic
+        }
       }
     }
 
     // Build activity data for comparison
     const activityData: any = {
       type: activity.type,
-      mentions: activity.mentions || [],
       meta: activity.meta || {},
     };
 
@@ -172,13 +254,12 @@ export async function createActivity(
       // Use the priority from the best matching activity
       targetPriorityId = matchResult.data[0].priority_id;
     } else {
-      // No matching activities found, use parent or default
-      targetPriorityId = parent?.priority_id ?? plot.priorityId;
+      // No matching activities found, use default
+      targetPriorityId = plot.priorityId;
     }
   } else {
-    // Explicit priority specified: parent > explicit > default
+    // Explicit priority specified or use default
     targetPriorityId =
-      parent?.priority_id ??
       ("priority" in activity ? activity.priority.id : undefined) ??
       plot.priorityId;
   }
@@ -197,6 +278,7 @@ export async function createActivity(
         break;
       case ActivityType.Action:
         dbActivityType = "action";
+        activity.start ??= new Date();
         break;
       case ActivityType.Event:
         dbActivityType = "event";
@@ -213,37 +295,59 @@ export async function createActivity(
     activity.recurrenceRule ?? null
   );
 
-  let path = undefined;
-  if (parent) {
-    const pathResult = await plot.supabase.rpc("generate_path", {
-      parent: parent?.path,
-    });
-    if (pathResult.error) {
-      throw new Error(`Path generation failed: ${pathResult.error.message}`);
+  // Generate preview from first note with content
+  let previewText: string | null = null;
+  if ("notes" in activity && activity.notes && activity.notes.length > 0) {
+    // Find first note with content
+    const firstNoteWithContent = activity.notes.find((note) => note.content);
+    if (firstNoteWithContent && firstNoteWithContent.content) {
+      // Convert note to markdown first if needed
+      const markdown = convertNoteToMarkdown(
+        firstNoteWithContent.content,
+        firstNoteWithContent.noteType
+      );
+      previewText = createPreviewFromMarkdown(markdown);
     }
-    path = pathResult.data;
+  }
+
+  // Determine assignee_id for the activity
+  let assigneeId: string | null = null;
+  if (activity.assignee) {
+    // Use explicitly provided assignee
+    assigneeId = activity.assignee.id;
+  } else if (dbActivityType === "action") {
+    // For actions without explicit assignee, default to twist owner
+    const twistOwnerResult = await plot.supabase
+      .from("priority_twist")
+      .select("owner_id")
+      .eq("id", plot.priorityTwistId)
+      .single();
+
+    if (twistOwnerResult.data) {
+      assigneeId = twistOwnerResult.data.owner_id;
+    }
   }
 
   // Convert NewActivity to database format
   const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] = {
     author_id: plot.priorityTwistId,
     created_by: plot.priorityTwistId,
+    assignee_id: assigneeId,
     priority_id: targetPriorityId,
     type: dbActivityType,
     title: activity.title ?? null,
-    note: convertNoteToMarkdown(activity.note, activity.noteType),
+    preview: previewText,
+    draft: activity.draft ?? false,
+    private: activity.private ?? false,
     duration: duration ? formatInterval(duration) : null,
     done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
-    links: activity.links ?? null,
     recurrence_rule: activity.recurrenceRule ?? null,
     recurrence_exdates:
       activity.recurrenceExdates?.map((d) => d.toISOString()) ?? null,
     recurrence_dates:
       activity.recurrenceDates?.map((d) => d.toISOString()) ?? null,
     meta: activity.meta ?? null,
-    mentions: activity.mentions ?? null,
     updated_by: plot.getUpdatedBy(),
-    path,
     embedding: embedding ? JSON.stringify(embedding) : null,
     pick_priority: pickPriorityConfig ?? null,
   };
@@ -296,6 +400,26 @@ export async function createActivity(
     await plot.supabase.from("activity").insert(dbActivity).select().single()
   );
 
+  // Mark as read for all priority users if unread is false
+  if (options?.unread === false) {
+    // Get all users in the priority
+    const usersResult = await plot.supabase
+      .from("priority_user")
+      .select("user_id")
+      .eq("priority_id", targetPriorityId);
+
+    if (usersResult.data && usersResult.data.length > 0) {
+      // Create activity_read entries for all users
+      const activityReadEntries = usersResult.data.map((pu) => ({
+        activity_id: dbResult.id,
+        user_id: pu.user_id,
+        read_at: dbResult.created_at, // Use activity's created_at timestamp
+      }));
+
+      await plot.supabase.from("activity_read").insert(activityReadEntries);
+    }
+  }
+
   // Add tags if provided
   if (activity.tags) {
     const tagUpdates: Record<string, boolean> = {};
@@ -305,39 +429,25 @@ export async function createActivity(
 
     await plot.supabase.rpc("update_activity_tags", {
       p_activity_id: dbResult.id,
-      p_user_id: plot.priorityTwistId, // Use twist as the actor
+      p_actor_id: plot.priorityTwistId, // Use twist as the actor
       p_client_id: plot.getUpdatedBy(),
       p_tag_updates: tagUpdates,
     });
   }
 
-  // Fetch the created activity with author information
-  const { data: activityWithAuthor, error: fetchError } = await plot.supabase
-    .from("activity")
-    .select(
-      `
-        *,
-        author:actor!author_id(
-          id,
-          name,
-          type,
-          email
-        )
-      `
-    )
-    .eq("id", dbResult.id)
-    .single();
-
-  if (fetchError) {
-    throw new Error(`Failed to fetch created activity: ${fetchError.message}`);
+  // Create initial notes if provided
+  if ("notes" in activity && activity.notes && activity.notes.length > 0) {
+    await createNotes(
+      plot,
+      activity.notes.map((note) => ({
+        ...note,
+        activity: { id: dbResult.id },
+      }))
+    );
   }
 
-  // Fetch tags for the activity
-  const { data: tagsData } = await plot.supabase
-    .from("activity_tags")
-    .select("tags")
-    .eq("activity_id", dbResult.id)
-    .single();
+  // Get author from cached twist actor
+  const author = await plot.getActor();
 
   // Check if ContactAccess.Read permission is granted to include author email
   const includeAuthorEmail =
@@ -346,42 +456,217 @@ export async function createActivity(
 
   return fromDbActivity(
     {
-      ...activityWithAuthor,
-      tags: tagsData?.tags || null,
-    } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+      ...dbResult,
+      tags: activity.tags || null,
       author: {
-        id: string;
-        name: string;
-        type: string;
-        email?: string;
-      };
+        id: author.id,
+        name: author.name ?? "",
+        type: actorTypeToString(author.type),
+        email: author.email ?? null,
+      },
+      assignee: null,
     },
     includeAuthorEmail
   );
+}
+
+export async function createNote(
+  plot: Plot,
+  note: NewNote,
+  options?: CreateNoteOptions
+): Promise<Note> {
+  // Fetch activity with author for validation and later use
+  const { data: activityData, error: activityError } = await plot.supabase
+    .from("activity")
+    .select(
+      `
+        *,
+        author:actor!author_id(
+          id,
+          name,
+          type,
+          email,
+          archived_at,
+          avatar_url,
+          created_at,
+          updated_at
+        ),
+        assignee:actor!assignee_id(
+          id,
+          name,
+          type,
+          email,
+          archived_at,
+          avatar_url,
+          created_at,
+          updated_at
+        )
+      `
+    )
+    .eq("id", note.activity.id)
+    .single();
+
+  if (activityError) {
+    throw new Error(`Activity not found: ${activityError.message}`);
+  }
+
+  if (!activityData.author) {
+    throw new Error(`Activity author not found`);
+  }
+
+  await plot.validatePriorityAccess(activityData.priority_id);
+
+  // Store activity data with non-null author for type safety
+  const activityWithAuthor = {
+    ...activityData,
+    author: activityData.author,
+    assignee: activityData.assignee ?? null,
+  };
+
+  // Convert Note to database format
+  const dbNote: Database["public"]["Tables"]["note"]["Insert"] = {
+    author_id: plot.priorityTwistId,
+    created_by: plot.priorityTwistId,
+    activity_id: note.activity.id,
+    draft: note.draft ?? false,
+    private: note.private ?? false,
+    content: note.content,
+    links: note.links ?? null,
+    mentions: note.mentions ?? null,
+    updated_by: plot.getUpdatedBy(),
+  };
+
+  const dbResult = safeQuery(
+    await plot.supabase.from("note").insert(dbNote).select().single()
+  );
+
+  // Mark activity as read for all priority users if unread is false
+  if (options?.unread === false) {
+    // Get all users in the priority
+    const usersResult = await plot.supabase
+      .from("priority_user")
+      .select("user_id")
+      .eq("priority_id", activityData.priority_id);
+
+    if (usersResult.data && usersResult.data.length > 0) {
+      // Create or update activity_read entries for all users
+      const activityReadEntries = usersResult.data.map((pu) => ({
+        activity_id: note.activity.id,
+        user_id: pu.user_id,
+        read_at: dbResult.created_at, // Use note's created_at timestamp
+      }));
+
+      // Use upsert to handle cases where some users may have already read the activity
+      await plot.supabase
+        .from("activity_read")
+        .upsert(activityReadEntries, {
+          onConflict: "user_id,activity_id",
+        });
+    }
+  }
+
+  // Add tags if provided
+  if (note.tags) {
+    const tagUpdates: Record<string, boolean> = {};
+    for (const tagId of Object.keys(note.tags)) {
+      tagUpdates[tagId] = true;
+    }
+
+    // Insert tags using note_tag table
+    const tagInserts = Object.entries(note.tags)
+      .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
+      .flatMap(([tagId, actorIds]) =>
+        actorIds!.map((actorId) => ({
+          note_id: dbResult.id,
+          tag_id: parseInt(tagId),
+          actor_id: actorId,
+          updated_by: plot.getUpdatedBy(),
+        }))
+      );
+
+    if (tagInserts.length > 0) {
+      await plot.supabase.from("note_tag").insert(tagInserts);
+    }
+  }
+
+  // Get author from cached twist actor
+  const author = await plot.getActor();
+
+  // Check if ContactAccess.Read permission is granted
+  const includeAuthorEmail =
+    plot.plotOptions?.contact?.access !== undefined &&
+    plot.plotOptions.contact.access >= ContactAccess.Read;
+
+  // Convert to Note type using cached activity data
+  return {
+    id: dbResult.id,
+    activity: fromDbActivity(
+      { ...activityWithAuthor, tags: null },
+      includeAuthorEmail
+    ),
+    author: {
+      id: author.id,
+      type: author.type,
+      name: author.name ?? null,
+      email: includeAuthorEmail ? author.email ?? undefined : undefined,
+    },
+    draft: dbResult.draft,
+    private: dbResult.private,
+    content: dbResult.content,
+    links: dbResult.links as ActivityLink[] | null,
+    mentions: (dbResult.mentions as string[])?.map((m) => m as ActorId) ?? null,
+    tags: note.tags || null,
+  };
+}
+
+export async function createNotes(
+  plot: Plot,
+  notes: NewNote[]
+): Promise<Note[]> {
+  // Create all notes in parallel
+  return Promise.all(notes.map((note) => createNote(plot, note)));
 }
 
 export async function updateActivity(
   plot: Plot,
   activity: ActivityUpdate
 ): Promise<void> {
-  // Validate activity update access permissions
-  await plot.validateActivityUpdateAccess(activity.id);
+  // Check worker-level cache for activity data first
+  const { getActivityCache } = await import("./index");
+  const cacheKey = `${activity.id}:${plot.priorityTwistId}`;
+  const cached = getActivityCache()?.get(cacheKey);
 
-  // Fetch activity priority and created_by to validate access
-  const { data: existingActivity, error: fetchError } = await plot.supabase
-    .from("activity")
-    .select("priority_id, created_by")
-    .eq("id", activity.id)
-    .single();
+  if (cached) {
+    // Use cached data - no database query needed
+    await plot.validateActivityUpdateAccess(activity.id, {
+      created_by: cached.created_by,
+      mentions: cached.mentions,
+    });
 
-  if (fetchError) {
-    throw new Error(
-      `Activity not found or access denied: ${fetchError.message}`
-    );
+    // Validate priority access
+    await plot.validatePriorityAccess(cached.priority_id);
+  } else {
+    // Cache miss - validate access first (will query for created_by/mentions)
+    await plot.validateActivityUpdateAccess(activity.id);
+
+    // Query for priority_id to validate access
+    const { data: existingActivity, error: fetchError } = await plot.supabase
+      .from("activity")
+      .select("priority_id")
+      .eq("id", activity.id)
+      .single();
+
+    if (fetchError || !existingActivity) {
+      throw new Error(
+        `Activity not found or access denied: ${
+          fetchError?.message ?? "Not found"
+        }`
+      );
+    }
+
+    // Validate priority access
+    await plot.validatePriorityAccess(existingActivity.priority_id);
   }
-
-  // Validate priority access
-  await plot.validatePriorityAccess(existingActivity.priority_id);
 
   // Build update object
   const dbUpdate: Database["public"]["Tables"]["activity"]["Update"] = {
@@ -407,20 +692,17 @@ export async function updateActivity(
   if (activity.title !== undefined) {
     dbUpdate.title = activity.title;
   }
-  if (activity.note !== undefined) {
-    dbUpdate.note = convertNoteToMarkdown(activity.note, activity.noteType);
+  if (activity.draft !== undefined) {
+    dbUpdate.draft = activity.draft;
+  }
+  if (activity.private !== undefined) {
+    dbUpdate.private = activity.private;
   }
   if (activity.doneAt !== undefined) {
     dbUpdate.done_at = activity.doneAt ? activity.doneAt.toISOString() : null;
   }
   if (activity.meta !== undefined) {
     dbUpdate.meta = activity.meta;
-  }
-  if (activity.links !== undefined) {
-    dbUpdate.links = activity.links;
-  }
-  if (activity.mentions !== undefined) {
-    dbUpdate.mentions = activity.mentions;
   }
 
   // Handle recurrence fields
@@ -516,49 +798,6 @@ export async function updateActivity(
     }
   }
 
-  // Handle parent path updates
-  if (activity.parent !== undefined) {
-    if (activity.parent) {
-      // Look up parent activity to get its path and priority
-      const parentResult = await plot.supabase
-        .from("activity")
-        .select("path, priority_id")
-        .eq("id", activity.parent.id)
-        .single();
-
-      if (parentResult.error) {
-        throw new Error(
-          `Parent activity not found: ${parentResult.error.message}`
-        );
-      }
-
-      // Validate that parent activity is within allowed hierarchy
-      await plot.validatePriorityAccess(parentResult.data.priority_id);
-
-      // Generate child path using database function
-      const pathResult = await plot.supabase.rpc("generate_path", {
-        parent: parentResult.data.path,
-      });
-
-      if (pathResult.error) {
-        throw new Error(`Path generation failed: ${pathResult.error.message}`);
-      }
-
-      dbUpdate.path = pathResult.data;
-    } else {
-      // Setting parent to null - generate new root path
-      const pathResult = await plot.supabase.rpc("generate_path", {
-        parent: null,
-      });
-
-      if (pathResult.error) {
-        throw new Error(`Path generation failed: ${pathResult.error.message}`);
-      }
-
-      dbUpdate.path = pathResult.data;
-    }
-  }
-
   // Execute the update
   const { error: updateError } = await plot.supabase
     .from("activity")
@@ -571,9 +810,34 @@ export async function updateActivity(
 
   // Handle full tags object replacement (only for activities created by this twist)
   if (activity.tags !== undefined) {
-    if (existingActivity.created_by !== plot.priorityTwistId) {
+    // Get created_by from cache or query if needed
+    const created_by =
+      cached?.created_by ??
+      (async () => {
+        const { data: activityData, error: queryError } = await plot.supabase
+          .from("activity")
+          .select("created_by")
+          .eq("id", activity.id)
+          .single();
+
+        if (queryError || !activityData) {
+          throw new Error(
+            `Failed to verify activity creator: ${
+              queryError?.message ?? "Not found"
+            }`
+          );
+        }
+        return activityData.created_by;
+      })();
+
+    const createdBy =
+      typeof created_by === "string" || created_by === null
+        ? created_by
+        : await created_by;
+
+    if (createdBy !== plot.priorityTwistId) {
       throw new Error(
-        `Cannot update tags field: activity was not created by this twist (activity.createdBy: ${existingActivity.created_by}, twist: ${plot.priorityTwistId}). Use twistTags instead to add/remove tags for this twist.`
+        `Cannot update tags field: activity was not created by this twist (activity.createdBy: ${createdBy}, twist: ${plot.priorityTwistId}). Use twistTags instead to add/remove tags for this twist.`
       );
     }
 
@@ -614,55 +878,165 @@ export async function updateActivity(
   if (activity.twistTags) {
     await plot.supabase.rpc("update_activity_tags", {
       p_activity_id: activity.id,
-      p_user_id: plot.priorityTwistId,
+      p_actor_id: plot.priorityTwistId,
       p_client_id: plot.getUpdatedBy(),
       p_tag_updates: activity.twistTags,
     });
   }
 }
 
-export async function getThread(
+export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
+  // Validate access to the note's activity
+  const { data: noteData, error: noteError } = await plot.supabase
+    .from("note")
+    .select("activity_id")
+    .eq("id", note.id)
+    .single();
+
+  if (noteError) {
+    throw new Error(`Note not found: ${noteError.message}`);
+  }
+
+  // Validate access to the activity's priority
+  const { data: activityData, error: activityError } = await plot.supabase
+    .from("activity")
+    .select("priority_id")
+    .eq("id", noteData.activity_id)
+    .single();
+
+  if (activityError) {
+    throw new Error(`Activity not found: ${activityError.message}`);
+  }
+
+  await plot.validatePriorityAccess(activityData.priority_id);
+
+  // Build update object
+  const dbUpdate: Database["public"]["Tables"]["note"]["Update"] = {
+    updated_by: plot.getUpdatedBy(),
+  };
+
+  // Handle basic fields
+  if (note.content !== undefined) {
+    dbUpdate.content = note.content;
+  }
+  if (note.links !== undefined) {
+    dbUpdate.links = note.links;
+  }
+  if (note.draft !== undefined) {
+    dbUpdate.draft = note.draft;
+  }
+  if (note.private !== undefined) {
+    dbUpdate.private = note.private;
+  }
+  if (note.mentions !== undefined) {
+    dbUpdate.mentions = note.mentions;
+  }
+
+  // Execute the update
+  const { error: updateError } = await plot.supabase
+    .from("note")
+    .update(dbUpdate)
+    .eq("id", note.id);
+
+  if (updateError) {
+    throw new Error(`Note update failed: ${updateError.message}`);
+  }
+
+  // Handle tags if provided
+  if (note.tags !== undefined) {
+    // Delete all existing tags for this note
+    const { error: deleteError } = await plot.supabase
+      .from("note_tag")
+      .delete()
+      .eq("note_id", note.id);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete existing tags: ${deleteError.message}`);
+    }
+
+    // Insert new tags
+    const newTags = Object.entries(note.tags)
+      .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
+      .flatMap(([tagId, actorIds]) =>
+        actorIds!.map((actorId) => ({
+          note_id: note.id,
+          tag_id: parseInt(tagId),
+          actor_id: actorId,
+          updated_by: plot.getUpdatedBy(),
+        }))
+      );
+
+    if (newTags.length > 0) {
+      const { error: insertError } = await plot.supabase
+        .from("note_tag")
+        .insert(newTags);
+
+      if (insertError) {
+        throw new Error(`Failed to insert new tags: ${insertError.message}`);
+      }
+    }
+  }
+}
+
+export async function getNotes(
   plot: Plot,
   activity: Activity
-): Promise<Activity[]> {
+): Promise<Note[]> {
   try {
     // Validate access to the priority
     await plot.validatePriorityAccess(activity.priority.id);
 
-    // The activity_thread RPC function now includes actor data directly
+    // Get all notes for this activity
     const { data, error } = await plot.supabase
-      .rpc("activity_thread", {
-        p_activity_id: activity.id,
-      })
+      .from("note")
       .select(
         `
-          *,
+          id,
+          created_at,
+          updated_at,
+          author_id,
+          created_by,
+          updated_by,
+          archived_at,
+          activity_id,
+          draft,
+          private,
+          content,
+          links,
+          mentions,
           author:actor!author_id(
             id,
             name,
             type,
-            email
+            email,
+            archived_at,
+            avatar_url,
+            created_at,
+            updated_at
           )
         `
-      );
+      )
+      .eq("activity_id", activity.id)
+      .order("created_at", { ascending: true });
+
     if (error) {
       console.error(error);
       throw error;
     }
 
-    // Fetch tags for all activities in the thread
-    const activityIds = data.map((row: any) => row.id);
+    // Fetch tags for all notes
+    const noteIds = data.map((row: any) => row.id);
     const { data: tagsData } = await plot.supabase
-      .from("activity_tags")
-      .select("activity_id, tags")
-      .in("activity_id", activityIds);
+      .from("note_tags")
+      .select("note_id, tags")
+      .in("note_id", noteIds);
 
-    // Create a map of activity_id to tags
+    // Create a map of note_id to tags
     const tagsMap = new Map<string, any>();
     if (tagsData) {
       for (const tagRecord of tagsData) {
-        if (tagRecord.activity_id) {
-          tagsMap.set(tagRecord.activity_id, tagRecord.tags);
+        if (tagRecord.note_id) {
+          tagsMap.set(tagRecord.note_id, tagRecord.tags);
         }
       }
     }
@@ -672,24 +1046,31 @@ export async function getThread(
       plot.plotOptions?.contact?.access !== undefined &&
       plot.plotOptions.contact.access >= ContactAccess.Read;
 
-    return data.map((row) =>
-      fromDbActivity(
-        {
-          ...row,
-          tags: tagsMap.get(row.id) || null,
-        } as any as Database["public"]["Tables"]["activity"]["Row"] & {
-          author: {
-            id: string;
-            name: string;
-            type: string;
-            email?: string;
-          };
+    return data.map((row) => {
+      if (!row.author) {
+        throw new Error("Note author not found");
+      }
+      return {
+        id: row.id,
+        activity: activity, // Use the activity parameter passed to the function
+        author: {
+          id: row.author.id as ActorId,
+          type: row.author.type as unknown as ActorType,
+          name: row.author.name ?? null,
+          email: includeAuthorEmail ? row.author.email ?? undefined : undefined,
         },
-        includeAuthorEmail
-      )
-    );
+        draft: row.draft,
+        private: row.private,
+        content: row.content,
+        links: row.links as ActivityLink[] | null,
+        mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? null,
+        tags:
+          (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) ||
+          null,
+      };
+    });
   } catch (err) {
-    console.error("Failed to get activities:", err);
+    console.error("Failed to get notes:", err);
     throw err;
   }
 }
@@ -707,11 +1088,25 @@ export async function getActivityByMeta(
       .select(
         `
           *,
-          author:actor(
+          author:actor!author_id(
             id,
             name,
             type,
-            email
+            email,
+            archived_at,
+            avatar_url,
+            created_at,
+            updated_at
+          ),
+          assignee:actor!assignee_id(
+            id,
+            name,
+            type,
+            email,
+            archived_at,
+            avatar_url,
+            created_at,
+            updated_at
           )
         `
       )
@@ -725,6 +1120,32 @@ export async function getActivityByMeta(
     if (!data) {
       return null;
     }
+
+    if (!data.author) {
+      throw new Error(`Activity author not found`);
+    }
+
+    // Store data with non-null author for type safety
+    // Add missing/nullable fields from the user_activity view with proper defaults
+    const dataWithAuthor = {
+      ...data,
+      id: data.id ?? "",
+      author_id: data.author_id ?? data.author.id ?? "",
+      created_at: data.created_at ?? new Date().toISOString(),
+      created_by: data.author_id ?? "",
+      draft: data.draft ?? false,
+      order: data.order ?? 0,
+      priority_id: data.priority_id ?? "",
+      private: data.private ?? false,
+      type: (data.type ?? "note") as Database["public"]["Enums"]["activity_type"],
+      updated_at: data.updated_at ?? new Date().toISOString(),
+      updated_by: data.updated_by ?? 0,
+      author: data.author,
+      assignee: data.assignee ?? null,
+      assignee_id: null,
+      embedding: null,
+      pick_priority: null,
+    };
 
     // Fetch tags for the activity
     const { data: tagsData } = data.id
@@ -742,15 +1163,8 @@ export async function getActivityByMeta(
 
     return fromDbActivity(
       {
-        ...data,
+        ...dataWithAuthor,
         tags: tagsData?.tags || null,
-      } as any as Database["public"]["Tables"]["activity"]["Row"] & {
-        author: {
-          id: string;
-          name: string;
-          type: string;
-          email?: string;
-        };
       },
       includeAuthorEmail
     );
@@ -762,7 +1176,8 @@ export async function getActivityByMeta(
 
 export async function createActivities(
   plot: Plot,
-  activities: NewActivity[]
+  activities: (NewActivity | NewActivityWithNotes)[],
+  options?: CreateActivityOptions
 ): Promise<Activity[]> {
   if (activities.length === 0) {
     return [];
@@ -814,19 +1229,33 @@ export async function createActivities(
 
       // Generate embedding if content is in config
       if (pickPriorityConfig.content !== undefined) {
-        const textToEmbed = [activity.title, activity.note]
+        // Get content from first note
+        const firstNoteContent =
+          "notes" in activity && activity.notes?.[0]?.content
+            ? activity.notes[0].content
+            : null;
+
+        const textToEmbed = [activity.title, firstNoteContent]
           .filter(Boolean)
           .join(" ");
 
         if (textToEmbed.trim().length > 0) {
-          embedding = await plot.ai.embed(textToEmbed);
+          try {
+            embedding = await plot.ai.embed(textToEmbed);
+          } catch (error) {
+            console.warn(
+              `Failed to generate embedding for pickPriority in batch operation, falling back to default priority: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+            // embedding remains null, will use default priority logic
+          }
         }
       }
 
       // Build activity data for comparison
       const activityData: any = {
         type: activity.type,
-        mentions: activity.mentions || [],
         meta: activity.meta || {},
       };
 
@@ -872,6 +1301,7 @@ export async function createActivities(
           break;
         case ActivityType.Action:
           dbActivityType = "action";
+          activity.start ??= new Date();
           break;
         case ActivityType.Event:
           dbActivityType = "event";
@@ -888,6 +1318,21 @@ export async function createActivities(
       activity.recurrenceRule ?? null
     );
 
+    // Generate preview from first note with content
+    let previewText: string | null = null;
+    if ("notes" in activity && activity.notes && activity.notes.length > 0) {
+      // Find first note with content
+      const firstNoteWithContent = activity.notes.find((note) => note.content);
+      if (firstNoteWithContent && firstNoteWithContent.content) {
+        // Convert note to markdown first if needed
+        const markdown = convertNoteToMarkdown(
+          firstNoteWithContent.content,
+          firstNoteWithContent.noteType
+        );
+        previewText = createPreviewFromMarkdown(markdown);
+      }
+    }
+
     // Convert NewActivity to database format
     const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] = {
       author_id: plot.priorityTwistId,
@@ -895,17 +1340,15 @@ export async function createActivities(
       priority_id: targetPriorityId,
       type: dbActivityType,
       title: activity.title ?? null,
-      note: convertNoteToMarkdown(activity.note, activity.noteType),
+      preview: previewText,
       duration: duration ? formatInterval(duration) : null,
       done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
-      links: activity.links ?? null,
       recurrence_rule: activity.recurrenceRule ?? null,
       recurrence_exdates:
         activity.recurrenceExdates?.map((d) => d.toISOString()) ?? null,
       recurrence_dates:
         activity.recurrenceDates?.map((d) => d.toISOString()) ?? null,
       meta: activity.meta ?? null,
-      mentions: activity.mentions ?? null,
       updated_by: plot.getUpdatedBy(),
       embedding: embedding ? JSON.stringify(embedding) : null,
       pick_priority: pickPriorityConfig ?? null,
@@ -953,35 +1396,6 @@ export async function createActivities(
       }
     }
 
-    // Handle path generation based on parentId
-    if (activity.parent) {
-      // Look up parent activity to get its path and priority
-      const parentResult = await plot.supabase
-        .from("activity")
-        .select("path, priority_id")
-        .eq("id", activity.parent.id)
-        .single();
-
-      if (parentResult.error) {
-        throw new Error(
-          `Parent activity not found: ${parentResult.error.message}`
-        );
-      }
-
-      // Validate that parent activity is within allowed hierarchy
-      await plot.validatePriorityAccess(parentResult.data.priority_id);
-      // Generate child path using database function
-      const pathResult = await plot.supabase.rpc("generate_path", {
-        parent: parentResult.data.path,
-      });
-
-      if (pathResult.error) {
-        throw new Error(`Path generation failed: ${pathResult.error.message}`);
-      }
-
-      dbActivity.path = pathResult.data;
-    }
-
     dbActivities.push(dbActivity);
   }
 
@@ -989,6 +1403,42 @@ export async function createActivities(
   const dbResult = safeQuery(
     await plot.supabase.from("activity").insert(dbActivities).select()
   );
+
+  // Mark activities as read for all priority users if unread is false
+  if (options?.unread === false && dbResult.length > 0) {
+    // Group activities by priority_id to minimize database queries
+    const activitiesByPriority = new Map<string, typeof dbResult>();
+    for (const activity of dbResult) {
+      const priorityId = activity.priority_id;
+      if (!activitiesByPriority.has(priorityId)) {
+        activitiesByPriority.set(priorityId, []);
+      }
+      activitiesByPriority.get(priorityId)!.push(activity);
+    }
+
+    // For each priority, get users and create activity_read entries
+    for (const [priorityId, priorityActivities] of activitiesByPriority) {
+      const usersResult = await plot.supabase
+        .from("priority_user")
+        .select("user_id")
+        .eq("priority_id", priorityId);
+
+      if (usersResult.data && usersResult.data.length > 0) {
+        // Create activity_read entries for all users and all activities in this priority
+        const activityReadEntries = priorityActivities.flatMap((activity) =>
+          usersResult.data!.map((pu) => ({
+            activity_id: activity.id,
+            user_id: pu.user_id,
+            read_at: activity.created_at, // Use activity's created_at timestamp
+          }))
+        );
+
+        if (activityReadEntries.length > 0) {
+          await plot.supabase.from("activity_read").insert(activityReadEntries);
+        }
+      }
+    }
+  }
 
   // Add tags for activities that have them
   for (let i = 0; i < activities.length; i++) {
@@ -1003,69 +1453,33 @@ export async function createActivities(
 
       await plot.supabase.rpc("update_activity_tags", {
         p_activity_id: dbActivity.id,
-        p_user_id: plot.priorityTwistId, // Use twist as the actor
+        p_actor_id: plot.priorityTwistId, // Use twist as the actor
         p_client_id: plot.getUpdatedBy(),
         p_tag_updates: tagUpdates,
       });
     }
   }
 
-  // Fetch all created activities with author information
-  const activityIds = dbResult.map((a: any) => a.id);
-  const { data: activitiesWithAuthor, error: fetchError } = await plot.supabase
-    .from("activity")
-    .select(
-      `
-        *,
-        author:actor!author_id(
-          id,
-          name,
-          type,
-          email
-        )
-      `
-    )
-    .in("id", activityIds);
-
-  if (fetchError) {
-    throw new Error(
-      `Failed to fetch created activities: ${fetchError.message}`
-    );
-  }
-
-  // Fetch tags for all activities
-  const { data: tagsData } = await plot.supabase
-    .from("activity_tags")
-    .select("activity_id, tags")
-    .in("activity_id", activityIds);
-
-  // Create a map of activity_id to tags
-  const tagsMap = new Map<string, any>();
-  if (tagsData) {
-    for (const tagRecord of tagsData) {
-      if (tagRecord.activity_id) {
-        tagsMap.set(tagRecord.activity_id, tagRecord.tags);
-      }
-    }
-  }
+  // Get author from cached twist actor
+  const author = await plot.getActor();
 
   // Check if ContactAccess.Read permission is granted to include author email
   const includeAuthorEmail =
     plot.plotOptions?.contact?.access !== undefined &&
     plot.plotOptions.contact.access >= ContactAccess.Read;
 
-  return activitiesWithAuthor.map((activityWithAuthor) =>
+  return dbResult.map((dbActivity, index) =>
     fromDbActivity(
       {
-        ...activityWithAuthor,
-        tags: tagsMap.get(activityWithAuthor.id) || null,
-      } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+        ...dbActivity,
+        tags: activities[index].tags || null,
         author: {
-          id: string;
-          name: string;
-          type: string;
-          email?: string;
-        };
+          id: author.id,
+          name: author.name ?? "",
+          type: actorTypeToString(author.type),
+          email: author.email ?? null,
+        },
+        assignee: null,
       },
       includeAuthorEmail
     )
@@ -1074,7 +1488,8 @@ export async function createActivities(
 
 async function createActivityException(
   plot: Plot,
-  activity: NewActivity
+  activity: NewActivity,
+  _options?: CreateActivityOptions
 ): Promise<Activity> {
   if (!activity.recurrence || !activity.occurrence) {
     throw new Error(
@@ -1085,8 +1500,20 @@ async function createActivityException(
   // Validate activity update access permissions (exceptions are updates to recurring activities)
   await plot.validateActivityUpdateAccess(activity.recurrence.id);
 
-  // Validate access to the recurrence activity
-  await plot.validatePriorityAccess(activity.recurrence.priority.id);
+  // Fetch the recurrence activity to get priority
+  const { data: recurrenceActivity, error: recurrenceError } =
+    await plot.supabase
+      .from("activity")
+      .select("priority_id, priority:priority!priority_id(id, title)")
+      .eq("id", activity.recurrence.id)
+      .single();
+
+  if (recurrenceError || !recurrenceActivity) {
+    throw new Error("Recurrence activity not found");
+  }
+
+  // Validate access to the recurrence activity's priority
+  await plot.validatePriorityAccess(recurrenceActivity.priority_id);
 
   // Format occurrence as required by database
   const hasTimestamp =
@@ -1110,7 +1537,6 @@ async function createActivityException(
       activity_id: activity.recurrence.id,
       occurrence: occurrenceStr,
       title: activity.title ?? null,
-      note: convertNoteToMarkdown(activity.note, activity.noteType),
       duration: exceptionDuration ? formatInterval(exceptionDuration) : null,
       done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
       meta: activity.meta ?? null,
@@ -1181,11 +1607,14 @@ async function createActivityException(
     recurrenceUntil: activity.recurrenceUntil ?? null,
     recurrenceCount: activity.recurrenceCount ?? null,
     doneAt: activity.doneAt ?? null,
-    note: activity.note ?? null,
     title: activity.title ?? null,
-    parent: null,
-    links: activity.links ?? null,
-    priority: activity.recurrence!.priority,
+    assignee: null,
+    draft: false,
+    private: false,
+    priority: {
+      id: recurrenceActivity.priority_id,
+      title: (recurrenceActivity.priority as any)?.title ?? "Untitled",
+    },
     recurrenceRule: null,
     recurrenceExdates: null,
     recurrenceDates: null,
@@ -1193,6 +1622,6 @@ async function createActivityException(
     occurrence: activity.occurrence ?? null,
     meta: activity.meta ?? null,
     tags: activity.tags ?? null,
-    mentions: activity.mentions ?? null,
+    mentions: null, // Read-only aggregation from notes
   };
 }

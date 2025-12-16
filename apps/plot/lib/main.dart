@@ -6,6 +6,7 @@ import 'package:super_editor/super_editor.dart' show LogNames;
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'app.dart';
+import 'app_info.dart';
 import 'env.dart';
 import 'base.dart';
 import 'logging.dart';
@@ -47,6 +48,7 @@ Future<void> run() async {
     WidgetsFlutterBinding.ensureInitialized();
     await Window.init();
     await Env.init();
+    await AppInfo.init();
 
     // Initialize PostHog with environment variables
     final config = PostHogConfig(Env.posthogApiKey)

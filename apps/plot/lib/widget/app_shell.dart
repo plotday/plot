@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/command/global.dart';
 import 'package:plot/page/loading.dart';
@@ -12,10 +13,12 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ModalProvider(
-      child: GlobalMenu(
-        child: GlobalShortcuts(
-          child: AutoRouter(placeholder: (context) => const LoadingPage()),
+    return FToaster(
+      child: ModalProvider(
+        child: GlobalMenu(
+          child: GlobalShortcuts(
+            child: AutoRouter(placeholder: (context) => const LoadingPage()),
+          ),
         ),
       ),
     );

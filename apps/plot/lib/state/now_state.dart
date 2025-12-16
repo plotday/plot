@@ -27,10 +27,10 @@ final class NowLoaded extends NowState {
   final Priority? context;
 
   List<Activity> get scheduled =>
-      _day.events.where((event) => event.at!.includes(now)).toList();
+      _day.scheduled.where((event) => event.at!.includes(now)).toList();
 
   List<Activity> get next {
-    final events = _day.events;
+    final events = _day.scheduled;
     int first = -1;
     int last = events.length;
     for (int i = 0; i < events.length; i++) {
@@ -56,7 +56,7 @@ final class NowLoaded extends NowState {
   }
 
   List<Activity> get previous {
-    final events = _day.events;
+    final events = _day.scheduled;
     int first = 0;
     int last = events.length;
     for (int i = events.length - 1; i >= 0; i--) {
@@ -77,7 +77,14 @@ final class NowLoaded extends NowState {
   }
 
   @override
-  List<Object?> get props => [session, scheduled, next, previous];
+  List<Object?> get props => [
+    session,
+    scheduled,
+    next,
+    previous,
+    context?.id,
+    defaultPriority,
+  ];
 
   Priority get priority =>
       context ??

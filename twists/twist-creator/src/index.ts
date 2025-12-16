@@ -24,7 +24,9 @@ export default class TwistCreator extends Twist<TwistCreator> {
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: "Getting Started",
-      note: `Let's build something great!
+      notes: [
+        {
+          content: `Let's build something great!
 
 Plot twists are written in TypeScript and run remotely.
 
@@ -34,6 +36,8 @@ To get started:
 2. Edit the generated twist code in the \`src/index.ts\` file.
 3. Upload your twist using \`npm deploy\`.
 4. Add your twist to a priority in the app to test it.`,
+        },
+      ],
     });
 
     const logsCallback = await this.callback(this.onLogs);
@@ -65,7 +69,11 @@ To get started:
         const parentActivity = await this.tools.plot.createActivity({
           type: ActivityType.Note,
           title: `Twist Logs (${environment})`,
-          note: `Console logs from ${environment} environment`,
+          notes: [
+            {
+              content: `Console logs from ${environment} environment`,
+            },
+          ],
         });
         parentId = parentActivity.id;
         parentIds[environment] = parentId;
@@ -78,7 +86,11 @@ To get started:
         title: `[${log.severity}] ${log.message.substring(0, 50)}${
           log.message.length > 50 ? "..." : ""
         }`,
-        note: log.message,
+        notes: [
+          {
+            content: log.message,
+          },
+        ],
         start: log.timestamp,
         parent: { id: parentId },
       }));

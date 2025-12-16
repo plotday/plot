@@ -6,9 +6,9 @@ typedef ActivityId = Uuid;
 class Activities extends Table
     with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
   BlobColumn get priorityId => blob().map(const UuidConverter())();
-  TextColumn get path => text().map(const PathConverter())();
-  BlobColumn get authorId => blob().map(const UuidConverter())();
-  BlobColumn get assigneeId => blob().nullable().map(const UuidConverter())();
+  BlobColumn get authorId => blob().map(const ActorIdConverter())();
+  BlobColumn get assigneeId =>
+      blob().nullable().map(const ActorIdConverter())();
   RealColumn get order => real()
       .clientDefault(() => Order.first().value)
       .map(const OrderConverter())();
@@ -16,7 +16,7 @@ class Activities extends Table
   TextColumn get type => text().map(const EnumConverter<ActivityType>())();
 
   TextColumn get title => text().nullable()();
-  TextColumn get note => text().nullable()();
+  TextColumn get preview => text().nullable()();
 
   DateTimeColumn get startAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
@@ -30,6 +30,8 @@ class Activities extends Table
       integer().nullable().map(const IntervalConverter())();
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get lastNoteCreatedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
 
   TextColumn get recurrenceRule =>
       text().nullable().map(const RecurrenceRuleConverter())();
@@ -37,7 +39,6 @@ class Activities extends Table
       text().nullable().map(const DateTimeListConverter())();
   TextColumn get recurrenceDates =>
       text().nullable().map(const DateTimeListConverter())();
-  TextColumn get links => text().nullable().map(const LinksConverter())();
   TextColumn get mentions => text().nullable().map(const UuidListConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   BoolColumn get unreadUpdated => boolean().nullable()();
@@ -90,7 +91,7 @@ class RecurrenceRuleConverter extends TypeConverter<RecurrenceRule?, String?>
 }
 
 class ActivitiesBase extends BaseTable {
-  ActivitiesBase({this.priorityPath})
+  ActivitiesBase({this.priorityPath, this.initial = false})
     : super(
         table: 'user_activity',
         writeTable: 'activity',
@@ -98,10 +99,13 @@ class ActivitiesBase extends BaseTable {
         filterName: priorityPath,
         ascending:
             false, // Get latest items first for reverse chronological sync
-        limit: 200,
+        limit: initial
+            ? null
+            : 200, // No limit for initial pull (active OR unread)
       );
 
   final String? priorityPath;
+  final bool initial;
 
   @override
   PostgrestFilterBuilder<T2> filterRange<T2>(
@@ -109,10 +113,18 @@ class ActivitiesBase extends BaseTable {
     DateTimeRange? range,
   ) {
     if (range == null) return query;
+
+    // Apply date range overlap filter for calendar-based filtering
+    // This checks if the activity's scheduled dates (range_at or range_on)
+    // overlap with the requested calendar date range.
+    // Note: We don't call super.filterRange() here because that applies
+    // created_at boundaries for pagination, which is handled separately
+    // by BaseTable.get() and the pull() logic.
     final dateRange = range.toDateRange();
     query = query.or(
       'range_at.ov."${dateRange.toDb()}",range_on.ov."${dateRange.toDb()}"',
     );
+
     return query;
   }
 
@@ -126,6 +138,26 @@ class ActivitiesBase extends BaseTable {
       query = query.filter('priority_path', 'cd', priorityPath);
     }
 
+    // Initial pull: fetch active OR unread activities
+    if (initial) {
+      final now = DateTime.now().toUtc().toIso8601String();
+      final today = Date.today().toString();
+
+      // Build active filter conditions (to be ORed with unread)
+      // Active: type=action AND done_at IS NULL AND archived_at IS NULL
+      //         AND (range_at <= now OR range_on <= today OR both null)
+      final activeFilter =
+          'and(type.eq.action,done_at.is.null,archived_at.is.null,or(range_at.cs."[,$now)",range_on.cs."[,$today)",and(range_at.is.null,range_on.is.null)))';
+
+      // Build unread filter conditions
+      // Unread: unread=true AND archived_at IS NULL AND draft=false
+      final unreadFilter =
+          'and(unread.eq.true,archived_at.is.null,draft.eq.false)';
+
+      // Apply OR filter: (active) OR (unread)
+      query = query.or('$activeFilter,$unreadFilter');
+    }
+
     return query;
   }
 
@@ -137,7 +169,7 @@ class ActivitiesBase extends BaseTable {
     ); // Remove user_id from activity_in_range function result
 
     // Handle the 'at' field from activity_in_range function
-    final at = json['at'] != null
+    final at = json['at'] != null && json['at'] != 'empty'
         ? DateTimeRange.fromString(json['at'] as String)
         : null;
     json['start_at'] = at?.start?.toDb();
@@ -145,7 +177,7 @@ class ActivitiesBase extends BaseTable {
     json.remove('at');
 
     // Handle the 'on' field from activity_in_range function
-    final on = json['on'] != null
+    final on = json['on'] != null && json['on'] != 'empty'
         ? DateRange.fromString(json['on'] as String)
         : null;
     json['start_on'] = on?.start?.toString();
@@ -196,96 +228,59 @@ class ActivitiesBase extends BaseTable {
     json.remove('unread');
     json.remove('unread_updated');
 
+    // Remove mentions - it's a calculated field from notes
+    json.remove('mentions');
+
+    // Remove last_note_created_at - it's a calculated field from notes
+    json.remove('last_note_created_at');
+
     return json;
   }
 }
 
-enum ActivityOrder { sorted, nested, reverse }
+enum ActivityOrder { sorted, reverse }
 
 class Activity extends Equatable implements Comparable<Activity> {
-  /// Parse mentions from note and return list of twist UUIDs
-  /// Mentions are stored in the format [Name](#@{UUID}) in markdown
-  static List<Uuid> parseMentionsFromNote(
-    String? note,
-    List<PriorityTwist> twists,
-  ) {
-    if (note == null || note.isEmpty) {
-      return [];
-    }
-
-    final mentionedTwistIds = <Uuid>{};
-
-    // Match mentions in format [Name](#@{UUID})
-    // UUID format: 8-4-4-4-12 hexadecimal characters
-    final mentionPattern = RegExp(
-      r'\[([^\]]+)\]\(#@([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)',
-    );
-
-    final matches = mentionPattern.allMatches(note);
-    for (final match in matches) {
-      final uuidString = match.group(
-        2,
-      ); // UUID is in group 2, name is in group 1
-      if (uuidString != null) {
-        try {
-          mentionedTwistIds.add(Uuid.fromString(uuidString));
-        } catch (e) {
-          // Skip invalid UUIDs
-          continue;
-        }
-      }
-    }
-
-    return mentionedTwistIds.toList();
-  }
-
   static Future<void> pullInitial() async {
-    // Pull activities first (with limit of 200)
+    // Pull active OR unread activities (no limit)
+    // This fetches all items that are either:
+    // - Active: type=action, not done, not archived, scheduled for now/past or unscheduled
+    // - Unread: unread=true, not archived, not draft
     final activitiesRange = await Store.get.pull(
-      PullType.initial,
       Store.get.activities,
-      ActivitiesBase(),
+      ActivitiesBase(initial: true),
+      initial: true,
     );
 
-    if (activitiesRange == null) return;
-
-    // Use the returned range for exceptions and tags
-    await Store.get.pull(
-      PullType.initial,
-      Store.get.activityExceptions,
-      ActivityExceptionsBase(),
-      range: activitiesRange,
-    );
-    await Store.get.pull(
-      PullType.initial,
-      Store.get.activityTags,
-      ActivityTagsBase(),
-      range: activitiesRange,
-    );
+    // Pull exceptions and tags for the same range if we got any activities
+    if (activitiesRange != null) {
+      await Store.get.pull(
+        Store.get.activityExceptions,
+        ActivityExceptionsBase(),
+        initial: true,
+        range: activitiesRange,
+      );
+      await Store.get.pull(
+        Store.get.activityTags,
+        ActivityTagsBase(),
+        initial: true,
+        range: activitiesRange,
+      );
+    }
   }
 
   static Future<void> pull() async {
+    await Store.get.pull(Store.get.activities, ActivitiesBase());
     await Store.get.pull(
-      PullType.updates,
-      Store.get.activities,
-      ActivitiesBase(),
-    );
-    await Store.get.pull(
-      PullType.updates,
       Store.get.activityExceptions,
       ActivityExceptionsBase(),
     );
-    await Store.get.pull(
-      PullType.updates,
-      Store.get.activityTags,
-      ActivityTagsBase(),
-    );
+    await Store.get.pull(Store.get.activityTags, ActivityTagsBase());
   }
 
   static Future<void> pullRange(DateRange range, Path? priorityPath) async {
     // Pull activities first (with limit of 200)
-    final activitiesRange = await Store.get.pull(
-      PullType.more,
+    final activitiesRange = await Store.get.pullMore(
       Store.get.activities,
       ActivitiesBase(priorityPath: priorityPath?.value ?? ''),
       range: (range.start?.toDateTime(), range.end?.toDateTime()),
@@ -294,14 +289,12 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (activitiesRange == null) return;
 
     // Use the returned range for exceptions and tags
-    await Store.get.pull(
-      PullType.more,
+    await Store.get.pullMore(
       Store.get.activityExceptions,
       ActivityExceptionsBase(priorityPath: priorityPath?.value ?? ''),
       range: activitiesRange,
     );
-    await Store.get.pull(
-      PullType.more,
+    await Store.get.pullMore(
       Store.get.activityTags,
       ActivityTagsBase(priorityPath: priorityPath?.value ?? ''),
       range: activitiesRange,
@@ -322,37 +315,85 @@ class Activity extends Equatable implements Comparable<Activity> {
       Store.get.activities,
     )..where((t) => t.unreadUpdated.equals(true))).get();
 
-    for (final activity in unreadActivities) {
-      // Get root activity path (first level only)
-      final pathParts = activity.path.value.split('.');
-      final rootPath = pathParts.first;
+    if (unreadActivities.isEmpty) {
+      return success;
+    }
 
+    // Get the max pulledAt from activities and notes for read_at timestamp
+    final syncStates = await (Store.get.select(
+      Store.get.syncStates,
+    )..where((row) => row.entity.isIn(['activities', 'notes']))).get();
+
+    final maxPulledAtMicros = syncStates
+        .map((s) => s.pulledAt)
+        .whereType<int>()
+        .fold<int?>(
+          null,
+          (max, value) => max == null || value > max ? value : max,
+        );
+
+    // We use the latest pulledAt since the user hasn't read anything since that point, even if it exists remotely
+    final readAt = maxPulledAtMicros != null
+        ? DateTime.fromMicrosecondsSinceEpoch(maxPulledAtMicros, isUtc: true)
+        : DateTime.now().toUtc();
+
+    // Separate activities into read and unread lists
+    final toMarkRead = <ActivityRow>[];
+    final toMarkUnread = <ActivityRow>[];
+
+    for (final activity in unreadActivities) {
       if (activity.unread) {
-        // Mark as unread - delete from activity_read table
+        toMarkUnread.add(activity);
+      } else {
+        toMarkRead.add(activity);
+      }
+    }
+
+    try {
+      // Batch upsert for marking as read
+      if (toMarkRead.isNotEmpty) {
+        final readRecords = toMarkRead
+            .map(
+              (activity) => {
+                'user_id': Base.userId.toString(),
+                'activity_id': activity.id.toString(),
+                'read_at': readAt.toIso8601String(),
+              },
+            )
+            .toList();
+
         await Base.client
             .from('activity_read')
-            .delete()
-            .eq('user_id', Base.userId.toString())
-            .eq('activity_path', rootPath);
-      } else {
-        // Mark as read - upsert to activity_read table
-        await Base.client.from('activity_read').upsert({
-          'user_id': Base.userId.toString(),
-          'activity_path': rootPath,
-          'read_at': DateTime.now().toIso8601String(),
-        });
+            .upsert(readRecords, onConflict: 'user_id,activity_id');
       }
 
-      // Clear unreadUpdated flag in local database
-      await Store.get
-          .update(Store.get.activities)
-          .replace(
-            ActivitiesCompanion(
-              id: Value(activity.id),
-              unreadUpdated: const Value(null),
-              updatedAt: Value(DateTime.now()),
-            ),
-          );
+      // Batch delete for marking as unread
+      if (toMarkUnread.isNotEmpty) {
+        for (final activity in toMarkUnread) {
+          await Base.client
+              .from('activity_read')
+              .delete()
+              .eq('user_id', Base.userId.toString())
+              .eq('activity_id', activity.id.toString());
+        }
+      }
+
+      // Clear unreadUpdated flags for all activities (only on success)
+      for (final activity in unreadActivities) {
+        await (Store.get.update(
+          Store.get.activities,
+        )..where((t) => t.id.equals(activity.id.toBytes()))).write(
+          ActivitiesCompanion(
+            unreadUpdated: const Value(null),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+    } catch (e) {
+      log.severe('Failed to push activity_read changes: $e');
+      // Don't clear unreadUpdated flags on failure
+      // They will be retried on next push
+      rethrow;
     }
 
     return success;
@@ -363,9 +404,8 @@ class Activity extends Equatable implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
-    Path? path,
-    int? depth,
-    bool? deleted = false,
+    bool? archived = false,
+    bool? draft = false,
     String? search,
     bool self = true,
     ActivityOrder order = ActivityOrder.sorted,
@@ -376,9 +416,8 @@ class Activity extends Equatable implements Comparable<Activity> {
       id: id,
       priorityId: priorityId,
       priorityPath: priorityPath,
-      path: path,
-      depth: depth,
-      deleted: deleted,
+      archived: archived,
+      draft: draft,
       order: order,
       search: search,
       self: self,
@@ -391,9 +430,8 @@ class Activity extends Equatable implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
-    Path? path,
-    int? depth,
-    bool? deleted = false,
+    bool? archived = false,
+    bool? draft = false,
     String? search,
     bool self = true,
     ActivityOrder order = ActivityOrder.sorted,
@@ -404,94 +442,84 @@ class Activity extends Equatable implements Comparable<Activity> {
       id: id,
       priorityId: priorityId,
       priorityPath: priorityPath,
-      path: path,
-      depth: depth,
-      deleted: deleted,
+      archived: archived,
+      draft: draft,
       order: order,
       search: search,
       self: self,
       filter: filter,
     ).watch().asyncMap(
       (results) =>
-          _mapResultsToActivities(results, deleted: deleted, range: range),
+          _mapResultsToActivities(results, archived: archived, range: range),
     );
   }
 
-  static Future<Activity> getOne(
-    ActivityId id, {
-    int? depth = 0,
-    bool getParent = true,
-  }) async {
+  static Future<Activity> getOne(ActivityId id) async {
     final activities = await _get(
       id: id,
-      depth: depth,
-      deleted: null,
-      getParent: getParent,
-      order: ActivityOrder.nested,
+      archived: null,
+      order: ActivityOrder.sorted,
     );
     if (activities.isEmpty) {
       log.warning("Activity not found: $id");
       throw Exception('Activity not found');
     }
-    return _asNested(activities, id: id).first;
+    return activities.first;
   }
 
-  static Stream<Activity> watchOne(
-    ActivityId id, {
-    int? depth = 0,
-    bool getParent = true,
-  }) {
+  static Stream<Activity> watchOne(ActivityId id) {
     return _getQuery(
       id: id,
-      depth: depth,
-      deleted: null,
-      getParent: getParent,
-      order: ActivityOrder.nested,
+      archived: null,
+      order: ActivityOrder.sorted,
     ).watch().asyncMap((results) async {
       final activities = await _mapResultsToActivities(results, range: null);
-      return _asNested(activities, id: id).first;
+      if (activities.isEmpty) {
+        throw Exception('Activity not found');
+      }
+      return activities.first;
     });
   }
 
-  //   /// Transform a flat list in ActivityOrder.nested order to a list of the top-level items with descendants.
-  static List<Activity> _asNested(
-    List<Activity> activities, {
-    ActivityId? id,
-    Path? path,
-    bool flat = false,
-  }) {
-    List<Activity> matches = [];
-    List<Activity> stack = [];
-
-    for (var activity in activities) {
-      if (stack.isNotEmpty && !stack.last.path.isParent(activity.path)) {
-        stack.removeWhere((c) => !c.path.isParent(activity.path));
-      }
-
-      if (stack.isNotEmpty) {
-        activity = activity.copyWith(parent: stack.last);
-      }
-
-      if ((id == null && path == null && activity.path.isRoot) ||
-          activity.path == path ||
-          activity.id == id) {
-        matches.add(activity);
-        stack.clear();
-      } else if (flat) {
-        matches.add(activity);
-      }
-
-      stack.add(activity);
-    }
-
-    matches.sort();
-    return matches;
+  /// Get the draft activity for a specific priority
+  /// Returns null if no non-archived draft exists
+  static Future<Activity?> getDraftByPriority(PriorityId priorityId) async {
+    final drafts = await _get(
+      priorityId: priorityId,
+      draft: true,
+      archived: false,
+      order: ActivityOrder.sorted,
+    );
+    return drafts.isEmpty ? null : drafts.first;
   }
+
+  /// Archive a draft activity by setting archivedAt
+  static Future<void> archiveDraft(ActivityId id) async {
+    final activity = await getOne(id);
+    if (!activity.draft) {
+      throw Exception('Cannot archive non-draft activity');
+    }
+    await activity.copyWith(archivedAt: Value(DateTime.now())).save();
+  }
+
+  /// Unarchive a draft activity by clearing archivedAt
+  static Future<void> unarchiveDraft(ActivityId id) async {
+    final db = Store.get;
+    await (db.update(db.activities)..where((a) => a.id.equalsValue(id))).write(
+      ActivitiesCompanion(
+        archivedAt: const Value(null),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  // Note: _asNested method removed - path-based nesting is no longer supported.
+  // Use Note model for thread structure instead.
 
   static Future<Activity?> next(
     Date? fromDate, {
     Priority? context,
-    bool? deleted = false,
+    bool? archived = false,
     int offset = 0,
   }) async {
     if (fromDate == null) {
@@ -501,7 +529,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       range: CustomDateRange(fromDate, null),
       strictRange: true,
       priorityPath: context?.path,
-      deleted: deleted,
+      archived: archived,
       order: ActivityOrder.sorted,
       limit: 1,
       offset: offset,
@@ -515,7 +543,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   static Future<Activity?> previous(
     Date? fromDate, {
     Priority? context,
-    bool? deleted = false,
+    bool? archived = false,
     int offset = 0,
   }) async {
     if (fromDate == null) {
@@ -528,7 +556,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       range: range,
       strictRange: true,
       priorityPath: context?.path,
-      deleted: deleted,
+      archived: archived,
       order: ActivityOrder.reverse,
       limit: 1,
       offset: offset,
@@ -542,7 +570,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   static Stream<Activity?> watchNext(
     Date? fromDate, {
     Priority? context,
-    bool? deleted = false,
+    bool? archived = false,
     int offset = 0,
   }) {
     if (fromDate == null) {
@@ -555,24 +583,24 @@ class Activity extends Equatable implements Comparable<Activity> {
       range: range,
       strictRange: true,
       priorityPath: context?.path,
-      deleted: deleted,
+      archived: archived,
       order: ActivityOrder.sorted,
       limit: 1,
       offset: offset,
     ).watch().asyncMap((results) async {
       final activities = await _mapResultsToActivities(
         results,
-        deleted: deleted,
+        archived: archived,
         range: range,
       );
       return activities.isEmpty ? null : activities.first;
-    });
+    }).distinct();
   }
 
   static Stream<Activity?> watchPrevious(
     Date? fromDate, {
     Priority? context,
-    bool? deleted = false,
+    bool? archived = false,
     int offset = 0,
   }) {
     if (fromDate == null) {
@@ -585,18 +613,18 @@ class Activity extends Equatable implements Comparable<Activity> {
       range: range,
       strictRange: true,
       priorityPath: context?.path,
-      deleted: deleted,
+      archived: archived,
       order: ActivityOrder.reverse,
       limit: 1,
       offset: offset,
     ).watch().asyncMap((results) async {
       final activities = await _mapResultsToActivities(
         results,
-        deleted: deleted,
+        archived: archived,
         range: range,
       );
       return activities.isEmpty ? null : activities.first;
-    });
+    }).distinct();
   }
 
   /// Watch all tags present in activities within a priority and its descendants.
@@ -746,133 +774,6 @@ class Activity extends Equatable implements Comparable<Activity> {
     );
   }
 
-  /// Watch all tags present in activities within an activity thread (root + descendants).
-  /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
-  static Stream<List<(Tag, int)>> watchTagsForActivityThread(
-    Path activityPath,
-  ) {
-    final at = Store.get.activityTags;
-    final a = Store.get.activities;
-
-    final now = DateTime.now();
-    final today = Date.today().toString();
-    final activityPathLike = '$activityPath.%';
-
-    // Query for stored tags from activity_tags table
-    final tagsQuery = Store.get.select(at).join([
-      innerJoin(a, a.id.equalsExp(at.id)),
-    ]);
-
-    tagsQuery.where(
-      a.archivedAt.isNull() &
-          (a.path.equalsValue(activityPath) |
-              a.path.likeExp(Constant(activityPathLike))),
-    );
-
-    // COUNT query for Tag.done
-    final doneQuery = Store.get.selectOnly(a)..addColumns([a.id]);
-    doneQuery.where(
-      a.archivedAt.isNull() &
-          a.doneAt.isNotNull() &
-          (a.path.equalsValue(activityPath) |
-              a.path.likeExp(Constant(activityPathLike))),
-    );
-    final doneCountStream = doneQuery.watch().map(
-      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
-    );
-
-    // COUNT query for Tag.now
-    final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
-    nowQuery.where(
-      a.archivedAt.isNull() &
-          a.type.equalsValue(ActivityType.action) &
-          a.doneAt.isNull() &
-          (a.path.equalsValue(activityPath) |
-              a.path.likeExp(Constant(activityPathLike))) &
-          (
-          // Date-based scheduling: startOn <= today
-          (a.startOn.isSmallerOrEqualValue(today) & a.startAt.isNull()) |
-              // DateTime-based scheduling: startAt <= now AND endAt >= now
-              (a.startAt.isSmallerOrEqualValue(now) &
-                  (a.endAt.isNull() | a.endAt.isBiggerOrEqualValue(now)) &
-                  a.startOn.isNull())),
-    );
-    final nowCountStream = nowQuery.watch().map(
-      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
-    );
-
-    // COUNT query for Tag.later
-    final laterQuery = Store.get.selectOnly(a)..addColumns([a.id]);
-    laterQuery.where(
-      a.archivedAt.isNull() &
-          a.type.equalsValue(ActivityType.action) &
-          a.doneAt.isNull() &
-          (a.path.equalsValue(activityPath) |
-              a.path.likeExp(Constant(activityPathLike))) &
-          (
-          // Date-based scheduling: startOn > today
-          (a.startOn.isBiggerThanValue(today) & a.startAt.isNull()) |
-              // DateTime-based scheduling: startAt > now
-              (a.startAt.isBiggerThanValue(now) & a.startOn.isNull())),
-    );
-    final laterCountStream = laterQuery.watch().map(
-      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
-    );
-
-    // COUNT query for Tag.archived
-    final archivedQuery = Store.get.selectOnly(a)..addColumns([a.id]);
-    archivedQuery.where(
-      a.archivedAt.isNotNull() &
-          (a.path.equalsValue(activityPath) |
-              a.path.likeExp(Constant(activityPathLike))),
-    );
-    final archivedCountStream = archivedQuery.watch().map(
-      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
-    );
-
-    return Rx.combineLatest5(
-      tagsQuery.watch(),
-      doneCountStream,
-      nowCountStream,
-      laterCountStream,
-      archivedCountStream,
-      (rows, doneCount, nowCount, laterCount, archivedCount) {
-        final Map<Tag, int> tagCounts = {};
-
-        // Count stored tags
-        final Map<Tag, Set<ActivityId>> storedTagCounts = {};
-        for (final row in rows) {
-          final activityTagsRow = row.readTable(at);
-          final activityId = activityTagsRow.id;
-          final tags = activityTagsRow.tags;
-
-          if (tags != null) {
-            for (final tag in tags.keys) {
-              storedTagCounts.putIfAbsent(tag, () => {}).add(activityId);
-            }
-          }
-        }
-
-        // Add stored tag counts
-        for (final entry in storedTagCounts.entries) {
-          tagCounts[entry.key] = entry.value.length;
-        }
-
-        // Add computed tag counts
-        if (doneCount > 0) tagCounts[Tag.done] = doneCount;
-        if (nowCount > 0) tagCounts[Tag.now] = nowCount;
-        if (laterCount > 0) tagCounts[Tag.later] = laterCount;
-        if (archivedCount > 0) tagCounts[Tag.archived] = archivedCount;
-
-        // Convert to list of (Tag, count) and sort by count descending
-        final result = tagCounts.entries.map((e) => (e.key, e.value)).toList()
-          ..sort((a, b) => b.$2.compareTo(a.$2));
-
-        return result;
-      },
-    );
-  }
-
   static Future<List<Activity>> _get({
     DateRange? range,
     bool strictRange = false,
@@ -881,12 +782,11 @@ class Activity extends Equatable implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
-    Path? path,
 
     /* Filters */
-    int? depth,
     bool self = true,
-    bool? deleted = false,
+    bool? archived = false,
+    bool? draft = false,
     String? search,
     List<Tag>? filter,
 
@@ -906,10 +806,9 @@ class Activity extends Equatable implements Comparable<Activity> {
       id: id,
       priorityId: priorityId,
       priorityPath: priorityPath,
-      path: path,
-      depth: depth,
       self: self,
-      deleted: deleted,
+      archived: archived,
+      draft: draft,
       search: search,
       filter: filter,
       order: order,
@@ -919,7 +818,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     );
 
     final results = await query.get();
-    return _mapResultsToActivities(results, deleted: deleted, range: range);
+    return _mapResultsToActivities(results, archived: archived, range: range);
   }
 
   static JoinedSelectStatement<HasResultSet, dynamic> _getQuery({
@@ -931,12 +830,12 @@ class Activity extends Equatable implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
-    Path? path,
 
     /* Filters */
-    int? depth,
     bool self = true,
-    bool? deleted = false,
+    bool? archived = false,
+    bool? draft = false,
+    bool includeAllFutureEvents = true,
     String? search,
     List<Tag>? filter,
 
@@ -948,7 +847,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     int? offset,
 
     /* Augmentation */
-    bool getParent = true,
+    bool getParent = true, // Deprecated, kept for compatibility
   }) {
     if (range != null) {
       Activity.pullRange(range, priorityPath);
@@ -957,81 +856,52 @@ class Activity extends Equatable implements Comparable<Activity> {
     // Create a copy of filter to avoid mutating the original
     final mutableFilter = filter != null ? List<Tag>.from(filter) : null;
     if (mutableFilter?.remove(Tag.archived) == true) {
-      deleted = true;
+      archived = true;
     }
     final doNow = mutableFilter?.remove(Tag.now) == true;
     final doLater = mutableFilter?.remove(Tag.later) == true;
     final done = mutableFilter?.remove(Tag.done) == true;
 
-    final includeDescendants = path == null && (depth == null || depth > 0);
+    final a = Store.get.alias(Store.get.activities, 'a');
+    final startingQuery = Store.get.select(a);
 
-    final base = Store.get.alias(
-      Store.get.activities,
-      includeDescendants ? 'base' : 'a',
-    );
-    final startingQuery = Store.get.select(base);
     if (id != null) {
       startingQuery.where((t) => t.id.equalsValue(id));
     }
     if (priorityId != null) {
       startingQuery.where((t) => t.priorityId.equalsValue(priorityId));
     }
-    if (path != null) {
-      if (depth == 0) {
-        startingQuery.where((t) => t.path.equalsValue(path));
-      } else {
-        startingQuery.where((t) => t.path.likeExp(Constant('$path%')));
-      }
-    }
-    if (id == null && priorityId == null && path == null && depth == 0) {
-      startingQuery.where((t) => t.path.likeExp(Constant('%.%')).not());
-    }
 
-    var a = includeDescendants
-        ? Store.get.alias(Store.get.activities, 'a')
-        : base;
-    var query = startingQuery.join([
-      if (includeDescendants)
-        innerJoin(
-          a,
-          a.path.likeExp(base.path + Constant('%')) |
-              (getParent
-                  // This gets all parents and could be optimized to get just the direct parent.
-                  ? base.path.likeExp(a.path + Constant('%'))
-                  : Constant(false)),
-        ),
-    ]);
-    if (depth != null && depth > 0) {
-      query.where(
-        CustomExpression<int>("""
-            LENGTH(a.path) - LENGTH(REPLACE(a.path, '.', '')) -
-            (CASE WHEN a.path IS NULL THEN 0 ELSE LENGTH(a.path) - LENGTH(REPLACE(a.path, '.', '')) END)
-          """).isSmallerOrEqualValue(depth),
-      );
-    }
+    var query = startingQuery.join([]);
+    final now = DateTime.now();
 
     // Add priority path filtering if priorityPath is provided
     if (priorityPath != null) {
       final p = Store.get.alias(Store.get.priorities, 'p');
-      query = query.join([
-        innerJoin(
-          p,
-          p.id.equalsExp(a.priorityId) &
-              (p.path.equalsValue(priorityPath) |
-                  p.path.likeExp(Constant('$priorityPath%'))),
-        ),
-      ]);
-    }
-
-    // Add activity path filtering if path is provided
-    if (path != null) {
-      query.where(
-        a.path.equalsValue(path) | a.path.likeExp(Constant('$path.%')),
-      );
+      if (includeAllFutureEvents) {
+        query = query.join([
+          innerJoin(
+            p,
+            p.id.equalsExp(a.priorityId) &
+                (p.path.equalsValue(priorityPath) |
+                    p.path.likeExp(Constant('$priorityPath%')) |
+                    (a.type.equalsValue(ActivityType.event) &
+                        a.endAt.isBiggerOrEqualValue(now))),
+          ),
+        ]);
+      } else {
+        query = query.join([
+          innerJoin(
+            p,
+            p.id.equalsExp(a.priorityId) &
+                (p.path.equalsValue(priorityPath) |
+                    p.path.likeExp(Constant('$priorityPath%'))),
+          ),
+        ]);
+      }
     }
 
     if (doNow) {
-      final now = DateTime.now();
       query.where(
         a.type.equalsValue(ActivityType.action) &
             a.doneAt.isNull() &
@@ -1061,12 +931,14 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (done) {
       query.where(a.doneAt.isNotNull());
     }
-    if (deleted != null) {
-      query.where(deleted ? a.archivedAt.isNotNull() : a.archivedAt.isNull());
+    if (archived != null) {
+      query.where(archived ? a.archivedAt.isNotNull() : a.archivedAt.isNull());
+    }
+    if (draft != null) {
+      query.where(a.draft.equals(draft));
     }
     if (search?.isNotEmpty == true) {
-      // Use FTS5 for full-text search with prefix matching
-      final fts = Store.get.alias(Store.get.activityFts, 'fts');
+      // Use FTS5 for full-text search with prefix matching on activity title and note content
       // Split search into words, escape special characters, and add prefix matching
       final words = search!
           .split(RegExp(r'\s+'))
@@ -1083,21 +955,20 @@ class Activity extends Equatable implements Comparable<Activity> {
           .map((word) => '$word*') // Add prefix matching to each word
           .join(' '); // AND multiple words together
       if (words.isNotEmpty) {
-        query = query.join([
-          innerJoin(
-            fts,
-            fts.activityId.equalsExp(a.id) &
-                CustomExpression<bool>("activity_fts MATCH '$words'"),
-          ),
-        ]);
+        // Search both activity title (activity_fts) and note content (note_fts)
+        // Returns activities where either the title OR any note content matches
+        query.where(
+          CustomExpression<bool>('''
+            EXISTS (SELECT 1 FROM activity_fts WHERE activity_id = a.id AND activity_fts MATCH '$words')
+            OR
+            EXISTS (SELECT 1 FROM note_fts WHERE activity_id = a.id AND note_fts MATCH '$words')
+          '''),
+        );
       }
     }
     if (self == false) {
       if (id != null) {
         query.where(a.id.equalsValue(id).not());
-      }
-      if (path != null) {
-        query.where(a.path.equalsValue(path).not());
       }
     }
 
@@ -1106,16 +977,22 @@ class Activity extends Equatable implements Comparable<Activity> {
       final rangeEnd = range.end?.toDateTime();
       Expression<bool> condition = Constant(false);
 
-      // Activity was created within the range
+      // Activity was created within the range OR got a new note within the range
       Expression<bool> createdInRange =
           a.startOn.isNull() & a.startAt.isNull() & a.doneAt.isNull();
       if (rangeStart != null) {
         createdInRange =
-            createdInRange & a.createdAt.isBiggerOrEqualValue(rangeStart);
+            createdInRange &
+            (a.createdAt.isBiggerOrEqualValue(rangeStart) |
+             (a.lastNoteCreatedAt.isNotNull() &
+              a.lastNoteCreatedAt.isBiggerOrEqualValue(rangeStart)));
       }
       if (rangeEnd != null) {
         createdInRange =
-            createdInRange & a.createdAt.isSmallerThanValue(rangeEnd);
+            createdInRange &
+            (a.createdAt.isSmallerThanValue(rangeEnd) |
+             (a.lastNoteCreatedAt.isNotNull() &
+              a.lastNoteCreatedAt.isSmallerThanValue(rangeEnd)));
       }
       condition = condition | createdInRange;
 
@@ -1188,7 +1065,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         CaseWhen(a.startAt.isNotNull(), then: a.startAt),
         CaseWhen(a.startOn.isNotNull(), then: a.startOn),
       ],
-      orElse: a.createdAt,
+      // For non-scheduled activities, use GREATEST(createdAt, lastNoteCreatedAt)
+      orElse: coalesce([a.lastNoteCreatedAt, a.createdAt]),
     );
     switch (order) {
       case ActivityOrder.sorted:
@@ -1202,10 +1080,6 @@ class Activity extends Equatable implements Comparable<Activity> {
           OrderingTerm.desc(sortExpression),
           OrderingTerm.desc(a.order),
         ]);
-        break;
-      case ActivityOrder.nested:
-        // order by path so parents always precede children
-        query.orderBy([OrderingTerm(expression: a.path)]);
         break;
     }
 
@@ -1241,6 +1115,66 @@ class Activity extends Equatable implements Comparable<Activity> {
     return query;
   }
 
+  /// Efficiently gets which activity IDs from the given list are active.
+  /// An activity is active if it's an action assigned to current user,
+  /// not done, not archived, and scheduled for now/past or unscheduled.
+  static Future<Set<ActivityId>> _getActiveActivityIds(
+    List<ActivityId> ids,
+  ) async {
+    if (ids.isEmpty) return {};
+
+    final now = DateTime.now();
+    final today = Date.today().toString();
+    final actorId = Base.actorId;
+
+    final a = Store.get.activities;
+    final query = Store.get.selectOnly(a)..addColumns([a.id]);
+
+    // Convert ActivityId (Uuid) to Uint8List for isIn query
+    final idBytes = ids.map((id) => id.toBytes()).toList();
+
+    query.where(
+      a.id.isIn(idBytes) &
+          a.type.equalsValue(ActivityType.action) &
+          a.assigneeId.equalsValue(actorId) &
+          a.doneAt.isNull() &
+          a.archivedAt.isNull() &
+          (
+          // DateTime scheduled
+          (a.startAt.isSmallerOrEqualValue(now) & a.startOn.isNull()) |
+              // Date scheduled
+              (a.startOn.isSmallerOrEqualValue(today) & a.startAt.isNull()) |
+              // Unscheduled
+              (a.startAt.isNull() & a.startOn.isNull())),
+    );
+
+    final results = await query.get();
+    return results.map((row) => Uuid.fromBytes(row.read(a.id)!)).toSet();
+  }
+
+  /// Efficiently gets which activity IDs from the given list are unread.
+  /// An activity is unread if server says unread and we haven't overridden it locally.
+  static Future<Set<ActivityId>> _getUnreadActivityIds(
+    List<ActivityId> ids,
+  ) async {
+    if (ids.isEmpty) return {};
+
+    final a = Store.get.activities;
+    final query = Store.get.selectOnly(a)..addColumns([a.id]);
+
+    // Convert ActivityId (Uuid) to Uint8List for isIn query
+    final idBytes = ids.map((id) => id.toBytes()).toList();
+
+    query.where(
+      a.id.isIn(idBytes) &
+          a.unread.equals(true) &
+          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+    );
+
+    final results = await query.get();
+    return results.map((row) => Uuid.fromBytes(row.read(a.id)!)).toSet();
+  }
+
   /// Maps database query results to Activity objects.
   ///
   /// This function handles both regular and recurring activities:
@@ -1248,11 +1182,11 @@ class Activity extends Equatable implements Comparable<Activity> {
   /// - For recurring activities with a range: Generates occurrences within the range
   /// - For recurring activities without a range: Returns the base recurring activity template
   ///
-  /// Recurring activities can have exceptions (modified/deleted occurrences) stored in
+  /// Recurring activities can have exceptions (modified/archived occurrences) stored in
   /// the activity_exceptions table, which override generated occurrences.
   static Future<List<Activity>> _mapResultsToActivities(
     List<TypedResult> results, {
-    bool? deleted = false,
+    bool? archived = false,
     DateRange? range,
   }) async {
     if (results.isEmpty) return [];
@@ -1267,7 +1201,7 @@ class Activity extends Equatable implements Comparable<Activity> {
 
     // Get all priorities needed for the activities
     final priorities = await Priority.get(
-      deleted: deleted == false ? false : null,
+      archived: archived == false ? false : null,
     );
     final priorityMap = Priority.asMap(priorities);
 
@@ -1277,6 +1211,11 @@ class Activity extends Equatable implements Comparable<Activity> {
       final activityId = result.readTable(a).id;
       activityGroups.putIfAbsent(activityId, () => []).add(result);
     }
+
+    // Compute which activities are active and unread (efficient bulk queries)
+    final activityIds = activityGroups.keys.toList();
+    final activeIds = await _getActiveActivityIds(activityIds);
+    final unreadIds = await _getUnreadActivityIds(activityIds);
 
     // Separate recurring activities from non-recurring and collect database exceptions
     final activities = <Activity>[];
@@ -1296,6 +1235,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         activity: activityRow,
         priority: priority,
         tags: tagsRow,
+        active: activeIds.contains(activityRow.id),
+        unreadComputed: unreadIds.contains(activityRow.id),
       );
 
       if (!baseActivity.recurring) {
@@ -1321,6 +1262,8 @@ class Activity extends Equatable implements Comparable<Activity> {
               priority: priority,
               tags: result.readTableOrNull(tags),
               exception: exception,
+              active: activeIds.contains(activityRow.id),
+              unreadComputed: unreadIds.contains(activityRow.id),
             );
             occurrences[exception.occurrence] = activity;
           }
@@ -1340,7 +1283,10 @@ class Activity extends Equatable implements Comparable<Activity> {
     return activities;
   }
 
-  static Map<Priority, List<Activity>> prioritize(List<Activity> activities) {
+  static Map<Priority, List<Activity>> prioritize(
+    List<Activity> activities, {
+    Priority? context,
+  }) {
     final Map<Priority, List<Activity>> activitiesByPriority = {};
     for (final activity in activities) {
       activitiesByPriority
@@ -1348,13 +1294,16 @@ class Activity extends Equatable implements Comparable<Activity> {
           .add(activity);
     }
 
-    // Create list of priority groups ordered by priority path
     final Map<Priority, List<Activity>> sortedActivitiesByPriority = {};
     final priorities = activitiesByPriority.keys.toList()
-      ..sort((a, b) => a.compareTo(b));
+      ..sort((a, b) {
+        if (context != null && a == context && b != context) return 1;
+        if (context != null && a != context && b == context) return -1;
+        return a.compareTo(b);
+      });
+
     for (final priority in priorities) {
       final priorityActivities = activitiesByPriority[priority]!;
-      // Sort activities within each priority group (by order property)
       priorityActivities.sort();
       sortedActivitiesByPriority[priority] = priorityActivities;
     }
@@ -1364,30 +1313,30 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   Activity({
     required this.priority,
-    this.parent,
     ActivityType type = ActivityType.note,
     Order? order,
-    String? note,
     String? title,
+    String? preview,
     bool draft = false,
     bool private = false,
     DateTimeRange? at,
     DateRange? on,
-    Uuid? assigneeId,
+    ActorId? assigneeId,
+    List<Note>? notes,
   }) : _activity = ActivityRow(
          id: Uuid.generate(),
          type: type,
-         authorId: Base.userId,
-         assigneeId: assigneeId,
+         authorId: Base.actorId,
+         assigneeId:
+             assigneeId ?? (type == ActivityType.action ? Base.actorId : null),
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
          priorityId: priority.id,
          draft: draft,
          private: private,
          order: order ?? Order.first(),
-         path: Path.generate(parent: parent?.path),
          title: title,
-         note: note,
+         preview: preview,
          startAt: at?.start,
          endAt: at?.end,
          startOn: on?.start,
@@ -1396,50 +1345,56 @@ class Activity extends Equatable implements Comparable<Activity> {
          unreadUpdated: null,
        ),
        _exception = null,
-       _tags = null {
-    parent?._addChild(this);
-  }
+       _tags = null,
+       _notes = notes,
+       _active = null,
+       _unreadComputed = null;
 
   Activity._fromStore({
     required ActivityRow activity,
     required this.priority,
-    this.parent,
     ActivityExceptionRow? exception,
     ActivityTagsRow? tags,
+    List<Note>? notes,
+    bool? active,
+    bool? unreadComputed,
   }) : _activity = activity,
        _exception = exception,
-       _tags = tags {
+       _tags = tags,
+       _notes = notes,
+       _active = active,
+       _unreadComputed = unreadComputed {
     assert(
       priority.id == activity.priorityId,
       "Priority does not match activity",
     );
-    parent?._addChild(this);
   }
 
   final ActivityRow _activity;
   final ActivityExceptionRow? _exception;
   final ActivityTagsRow? _tags;
+  final List<Note>? _notes;
+  final bool? _active;
+  final bool? _unreadComputed;
 
-  final Activity? parent;
   final Priority priority;
 
   Uuid get id => _activity.id;
   bool get recurring => _activity.recurrenceRule != null && _exception == null;
-  Path get path => _activity.path;
   Order get order => _activity.order;
   DateTime get createdAt => _activity.createdAt;
   DateTime get updatedAt => _activity.updatedAt;
   DateTime? get archivedAt => _activity.archivedAt;
   bool get draft => _activity.draft;
   bool get private => _activity.private;
-  Uuid get authorId => _activity.authorId;
-  Uuid? get assigneeId => _activity.assigneeId;
-  ActivityType? get type => _activity.type;
+  ActorId get authorId => _activity.authorId;
+  ActorId? get assigneeId => _activity.assigneeId;
+  ActivityType get type => _activity.type;
   DateTime? get doneAt => _exception?.doneAt ?? _activity.doneAt;
   RecurrenceRule? get recurrenceRule => _activity.recurrenceRule;
   List<DateTime>? get recurrenceExdates => _activity.recurrenceExdates;
   List<DateTime>? get recurrenceDates => _activity.recurrenceDates;
-  Map<Tag, List<Uuid>> get tags => {
+  Map<Tag, List<ActorId>> get tags => {
     ...Map.fromEntries(
       [
         Tag.now,
@@ -1451,37 +1406,34 @@ class Activity extends Equatable implements Comparable<Activity> {
     ...(_tags?.tags ?? const {}),
   };
 
-  List<Link> get links => _activity.links ?? const [];
-  bool get unread => _activity.unread;
+  /// Returns true if this activity is active (computed from query or false if not computed)
+  bool get active => _active ?? false;
+
+  /// Returns true if this activity is unread (considering local overrides)
+  bool get unread {
+    final computed = _unreadComputed;
+    final stored = _activity.unread;
+    final result = computed ?? stored;
+
+    return result;
+  }
+
   bool? get unreadUpdated => _activity.unreadUpdated;
 
   String? get title => _exception?.title ?? _activity.title;
-  String? get note => _exception?.note ?? _activity.note;
+  String? get preview => _activity.preview;
+  List<Note>? get notes => _notes;
 
-  /// Helper to replace mentions [Name](#@ID) with just Name for display
-  static String _replaceMentionsForDisplay(String text) {
-    // Replace [Name](#@UUID) with just Name
-    return text.replaceAllMapped(
-      RegExp(
-        r'\[([^\]]+)\]\(#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)',
-      ),
-      (match) => match.group(1) ?? '',
-    );
-  }
+  /// Returns the first note if notes are loaded
+  Note? get firstNote => notes?.firstOrNull;
 
-  String? get noteText {
-    final text = _exception?.note ?? _activity.note;
-    if (text == null) return null;
-    return _replaceMentionsForDisplay(
-      text,
-    ).removeMarkdown().replaceAll('\n', ' ').trim();
-  }
+  /// Returns true if this activity has any notes
+  bool get hasNotes => notes != null && notes!.isNotEmpty;
 
   String get displayTitle {
     if (title != null) return title!;
-    final noteFirstLine = note?.split("\n").first;
-    if (noteFirstLine == null) return draft ? '🤷' : 'Untitled';
-    return _replaceMentionsForDisplay(noteFirstLine).removeMarkdown().trim();
+    if (preview != null) return preview!;
+    return draft ? '🤷' : 'Untitled';
   }
 
   DateTimeRange? get at =>
@@ -1505,18 +1457,39 @@ class Activity extends Equatable implements Comparable<Activity> {
       on?.duration ??
       at?.duration;
 
-  DateTime get agendaAt =>
-      doneAt ??
-      (todo ? DateTime.now() : null) ??
-      at?.start ??
-      on?.start?.toDateTime() ??
-      createdAt;
+  DateTime get agendaAt {
+    // For non-todo activities (notes), use GREATEST(createdAt, doneAt, lastNoteCreatedAt)
+    if (type == ActivityType.note) {
+      final times = [
+        createdAt,
+        if (doneAt != null) doneAt!,
+        if (_activity.lastNoteCreatedAt != null) _activity.lastNoteCreatedAt!,
+      ];
+      times.sort((a, b) => b.compareTo(a)); // Sort descending
+      return times.first; // Return the greatest (most recent)
+    }
+
+    // For todos and events, use the existing logic
+    return doneAt ??
+        (doNow ? DateTime.now() : null) ??
+        at?.start ??
+        on?.start?.toDateTime() ??
+        createdAt;
+  }
 
   bool get doNow => todo && at?.includes(DateTime.now()) == true;
   bool get doLater => todo && at?.start?.isAfter(DateTime.now()) == true;
   bool get todo => type == ActivityType.action && !done;
-  bool get scheduled => at != null || on != null;
   bool get done => doneAt != null;
+
+  IconData get icon {
+    if (done) return PlotIcon.done;
+    if (doNow) return PlotIcon.now;
+    if (doLater) return PlotIcon.later;
+    if (type == ActivityType.event) return PlotIcon.event;
+    if (type == ActivityType.action) return PlotIcon.todo;
+    return PlotIcon.note;
+  }
 
   static const separator = ' › ';
 
@@ -1524,20 +1497,19 @@ class Activity extends Equatable implements Comparable<Activity> {
     // These fields always update the root activity
     Priority? priority,
     ActivityType? type,
-    Path? path,
     Order? order,
     bool? draft,
     bool? private,
-    Activity? parent,
-    Uuid? assigneeId,
+    ActorId? assigneeId,
     bool? unread,
     Value<List<Uuid>?> mentions = const Value.absent(),
+    Value<String?> preview = const Value.absent(),
+    Value<List<Note>?> notes = const Value.absent(),
 
     // These fields update the exception if this is a recurrence, or the root activity otherwise
     Value<DateTimeRange?> at = const Value.absent(),
     Value<DateRange?> on = const Value.absent(),
     Value<DateTime?> doneAt = const Value.absent(),
-    Value<String?> note = const Value.absent(),
     Value<String?> title = const Value.absent(),
     Value<Duration?> duration = const Value.absent(),
     Value<DateTime?> archivedAt = const Value.absent(),
@@ -1550,10 +1522,8 @@ class Activity extends Equatable implements Comparable<Activity> {
     Value<RecurrenceRule?> recurrenceRule = const Value.absent(),
     Value<List<DateTime>?> recurrenceExdates = const Value.absent(),
     Value<List<DateTime>?> recurrenceDates = const Value.absent(),
-    Value<String?> recurrenceNote = const Value.absent(),
     Value<String?> recurrenceTitle = const Value.absent(),
     Value<Duration?> recurrenceDuration = const Value.absent(),
-    Value<List<Link>?> links = const Value.absent(),
   }) {
     final now = DateTime.now();
 
@@ -1566,17 +1536,25 @@ class Activity extends Equatable implements Comparable<Activity> {
       type = .note;
     }
 
+    // Ensure assigneeId is set when converting to action type
+    // If type is being changed to action and no assigneeId is provided, default to current user
+    if (type == ActivityType.action &&
+        assigneeId == null &&
+        _activity.assigneeId == null) {
+      assigneeId = Base.actorId;
+    }
+
     // Update root activity if any root-specific fields are changing
     var activity = _activity;
     if (priority != null ||
         type != null ||
-        path != null ||
         order != null ||
         draft != null ||
         private != null ||
         assigneeId != null ||
         unread != null ||
         mentions.present ||
+        preview.present ||
         recurrenceAt.present ||
         recurrenceOn.present ||
         recurrenceDoneAt.present ||
@@ -1584,15 +1562,12 @@ class Activity extends Equatable implements Comparable<Activity> {
         recurrenceRule.present ||
         recurrenceExdates.present ||
         recurrenceDates.present ||
-        recurrenceNote.present ||
         recurrenceTitle.present ||
         recurrenceDuration.present ||
-        links.present ||
         (!recurring &&
             (at.present ||
                 on.present ||
                 doneAt.present ||
-                note.present ||
                 title.present ||
                 duration.present ||
                 archivedAt.present))) {
@@ -1603,7 +1578,6 @@ class Activity extends Equatable implements Comparable<Activity> {
       Value<Date?> rootEndOn = const Value.absent();
       Value<DateTime?> rootDoneAt = const Value.absent();
       Value<DateTime?> rootDeletedAt = const Value.absent();
-      Value<String?> rootNote = const Value.absent();
       Value<String?> rootTitle = const Value.absent();
       Value<Duration?> rootDuration = const Value.absent();
 
@@ -1618,7 +1592,6 @@ class Activity extends Equatable implements Comparable<Activity> {
       }
       if (recurrenceDoneAt.present) rootDoneAt = recurrenceDoneAt;
       if (recurrenceDeletedAt.present) rootDeletedAt = recurrenceDeletedAt;
-      if (recurrenceNote.present) rootNote = recurrenceNote;
       if (recurrenceTitle.present) rootTitle = recurrenceTitle;
       if (recurrenceDuration.present) rootDuration = recurrenceDuration;
 
@@ -1634,7 +1607,6 @@ class Activity extends Equatable implements Comparable<Activity> {
         }
         if (doneAt.present) rootDoneAt = doneAt;
         if (archivedAt.present) rootDeletedAt = archivedAt;
-        if (note.present) rootNote = note;
         if (title.present) rootTitle = title;
         if (duration.present) rootDuration = duration;
       }
@@ -1642,7 +1614,6 @@ class Activity extends Equatable implements Comparable<Activity> {
       activity = _activity.copyWith(
         priorityId: priority?.id,
         type: type,
-        path: path,
         order: order,
         draft: draft,
         private: private,
@@ -1650,6 +1621,7 @@ class Activity extends Equatable implements Comparable<Activity> {
             ? Value(assigneeId)
             : const Value.absent(),
         mentions: mentions,
+        preview: preview,
         createdAt: draft == false && _activity.draft ? now : null,
         updatedAt: now,
         startAt: rootStartAt,
@@ -1661,10 +1633,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         recurrenceRule: recurrenceRule,
         recurrenceExdates: recurrenceExdates,
         recurrenceDates: recurrenceDates,
-        note: rootNote,
         title: rootTitle,
         duration: rootDuration,
-        links: links,
         unread: unread,
         unreadUpdated: unread != null ? Value(true) : const Value.absent(),
       );
@@ -1676,7 +1646,6 @@ class Activity extends Equatable implements Comparable<Activity> {
         (at.present ||
             on.present ||
             doneAt.present ||
-            note.present ||
             title.present ||
             duration.present ||
             archivedAt.present)) {
@@ -1687,7 +1656,6 @@ class Activity extends Equatable implements Comparable<Activity> {
         endOn: on.present ? Value(on.value?.end) : const Value.absent(),
         doneAt: doneAt,
         title: title,
-        note: note,
         duration: duration,
         // Note: exceptions don't have archivedAt, so we ignore that field
       );
@@ -1698,7 +1666,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       exception: exception,
       tags: _tags,
       priority: priority ?? this.priority,
-      parent: parent ?? this.parent,
+      notes: notes.present ? notes.value : _notes,
     );
   }
 
@@ -1756,11 +1724,13 @@ class Activity extends Equatable implements Comparable<Activity> {
         break;
     }
 
-    final currentTags = Map<Tag, List<Uuid>>.from(tags);
-    final currentUser = Base.userId;
+    final currentTags = Map<Tag, List<ActorId>>.from(tags);
+    final currentUser = Base.actorId;
 
     // Get current users for this tag
-    final currentUsers = List<Uuid>.from(currentTags[tag] ?? []);
+    final List<ActorId> currentUsers = List<ActorId>.from(
+      currentTags[tag] ?? <ActorId>[],
+    );
 
     bool isAdding = false;
 
@@ -1820,7 +1790,6 @@ class Activity extends Equatable implements Comparable<Activity> {
             tagsUpdated: currentTagUpdates.isEmpty ? null : currentTagUpdates,
           ),
       priority: priority,
-      parent: parent,
     );
     return newActivity;
   }
@@ -1846,6 +1815,10 @@ class Activity extends Equatable implements Comparable<Activity> {
       );
     }
 
+    // Trigger full push including activity_read changes (fire and forget)
+    // This ensures activity_read is synced immediately, not just during sync cycles
+    Activity.push();
+
     // Generate a title on the first non-draft save
     if (title == null && !draft) {
       final generatedTitle = await generateTitle();
@@ -1854,18 +1827,28 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
   }
 
-  Future<String> generateTitle() async {
+  Future<String> generateTitle([String noteContent = '']) async {
+    // If no note content provided, return displayTitle as fallback
+    if (noteContent.isEmpty) {
+      return displayTitle;
+    }
+
     try {
       final response = await api.post<Map<String, dynamic>>(
-        "/summary",
-        body: {'body': note},
+        '/summary',
+        body: {'body': noteContent},
       );
-      return response['title'] as String;
+      final generatedTitle = response['title'] as String?;
+
+      if (generatedTitle != null && generatedTitle.isNotEmpty) {
+        log.info("Generated title for activity $id: $generatedTitle");
+        return generatedTitle;
+      } else {
+        log.info("API returned empty title for activity $id, using fallback");
+        return displayTitle;
+      }
     } catch (e, t) {
-      log.warning("Error generating title: $e\n$t");
-      // It might be better to leave title null and generate displayTitle,
-      // but for some reason, activities without titles are not appearing
-      // on PriorityPage.
+      log.warning("Error generating title for activity $id: $e\n$t");
       return displayTitle;
     }
   }
@@ -1889,29 +1872,60 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
   }
 
-  static final Map<Uuid, List<Activity>> _children = {};
-  void _addChild(Activity child) {
-    _children
-        .putIfAbsent(id, () => [])
-        .replaceSorted(child, (a, b) => a.id == b.id);
+  /// Get actor names for a tag, formatted for display in tooltips
+  /// Returns a formatted string like "You, Alice, Bob" or "You, Alice, Bob + 2 more"
+  Future<String> getTagActorNames(Tag tag) async {
+    // Special case: For now/later/done tags, show assignee instead of author
+    if (assigneeId != null && [Tag.now, Tag.later, Tag.done].contains(tag)) {
+      return Activity._formatActorNames([assigneeId!]);
+    }
+
+    // Default behavior for all other tags
+    final actorIds = tags[tag];
+    if (actorIds == null || actorIds.isEmpty) {
+      return '';
+    }
+
+    return Activity._formatActorNames(actorIds);
   }
 
-  List<Activity> get children => _children[id] ?? [];
-  bool isParent(Activity other) => path.isParent(other.path);
-  List<Activity> get peers => parent?.children ?? [];
-  List<Activity> descendants() {
-    List<Activity> result = [];
+  /// Helper to format a list of actorIds into a display string
+  /// - Replaces current user with "You"
+  /// - Shows first 3 names + count if more exist
+  static Future<String> _formatActorNames(List<ActorId> actorIds) async {
+    if (actorIds.isEmpty) return '';
 
-    void collectDescendants(Activity activity) {
-      for (var child in activity.children) {
-        result.add(child);
-        collectDescendants(child);
+    // Fetch actor names from the database
+    final actors =
+        await (Store.get.select(Store.get.actors)..where(
+              (a) => a.id.isIn(actorIds.map((id) => id.toBytes()).toList()),
+            ))
+            .get();
+
+    // Create a map of actorId to name
+    final actorMap = {for (var actor in actors) actor.id: actor.name};
+
+    // Build the display names list
+    final displayNames = <String>[];
+    final currentContactId = Base.actorId;
+
+    for (final actorId in actorIds) {
+      if (actorId == currentContactId) {
+        displayNames.insert(0, 'You'); // Put "You" first
+      } else {
+        final name = actorMap[actorId] ?? 'Unknown';
+        displayNames.add(name);
       }
     }
 
-    collectDescendants(this);
-    result.sort();
-    return result;
+    // Format the output
+    if (displayNames.length <= 3) {
+      return displayNames.join(', ');
+    } else {
+      final first3 = displayNames.take(3).join(', ');
+      final remaining = displayNames.length - 3;
+      return '$first3 + $remaining more';
+    }
   }
 
   List<Activity> generateOccurrences(BoundedDateRange range) {
@@ -1997,7 +2011,6 @@ class Activity extends Equatable implements Comparable<Activity> {
           endOn: occurrenceOn?.end,
         ),
         priority: priority,
-        parent: parent,
         tags: _tags,
       );
 
@@ -2066,42 +2079,47 @@ class Activity extends Equatable implements Comparable<Activity> {
     return targetInstance.toDate();
   }
 
+  /// Activity are sorted in this order:
+  /// - For ActivityType.note, GREATEST(createdAt, doneAt, lastNoteCreatedAt)
+  /// - For ActivityType.action, doneAt ?? startAt.toDate()/startOn
+  /// - For ActivityType.event, startAt/startOn
+  /// Ties are broken using the order property.
   @override
   int compareTo(Activity other) {
-    if (todo) {
-      if (other.todo) {
-        return order.compareTo(other.order);
-      } else {
-        // todo activities come after
-        return 1;
-      }
-    } else if (other.todo) {
-      // other activity is todo, this one is not
-      return -1;
-    }
+    // Get sort time based on type
+    final thisTime = _getSortTime();
+    final otherTime = other._getSortTime();
 
-    // For non-scheduled activities, sort by order (manual ordering)
-    // For scheduled activities, sort by time, then order
-    final thisScheduled = scheduled;
-    final otherScheduled = other.scheduled;
-
-    if (!thisScheduled && !otherScheduled && !done && !other.done) {
-      // Both are non-scheduled, non-done: sort by order for manual reordering
-      return order.compareTo(other.order);
-    }
-
-    // Otherwise, compare doneAt ?? createdAt, then by order
-    final thisTime = doneAt ?? createdAt;
-    final otherTime = other.doneAt ?? other.createdAt;
+    // Compare times
     final timeComparison = thisTime.compareTo(otherTime);
     if (timeComparison != 0) {
       return timeComparison;
     }
+
+    // Break ties with order
     return order.compareTo(other.order);
   }
 
+  DateTime _getSortTime() {
+    switch (type) {
+      case ActivityType.note:
+        // For notes, use GREATEST(createdAt, doneAt, lastNoteCreatedAt)
+        final times = [
+          createdAt,
+          if (doneAt != null) doneAt!,
+          if (_activity.lastNoteCreatedAt != null) _activity.lastNoteCreatedAt!,
+        ];
+        times.sort((a, b) => b.compareTo(a)); // Sort descending
+        return times.first; // Return the greatest (most recent)
+      case ActivityType.action:
+        return (doneAt ?? at?.start ?? on?.start?.toDateTime())!;
+      case ActivityType.event:
+        return (at?.start ?? on?.start?.toDateTime())!;
+    }
+  }
+
   @override
-  List<Object?> get props => [_activity, _exception, _tags, parent, priority];
+  List<Object?> get props => [_activity, _exception, _tags, _notes, priority];
 
   @override
   String toString() {
@@ -2109,7 +2127,7 @@ class Activity extends Equatable implements Comparable<Activity> {
 
     // ID and type
     buffer.write('id: ${id.toString().substring(0, 8)}..., ');
-    buffer.write('type: ${type?.name ?? 'null'}, ');
+    buffer.write('type: ${type.name}, ');
 
     // Title (truncated)
     final titleStr = title;
@@ -2120,22 +2138,17 @@ class Activity extends Equatable implements Comparable<Activity> {
       buffer.write('title: "$truncatedTitle", ');
     }
 
-    // Note (truncated and sanitized)
-    final noteStr = noteText;
-    if (noteStr != null && noteStr.isNotEmpty) {
-      final truncatedNote = noteStr.length > 50
-          ? '${noteStr.substring(0, 47)}...'
-          : noteStr;
-      buffer.write('note: "$truncatedNote", ');
+    // Preview (truncated)
+    final previewStr = preview;
+    if (previewStr != null && previewStr.isNotEmpty) {
+      final truncatedPreview = previewStr.length > 50
+          ? '${previewStr.substring(0, 47)}...'
+          : previewStr;
+      buffer.write('preview: "$truncatedPreview", ');
     }
 
     // Priority
     buffer.write('priority: ${priority.title}, ');
-
-    // Path (for nested activities)
-    if (!path.isRoot) {
-      buffer.write('path: $path, ');
-    }
 
     // Scheduling info
     if (at != null) {
@@ -2152,7 +2165,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     if (archivedAt != null) {
-      buffer.write('deleted: $archivedAt, ');
+      buffer.write('archived: $archivedAt, ');
     }
 
     if (draft) {

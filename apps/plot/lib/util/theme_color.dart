@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart';
 
 extension type ThemeColor(int index) {
-  const ThemeColor.defaultColor() : index = 0;
+  const ThemeColor.defaultColor() : index = 7;
 
   static final List<ThemeColor> options = [
     ThemeColor(0),
@@ -36,12 +36,12 @@ extension type ThemeColor(int index) {
       4 => 20.0, // Turning Point - pink
       5 => 54.0, // Breakthrough - orange
       6 => 108.0, // Climax - olive
-      7 => 0.0, // Resolution - gray
+      7 => 164.18, // Resolution - blue-gray
       _ => 0.0, // Unknown - default to red
     };
   }
 
-  double get chromaFactor => index == 7 ? 0.0 : 1.0;
+  double get chromaFactor => index == 7 ? 0.10 : 1.0;
 }
 
 class ThemeColorConverter extends TypeConverter<ThemeColor, int> {

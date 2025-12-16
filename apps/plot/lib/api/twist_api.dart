@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import 'package:plot/env.dart';
 import 'package:plot/store/store.dart';
 import 'api.dart' as api;
-import 'logging.dart';
 import 'twist_permission.dart';
 
 /// Represents an twist tool with its identifier
@@ -95,82 +94,6 @@ class Twist {
   }
 }
 
-class PriorityTwist {
-  final String id;
-  final String priorityId;
-  final String twistId;
-  final String twistEnvironment;
-  final String name;
-  final Map<String, dynamic> config;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
-  final DateTime? archivedAt;
-  final List<TwistTool>? tools;
-  final TwistPermissions? permissions;
-
-  const PriorityTwist({
-    required this.id,
-    required this.priorityId,
-    required this.twistId,
-    required this.twistEnvironment,
-    required this.name,
-    required this.config,
-    this.createdAt,
-    this.updatedAt,
-    this.archivedAt,
-    this.tools,
-    this.permissions,
-  });
-
-  factory PriorityTwist.fromJson(Map<String, dynamic> json) {
-    List<TwistTool>? tools;
-    if (json['tools'] != null) {
-      final toolsRaw = json['tools'];
-      if (toolsRaw is Map<String, dynamic>) {
-        // Handle tools as map format: {"tool-id": {}}
-        tools = toolsRaw.entries
-            .map((entry) => TwistTool(id: entry.key))
-            .toList();
-      } else if (toolsRaw is List<dynamic>) {
-        // Handle tools as list format: [{"id": "tool-id"}]
-        tools = toolsRaw
-            .map((tool) => TwistTool.fromJson(tool as Map<String, dynamic>))
-            .toList();
-      }
-    }
-
-    // Extract permissions from nested twist data if available
-    TwistPermissions? permissions;
-    if (json['twist'] != null) {
-      final twistData = json['twist'] as Map<String, dynamic>;
-      if (twistData['permissions'] != null) {
-        permissions = TwistPermissions.fromJson(
-            twistData['permissions'] as Map<String, dynamic>);
-      }
-    }
-
-    return PriorityTwist(
-      id: json['id'] as String,
-      priorityId: json['priority_id'] as String,
-      twistId: json['twist_id'] as String,
-      twistEnvironment: json['twist_environment'] as String? ?? 'public',
-      name: json['name'] as String,
-      config: json['config'] as Map<String, dynamic>? ?? {},
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : null,
-      updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
-          : null,
-      archivedAt: json['archived_at'] != null
-          ? DateTime.parse(json['archived_at'] as String)
-          : null,
-      tools: tools,
-      permissions: permissions,
-    );
-  }
-}
-
 class TwistApi {
   /// Get all available twists for a priority
   static Future<List<Twist>> getAllTwists(Priority priority) async {
@@ -180,20 +103,6 @@ class TwistApi {
     return twistsData
         .map((json) => Twist.fromJson(json as Map<String, dynamic>))
         .toList();
-  }
-
-  /// Get twists active for a priority (including ancestors)
-  static Future<List<PriorityTwist>> getTwistsForPriority(
-    Priority priority,
-  ) async {
-    final twistsData = await api.get<List<dynamic>>(
-      '/twist?priorityId=${priority.id.toString()}',
-    );
-    log.info('Twists for priority: $twistsData ');
-    final ret = twistsData
-        .map((json) => PriorityTwist.fromJson(json as Map<String, dynamic>))
-        .toList();
-    return ret;
   }
 
   /// Remove a twist from a priority
@@ -229,25 +138,5 @@ class TwistApi {
     // Server returns the priority twist ID as a JSON-encoded string
     final decodedResponse = jsonDecode(response.body);
     return decodedResponse.toString();
-  }
-
-  /// Update a twist
-  static Future<PriorityTwist> updateTwist(
-    String priorityTwistId,
-    Map<String, dynamic> updates,
-  ) async {
-    final response = await api.patch<Map<String, dynamic>>(
-      '/twist/$priorityTwistId',
-      body: {'twist': updates},
-    );
-    return PriorityTwist.fromJson(response);
-  }
-
-  /// Get twist by priority twist ID
-  static Future<PriorityTwist> getTwistById(String priorityTwistId) async {
-    final response = await api.get<Map<String, dynamic>>(
-      '/twist/$priorityTwistId',
-    );
-    return PriorityTwist.fromJson(response);
   }
 }

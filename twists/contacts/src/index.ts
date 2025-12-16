@@ -82,7 +82,11 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
       title: "Connect your contacts",
       start: new Date(),
       end: null,
-      links: [googleAuthLink],
+      notes: [
+        {
+          links: [googleAuthLink],
+        },
+      ],
     });
   }
 
@@ -187,7 +191,11 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
       title: `Would you like to sync your ${provider} contacts?`,
       start: new Date(),
       end: null,
-      links: [link],
+      notes: [
+        {
+          links: [link],
+        },
+      ],
     });
   }
 
@@ -209,7 +217,11 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
       await this.tools.plot.createActivity({
         type: ActivityType.Action,
         title: `✅ Started syncing ${provider} contacts`,
-        note: `Contact sync has been started for your ${provider} contacts.`,
+        notes: [
+          {
+            content: `Contact sync has been started for your ${provider} contacts.`,
+          },
+        ],
         start: new Date(),
         end: null,
       });

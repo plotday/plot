@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:change_case/change_case.dart';
 
@@ -70,5 +72,30 @@ class LocalDateTimeConverter extends TypeConverter<DateTime, DateTime> {
   @override
   DateTime toSql(DateTime value) {
     return value.toUtc();
+  }
+}
+
+class JsonConverter extends TypeConverter<Map<String, dynamic>, String>
+    with JsonTypeConverter2<Map<String, dynamic>, String, Map<String, dynamic>> {
+  const JsonConverter();
+
+  @override
+  Map<String, dynamic> fromSql(String fromDb) {
+    return jsonDecode(fromDb) as Map<String, dynamic>;
+  }
+
+  @override
+  String toSql(Map<String, dynamic> value) {
+    return jsonEncode(value);
+  }
+
+  @override
+  Map<String, dynamic> fromJson(Map<String, dynamic> json) {
+    return json;
+  }
+
+  @override
+  Map<String, dynamic> toJson(Map<String, dynamic> value) {
+    return value;
   }
 }

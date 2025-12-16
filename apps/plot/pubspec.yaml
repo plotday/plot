@@ -59,6 +59,7 @@ dependencies:
   drift_flutter: ^0.2.7
   device_info_plus: ^12.1.0
   flutter_resizable_container: ^4.2.0
+  package_info_plus: ^8.0.0
   macos_window_utils: ^1.6.1
   window_manager: ^0.5.1
   screen_retriever: ^0.2.0
@@ -114,6 +115,7 @@ dev_dependencies:
   drift_dev: ^2.29.0
   auto_route_generator: ^10.0.1
   msix: ^3.16.7
+  flutter_native_splash: ^2.4.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -138,8 +140,25 @@ flutter:
   fonts:
     - family: Figtree
       fonts:
-        - asset: assets/fonts/figtree/Figtree-VariableFont_wght.ttf
-        - asset: assets/fonts/figtree/Figtree-Italic-VariableFont_wght.ttf
+        - asset: assets/fonts/figtree/Figtree-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/figtree/Figtree-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/figtree/Figtree-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/figtree/Figtree-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/figtree/Figtree-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: assets/fonts/figtree/Figtree-MediumItalic.ttf
+          weight: 500
+          style: italic
+        - asset: assets/fonts/figtree/Figtree-SemiBoldItalic.ttf
+          weight: 600
+          style: italic
+        - asset: assets/fonts/figtree/Figtree-BoldItalic.ttf
+          weight: 700
           style: italic
 
 scripts:
@@ -158,6 +177,13 @@ scripts:
   deploy:
     web: wrangler pages deploy build/web --project-name=app --commit-hash ${GITHUB_SHA:-$(git rev-parse HEAD)}
 
+# NOTE: Android launcher icons now use custom adaptive icons for crisp rendering:
+# - android/app/src/main/res/drawable/ic_launcher_foreground.xml
+# - android/app/src/main/res/drawable/ic_launcher_background.xml
+# - android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+# These override the auto-generated PNG assets from flutter_launcher_icons on Android API 26+.
+# Background color is #f2f5f3 (light) and #1f2221 (dark) to match the app interface.
+# The configuration below is kept for iOS, web, Windows, macOS, and older Android versions.
 flutter_launcher_icons:
   android: true
   ios: true
@@ -180,3 +206,23 @@ msix_config:
   msix_version: 1.0.0+179
   logo_path: assets/plot-512x512.png
   capabilities: internetClient
+
+# NOTE: Android splash screen now uses custom vector drawables for crisp rendering:
+# - android/app/src/main/res/drawable/ic_splash_logo.xml (pre-Android 12)
+# - android/app/src/main/res/drawable/ic_splash_foreground.xml (Android 12+ adaptive icon)
+# These override the auto-generated PNG assets from flutter_native_splash.
+# The configuration below is kept for iOS, web, and color reference.
+flutter_native_splash:
+  color: "#f2f5f3"
+  color_dark: "#1f2221"
+  image: assets/p-1024x1024.png
+  android: true
+  ios: true
+  web: true
+  fullscreen: true
+  android_gravity: center
+  ios_content_mode: center
+  android_12:
+    image: assets/p-1024x1024.png
+    color: "#f2f5f3"
+    color_dark: "#1f2221"

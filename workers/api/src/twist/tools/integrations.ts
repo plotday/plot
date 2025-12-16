@@ -147,17 +147,17 @@ export class Integrations extends Tool implements IAuth {
     const config = PROVIDER_CONFIGS[tokenInfo.provider];
 
     // Parse provider-specific data if handler exists
-    const providerData = config?.parseTokenResponse?.(tokenInfo);
+    const providerData = config?.parseTokenResponse?.(tokenInfo) ?? null;
 
     const tokenKey = `auth_token:${authorizationId}`;
     const token: StoredTokenData = {
       client_id: tokenInfo.client_id,
       access_token: tokenInfo.access_token,
-      refresh_token: tokenInfo.refresh_token,
+      refresh_token: tokenInfo.refresh_token ?? null,
       scopes: tokenInfo.scopes,
       expires_at: tokenInfo.expires_in
         ? Date.now() + tokenInfo.expires_in * 1000
-        : undefined,
+        : null,
       providerData,
     };
     await this.store.set(tokenKey, token);
@@ -204,11 +204,11 @@ export class Integrations extends Tool implements IAuth {
             client_id: tokenData.client_id,
             access_token: refreshedToken.access_token,
             refresh_token:
-              refreshedToken.refresh_token || tokenData.refresh_token,
+              refreshedToken.refresh_token || tokenData.refresh_token || null,
             scopes: tokenData.scopes,
             expires_at: refreshedToken.expires_in
               ? Date.now() + refreshedToken.expires_in * 1000
-              : undefined,
+              : null,
             providerData: tokenData.providerData, // Preserved automatically
           };
           await this.store.set(tokenKey, updatedToken);
@@ -585,6 +585,8 @@ export class Integrations extends Tool implements IAuth {
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
       ...config.additionalParams,
+      // Override prompt for twist auth to always show consent
+      prompt: "select_account consent",
     });
 
     const url = `${config.authUrl}?${params.toString()}`;

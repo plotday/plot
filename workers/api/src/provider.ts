@@ -3,8 +3,8 @@ import { type AuthProvider } from "@plotday/twister/tools/integrations";
 // Base OAuth token data (common to all providers)
 export type BaseTokenData = {
   access_token: string;
-  refresh_token?: string;
-  expires_at?: number;
+  refresh_token: string | null;
+  expires_at: number | null;
   scopes: string[];
   client_id: string;
 };
@@ -23,7 +23,7 @@ export type ProviderData = SlackProviderData;
 
 // Combined storage type
 export type StoredTokenData = BaseTokenData & {
-  providerData?: ProviderData;
+  providerData: ProviderData | null;
 };
 
 type ProviderConfig = {
@@ -44,7 +44,7 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     tokenUrl: "https://oauth2.googleapis.com/token",
     additionalParams: {
       access_type: "offline",
-      prompt: "select_account consent",
+      prompt: "select_account",
     },
   },
   microsoft: {

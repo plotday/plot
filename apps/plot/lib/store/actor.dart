@@ -1,14 +1,15 @@
 part of 'store.dart';
 
-typedef ActorId = Uuid;
-
 @DataClassName('ActorRow')
-class Actors extends Table
-    with SyncableTable, UuidTable, CreatedTable, DeletableTable {
+class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
+  BlobColumn get id => blob().map(const ActorIdConverter())();
   TextColumn get type => text().map(const EnumConverter<ActorType>())();
   TextColumn get name => text()();
   TextColumn get email => text().nullable()();
   TextColumn get avatarUrl => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 class ActorsBase extends BaseTable {
@@ -35,22 +36,26 @@ class ActorsBase extends BaseTable {
 class Actor extends ActorRow {
   static TableInfo<Actors, ActorRow> get table => Store.get.actors;
 
-  static Future<void> pull() async =>
-      await Store.get.pull(PullType.all, table, ActorsBase());
-
-  static Future<List<Actor>> get({bool? deleted = false}) async {
-    return _get(deleted: deleted).get();
+  static Future<void> pull() async {
+    // First pull: fetch all actors if not already initialized
+    await Store.get.pull(table, ActorsBase(), initial: true);
+    // Subsequent pulls: fetch changes since last pull
+    await Store.get.pull(table, ActorsBase());
   }
 
-  static Stream<List<Actor>> watch({bool? deleted = false}) {
-    return _get(deleted: deleted).watch();
+  static Future<List<Actor>> get({bool? archived = false}) async {
+    return _get(archived: archived).get();
   }
 
-  static MultiSelectable<Actor> _get({bool? deleted = false}) {
+  static Stream<List<Actor>> watch({bool? archived = false}) {
+    return _get(archived: archived).watch();
+  }
+
+  static MultiSelectable<Actor> _get({bool? archived = false}) {
     return (Store.get.select(table)..where(
-          (t) => deleted == null
+          (t) => archived == null
               ? const Constant(true)
-              : deleted
+              : archived
               ? t.archivedAt.isNotNull()
               : t.archivedAt.isNull(),
         ))
@@ -93,4 +98,60 @@ class Actor extends ActorRow {
       pending: pending,
     ),
   );
+}
+
+/// Drift converter for ActorId
+class ActorIdConverter extends TypeConverter<ActorId, Uint8List>
+    with JsonTypeConverter2<ActorId, Uint8List, String> {
+  const ActorIdConverter();
+
+  @override
+  ActorId fromSql(Uint8List fromDb) {
+    return ActorId.fromUuid(Uuid.fromBytes(fromDb));
+  }
+
+  @override
+  Uint8List toSql(ActorId value) {
+    return value.toUuid().toBytes();
+  }
+
+  @override
+  ActorId fromJson(String json) {
+    return ActorId.fromString(json);
+  }
+
+  @override
+  String toJson(ActorId value) {
+    return value.toString();
+  }
+}
+
+/// Drift converter for lists of ActorIds
+class ActorIdListConverter extends TypeConverter<List<ActorId>, String>
+    with JsonTypeConverter2<List<ActorId>, String, List<dynamic>> {
+  const ActorIdListConverter();
+
+  @override
+  List<ActorId> fromSql(String fromDb) {
+    if (fromDb.isEmpty) return [];
+    return fromDb
+        .split(',')
+        .map((uuidStr) => ActorId.fromString(uuidStr.trim()))
+        .toList();
+  }
+
+  @override
+  String toSql(List<ActorId> value) {
+    return value.map((id) => id.toString()).join(',');
+  }
+
+  @override
+  List<ActorId> fromJson(List<dynamic> json) {
+    return json.map((item) => ActorId.fromString(item as String)).toList();
+  }
+
+  @override
+  List<dynamic> toJson(List<ActorId> value) {
+    return value.map((id) => id.toString()).toList();
+  }
 }

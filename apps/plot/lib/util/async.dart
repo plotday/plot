@@ -224,3 +224,70 @@ Stream<T> streamWithExpiry<T>(
 
   return controller.stream;
 }
+
+/// Adaptive batch debouncer with three configurable timing parameters.
+///
+/// Batches rapid function calls with adaptive timing:
+/// - First batch fires quickly (maxInitialMs)
+/// - Subsequent batches fire with longer delay (maxSubsequentMs)
+/// - Waits for quiet period (waitMs) between calls before firing
+///
+/// Example: BatchDebouncer(200, 500, 250) with calls at [80, 100, 220, 320, 450]ms:
+/// - Batch 1: [80, 100] → fires at 280ms (80 + 200 max initial)
+/// - Batch 2: [220, 320, 450] → fires at 720ms (220 + 500 max subsequent)
+class BatchDebouncer<T> {
+  final int maxInitialMs;
+  final int maxSubsequentMs;
+  final int waitMs;
+  final void Function(T key) onBatch;
+
+  final Map<T, Timer> _timers = {};
+  final Map<T, DateTime> _batchStartTimes = {};
+
+  BatchDebouncer({
+    required this.maxInitialMs,
+    required this.maxSubsequentMs,
+    required this.waitMs,
+    required this.onBatch,
+  });
+
+  void call(T key) {
+    final now = DateTime.now();
+    final existingBatchStartTime = _batchStartTimes[key];
+
+    // Cancel existing timer
+    _timers[key]?.cancel();
+
+    // Calculate appropriate delay based on whether this is first call in batch
+    final int delay;
+    if (existingBatchStartTime == null) {
+      // First call in batch
+      _batchStartTimes[key] = now;
+      delay = maxInitialMs < waitMs ? maxInitialMs : waitMs;
+    } else {
+      // Subsequent call in batch
+      final int elapsed = now.difference(existingBatchStartTime).inMilliseconds;
+      final int remainingTime = maxSubsequentMs - elapsed;
+      delay = remainingTime < waitMs ? remainingTime : waitMs;
+    }
+
+    // Start new timer
+    _timers[key] = Timer(Duration(milliseconds: delay), () {
+      _executeBatch(key);
+    });
+  }
+
+  void _executeBatch(T key) {
+    _timers.remove(key);
+    _batchStartTimes.remove(key);
+    onBatch(key);
+  }
+
+  void dispose() {
+    for (final timer in _timers.values) {
+      timer.cancel();
+    }
+    _timers.clear();
+    _batchStartTimes.clear();
+  }
+}

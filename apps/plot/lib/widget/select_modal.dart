@@ -12,7 +12,7 @@ import 'logging.dart';
 
 /// A group of items to display in a SelectModal.
 class SelectGroup<T> {
-  SelectGroup({this.title, required this.items, this.infoBuilder});
+  SelectGroup({this.title, required this.items, this.infoBuilder, this.hint});
 
   /// The title of the group (displayed as a header).
   final String? title;
@@ -22,6 +22,9 @@ class SelectGroup<T> {
 
   /// Optional widget to display below the group header.
   final Widget Function(BuildContext)? infoBuilder;
+
+  /// Optional hint shown on the right side (usally a keyboard shortcut).
+  final String? hint;
 }
 
 /// A generic selection modal for selecting items from a list.
@@ -470,15 +473,43 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             group != _getGroupAtIndex(index - 1)) {
                           // Show group header if it has a title
                           if (group.title != null) {
+                            // Check if this group has a shortcut (metadata will be ShortcutActivator)
                             header = Padding(
                               padding: widgetPaddingSm,
-                              child: Text(
-                                group.title!,
-                                style: TextStyle(
-                                  color: context.theme.colors.mutedForeground,
-                                  fontSize:
-                                      context.theme.typography.sm.fontSize,
-                                ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      group.title!,
+                                      style: TextStyle(
+                                        color:
+                                            context.theme.colors.mutedForeground,
+                                        fontSize:
+                                            context.theme.typography.sm.fontSize,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  // Show shortcut if present
+                                  if (group.hint != null &&
+                                      hasPhysicalKeyboard())
+                                    Text(
+                                      group.hint!,
+                                      style: TextStyle(
+                                        color: context
+                                            .theme
+                                            .colors
+                                            .mutedForeground,
+                                        fontSize: context
+                                            .theme
+                                            .typography
+                                            .xs
+                                            .fontSize,
+                                      ),
+                                    ),
+                                ],
                               ),
                             );
                           }

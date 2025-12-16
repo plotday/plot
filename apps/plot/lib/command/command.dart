@@ -5,6 +5,7 @@ export 'global.dart';
 export 'navigation.dart';
 export 'priority.dart';
 export 'activity.dart';
+export 'note.dart';
 export 'twist.dart';
 export 'provider.dart';
 export 'settings.dart';

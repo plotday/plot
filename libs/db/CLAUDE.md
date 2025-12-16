@@ -14,3 +14,7 @@ Don't create migrations manually. Migrations are generated from the schema.
 ## Generate Types
 
 Do not edit `src/types.ts` directly. Run `pnpm run types` in this package to regenerate.
+
+## DB Reset
+
+NEVER do a DB reset without asking first.

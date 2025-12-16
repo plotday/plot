@@ -44,13 +44,13 @@ class OklchColours {
   /// Calculate accent lightness for a ThemeColor based on brightness
   /// ThemeColor 7 (gray) uses special lightness values for better contrast
   static double _getAccentLightness(
-    ThemeColor themeColor,
+    ThemeColor? themeColor,
     Brightness brightness,
   ) {
-    if (themeColor.index == 7) {
+    if (themeColor?.index == 7) {
       return brightness == Brightness.light ? 0.15 : 0.9;
     }
-    return brightness == Brightness.light ? 0.45 : 0.7;
+    return brightness == Brightness.light ? 0.35 : 0.8;
   }
 
   /// Create OKLCH colors from a ThemeColor
@@ -81,7 +81,7 @@ class OklchColours {
         : RayOklch.fromComponents(1.0, 0.0, 0.0);
 
     if (brightness == Brightness.light) {
-      const baseChroma = 0.4;
+      const baseChroma = 0.2;
       final accentLightness = _getAccentLightness(themeColor, brightness);
       return OklchColours(
         pureBackground: pureBackground,
@@ -89,14 +89,8 @@ class OklchColours {
         background: lch(0.965, 0.004),
         editableBackground: pureBackground,
         accent: lch(accentLightness, baseChroma),
-        accentBackground: lch(themeColor.index == 7 ? 0.93 : 0.95, 0.035),
-        // highlight: lch(themeColor.index == 7 ? 0.9 : 0.85, 0.02, hue, 0.25),
-        highlight: lch(
-          themeColor.index == 7 ? 1 : 0.65,
-          0.01,
-          hue,
-          themeColor.index == 7 ? 0.9 : 0.1,
-        ),
+        accentBackground: lch(0.94, 0.025),
+        highlight: lch(1, 0, hue, 0.8),
         foreground: lch(0.15, 0.01),
         muted: lch(0.5, 0.005),
         border: lch(0.0, 0.0, 0.0, 0.2),
@@ -112,36 +106,40 @@ class OklchColours {
         background: lch(0.25, 0.005),
         editableBackground: lch(0.3, 0.005),
         accent: lch(accentLightness, baseChroma),
-        accentBackground: lch(0.22, 0.02),
+        accentBackground: lch(0.20, 0.04),
         highlight: lch(0.6, 0.03, hue, 0.1),
-        foreground: lch(0.85, 0.0),
-        muted: lch(0.65, 0.01),
-        border: lch(1.0, 0.0, 0.0, 0.1),
+        foreground: lch(0.82, 0.0),
+        muted: lch(0.68, 0.01),
+        border: lch(1.0, 0.0, 0.0, 0.15),
         barrier: lch(0.0, 0.0, 0.0, 0.6),
         baseAccentChroma: baseChroma * saturate,
       );
     }
   }
 
-  Color fromTheme(ThemeColor? color, {double? lightness}) {
+  Color fromTheme(ThemeColor? color, {double? lightness, bool muted = false}) {
     double effectiveLightness;
+    double chromaMultiplier = 1.0;
 
-    if (lightness != null) {
+    // Determine mode based on accent lightness
+    final isLightMode = accent.lightness < 0.6;
+    final brightness = isLightMode ? Brightness.light : Brightness.dark;
+
+    if (muted) {
+      // Apply muted color values
+      effectiveLightness = brightness == Brightness.light ? 0.55 : 0.68;
+      chromaMultiplier = brightness == Brightness.light ? 0.5 : 0.5;
+    } else if (lightness != null) {
       effectiveLightness = lightness;
-    } else if (color != null) {
-      // Determine mode based on accent lightness
-      final isLightMode = accent.lightness < 0.6;
-      final brightness = isLightMode ? Brightness.light : Brightness.dark;
-      effectiveLightness = _getAccentLightness(color, brightness);
     } else {
-      effectiveLightness = accent.lightness;
+      effectiveLightness = _getAccentLightness(color, brightness);
     }
 
-    return accent
-        .withChroma(baseAccentChroma * (color?.chromaFactor ?? 1.0))
-        .withHue((color ?? const ThemeColor.defaultColor()).toHue())
-        .withLightness(effectiveLightness)
-        .toColor();
+    return RayOklch.fromComponents(
+      effectiveLightness,
+      baseAccentChroma * chromaMultiplier * (color?.chromaFactor ?? 1.0),
+      (color ?? const ThemeColor.defaultColor()).toHue(),
+    ).toColor();
   }
 }
 
@@ -198,8 +196,8 @@ class ColourSchemeData extends Equatable {
       barrier: barrier,
       background: background,
       foreground: foreground,
-      primary: accentBackground,
-      primaryForeground: accent,
+      primary: accent,
+      primaryForeground: accentBackground,
       secondary: highlight,
       secondaryForeground: foreground,
       muted: const Color(0x00FFFFFF),

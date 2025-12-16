@@ -16,8 +16,8 @@ import 'package:plot/util/google_sign_in.dart' as web;
 import 'package:plot/store/store.dart' show AuthLink;
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/style/layout.dart';
 import 'logging.dart';
-import 'spinner.dart';
 
 export 'package:plot/store/types.dart' show AuthProvider;
 
@@ -197,16 +197,11 @@ class _AuthButtonState extends State<AuthButton> {
   void _startGoogleAuth() async {
     setState(() => _isLoading = true);
     try {
-      GoogleSignInAccount? account;
-      if (widget.scopes.isNotEmpty) {
-        await GoogleSignIn.instance
-            .signOut(); // Ensure we get a fresh account for new scopes
-      }
-      if (widget.scopes.isEmpty && !widget.autoSignIn) {
-        account = await GoogleSignIn.instance
-            .attemptLightweightAuthentication();
-      }
-      account ??= await GoogleSignIn.instance.authenticate(
+      // Always sign out first to force account selection
+      await GoogleSignIn.instance.signOut();
+
+      // Authenticate with full account picker
+      final account = await GoogleSignIn.instance.authenticate(
         scopeHint: widget.scopes,
       );
       _onGoogleSignIn(account);
@@ -357,33 +352,19 @@ class _AuthButtonState extends State<AuthButton> {
     }
 
     final config = _getProviderConfig(widget.provider);
-    return SizedBox(
-      height: config.height,
-      child: FButton(
-        onPress: _isLoading ? null : _onPress,
-        style: _buildButtonStyle(context, config),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (_isLoading)
-              SizedBox(
-                width: config.iconSize,
-                height: config.iconSize,
-                child: Spinner(),
-              )
-            else
-              _ProviderIcon(provider: widget.provider, size: config.iconSize),
-            SizedBox(width: config.spacing),
-            Text(
-              config.buttonText,
-              style: context.theme.typography.base.copyWith(
-                fontWeight: config.fontWeight,
-                fontFamily: config.fontFamily,
-                color: _isLoading ? config.disabledTextColor : config.textColor,
-              ),
-            ),
-          ],
+    return FButton(
+      mainAxisSize: .min,
+      onPress: _isLoading ? null : _onPress,
+      style: _buildButtonStyle(context, config),
+      prefix: _isLoading
+          ? FCircularProgress()
+          : _ProviderIcon(provider: widget.provider, size: config.iconSize),
+      child: Text(
+        config.buttonText,
+        style: context.theme.typography.base.copyWith(
+          fontWeight: config.fontWeight,
+          fontFamily: config.fontFamily,
+          color: _isLoading ? config.disabledTextColor : config.textColor,
         ),
       ),
     );
@@ -394,45 +375,30 @@ class _AuthButtonState extends State<AuthButton> {
       decoration: FWidgetStateMap({
         WidgetState.any: BoxDecoration(
           color: config.backgroundColor,
-          border: Border.all(
-            color: config.borderColor,
-            width: config.borderWidth,
-          ),
-          borderRadius: BorderRadius.circular(config.borderRadius),
-          boxShadow: config.shadow,
+          border: Border.all(color: config.borderColor, width: 1),
+          borderRadius: tileBorderRadius,
         ),
         WidgetState.hovered: BoxDecoration(
           color: config.hoverColor,
-          border: Border.all(
-            color: config.borderColor,
-            width: config.borderWidth,
-          ),
-          borderRadius: BorderRadius.circular(config.borderRadius),
-          boxShadow: config.shadow,
+          border: Border.all(color: config.borderColor, width: 1),
+          borderRadius: tileBorderRadius,
         ),
         WidgetState.focused: BoxDecoration(
           color: config.backgroundColor,
-          border: Border.all(
-            color: config.focusColor,
-            width: config.borderWidth,
-          ),
-          borderRadius: BorderRadius.circular(config.borderRadius),
-          boxShadow: config.shadow,
+          border: Border.all(color: config.focusColor, width: 1),
+          borderRadius: tileBorderRadius,
         ),
         WidgetState.disabled: BoxDecoration(
           color: config.backgroundColor.withValues(alpha: 0.6),
           border: Border.all(
             color: config.borderColor.withValues(alpha: 0.6),
-            width: config.borderWidth,
+            width: 1,
           ),
-          borderRadius: BorderRadius.circular(config.borderRadius),
+          borderRadius: tileBorderRadius,
         ),
       }),
       contentStyle: FButtonContentStyle(
-        padding: EdgeInsets.symmetric(
-          horizontal: config.horizontalPadding,
-          vertical: 0,
-        ),
+        padding: widgetPadding,
         textStyle: FWidgetStateMap.all(
           context.theme.typography.base.copyWith(
             fontWeight: config.fontWeight,
@@ -448,7 +414,7 @@ class _AuthButtonState extends State<AuthButton> {
         iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
       ),
       focusedOutlineStyle: FFocusedOutlineStyle(
-        borderRadius: BorderRadius.circular(config.borderRadius),
+        borderRadius: tileBorderRadius,
         color: config.focusColor,
       ),
       tappableStyle: FTappableStyle(),
@@ -473,10 +439,7 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: const Color(0xFF3C4043),
           borderColor: const Color(0xFFDADBDD),
-          borderWidth: 1,
-          borderRadius: 4,
           horizontalPadding: 12,
-          height: 40,
           hoverColor: const Color(0xFFF8F9FA),
           focusColor: const Color(0xFF4285F4),
           loadingColor: const Color(0xFF4285F4),
@@ -487,13 +450,6 @@ class _AuthButtonState extends State<AuthButton> {
           fontWeight: FontWeight.w500,
           fontFamily: 'Roboto',
           buttonText: 'Continue with Google',
-          shadow: const [
-            BoxShadow(
-              color: Color(0x1A000000),
-              blurRadius: 1,
-              offset: Offset(0, 1),
-            ),
-          ],
         );
 
       case AuthProvider.microsoft:
@@ -501,10 +457,7 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: const Color(0xFF5E5E5E), // Microsoft's text color
           borderColor: const Color(0xFF8C8C8C), // Darker border than Google
-          borderWidth: 1,
-          borderRadius: 2, // Microsoft uses smaller border radius
           horizontalPadding: 12,
-          height: 32, // Microsoft's standard height is smaller
           hoverColor: const Color(0xFFF3F2F1), // Microsoft's hover color
           focusColor: const Color(0xFF0078D4), // Microsoft Blue
           loadingColor: const Color(0xFF0078D4),
@@ -515,13 +468,6 @@ class _AuthButtonState extends State<AuthButton> {
           fontWeight: FontWeight.w400, // Regular weight
           fontFamily: 'Segoe UI', // Microsoft's font
           buttonText: 'Continue with Microsoft',
-          shadow: const [
-            BoxShadow(
-              color: Color(0x0D000000),
-              blurRadius: 2,
-              offset: Offset(0, 1),
-            ),
-          ],
         );
 
       case AuthProvider.slack:
@@ -529,10 +475,7 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: const Color(0xFF4A154B), // Slack Purple
           textColor: Colors.white,
           borderColor: const Color(0xFF4A154B),
-          borderWidth: 1,
-          borderRadius: 4,
           horizontalPadding: 16, // More padding
-          height: 44, // Taller button
           hoverColor: const Color(0xFF611F69), // Darker purple on hover
           focusColor: const Color(0xFF611F69),
           loadingColor: Colors.white,
@@ -543,13 +486,6 @@ class _AuthButtonState extends State<AuthButton> {
           fontWeight: FontWeight.w600, // Semi-bold
           fontFamily: 'Lato', // Slack's font
           buttonText: 'Continue with Slack',
-          shadow: const [
-            BoxShadow(
-              color: Color(0x1A4A154B),
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
         );
 
       case AuthProvider.apple:
@@ -557,10 +493,7 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: Colors.black,
           borderColor: const Color(0xFFDADBDD),
-          borderWidth: 1,
-          borderRadius: 6, // Apple uses 6px radius
           horizontalPadding: 16,
-          height: 44, // Apple's standard height
           hoverColor: const Color(0xFF1D1D1F),
           focusColor: const Color(0xFF0071E3), // Apple Blue
           loadingColor: Colors.white,
@@ -571,13 +504,6 @@ class _AuthButtonState extends State<AuthButton> {
           fontWeight: FontWeight.w600,
           fontFamily: 'SF Pro Text', // Apple's font
           buttonText: 'Continue with Apple',
-          shadow: const [
-            BoxShadow(
-              color: Color(0x33000000),
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
         );
 
       case AuthProvider.github:
@@ -585,10 +511,7 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: const Color(0xFF24292E), // GitHub dark
           textColor: Colors.white,
           borderColor: const Color(0xFF24292E),
-          borderWidth: 1,
-          borderRadius: 6,
           horizontalPadding: 16,
-          height: 40,
           hoverColor: const Color(0xFF2F363D),
           focusColor: const Color(0xFF0366D6), // GitHub Blue
           loadingColor: Colors.white,
@@ -599,13 +522,6 @@ class _AuthButtonState extends State<AuthButton> {
           fontWeight: FontWeight.w500,
           fontFamily: 'system-ui', // System font
           buttonText: 'Continue with GitHub',
-          shadow: const [
-            BoxShadow(
-              color: Color(0x1A000000),
-              blurRadius: 3,
-              offset: Offset(0, 1),
-            ),
-          ],
         );
 
       case AuthProvider.discord:
@@ -613,10 +529,7 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: const Color(0xFF5865F2), // Discord Blurple
           textColor: Colors.white,
           borderColor: const Color(0xFF5865F2),
-          borderWidth: 1,
-          borderRadius: 3,
           horizontalPadding: 16,
-          height: 38,
           hoverColor: const Color(0xFF4752C4),
           focusColor: const Color(0xFF4752C4),
           loadingColor: Colors.white,
@@ -627,13 +540,6 @@ class _AuthButtonState extends State<AuthButton> {
           fontWeight: FontWeight.w500,
           fontFamily: 'system-ui',
           buttonText: 'Continue with Discord',
-          shadow: const [
-            BoxShadow(
-              color: Color(0x1A5865F2),
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
         );
 
       default:
@@ -641,10 +547,7 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: const Color(0xFF3C4043),
           borderColor: const Color(0xFFDADBDD),
-          borderWidth: 1,
-          borderRadius: 4,
           horizontalPadding: 12,
-          height: 40,
           hoverColor: const Color(0xFFF8F9FA),
           focusColor: const Color(0xFF4285F4),
           loadingColor: const Color(0xFF4285F4),
@@ -655,13 +558,6 @@ class _AuthButtonState extends State<AuthButton> {
           fontWeight: FontWeight.w500,
           fontFamily: 'Roboto',
           buttonText: 'Continue with $provider',
-          shadow: const [
-            BoxShadow(
-              color: Color(0x1A000000),
-              blurRadius: 1,
-              offset: Offset(0, 1),
-            ),
-          ],
         );
     }
   }
@@ -671,10 +567,7 @@ class _ProviderConfig {
   final Color backgroundColor;
   final Color textColor;
   final Color borderColor;
-  final double borderWidth;
-  final double borderRadius;
   final double horizontalPadding;
-  final double height;
   final Color hoverColor;
   final Color focusColor;
   final Color loadingColor;
@@ -685,16 +578,12 @@ class _ProviderConfig {
   final FontWeight fontWeight;
   final String fontFamily;
   final String buttonText;
-  final List<BoxShadow> shadow;
 
   const _ProviderConfig({
     required this.backgroundColor,
     required this.textColor,
     required this.borderColor,
-    required this.borderWidth,
-    required this.borderRadius,
     required this.horizontalPadding,
-    required this.height,
     required this.hoverColor,
     required this.focusColor,
     required this.loadingColor,
@@ -705,7 +594,6 @@ class _ProviderConfig {
     required this.fontWeight,
     required this.fontFamily,
     required this.buttonText,
-    required this.shadow,
   });
 }
 

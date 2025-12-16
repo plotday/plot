@@ -8,6 +8,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/widget/icon.dart';
+import 'logging.dart';
 
 class SetActivityFilters extends Command {
   SetActivityFilters({required this.filters, String? title})
@@ -132,6 +133,55 @@ class ToggleActivityFilter extends Command {
       priorityBloc.updateFilter(currentFilters);
     } on ProviderNotFoundException {
       // PriorityBloc not in scope, continue
+    }
+
+    return const CommandDone();
+  }
+}
+
+/// Toggle a tag filter for notes within an activity
+class ToggleNoteFilter extends Command {
+  ToggleNoteFilter._({required this.tag, super.on})
+    : super(
+        title: tag.name,
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
+        icon: tag.icon,
+      );
+
+  factory ToggleNoteFilter(Tag tag, {required BuildContext context}) {
+    final isActive = _isTagActive(context, tag);
+    return ToggleNoteFilter._(tag: tag, on: isActive);
+  }
+
+  final Tag tag;
+
+  static bool? _isTagActive(BuildContext context, Tag tag) {
+    try {
+      final activityBloc = context.read<ActivityBloc>();
+      return activityBloc.state.filter.contains(tag);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final activityBloc = context.read<ActivityBloc>();
+      final currentFilters = List<Tag>.from(activityBloc.state.filter);
+
+      if (currentFilters.contains(tag)) {
+        // Remove the tag from filters
+        currentFilters.remove(tag);
+      } else {
+        // Add the tag to filters
+        currentFilters.add(tag);
+      }
+
+      activityBloc.updateFilter(currentFilters);
+    } on ProviderNotFoundException {
+      log.warning('ActivityBloc not found in context for ToggleNoteFilter');
     }
 
     return const CommandDone();

@@ -11,7 +11,7 @@ class Modal extends StatelessWidget {
   const Modal({
     required this.builder,
     this.header,
-    this.constraints = const BoxConstraints(maxHeight: 500, maxWidth: 750),
+    this.constraints = const BoxConstraints(maxHeight: 640, maxWidth: 750),
     this.maxWidthPercentage = 0.8,
     this.maxHeightPercentage = 0.8,
     this.padding = const EdgeInsets.all(16),
@@ -145,7 +145,7 @@ class _ModalProviderState extends State<ModalProvider> {
         final screenHeight = mediaQuery.size.height;
 
         // Get dialog height from constraints
-        double dialogHeight = 500; // default max height
+        double dialogHeight = 640; // default max height
         if (stackItem.modal is Modal) {
           final modalWidget = stackItem.modal as Modal;
           final safeAreaHeight =
@@ -397,8 +397,10 @@ class _ModalStackDisplayState extends State<_ModalStackDisplay> {
     }
     // Use IndexedStack to keep all modal states alive while only showing the top one.
     // This prevents state loss when modals are pushed on top and then popped.
+    // Use loose sizing so the stack sizes to the current visible child.
     return IndexedStack(
       index: widget.modalStack.length - 1,
+      sizing: StackFit.loose,
       children: widget.modalStack.map((item) => item.modal).toList(),
     );
   }

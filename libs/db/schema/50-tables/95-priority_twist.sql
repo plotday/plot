@@ -40,3 +40,32 @@ CREATE TRIGGER set_priority_twist_owner_id
     FOR EACH ROW
     EXECUTE FUNCTION set_priority_twist_owner_id ();
 
+-- Function to prevent changes to immutable fields (twist_id, owner_id)
+CREATE OR REPLACE FUNCTION public.prevent_priority_twist_immutable_changes ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    AS $function$
+BEGIN
+    -- Prevent changing twist_id
+    IF OLD.twist_id IS DISTINCT FROM NEW.twist_id THEN
+        RAISE EXCEPTION 'Cannot change twist_id of an existing priority_twist';
+    END IF;
+    -- Prevent changing owner_id
+    IF OLD.owner_id IS DISTINCT FROM NEW.owner_id THEN
+        RAISE EXCEPTION 'Cannot change owner_id of an existing priority_twist';
+    END IF;
+    RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER prevent_priority_twist_immutable_changes
+    BEFORE UPDATE ON "public"."priority_twist"
+    FOR EACH ROW
+    EXECUTE FUNCTION prevent_priority_twist_immutable_changes ();
+
+CREATE TRIGGER notify_priority_twist_update
+    AFTER INSERT OR UPDATE OR DELETE ON "public"."priority_twist"
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_internal_api_for_priority_twist ();
+

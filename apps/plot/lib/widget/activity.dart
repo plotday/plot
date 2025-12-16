@@ -1,8 +1,10 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/activity_link.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/state/priority.dart';
+import 'package:plot/util/hooks.dart';
 
 class ActivityWidget extends StatefulWidget {
   const ActivityWidget({
@@ -10,6 +12,7 @@ class ActivityWidget extends StatefulWidget {
     this.context,
     this.selected = false,
     this.highlighted = false,
+    this.now = false,
     this.focusNode,
     this.onHover,
     this.reorderableIndex,
@@ -20,6 +23,7 @@ class ActivityWidget extends StatefulWidget {
   final Priority? context;
   final bool highlighted;
   final bool selected;
+  final bool now;
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
@@ -32,8 +36,8 @@ class _ActivityWidgetState extends State<ActivityWidget> {
   Command? _getSwipeRightCommand() {
     if (widget.activity.type == ActivityType.event) return null;
     return widget.activity.doNow
-        ? FinishActivity(widget.activity)
-        : StartActivity(widget.activity);
+        ? FinishAction(widget.activity, stateIcon: true)
+        : StartAction(widget.activity);
   }
 
   Command? _getSwipeLeftCommand() {
@@ -42,7 +46,9 @@ class _ActivityWidgetState extends State<ActivityWidget> {
   }
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
-    final hasVisibleLinks = widget.activity.links.isNotEmpty;
+    // Get tag suggestions from PriorityBloc if available
+    final tagSuggestions =
+        buildContext.watch<PriorityBloc?>()?.state.tagSuggestions ?? [];
 
     return ListTile(
       command: CommandWrapper(
@@ -53,51 +59,77 @@ class _ActivityWidgetState extends State<ActivityWidget> {
           ? ShowActivityCommands(widget.activity)
           : null,
       title: widget.activity.displayTitle,
-      subtitle: widget.activity.note != null && widget.activity.note!.isNotEmpty
-          ? widget.activity.noteText
-          : null,
+      subtitle: widget.activity.preview,
       padding: const EdgeInsets.symmetric(horizontal: 12),
+      leadingIndicator: UnreadIndicator(
+        color: widget.activity.priority.displayColor,
+        unread: widget.activity.unread,
+      ),
+      leadingBuilder: (isHovered, hasFocus) {
+        final activityColor = buildContext.colour.colours.fromTheme(
+          widget.activity.priority.displayColor,
+        );
+        return Stack(
+          children: [
+            SizedBox(width: 24, height: 30),
+            Positioned(
+              top: 0,
+              left: -7,
+              width: 30,
+              height: 30,
+              child: Button.icon(
+                primaryActivityCommand(widget.activity),
+                selected: widget.activity.doNow || widget.now,
+                selectedColor: activityColor,
+                forceHover: isHovered,
+              ),
+            ),
+          ],
+        );
+      },
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: widget.activity.displayTitle,
-                    style: widget.selected
-                        ? TextStyle(color: buildContext.colour.accent)
-                        : null,
-                  ),
-                  if (widget.activity.note != null &&
-                      widget.activity.note!.isNotEmpty &&
-                      widget.activity.noteText != widget.activity.displayTitle)
-                    TextSpan(
-                      text: ' ${widget.activity.noteText}',
-                      style: TextStyle(color: buildContext.colour.muted),
-                    ),
-                ],
-              ),
               overflow: TextOverflow.ellipsis,
               style: buildContext.theme.typography.base.copyWith(
                 color: buildContext.colour.foreground,
               ),
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: widget.activity.displayTitle,
+                    style: widget.now
+                        ? TextStyle(
+                            color: buildContext.colour.colours.fromTheme(
+                              widget.activity.priority.displayColor,
+                            ),
+                          )
+                        : widget.selected
+                        ? TextStyle(color: buildContext.colour.foreground)
+                        : null,
+                  ),
+                  if (widget.activity.preview != null &&
+                      widget.activity.preview!.isNotEmpty &&
+                      widget.activity.preview != widget.activity.displayTitle)
+                    TextSpan(
+                      text: ' ${widget.activity.preview}',
+                      style: TextStyle(color: buildContext.colour.muted),
+                    ),
+                ],
+              ),
             ),
           ),
-          if (hasVisibleLinks) ...[
-            const SizedBox(height: 8),
-            ActivityLinksList(activity: widget.activity),
-          ],
         ],
       ),
-      trailing: ActivityTags(activity: widget.activity, reverse: true),
-      trailingCommands: [
-        ShowActivityCommands(widget.activity),
-        ...activitySecondaryCommands(widget.activity).toList().reversed,
-      ],
-      revealTrailingCommands: true,
+      trailingBuilder: (isHovered, hasFocus) => ActivityCommands(
+        activity: widget.activity,
+        tagSuggestions: tagSuggestions,
+        showCommands: isHovered || hasFocus,
+        reverse: true,
+      ),
       selected: widget.selected,
       focusNode: widget.focusNode,
       onHover: widget.onHover,
@@ -132,160 +164,122 @@ class _ActivityWidgetState extends State<ActivityWidget> {
   }
 }
 
-class ActivityTags extends StatelessWidget {
-  const ActivityTags({required this.activity, this.reverse = false, super.key});
-
-  final Activity activity;
-  final bool reverse;
-
-  @override
-  Widget build(BuildContext context) {
-    var relevantTags = Tag.getAll().where((tag) => activity.hasTag(tag));
-    if (reverse) {
-      relevantTags = relevantTags.toList().reversed;
-    }
-
-    return Wrap(
-      spacing: 4,
-      runSpacing: 4,
-      children: relevantTags.map((tag) {
-        final hasTag = activity.hasTag(tag);
-        final key = ValueKey(Object.hash(activity.id, tag.id));
-
-        // Use FinishActivity when clicking Tag.now on a "doNow" activity
-        final command = tag == Tag.now && hasTag
-            ? FinishActivity(activity)
-            : ToggleActivityTag(activity, tag);
-
-        return Button.icon(command, key: key, selected: hasTag);
-      }).toList(),
-    );
-  }
-}
-
-class ActivityDetailWidget extends StatefulWidget {
-  const ActivityDetailWidget({
+class ActivityCommands extends HookWidget {
+  const ActivityCommands({
     required this.activity,
-    this.context,
-    this.selected = false,
-    this.focusNode,
-    this.onHover,
-    this.reorderableIndex,
+    this.tagSuggestions = const [],
+    this.showCommands = false,
+    this.reverse = false,
     super.key,
   });
 
   final Activity activity;
-  final Activity? context;
-  final bool selected;
-  final FocusNode? focusNode;
-  final void Function(bool hovered)? onHover;
-  final int? reorderableIndex;
-
-  @override
-  State<ActivityDetailWidget> createState() => _ActivityDetailWidgetState();
-}
-
-class _ActivityDetailWidgetState extends State<ActivityDetailWidget> {
-  bool _isHovered = false;
-
-  bool get _showCommands => _isHovered || (widget.focusNode?.hasFocus ?? false);
-
-  @override
-  void initState() {
-    super.initState();
-    widget.focusNode?.addListener(_onFocusChange);
-  }
-
-  @override
-  void didUpdateWidget(ActivityDetailWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.focusNode != widget.focusNode) {
-      oldWidget.focusNode?.removeListener(_onFocusChange);
-      widget.focusNode?.addListener(_onFocusChange);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.focusNode?.removeListener(_onFocusChange);
-    super.dispose();
-  }
-
-  void _onFocusChange() {
-    setState(() {});
-  }
-
-  void _setHovered(bool hovered) {
-    if (_isHovered != hovered) {
-      setState(() {
-        _isHovered = hovered;
-      });
-    }
-  }
+  final List<Tag> tagSuggestions;
+  final bool showCommands;
+  final bool reverse;
 
   @override
   Widget build(BuildContext context) {
-    final hasVisibleLinks = widget.activity.links.isNotEmpty;
-    final activityTime = widget.activity.doneAt ?? widget.activity.createdAt;
+    // Compute activity color for selected buttons
+    final activityColor = context.colour.colours.fromTheme(
+      activity.priority.displayColor,
+    );
 
-    return MouseRegion(
-      onEnter: (_) => _setHovered(true),
-      onExit: (_) => _setHovered(false),
-      child: ListTile(
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Viewer(
-              markdown: widget.activity.note ?? widget.activity.displayTitle,
+    // Get tags that this activity has
+    // Exclude Tag.now for doNow activities since it's shown as leading command
+    // Exclude Tag.later for doLater activities since it's shown as leading icon
+    // Exclude Tag.done for done activities since it's shown as leading icon
+    final activityTags = useMemoized(
+      () => Tag.getAll(onlyAddable: true)
+          .where((tag) => activity.hasTag(tag))
+          .where((tag) => !(tag == Tag.now && activity.doNow))
+          .where((tag) => !(tag == Tag.later && activity.doLater))
+          .where((tag) => !(tag == Tag.done && activity.done))
+          .toList(),
+      [activity.tags, activity.doNow, activity.doLater, activity.done],
+    );
+
+    // Create futures to load actor names for tooltips - memoized to avoid recreating on every build
+    final tagFutures = useMemoized(
+      () => activityTags.map((tag) async {
+        final key = ValueKey(Object.hash(activity.id, tag.id));
+
+        // Use FinishActivity when clicking Tag.now on a "doNow" activity
+        final command = tag == Tag.now
+            ? FinishAction(activity, stateIcon: true)
+            : ToggleActivityTag(activity, tag);
+
+        // Get actor names for tooltip
+        final actorNames = await activity.getTagActorNames(tag);
+
+        // Wrap command with subtitle showing actor names
+        final wrappedCommand = actorNames.isNotEmpty
+            ? CommandWrapper(command, subtitle: Value(actorNames))
+            : command;
+
+        return Button.icon(
+          wrappedCommand,
+          key: key,
+          selected: true,
+          selectedColor: activityColor,
+        );
+      }).toList(),
+      [activity.id, activity.tags],
+    );
+
+    // Get commands (only if showCommands is true)
+    final commandButtons = showCommands
+        ? [
+            ...activityCommands(
+              activity,
+              skipActive: true,
+              skipPrimary: true, // Exclude primary command from trailing
+            ).map((cmd) => Button.icon(cmd)),
+            // Add top tag buttons
+            ...topActivityTags(
+              activity,
+              tagSuggestions,
+            ).map((cmd) => Button.icon(cmd)),
+            Button.icon(
+              CommandWrapper(
+                ShowActivityCommands(activity),
+                icon: Value(PlotIcon.more),
+              ),
             ),
-            if (hasVisibleLinks) ...[
-              const SizedBox(height: 8),
-              ActivityLinksList(activity: widget.activity),
-            ],
-            Stack(
-              children: [
-                // Base layer - tags and timestamp
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    ActivityTags(activity: widget.activity),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8, bottom: 4),
-                      child: Text(
-                        activityTime.toTimeAgo(),
-                        style: context.theme.typography.xs.copyWith(
-                          color: context.colour.muted,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                // Overlay layer - commands that cover timestamp
-                Row(
-                  children: [
-                    // Invisible spacer same width as tags
-                    Opacity(
-                      opacity: 0,
-                      child: ActivityTags(activity: widget.activity),
-                    ),
-                    if (_showCommands)
-                      ...[
-                        ...activitySecondaryCommands(widget.activity),
-                        ShowActivityCommands(widget.activity, open: false),
-                      ].asMap().entries.map(
-                        (entry) => Button.icon(entry.value),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-        selected: widget.selected,
-        focusNode: widget.focusNode,
-        onHover: widget.onHover,
-        reorderableIndex: widget.reorderableIndex,
-      ),
+          ]
+        : <Widget>[];
+
+    // Build the final row with tags and commands
+    return FutureBuilder<List<Widget>>(
+      future: Future.wait(tagFutures),
+      builder: (context, snapshot) {
+        // While loading or on error, show buttons without subtitles
+        final loadedTagButtons =
+            snapshot.hasData && snapshot.connectionState == ConnectionState.done
+            ? snapshot.data!
+            : activityTags.map((tag) {
+                final key = ValueKey(Object.hash(activity.id, tag.id));
+                final command = tag == Tag.now
+                    ? FinishAction(activity, stateIcon: true)
+                    : ToggleActivityTag(activity, tag);
+                return Button.icon(
+                  command,
+                  key: key,
+                  selected: true,
+                  selectedColor: activityColor,
+                );
+              }).toList();
+
+        // Combine tags and commands
+        final allButtons = reverse
+            ? [...commandButtons, ...loadedTagButtons]
+            : [...loadedTagButtons, ...commandButtons];
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 4,
+          children: allButtons,
+        );
+      },
     );
   }
 }

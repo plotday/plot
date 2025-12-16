@@ -12,8 +12,8 @@ Supported platforms:
 
 ## Definitions
 
-- Activity: A single item in Plot, such as a task, message, or document link.
-- Thread: A top-level Activity (with a top-level path) and all Activity with child paths.
+- Activity: A single item in Plot, containing notes. An activity might be just notes, or it might be an event or action (task).
+- Note: Content associated with an activity, such as Markdown notes and links.
 - Priority: Similar to a project or folder for Activity. Priorities are nested using paths, and display all Activity related to them and their descendants.
 - Twist: The Plot version of an extension/plugin/app/agent. Users add them to a Priority where they have access to that Priority and its descendants. They tend to implement opinionated workflows (e.g. create tasks from emails).
 - Tool: Provide capabilities to twists. Some are built-in and implemented in the API, while others are available as separate packages. They tend to be unopinionated building blocks (e.g. watch and send Gmail messages).
@@ -57,13 +57,12 @@ export type Activity = {
   id: string; // Required
   type: ActivityType; // Required
   title: string | null; // Nullable (not optional)
-  note: string | null; // Nullable (not optional)
   start: Date | string | null; // Nullable (not optional)
 };
 
-export type NewActivity = {
-  type: Activity["type"]; // Only type is required
-} & Partial<Omit<Activity, "id" | "author" | "type">>;
+// type is required, all other fields are optional
+export type NewActivity = Pick<Activity, "type"> &
+  Partial<Omit<Activity, "id" | "type">>;
 ```
 
 This pattern allows functions to distinguish between:

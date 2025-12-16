@@ -13,9 +13,8 @@ class Priorities extends Table
       .nullable()
       .withDefault(const Constant(25 * 60))
       .map(const DurationConverter())();
-  IntColumn get color => integer()
-      .nullable()
-      .map(const ThemeColorConverter())();
+  IntColumn get color =>
+      integer().nullable().map(const ThemeColorConverter())();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
 }
@@ -56,12 +55,23 @@ class PriorityAncestor {
     final colors = (jsonDecode(row.colors) as List)
         .map((e) => e as int?)
         .toList();
+
+    // Compute display colors with inheritance
+    int currentColorIndex = ThemeColor.defaultColor().index;
+    final displayColors = <int>[];
+    for (int i = 0; i < colors.length; i++) {
+      if (colors[i] != null) {
+        currentColorIndex = colors[i]!;
+      }
+      displayColors.add(currentColorIndex);
+    }
+
     return List.generate(
       ids.length,
       (index) => PriorityAncestor(
         id: ids[index],
         title: titles[index],
-        color: colors[index],
+        color: displayColors[index],
       ),
     );
   }
@@ -74,7 +84,10 @@ class PriorityAncestor {
 
   final PriorityId id;
   final String title;
-  final int? color;
+
+  /// The computed display color index (with inheritance applied).
+  /// Root priorities default to 7 (Resolution) when no color is explicitly set.
+  final int color;
 }
 
 class Priority extends PriorityRow implements Comparable<Priority> {
@@ -82,47 +95,100 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   static Future<bool> push() => Store.get.push(table, PrioritiesBase());
   static Future<void> pull() async {
-    await Store.get.pull(PullType.all, table, PrioritiesBase());
+    // First pull: fetch all priorities if not already initialized
+    await Store.get.pull(table, PrioritiesBase(), initial: true);
+    // Subsequent pulls: fetch changes since last pull
+    await Store.get.pull(table, PrioritiesBase());
   }
 
   static Future<List<Priority>> get({
     PriorityId? id,
     Path? path,
     int? depth,
-    bool? deleted = false,
+    bool? archived = false,
     String? search,
     bool self = true,
     PriorityOrder order = PriorityOrder.sorted,
   }) async {
-    return _get(
+    final priorities = await _get(
       id: id,
       path: path,
       depth: depth,
-      deleted: deleted,
+      archived: archived,
       order: order,
       search: search,
       self: self,
     ).get();
+
+    // Compute active/unread status for all priorities
+    return _enrichWithStatus(priorities);
   }
 
   static Stream<List<Priority>> watch({
     PriorityId? id,
     Path? path,
     int? depth,
-    bool? deleted = false,
+    bool? archived = false,
     String? search,
     bool self = true,
     PriorityOrder order = PriorityOrder.sorted,
   }) {
-    return _get(
+    // Watch priorities table
+    final prioritiesStream = _get(
       id: id,
       path: path,
       depth: depth,
-      deleted: deleted,
+      archived: archived,
       order: order,
       search: search,
       self: self,
     ).watch();
+
+    // Watch active and unread priority IDs
+    final activePriorityIdsStream = _watchActivePriorityIds();
+    final unreadPriorityIdsStream = _watchUnreadPriorityIds();
+
+    // Combine all three streams
+    return Rx.combineLatest3(
+          prioritiesStream,
+          activePriorityIdsStream,
+          unreadPriorityIdsStream,
+          (priorities, activeIds, unreadIds) =>
+              (priorities, activeIds, unreadIds),
+        )
+        .map((tuple) {
+          final priorities = tuple.$1;
+          final activeIds = tuple.$2;
+          final unreadIds = tuple.$3;
+
+          // Map priorities with computed status
+          return priorities.map((p) {
+            return Priority.fromStore(
+              p,
+              parent: p.parent,
+              children: p.children,
+              draft: p.draft,
+              ancestors: p._ancestors,
+              minAncestorTopOrder: p.minAncestorTopOrder,
+              active: activeIds.contains(p.id),
+              unreadComputed: unreadIds.contains(p.id),
+            );
+          }).toList();
+        })
+        .distinct()
+        .transform(
+          ExpiringStreamTransformer((priorities) {
+            // Re-evaluate every minute on the minute for time-based active status
+            final now = DateTime.now();
+            final expiry = now.add(
+              Duration(
+                seconds: 60 - now.second,
+                milliseconds: -now.millisecond,
+              ),
+            );
+            return ExpiringResult(value: priorities, expiry: expiry);
+          }),
+        );
   }
 
   static Future<Priority> getOne(
@@ -133,10 +199,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return _get(
       id: id,
       depth: depth,
-      deleted: null,
+      archived: null,
       ancestors: ancestors,
       order: PriorityOrder.nested,
-    ).get().then((priorities) => asNested(priorities, id: id).first);
+    ).get().then((priorities) {
+      final nested = asNested(priorities, id: id);
+      if (nested.isEmpty) {
+        throw StateError('Priority not found: $id');
+      }
+      return nested.first;
+    });
   }
 
   static Stream<Priority> watchOne(
@@ -147,7 +219,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return _get(
       id: id,
       depth: depth,
-      deleted: null,
+      archived: null,
       ancestors: ancestors,
       order: PriorityOrder.nested,
     ).watch().map((priorities) => asNested(priorities, id: id).first);
@@ -165,21 +237,182 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return _default().watchSingleOrNull().map((p) => p!);
   }
 
-  static Future<List<Priority>> getRoot({int? depth, bool? deleted = false}) =>
+  static Future<List<Priority>> getRoot({int? depth, bool? archived = false}) =>
       get(
         depth: depth,
-        deleted: deleted,
+        archived: archived,
         order: PriorityOrder.nested,
       ).then((priorities) => asNested(priorities));
 
   static Stream<List<Priority>> watchRoot({
     int? depth,
-    bool? deleted = false,
+    bool? archived = false,
   }) => watch(
     depth: depth,
-    deleted: deleted,
+    archived: archived,
     order: PriorityOrder.nested,
   ).map((priorities) => asNested(priorities));
+
+  /// Enriches a list of priorities with computed active/unread status.
+  static Future<List<Priority>> _enrichWithStatus(
+    List<Priority> priorities,
+  ) async {
+    if (priorities.isEmpty) return priorities;
+
+    // Get all priority IDs
+    final priorityIds = priorities.map((p) => p.id).toList();
+
+    // Compute which priorities have active/unread activities
+    final activeIds = await _getActivePriorityIds(priorityIds);
+    final unreadIds = await _getUnreadPriorityIds(priorityIds);
+
+    // Create new Priority objects with computed status
+    return priorities.map((p) {
+      return Priority.fromStore(
+        p,
+        parent: p.parent,
+        children: p.children,
+        draft: p.draft,
+        ancestors: p._ancestors,
+        minAncestorTopOrder: p.minAncestorTopOrder,
+        active: activeIds.contains(p.id),
+        unreadComputed: unreadIds.contains(p.id),
+      );
+    }).toList();
+  }
+
+  /// Efficiently gets which priority IDs from the given list have active activities.
+  static Future<Set<PriorityId>> _getActivePriorityIds(
+    List<PriorityId> ids,
+  ) async {
+    if (ids.isEmpty) return {};
+
+    final now = DateTime.now();
+    final today = Date.today().toString();
+    final actorId = Base.actorId;
+
+    final a = Store.get.activities;
+    final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
+
+    // Convert PriorityId (Uuid) to Uint8List for isIn query
+    final idBytes = ids.map((id) => id.toBytes()).toList();
+
+    query.where(
+      a.priorityId.isIn(idBytes) &
+          a.type.equalsValue(ActivityType.action) &
+          a.assigneeId.equalsValue(actorId) &
+          a.doneAt.isNull() &
+          a.archivedAt.isNull() &
+          (
+          // DateTime scheduled
+          (a.startAt.isSmallerOrEqualValue(now) & a.startOn.isNull()) |
+              // Date scheduled
+              (a.startOn.isSmallerOrEqualValue(today) & a.startAt.isNull()) |
+              // Unscheduled
+              (a.startAt.isNull() & a.startOn.isNull())),
+    );
+
+    final results = await query.get();
+    return results
+        .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
+        .toSet();
+  }
+
+  /// Efficiently gets which priority IDs from the given list have unread activities.
+  static Future<Set<PriorityId>> _getUnreadPriorityIds(
+    List<PriorityId> ids,
+  ) async {
+    if (ids.isEmpty) return {};
+
+    final a = Store.get.activities;
+    final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
+
+    // Convert PriorityId (Uuid) to Uint8List for isIn query
+    final idBytes = ids.map((id) => id.toBytes()).toList();
+
+    query.where(
+      a.priorityId.isIn(idBytes) &
+          a.unread.equals(true) &
+          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)) &
+          a.archivedAt.isNull() &
+          a.draft.equals(false),
+    );
+
+    final results = await query.get();
+    return results
+        .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
+        .toSet();
+  }
+
+  /// Watches which priorities have unread activities.
+  /// Returns a stream of priority IDs that have unread items.
+  static Stream<Set<PriorityId>> _watchUnreadPriorityIds() {
+    final a = Store.get.activities;
+    final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
+
+    query.where(
+      a.unread.equals(true) &
+          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)) &
+          a.archivedAt.isNull() &
+          a.draft.equals(false),
+    );
+
+    return query
+        .watch()
+        .map(
+          (results) => results
+              .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
+              .toSet(),
+        )
+        .distinct();
+  }
+
+  /// Watches which priorities have active activities.
+  /// Returns a stream of priority IDs that have active tasks.
+  /// Time-based filtering is done in-memory to allow reactive updates.
+  static Stream<Set<PriorityId>> _watchActivePriorityIds() {
+    final actorId = Base.actorId;
+    final a = Store.get.activities;
+
+    // Query for activities that could be active (without time filtering)
+    // We'll filter by time in the map to allow reactive updates
+    final query = Store.get.selectOnly(a)
+      ..addColumns([a.priorityId, a.startAt, a.startOn]);
+
+    query.where(
+      a.type.equalsValue(ActivityType.action) &
+          a.assigneeId.equalsValue(actorId) &
+          a.doneAt.isNull() &
+          a.archivedAt.isNull(),
+    );
+
+    return query.watch().map((results) {
+      final now = DateTime.now();
+      final today = Date.today().toString();
+
+      return results
+          .where((row) {
+            final startAt = row.read(a.startAt);
+            final startOn = row.read(a.startOn);
+
+            // DateTime scheduled and active
+            if (startAt != null && startOn == null) {
+              return startAt.isBefore(now) || startAt.isAtSameMomentAs(now);
+            }
+            // Date scheduled and active
+            if (startOn != null && startAt == null) {
+              return startOn.compareTo(today) <= 0;
+            }
+            // Unscheduled (always active)
+            if (startAt == null && startOn == null) {
+              return true;
+            }
+            return false;
+          })
+          .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
+          .toSet();
+    }).distinct();
+  }
 
   static MultiSelectable<Priority> _get({
     /* Selectors */
@@ -190,7 +423,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     int? depth,
     bool ancestors = false,
     bool self = true,
-    bool? deleted = false,
+    bool? archived = false,
     String? search,
 
     /* Sorting */
@@ -229,8 +462,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       ),
     ]);
 
-    if (deleted != null) {
-      query.where(deleted ? p.archivedAt.isNotNull() : p.archivedAt.isNull());
+    if (archived != null) {
+      query.where(archived ? p.archivedAt.isNotNull() : p.archivedAt.isNull());
     }
     if (search?.isNotEmpty == true) {
       query.where(p.title.like('%$search%'));
@@ -343,7 +576,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       stack.add(priority);
     }
 
-    matches.sort();
+    matches.sort((a, b) => a.path.value.compareTo(b.path.value));
     return matches;
   }
 
@@ -357,9 +590,18 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }) : children = [],
        _ancestors =
            parent!._ancestors +
-           [PriorityAncestor(id: parent.id, title: parent.title, color: parent.color?.index)],
+           [
+             PriorityAncestor(
+               id: parent.id,
+               title: parent.title,
+               color: parent.displayColor.index,
+             ),
+           ],
+       minAncestorTopOrder = null,
        displayColor = color ?? parent.displayColor,
        _originalPath = null,
+       _activeComputed = null,
+       _unreadComputed = null,
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
@@ -379,21 +621,37 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     this.parent,
     List<Priority>? children,
     PriorityAncestryData? ancestry,
+    List<PriorityAncestor>? ancestors,
+    Order? minAncestorTopOrder,
     this.draft = false,
     Path? originalPath,
+    bool? active,
+    bool? unreadComputed,
   }) : children = children ?? [],
-       _ancestors = ancestry == null
-           ? parent == null
-                 ? const []
-                 : parent._ancestors +
-                       [PriorityAncestor(id: parent.id, title: parent.title, color: parent.color?.index)]
-           : PriorityAncestor.fromStore(ancestry),
+       _ancestors = ancestors ??
+           (ancestry == null
+               ? parent == null
+                     ? const []
+                     : parent._ancestors +
+                           [
+                             PriorityAncestor(
+                               id: parent.id,
+                               title: parent.title,
+                               color: parent.displayColor.index,
+                             ),
+                           ]
+               : PriorityAncestor.fromStore(ancestry)),
+       minAncestorTopOrder = minAncestorTopOrder ?? ancestry?.minAncestorTopOrder,
        _originalPath = originalPath ?? row.path,
-       displayColor = row.color ?? _computeDisplayColor(
-         ancestry: ancestry,
-         parent: parent,
-         isRoot: row.root,
-       ),
+       displayColor =
+           row.color ??
+           _computeDisplayColor(
+             ancestry: ancestry,
+             parent: parent,
+             isRoot: row.root,
+           ),
+       _activeComputed = active,
+       _unreadComputed = unreadComputed,
        super(
          id: row.id,
          createdAt: row.createdAt,
@@ -434,8 +692,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       // Use parent's displayColor
       return parent.displayColor;
     }
-    // Default color: Resolution (7) for root priorities, Catalyst (0) for others
-    return isRoot ? ThemeColor(7) : const ThemeColor.defaultColor();
+    return const ThemeColor.defaultColor();
   }
 
   static const separator = ' › ';
@@ -446,7 +703,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }) {
     final ancestors = [
       ..._ancestors,
-      if (includeSelf) PriorityAncestor(id: id, title: title, color: color?.index),
+      if (includeSelf)
+        PriorityAncestor(id: id, title: title, color: displayColor.index),
     ];
     if (context != null) {
       int startIndex = ancestors.indexWhere((a) => a.id == context.id);
@@ -461,10 +719,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return ancestors;
   }
 
-  String ancestorsLabel({Priority? context}) {
+  String? ancestorsLabel({Priority? context}) {
     final ancestors = this.ancestors(context: context);
     if (ancestors.isEmpty) {
-      return '';
+      return null;
     }
     return (ancestors
             .map((a) => a.title)
@@ -475,10 +733,25 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .join();
   }
 
+  /// Get the effective topOrder for sorting, considering both this priority's
+  /// topOrder and the minimum topOrder from its ancestry.
+  /// Returns the minimum (earliest) value, as lower Order values sort first.
+  Order? get effectiveTopOrder {
+    // If both exist, return the minimum (earliest)
+    if (topOrder != null && minAncestorTopOrder != null) {
+      return topOrder!.value < minAncestorTopOrder!.value
+          ? topOrder
+          : minAncestorTopOrder;
+    }
+    // Return whichever one exists, or null if neither exists
+    return topOrder ?? minAncestorTopOrder;
+  }
+
   final Priority? parent;
   PriorityId? get parentId => parent?.id ?? _ancestors.lastOrNull?.id;
   List<Priority> children;
   final List<PriorityAncestor> _ancestors;
+  final Order? minAncestorTopOrder;
   final ThemeColor displayColor;
 
   /// The original path from the database, used to detect parent changes.
@@ -488,6 +761,22 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Whether this priority is a draft (not added to parent's children list).
   /// This is an in-memory property only, not persisted to the database.
   final bool draft;
+
+  /// Computed active status from query (true if priority has active activities).
+  /// Falls back to false if not computed.
+  final bool? _activeComputed;
+
+  /// Computed unread status from query (considers local overrides).
+  /// Falls back to row's unread value if not computed.
+  final bool? _unreadComputed;
+
+  /// Returns true if this priority has active activities.
+  bool get active => _activeComputed ?? false;
+
+  /// Returns true if this priority has unread activities (considering local overrides).
+  /// Falls back to the row's unread value if not computed.
+  @override
+  bool get unread => _unreadComputed ?? super.unread;
 
   List<Priority> descendants() {
     List<Priority> result = [];
@@ -556,6 +845,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       parent: currentParent,
       children: children,
       draft: newDraft,
+      ancestors: _ancestors,
+      minAncestorTopOrder: minAncestorTopOrder,
       originalPath: _originalPath,
     );
   }
@@ -694,7 +985,24 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   @override
   int compareTo(Priority other) {
-    return path.value.compareTo(other.path.value);
+    // Get effective topOrder (considering ancestry) for both priorities
+    final thisEffectiveOrder = effectiveTopOrder;
+    final otherEffectiveOrder = other.effectiveTopOrder;
+
+    // Sort by effective topOrder if both have it
+    if (thisEffectiveOrder != null && otherEffectiveOrder != null) {
+      final orderCompare = thisEffectiveOrder.value.compareTo(
+        otherEffectiveOrder.value,
+      );
+      if (orderCompare != 0) return orderCompare;
+    }
+
+    // If only one has effective topOrder, that one comes first
+    if (thisEffectiveOrder != null && otherEffectiveOrder == null) return -1;
+    if (thisEffectiveOrder == null && otherEffectiveOrder != null) return 1;
+
+    // Fall back to createdAt
+    return createdAt.compareTo(other.createdAt);
   }
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/util/shortcut.dart';
 import 'list_tile.dart';
 import 'modal.dart';
 import 'logging.dart';
@@ -32,11 +33,13 @@ class CommandModal {
                 title: cg.title,
                 items: cg.commands,
                 infoBuilder: cg.infoBuilder,
+                hint: formatShortcut(cg.shortcut),
               ),
             )
             .toList();
       },
-      itemBuilder: (command) => ListTile(command: command),
+      itemBuilder: (command) =>
+          ListTile(command: command, noRun: true, showShortcut: true),
       prompt: commands.prompt,
       onSelect: _handleCommandSelection,
     );
@@ -82,18 +85,31 @@ class CommandModal {
       } else if (result is CommandMessage) {
         if (result.isError) {
           // Show error toast
+          final colors = rootContext.theme.colors;
           showFToast(
-            context: modalContext,
+            context: rootContext,
             alignment: FToastAlignment.topEnd,
             title: const Text('Error'),
             description: Text(result.message),
             duration: const Duration(seconds: 3),
+            style: (style) => style.copyWith(
+              decoration: style.decoration.copyWith(color: colors.destructive),
+              iconStyle: style.iconStyle.copyWith(
+                color: colors.destructiveForeground,
+              ),
+              titleTextStyle: style.titleTextStyle.copyWith(
+                color: colors.destructiveForeground,
+              ),
+              descriptionTextStyle: style.descriptionTextStyle.copyWith(
+                color: colors.destructiveForeground,
+              ),
+            ),
           );
           return result;
         } else {
           // Show success toast
           showFToast(
-            context: modalContext,
+            context: rootContext,
             alignment: FToastAlignment.topEnd,
             title: Text(result.message),
             duration: const Duration(seconds: 2),
@@ -101,7 +117,7 @@ class CommandModal {
         }
       }
 
-      // Only close modals and navigate for CommandRoute
+      // Close the modal before navigating
       if (result is CommandRoute) {
         Modal.popAll(modalContext);
         if (modalContext.mounted) {
@@ -111,12 +127,25 @@ class CommandModal {
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
+      final colors = rootContext.theme.colors;
       showFToast(
-        context: modalContext,
+        context: rootContext,
         alignment: FToastAlignment.topEnd,
         title: const Text('Error'),
         description: const Text('Something went wrong'),
         duration: const Duration(seconds: 3),
+        style: (style) => style.copyWith(
+          decoration: style.decoration.copyWith(color: colors.destructive),
+          iconStyle: style.iconStyle.copyWith(
+            color: colors.destructiveForeground,
+          ),
+          titleTextStyle: style.titleTextStyle.copyWith(
+            color: colors.destructiveForeground,
+          ),
+          descriptionTextStyle: style.descriptionTextStyle.copyWith(
+            color: colors.destructiveForeground,
+          ),
+        ),
       );
       return const CommandMessage('Something went wrong', isError: true);
     }

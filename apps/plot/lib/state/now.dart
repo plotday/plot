@@ -34,6 +34,7 @@ class NowBloc extends Cubit<NowState> {
               defaultPriority: priority,
               day: day,
               session: session,
+              context: state is NowLoaded ? (state as NowLoaded).context : null,
             );
           },
         ).listen((state) {
@@ -47,19 +48,22 @@ class NowBloc extends Cubit<NowState> {
 
   void stop() {
     _subscription?.cancel();
+    // Reset state to prevent stale data from persisting across user sessions
+    emit(const NowLoading());
   }
 
   /// Context is the priority being displayed, which may
   /// be more general than the focus.
   void setContext(Priority? priority) async {
     if (loadedState.context?.id == priority?.id) return;
-    emit(loadedState.copyWith(context: priority));
+    final newState = loadedState.copyWith(context: priority);
+    emit(newState);
   }
 
   /// Focus is the priority of the current activity, which may
   /// be more specific than the context.
   void setFocus(Priority? priority) async {
-    if (loadedState.context == null) {
+    if (loadedState.context == null && priority != null) {
       setContext(priority);
     }
     if (loadedState.session?.priority?.id == priority?.id) return;

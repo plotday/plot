@@ -1,3 +1,5 @@
+export 'package:remove_markdown/remove_markdown.dart';
+
 extension StringExtension on String {
   /// Truncates the string to the specified [length].
   ///

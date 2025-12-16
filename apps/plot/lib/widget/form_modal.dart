@@ -66,7 +66,7 @@ class FormModalState extends State<_FormModal> {
 
   @override
   void dispose() {
-    // Remove listeners from text input controllers
+    // Remove listeners from text input controllers and select fields
     // Note: We don't dispose the controllers here because the FormItem instances
     // might be reused if another dialog (like SelectBar) was on top and closes.
     // The FormItems are owned by the FormData, not by FormBarState.
@@ -74,6 +74,8 @@ class FormModalState extends State<_FormModal> {
       for (var item in group.items) {
         if (item is FormTextInput) {
           item.controller.removeListener(_onFormChanged);
+        } else if (item is FormSelect) {
+          item.removeListener(_onFormChanged);
         }
       }
     }
@@ -103,11 +105,13 @@ class FormModalState extends State<_FormModal> {
       }
     }
 
-    // Add listeners to all text input controllers to rebuild on changes
+    // Add listeners to all text input controllers and select fields to rebuild on changes
     for (var group in _formGroups) {
       for (var item in group.items) {
         if (item is FormTextInput) {
           item.controller.addListener(_onFormChanged);
+        } else if (item is FormSelect) {
+          item.addListener(_onFormChanged);
         }
       }
     }

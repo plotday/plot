@@ -18,5 +18,5 @@ class PrioritiesState extends Equatable {
   }
 
   @override
-  List<Object?> get props => [priorities];
+  List<Object?> get props => [priorities, root];
 }

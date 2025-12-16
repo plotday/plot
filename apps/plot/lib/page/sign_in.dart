@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
@@ -13,11 +14,7 @@ import 'logging.dart';
 
 @RoutePage()
 class SignInPage extends StatefulWidget {
-  const SignInPage({
-    this.returnTo,
-    this.onSignIn,
-    super.key,
-  });
+  const SignInPage({this.returnTo, this.onSignIn, super.key});
 
   final String? returnTo;
   final void Function()? onSignIn;
@@ -34,7 +31,9 @@ class _SignInPageState extends State<SignInPage> {
     return BlocListener<UserBloc, UserState>(
       listener: (context, state) {
         if (state is UserReady && widget.onSignIn != null) {
-          Logger('plot.route').info('SignInPage: UserReady detected, calling onSignIn callback');
+          Logger(
+            'plot.route',
+          ).info('SignInPage: UserReady detected, calling onSignIn callback');
           widget.onSignIn!();
         }
       },
@@ -56,9 +55,10 @@ class _SignInPageState extends State<SignInPage> {
                     height: 120,
                   ),
                 ),
-                const Text(
+                Text(
                   'Sign in to make progress on your priorities',
                   textAlign: TextAlign.center,
+                  style: context.theme.typography.base,
                 ),
                 const SizedBox(height: 8),
 
@@ -153,6 +153,7 @@ class _SignInPageState extends State<SignInPage> {
                     );
                   },
                   style: FButtonStyle.secondary(),
+                  prefix: const FaIcon(FontAwesomeIcons.envelope, size: 18),
                   child: const Text('Continue with email'),
                 ),
 

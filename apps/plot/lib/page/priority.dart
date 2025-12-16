@@ -17,7 +17,8 @@ class PriorityWrapper implements AutoRouteWrapper {
   PriorityWrapper({@PathParam("priorityId") required String priorityIdString})
     : priorityId = PriorityId.fromShortString(priorityIdString),
       _routerKey = GlobalKey(
-        debugLabel: 'PriorityWrapper_${PriorityId.fromShortString(priorityIdString).toShortString()}',
+        debugLabel:
+            'PriorityWrapper_${PriorityId.fromShortString(priorityIdString).toShortString()}',
       );
 
   final PriorityId priorityId;
@@ -259,17 +260,24 @@ class PriorityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocConsumer<PriorityBloc, PriorityState>(
       listener: (context, state) {
-        context.read<NowBloc>().setFocus(state.context);
+        final nowBloc = context.read<NowBloc>();
+        nowBloc.setFocus(state.context);
+        // Update theme when priority switch loading completes
+        if (state.targetPriority == null) {
+          nowBloc.setContext(state.context);
+        }
       },
       listenWhen: (previous, current) =>
-          previous.context.id != current.context.id,
+          previous.context.id != current.context.id ||
+          (previous.targetPriority != null && current.targetPriority == null),
       builder: (context, state) {
         // Find the index of the current activity in the agenda items
         int? selected;
         if (state.activity != null) {
           for (int i = 0; i < state.agendaItems.length; i++) {
-            final activity = state.agendaItems[i].iff<Activity>(
-              activity: (a) => a,
+            final activity = state.agendaItems[i].when<Activity?>(
+              header: (header) => null,
+              activity: (agendaActivity) => agendaActivity.activity,
             );
             if (activity?.id == state.activity!.id) {
               selected = state.first + i;
@@ -347,9 +355,11 @@ class PriorityPage extends StatelessWidget {
                                 index - state.first < state.agendaItems.length
                             ? state.agendaItems[index - state.first]
                             : null;
-                        item?.iff(
-                          activity: (activity) =>
-                              context.run(ChangeCurrentActivity(activity)),
+                        item?.when(
+                          header: (header) => null,
+                          activity: (agendaActivity) => context.run(
+                            ChangeCurrentActivity(agendaActivity.activity),
+                          ),
                         );
                       },
                       builder: (context, listController) {
@@ -400,13 +410,17 @@ class PriorityPage extends StatelessWidget {
                                                   ? state.agendaItems[index -
                                                         state.first]
                                                   : null;
-                                              return item?.iff(
-                                                    activity: (activity) =>
+                                              return item?.when<
+                                                    List<StaticCommandGroup>
+                                                  >(
+                                                    activity: (agendaActivity) =>
                                                         activityCommandGroups(
-                                                          activity,
+                                                          agendaActivity
+                                                              .activity,
                                                         ),
-                                                    priority: (priority) {
-                                                      if (priority.id ==
+                                                    header: (header) {
+                                                      if (header.priority == null ||
+                                                          header.priority!.id ==
                                                           state.context.id) {
                                                         return <
                                                           StaticCommandGroup
@@ -414,10 +428,12 @@ class PriorityPage extends StatelessWidget {
                                                       }
                                                       return [
                                                         StaticCommandGroup(
-                                                          title: priority.title,
+                                                          title: header
+                                                              .priority!
+                                                              .title,
                                                           commands:
                                                               priorityCommands(
-                                                                priority,
+                                                                header.priority!,
                                                               ),
                                                         ),
                                                       ];
@@ -451,19 +467,23 @@ class PriorityPage extends StatelessWidget {
                                             state.agendaItems.length
                                     ? state.agendaItems[index - state.first]
                                     : null;
-                                return item?.iff(
-                                      activity: (activity) =>
-                                          activityCommandGroups(activity),
-                                      priority: (priority) {
-                                        // Skip if this is the context priority (already added by outer CommandScope)
-                                        if (priority.id == state.context.id) {
+                                return item?.when<List<StaticCommandGroup>>(
+                                      activity: (agendaActivity) =>
+                                          activityCommandGroups(
+                                            agendaActivity.activity,
+                                          ),
+                                      header: (header) {
+                                        // Skip if priority is null or this is the context priority (already added by outer CommandScope)
+                                        if (header.priority == null ||
+                                            header.priority!.id ==
+                                            state.context.id) {
                                           return <StaticCommandGroup>[];
                                         }
                                         return [
                                           StaticCommandGroup(
-                                            title: priority.title,
+                                            title: header.priority!.title,
                                             commands: priorityCommands(
-                                              priority,
+                                              header.priority!,
                                             ),
                                           ),
                                         ];
@@ -475,46 +495,34 @@ class PriorityPage extends StatelessWidget {
                               child: Scaffold(
                                 scrollable: false,
                                 translucent: true,
-                                header: StreamBuilder<List<(Tag, int)>>(
-                                  stream: Activity.watchTagsForPriority(
-                                    state.context.path,
+                                header: Header(
+                                  title: state.context.title,
+                                  main: PrioritySelector(
+                                    selected: state.context,
+                                    onSelect: (p) =>
+                                        context.run(ChangeCurrentPriority(p)),
                                   ),
-                                  builder: (context, snapshot) {
-                                    final tagCommands =
-                                        snapshot.data
-                                            ?.map(
-                                              (tagData) => ToggleActivityFilter(
-                                                tagData.$1,
-                                                context: context,
-                                              ),
-                                            )
-                                            .toList() ??
-                                        [];
-
-                                    return Header(
-                                      title: state.context.title,
-                                      main: PrioritySelector(
-                                        selected: state.context,
-                                        onSelect: (p) => context.run(
-                                          ChangeCurrentPriority(p),
+                                  onSearchChanged: (search) => context
+                                      .read<PriorityBloc>()
+                                      .updateSearch(search),
+                                  onSearchClosed: () => context
+                                      .read<PriorityBloc>()
+                                      .updateFilter([]),
+                                  filterCommands: state.tags
+                                      .map(
+                                        (tagData) => ToggleActivityFilter(
+                                          tagData.$1,
+                                          context: context,
                                         ),
-                                      ),
-                                      onSearchChanged: (search) => context
-                                          .read<PriorityBloc>()
-                                          .updateSearch(search),
-                                      onSearchClosed: () => context
-                                          .read<PriorityBloc>()
-                                          .updateFilter([]),
-                                      filterCommands: tagCommands,
-                                      commands: [
-                                        if (layoutState.multiPanel) NewActivity(),
-                                        ShowPriorityCommands(
-                                          state.context,
-                                          current: true,
-                                        ),
-                                      ],
-                                    );
-                                  },
+                                      )
+                                      .toList(),
+                                  commands: [
+                                    if (layoutState.multiPanel) NewActivity(),
+                                    ShowPriorityCommands(
+                                      state.context,
+                                      current: true,
+                                    ),
+                                  ],
                                 ),
                                 body: BidirectionalList(
                                   anchorOffset: 0.35,
@@ -532,61 +540,67 @@ class PriorityPage extends StatelessWidget {
                                   builder: (context, index, focusNode, {reorderableIndex}) {
                                     final current =
                                         state.agendaItems[index - state.first];
+
+                                    // Check if previous item is also a header
+                                    final prevItem = index > state.first
+                                        ? state.agendaItems[index - state.first - 1]
+                                        : null;
+                                    final followsHeader = prevItem?.when(
+                                      header: (_) => true,
+                                      activity: (_) => false,
+                                    ) ?? false;
+
                                     return Column(
                                       mainAxisSize: MainAxisSize.min,
                                       key: ValueKey(
                                         current.when(
-                                          date: (d) => 'date_${d.toString()}',
-                                          priority: (p) => 'priority_${p.id}',
-                                          activity: (a) => a.id,
+                                          header: (h) => h.date != null
+                                              ? 'header_date_${h.date}'
+                                              : h.dateTimeRange != null
+                                              ? 'header_event_${h.priority?.id ?? 'null'}_${h.dateTimeRange}'
+                                              : 'header_priority_${h.priority?.id ?? 'null'}',
+                                          activity: (a) =>
+                                              'activity_${a.activity.id}',
                                         ),
                                       ),
                                       children: [
                                         ...current.when(
-                                          date: (date) => [
-                                            DayHeader(
-                                              key: ValueKey(
-                                                'dayheader_${date.toString()}',
-                                              ),
-                                              date: date,
-                                              now: date == Date.today(),
-                                              focusNode: focusNode,
-                                            ),
-                                          ],
-                                          priority: (priority) => [
+                                          header: (header) => [
                                             AgendaHeader(
                                               key: ValueKey(
-                                                'agendaheader_priority_${priority.id}',
+                                                header.date != null
+                                                    ? 'agendaheader_date_${header.date}'
+                                                    : header.dateTimeRange !=
+                                                          null
+                                                    ? 'agendaheader_event_${header.priority?.id ?? 'null'}_${header.dateTimeRange}'
+                                                    : 'agendaheader_priority_${header.priority?.id ?? 'null'}',
                                               ),
-                                              priority: priority,
-                                              context: state.context,
+                                              priority: header.priority,
+                                              priorityContext: state.context,
+                                              dateTimeRange:
+                                                  header.dateTimeRange,
+                                              date: header.date,
+                                              now: header.now,
+                                              activity: header.activity,
                                               focusNode: focusNode,
+                                              text: header.text,
+                                              scheduleAt: header.scheduleAt,
+                                              followsHeader: followsHeader,
                                             ),
                                           ],
-                                          activity: (activity) => [
-                                            if (activity.type ==
-                                                ActivityType.event)
-                                              AgendaHeader(
-                                                key: ValueKey(
-                                                  'agendaheader_activity_${activity.id}',
-                                                ),
-                                                activity: activity,
-                                                context: state.context,
-                                                focusNode: focusNode,
+                                          activity: (agendaActivity) => [
+                                            ActivityWidget(
+                                              key: ValueKey(
+                                                'activitywidget_${agendaActivity.activity.id}',
                                               ),
-                                            if (activity.type !=
-                                                ActivityType.event)
-                                              ActivityWidget(
-                                                key: ValueKey(
-                                                  'activitywidget_${activity.id}',
-                                                ),
-                                                activity: activity,
-                                                selected: selected == index,
-                                                focusNode: focusNode,
-                                                context: state.context,
-                                                reorderableIndex:
-                                                    reorderableIndex,
-                                              ),
+                                              activity: agendaActivity.activity,
+                                              selected: selected == index,
+                                              now: agendaActivity.now,
+                                              focusNode: focusNode,
+                                              context: state.context,
+                                              reorderableIndex:
+                                                  reorderableIndex,
+                                            ),
                                           ],
                                         ),
                                       ],
@@ -595,10 +609,12 @@ class PriorityPage extends StatelessWidget {
                                   onReorder: (index) {
                                     final item =
                                         state.agendaItems[index - state.first];
-                                    final activity = item.iff(
-                                      activity: (activity) => activity,
+                                    final activity = item.when<Activity?>(
+                                      header: (header) => null,
+                                      activity: (agendaActivity) =>
+                                          agendaActivity.activity,
                                     );
-                                    if (activity == null) {
+                                    if (activity?.todo != true || activity == null) {
                                       return null;
                                     }
                                     return (int newIndex) {
@@ -636,6 +652,7 @@ class PriorityPage extends StatelessWidget {
                                           );
 
                                       // Then update the database asynchronously with correct prev/next
+                                      // activity is guaranteed non-null here due to the check above
                                       onReorderActivity(activity, prev, next);
                                     };
                                   },
@@ -659,19 +676,16 @@ class PriorityPage extends StatelessWidget {
     AgendaItem? next,
   ) async {
     final prevActivity = prev?.when<Activity?>(
-      date: (Date date) => null,
-      priority: (Priority priority) => null,
-      activity: (Activity a) => a,
+      header: (header) => null,
+      activity: (agendaActivity) => agendaActivity.activity,
     );
     final nextActivity = next?.when<Activity?>(
-      date: (Date date) => null,
-      priority: (Priority priority) => null,
-      activity: (Activity a) => a,
+      header: (header) => null,
+      activity: (agendaActivity) => agendaActivity.activity,
     );
     final priority = prev?.when<Priority?>(
-      date: (Date date) => null,
-      priority: (Priority priority) => priority,
-      activity: (Activity a) => a.priority,
+      header: (header) => header.priority,
+      activity: (agendaActivity) => agendaActivity.activity.priority,
     );
     activity
         .copyWith(

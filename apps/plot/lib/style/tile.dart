@@ -6,8 +6,8 @@ FTileStyle buildTileStyle(FTileStyle baseStyle, FColors colors) {
   return baseStyle.copyWith(
     backgroundColor: FWidgetStateMap({
       WidgetState.selected | WidgetState.hovered | WidgetState.pressed:
-          colors.primary,
-      WidgetState.any: colors.primary,
+          colors.primaryForeground,
+      WidgetState.any: colors.primaryForeground,
     }),
   );
 }

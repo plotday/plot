@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 const widgetPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
-const widgetPaddingSm = EdgeInsets.symmetric(horizontal: 12, vertical: 8);
+const widgetPaddingSm = EdgeInsets.symmetric(horizontal: 12, vertical: 6);
 
 // Border radius
 const borderRadiusSm = 4.0;

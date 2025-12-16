@@ -105,8 +105,6 @@ class AppRouter extends RootStackRouter {
                           final priorityBloc = resolver.context
                               .read<PriorityBloc>();
                           priorityBloc.setActivity(null);
-                          // Reset draft to ensure a fresh activity each time
-                          priorityBloc.resetDraft();
                           resolver.next();
                         }),
                       ],
@@ -180,11 +178,15 @@ class AuthGuard extends AutoRouteGuard {
         resolver.next();
         break;
       case UserPasswordRequired():
-        _logger.info('AuthGuard: Redirecting to PasswordSetupRoute with callback');
+        _logger.info(
+          'AuthGuard: Redirecting to PasswordSetupRoute with callback',
+        );
         resolver.redirectUntil(
           PasswordSetupRoute(
             onPasswordSet: () {
-              _logger.info('AuthGuard: onPasswordSet callback called, calling resolver.next()');
+              _logger.info(
+                'AuthGuard: onPasswordSet callback called, calling resolver.next()',
+              );
               resolver.next();
             },
           ),
@@ -194,11 +196,15 @@ class AuthGuard extends AutoRouteGuard {
           // Already heading to InvitationRoute, just proceed
           resolver.next();
         } else {
-          _logger.info('AuthGuard: Redirecting to InvitationRoute with callback');
+          _logger.info(
+            'AuthGuard: Redirecting to InvitationRoute with callback',
+          );
           resolver.redirectUntil(
             InvitationRoute(
               onInvited: () {
-                _logger.info('AuthGuard: onInvited callback called, calling resolver.next()');
+                _logger.info(
+                  'AuthGuard: onInvited callback called, calling resolver.next()',
+                );
                 resolver.next();
               },
             ),
@@ -209,7 +215,9 @@ class AuthGuard extends AutoRouteGuard {
         resolver.redirectUntil(
           SignInRoute(
             onSignIn: () {
-              _logger.info('AuthGuard: onSignIn callback called, calling resolver.next()');
+              _logger.info(
+                'AuthGuard: onSignIn callback called, calling resolver.next()',
+              );
               resolver.next();
             },
           ),

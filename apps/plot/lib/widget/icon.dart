@@ -4,8 +4,8 @@ class PlotIcon {
   // UI
   static const left = FontAwesomeIcons.chevronLeft;
   static const right = FontAwesomeIcons.chevronRight;
-  static const up = FontAwesomeIcons.caretUp;
-  static const down = FontAwesomeIcons.caretDown;
+  static const up = FontAwesomeIcons.anglesUp;
+  static const down = FontAwesomeIcons.anglesDown;
   static const verticalExpand = FontAwesomeIcons.anglesUpDown;
   static const addActivity = FontAwesomeIcons.arrowUp;
   static const pipe = FontAwesomeIcons.pipe;
@@ -18,6 +18,7 @@ class PlotIcon {
   static const activity = FontAwesomeIcons.listCheck;
   static const open = FontAwesomeIcons.arrowRight;
   static const menu = FontAwesomeIcons.ellipsisVertical;
+  static const more = FontAwesomeIcons.ellipsis;
   static const hamburgerMenu = FontAwesomeIcons.bars;
   static const close = FontAwesomeIcons.xmark;
   static const back = FontAwesomeIcons.arrowLeft;
@@ -26,7 +27,7 @@ class PlotIcon {
   static const signOut = FontAwesomeIcons.rightFromBracket;
   static const sync = FontAwesomeIcons.arrowsRotate;
   static const filter = FontAwesomeIcons.filter;
-  static const move = FontAwesomeIcons.rightLeft;
+  static const move = FontAwesomeIcons.arrowUTurnUpRight;
   static const sidebarOpen = FontAwesomeIcons.arrowRightFromLine;
   static const sidebarClose = FontAwesomeIcons.arrowLeftToLine;
   static const search = FontAwesomeIcons.magnifyingGlass;
@@ -34,6 +35,8 @@ class PlotIcon {
   static const unpin = FontAwesomeIcons.thumbtackAngleSlash;
   static const next = FontAwesomeIcons.arrowDownToLine;
   static const previous = FontAwesomeIcons.arrowUpToLine;
+  static const note = FontAwesomeIcons.note;
+  static const reschedule = FontAwesomeIcons.calendarPen;
 
   // Tags
   static const now = FontAwesomeIcons.circlePlay;

@@ -198,46 +198,15 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(
-                      child: FResizable(
-                        axis: Axis.horizontal,
-                        divider: FResizableDivider.divider,
-                        onChange: (regions) async {
-                          final prefs = await SharedPreferences.getInstance();
-                          double? newLeftWidth;
-                          double? newMiddleRatio;
-
-                          if (layoutState.leftPanelVisible &&
-                              regions[0].index == 0) {
-                            newLeftWidth = regions[0].extent.current;
-                            prefs.setDouble(
-                              'layout_left_panel_width',
-                              newLeftWidth,
-                            );
-                            regions = regions.sublist(1);
-                          }
-                          if (layoutState.middlePanelVisible &&
-                              regions.length == 2) {
-                            newMiddleRatio =
-                                regions[0].extent.current /
-                                (regions[0].extent.current +
-                                    regions[1].extent.current);
-                            prefs.setDouble(
-                              'layout_middle_panel_ratio',
-                              newMiddleRatio,
-                            );
-                          }
-
-                          // Update state variables to prevent jumping on rebuild
-                          setState(() {
-                            if (newLeftWidth != null) {
-                              _leftPanelWidth = newLeftWidth;
-                            }
-                            if (newMiddleRatio != null) {
-                              _middlePanelRatio = newMiddleRatio;
-                            }
-                          });
+                      child: _HoverableResizable(
+                        regions: regions,
+                        layoutState: layoutState,
+                        onLeftWidthChanged: (width) {
+                          setState(() => _leftPanelWidth = width);
                         },
-                        children: regions,
+                        onMiddleRatioChanged: (ratio) {
+                          setState(() => _middlePanelRatio = ratio);
+                        },
                       ),
                     ),
                   ],
@@ -250,3 +219,131 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     );
   }
 }
+
+/// A wrapper around FResizable that provides hover effects on dividers
+class _HoverableResizable extends StatefulWidget {
+  final List<FResizableRegion> regions;
+  final LayoutState layoutState;
+  final ValueChanged<double> onLeftWidthChanged;
+  final ValueChanged<double> onMiddleRatioChanged;
+
+  const _HoverableResizable({
+    required this.regions,
+    required this.layoutState,
+    required this.onLeftWidthChanged,
+    required this.onMiddleRatioChanged,
+  });
+
+  @override
+  State<_HoverableResizable> createState() => _HoverableResizableState();
+}
+
+class _HoverableResizableState extends State<_HoverableResizable> {
+  int? _hoveredDividerIndex;
+  late final FResizableController _controller;
+  static const double _hitRegionExtent = 10.0; // Desktop hit region size
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = FResizableController.cascade();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colour;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return ListenableBuilder(
+          listenable: _controller,
+          builder: (context, child) {
+            return Stack(
+              children: [
+                // The actual resizable widget with default styling
+                FResizable(
+                  controller: _controller,
+                  axis: Axis.horizontal,
+                  divider: FResizableDivider.divider,
+                  onChange: (regions) async {
+                    final prefs = await SharedPreferences.getInstance();
+                    double? newLeftWidth;
+                    double? newMiddleRatio;
+
+                    if (widget.layoutState.leftPanelVisible &&
+                        regions[0].index == 0) {
+                      newLeftWidth = regions[0].extent.current;
+                      prefs.setDouble(
+                        'layout_left_panel_width',
+                        newLeftWidth,
+                      );
+                      regions = regions.sublist(1);
+                    }
+                    if (widget.layoutState.middlePanelVisible &&
+                        regions.length == 2) {
+                      newMiddleRatio =
+                          regions[0].extent.current /
+                          (regions[0].extent.current +
+                              regions[1].extent.current);
+                      prefs.setDouble(
+                        'layout_middle_panel_ratio',
+                        newMiddleRatio,
+                      );
+                    }
+
+                    // Update state variables to prevent jumping on rebuild
+                    if (newLeftWidth != null) {
+                      widget.onLeftWidthChanged(newLeftWidth);
+                    }
+                    if (newMiddleRatio != null) {
+                      widget.onMiddleRatioChanged(newMiddleRatio);
+                    }
+                  },
+                  children: widget.regions,
+                ),
+                // Overlay hover detection and colored dividers
+                if (_controller.regions.isNotEmpty)
+                  for (var i = 0; i < _controller.regions.length - 1; i++)
+                    Positioned(
+                      left: _controller.regions[i].offset.max - (_hitRegionExtent / 2),
+                      top: 0,
+                      child: MouseRegion(
+                        opaque: false,
+                        cursor: SystemMouseCursors.resizeLeftRight,
+                        onEnter: (_) => setState(() => _hoveredDividerIndex = i),
+                        onExit: (_) => setState(() => _hoveredDividerIndex = null),
+                        child: IgnorePointer(
+                          child: SizedBox(
+                            width: _hitRegionExtent,
+                            height: constraints.maxHeight,
+                            child: Center(
+                              child: AnimatedOpacity(
+                                opacity: _hoveredDividerIndex == i ? 1.0 : 0.0,
+                                duration: const Duration(milliseconds: 150),
+                                curve: Curves.easeInOut,
+                                child: Container(
+                                  width: 1,
+                                  height: constraints.maxHeight,
+                                  color: colorScheme.accent,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+

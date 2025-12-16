@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION public.update_activity_tags (p_activity_id uuid, p_user_id uuid, p_client_id integer, p_tag_updates jsonb)
+CREATE OR REPLACE FUNCTION public.update_activity_tags (p_activity_id uuid, p_actor_id uuid, p_client_id integer, p_tag_updates jsonb)
     RETURNS void
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -9,6 +9,10 @@ DECLARE
     is_adding boolean;
     current_tag_type tag_type;
 BEGIN
+    -- Validate that activity_id is provided
+    IF p_activity_id IS NULL THEN
+        RAISE EXCEPTION 'p_activity_id must be provided';
+    END IF;
     -- Iterate through the tag updates JSON object
     FOR tag_record IN
     SELECT
@@ -25,7 +29,7 @@ BEGIN
             IF is_adding THEN
                 -- Adding a tag - use upsert to create or reactivate
                 INSERT INTO activity_tag (actor_id, activity_id, occurrence, tag_id, updated_at, archived_at, updated_by)
-                    VALUES (p_user_id, p_activity_id, NULL, tag_id_int, now(), NULL, p_client_id)
+                    VALUES (p_actor_id, p_activity_id, NULL, tag_id_int, now(), NULL, p_client_id)
                 ON CONFLICT (actor_id, activity_id, occurrence, tag_id)
                     DO UPDATE SET
                         archived_at = NULL,
@@ -45,7 +49,7 @@ BEGIN
                         AND tag_id = tag_id_int
                         AND archived_at IS NULL;
                 ELSE
-                    -- For count/compute tags, only remove current user's tag
+                    -- For count/compute tags, only remove current actor's tag
                     UPDATE
                         activity_tag
                     SET
@@ -54,12 +58,11 @@ BEGIN
                     WHERE
                         activity_id = p_activity_id
                         AND tag_id = tag_id_int
-                        AND actor_id = p_user_id
+                        AND actor_id = p_actor_id
                         AND archived_at IS NULL;
                 END IF;
             END IF;
         END LOOP;
 END;
 $function$;
-
 

@@ -4,7 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:super_editor/super_editor.dart';
 import 'package:follow_the_leader/follow_the_leader.dart';
 
-import 'package:plot/api/twist_api.dart';
+import 'package:plot/store/store.dart';
 
 /// A popover that displays a list of twists for editor mentions.
 ///
@@ -44,10 +44,10 @@ class EditorMentionPopover extends StatefulWidget {
   final VoidCallback onCancelRequested;
 
   @override
-  State<EditorMentionPopover> createState() => _EditorMentionPopoverState();
+  State<EditorMentionPopover> createState() => EditorMentionPopoverState();
 }
 
-class _EditorMentionPopoverState extends State<EditorMentionPopover> {
+class EditorMentionPopoverState extends State<EditorMentionPopover> {
   late final FocusNode _focusNode;
   late final ScrollController _scrollController;
 
@@ -60,11 +60,6 @@ class _EditorMentionPopoverState extends State<EditorMentionPopover> {
     _focusNode = FocusNode();
     _scrollController = ScrollController();
     _updateFilteredAgents();
-
-    // Request focus on the next frame to ensure the widget is built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNode.requestFocus();
-    });
   }
 
   @override
@@ -183,32 +178,57 @@ class _EditorMentionPopoverState extends State<EditorMentionPopover> {
     });
   }
 
+  /// Public methods for external navigation control
+
+  /// Navigate to the previous item in the list
+  void navigateUp() {
+    if (_filteredAgents.isEmpty) return;
+    setState(() {
+      _selectedIndex =
+          (_selectedIndex - 1 + _filteredAgents.length) %
+          _filteredAgents.length;
+    });
+    _scrollToSelected();
+  }
+
+  /// Navigate to the next item in the list
+  void navigateDown() {
+    if (_filteredAgents.isEmpty) return;
+    setState(() {
+      _selectedIndex = (_selectedIndex + 1) % _filteredAgents.length;
+    });
+    _scrollToSelected();
+  }
+
+  /// Select the currently highlighted item
+  void selectCurrent() {
+    _selectCurrent();
+  }
+
+  /// Cancel the mention selection
+  void cancel() {
+    widget.onCancelRequested();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SuperEditorPopover(
       popoverFocusNode: _focusNode,
       editorFocusNode: widget.editorFocusNode,
       onKeyEvent: _onKeyEvent,
-      child: GestureDetector(
-        onTap: () {
-          if (!_focusNode.hasFocus) {
-            _focusNode.requestFocus();
-          }
+      child: Builder(
+        builder: (context) {
+          return Follower.withOffset(
+            link: widget.leaderLink,
+            leaderAnchor: Alignment.topLeft,
+            followerAnchor: widget.showAbove
+                ? Alignment.bottomLeft
+                : Alignment.topLeft,
+            offset: const Offset(0, 0),
+            showWhenUnlinked: false,
+            child: _buildPopoverContent(context),
+          );
         },
-        child: Builder(
-          builder: (context) {
-            return Follower.withOffset(
-              link: widget.leaderLink,
-              leaderAnchor: Alignment.topLeft,
-              followerAnchor: widget.showAbove
-                  ? Alignment.bottomLeft
-                  : Alignment.topLeft,
-              offset: const Offset(0, 0),
-              showWhenUnlinked: false,
-              child: _buildPopoverContent(context),
-            );
-          },
-        ),
       ),
     );
   }
@@ -251,10 +271,14 @@ class _EditorMentionPopoverState extends State<EditorMentionPopover> {
           onPress: () => widget.onAgentSelected(twist),
           // ignore: unused_result
           style: context.theme.tileStyle.copyWith(
+            // ignore: unused_result
+            contentStyle: context.theme.tileStyle.contentStyle.copyWith(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+            ),
             decoration: FWidgetStateMap({
               WidgetState.any: BoxDecoration(
                 color: isSelected
-                    ? context.theme.colors.background.withAlpha(172)
+                    ? context.theme.colors.primaryForeground
                     : context.theme.colors.background,
               ),
             }),

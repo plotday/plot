@@ -13,10 +13,12 @@ class Button extends StatefulWidget {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
+    this.selectedColor,
     this.expand = true,
     super.key,
   }) : iconOnly = false,
-       style = ButtonStyle.secondary;
+       style = ButtonStyle.secondary,
+       forceHover = false;
 
   const Button.primary(
     this.command, {
@@ -26,17 +28,21 @@ class Button extends StatefulWidget {
     super.key,
   }) : style = ButtonStyle.primary,
        iconOnly = false,
-       selected = false;
+       selected = false,
+       selectedColor = null,
+       forceHover = false;
 
   const Button.ghost(
     this.command, {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
+    this.selectedColor,
     this.expand = true,
     super.key,
   }) : style = ButtonStyle.ghost,
-       iconOnly = false;
+       iconOnly = false,
+       forceHover = false;
 
   const Button.icon(
     this.command, {
@@ -44,6 +50,8 @@ class Button extends StatefulWidget {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
+    this.selectedColor,
+    this.forceHover = false,
     super.key,
   }) : iconOnly = true,
        expand = false;
@@ -52,6 +60,8 @@ class Button extends StatefulWidget {
   final bool loading;
   final bool enabled;
   final bool selected;
+  final Color? selectedColor;
+  final bool forceHover;
   final bool iconOnly;
   final bool expand;
   final Command command;
@@ -73,23 +83,21 @@ class _ButtonState extends State<Button> {
           ButtonStyle.secondary => context.theme.buttonStyles.outline,
           ButtonStyle.ghost => context.theme.buttonStyles.ghost,
         };
+        final color = widget.selectedColor ?? context.theme.colors.primary;
         var result = selectedStyle.copyWith(
           // ignore: unused_result
           contentStyle: selectedStyle.contentStyle.copyWith(
             textStyle: selectedStyle.contentStyle.textStyle.map(
-              (style) =>
-                  style.copyWith(color: context.theme.colors.primaryForeground),
+              (style) => style.copyWith(color: color),
             ),
             iconStyle: selectedStyle.iconContentStyle.iconStyle.map(
-              (style) =>
-                  style.copyWith(color: context.theme.colors.primaryForeground),
+              (style) => style.copyWith(color: color),
             ),
           ),
           // ignore: unused_result
           iconContentStyle: selectedStyle.iconContentStyle.copyWith(
             iconStyle: selectedStyle.iconContentStyle.iconStyle.map(
-              (style) =>
-                  style.copyWith(color: context.theme.colors.primaryForeground),
+              (style) => style.copyWith(color: color),
             ),
           ),
         );
@@ -142,7 +150,7 @@ class _ButtonState extends State<Button> {
           // Determine which icon to show
           var icon = widget.command.icon;
 
-          if (widget.command.hoverIcon != null && _isHovered) {
+          if (widget.command.hoverIcon != null && (widget.forceHover || _isHovered)) {
             // Use hover icon when hovering and hoverIcon is specified
             icon = widget.command.hoverIcon;
           }

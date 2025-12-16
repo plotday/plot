@@ -62,7 +62,7 @@ class Session extends SessionRow {
 
   static Future<bool> push() => Store.get.push(table, SessionsBase());
   static Future<void> pull() async =>
-      await Store.get.pull(PullType.updates, table, SessionsBase());
+      await Store.get.pull(table, SessionsBase());
 
   static final _resumeLock = Lock();
 
@@ -126,7 +126,7 @@ class Session extends SessionRow {
     DateRange? range,
     int? limit,
     bool withPriority = false,
-    bool? deleted = false,
+    bool? archived = false,
     bool expiring = false, // emit every minute
   }) {
     final query = Store.get.select(table);
@@ -138,9 +138,9 @@ class Session extends SessionRow {
         query.where((t) => t.end.isBiggerThanValue(range.start!.toStart()));
       }
     }
-    if (deleted != null) {
+    if (archived != null) {
       query.where(
-        (t) => deleted ? t.archivedAt.isNotNull() : t.archivedAt.isNull(),
+        (t) => archived ? t.archivedAt.isNotNull() : t.archivedAt.isNull(),
       );
     }
     query.orderBy([

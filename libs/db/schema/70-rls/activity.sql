@@ -1,7 +1,31 @@
+-- Helper function to check if a user is mentioned in an activity's notes
+-- SECURITY DEFINER to bypass RLS and avoid infinite recursion
+CREATE OR REPLACE FUNCTION public.user_mentioned_in_activity (user_id uuid, activity_id uuid)
+    RETURNS boolean
+    LANGUAGE sql
+    STABLE
+    SECURITY DEFINER
+    AS $function$
+    SELECT
+        EXISTS (
+            SELECT
+                1
+            FROM
+                public.note
+            WHERE
+                note.activity_id = user_mentioned_in_activity.activity_id
+                AND note.archived_at IS NULL
+                AND user_mentioned_in_activity.user_id = ANY (note.mentions));
+$function$;
+
 -- Activity RLS policies
 CREATE POLICY "Users can view activities in their accessible priorities" ON "public"."activity"
     FOR SELECT
-        USING (public.user_has_priority_access (auth.uid (), activity.priority_id));
+        USING (public.user_has_priority_access (auth.uid (), activity.priority_id)
+        -- Draft filtering: only creator can see drafts
+            AND (activity.draft = FALSE OR activity.created_by = auth.uid ())
+            -- Private filtering: creator or mentioned users can see private items
+            AND (activity.private = FALSE OR activity.created_by = auth.uid () OR public.user_mentioned_in_activity (auth.uid (), activity.id)));
 
 CREATE POLICY "Users can insert activities in their accessible priorities" ON "public"."activity"
     FOR INSERT
@@ -10,8 +34,16 @@ CREATE POLICY "Users can insert activities in their accessible priorities" ON "p
 
 CREATE POLICY "Users can update activities in their accessible priorities" ON "public"."activity"
     FOR UPDATE
-        USING (public.user_has_priority_access (auth.uid (), activity.priority_id))
-        WITH CHECK (public.user_has_priority_access (auth.uid (), activity.priority_id));
+        USING (public.user_has_priority_access (auth.uid (), activity.priority_id)
+        -- Draft filtering: only creator can update drafts
+            AND (activity.draft = FALSE OR activity.created_by = auth.uid ())
+            -- Private filtering: creator or mentioned users can update private items
+            AND (activity.private = FALSE OR activity.created_by = auth.uid () OR public.user_mentioned_in_activity (auth.uid (), activity.id)))
+            WITH CHECK (public.user_has_priority_access (auth.uid (), activity.priority_id)
+            -- Draft filtering: only creator can update drafts
+            AND (activity.draft = FALSE OR activity.created_by = auth.uid ())
+            -- Private filtering: creator or mentioned users can update private items
+            AND (activity.private = FALSE OR activity.created_by = auth.uid () OR public.user_mentioned_in_activity (auth.uid (), activity.id)));
 
 -- Activity Exception RLS policies
 CREATE POLICY "Users can view activity exceptions for accessible activities" ON "public"."activity_exception"

@@ -3,12 +3,15 @@ import 'package:forui/forui.dart';
 import 'package:intl/intl.dart';
 
 import 'package:plot/api/twist_api.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/widget/twist_permission_helper.dart';
 
 class TwistDetails extends StatelessWidget {
-  const TwistDetails({required this.twist, super.key});
+  const TwistDetails({required this.twist, this.priority, super.key});
 
   final Twist twist;
+  final Priority? priority;
 
   @override
   Widget build(BuildContext context) {
@@ -28,15 +31,18 @@ class TwistDetails extends StatelessWidget {
     // Build permissions section
     final permissionsList = <Widget>[];
     if (twist.permissions != null) {
-      final groupedPermissions = twist.permissions!.permissions;
-      groupedPermissions.forEach((domain, entities) {
-        // Add domain header
+      final descriptions = PermissionDescriptions.fromTwistPermissions(
+        twist.permissions!,
+      );
+
+      descriptions.categories.forEach((categoryName, descriptionsList) {
+        // Add category header
         permissionsList.add(
           Padding(
-            key: ValueKey('domain_$domain'),
-            padding: const EdgeInsets.only(top: 8, bottom: 4),
+            key: ValueKey('category_$categoryName'),
+            padding: const EdgeInsets.only(top: 12, bottom: 4),
             child: Text(
-              domain,
+              categoryName,
               style: TextStyle(
                 fontSize: theme.typography.sm.fontSize,
                 fontWeight: FontWeight.w600,
@@ -46,37 +52,36 @@ class TwistDetails extends StatelessWidget {
           ),
         );
 
-        // Add entity permissions
-        entities.forEach((entity, flags) {
-          final flagsText = flags.map((f) => f.name).join(', ');
+        // Add bullet points for each description
+        for (final description in descriptionsList) {
           permissionsList.add(
             Padding(
-              key: ValueKey('${domain}_$entity'),
-              padding: const EdgeInsets.only(left: 12, bottom: 4),
+              key: ValueKey('${categoryName}_$description'),
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    '• ',
+                    style: TextStyle(
+                      fontSize: theme.typography.base.fontSize,
+                      color: theme.colors.foreground,
+                    ),
+                  ),
                   Expanded(
                     child: Text(
-                      entity,
+                      description,
                       style: TextStyle(
                         fontSize: theme.typography.base.fontSize,
                         color: theme.colors.foreground,
                       ),
                     ),
                   ),
-                  Text(
-                    flagsText,
-                    style: TextStyle(
-                      fontSize: theme.typography.xs.fontSize,
-                      color: theme.colors.mutedForeground,
-                    ),
-                  ),
                 ],
               ),
             ),
           );
-        });
+        }
       });
     }
 
@@ -133,11 +138,11 @@ class TwistDetails extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildMetadataRow(context, 'Author', authorText),
-              if (twist.version != null) ...[
+              if (priority != null) ...[
+                _buildPriorityRow(context, priority!),
                 const SizedBox(height: 4),
-                _buildMetadataRow(context, 'Version', twist.version!),
               ],
+              _buildMetadataRow(context, 'Author', authorText),
               if (twist.createdAt != null) ...[
                 const SizedBox(height: 4),
                 _buildMetadataRow(
@@ -177,6 +182,37 @@ class TwistDetails extends StatelessWidget {
               ),
               ...permissionsList,
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPriorityRow(BuildContext context, Priority priority) {
+    final theme = context.theme;
+    final priorityPath = priority.ancestorsLabel() != null
+        ? '${priority.ancestorsLabel()}${Priority.separator}${priority.title}'
+        : priority.title;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Installed in',
+          style: TextStyle(
+            fontSize: theme.typography.base.fontSize,
+            color: theme.colors.mutedForeground,
+          ),
+        ),
+        Flexible(
+          child: Text(
+            priorityPath,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: theme.typography.base.fontSize,
+              color: theme.colors.foreground,
+            ),
           ),
         ),
       ],

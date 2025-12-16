@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -28,6 +30,7 @@ class RootProviderState extends State<RootProvider> {
   late final RouterConfig<UrlState> routerConfig;
 
   void Function()? _nowBlocListener;
+  StreamSubscription<Priority>? _contextPriorityListener;
 
   @override
   void initState() {
@@ -39,14 +42,27 @@ class RootProviderState extends State<RootProvider> {
   @override
   void dispose() {
     _nowBlocListener?.call();
+    _contextPriorityListener?.cancel();
     super.dispose();
   }
 
   void _setupNowBlocListener(ThemeBloc themeBloc) {
     _nowBlocListener?.call();
     _nowBlocListener = nowBloc.stream.listen((state) {
-      if (state is NowLoaded) {
-        themeBloc.setPriorityColor(state.priority.displayColor);
+      if (state is NowLoaded && state.context != null) {
+        themeBloc.setPriorityColor(state.context!.displayColor);
+
+        // Set up Priority watcher to detect color changes
+        _contextPriorityListener?.cancel();
+        _contextPriorityListener = Priority.watchOne(state.context!.id).listen((
+          priority,
+        ) {
+          themeBloc.setPriorityColor(priority.displayColor);
+        });
+      } else {
+        // No context, cancel Priority listener
+        _contextPriorityListener?.cancel();
+        _contextPriorityListener = null;
       }
     }).cancel;
   }
@@ -54,6 +70,8 @@ class RootProviderState extends State<RootProvider> {
   void _teardownNowBlocListener() {
     _nowBlocListener?.call();
     _nowBlocListener = null;
+    _contextPriorityListener?.cancel();
+    _contextPriorityListener = null;
   }
 
   @override
@@ -76,12 +94,6 @@ class RootProviderState extends State<RootProvider> {
               await prioritiesBloc.start();
               await nowBloc.start();
               _setupNowBlocListener(themeBloc);
-              // Set initial theme color from current priority
-              if (nowBloc.state is NowLoaded) {
-                themeBloc.setPriorityColor(
-                  (nowBloc.state as NowLoaded).priority.displayColor,
-                );
-              }
               // Navigate away from auth pages after successful sign-in
               final currentPath = router.currentPath;
               if (currentPath.startsWith('/login') ||

@@ -7,6 +7,7 @@ CREATE TABLE "public"."priority" (
     -- All fields added below must be handled in handle_user_priority_upsert
     "archived_at" timestamp with time zone,
     "title" text NOT NULL,
+    "color" integer,
     "path" ltree NOT NULL UNIQUE,
     "updated_by" integer NOT NULL DEFAULT 0
 );
@@ -36,6 +37,11 @@ CREATE TABLE "public"."priority_user" (
     "archived_at" timestamp with time zone,
     CONSTRAINT priority_user_unique UNIQUE (user_id, priority_id)
 );
+
+-- Index for user-based priority lookups in user_priority_base view
+CREATE INDEX idx_priority_user_user_id ON "public"."priority_user" ("user_id")
+WHERE
+    archived_at IS NULL;
 
 ALTER TABLE "public"."priority_user" ENABLE ROW LEVEL SECURITY;
 

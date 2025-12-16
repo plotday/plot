@@ -8,7 +8,12 @@ class PriorityWidget extends StatelessWidget {
     required this.priority,
     this.context,
     this.selected = false,
+    this.selectedBorder = true,
     this.onHover,
+    this.indentLevel = 0,
+    this.textStyle,
+    this.showAncestry = false,
+    this.unread,
     super.key,
   });
 
@@ -20,7 +25,22 @@ class PriorityWidget extends StatelessWidget {
 
   final bool selected;
 
+  /// Whether to show border when selected
+  final bool selectedBorder;
+
   final void Function(bool hovered)? onHover;
+
+  /// Indentation level for nested priorities
+  final int indentLevel;
+
+  /// Custom text style for the priority title
+  final TextStyle? textStyle;
+
+  /// Whether to show ancestry in the command (for top priorities)
+  final bool showAncestry;
+
+  /// Custom unread value (if null, uses priority.unread)
+  final bool? unread;
 
   @override
   Widget build(BuildContext context) {
@@ -28,12 +48,30 @@ class PriorityWidget extends StatelessWidget {
     // bool contextChild = priority.parentId == this.context?.id;
     return ListTile(
       command: !isContext
-          ? CommandWrapper(ChangeCurrentPriority(priority), icon: Value(null))
+          ? ChangeCurrentPriority(priority, ancestry: showAncestry)
           : null,
-      trailingCommands: [ShowPriorityCommands(priority)],
-      body: PriorityLabel(priority: priority),
+      trailingBuilder: (isHovered, hasFocus) => (isHovered || hasFocus)
+          ? Row(
+              children: [
+                Button.icon(
+                  SetTopPriority(priority, priority.topOrder == null),
+                ),
+                Button.icon(ShowPriorityCommands(priority)),
+              ],
+            )
+          : null,
+      title: showAncestry ? null : priority.title,
+      body: showAncestry ? PriorityLabel(priority: priority, fontSize: textStyle?.fontSize, height: textStyle?.height) : null,
+      selected: selected,
+      selectedBorder: selectedBorder,
       highlighted: selected,
       onHover: onHover,
+      indentLevel: indentLevel,
+      textStyle: textStyle,
+      leadingIndicator: UnreadIndicator(
+        color: priority.displayColor,
+        unread: unread ?? priority.unread,
+      ),
     );
   }
 }
@@ -45,14 +83,21 @@ class PriorityLabel extends StatelessWidget {
     Priority? context,
     this.onSelect,
     this.fontSize,
+    this.height,
+    this.muted = false,
     super.key,
-  }) : ancestors =
-           ancestors ?? priority?.ancestors(context: context) ?? const [];
+  }) : ancestors = (() {
+         final computed =
+             ancestors ?? priority?.ancestors(context: context) ?? const [];
+         return computed;
+       }());
 
   final List<PriorityAncestor> ancestors;
   final Priority? priority;
   final void Function(PriorityId)? onSelect;
   final double? fontSize;
+  final double? height;
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
@@ -60,15 +105,13 @@ class PriorityLabel extends StatelessWidget {
     ThemeColor currentColor = const ThemeColor.defaultColor();
     final displayColors = <ThemeColor>[];
     for (final ancestor in ancestors) {
-      if (ancestor.color != null) {
-        currentColor = ThemeColor(ancestor.color!);
-      }
+      currentColor = ThemeColor(ancestor.color);
       displayColors.add(currentColor);
     }
 
     // Update current color with priority's color if present
-    if (priority?.color != null) {
-      currentColor = priority!.color!;
+    if (priority?.displayColor != null) {
+      currentColor = priority!.displayColor;
     }
 
     return Row(
@@ -80,6 +123,7 @@ class PriorityLabel extends StatelessWidget {
           final isLast = i == ancestors.length - 1;
           final ancestorColor = context.colour.colours.fromTheme(
             displayColors[i],
+            muted: muted,
           );
           return [
             Flexible(
@@ -88,6 +132,7 @@ class PriorityLabel extends StatelessWidget {
                 style: DefaultTextStyle.of(context).style.copyWith(
                   color: ancestorColor,
                   fontSize: fontSize ?? context.theme.typography.base.fontSize,
+                  height: height,
                 ),
                 child: Tapable(
                   onTap: () async {
@@ -113,6 +158,7 @@ class PriorityLabel extends StatelessWidget {
                 style: DefaultTextStyle.of(context).style.copyWith(
                   color: context.theme.colors.mutedForeground,
                   fontSize: fontSize ?? context.theme.typography.base.fontSize,
+                  height: height,
                 ),
                 child: Text(Priority.separator),
               ),
@@ -122,8 +168,12 @@ class PriorityLabel extends StatelessWidget {
           Flexible(
             child: DefaultTextStyle(
               style: DefaultTextStyle.of(context).style.copyWith(
-                color: context.colour.colours.fromTheme(currentColor),
+                color: context.colour.colours.fromTheme(
+                  currentColor,
+                  muted: muted,
+                ),
                 fontSize: fontSize ?? context.theme.typography.base.fontSize,
+                height: height,
               ),
               child: Text(
                 priority!.title,

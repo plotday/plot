@@ -4,7 +4,7 @@ part of 'store.dart';
 class ActivityTags extends Table with SyncableTable, UuidTable {
   // Empty string means no occurrence (NULL in PostgreSQL)
   TextColumn get occurrence => text().withDefault(const Constant(''))();
-  TextColumn get tags => text().nullable().map(const ActivityTagsConverter())();
+  TextColumn get tags => text().nullable().map(const TagsConverter())();
   TextColumn get tagsUpdated =>
       text().nullable().map(const TagUpdatesConverter())();
 
@@ -108,25 +108,53 @@ class ActivityTagsBase extends BaseTable {
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
 
+    log.info('ActivityTagsBase.put called with ${rows.length} rows');
+
     for (final row in rows) {
+      log.info(
+        'ActivityTagsBase.put - processing row: ${row['id']}, tags_updated: ${row['tags_updated']}',
+      );
+
       final tagsUpdated = row['tags_updated'] as Map<String, dynamic>?;
-      if (tagsUpdated == null || tagsUpdated.isEmpty) continue;
+      if (tagsUpdated == null || tagsUpdated.isEmpty) {
+        log.info(
+          'ActivityTagsBase.put - skipping row ${row['id']}: no tags_updated',
+        );
+        continue;
+      }
 
       final id = row['id'] as String;
       final updatedBy = row['updated_by'] as int;
 
+      log.info('ActivityTagsBase.put - updating activity tags for id: $id');
+
       // Update the server
-      await Base.client.rpc<void>(
-        'update_activity_tags',
-        params: {
-          'p_activity_id': id,
-          'p_user_id': Base.userId.toString(),
-          'p_client_id': updatedBy,
-          'p_tag_updates': tagsUpdated,
-        },
-      );
+      try {
+        await Base.client.rpc<void>(
+          'update_activity_tags',
+          params: {
+            'p_activity_id': id,
+            'p_user_id': Base.userId.toString(),
+            'p_client_id': updatedBy,
+            'p_tag_updates': tagsUpdated,
+          },
+        );
+        log.info(
+          'ActivityTagsBase.put - update_activity_tags RPC completed successfully',
+        );
+      } catch (e, stackTrace) {
+        log.severe(
+          'ActivityTagsBase.put - RPC error for id $id: $e',
+          e,
+          stackTrace,
+        );
+        rethrow;
+      }
 
       // After successfully updating the server, clear tagsUpdated in the local database
+      log.info(
+        'ActivityTagsBase.put - clearing tagsUpdated in local database for id: $id',
+      );
       await Store.get
           .update(Store.get.activityTags)
           .replace(
@@ -136,6 +164,7 @@ class ActivityTagsBase extends BaseTable {
               updatedAt: Value(DateTime.now()),
             ),
           );
+      log.info('ActivityTagsBase.put - completed processing row: $id');
     }
   }
 }

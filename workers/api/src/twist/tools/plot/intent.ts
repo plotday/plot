@@ -1,18 +1,18 @@
-import { type Activity, ActivityType } from "@plotday/twister/plot";
+import type { Note } from "@plotday/twister/plot";
 
-import { createActivity } from "./activity";
+import { createNote } from "./activity";
 import type { Plot } from "./index";
 
 const MENU_INTENT = `Describe what this twist can do. Example: "What can you do?"`;
 const REMOVE_INTENT = `Disable and remove this twist. Example: "Remove yourself."`;
 
 /**
- * Matches an activity's content against registered intents using AI.
+ * Matches a note's content against registered intents using AI.
  * Returns the best matching intent key or null if no good match.
  */
 export async function matchIntent(
   plot: Plot,
-  activity: Activity
+  note: Note
 ): Promise<string | null> {
   if (!plot.env) {
     console.warn("Cannot match intent without env bindings");
@@ -20,7 +20,7 @@ export async function matchIntent(
   }
 
   // Collect all intent descriptions (custom + built-in)
-  const customIntents = plot.plotOptions?.activity?.intents || [];
+  const customIntents = plot.plotOptions?.note?.intents || [];
   const builtInIntentObjects = [
     { description: MENU_INTENT, examples: [] },
     { description: REMOVE_INTENT, examples: [] },
@@ -31,10 +31,10 @@ export async function matchIntent(
     return null;
   }
 
-  // Prepare activity content for matching
-  const content = [activity.title, activity.note].filter(Boolean).join(" - ");
+  // Prepare note content for matching
+  const content = note.content;
 
-  if (!content.trim()) {
+  if (!content?.trim()) {
     return null;
   }
 
@@ -51,7 +51,7 @@ export async function matchIntent(
   };
 
   // Use AI to match intent
-  const prompt = `Given this activity: "${content}"
+  const prompt = `Given this note: "${content}"
 
 Select the best matching intent from the list below, or respond with "none" if no intent matches well.
 Given similar intents, prefer ones earlier in the list.
@@ -100,50 +100,48 @@ Respond with ONLY the intent number (e.g., "1", "2", etc.) or "none".`;
 }
 
 /**
- * Handles an activity intent by dispatching to the appropriate handler.
- * If no intent matches, creates a reply activity with a helpful message.
+ * Handles a note intent by dispatching to the appropriate handler.
+ * If no intent matches, creates a reply note with a helpful message.
  * Returns info about which callback to invoke in the twist worker, or null if handled here.
  */
 export async function handleIntent(
   plot: Plot,
-  activity: Activity
+  note: Note
 ): Promise<{ optionPath: string[]; args: any[] } | null> {
-  const matchedIntent = await matchIntent(plot, activity);
+  const matchedIntent = await matchIntent(plot, note);
 
   if (!matchedIntent) {
-    // No intent matched - create a reply activity
-    await createActivity(plot, {
-      type: ActivityType.Note,
-      title: "I'm not sure how to help with that",
-      note: "I didn't recognize what you're asking for. Try asking me 'What can you do?' to see what I can help with.",
-      parent: { id: activity.id },
+    // No intent matched - create a reply note
+    await createNote(plot, {
+      activity: { id: note.activity.id },
+      content: "I didn't recognize what you're asking for. Try asking me 'What can you do?' to see what I can help with.",
     });
     return null;
   }
 
   // Handle built-in intents
   if (matchedIntent === MENU_INTENT) {
-    await handleDescribeCapabilities(plot, activity);
+    await handleDescribeCapabilities(plot, note);
     return null;
   }
 
   if (matchedIntent === REMOVE_INTENT) {
-    await handleRemoveTwist(plot, activity);
+    await handleRemoveTwist(plot, note);
     return null;
   }
 
   // Return path to custom intent handler to be called in twist worker
-  const intents = plot.plotOptions?.activity?.intents || [];
+  const intents = plot.plotOptions?.note?.intents || [];
   const intentIndex = intents.findIndex(
-    (intent) => intent.description === matchedIntent
+    (intent: any) => intent.description === matchedIntent
   );
 
   if (intentIndex !== -1) {
     const intentHandler = intents[intentIndex];
     if (intentHandler && typeof intentHandler.handler === "function") {
       return {
-        optionPath: ["activity", "intents", intentIndex.toString(), "handler"],
-        args: [activity],
+        optionPath: ["note", "intents", intentIndex.toString(), "handler"],
+        args: [note],
       };
     }
   }
@@ -157,24 +155,24 @@ export async function handleIntent(
  */
 async function handleDescribeCapabilities(
   plot: Plot,
-  activity: Activity
+  note: Note
 ): Promise<void> {
   if (!plot.env) {
     console.warn("Cannot describe capabilities without env bindings");
     return;
   }
 
-  const customIntents = plot.plotOptions?.activity?.intents || [];
+  const customIntents = plot.plotOptions?.note?.intents || [];
 
   let description: string;
   if (customIntents.length === 0) {
     description =
-      "I can help with general tasks. Mention me in an activity to get started!";
+      "I can help with general tasks. Mention me in a note to get started!";
   } else {
     // Use AI to generate a natural summary
     const prompt = `Given these capabilities:
 ${customIntents
-  .map((intent, i) => `${i + 1}. ${intent.description}`)
+  .map((intent: any, i: number) => `${i + 1}. ${intent.description}`)
   .join("\n")}
 
 Write a brief, friendly paragraph (2-3 sentences) describing what this twist can help with. Use "I" language.`;
@@ -199,12 +197,10 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this twist can
     }
   }
 
-  // Create reply activity with the description
-  await createActivity(plot, {
-    type: ActivityType.Note,
-    title: "Here's what I can do",
-    note: description,
-    parent: { id: activity.id },
+  // Create reply note with the description
+  await createNote(plot, {
+    activity: { id: note.activity.id },
+    content: description,
   });
 }
 
@@ -214,7 +210,7 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this twist can
  */
 async function handleRemoveTwist(
   plot: Plot,
-  activity: Activity
+  note: Note
 ): Promise<void> {
   try {
     // Set archived_at on the priority_twist record
@@ -227,24 +223,20 @@ async function handleRemoveTwist(
       throw error;
     }
 
-    // Create farewell activity
-    await createActivity(plot, {
-      type: ActivityType.Note,
-      title: "I've removed myself",
-      note: "I've been removed from this priority. You can add me back anytime if you need me!",
-      parent: { id: activity.id },
+    // Create farewell note
+    await createNote(plot, {
+      activity: { id: note.activity.id },
+      content: "I've been removed from this priority. You can add me back anytime if you need me!",
     });
   } catch (error) {
     console.error("Error removing twist:", error);
 
-    // Create error activity
-    await createActivity(plot, {
-      type: ActivityType.Note,
-      title: "I couldn't remove myself",
-      note: `There was an error removing me: ${
+    // Create error note
+    await createNote(plot, {
+      activity: { id: note.activity.id },
+      content: `There was an error removing me: ${
         error instanceof Error ? error.message : "Unknown error"
       }`,
-      parent: { id: activity.id },
     });
   }
 }

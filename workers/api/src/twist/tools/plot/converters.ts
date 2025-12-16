@@ -1,14 +1,14 @@
+import type { Database, Json } from "@plotday/db";
 import {
   type Activity,
-  type ActivityLink,
   type ActivityMeta,
   ActivityType,
   type Actor,
   type ActorId,
   ActorType,
   type Priority,
+  type Tags,
 } from "@plotday/twister/plot";
-import type { Database } from "@plotday/db";
 
 import {
   calculateRecurrenceUntil,
@@ -20,11 +20,19 @@ import {
 export function fromDbActivity(
   dbActivity: Database["public"]["Tables"]["activity"]["Row"] & {
     author: {
-      id: string;
-      name: string;
-      type: string;
-      email?: string;
+      id: string | null;
+      name: string | null;
+      type: string | null;
+      email?: string | null;
     };
+    assignee?: {
+      id: string | null;
+      name: string | null;
+      type: string | null;
+      email?: string | null;
+    } | null;
+    tags?: Json | null;
+    mentions?: string[] | null;
   },
   includeAuthorEmail: boolean = false
 ): Activity {
@@ -101,6 +109,35 @@ export function fromDbActivity(
       : {}),
   };
 
+  // Build assignee object if available
+  let assignee: Actor | null = null;
+  if (dbActivity.assignee) {
+    // Map assignee type to ActorType enum
+    let assigneeType: number = ActorType.User; // Default to User
+    if (dbActivity.assignee.type) {
+      switch (dbActivity.assignee.type) {
+        case "user":
+          assigneeType = ActorType.User;
+          break;
+        case "contact":
+          assigneeType = ActorType.Contact;
+          break;
+        case "priority_twist":
+          assigneeType = ActorType.Twist;
+          break;
+      }
+    }
+
+    assignee = {
+      id: (dbActivity.assignee.id || dbActivity.assignee_id) as ActorId,
+      name: dbActivity.assignee.name || null,
+      type: assigneeType,
+      ...(includeAuthorEmail && dbActivity.assignee.email
+        ? { email: dbActivity.assignee.email }
+        : {}),
+    };
+  }
+
   return {
     id: dbActivity.id,
     type: activityType,
@@ -110,10 +147,10 @@ export function fromDbActivity(
     recurrenceUntil,
     recurrenceCount: null, // Not stored separately in database
     doneAt: dbActivity.done_at ? new Date(dbActivity.done_at) : null,
-    note: dbActivity.note || null,
     title: dbActivity.title || null,
-    parent: null,
-    links: dbActivity.links as Array<ActivityLink> | null,
+    assignee,
+    draft: dbActivity.draft ?? false,
+    private: dbActivity.private ?? false,
     priority: {
       id: dbActivity.priority_id,
       title: dbActivity.title ?? "Untitled",
@@ -126,7 +163,7 @@ export function fromDbActivity(
     recurrence: null,
     occurrence: null,
     meta: dbActivity.meta as ActivityMeta | null,
-    tags: (dbActivity as any).tags || null,
+    tags: (dbActivity.tags as Tags) || null,
     mentions: (dbActivity.mentions as ActorId[]) || null,
   };
 }

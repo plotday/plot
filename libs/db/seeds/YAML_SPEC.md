@@ -7,8 +7,9 @@ This document defines the YAML format for generating seed data for the Plot appl
 The seed data format allows you to define:
 - **Contacts**: People and their details
 - **Priorities**: Hierarchical project/folder structure
-- **Activities**: Tasks, events, and notes with threads/replies
-- **Tags**: Labels applied to activities
+- **Activities**: Tasks, events, and notes with associated note content
+- **Notes**: Content associated with activities (markdown, links, mentions)
+- **Tags**: Labels applied to activities and notes
 - **Settings**: User-specific priority settings
 
 All dates are specified as offsets from a base date, allowing identical data to be generated at different points in time.
@@ -114,7 +115,7 @@ priorities:
 
 ## Activities
 
-Activities can be tasks (actions), calendar events, or notes. They support threading (replies).
+Activities can be tasks (actions), calendar events, or notes. They can have associated notes.
 
 **Fields:**
 - `ref` (optional): Unique reference string (only needed if referenced elsewhere)
@@ -123,7 +124,6 @@ Activities can be tasks (actions), calendar events, or notes. They support threa
 - `priority_ref` (required): Reference to a priority
 - `author_ref` (optional, default: "user"): Reference to contact or "user"
 - `assignee_ref` (optional): Reference to contact or "user"
-- `note` (optional): Markdown content
 - `draft` (optional, default: false): Whether this is a draft
 - `private` (optional, default: false): Whether this is private
 - `archived_at` (optional): Date offset when archived
@@ -132,10 +132,9 @@ Activities can be tasks (actions), calendar events, or notes. They support threa
 - `on` (optional): Date range for all-day events (see Date Offsets)
 - `duration` (optional): Duration string (e.g., "30 minutes", "2 hours")
 - `recurrence_rule` (optional): iCalendar RRULE string
-- `links` (optional): Array of link objects
 - `mentions` (optional): Array of contact refs mentioned
 - `tags` (optional): Object mapping tag names to actor arrays
-- `children` (optional): Array of nested reply activities
+- `notes` (optional): Array of note objects (see Notes section)
 
 **Note:** Activities must have EITHER `at` (timestamp) OR `on` (date), not both.
 
@@ -149,14 +148,11 @@ activities:
     recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
     tags:
       pinned: [user]
-    children:
-      - title: "Yesterday: Completed API integration"
-        type: note
-        note: "Finished the REST API integration with the new service"
+    notes:
+      - note: "Yesterday: Completed API integration\n\nFinished the REST API integration with the new service"
         author_ref: alice
 
-      - title: "Today: Working on frontend"
-        type: note
+      - note: "Today: Working on frontend"
         author_ref: alice
 
   - title: Write project proposal
@@ -167,10 +163,47 @@ activities:
     tags:
       todo: [user]
       urgent: [user, alice]
-    links:
-      - url: https://docs.example.com/proposal-template
-        title: Proposal Template
-        description: Use this template
+    notes:
+      - note: "Use the proposal template for this"
+        links:
+          - url: https://docs.example.com/proposal-template
+            title: Proposal Template
+            description: Use this template
+```
+
+## Notes
+
+Notes are content associated with an activity, stored as separate entities that reference their parent activity.
+
+**Fields:**
+- `ref` (optional): Unique reference string (only needed if referenced elsewhere)
+- `author_ref` (optional, default: "user"): Reference to contact or "user"
+- `note` (optional): Markdown content
+- `links` (optional): Array of link objects
+- `mentions` (optional): Array of contact refs mentioned
+- `tags` (optional): Object mapping tag names to actor arrays
+- `draft` (optional, default: false): Whether this is a draft
+- `private` (optional, default: false): Whether this is private
+
+**Note:** Notes are always associated with an activity through the `notes` array in the activity definition.
+
+```yaml
+activities:
+  - title: Project kickoff meeting
+    type: event
+    priority_ref: project-alpha
+    at: "+0d 14:00 / +0d 15:00"
+    notes:
+      - note: "Great discussion about the architecture"
+        author_ref: alice
+        tags:
+          star: [user]
+
+      - note: "Action items:\n- Set up repository\n- Create project board"
+        author_ref: user
+        links:
+          - url: https://github.com/org/repo
+            title: Project Repository
 ```
 
 ## Date Offset Syntax
@@ -267,10 +300,8 @@ activities:
     recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
     tags:
       pinned: [user]
-    children:
-      - title: Status Update
-        type: note
-        note: "Working on feature X"
+    notes:
+      - note: "Working on feature X"
         author_ref: alice
 
   - title: Complete API documentation
@@ -281,9 +312,11 @@ activities:
     tags:
       todo: [user]
       urgent: [user]
-    links:
-      - url: https://docs.example.com/api
-        title: API Docs
+    notes:
+      - note: "Reference the API documentation template"
+        links:
+          - url: https://docs.example.com/api
+            title: API Docs
 ```
 
 ## LLM Generation Guidelines
@@ -304,7 +337,7 @@ Generate Plot seed data in YAML format for this scenario:
 - Two projects: "Mobile App Redesign" and "API v2 Migration"
 - Include daily standups (recurring), sprint planning meetings, various tasks
 - Some tasks should be completed, some in progress, some blocked
-- Include realistic notes and comments in threads
+- Include realistic notes and comments associated with activities
 - Use appropriate tags (urgent, todo, done, blocked, etc.)
 - Make it look like realistic project activity over 2 weeks
 ```
@@ -323,10 +356,11 @@ The generator will validate:
 - Only one root priority per user
 - Contacts have unique emails
 
-## Notes
+## Implementation Notes
 
-- Generated UUIDs use UUIDv7 for realistic time-ordered IDs
-- ltree paths are generated automatically using Plot's path generation logic
+- Generated UUIDs use UUIDv4 for unique IDs
 - Activity ordering uses timestamp-based ordering
 - All timestamps include timezone (UTC)
-- Nested structures (priority children, activity threads) create proper hierarchical paths
+- Priority children create proper hierarchical ltree paths
+- Notes are stored as separate entities in the `note` table with references to their parent activity
+- Links are stored within notes, not directly on activities

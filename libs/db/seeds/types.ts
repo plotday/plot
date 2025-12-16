@@ -63,7 +63,6 @@ export interface Activity {
   priority_ref: string; // Reference to a priority
   author_ref?: string; // Default: "user"
   assignee_ref?: string;
-  note?: string; // Markdown content
   draft?: boolean; // Default: false
   private?: boolean; // Default: false
   archived_at?: string; // Date offset
@@ -72,10 +71,20 @@ export interface Activity {
   on?: string; // Date range (e.g., "+3d / +5d")
   duration?: string; // e.g., "30 minutes", "2 hours"
   recurrence_rule?: string; // iCalendar RRULE
+  mentions?: string[]; // Array of contact refs
+  tags?: Tags;
+  notes?: Note[]; // Notes associated with this activity
+}
+
+export interface Note {
+  ref?: string; // Optional unique reference
+  author_ref?: string; // Default: "user"
+  note?: string; // Markdown content
   links?: Link[];
   mentions?: string[]; // Array of contact refs
   tags?: Tags;
-  children?: Activity[]; // Nested reply activities
+  draft?: boolean; // Default: false
+  private?: boolean; // Default: false
 }
 
 export interface Link {
@@ -187,19 +196,17 @@ export interface GeneratedActivity {
   assignee_id: string | null; // UUID
   priority_id: string; // UUID
   type: ActivityType;
-  path: string; // ltree path
   order: number; // Timestamp in milliseconds
   draft: boolean;
   private: boolean;
   title: string | null;
-  note: string | null;
+  preview: string | null;
   at: string | null; // tstzrange SQL format
   on: string | null; // daterange SQL format
   duration: string | null; // interval SQL format
   done_at: string | null; // ISO timestamp
   recurrence_rule: string | null;
   archived_at: string | null; // ISO timestamp
-  links: string | null; // JSONB
   mentions: string | null; // Array literal
 }
 
@@ -208,6 +215,24 @@ export interface GeneratedActivityTag {
   activity_id: string; // UUID
   tag_id: number;
   occurrence: string | null;
+}
+
+export interface GeneratedNote {
+  id: string; // UUID
+  activity_id: string; // UUID
+  author_id: string; // UUID
+  created_by: string; // UUID
+  draft: boolean;
+  private: boolean;
+  content: string | null;
+  links: string | null; // JSONB
+  mentions: string | null; // Array literal
+}
+
+export interface GeneratedNoteTag {
+  actor_id: string; // UUID
+  note_id: string; // UUID
+  tag_id: number;
 }
 
 // ============================================================================

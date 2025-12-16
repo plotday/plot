@@ -35,15 +35,8 @@ class UserBloc extends Cubit<UserState> {
       }
 
       log.info('User signed in: ${user.primaryEmail}');
-      try {
-        await Store.start(user);
-        emit(UserReady(user));
-      } catch (e, stackTrace) {
-        log.warning('User init failed', e, stackTrace);
-        // If Store.init fails (e.g., offline with no local data), sign out
-        // The error message from Store.init will be logged above
-        emit(const UserSignedOut());
-      }
+      await Store.start(user);
+      emit(UserReady(user));
     });
   }
 
@@ -72,13 +65,8 @@ class UserBloc extends Cubit<UserState> {
       } else {
         // Password setup complete, initialize store if not already ready
         if (state is! UserReady) {
-          try {
-            await Store.start(currentUser);
-            emit(UserReady(currentUser));
-          } catch (e, stackTrace) {
-            log.warning('User init failed', e, stackTrace);
-            emit(const UserSignedOut());
-          }
+          await Store.start(currentUser);
+          emit(UserReady(currentUser));
         }
       }
     }

@@ -37,19 +37,26 @@ class PrioritiesList extends StatelessWidget {
             title: root.title,
             command: ChangeCurrentPriority(root),
             selected: selected?.id == root.id,
+            leadingIndicator: UnreadIndicator(
+              color: root.displayColor,
+              unread: root.unread,
+            ),
             textStyle: itemStyle.copyWith(
               color: context.colour.colours.fromTheme(root.displayColor),
             ),
-            trailingCommands: [ShowPriorityCommands(root)],
-            revealTrailingCommands: true,
+            trailingBuilder: (isHovered, hasFocus) => (isHovered || hasFocus)
+                ? Button.icon(ShowPriorityCommands(root))
+                : null,
           ),
 
           // Second group: Top Priorities
           if (topPriorities.isNotEmpty) ...[
+            SizedBox(height: 16),
             ListTile(
               title: 'Top Priorities',
               style: ListTileStyle.header,
               textStyle: headerStyle,
+              noHoverHighlight: true,
             ),
             ReorderableListView<Priority>(
               list: topPriorities,
@@ -94,10 +101,12 @@ class PrioritiesList extends StatelessWidget {
           ],
 
           // Third group: All Priorities
+          SizedBox(height: 16),
           ListTile(
             title: 'All Priorities',
             style: ListTileStyle.header,
             textStyle: headerStyle,
+            noHoverHighlight: true,
           ),
           ...root.children.expand(
             (priority) => _buildPriorityItems(
@@ -121,16 +130,15 @@ class PrioritiesList extends StatelessWidget {
     required TextStyle textStyle,
   }) {
     return [
-      ListTile(
+      PriorityWidget(
         key: ValueKey('${topSection ? 'top' : 'all'}-${priority.id}'),
-        title: priority.title,
-        command: ChangeCurrentPriority(priority, ancestry: topSection),
+        priority: priority,
         selected: selected?.id == priority.id,
         selectedBorder: topSection || priority.topOrder == null,
         indentLevel: indentLevel,
         textStyle: textStyle,
-        trailingCommands: [ShowPriorityCommands(priority)],
-        revealTrailingCommands: true,
+        showAncestry: topSection,
+        unread: topSection ? _hasDescendantUnread(priority) : null,
       ),
       ...priority.children.expand(
         (child) => _buildPriorityItems(
@@ -144,5 +152,11 @@ class PrioritiesList extends StatelessWidget {
         ),
       ),
     ];
+  }
+
+  /// Returns true if the priority or any of its descendants has unread activities
+  bool _hasDescendantUnread(Priority priority) {
+    if (priority.unread) return true;
+    return priority.descendants().any((p) => p.unread);
   }
 }

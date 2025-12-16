@@ -154,13 +154,47 @@ class _HeaderState extends State<Header> {
                   child: FTextField(
                     controller: _searchController,
                     focusNode: _searchFocusNode,
-                    hint: 'Search...',
+                    hint: 'Search…',
                     style: (style) => style.copyWith(
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 4,
                       ),
                     ),
+                    suffixBuilder: (context, style, states) {
+                      final children = <Widget>[
+                        // Filter command buttons
+                        ...widget.filterCommands.asMap().entries.map((entry) {
+                          final key = ValueKey(
+                            Object.hash(entry.value.hashCode, entry.key),
+                          );
+                          return Button.icon(
+                            entry.value,
+                            key: key,
+                            selected: entry.value.on == true,
+                          );
+                        }),
+                        // Close search button
+                        Button.icon(
+                          ToggleSearchCommand(
+                            searchExpanded: _searchExpanded,
+                            onToggle: () {
+                              setState(() {
+                                _searchExpanded = false;
+                                _searchController.clear();
+                                widget.onSearchChanged!('');
+                                widget.onSearchClosed?.call();
+                              });
+                            },
+                          ),
+                        ),
+                      ];
+
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: children,
+                      );
+                    },
                   ),
                 ),
               ),
@@ -180,37 +214,18 @@ class _HeaderState extends State<Header> {
 
         // Build suffixes with position-specific right buttons
         final suffixes = <Widget>[
-          // Filter commands (only shown when search is expanded)
-          if (_searchExpanded && widget.onSearchChanged != null)
-            ...widget.filterCommands.asMap().entries.map((entry) {
-              final key = ValueKey(
-                Object.hash(entry.value.hashCode, entry.key),
-              );
-              return Button.icon(
-                entry.value,
-                key: key,
-                selected: entry.value.on == true,
-              );
-            }),
-          // Add search button/close button if onSearchChanged is provided
-          if (widget.onSearchChanged != null)
+          // Add search button to activate search (only when not expanded)
+          if (widget.onSearchChanged != null && !_searchExpanded)
             Button.icon(
               ToggleSearchCommand(
                 searchExpanded: _searchExpanded,
                 onToggle: () {
                   setState(() {
-                    _searchExpanded = !_searchExpanded;
-                    if (_searchExpanded) {
-                      // Focus the text field when expanding
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _searchFocusNode.requestFocus();
-                      });
-                    } else {
-                      // Clear search when collapsing
-                      _searchController.clear();
-                      widget.onSearchChanged!('');
-                      widget.onSearchClosed?.call();
-                    }
+                    _searchExpanded = true;
+                    // Focus the text field when expanding
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _searchFocusNode.requestFocus();
+                    });
                   });
                 },
               ),

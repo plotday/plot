@@ -5,7 +5,7 @@ import { toDate } from "@plotday/tz";
 
 import type { Database } from "./types";
 
-export type { Database } from "./types";
+export type { Database, Json } from "./types";
 export type SupabaseClient = _SupabaseClient<Database>;
 
 // Create a non-session client.

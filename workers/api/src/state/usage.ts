@@ -71,6 +71,16 @@ export class Usage extends DurableObject<Bindings> {
         nextFlushTime INTEGER
       ) STRICT
     `);
+
+    // Migration: Rename priorityAgentId to priorityTwistId for existing DOs
+    // This is safe to run multiple times - it will fail silently if column doesn't exist
+    try {
+      this.sql.exec(`
+        ALTER TABLE state RENAME COLUMN priorityAgentId TO priorityTwistId
+      `);
+    } catch {
+      // Column already renamed or never existed, ignore error
+    }
   }
 
   private loadState() {
@@ -255,7 +265,7 @@ export class Usage extends DurableObject<Bindings> {
 
       const { data: insertedCosts, error: insertError } = await this.supabase
         .from("cost")
-        .upsert(newCosts, { onConflict: "name", ignoreDuplicates: false })
+        .upsert(newCosts, { onConflict: "name,start", ignoreDuplicates: false })
         .select("id, name");
 
       if (insertError) {

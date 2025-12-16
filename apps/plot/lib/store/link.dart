@@ -98,26 +98,26 @@ class AuthLink extends Link {
 }
 
 class CallbackLink extends Link {
-  const CallbackLink({required this.title, required this.token})
+  const CallbackLink({required this.title, required this.callback})
     : super(type: LinkType.callback);
 
   final String title;
-  final String token;
+  final String callback;
 
   factory CallbackLink.fromJson(Map<String, dynamic> json) {
     return CallbackLink(
       title: json['title'] as String,
-      token: json['token'] as String,
+      callback: json['callback'] as String,
     );
   }
 
   @override
   Map<String, dynamic> toJson() {
-    return {'type': type.name, 'title': title, 'token': token};
+    return {'type': type.name, 'title': title, 'callback': callback};
   }
 
   @override
-  List<Object?> get props => [type, title, token];
+  List<Object?> get props => [type, title, callback];
 }
 
 class ConferencingLink extends Link {

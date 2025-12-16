@@ -142,7 +142,8 @@ class FormSelect<T> extends FormItem {
     super.required,
     super.autofocus,
     required this.items,
-    required this.labelBuilder,
+    this.labelBuilder,
+    this.titleBuilder,
     this.subtitleBuilder,
     this.leadingBuilder,
     this.placeholder,
@@ -150,17 +151,28 @@ class FormSelect<T> extends FormItem {
     T? initialValue,
     this.onChanged,
     bool hasInitialValue = false,
-  }) : _value = initialValue,
-       _hasValue = hasInitialValue || initialValue != null;
+  })  : assert(
+          labelBuilder != null || titleBuilder != null,
+          'Must provide either labelBuilder or titleBuilder',
+        ),
+        _value = initialValue,
+        _hasValue = hasInitialValue || initialValue != null;
 
   /// Function to fetch items, optionally filtered by search text.
   final Future<List<T>> Function(String? search) items;
 
-  /// Function to build the display label for an item.
-  final String Function(T) labelBuilder;
+  /// Optional function to build a Widget label for an item in the selection modal.
+  /// If provided, this takes precedence over titleBuilder+subtitleBuilder for the modal.
+  /// The titleBuilder is still required for the form field display.
+  final Widget Function(T)? labelBuilder;
 
-  /// Optional function to build a subtitle for an item.
-  final String Function(T)? subtitleBuilder;
+  /// Function to build the string title for an item.
+  /// Used for the form field display, and also for the modal if labelBuilder is not provided.
+  final String Function(T)? titleBuilder;
+
+  /// Optional function to build a subtitle for an item in the selection modal.
+  /// Only used when labelBuilder is not provided (i.e., using string-based labels).
+  final String? Function(T)? subtitleBuilder;
 
   /// Optional function to build a leading widget for an item.
   final Widget Function(T)? leadingBuilder;
@@ -176,6 +188,7 @@ class FormSelect<T> extends FormItem {
 
   T? _value;
   bool _hasValue;
+  final List<VoidCallback> _listeners = [];
 
   @override
   T? getValue() => _value;
@@ -186,6 +199,7 @@ class FormSelect<T> extends FormItem {
       _value = value;
       _hasValue = true;
       onChanged?.call();
+      _notifyListeners();
     }
   }
 
@@ -195,6 +209,23 @@ class FormSelect<T> extends FormItem {
       return _value != null;
     }
     return true;
+  }
+
+  /// Add a listener to be notified when the value changes
+  void addListener(VoidCallback listener) {
+    _listeners.add(listener);
+  }
+
+  /// Remove a listener
+  void removeListener(VoidCallback listener) {
+    _listeners.remove(listener);
+  }
+
+  /// Notify all listeners of a value change
+  void _notifyListeners() {
+    for (final listener in _listeners) {
+      listener();
+    }
   }
 
   /// Activate the select field (open the selection modal)
@@ -207,9 +238,25 @@ class FormSelect<T> extends FormItem {
         return [SelectGroup(title: null, items: itemsList)];
       },
       itemBuilder: (item) {
-        final label = labelBuilder(item);
-        final subtitle = subtitleBuilder?.call(item);
         final leading = leadingBuilder?.call(item);
+
+        // Use Widget-based label if provided
+        if (labelBuilder != null) {
+          final labelWidget = labelBuilder!(item);
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                if (leading != null) ...[leading, const SizedBox(width: 8)],
+                Expanded(child: labelWidget),
+              ],
+            ),
+          );
+        }
+
+        // Otherwise use String-based title+subtitle
+        final title = titleBuilder!(item);
+        final subtitle = subtitleBuilder?.call(item);
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -221,7 +268,7 @@ class FormSelect<T> extends FormItem {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label, overflow: TextOverflow.ellipsis),
+                    Text(title, overflow: TextOverflow.ellipsis),
                     if (subtitle != null)
                       Text(
                         subtitle,
@@ -245,6 +292,7 @@ class FormSelect<T> extends FormItem {
       _value = result.value;
       _hasValue = true;
       onChanged?.call();
+      _notifyListeners();
     }
   }
 
@@ -258,7 +306,7 @@ class FormSelect<T> extends FormItem {
     final isEnabled = this.enabled && enabled;
     return SelectTile(
       label: label ?? key,
-      value: _hasValue ? labelBuilder(_value as T) : null,
+      value: _hasValue ? titleBuilder!(_value as T) : null,
       leading: _hasValue && leadingBuilder != null
           ? leadingBuilder!(_value as T)
           : null,
@@ -366,6 +414,35 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
         ),
       ),
     );
+  }
+}
+
+/// Info form item for displaying static content
+class FormInfo extends FormItem {
+  FormInfo({required super.key, required this.builder})
+    : super(required: false, autofocus: false);
+
+  final Widget Function(BuildContext) builder;
+
+  @override
+  dynamic getValue() => null;
+
+  @override
+  void setValue(dynamic value) {
+    // Info items don't have values
+  }
+
+  @override
+  bool isValid() => true; // Info items are always valid
+
+  @override
+  Widget build(
+    BuildContext context,
+    bool highlighted, {
+    bool enabled = true,
+    FocusNode? focusNode,
+  }) {
+    return builder(context);
   }
 }
 

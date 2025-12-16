@@ -11,7 +11,6 @@ import 'package:plot/router.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
-import 'package:plot/state/theme.dart';
 import 'package:plot/util/theme_color.dart';
 
 abstract class PriorityCommand extends Command {
@@ -31,10 +30,10 @@ abstract class PriorityCommand extends Command {
   Widget buildBody(BuildContext context) {
     return Row(
       children: [
-        if (priority?.ancestorsLabel().isNotEmpty == true) ...[
+        if (priority?.ancestorsLabel() != null) ...[
           Flexible(
             child: Text(
-              priority!.ancestorsLabel(),
+              priority!.ancestorsLabel()!,
               overflow: TextOverflow.ellipsis,
               style: context.theme.typography.base.copyWith(
                 color: context.theme.plotColors.muted,
@@ -175,10 +174,8 @@ class EditPriority extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final themeBloc = context.read<ThemeBloc>();
     final priority = await _priority;
     await priority.save();
-    themeBloc.setPriorityColor(priority.displayColor);
     return const CommandDone();
   }
 }
@@ -245,8 +242,13 @@ class NewPriority extends ShowForm {
                       order: PriorityOrder.nested,
                       search: search,
                     ),
-                    labelBuilder: (p) => p.title,
-                    subtitleBuilder: (p) => p.ancestorsLabel(),
+                    labelBuilder: (p) => PriorityLabel(
+                      priority: p,
+                      fontSize: 12,
+                    ),
+                    titleBuilder: (p) => p.ancestorsLabel() != null
+                        ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
+                        : p.title,
                   ),
                   FormSelect<ThemeColor?>(
                     key: 'color',
@@ -262,7 +264,7 @@ class NewPriority extends ShowForm {
                               ),
                         )
                         .toList(),
-                    labelBuilder: (c) => c?.label ?? 'Inherit',
+                    titleBuilder: (c) => c?.label ?? 'Inherit',
                     leadingBuilder: (c) =>
                         ColorDot(color: c ?? defaultParent.displayColor),
                   ),
@@ -308,9 +310,6 @@ class EditPriorityCommand extends ShowForm {
         icon: PlotIcon.settings,
         form: (context) async {
           final isRoot = priority.root;
-          // Capture ThemeBloc while context is still valid (before form submission deactivates widget)
-          final themeBloc = context.read<ThemeBloc>();
-
           // Load parent if not already loaded (parent might be null even when priority has ancestors)
           Priority? parent = priority.parent;
           if (parent == null && priority.parentId != null) {
@@ -349,7 +348,7 @@ class EditPriorityCommand extends ShowForm {
                           )
                           .toList();
                     },
-                    labelBuilder: (p) => p.title,
+                    titleBuilder: (p) => p.title,
                     subtitleBuilder: (p) => p.ancestorsLabel(),
                   ),
                   FormSelect<ThemeColor?>(
@@ -370,7 +369,7 @@ class EditPriorityCommand extends ShowForm {
                                       .startsWith(search.toLowerCase()),
                             )
                             .toList(),
-                    labelBuilder: (c) => c?.label ?? 'Inherit',
+                    titleBuilder: (c) => c?.label ?? 'Inherit',
                     leadingBuilder: (c) => ColorDot(
                       color:
                           c ??
@@ -380,9 +379,7 @@ class EditPriorityCommand extends ShowForm {
                   ),
                   FormButton(
                     key: 'save',
-                    command: EditPriority(
-                      Future.value(priority.copyWith(title: '')),
-                    ),
+                    command: EditPriority(Future.value(priority)),
                     onSubmit: (context, values) async {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
@@ -393,7 +390,6 @@ class EditPriorityCommand extends ShowForm {
                         color: Value(color),
                       );
                       await updatedPriority.save();
-                      themeBloc.setPriorityColor(updatedPriority.displayColor);
                       return const CommandDone();
                     },
                   ),
@@ -427,7 +423,6 @@ class ShowPriorityCommands extends ShowCommands {
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
   EditPriorityCommand(priority),
-  ManageTwists(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.root) ArchivePriority(Future.value(priority)),
 ];
@@ -447,7 +442,7 @@ List<Command> currentPriorityCommands(Priority priority) => [
 class SetTopPriority extends Command {
   SetTopPriority(this.priority, this.add)
     : super(
-        title: add ? 'Add to Top Priorities' : 'Remove From Top Priorities',
+        title: add ? 'Add to Top Priorities' : 'Remove from Top Priorities',
         eventObject: EventObject.priority,
         eventAction: add ? EventAction.pinned : EventAction.unpinned,
         icon: add ? PlotIcon.pin : PlotIcon.unpin,

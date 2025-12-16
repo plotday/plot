@@ -5,9 +5,10 @@ import {
   ActivityType,
   type ActorId,
   ActorType,
+  type Note,
 } from "@plotday/twister/plot";
 
-import { type ActivityItem } from "../../../types";
+import { type ActivityItem, type NoteItem } from "../../../types";
 
 /**
  * Parses the start date/time from range fields in database records.
@@ -138,11 +139,6 @@ export function buildActivityFromDbRecord(
       activityType = ActivityType.Note;
   }
 
-  // Build thread root from database record if present
-  const threadRoot = activityRecord.thread_root
-    ? buildActivityFromDbRecord(activityRecord.thread_root)
-    : undefined;
-
   return {
     id: activityRecord.id,
     type: activityType,
@@ -165,11 +161,16 @@ export function buildActivityFromDbRecord(
     recurrenceUntil: null,
     recurrenceCount: null,
     doneAt: activityRecord.done_at ? new Date(activityRecord.done_at) : null,
-    note: activityRecord.note,
     title: activityRecord.title,
-    parent: null,
-    ...(threadRoot && { threadRoot }),
-    links: activityRecord.links as ActivityLink[] | null,
+    assignee: activityRecord.assignee_id
+      ? {
+          id: activityRecord.assignee_id as ActorId,
+          name: null, // Not enriched in ActivityItem
+          type: ActorType.User, // Default type, not enriched in ActivityItem
+        }
+      : null,
+    draft: activityRecord.draft ?? false,
+    private: activityRecord.private ?? false,
     recurrenceRule: activityRecord.recurrence_rule,
     recurrenceExdates: activityRecord.recurrence_exdates
       ? activityRecord.recurrence_exdates.map((date: string) => new Date(date))
@@ -182,5 +183,39 @@ export function buildActivityFromDbRecord(
     meta: activityRecord.meta as ActivityMeta | null,
     tags: activityRecord.tags as Partial<Record<number, ActorId[]>> | null,
     mentions: (activityRecord.mentions as ActorId[]) || null,
+  };
+}
+
+/**
+ * Converts a database note record into a Note object.
+ * Note: The activity field only contains minimal data (id and priority) since the full activity
+ * is not included in NoteItem. This is sufficient for intent handlers.
+ */
+export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
+  return {
+    id: noteRecord.id,
+    // @ts-ignore - Only activity.id and priority.id are used by intent handlers, full Activity data is not available in NoteItem
+    activity: {
+      id: noteRecord.activity_id,
+      priority: {
+        id: noteRecord.priority_id,
+      },
+    } as unknown as Activity,
+    author: {
+      id: (noteRecord.author_id ?? noteRecord.created_by) as ActorId,
+      name: noteRecord.author_name,
+      type:
+        noteRecord.author_type === "user"
+          ? ActorType.User
+          : noteRecord.author_type === "priority_twist"
+          ? ActorType.Twist
+          : ActorType.Contact,
+    },
+    content: noteRecord.content,
+    mentions: (noteRecord.mentions as ActorId[]) || null,
+    tags: noteRecord.tags as Partial<Record<number, ActorId[]>> | null,
+    draft: noteRecord.draft,
+    private: noteRecord.private,
+    links: noteRecord.links as Array<ActivityLink> | null,
   };
 }

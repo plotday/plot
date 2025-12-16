@@ -4,11 +4,10 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/analytics.dart';
-import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
-import 'package:plot/state/activity.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'logging.dart';
@@ -20,10 +19,7 @@ abstract class ActivityCommand extends Command {
     required super.eventAction,
     super.icon,
     String? title,
-  }) : super(
-         title: title ?? activity?.displayTitle ?? 'None',
-         subtitle: activity?.parent?.displayTitle ?? '',
-       );
+  }) : super(title: title ?? activity?.displayTitle ?? 'None', subtitle: '');
 
   final Activity? activity;
 
@@ -31,28 +27,11 @@ abstract class ActivityCommand extends Command {
   Widget buildBody(BuildContext context) {
     return Row(
       children: [
-        if (activity?.parent?.displayTitle.isNotEmpty == true) ...[
-          Flexible(
-            child: Text(
-              activity!.parent?.displayTitle ?? '',
-              overflow: TextOverflow.ellipsis,
-              style: context.theme.typography.sm.copyWith(
-                color: context.theme.plotColors.muted,
-              ),
-            ),
-          ),
-          Text(
-            Activity.separator,
-            style: context.theme.typography.sm.copyWith(
-              color: context.theme.plotColors.muted,
-            ),
-          ),
-        ],
         Flexible(
           child: Text(
             title,
             overflow: TextOverflow.ellipsis,
-            style: context.theme.typography.sm.copyWith(
+            style: context.theme.typography.base.copyWith(
               color: context.theme.colors.foreground,
             ),
           ),
@@ -67,7 +46,7 @@ class ChangeCurrentActivity extends ActivityCommand {
     : super(
         eventObject: EventObject.activity,
         eventAction: activity == null ? EventAction.closed : EventAction.opened,
-        title: 'Open ${activity?.displayTitle}',
+        title: 'Open',
         icon: PlotIcon.open,
       );
 
@@ -126,6 +105,39 @@ class NewActivity extends Command {
   }
 }
 
+class NewEvent extends Command {
+  NewEvent({
+    required this.priority,
+    required this.startTime,
+    required this.duration,
+  }) : super(
+         title: "New Event",
+         eventObject: EventObject.activity,
+         eventAction: EventAction.opened,
+         icon: PlotIcon.add,
+       );
+
+  final Priority priority;
+  final DateTime startTime;
+  final Duration duration;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: priority.id.toShortString(),
+        children: [
+          NewActivityRoute(
+            startTime: startTime.toIso8601String(),
+            duration: duration.inMinutes,
+            priorityId: priority.id.toShortString(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class NextActivityThread extends Command {
   NextActivityThread()
     : super(
@@ -153,8 +165,11 @@ class NextActivityThread extends Command {
           return const CommandSkipped();
         }
 
-        final activity = item.iff<Activity>(activity: (a) => a);
-        if (activity != null && activity.path.isRoot) {
+        final activity = item.when<Activity?>(
+          header: (header) => null,
+          activity: (agendaActivity) => agendaActivity.activity,
+        );
+        if (activity != null) {
           return ChangeCurrentActivity(activity).run(context);
         }
         offset++;
@@ -195,8 +210,11 @@ class PreviousActivityThread extends Command {
           return const CommandSkipped();
         }
 
-        final activity = item.iff<Activity>(activity: (a) => a);
-        if (activity != null && activity.path.isRoot) {
+        final activity = item.when<Activity?>(
+          header: (header) => null,
+          activity: (agendaActivity) => agendaActivity.activity,
+        );
+        if (activity != null) {
           return ChangeCurrentActivity(activity).run(context);
         }
         offset--;
@@ -224,30 +242,16 @@ class AddActivity extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Try to get ActivityBloc from context before any async operations
-    ActivityBloc? activityBloc;
-    try {
-      activityBloc = context.read<ActivityBloc>();
-    } catch (e) {
-      // No ActivityBloc in context
-      activityBloc = null;
-    }
-
     // Get PriorityBloc before async operations
     final priorityBloc = context.read<PriorityBloc>();
 
     final activity = await _activity;
 
-    // Use ActivityBloc.add() if available (resets the draft), otherwise save directly
-    if (activityBloc != null) {
-      await activityBloc.add(activity);
-    } else {
-      await activity.copyWith(draft: false).save();
-    }
+    // Save the activity directly
+    await activity.copyWith(draft: false).save();
 
-    // Only navigate if we're not already in an ActivityPage thread context
-    // If activityBloc exists, we're adding a child to an existing thread - stay in place
-    if (!navigate || activityBloc != null) {
+    // Only navigate if requested
+    if (!navigate) {
       return const CommandDone();
     }
 
@@ -259,6 +263,143 @@ class AddActivity extends Command {
         priorityIdString: activity.priority.id.toShortString(),
         children: [
           ActivityRoute(activityIdString: activity.id.toShortString()),
+        ],
+      ),
+    );
+  }
+}
+
+class AddActivityWithNote extends Command {
+  AddActivityWithNote(this._data, {this.navigate = true})
+    : super(
+        title: 'Add',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.added,
+        icon: PlotIcon.addActivity,
+      );
+
+  final ActivityWithNote _data;
+  final bool navigate;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Get PriorityBloc before async operations
+    final priorityBloc = context.read<PriorityBloc>();
+
+    // Save the activity first (ensures it has an ID)
+    final savedActivity = _data.activity.copyWith(draft: false);
+    await savedActivity.save();
+
+    // Create and save the first note for this activity
+    if (_data.noteContent.trim().isNotEmpty) {
+      final note = Note(
+        id: Uuid.generate(),
+        activityId: savedActivity.id,
+        authorId: Base.actorId,
+        draft: false,
+        private: false,
+        content: _data.noteContent,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      await note.save();
+
+      // Asynchronously generate a better title using AI (fire and forget)
+      // The activity is already saved with a fallback title, so this update
+      // will happen in the background without blocking the UI
+      savedActivity
+          .generateTitle(_data.noteContent)
+          .then((title) async {
+            if (title != savedActivity.title) {
+              await savedActivity.copyWith(title: Value(title)).save();
+            }
+          })
+          .catchError((Object e) {
+            // Error already logged by generateTitle(), just ignore here
+          });
+    }
+
+    // Only navigate if requested
+    if (!navigate) {
+      return const CommandDone();
+    }
+
+    // Update PriorityBloc to track the new activity
+    priorityBloc.setActivity(savedActivity);
+
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: savedActivity.priority.id.toShortString(),
+        children: [
+          ActivityRoute(activityIdString: savedActivity.id.toShortString()),
+        ],
+      ),
+    );
+  }
+}
+
+class AddEvent extends Command {
+  AddEvent(this._activity, this._noteContent, {this.navigate = true})
+    : super(
+        title: 'Add',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.added,
+        icon: PlotIcon.addActivity,
+      );
+
+  final Activity _activity;
+  final String? _noteContent;
+  final bool navigate;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Get PriorityBloc before async operations
+    final priorityBloc = context.read<PriorityBloc>();
+
+    // Save the activity first (ensures it has an ID)
+    final savedActivity = _activity.copyWith(draft: false);
+    await savedActivity.save();
+
+    // Create and save note only if content is provided and not empty
+    if (_noteContent != null && _noteContent.trim().isNotEmpty) {
+      final note = Note(
+        id: Uuid.generate(),
+        activityId: savedActivity.id,
+        authorId: Base.actorId,
+        draft: false,
+        private: false,
+        content: _noteContent,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      await note.save();
+
+      // Asynchronously generate a better title using AI (fire and forget)
+      savedActivity
+          .generateTitle(_noteContent)
+          .then((title) async {
+            if (title != savedActivity.title) {
+              await savedActivity.copyWith(title: Value(title)).save();
+            }
+          })
+          .catchError((Object e) {
+            // Error already logged by generateTitle(), just ignore here
+          });
+    }
+
+    // Only navigate if requested
+    if (!navigate) {
+      return const CommandDone();
+    }
+
+    // Update PriorityBloc to track the new activity
+    priorityBloc.setActivity(savedActivity);
+
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: savedActivity.priority.id.toShortString(),
+        children: [
+          ActivityRoute(activityIdString: savedActivity.id.toShortString()),
         ],
       ),
     );
@@ -318,13 +459,14 @@ abstract class _UpdateActivityCommand extends Command {
   final Future<void> Function(Activity) onUpdate;
 }
 
-class StartActivity extends _UpdateActivityCommand {
-  StartActivity(super.activity, {super.onUpdate})
+class StartAction extends _UpdateActivityCommand {
+  StartAction(super.activity, {super.onUpdate, bool stateIcon = false})
     : super(
         title: 'Do Now',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
-        icon: PlotIcon.now,
+        icon: stateIcon ? activity.icon : PlotIcon.now,
+        hoverIcon: stateIcon ? PlotIcon.now : null,
       );
 
   @override
@@ -350,6 +492,7 @@ class StartActivity extends _UpdateActivityCommand {
           on: !hasDateTime
               ? Value(CustomDateRange(Date.today(), null))
               : const Value.absent(),
+          order: Order.first(),
         ),
       );
     } else {
@@ -363,14 +506,18 @@ class StartActivity extends _UpdateActivityCommand {
   }
 }
 
-class FinishActivity extends _UpdateActivityCommand {
-  FinishActivity(super.activity, {super.onUpdate})
+class FinishAction extends _UpdateActivityCommand {
+  FinishAction(super.activity, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'Finish',
+        title: 'Mark Done',
         eventObject: EventObject.activity,
         eventAction: EventAction.finished,
-        icon: activity.doNow ? FontAwesomeIcons.circle : PlotIcon.done,
-        hoverIcon: activity.doNow ? FontAwesomeIcons.circleCheck : null,
+        icon: stateIcon && activity.doNow
+            ? FontAwesomeIcons.circle
+            : PlotIcon.done,
+        hoverIcon: stateIcon && activity.doNow
+            ? FontAwesomeIcons.circleCheck
+            : null,
       );
 
   @override
@@ -380,8 +527,8 @@ class FinishActivity extends _UpdateActivityCommand {
   }
 }
 
-class ScheduleActivity extends _UpdateActivityCommand {
-  ScheduleActivity(super.activity, {required this.when, super.onUpdate})
+class ScheduleAction extends _UpdateActivityCommand {
+  ScheduleAction(super.activity, {required this.when, super.onUpdate})
     : super(
         title: activity.todo ? 'Reschedule' : 'Schedule',
         eventObject: EventObject.activity,
@@ -406,23 +553,152 @@ class ScheduleActivity extends _UpdateActivityCommand {
   }
 }
 
+class ScheduleEvent extends _UpdateActivityCommand {
+  ScheduleEvent(super.activity, {required this.at, super.onUpdate})
+    : super(
+        title: activity.type == .event ? 'Reschedule' : 'Schedule',
+        eventObject: EventObject.activity,
+        eventAction: activity.type == .event
+            ? EventAction.rescheduled
+            : EventAction.scheduled,
+        icon: PlotIcon.event,
+      );
+
+  final DateTimeRange at;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await onUpdate(
+      activity.copyWith(
+        type: ActivityType.event,
+        at: Value(at),
+        on: const Value(null), // Clear any existing datetime scheduling
+      ),
+    );
+    return const CommandDone();
+  }
+}
+
+class RescheduleEvent extends Command {
+  RescheduleEvent(
+    this.activity, {
+    bool stateIcon = false,
+    this.showPrioritySelector = false,
+  }) : super(
+         title: 'Reschedule',
+         eventObject: EventObject.activity,
+         eventAction: EventAction.rescheduled,
+         icon: stateIcon ? PlotIcon.event : PlotIcon.reschedule,
+         hoverIcon: stateIcon ? PlotIcon.reschedule : null,
+       );
+
+  final Activity activity;
+  final bool showPrioritySelector;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final result = await Modal(
+      builder: (modalContext) => RescheduleEventModal(
+        activity: activity,
+        showPrioritySelector: showPrioritySelector,
+      ),
+    ).show<DateTimeRange>(context);
+
+    if (result.present && context.mounted) {
+      // User confirmed rescheduling with new time
+      await ScheduleEvent(activity, at: result.value).run(context);
+      return const CommandDone();
+    }
+
+    return const CommandSkipped();
+  }
+}
+
+class UnscheduleEvent extends _UpdateActivityCommand {
+  UnscheduleEvent(super.activity, {super.onUpdate})
+    : super(
+        title: 'Unschedule',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.unscheduled,
+        icon: PlotIcon.event,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await onUpdate(activity.copyWith(type: .note, at: const Value(null)));
+    return const CommandDone();
+  }
+}
+
 class PickScheduleActivity extends ShowPage {
   PickScheduleActivity(Activity activity)
     : super(
-        title: 'Schedule',
+        title: 'Schedule Action',
         icon: PlotIcon.later,
-        builder: (context) => FCalendar(
-          controller: FCalendarController.date(),
-          onPress: (date) async {
-            final actionReturn = await ScheduleActivity(
-              activity,
-              when: date.toDate(),
-            ).run(context);
-            if (!context.mounted) return;
-            Modal.pop(context, Value(actionReturn));
-          },
+        builder: (context) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                'Schedule Action',
+                style: context.theme.typography.xl2.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            FCalendar(
+              controller: FCalendarController.date(
+                selectable: (date) {
+                  final today = DateTime.now();
+                  final todayStart = DateTime(
+                    today.year,
+                    today.month,
+                    today.day,
+                  );
+                  final dateStart = DateTime(date.year, date.month, date.day);
+                  return !dateStart.isBefore(todayStart);
+                },
+              ),
+              style: (style) =>
+                  style.copyWith(decoration: const BoxDecoration()),
+              onPress: (date) async {
+                final actionReturn = await ScheduleAction(
+                  activity,
+                  when: date.toDate(),
+                ).run(context);
+                if (!context.mounted) return;
+                Modal.pop(context, Value(actionReturn));
+              },
+            ),
+          ],
         ),
       );
+}
+
+class ActivityToNote extends _UpdateActivityCommand {
+  ActivityToNote(super.activity, {super.onUpdate, bool stateIcon = false})
+    : super(
+        title: activity.done ? 'Mark Not Done' : 'Convert to Note',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: stateIcon ? activity.icon : PlotIcon.note,
+        hoverIcon: stateIcon ? PlotIcon.note : null,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await onUpdate(
+      activity.copyWith(
+        type: .note,
+        at: const Value(null),
+        on: const Value(null),
+        doneAt: const Value(null),
+      ),
+    );
+    return const CommandDone();
+  }
 }
 
 class MarkActivityIncomplete extends _UpdateActivityCommand {
@@ -437,29 +713,6 @@ class MarkActivityIncomplete extends _UpdateActivityCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doneAt: const Value(null)));
-    return const CommandDone();
-  }
-}
-
-class PinActivity extends _UpdateActivityCommand {
-  PinActivity(super.activity, {super.onUpdate})
-    : super(
-        title: _isPinned(activity) ? 'Unpin' : 'Pin',
-        eventObject: EventObject.activity,
-        eventAction: _isPinned(activity)
-            ? EventAction.unpinned
-            : EventAction.pinned,
-        icon: PlotIcon.pinned,
-      );
-
-  static bool _isPinned(Activity activity) {
-    return activity.hasTag(Tag.pinned);
-  }
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final updatedActivity = activity.toggleTag(Tag.pinned);
-    await onUpdate(updatedActivity);
     return const CommandDone();
   }
 }
@@ -523,18 +776,18 @@ class MoveToNewThread extends Command {
     // Get PriorityBloc before async operations
     final priorityBloc = context.read<PriorityBloc>();
 
-    // Move to new thread by generating a new root-level path
-    final updatedActivity = activity.copyWith(path: Path.generate());
-    await updatedActivity.save();
+    // Note: Thread functionality has been removed. This command is now a no-op.
+    // Keeping it for compatibility but it doesn't change the activity.
+    await activity.save();
 
-    // Update PriorityBloc to track the new thread as current
-    priorityBloc.setActivity(updatedActivity);
+    // Update PriorityBloc to track the activity as current
+    priorityBloc.setActivity(activity);
 
     return CommandRoute(
       PriorityRoute(
-        priorityIdString: updatedActivity.priority.id.toShortString(),
+        priorityIdString: activity.priority.id.toShortString(),
         children: [
-          ActivityRoute(activityIdString: updatedActivity.id.toShortString()),
+          ActivityRoute(activityIdString: activity.id.toShortString()),
         ],
       ),
     );
@@ -583,13 +836,6 @@ class ShowActivityCommands extends ShowCommands {
         ),
       );
 }
-
-List<Command> activitySecondaryCommands(Activity activity) => [
-  if (!activity.todo) StartActivity(activity),
-  if (activity.path.isRoot) PickScheduleActivity(activity),
-  if (!activity.doNow) FinishActivity(activity),
-  if (!PinActivity._isPinned(activity)) PinActivity(activity),
-];
 
 // Focus navigation intents and actions for list items
 
@@ -715,7 +961,7 @@ List<StaticCommandGroup> activityCommandGroups(
       .where(
         (tag) =>
             activity.type != ActivityType.event ||
-            [Tag.now, Tag.later].contains(tag),
+            ![Tag.now, Tag.later, Tag.done].contains(tag),
       )
       .map((tag) => ToggleActivityTag(activity, tag))
       .toList();
@@ -727,27 +973,108 @@ List<StaticCommandGroup> activityCommandGroups(
       .toList();
   final add = tags
       .where(
-        (cmd) => cmd.tag.type != TagType.compute && !activity.hasTag(cmd.tag),
+        (cmd) =>
+            cmd.tag.addable == true &&
+            cmd.tag.type != TagType.compute &&
+            !activity.hasTag(cmd.tag),
       )
       .toList();
   return [
     if (commands.isNotEmpty)
-      StaticCommandGroup(title: 'Commands', commands: commands),
+      StaticCommandGroup(
+        title: 'Activity: ${activity.title}',
+        commands: commands,
+      ),
     if (remove.isNotEmpty)
       StaticCommandGroup(title: 'Remove Tag', commands: remove),
     if (add.isNotEmpty) StaticCommandGroup(title: 'Add Tag', commands: add),
   ];
 }
 
-List<Command> activityCommands(Activity activity, {bool open = true}) {
-  final commands = Tag.getAll()
-      .where((tag) => tag.type == TagType.compute)
-      .map((tag) => ToggleActivityTag(activity, tag))
-      .toList();
+List<Command> activityCommands(
+  Activity activity, {
+  bool open = false,
+  bool skipActive = false,
+  bool skipPrimary = false,
+}) {
+  // Determine if each command is primary
+  final isFinishPrimary = activity.doNow;
+  final isSchedulePrimary = activity.doLater;
+  final isStartPrimary =
+      activity.type == ActivityType.note ||
+      (activity.todo && !activity.doNow && !activity.doLater);
+  final isReschedulePrimary = activity.type == ActivityType.event;
+  final isToNotePrimary = activity.done;
+
   return [
     if (open) ChangeCurrentActivity(activity),
-    if (!activity.path.isRoot) MoveToNewThread(activity),
-    if (activity.path.isRoot) MoveActivityToPriority(activity),
-    ...commands,
+    // RescheduleEvent - primary when type==event
+    if (activity.type == ActivityType.event &&
+        !(skipPrimary && isReschedulePrimary))
+      RescheduleEvent(activity, stateIcon: true),
+    // FinishAction with stateIcon - primary when doNow
+    if (activity.type != ActivityType.event &&
+        activity.doNow &&
+        !skipActive &&
+        !(skipPrimary && isFinishPrimary))
+      FinishAction(activity, stateIcon: true),
+    // ActivityToNote - primary when done
+    if (activity.done && !(skipPrimary && isToNotePrimary))
+      ActivityToNote(activity, stateIcon: true),
+    // StartAction - primary when type==note or unscheduled action
+    if (activity.type != ActivityType.event &&
+        !activity.todo &&
+        !(skipPrimary && isStartPrimary))
+      StartAction(activity),
+    // PickScheduleActivity - primary when doLater
+    if (activity.type != ActivityType.event &&
+        !(skipPrimary && isSchedulePrimary))
+      PickScheduleActivity(activity),
+    // FinishAction for non-doNow activities
+    if (activity.type != ActivityType.event && !activity.doNow)
+      FinishAction(activity, stateIcon: true),
+    MoveActivityToPriority(activity),
+    if (!skipActive) ArchiveActivity(activity),
   ];
+}
+
+/// Returns up to 3 tag suggestions for quick actions.
+/// The number shown is reduced by the count of non-hardcoded tags already on the activity.
+/// Takes from tagSuggestions list which is pre-sorted (common tags first, then all others).
+List<Command> topActivityTags(Activity activity, List<Tag> tagSuggestions) {
+  // Count non-hardcoded tags already on activity
+  final activeNonHardcodedCount = tagSuggestions
+      .where((tag) => activity.hasTag(tag))
+      .length;
+
+  // Calculate how many tags to show: 3 minus active non-hardcoded tags
+  final maxToShow = 3 - activeNonHardcodedCount;
+  if (maxToShow <= 0) return [];
+
+  // Filter out tags already on activity and take maxToShow
+  return tagSuggestions
+      .where((tag) => !activity.hasTag(tag))
+      .take(maxToShow)
+      .map((tag) => ToggleActivityTag(activity, tag))
+      .toList();
+}
+
+/// Returns the primary command for an activity based on its current state.
+/// This is shown as the leading command in ActivityWidget and as the primary action in ActivityPage header.
+/// Use `selected: true` on the button when activity.doNow.
+Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
+  if (activity.type == ActivityType.note) {
+    return StartAction(activity, stateIcon: stateIcon);
+  } else if (activity.type == ActivityType.event) {
+    return RescheduleEvent(activity, stateIcon: stateIcon);
+  } else if (activity.doNow) {
+    return FinishAction(activity, stateIcon: stateIcon);
+  } else if (activity.doLater) {
+    return PickScheduleActivity(activity);
+  } else if (activity.done) {
+    return ActivityToNote(activity, stateIcon: stateIcon);
+  } else {
+    // Fallback for actions that are not scheduled and not done
+    return StartAction(activity, stateIcon: stateIcon);
+  }
 }

@@ -25,6 +25,7 @@ CREATE POLICY "Users can insert twists in their accessible priorities" ON "publi
 
 -- Users can update twists in their accessible priorities, but cannot change owner_id to another user
 -- The WITH CHECK ensures that owner_id can only be the current user's ID
+-- Note: twist_id and owner_id immutability is enforced by the prevent_twist_immutable_changes trigger
 CREATE POLICY "Users can update twists in their accessible priorities" ON "public"."priority_twist"
     FOR UPDATE TO authenticated
         USING (can_access_priority (priority_id))

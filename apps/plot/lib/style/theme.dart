@@ -10,6 +10,8 @@ import 'package:plot/style/sidebar.dart';
 import 'package:plot/style/tile.dart';
 import 'package:plot/style/scaffold.dart';
 import 'package:plot/style/bottom_navigation_bar.dart';
+import 'package:plot/style/toaster.dart';
+import 'package:plot/style/tooltip.dart';
 
 FThemeData buildTheme(ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
@@ -28,18 +30,24 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     extensions: [plotColors],
   );
 
+  final customTextFieldStyle = buildTextFieldStyle(
+    theme.textFieldStyle,
+    colourScheme,
+    theme.style.borderRadius,
+    theme.style.borderWidth,
+  );
+
   theme = theme.copyWith(
     headerStyles: buildHeaderStyles(
       theme.headerStyles,
       typography,
       colourScheme,
     ),
-    textFieldStyle: buildTextFieldStyle(
-      theme.textFieldStyle,
-      colourScheme,
-      theme.style.borderRadius,
-      theme.style.borderWidth,
-    ),
+    textFieldStyle: customTextFieldStyle,
+    dateFieldStyle: (style) =>
+        style.copyWith(textFieldStyle: customTextFieldStyle),
+    timeFieldStyle: (style) =>
+        style.copyWith(textFieldStyle: customTextFieldStyle),
     buttonStyles: buildButtonStyles(
       theme.buttonStyles,
       colourScheme,
@@ -56,6 +64,18 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     bottomNavigationBarStyle: buildBottomNavigationBarStyle(
       theme.bottomNavigationBarStyle,
       colourScheme,
+    ),
+    toasterStyle: buildToasterStyle(
+      theme.toasterStyle,
+      colourScheme,
+      theme.style.borderRadius,
+      typography,
+    ),
+    tooltipStyle: buildTooltipStyle(
+      theme.tooltipStyle,
+      colourScheme,
+      theme.style.borderRadius,
+      typography,
     ),
   );
 

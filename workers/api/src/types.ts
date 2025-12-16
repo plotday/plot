@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// Define base schema for non-recursive fields
-const BaseActivityItemSchema = z.object({
+// Activity item schema
+export const ActivityItemSchema = z.object({
   id: z.string(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -12,13 +12,11 @@ const BaseActivityItemSchema = z.object({
   archived_at: z.string().nullable(),
   priority_id: z.string(),
   type: z.enum(["action", "event", "note"]),
-  path: z.string(),
   order: z.number(),
   draft: z.boolean(),
   private: z.boolean(),
   title: z.string().nullable(),
-  note: z.string().nullable(),
-  links: z.array(z.record(z.string(), z.any())).nullable(),
+  preview: z.string().nullable(),
   at: z.string().nullable(),
   on: z.string().nullable(),
   duration: z.string().nullable(),
@@ -35,10 +33,27 @@ const BaseActivityItemSchema = z.object({
   tags: z.record(z.string(), z.any()).nullable(),
 });
 
-// Activity item schema (with enriched fields and recursive thread_root)
-export const ActivityItemSchema: z.ZodType<any> = BaseActivityItemSchema.extend({
-  // Thread root (recursive, only present for nested activities)
-  thread_root: z.lazy(() => ActivityItemSchema).optional(),
+// Note item schema
+export const NoteItemSchema = z.object({
+  id: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  author_id: z.string(),
+  created_by: z.string(),
+  updated_by: z.number(),
+  archived_at: z.string().nullable(),
+  activity_id: z.string(),
+  priority_id: z.string(),
+  draft: z.boolean(),
+  private: z.boolean(),
+  content: z.string().nullable(),
+  links: z.array(z.record(z.string(), z.any())).nullable(),
+  mentions: z.array(z.string()).nullable(),
+  // Enriched fields from database JOINs
+  author_name: z.string().nullable(),
+  author_type: z.enum(["user", "contact", "priority_twist"]),
+  activity_title: z.string().nullable(),
+  tags: z.record(z.string(), z.any()).nullable(),
 });
 
 // Priority item schema
@@ -69,15 +84,33 @@ export const SessionItemSchema = z.object({
   updated_by: z.number(),
 });
 
+// Priority twist item schema
+export const PriorityTwistItemSchema = z.object({
+  id: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  archived_at: z.string().nullable(),
+  priority_id: z.string(),
+  twist_id: z.string(),
+  twist_environment: z.string(),
+  owner_id: z.string(),
+  name: z.string(),
+  config: z.record(z.string(), z.any()),
+});
+
 // Union schema for all item types - the type discrimination happens at the request level
 export const ItemSchema = z.union([
   ActivityItemSchema,
+  NoteItemSchema,
   PriorityItemSchema,
   SessionItemSchema,
+  PriorityTwistItemSchema,
 ]);
 
 // TypeScript types generated from zod schemas
 export type ActivityItem = z.infer<typeof ActivityItemSchema>;
+export type NoteItem = z.infer<typeof NoteItemSchema>;
 export type PriorityItem = z.infer<typeof PriorityItemSchema>;
 export type SessionItem = z.infer<typeof SessionItemSchema>;
+export type PriorityTwistItem = z.infer<typeof PriorityTwistItemSchema>;
 export type UpdateItem = z.infer<typeof ItemSchema>;

@@ -23,6 +23,17 @@ export class LogSubscriptions extends DurableObject<Bindings> {
         PRIMARY KEY (twist_root_id, callback_token)
       )
     `);
+
+    // Migration: Rename agent_root_id to twist_root_id for existing DOs
+    // This is safe to run multiple times - it will fail silently if column doesn't exist
+    try {
+      this.sql.exec(`
+        ALTER TABLE subscriptions RENAME COLUMN agent_root_id TO twist_root_id
+      `);
+    } catch {
+      // Column already renamed or never existed, ignore error
+    }
+
     this.sql.exec(`
       CREATE INDEX IF NOT EXISTS idx_subscriptions_twist_root_id
       ON subscriptions(twist_root_id)
