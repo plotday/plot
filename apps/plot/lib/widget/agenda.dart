@@ -282,8 +282,8 @@ class _AgendaHeaderState extends State<AgendaHeader> {
           // Calculate background color based on date and highlighted state
           // When highlighted, composite the semi-transparent highlight color over
           // the background to create a solid color that blocks the line
-          // Always provide a background when there's a date line to cover it
-          final backgroundColor = widget.date != null
+          // Always provide a background when there's a date or now line to cover it
+          final backgroundColor = widget.date != null || widget.now
               ? (isHighlighted
                     ? Color.alphaBlend(
                         context.theme.plotColors.highlight,
@@ -338,7 +338,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                         fontSize: context.theme.typography.sm.fontSize,
                       );
                       alignment = Alignment.centerLeft;
-                      padding = widget.date != null
+                      padding = widget.date != null || widget.now
                           ? const EdgeInsets.only(right: 8)
                           : null;
                     } else if (hasCenter) {
@@ -353,7 +353,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                         ),
                       );
                       alignment = Alignment.center;
-                      padding = widget.date != null
+                      padding = widget.date != null || widget.now
                           ? const EdgeInsets.symmetric(horizontal: 8)
                           : null;
                     } else {
@@ -365,7 +365,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                         remainingDuration: remainingDuration,
                       );
                       alignment = Alignment.centerRight;
-                      padding = widget.date != null
+                      padding = widget.date != null || widget.now
                           ? const EdgeInsets.only(left: 8)
                           : null;
                     }
@@ -374,7 +374,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       alignment: Alignment.center,
                       children: [
                         // Background: Full-width "now" line
-                        if (widget.date != null)
+                        if (widget.date != null || widget.now)
                           Container(
                             height: 1,
                             decoration: BoxDecoration(
@@ -413,7 +413,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                     alignment: Alignment.center,
                     children: [
                       // Background: Full-width "now" line
-                      if (widget.date != null)
+                      if (widget.date != null || widget.now)
                         Container(
                           height: 1,
                           decoration: BoxDecoration(
@@ -446,7 +446,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                               color: backgroundColor,
                                             )
                                           : null,
-                                      padding: widget.date != null
+                                      padding: widget.date != null || widget.now
                                           ? const EdgeInsets.only(right: 8)
                                           : null,
                                       child: PriorityLabel(
@@ -473,7 +473,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                               color: backgroundColor,
                                             )
                                           : null,
-                                      padding: widget.date != null
+                                      padding: widget.date != null || widget.now
                                           ? const EdgeInsets.symmetric(
                                               horizontal: 8,
                                             )
@@ -507,7 +507,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                               color: backgroundColor,
                                             )
                                           : null,
-                                      padding: widget.date != null
+                                      padding: widget.date != null || widget.now
                                           ? const EdgeInsets.only(left: 8)
                                           : null,
                                       child: _buildDurationContent(
