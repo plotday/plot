@@ -12,6 +12,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/env.dart';
 import 'package:plot/widget/alert.dart';
+import 'package:plot/widget/spinner.dart';
 import 'package:plot/util/google_sign_in.dart' as web;
 import 'package:plot/store/store.dart' show AuthLink;
 import 'package:plot/store/types.dart' show AuthProvider;
@@ -357,7 +358,7 @@ class _AuthButtonState extends State<AuthButton> {
       onPress: _isLoading ? null : _onPress,
       style: _buildButtonStyle(context, config),
       prefix: _isLoading
-          ? FCircularProgress()
+          ? Spinner()
           : _ProviderIcon(provider: widget.provider, size: config.iconSize),
       child: Text(
         config.buttonText,

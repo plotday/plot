@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
+import 'package:plot/widget/spinner.dart';
 import 'package:plot/api/api.dart' as api;
 import 'logging.dart';
 
@@ -51,20 +52,7 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
       style: FButtonStyle.secondary(),
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
-      suffix: _isLoading
-          ? FCircularProgress(
-              style:
-                  FCircularProgressStyle.inherit(
-                    colors: context.theme.colors,
-                    // ignore: unused_result
-                  ).copyWith(
-                    iconStyle: IconThemeData(
-                      color: context.theme.colors.foreground,
-                      size: 15,
-                    ),
-                  ),
-            )
-          : null,
+      suffix: _isLoading ? Spinner(size: 15) : null,
       child: Text(widget.link.title),
     );
   }
