@@ -44,7 +44,7 @@ jobs:
 
       - name: Update email confirmation template
         run: |
-          CONTENT=$(cat libs/email/dist/email-confirmation.html | jq -Rs .)
+          CONTENT=$(cat libs/db/supabase/email-templates/email-confirmation.html | jq -Rs .)
           curl -X PATCH \
             "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
@@ -56,7 +56,7 @@ jobs:
 
       - name: Update magic link template
         run: |
-          CONTENT=$(cat libs/email/dist/email-confirmation.html | jq -Rs .)
+          CONTENT=$(cat libs/db/supabase/email-templates/email-confirmation.html | jq -Rs .)
           curl -X PATCH \
             "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
@@ -68,7 +68,7 @@ jobs:
 
       - name: Update password reset template
         run: |
-          CONTENT=$(cat libs/email/dist/password-reset.html | jq -Rs .)
+          CONTENT=$(cat libs/db/supabase/email-templates/password-reset.html | jq -Rs .)
           curl -X PATCH \
             "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
@@ -80,7 +80,7 @@ jobs:
 
       - name: Update email change template
         run: |
-          CONTENT=$(cat libs/email/dist/email-change.html | jq -Rs .)
+          CONTENT=$(cat libs/db/supabase/email-templates/email-change.html | jq -Rs .)
           curl -X PATCH \
             "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
