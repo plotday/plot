@@ -4,6 +4,7 @@ import { z } from "zod";
 import { twistFactory } from "../twist";
 import {
   add as addTwist,
+  archiveAndDeleteTwist,
   deleteTwist,
   getById as getTwistById,
   getByPriority as getTwistsByPriority,
@@ -28,7 +29,8 @@ const TwistRequestSchema = z.object({
 });
 
 const TwistUpdateRequestSchema = z.object({
-  twist: z.record(z.string(), z.any()),
+  name: z.string().optional(),
+  config: z.record(z.string(), z.any()).optional(),
 });
 
 // GET /twists - List all twists accessible to user for a priority
@@ -107,7 +109,7 @@ twists.patch("/twist/:id", async (c) => {
   }
   const body = parseResult.data;
   try {
-    const dbTwist = await updateTwist(c.var.supabase, twistId, body.twist);
+    const dbTwist = await updateTwist(c.var.supabase, twistId, body);
     return c.json(dbTwist);
   } catch (error) {
     if (error instanceof Error) {
@@ -123,6 +125,13 @@ twists.patch("/twist/:id", async (c) => {
 twists.delete("/twist/:id", async (c) => {
   const twistId = c.req.param("id");
   await deleteTwist(c.var.supabase, twistId);
+  return c.json({ success: true });
+});
+
+// DELETE /twist/:id/archive-activities - Archive activities and delete twist
+twists.delete("/twist/:id/archive-activities", async (c) => {
+  const twistId = c.req.param("id");
+  await archiveAndDeleteTwist(c.var.supabase, twistId);
   return c.json({ success: true });
 });
 

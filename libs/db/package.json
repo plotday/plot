@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@plotday/tsconfig": "workspace:^",
-    "supabase": "^2.62.10",
+    "supabase": "^2.67.1",
     "tsx": "^4.19.2",
     "yaml": "^2.6.1"
   },

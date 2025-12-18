@@ -328,10 +328,18 @@ export async function createActivity(
     }
   }
 
+  // Get twist definition ID for upsert support
+  const twistId = await plot.getTwistId(plot.priorityTwistId);
+
   // Convert NewActivity to database format
-  const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] = {
+  // Note: created_by_twist_id and source are added by migration, not yet in generated types
+  const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] & {
+    created_by_twist_id?: string | null;
+    source?: string | null;
+  } = {
     author_id: plot.priorityTwistId,
     created_by: plot.priorityTwistId,
+    created_by_twist_id: twistId,
     assignee_id: assigneeId,
     priority_id: targetPriorityId,
     type: dbActivityType,
@@ -347,6 +355,7 @@ export async function createActivity(
     recurrence_dates:
       activity.recurrenceDates?.map((d) => d.toISOString()) ?? null,
     meta: activity.meta ?? null,
+    source: activity.source ?? null,
     updated_by: plot.getUpdatedBy(),
     embedding: embedding ? JSON.stringify(embedding) : null,
     pick_priority: pickPriorityConfig ?? null,
@@ -396,29 +405,20 @@ export async function createActivity(
     }
   }
 
+  // Use upsert when source is provided for idempotent sync operations
+  // Unique constraint ensures (source, created_by_twist_id) is unique per twist
   const dbResult = safeQuery(
-    await plot.supabase.from("activity").insert(dbActivity).select().single()
+    await (activity.source && twistId
+      ? plot.supabase
+          .from("activity")
+          .upsert(dbActivity, {
+            onConflict: "source,created_by_twist_id",
+            ignoreDuplicates: false, // Update on conflict
+          })
+          .select()
+          .single()
+      : plot.supabase.from("activity").insert(dbActivity).select().single())
   );
-
-  // Mark as read for all priority users if unread is false
-  if (options?.unread === false) {
-    // Get all users in the priority
-    const usersResult = await plot.supabase
-      .from("priority_user")
-      .select("user_id")
-      .eq("priority_id", targetPriorityId);
-
-    if (usersResult.data && usersResult.data.length > 0) {
-      // Create activity_read entries for all users
-      const activityReadEntries = usersResult.data.map((pu) => ({
-        activity_id: dbResult.id,
-        user_id: pu.user_id,
-        read_at: dbResult.created_at, // Use activity's created_at timestamp
-      }));
-
-      await plot.supabase.from("activity_read").insert(activityReadEntries);
-    }
-  }
 
   // Add tags if provided
   if (activity.tags) {
@@ -444,6 +444,34 @@ export async function createActivity(
         activity: { id: dbResult.id },
       }))
     );
+  }
+
+  // Mark as read for all priority users if unread is false
+  // This happens AFTER notes are created to ensure read_at timestamp is later than note timestamps
+  if (options?.unread === false) {
+    // Get all users with access to this priority (including inherited access from parent priorities)
+    const usersResult = await plot.supabase
+      .rpc("get_users_with_priority_access", {
+        target_priority_id: targetPriorityId
+      });
+
+    if (usersResult.data && usersResult.data.length > 0) {
+      // Create activity_read entries for all users
+      // Omit read_at to let PostgreSQL DEFAULT now() generate timestamp after notes are created
+      const activityReadEntries = usersResult.data.map((pu) => ({
+        activity_id: dbResult.id,
+        user_id: pu.user_id,
+      }));
+
+      const insertResult = await plot.supabase.from("activity_read").insert(activityReadEntries);
+      if (insertResult.error) {
+        console.error('[Plot] Failed to insert activity_read entries', {
+          activityId: dbResult.id,
+          count: activityReadEntries.length,
+          error: insertResult.error
+        });
+      }
+    }
   }
 
   // Get author from cached twist actor
@@ -542,11 +570,11 @@ export async function createNote(
 
   // Mark activity as read for all priority users if unread is false
   if (options?.unread === false) {
-    // Get all users in the priority
+    // Get all users with access to this priority (including inherited access from parent priorities)
     const usersResult = await plot.supabase
-      .from("priority_user")
-      .select("user_id")
-      .eq("priority_id", activityData.priority_id);
+      .rpc("get_users_with_priority_access", {
+        target_priority_id: activityData.priority_id
+      });
 
     if (usersResult.data && usersResult.data.length > 0) {
       // Create or update activity_read entries for all users
@@ -557,11 +585,18 @@ export async function createNote(
       }));
 
       // Use upsert to handle cases where some users may have already read the activity
-      await plot.supabase
+      const upsertResult = await plot.supabase
         .from("activity_read")
         .upsert(activityReadEntries, {
           onConflict: "user_id,activity_id",
         });
+      if (upsertResult.error) {
+        console.error('[Plot] Failed to upsert activity_read entries for note', {
+          activityId: note.activity.id,
+          count: activityReadEntries.length,
+          error: upsertResult.error
+        });
+      }
     }
   }
 
@@ -612,6 +647,7 @@ export async function createNote(
     },
     draft: dbResult.draft,
     private: dbResult.private,
+    archived: false, // Newly created notes are not archived
     content: dbResult.content,
     links: dbResult.links as ActivityLink[] | null,
     mentions: (dbResult.mentions as string[])?.map((m) => m as ActorId) ?? null,
@@ -808,7 +844,7 @@ export async function updateActivity(
     throw new Error(`Activity update failed: ${updateError.message}`);
   }
 
-  // Handle full tags object replacement (only for activities created by this twist)
+  // Handle full tags object replacement (only for activities created by this twist or another instance of the same twist)
   if (activity.tags !== undefined) {
     // Get created_by from cache or query if needed
     const created_by =
@@ -835,7 +871,15 @@ export async function updateActivity(
         ? created_by
         : await created_by;
 
-    if (createdBy !== plot.priorityTwistId) {
+    // Check if activity was created by this exact instance (fast path)
+    const isExactInstance = createdBy === plot.priorityTwistId;
+    // Or check if activity was created by another instance of the same twist (fallback)
+    const isSameTwist =
+      !isExactInstance &&
+      createdBy &&
+      (await plot.isSameTwistDefinition(createdBy));
+
+    if (!isExactInstance && !isSameTwist) {
       throw new Error(
         `Cannot update tags field: activity was not created by this twist (activity.createdBy: ${createdBy}, twist: ${plot.priorityTwistId}). Use twistTags instead to add/remove tags for this twist.`
       );
@@ -1061,6 +1105,7 @@ export async function getNotes(
         },
         draft: row.draft,
         private: row.private,
+        archived: row.archived_at !== null,
         content: row.content,
         links: row.links as ActivityLink[] | null,
         mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? null,
@@ -1077,16 +1122,14 @@ export async function getNotes(
 
 export async function getActivityByMeta(
   plot: Plot,
-  meta: ActivityMeta
+  meta: ActivityMeta,
+  includeArchived = false
 ): Promise<Activity | null> {
   try {
     // Query activities with matching meta fields using the user_activity view
     // This view automatically filters to activities the user has access to
-    // We use a JSON containment operator to check if the provided meta is contained in the stored meta
-    const { data, error } = await plot.supabase
-      .from("user_activity")
-      .select(
-        `
+    let query = plot.supabase.from("user_activity").select(
+      `
           *,
           author:actor!author_id(
             id,
@@ -1109,10 +1152,17 @@ export async function getActivityByMeta(
             updated_at
           )
         `
-      )
-      .contains("meta", meta)
-      .limit(1)
-      .maybeSingle();
+    );
+
+    // Use JSON containment for meta queries
+    query = query.contains("meta", meta);
+
+    // By default, exclude archived activities
+    if (!includeArchived) {
+      query = query.is("archived_at", null);
+    }
+
+    const { data, error } = await query.limit(1).maybeSingle();
 
     if (error) {
       throw error;
@@ -1418,10 +1468,11 @@ export async function createActivities(
 
     // For each priority, get users and create activity_read entries
     for (const [priorityId, priorityActivities] of activitiesByPriority) {
+      // Get all users with access to this priority (including inherited access from parent priorities)
       const usersResult = await plot.supabase
-        .from("priority_user")
-        .select("user_id")
-        .eq("priority_id", priorityId);
+        .rpc("get_users_with_priority_access", {
+          target_priority_id: priorityId
+        });
 
       if (usersResult.data && usersResult.data.length > 0) {
         // Create activity_read entries for all users and all activities in this priority
@@ -1434,7 +1485,13 @@ export async function createActivities(
         );
 
         if (activityReadEntries.length > 0) {
-          await plot.supabase.from("activity_read").insert(activityReadEntries);
+          const insertResult = await plot.supabase.from("activity_read").insert(activityReadEntries);
+          if (insertResult.error) {
+            console.error('[Plot] Failed to insert activity_read entries for batch activities', {
+              count: activityReadEntries.length,
+              error: insertResult.error
+            });
+          }
         }
       }
     }
@@ -1611,6 +1668,7 @@ async function createActivityException(
     assignee: null,
     draft: false,
     private: false,
+    archived: result.data.archived_at !== null,
     priority: {
       id: recurrenceActivity.priority_id,
       title: (recurrenceActivity.priority as any)?.title ?? "Untitled",
@@ -1620,6 +1678,7 @@ async function createActivityException(
     recurrenceDates: null,
     recurrence: activity.recurrence ?? null,
     occurrence: activity.occurrence ?? null,
+    source: activity.source ?? null,
     meta: activity.meta ?? null,
     tags: activity.tags ?? null,
     mentions: null, // Read-only aggregation from notes

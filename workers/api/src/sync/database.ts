@@ -19,7 +19,7 @@ const ToolSchema: z.ZodType<{
 );
 
 const DatabaseUpdateRequestSchema = z.object({
-  type: z.enum(["activity", "priority", "session", "note", "priority_twist"]),
+  type: z.enum(["activity", "priority", "session", "note", "priority_twist", "activity_read"]),
   event: z.enum(["created", "updated", "deleted"]),
   item: ItemSchema,
   previous: ItemSchema.optional(),
@@ -49,7 +49,7 @@ database.post("/update", async (c) => {
   const rawBody = await c.req.json();
   const parseResult = DatabaseUpdateRequestSchema.safeParse(rawBody);
   if (!parseResult.success) {
-    return handleValidationError(parseResult.error);
+    return handleValidationError(parseResult.error, rawBody);
   }
   const body = parseResult.data;
 

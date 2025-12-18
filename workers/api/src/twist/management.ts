@@ -368,3 +368,34 @@ export async function deleteTwist(
     throw error;
   }
 }
+
+export async function archiveAndDeleteTwist(
+  supabase: SupabaseClient,
+  priority_twist_id: string,
+  deactivate?: {
+    twistFactory: ReturnType<typeof TwistFactory>;
+  }
+) {
+  try {
+    if (!priority_twist_id || typeof priority_twist_id !== "string") {
+      throw new Error("priority_twist_id is required and must be a string");
+    }
+
+    // First, archive all activities created by this twist
+    const { error: archiveError } = await supabase
+      .from("activity")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("created_by", priority_twist_id)
+      .is("archived_at", null);
+
+    if (archiveError) {
+      throw new Error(`Failed to archive activities: ${archiveError.message}`);
+    }
+
+    // Then delete the twist (which also calls deactivate if provided)
+    return await deleteTwist(supabase, priority_twist_id, deactivate);
+  } catch (error) {
+    console.error("Error archiving and deleting twist:", error);
+    throw error;
+  }
+}

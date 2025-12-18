@@ -42,6 +42,7 @@ export type Database = {
           author_id: string
           created_at: string
           created_by: string
+          created_by_twist_id: string | null
           done_at: string | null
           draft: boolean
           duration: unknown
@@ -57,6 +58,7 @@ export type Database = {
           recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
+          source: string | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"]
           updated_at: string
@@ -89,6 +91,7 @@ export type Database = {
           author_id: string
           created_at?: string
           created_by?: string
+          created_by_twist_id?: string | null
           done_at?: string | null
           draft?: boolean
           duration?: unknown
@@ -104,6 +107,7 @@ export type Database = {
           recurrence_dates?: string[] | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
+          source?: string | null
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
           updated_at?: string
@@ -116,6 +120,7 @@ export type Database = {
           author_id?: string
           created_at?: string
           created_by?: string
+          created_by_twist_id?: string | null
           done_at?: string | null
           draft?: boolean
           duration?: unknown
@@ -131,6 +136,7 @@ export type Database = {
           recurrence_dates?: string[] | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
+          source?: string | null
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
           updated_at?: string
@@ -1610,6 +1616,7 @@ export type Database = {
           author_id: string | null
           created_at: string | null
           created_by: string | null
+          created_by_twist_id: string | null
           done_at: string | null
           draft: boolean | null
           duration: unknown
@@ -1627,6 +1634,7 @@ export type Database = {
           recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
+          source: string | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
@@ -1898,6 +1906,7 @@ export type Database = {
           at: unknown
           author_id: string | null
           created_at: string | null
+          created_by_twist_id: string | null
           done_at: string | null
           draft: boolean | null
           duration: unknown
@@ -1916,6 +1925,7 @@ export type Database = {
           recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
+          source: string | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           unread: boolean | null
@@ -2291,8 +2301,8 @@ export type Database = {
         }
       }
       can_access_priority:
-        | { Args: { _priority_path: unknown }; Returns: boolean }
         | { Args: { _priority_id: string }; Returns: boolean }
+        | { Args: { _priority_path: unknown }; Returns: boolean }
       count_not_null: { Args: { val: unknown }; Returns: number }
       find_matching_activities_scored: {
         Args: {

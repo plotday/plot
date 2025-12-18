@@ -16,6 +16,10 @@ CREATE UNIQUE INDEX idx_priority_created_by_root_true ON "public"."priority" ("c
 WHERE
     "root" = TRUE;
 
+-- Index for priority path ltree queries (supports <@ operator)
+-- Used heavily in user_activity view filtering
+CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
+
 ALTER TABLE "public"."priority" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_priority_updated_at

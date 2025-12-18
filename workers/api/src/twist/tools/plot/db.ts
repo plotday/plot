@@ -171,6 +171,7 @@ export function buildActivityFromDbRecord(
       : null,
     draft: activityRecord.draft ?? false,
     private: activityRecord.private ?? false,
+    archived: activityRecord.archived_at !== null,
     recurrenceRule: activityRecord.recurrence_rule,
     recurrenceExdates: activityRecord.recurrence_exdates
       ? activityRecord.recurrence_exdates.map((date: string) => new Date(date))
@@ -180,6 +181,7 @@ export function buildActivityFromDbRecord(
       : null,
     recurrence: null,
     occurrence: null,
+    source: activityRecord.source ?? null,
     meta: activityRecord.meta as ActivityMeta | null,
     tags: activityRecord.tags as Partial<Record<number, ActorId[]>> | null,
     mentions: (activityRecord.mentions as ActorId[]) || null,
@@ -216,6 +218,7 @@ export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
     tags: noteRecord.tags as Partial<Record<number, ActorId[]>> | null,
     draft: noteRecord.draft,
     private: noteRecord.private,
+    archived: noteRecord.archived_at !== null,
     links: noteRecord.links as Array<ActivityLink> | null,
   };
 }

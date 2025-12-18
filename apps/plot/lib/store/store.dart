@@ -997,6 +997,7 @@ class Store extends _$Store {
           await PriorityTwist.pullUpdates();
           break;
         case 'activity':
+        case 'activity_read':
           if (!await Activity.push()) {
             log.warning("Activity push failed during table sync");
           }

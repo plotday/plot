@@ -152,6 +152,8 @@ SELECT
     a.recurrence_exdates,
     a.recurrence_dates,
     a.meta,
+    a.source,
+    a.created_by_twist_id,
     uau.last_note_created_at,
     (
         SELECT

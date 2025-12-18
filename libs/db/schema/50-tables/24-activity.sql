@@ -32,6 +32,8 @@ CREATE TABLE "public"."activity" (
     "recurrence_exdates" timestamptz[],
     "recurrence_dates" timestamptz[],
     "meta" jsonb,
+    "source" text,
+    "created_by_twist_id" uuid,
     "embedding" halfvec (384),
     "pick_priority" jsonb
 );
@@ -59,6 +61,10 @@ CREATE TABLE "public"."activity_exception" (
 COMMENT ON COLUMN "public"."activity"."author_id" IS 'The actor to credit with creating this activity. For activities created by twists on behalf of contacts or users, this is the contact/user. For activities created directly by users or twists, this is the user/twist ID.';
 
 COMMENT ON COLUMN "public"."activity"."created_by" IS 'The user_id or priority_twist_id that actually created this activity. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
+
+COMMENT ON COLUMN "public"."activity"."source" IS 'External source identifier for deduplication and sync. Provided as a top-level field in the Activity type (not stored in meta). Indexed for efficient lookups. Used with created_by_twist_id for upsert behavior.';
+
+COMMENT ON COLUMN "public"."activity"."created_by_twist_id" IS 'The twist definition ID (twist_admin.id) that created this activity. Null for user-created activities. Used with source for per-twist deduplication.';
 
 COMMENT ON COLUMN "public"."activity"."pick_priority" IS 'The PickPriorityConfig used to automatically select this activity''s priority. Null if priority was explicitly specified. Used when moving activities to find similar activities to move. Not exposed to app or API.';
 
@@ -101,6 +107,24 @@ CREATE INDEX idx_activity_priority_archived ON "public"."activity" ("priority_id
 CREATE UNIQUE INDEX idx_activity_unique_draft_per_user_priority ON "public"."activity" ("created_by", "priority_id")
 WHERE
     draft = TRUE AND archived_at IS NULL;
+
+-- Index for efficient source lookups
+CREATE INDEX idx_activity_source ON "public"."activity" ("source")
+WHERE
+    source IS NOT NULL;
+
+-- Ensure one activity per source per twist definition (excluding archived)
+-- Allows different twists to independently manage activities with the same source
+CREATE UNIQUE INDEX idx_activity_source_twist_unique ON "public"."activity" ("source", "created_by_twist_id")
+WHERE
+    source IS NOT NULL AND created_by_twist_id IS NOT NULL AND archived_at IS NULL;
+
+-- Index for created_at sorting (critical for pagination queries)
+-- Includes priority_id to support common WHERE clauses
+-- Only indexes non-archived activities (most common case)
+CREATE INDEX idx_activity_created_at_priority ON "public"."activity" ("created_at" DESC, "priority_id")
+WHERE
+    archived_at IS NULL;
 
 ALTER TABLE "public"."activity" ENABLE ROW LEVEL SECURITY;
 

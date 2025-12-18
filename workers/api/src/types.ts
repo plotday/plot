@@ -24,6 +24,7 @@ export const ActivityItemSchema = z.object({
   recurrence_rule: z.string().nullable(),
   recurrence_exdates: z.array(z.string()).nullable(),
   recurrence_dates: z.array(z.string()).nullable(),
+  source: z.string().nullable(),
   meta: z.record(z.string(), z.any()).nullable(),
   mentions: z.array(z.string()).nullable(),
   // Enriched fields from database JOINs
@@ -98,6 +99,14 @@ export const PriorityTwistItemSchema = z.object({
   config: z.record(z.string(), z.any()),
 });
 
+// Activity read item schema
+export const ActivityReadItemSchema = z.object({
+  user_id: z.string(),
+  activity_id: z.string(),
+  read_at: z.string(),
+  updated_at: z.string(),
+});
+
 // Union schema for all item types - the type discrimination happens at the request level
 export const ItemSchema = z.union([
   ActivityItemSchema,
@@ -105,6 +114,7 @@ export const ItemSchema = z.union([
   PriorityItemSchema,
   SessionItemSchema,
   PriorityTwistItemSchema,
+  ActivityReadItemSchema,
 ]);
 
 // TypeScript types generated from zod schemas
@@ -113,4 +123,5 @@ export type NoteItem = z.infer<typeof NoteItemSchema>;
 export type PriorityItem = z.infer<typeof PriorityItemSchema>;
 export type SessionItem = z.infer<typeof SessionItemSchema>;
 export type PriorityTwistItem = z.infer<typeof PriorityTwistItemSchema>;
+export type ActivityReadItem = z.infer<typeof ActivityReadItemSchema>;
 export type UpdateItem = z.infer<typeof ItemSchema>;

@@ -1,10 +1,12 @@
-import type { SupabaseClient } from "@plotday/db";
+import { type Database, type SupabaseClient } from "@plotday/db";
 import {
   type Activity,
   type ActivityMeta,
   type ActivityUpdate,
   type Actor,
   type ActorId,
+  type CreateActivityOptions,
+  type CreateNoteOptions,
   type NewActivity,
   type NewActivityWithNotes,
   type NewPriority,
@@ -27,6 +29,7 @@ import { AI } from "../ai";
 import { Tool } from "../tool";
 import * as activityOps from "./activity";
 import * as contactsOps from "./contacts";
+import { fromDbActivity } from "./converters";
 import {
   buildActivityFromDbRecord,
   buildNoteFromDbRecord,
@@ -80,6 +83,36 @@ export function getActivityCache() {
   return ACTIVITY_METADATA_CACHE;
 }
 
+/**
+ * Worker-level cache for twist definition IDs to avoid database queries.
+ * This cache persists across HTTP requests within the same worker instance.
+ *
+ * Key format: `${priorityTwistId}` (the priority_twist.id)
+ * Value: `twist_id` from priority_twist table
+ * Entries expire after 5 minutes to prevent unbounded growth.
+ */
+const TWIST_ID_CACHE = new Map<
+  string,
+  {
+    twist_id: string;
+    timestamp: number;
+  }
+>();
+
+const TWIST_ID_CACHE_TTL_MS = 300_000; // 5 minutes
+
+/**
+ * Cleans up expired entries from the twist ID cache.
+ */
+function cleanupExpiredTwistIdCache(): void {
+  const now = Date.now();
+  for (const [key, value] of TWIST_ID_CACHE.entries()) {
+    if (now - value.timestamp > TWIST_ID_CACHE_TTL_MS) {
+      TWIST_ID_CACHE.delete(key);
+    }
+  }
+}
+
 export type DispatchItem =
   | { itemType: "activity"; item: ActivityItem; previous?: ActivityItem }
   | { itemType: "note"; item: NoteItem; previous?: NoteItem };
@@ -92,6 +125,7 @@ export class Plot extends Tool implements IPlot {
   public env?: Bindings;
   public ai: AI;
   private _actor?: Actor;
+  private _twistId?: string;
 
   /**
    * Returns permissions required by this Plot tool instance.
@@ -201,6 +235,69 @@ export class Plot extends Tool implements IPlot {
     }
 
     return this._actor;
+  }
+
+  /**
+   * Gets the twist definition ID for a given priority_twist ID.
+   * Uses worker-level cache to avoid repeated database queries.
+   * @param priorityTwistId - The priority_twist.id to look up
+   * @returns The twist_id (twist definition ID) or null if not found
+   */
+  async getTwistId(priorityTwistId: string): Promise<string | null> {
+    // Check worker-level cache first
+    const cached = TWIST_ID_CACHE.get(priorityTwistId);
+    if (cached && Date.now() - cached.timestamp < TWIST_ID_CACHE_TTL_MS) {
+      return cached.twist_id;
+    }
+
+    // Query database
+    const { data, error } = await this.supabase
+      .from("priority_twist")
+      .select("twist_id")
+      .eq("id", priorityTwistId)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    // Cache the result
+    TWIST_ID_CACHE.set(priorityTwistId, {
+      twist_id: data.twist_id,
+      timestamp: Date.now(),
+    });
+
+    // Periodically clean up expired entries
+    if (TWIST_ID_CACHE.size > 100) {
+      cleanupExpiredTwistIdCache();
+    }
+
+    return data.twist_id;
+  }
+
+  /**
+   * Checks if the given priority_twist ID belongs to the same twist definition
+   * as the current twist instance.
+   * @param priorityTwistId - The priority_twist.id to check
+   * @returns True if both belong to the same twist definition, false otherwise
+   */
+  async isSameTwistDefinition(priorityTwistId: string): Promise<boolean> {
+    // Get the current twist's definition ID
+    if (!this._twistId) {
+      const twistId = await this.getTwistId(this.priorityTwistId);
+      if (!twistId) {
+        return false;
+      }
+      this._twistId = twistId;
+    }
+
+    // Get the other twist's definition ID
+    const otherTwistId = await this.getTwistId(priorityTwistId);
+    if (!otherTwistId) {
+      return false;
+    }
+
+    return this._twistId === otherTwistId;
   }
 
   /**
@@ -481,6 +578,7 @@ export class Plot extends Tool implements IPlot {
    * Validates that the twist has permission to update an activity.
    * - Activities where the twist was mentioned require Respond permission
    * - Activities created by the twist require Create permission
+   * - Activities created by another instance of the same twist require Create permission
    *
    * @param activityId - The activity ID to validate access for
    * @param cachedData - Optional cached data to avoid database query
@@ -544,6 +642,16 @@ export class Plot extends Tool implements IPlot {
       return;
     }
 
+    // Fallback: Check if activity was created by another instance of the same twist
+    // This allows twists to update activities created by any instance of the same twist,
+    // which is useful when activities are moved between priorities or when multiple
+    // instances of the same twist are installed in different priorities
+    if (created_by && (await this.isSameTwistDefinition(created_by))) {
+      this.requireActivityAccess(ActivityAccess.Create);
+      // Skip priority validation - twist can access activities it created regardless of priority
+      return;
+    }
+
     throw new Error(
       `Cannot update activity: twist was not mentioned and did not create the activity`
     );
@@ -551,25 +659,121 @@ export class Plot extends Tool implements IPlot {
 
   // Activity operations
   async createActivity(
-    activity: NewActivity | NewActivityWithNotes
+    activity: NewActivity | NewActivityWithNotes,
+    options?: CreateActivityOptions
   ): Promise<Activity> {
-    return activityOps.createActivity(this, activity);
+    return activityOps.createActivity(this, activity, options);
   }
 
   async updateActivity(activity: ActivityUpdate): Promise<void> {
     return activityOps.updateActivity(this, activity);
   }
 
-  async getActivityByMeta(meta: ActivityMeta): Promise<Activity | null> {
-    return activityOps.getActivityByMeta(this, meta);
+  async getActivityByMeta(
+    meta: ActivityMeta,
+    includeArchived?: boolean
+  ): Promise<Activity | null> {
+    return activityOps.getActivityByMeta(this, meta, includeArchived);
   }
 
-  async getActivityBySource(source: string): Promise<Activity | null> {
-    return activityOps.getActivityByMeta(this, { source });
+  async getActivityBySource(
+    source: string,
+    includeArchived?: boolean
+  ): Promise<Activity | null> {
+    // Query activities by source column directly (uses indexed column for performance)
+    let query = this.supabase.from("user_activity").select(
+      `
+        *,
+        author:actor!author_id(
+          id,
+          name,
+          type,
+          email,
+          archived_at,
+          avatar_url,
+          created_at,
+          updated_at
+        ),
+        assignee:actor!assignee_id(
+          id,
+          name,
+          type,
+          email,
+          archived_at,
+          avatar_url,
+          created_at,
+          updated_at
+        )
+      `
+    ).eq("source", source);
+
+    // By default, exclude archived activities
+    if (!includeArchived) {
+      query = query.is("archived_at", null);
+    }
+
+    const { data, error } = await query.limit(1).maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      return null;
+    }
+
+    if (!data.author) {
+      throw new Error(`Activity author not found`);
+    }
+
+    // Store data with non-null author for type safety
+    const dataWithAuthor = {
+      ...data,
+      id: data.id ?? "",
+      author_id: data.author_id ?? data.author.id ?? "",
+      created_at: data.created_at ?? new Date().toISOString(),
+      created_by: data.author_id ?? "",
+      draft: data.draft ?? false,
+      order: data.order ?? 0,
+      priority_id: data.priority_id ?? "",
+      private: data.private ?? false,
+      type: (data.type ?? "note") as Database["public"]["Enums"]["activity_type"],
+      updated_at: data.updated_at ?? new Date().toISOString(),
+      updated_by: data.updated_by ?? 0,
+      author: data.author,
+      assignee: data.assignee ?? null,
+      assignee_id: null,
+      embedding: null,
+      pick_priority: null,
+    };
+
+    // Fetch tags for the activity
+    const { data: tagsData } = data.id
+      ? await this.supabase
+          .from("activity_tags")
+          .select("tags")
+          .eq("activity_id", data.id)
+          .single()
+      : { data: null };
+
+    // Check if ContactAccess.Read permission is granted to include author email
+    const includeAuthorEmail =
+      this.plotOptions?.contact?.access !== undefined &&
+      this.plotOptions.contact.access >= ContactAccess.Read;
+
+    return fromDbActivity(
+      {
+        ...dataWithAuthor,
+        tags: tagsData?.tags || null,
+      },
+      includeAuthorEmail
+    );
   }
 
-  async createActivities(activities: NewActivity[]): Promise<Activity[]> {
-    return activityOps.createActivities(this, activities);
+  async createActivities(
+    activities: NewActivity[],
+    options?: CreateActivityOptions
+  ): Promise<Activity[]> {
+    return activityOps.createActivities(this, activities, options);
   }
 
   // Priority operations
@@ -593,8 +797,11 @@ export class Plot extends Tool implements IPlot {
     return activityOps.getNotes(this, activity);
   }
 
-  async createNote(note: Omit<Note, "id" | "author">): Promise<Note> {
-    return activityOps.createNote(this, note);
+  async createNote(
+    note: Omit<Note, "id" | "author">,
+    options?: CreateNoteOptions
+  ): Promise<Note> {
+    return activityOps.createNote(this, note, options);
   }
 
   async createNotes(notes: Omit<Note, "id" | "author">[]): Promise<Note[]> {

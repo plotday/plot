@@ -59,7 +59,7 @@ BEGIN
     END IF;
     -- Build enriched item with author and priority information
     SELECT
-        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'created_by', current_item.created_by, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'preview', current_item.preview, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'meta', current_item.meta, 'mentions', (
+        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'created_by', current_item.created_by, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'preview', current_item.preview, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'source', current_item.source, 'meta', current_item.meta, 'mentions', (
                 SELECT
                     ARRAY ( SELECT DISTINCT
                             unnest(n.mentions)
@@ -88,7 +88,7 @@ BEGIN
     -- Build previous enriched item for updates
     IF TG_OP = 'UPDATE' THEN
         SELECT
-            jsonb_build_object('id', previous_item.id, 'created_at', previous_item.created_at, 'updated_at', previous_item.updated_at, 'author_id', previous_item.author_id, 'created_by', previous_item.created_by, 'assignee_id', previous_item.assignee_id, 'updated_by', previous_item.updated_by, 'archived_at', previous_item.archived_at, 'priority_id', previous_item.priority_id, 'type', previous_item.type, 'order', previous_item.order, 'draft', previous_item.draft, 'private', previous_item.private, 'title', previous_item.title, 'preview', previous_item.preview, 'at', previous_item.at, 'on', previous_item.on, 'duration', previous_item.duration, 'done_at', previous_item.done_at, 'recurrence_rule', previous_item.recurrence_rule, 'recurrence_exdates', previous_item.recurrence_exdates, 'recurrence_dates', previous_item.recurrence_dates, 'meta', previous_item.meta, 'mentions', (
+            jsonb_build_object('id', previous_item.id, 'created_at', previous_item.created_at, 'updated_at', previous_item.updated_at, 'author_id', previous_item.author_id, 'created_by', previous_item.created_by, 'assignee_id', previous_item.assignee_id, 'updated_by', previous_item.updated_by, 'archived_at', previous_item.archived_at, 'priority_id', previous_item.priority_id, 'type', previous_item.type, 'order', previous_item.order, 'draft', previous_item.draft, 'private', previous_item.private, 'title', previous_item.title, 'preview', previous_item.preview, 'at', previous_item.at, 'on', previous_item.on, 'duration', previous_item.duration, 'done_at', previous_item.done_at, 'recurrence_rule', previous_item.recurrence_rule, 'recurrence_exdates', previous_item.recurrence_exdates, 'recurrence_dates', previous_item.recurrence_dates, 'source', previous_item.source, 'meta', previous_item.meta, 'mentions', (
                     SELECT
                         ARRAY ( SELECT DISTINCT
                                 unnest(n.mentions)
@@ -386,6 +386,51 @@ BEGIN
     enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'twist_id', current_item.twist_id, 'twist_environment', current_item.twist_environment, 'owner_id', current_item.owner_id, 'name', current_item.name, 'config', current_item.config);
     -- Build the payload
     payload := jsonb_build_object('type', 'priority_twist', 'event', event_type, 'item', enriched_item, 'twists', COALESCE(twists_data, '[]'::jsonb), 'users', COALESCE(users_data, '[]'::jsonb), 'timestamp', extract(epoch FROM now()), 'table', 'priority_twist');
+    api_url := get_api_root () || '/update';
+    hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
+    signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
+    PERFORM
+        net.http_post (url := api_url, body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net', 'X-Plot-Signature', 'sha256=' || signature));
+    RETURN COALESCE(NEW, OLD);
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.notify_internal_api_for_activity_read ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    AS $function$
+DECLARE
+    event_type text;
+    users_data jsonb;
+    enriched_item jsonb;
+    payload jsonb;
+    api_url text;
+    hmac_secret text;
+    signature text;
+    current_item record;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        event_type := 'created';
+        current_item := NEW;
+    ELSIF TG_OP = 'UPDATE' THEN
+        event_type := 'updated';
+        current_item := NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        event_type := 'deleted';
+        current_item := OLD;
+    END IF;
+    -- Get user for this activity_read record
+    SELECT
+        jsonb_agg(jsonb_build_object('user_id', current_item.user_id)) INTO users_data;
+    -- Exit early if no users found
+    IF users_data IS NULL OR jsonb_array_length(users_data) = 0 THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
+    -- Build minimal enriched item (only what's needed for sync)
+    enriched_item := jsonb_build_object('user_id', current_item.user_id, 'activity_id', current_item.activity_id, 'read_at', current_item.read_at, 'updated_at', current_item.updated_at);
+    -- Build the payload (no twists for activity_read)
+    payload := jsonb_build_object('type', 'activity_read', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'activity_read');
     api_url := get_api_root () || '/update';
     hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
     signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');

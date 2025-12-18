@@ -154,8 +154,8 @@ importers:
         specifier: workspace:^
         version: link:../tsconfig
       supabase:
-        specifier: ^2.62.10
-        version: 2.62.10
+        specifier: ^2.67.1
+        version: 2.67.2
       tsx:
         specifier: ^4.19.2
         version: 4.20.6
@@ -6718,8 +6718,8 @@ packages:
     peerDependencies:
       postcss: ^8.3.3
 
-  supabase@2.62.10:
-    resolution: {integrity: sha512-Zw5vDl+3KGU8VWSChLQqJ0IYfeLwLNnmW32iS54GVx52VEnOxtDBZylMx/GRGRtv5z6RtU3/Eal7H2B0S1kDcQ==}
+  supabase@2.67.2:
+    resolution: {integrity: sha512-JDOLNGfH9SPHApqRCH4XgGseSIFVZ9F/43eWfCf1dxpUm9YPND52G7QemWrJieqBtmw2MoMzGYLQHHQtxiwHXw==}
     engines: {npm: '>=8'}
     hasBin: true
 
@@ -7625,7 +7625,7 @@ snapshots:
       '@babel/traverse': 7.23.5
       '@babel/types': 7.23.5
       convert-source-map: 2.0.0
-      debug: 4.3.5
+      debug: 4.4.1
       gensync: 1.0.0-beta.2
       json5: 2.2.3
       semver: 6.3.1
@@ -10354,7 +10354,7 @@ snapshots:
       '@typescript-eslint/scope-manager': 5.62.0
       '@typescript-eslint/type-utils': 5.62.0(eslint@8.45.0)(typescript@5.9.3)
       '@typescript-eslint/utils': 5.62.0(eslint@8.45.0)(typescript@5.9.3)
-      debug: 4.3.4
+      debug: 4.4.1
       eslint: 8.45.0
       graphemer: 1.4.0
       ignore: 5.3.0
@@ -10388,7 +10388,7 @@ snapshots:
       '@typescript-eslint/scope-manager': 5.62.0
       '@typescript-eslint/types': 5.62.0
       '@typescript-eslint/typescript-estree': 5.62.0(typescript@5.9.3)
-      debug: 4.3.4
+      debug: 4.4.1
       eslint: 8.45.0
     optionalDependencies:
       typescript: 5.9.3
@@ -11854,7 +11854,7 @@ snapshots:
 
   eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@5.62.0(eslint@8.45.0)(typescript@5.9.3))(eslint-import-resolver-node@0.3.7)(eslint-plugin-import@2.29.0)(eslint@8.45.0):
     dependencies:
-      debug: 4.3.4
+      debug: 4.4.1
       enhanced-resolve: 5.15.0
       eslint: 8.45.0
       eslint-module-utils: 2.8.0(@typescript-eslint/parser@5.62.0(eslint@8.45.0)(typescript@5.9.3))(eslint-import-resolver-node@0.3.7)(eslint-import-resolver-typescript@3.6.1)(eslint@8.45.0)
@@ -14347,7 +14347,7 @@ snapshots:
     dependencies:
       postcss: 8.5.6
 
-  supabase@2.62.10:
+  supabase@2.67.2:
     dependencies:
       bin-links: 6.0.0
       https-proxy-agent: 7.0.6

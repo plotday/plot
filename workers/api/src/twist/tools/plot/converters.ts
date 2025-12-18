@@ -33,6 +33,7 @@ export function fromDbActivity(
     } | null;
     tags?: Json | null;
     mentions?: string[] | null;
+    source?: string | null;
   },
   includeAuthorEmail: boolean = false
 ): Activity {
@@ -151,6 +152,7 @@ export function fromDbActivity(
     assignee,
     draft: dbActivity.draft ?? false,
     private: dbActivity.private ?? false,
+    archived: dbActivity.archived_at !== null,
     priority: {
       id: dbActivity.priority_id,
       title: dbActivity.title ?? "Untitled",
@@ -162,6 +164,7 @@ export function fromDbActivity(
       dbActivity.recurrence_dates?.map((d) => new Date(d)) || null,
     recurrence: null,
     occurrence: null,
+    source: dbActivity.source ?? null,
     meta: dbActivity.meta as ActivityMeta | null,
     tags: (dbActivity.tags as Tags) || null,
     mentions: (dbActivity.mentions as ActorId[]) || null,

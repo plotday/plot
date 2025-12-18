@@ -158,7 +158,6 @@ tokens.post("/session/authorize", async (c) => {
     c.env.SUPABASE_SERVICE_KEY
   );
   const { user, error: authError } = await getUser(supabaseAdmin, accessToken);
-  console.log("Authorized user:", user);
   if (authError || !user) {
     console.error("Authentication error:", authError);
     return new Response("Unauthorized: Invalid or expired session", {
