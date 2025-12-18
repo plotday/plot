@@ -94,18 +94,27 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   Widget build(BuildContext context) {
     return BlocListener<ActivityBloc, ActivityState>(
       listener: (context, state) {
-        // Focus NoteEditor when activity thread changes
-        // (BidirectionalListSelector is keyed by activity.id, so it creates a fresh controller)
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _noteEditorKey.currentState?.focus();
-        });
+        // Reschedule mark as read when new notes are synced
+        _scheduleMarkAsRead();
       },
       listenWhen: (previous, current) =>
-          previous.activity.id != current.activity.id,
-      child: BlocBuilder<ActivityBloc, ActivityState>(
-        builder: (context, state) {
-          return _buildContent(context, state);
+          previous.notes != current.notes &&
+          current.activity.unread,
+      child: BlocListener<ActivityBloc, ActivityState>(
+        listener: (context, state) {
+          // Focus NoteEditor when activity thread changes
+          // (BidirectionalListSelector is keyed by activity.id, so it creates a fresh controller)
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _noteEditorKey.currentState?.focus();
+          });
         },
+        listenWhen: (previous, current) =>
+            previous.activity.id != current.activity.id,
+        child: BlocBuilder<ActivityBloc, ActivityState>(
+          builder: (context, state) {
+            return _buildContent(context, state);
+          },
+        ),
       ),
     );
   }
@@ -280,25 +289,13 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   }
 
   int _getTotalItemCount(ActivityState state) {
-    return state.noteGroups.fold(
-      0,
-      (count, group) => count + group.notes.length,
-    );
+    return state.notes.length;
   }
 
   Note? _getNoteAtIndex(ActivityState state, int index) {
-    int currentIndex = 0;
-
-    for (final group in state.noteGroups) {
-      // Check notes in this group
-      for (final note in group.notes) {
-        if (currentIndex == index) {
-          return note;
-        }
-        currentIndex++;
-      }
+    if (index >= 0 && index < state.notes.length) {
+      return state.notes[index];
     }
-
     return null;
   }
 
@@ -336,25 +333,16 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
     FocusNode focusNode, {
     int? reorderableIndex,
   }) {
-    int currentIndex = 0;
-
-    for (final group in state.noteGroups) {
-      // Check notes in this group
-      for (final note in group.notes) {
-        if (currentIndex == index) {
-          return NoteWidget(
-            note: note,
-            selected: false, // No selection on ActivityPage
-            focusNode: focusNode,
-            key: ValueKey(note.id),
-            reorderableIndex: reorderableIndex,
-          );
-        }
-        currentIndex++;
-      }
+    final note = _getNoteAtIndex(state, index);
+    if (note != null) {
+      return NoteWidget(
+        note: note,
+        selected: false, // No selection on ActivityPage
+        focusNode: focusNode,
+        key: ValueKey(note.id),
+        reorderableIndex: reorderableIndex,
+      );
     }
-
-    // Fallback - should not happen
     return const SizedBox.shrink();
   }
 }

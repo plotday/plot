@@ -149,38 +149,7 @@ class ActivityBloc extends Cubit<ActivityState> {
         final sortedNotes = List<Note>.from(notes);
         sortedNotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-        // Group notes by date for headers
-        final groupedNotes = <NoteDateGroup>[];
-        Date? currentDate;
-        List<Note> currentGroup = [];
-
-        for (final note in sortedNotes) {
-          final noteDate = note.createdAt.toDate();
-
-          if (currentDate != noteDate) {
-            // Save previous group if it exists
-            if (currentDate != null && currentGroup.isNotEmpty) {
-              groupedNotes.add(
-                NoteDateGroup(date: currentDate, notes: currentGroup),
-              );
-            }
-
-            // Start new group
-            currentDate = noteDate;
-            currentGroup = [note];
-          } else {
-            currentGroup.add(note);
-          }
-        }
-
-        // Add the last group
-        if (currentDate != null && currentGroup.isNotEmpty) {
-          groupedNotes.add(
-            NoteDateGroup(date: currentDate, notes: currentGroup),
-          );
-        }
-
-        emit(state.copyWith(noteGroups: groupedNotes));
+        emit(state.copyWith(notes: sortedNotes));
       }),
     );
   }
