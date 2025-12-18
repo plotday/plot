@@ -6,7 +6,7 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/util/hooks.dart';
 
-class ActivityWidget extends StatefulWidget {
+class ActivityWidget extends StatelessWidget {
   const ActivityWidget({
     required this.activity,
     this.context,
@@ -28,21 +28,16 @@ class ActivityWidget extends StatefulWidget {
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
 
-  @override
-  State<ActivityWidget> createState() => _ActivityWidgetState();
-}
-
-class _ActivityWidgetState extends State<ActivityWidget> {
   Command? _getSwipeRightCommand() {
-    if (widget.activity.type == ActivityType.event) return null;
-    return widget.activity.doNow
-        ? FinishAction(widget.activity, stateIcon: true)
-        : StartAction(widget.activity);
+    if (activity.type == ActivityType.event) return null;
+    return activity.doNow
+        ? FinishAction(activity, stateIcon: true)
+        : StartAction(activity);
   }
 
   Command? _getSwipeLeftCommand() {
-    if (widget.activity.type == ActivityType.event) return null;
-    return PickScheduleActivity(widget.activity);
+    if (activity.type == ActivityType.event) return null;
+    return PickScheduleActivity(activity);
   }
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
@@ -52,22 +47,20 @@ class _ActivityWidgetState extends State<ActivityWidget> {
 
     return ListTile(
       command: CommandWrapper(
-        ChangeCurrentActivity(widget.activity),
+        ChangeCurrentActivity(activity),
         icon: Value(null),
       ),
-      longPressCommand: isTouchDevice
-          ? ShowActivityCommands(widget.activity)
-          : null,
-      title: widget.activity.displayTitle,
-      subtitle: widget.activity.preview,
+      longPressCommand: isTouchDevice ? ShowActivityCommands(activity) : null,
+      title: activity.displayTitle,
+      subtitle: activity.preview,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       leadingIndicator: UnreadIndicator(
-        color: widget.activity.priority.displayColor,
-        unread: widget.activity.unread,
+        color: activity.priority.displayColor,
+        unread: activity.unread,
       ),
       leadingBuilder: (isHovered, hasFocus) {
         final activityColor = buildContext.colour.colours.fromTheme(
-          widget.activity.priority.displayColor,
+          activity.priority.displayColor,
         );
         return Stack(
           children: [
@@ -78,8 +71,8 @@ class _ActivityWidgetState extends State<ActivityWidget> {
               width: 30,
               height: 30,
               child: Button.icon(
-                primaryActivityCommand(widget.activity),
-                selected: widget.activity.doNow || widget.now,
+                primaryActivityCommand(activity),
+                selected: activity.doNow || now,
                 selectedColor: activityColor,
                 forceHover: isHovered,
               ),
@@ -100,22 +93,22 @@ class _ActivityWidgetState extends State<ActivityWidget> {
               TextSpan(
                 children: [
                   TextSpan(
-                    text: widget.activity.displayTitle,
-                    style: widget.now
+                    text: activity.displayTitle,
+                    style: now
                         ? TextStyle(
                             color: buildContext.colour.colours.fromTheme(
-                              widget.activity.priority.displayColor,
+                              activity.priority.displayColor,
                             ),
                           )
-                        : widget.selected
+                        : selected
                         ? TextStyle(color: buildContext.colour.foreground)
                         : null,
                   ),
-                  if (widget.activity.preview != null &&
-                      widget.activity.preview!.isNotEmpty &&
-                      widget.activity.preview != widget.activity.displayTitle)
+                  if (activity.preview != null &&
+                      activity.preview!.isNotEmpty &&
+                      activity.preview != activity.displayTitle)
                     TextSpan(
-                      text: ' ${widget.activity.preview}',
+                      text: ' ${activity.preview}',
                       style: TextStyle(color: buildContext.colour.muted),
                     ),
                 ],
@@ -125,15 +118,15 @@ class _ActivityWidgetState extends State<ActivityWidget> {
         ],
       ),
       trailingBuilder: (isHovered, hasFocus) => ActivityCommands(
-        activity: widget.activity,
+        activity: activity,
         tagSuggestions: tagSuggestions,
         showCommands: isHovered || hasFocus,
         reverse: true,
       ),
-      selected: widget.selected,
-      focusNode: widget.focusNode,
-      onHover: widget.onHover,
-      reorderableIndex: widget.reorderableIndex,
+      selected: selected,
+      focusNode: focusNode,
+      onHover: onHover,
+      reorderableIndex: reorderableIndex,
     );
   }
 
@@ -156,7 +149,7 @@ class _ActivityWidgetState extends State<ActivityWidget> {
     }
 
     return Swipeable(
-      key: ValueKey(widget.activity.id),
+      key: ValueKey(activity.id),
       startCommand: swipeRightCommand,
       endCommand: swipeLeftCommand,
       child: listTile,

@@ -271,21 +271,6 @@ class PriorityPage extends StatelessWidget {
           previous.context.id != current.context.id ||
           (previous.targetPriority != null && current.targetPriority == null),
       builder: (context, state) {
-        // Find the index of the current activity in the agenda items
-        int? selected;
-        if (state.activity != null) {
-          for (int i = 0; i < state.agendaItems.length; i++) {
-            final activity = state.agendaItems[i].when<Activity?>(
-              header: (header) => null,
-              activity: (agendaActivity) => agendaActivity.activity,
-            );
-            if (activity?.id == state.activity!.id) {
-              selected = state.first + i;
-              break;
-            }
-          }
-        }
-
         return (state.agendaItems.isEmpty &&
                 !(state.doneStart && state.doneEnd))
             ? const Center(child: Spinner())
@@ -595,7 +580,10 @@ class PriorityPage extends StatelessWidget {
                                                 'activitywidget_${agendaActivity.activity.id}',
                                               ),
                                               activity: agendaActivity.activity,
-                                              selected: selected == index,
+                                              selected:
+                                                  state.activity != null &&
+                                                  agendaActivity.activity.id ==
+                                                      state.activity!.id,
                                               now: agendaActivity.now,
                                               focusNode: focusNode,
                                               context: state.context,

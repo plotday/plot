@@ -984,15 +984,15 @@ class Activity extends Equatable implements Comparable<Activity> {
         createdInRange =
             createdInRange &
             (a.createdAt.isBiggerOrEqualValue(rangeStart) |
-             (a.lastNoteCreatedAt.isNotNull() &
-              a.lastNoteCreatedAt.isBiggerOrEqualValue(rangeStart)));
+                (a.lastNoteCreatedAt.isNotNull() &
+                    a.lastNoteCreatedAt.isBiggerOrEqualValue(rangeStart)));
       }
       if (rangeEnd != null) {
         createdInRange =
             createdInRange &
             (a.createdAt.isSmallerThanValue(rangeEnd) |
-             (a.lastNoteCreatedAt.isNotNull() &
-              a.lastNoteCreatedAt.isSmallerThanValue(rangeEnd)));
+                (a.lastNoteCreatedAt.isNotNull() &
+                    a.lastNoteCreatedAt.isSmallerThanValue(rangeEnd)));
       }
       condition = condition | createdInRange;
 
@@ -1481,6 +1481,8 @@ class Activity extends Equatable implements Comparable<Activity> {
   bool get doLater => todo && at?.start?.isAfter(DateTime.now()) == true;
   bool get todo => type == ActivityType.action && !done;
   bool get done => doneAt != null;
+
+  String? get occurrence => _exception?.occurrence;
 
   IconData get icon {
     if (done) return PlotIcon.done;
