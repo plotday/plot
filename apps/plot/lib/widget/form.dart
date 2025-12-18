@@ -14,7 +14,7 @@ class ShowForm extends Command {
     EventObject? eventObject,
     EventAction? eventAction,
   }) : super(
-         eventObject: eventObject ?? EventObject.dialog,
+         eventObject: eventObject ?? EventObject.modal,
          eventAction: eventAction ?? EventAction.opened,
        );
 

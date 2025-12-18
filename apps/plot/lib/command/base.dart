@@ -117,7 +117,7 @@ class ShowCommands extends Command {
     EventObject? eventObject,
     EventAction? eventAction,
   }) : super(
-         eventObject: eventObject ?? EventObject.actionBar,
+         eventObject: eventObject ?? EventObject.commandBar,
          eventAction: eventAction ?? EventAction.opened,
        );
 
@@ -154,7 +154,7 @@ class ShowPage extends Command {
     EventObject? eventObject,
     EventAction? eventAction,
   }) : super(
-         eventObject: eventObject ?? EventObject.dialog,
+         eventObject: eventObject ?? EventObject.modal,
          eventAction: eventAction ?? EventAction.opened,
        );
 

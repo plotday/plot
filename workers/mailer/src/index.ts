@@ -55,7 +55,18 @@ export default {
       | MailRequest
       | MessageSendRequest<MailRequest>[];
     if (body instanceof Array) {
-      await env.QUEUE.sendBatch(body);
+      // Cloudflare Queues has a limit of 100 messages per batch
+      const BATCH_SIZE = 100;
+      const batches: MessageSendRequest<MailRequest>[][] = [];
+
+      for (let i = 0; i < body.length; i += BATCH_SIZE) {
+        batches.push(body.slice(i, i + BATCH_SIZE));
+      }
+
+      // Send all batches in parallel
+      await Promise.all(
+        batches.map((batch) => env.QUEUE.sendBatch(batch))
+      );
     } else {
       await env.QUEUE.send(body);
     }

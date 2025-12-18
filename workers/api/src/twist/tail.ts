@@ -146,9 +146,19 @@ export class TwistTail extends WorkerEntrypoint<
     }
 
     // Send logs to queue if we have any
+    // Cloudflare Queues has a limit of 100 messages per batch
     if (logMessages.length > 0) {
-      await this.env.TWIST_LOGS_QUEUE.sendBatch(
-        logMessages.map((msg) => ({ body: msg }))
+      const BATCH_SIZE = 100;
+      const batches: MessageSendRequest<LogMessage>[][] = [];
+
+      for (let i = 0; i < logMessages.length; i += BATCH_SIZE) {
+        const chunk = logMessages.slice(i, i + BATCH_SIZE);
+        batches.push(chunk.map((msg) => ({ body: msg })));
+      }
+
+      // Send all batches in parallel
+      await Promise.all(
+        batches.map((batch) => this.env.TWIST_LOGS_QUEUE.sendBatch(batch))
       );
     }
   }
