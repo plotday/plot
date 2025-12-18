@@ -239,12 +239,13 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   }
 }
 
-typedef ItemBuilder = Widget? Function(
-  BuildContext context,
-  int index,
-  FocusNode focusNode, {
-  int? reorderableIndex,
-});
+typedef ItemBuilder =
+    Widget? Function(
+      BuildContext context,
+      int index,
+      FocusNode focusNode, {
+      int? reorderableIndex,
+    });
 typedef ItemFetcher = Future<void> Function(int first, int count);
 
 class BidirectionalList extends StatefulWidget {
@@ -472,7 +473,9 @@ class BidirectionalListState extends State<BidirectionalList> {
 
         // Get or create FocusNode for this item
         final focusNode = widget.controller.getFocusNode(itemIndex);
-        final onReorder = enableReordering ? widget.onReorder?.call(itemIndex) : null;
+        final onReorder = enableReordering
+            ? widget.onReorder?.call(itemIndex)
+            : null;
 
         // Pass reorderableIndex to builder if reordering is enabled
         var child = widget.builder(
@@ -529,42 +532,47 @@ class BidirectionalListState extends State<BidirectionalList> {
       },
       child: ListenableBuilder(
         listenable: widget.controller,
-        builder: (context, child) => CustomScrollView(
-          controller: _scrollController,
-          center: _downListKey,
-          anchor: widget.anchorOffset,
-          reverse: widget.reverse,
-          slivers: [
-            if (widget.count > 0 && !widget.doneStart) spinner,
-            _buildSliverList(
-              key: _upListKey,
-              itemCount: _upCount,
-              // itemIndexCalculator: (index) =>
-              //     widget.first + _upCount - index - 1,
-              itemIndexCalculator: (index) {
-                index = -index - 1;
-                if (index >= widget.first &&
-                    index < widget.first + widget.count) {
-                  return index;
-                }
-                return null;
-              },
-              enableReordering: false,
-            ),
-            _buildSliverList(
-              key: _downListKey,
-              itemCount: _downCount,
-              itemIndexCalculator: (index) {
-                if (index >= widget.first &&
-                    index < widget.first + widget.count) {
-                  return index;
-                }
-                return null;
-              },
-              enableReordering: true,
-            ),
-            if (!widget.doneEnd) spinner,
-          ],
+        builder: (context, child) => ScrollConfiguration(
+          behavior: const ScrollBehavior().copyWith(
+            scrollbars: false,
+          ), // This is the key
+          child: CustomScrollView(
+            controller: _scrollController,
+            center: _downListKey,
+            anchor: widget.anchorOffset,
+            reverse: widget.reverse,
+            slivers: [
+              if (widget.count > 0 && !widget.doneStart) spinner,
+              _buildSliverList(
+                key: _upListKey,
+                itemCount: _upCount,
+                // itemIndexCalculator: (index) =>
+                //     widget.first + _upCount - index - 1,
+                itemIndexCalculator: (index) {
+                  index = -index - 1;
+                  if (index >= widget.first &&
+                      index < widget.first + widget.count) {
+                    return index;
+                  }
+                  return null;
+                },
+                enableReordering: false,
+              ),
+              _buildSliverList(
+                key: _downListKey,
+                itemCount: _downCount,
+                itemIndexCalculator: (index) {
+                  if (index >= widget.first &&
+                      index < widget.first + widget.count) {
+                    return index;
+                  }
+                  return null;
+                },
+                enableReordering: true,
+              ),
+              if (!widget.doneEnd) spinner,
+            ],
+          ),
         ),
       ),
     );
