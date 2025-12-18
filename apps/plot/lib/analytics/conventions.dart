@@ -97,8 +97,8 @@ enum EventObject {
   user('user'),
   action('action'),
   navigation('navigation'),
-  actionBar('action_bar'),
-  dialog('dialog'),
+  commandBar('command_bar'),
+  modal('modal'),
   settings('settings');
 
   const EventObject(this.value);

@@ -421,8 +421,8 @@ importers:
         specifier: ^4.6.15
         version: 4.6.15
       posthog-node:
-        specifier: ^5.11.0
-        version: 5.11.2
+        specifier: ^5.17.4
+        version: 5.17.4
       stripe:
         specifier: ^17.5.0
         version: 17.7.0
@@ -2901,6 +2901,9 @@ packages:
 
   '@posthog/core@1.5.2':
     resolution: {integrity: sha512-iedUP3EnOPPxTA2VaIrsrd29lSZnUV+ZrMnvY56timRVeZAXoYCkmjfIs3KBAsF8OUT5h1GXLSkoQdrV0r31OQ==}
+
+  '@posthog/core@1.8.1':
+    resolution: {integrity: sha512-jfzBtQIk9auRi/biO+G/gumK5KxqsD5wOr7XpYMROE/I3pazjP4zIziinp21iQuIQJMXrDvwt9Af3njgOGwtew==}
 
   '@react-email/body@0.2.0':
     resolution: {integrity: sha512-9GCWmVmKUAoRfloboCd+RKm6X17xn7eGL7HnpAZUnjBXBilWCxsKnLMTC/ixSHDKS/A/057M1Tx6ZUXd89sVBw==}
@@ -6102,6 +6105,10 @@ packages:
 
   posthog-node@5.11.2:
     resolution: {integrity: sha512-z+XekcBUmGePMsjPlGaEF2bJFiDHKHYPQjS4OEw4YPDQz8s7Owuim/L7xNX+6UJkyIRniBza9iC7bW8yrGTv1g==}
+    engines: {node: '>=20'}
+
+  posthog-node@5.17.4:
+    resolution: {integrity: sha512-hrd+Do/DMt40By12ESIDUfD81V9OASjq9XHjycZrGiD8cX/ZwCIVSJLUb7nQmvSCWcKII+u+nnPVuc4LjTDl9g==}
     engines: {node: '>=20'}
 
   prelude-ls@1.2.1:
@@ -9843,6 +9850,10 @@ snapshots:
       - debug
 
   '@posthog/core@1.5.2':
+    dependencies:
+      cross-spawn: 7.0.6
+
+  '@posthog/core@1.8.1':
     dependencies:
       cross-spawn: 7.0.6
 
@@ -13597,6 +13608,10 @@ snapshots:
   posthog-node@5.11.2:
     dependencies:
       '@posthog/core': 1.5.2
+
+  posthog-node@5.17.4:
+    dependencies:
+      '@posthog/core': 1.8.1
 
   prelude-ls@1.2.1: {}
 

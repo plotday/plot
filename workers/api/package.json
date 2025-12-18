@@ -29,7 +29,7 @@
     "@jridgewell/trace-mapping": "^0.3.31",
     "@plotday/db": "workspace:^",
     "@plotday/twister": "workspace:*",
-    "posthog-node": "^5.11.0",
+    "posthog-node": "^5.17.4",
     "@supabase/supabase-js": "^2.79.0",
     "ai": "^5.0.76",
     "hono": "^4.6.15",
