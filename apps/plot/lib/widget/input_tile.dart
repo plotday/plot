@@ -81,17 +81,22 @@ class _InputTileState extends State<InputTile> {
 
     return FormTileLayout(
       label: widget.label,
-      rightBackgroundColor: isActive ? context.theme.plotColors.editableBackground : null,
+      rightBackgroundColor: isActive
+          ? context.theme.plotColors.editableBackground
+          : null,
       isActive: isActive,
-      content: TextField(
-        controller: widget.controller,
-        label: widget.placeholder ?? '',
-        style: TextFieldStyle.ghost,
-        maxLines: 1,
-        onChanged: widget.onChanged,
-        onSubmitted: widget.onSubmitted,
-        autofocus: widget.autofocus,
-        focusNode: _focusNode,
+      content: Transform.translate(
+        offset: const Offset(-4, 0),
+        child: TextField(
+          controller: widget.controller,
+          label: widget.placeholder ?? '',
+          style: TextFieldStyle.ghost,
+          maxLines: 1,
+          onChanged: widget.onChanged,
+          onSubmitted: widget.onSubmitted,
+          autofocus: widget.autofocus,
+          focusNode: _focusNode,
+        ),
       ),
     );
   }

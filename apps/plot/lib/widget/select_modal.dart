@@ -484,10 +484,15 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                     child: Text(
                                       group.title!,
                                       style: TextStyle(
-                                        color:
-                                            context.theme.colors.mutedForeground,
-                                        fontSize:
-                                            context.theme.typography.sm.fontSize,
+                                        color: context
+                                            .theme
+                                            .colors
+                                            .mutedForeground,
+                                        fontSize: context
+                                            .theme
+                                            .typography
+                                            .sm
+                                            .fontSize,
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),

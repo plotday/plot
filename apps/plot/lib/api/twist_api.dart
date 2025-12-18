@@ -110,6 +110,28 @@ class TwistApi {
     await api.delete<Map<String, dynamic>>('/twist/$priorityTwistId');
   }
 
+  /// Archive all activities created by a twist and remove the twist
+  static Future<void> archiveAndRemoveTwist(String priorityTwistId) async {
+    await api.delete<Map<String, dynamic>>(
+      '/twist/$priorityTwistId/archive-activities',
+    );
+  }
+
+  /// Update a twist
+  static Future<void> updateTwist({
+    required String priorityTwistId,
+    String? name,
+    Map<String, dynamic>? config,
+  }) async {
+    await api.patch<Map<String, dynamic>>(
+      '/twist/$priorityTwistId',
+      body: {
+        if (name != null) 'name': name,
+        if (config != null) 'config': config,
+      },
+    );
+  }
+
   /// Add a twist to a priority
   static Future<String> addTwist({
     required String priorityId,

@@ -23,4 +23,22 @@ extension StringExtension on String {
 
     return '${substring(0, length - 1)}…';
   }
+
+  /// Capitalizes the first character of the string.
+  ///
+  /// If the string is empty, returns an empty string.
+  ///
+  /// Examples:
+  /// ```dart
+  /// 'hello'.capitalize()  // 'Hello'
+  /// 'HELLO'.capitalize()  // 'HELLO'
+  /// 'h'.capitalize()      // 'H'
+  /// ''.capitalize()       // ''
+  /// ```
+  String capitalize() {
+    if (isEmpty) {
+      return this;
+    }
+    return '${this[0].toUpperCase()}${substring(1)}';
+  }
 }

@@ -4,11 +4,12 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 import 'package:forui/forui.dart';
 
 class Spinner extends StatelessWidget {
-  const Spinner({this.message, this.size = 15, super.key});
-  const Spinner.message(this.message, {this.size = 15, super.key});
+  const Spinner({this.message, this.size = 15, this.color, super.key});
+  const Spinner.message(this.message, {this.size = 15, this.color, super.key});
 
   final String? message;
   final double size;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +41,7 @@ class Spinner extends StatelessWidget {
                     // ignore: unused_result
                   ).copyWith(
                     iconStyle: IconThemeData(
-                      color: context.theme.colors.foreground,
+                      color: color ?? context.theme.colors.foreground,
                       size: size,
                     ),
                   ),

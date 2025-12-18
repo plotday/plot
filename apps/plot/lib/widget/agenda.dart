@@ -17,7 +17,6 @@ class AgendaHeader extends StatefulWidget {
     this.focusNode,
     this.text,
     this.scheduleAt,
-    this.followsHeader = false,
     super.key,
   });
 
@@ -30,7 +29,6 @@ class AgendaHeader extends StatefulWidget {
   final FocusNode? focusNode;
   final String? text;
   final DateTime? scheduleAt;
-  final bool followsHeader;
 
   @override
   State<AgendaHeader> createState() => _AgendaHeaderState();
@@ -269,11 +267,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
     }
 
     return Padding(
-      padding: EdgeInsets.only(
-        top: widget.followsHeader
-            ? 0.0
-            : (widget.date != null ? 32.0 : 16.0),
-      ),
+      padding: EdgeInsets.only(top: widget.date != null ? 32.0 : 8.0),
       child: ListTile(
         command: command,
         focusNode: widget.focusNode,

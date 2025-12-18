@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/util/string.dart';
 import 'package:plot/widget/twist_permission_helper.dart';
 
 class TwistDetails extends StatelessWidget {
@@ -102,20 +103,12 @@ class TwistDetails extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Agent name and description
-        Padding(
-          padding: widgetPadding,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                twist.name,
-                style: TextStyle(
-                  fontSize: theme.typography.base.fontSize,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colors.foreground,
-                ),
-              ),
-              if (twist.description != null) ...[
+        if (twist.description != null) ...[
+          Padding(
+            padding: widgetPadding.copyWith(top: 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 const SizedBox(height: 4),
                 Text(
                   twist.description!,
@@ -125,12 +118,12 @@ class TwistDetails extends StatelessWidget {
                   ),
                 ),
               ],
-            ],
+            ),
           ),
-        ),
 
-        // Divider
-        Container(height: 1, color: theme.colors.border),
+          // Divider
+          Container(height: 1, color: theme.colors.border),
+        ],
 
         // Metadata section
         Padding(
@@ -143,11 +136,19 @@ class TwistDetails extends StatelessWidget {
                 const SizedBox(height: 4),
               ],
               _buildMetadataRow(context, 'Author', authorText),
+              if (twist.environment != 'public') ...[
+                const SizedBox(height: 4),
+                _buildMetadataRow(
+                  context,
+                  'Publishing Status',
+                  twist.environment.capitalize(),
+                ),
+              ],
               if (twist.createdAt != null) ...[
                 const SizedBox(height: 4),
                 _buildMetadataRow(
                   context,
-                  'First published',
+                  'First Published',
                   dateFormat.format(twist.createdAt!),
                 ),
               ],
@@ -155,7 +156,7 @@ class TwistDetails extends StatelessWidget {
                 const SizedBox(height: 4),
                 _buildMetadataRow(
                   context,
-                  'Last updated',
+                  'Last Updated',
                   dateFormat.format(twist.updatedAt!),
                 ),
               ],
@@ -177,7 +178,7 @@ class TwistDetails extends StatelessWidget {
                 style: TextStyle(
                   fontSize: theme.typography.sm.fontSize,
                   fontWeight: FontWeight.w600,
-                  color: theme.colors.foreground,
+                  color: theme.colors.mutedForeground,
                 ),
               ),
               ...permissionsList,

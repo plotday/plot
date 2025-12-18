@@ -48,17 +48,14 @@ class ShowForm extends Command {
 
 /// Form item base class
 abstract class FormItem {
-  const FormItem({
-    required this.key,
-    this.label,
-    this.required = false,
-    this.autofocus = false,
-  });
+  const FormItem({required this.key, this.label, this.required = false});
 
   final String key;
   final String? label;
   final bool required;
-  final bool autofocus;
+
+  /// Whether this item can receive keyboard focus and navigation
+  bool get isFocusable => true;
 
   /// Get the current value of the form item
   dynamic getValue();
@@ -84,7 +81,6 @@ class FormTextInput extends FormItem {
     required super.key,
     super.label,
     super.required,
-    super.autofocus,
     this.placeholder,
     this.maxLines = 1,
     String? initialValue,
@@ -123,7 +119,6 @@ class FormTextInput extends FormItem {
       label: label ?? key,
       controller: controller,
       placeholder: placeholder,
-      autofocus: autofocus,
       highlighted: highlighted,
       focusNode: focusNode,
     );
@@ -140,7 +135,6 @@ class FormSelect<T> extends FormItem {
     required super.key,
     super.label,
     super.required,
-    super.autofocus,
     required this.items,
     this.labelBuilder,
     this.titleBuilder,
@@ -311,7 +305,6 @@ class FormSelect<T> extends FormItem {
           ? leadingBuilder!(_value as T)
           : null,
       placeholder: placeholder,
-      autofocus: autofocus,
       highlighted: highlighted,
       enabled: isEnabled,
       onSelect: () => activate(context),
@@ -322,15 +315,13 @@ class FormSelect<T> extends FormItem {
 
 /// Button form item
 class FormButton extends FormItem {
-  FormButton({required super.key, required this.command, this.onSubmit})
-    : super(required: false, autofocus: false);
+  FormButton({
+    required super.key,
+    required String label,
+    required this.onSubmit,
+  }) : super(required: false, label: label);
 
-  final Command command;
-  final Future<CommandReturn> Function(
-    BuildContext context,
-    Map<String, dynamic> values,
-  )?
-  onSubmit;
+  final Command Function(Map<String, dynamic> values) onSubmit;
 
   @override
   dynamic getValue() => null;
@@ -351,7 +342,7 @@ class FormButton extends FormItem {
     FocusNode? focusNode,
   }) {
     return _FormButtonWidget(
-      command: command,
+      label: label!,
       highlighted: highlighted,
       enabled: enabled,
       focusNode: focusNode,
@@ -361,13 +352,13 @@ class FormButton extends FormItem {
 
 class _FormButtonWidget extends StatefulWidget {
   const _FormButtonWidget({
-    required this.command,
+    required this.label,
     required this.highlighted,
     required this.enabled,
     this.focusNode,
   });
 
-  final Command command;
+  final String label;
   final bool highlighted;
   final bool enabled;
   final FocusNode? focusNode;
@@ -390,8 +381,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
         child: FocusableActionDetector(
           focusNode: widget.enabled ? widget.focusNode : null,
           child: FormTileLayout(
-            label:
-                '', // FormButton doesn't have a label, just empty space on left
+            label: '', // FormButton doesn't have a separate label
             rightBackgroundColor: isHighlighted
                 ? context.theme.colors.secondary
                 : null,
@@ -399,13 +389,15 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
             content: MouseRegion(
               onEnter: (_) => setState(() => _isHovered = true),
               onExit: (_) => setState(() => _isHovered = false),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  widget.command.title,
-                  style: context.theme.typography.sm.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: context.theme.colors.foreground,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    widget.label,
+                    style: context.theme.typography.sm.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: context.theme.colors.foreground,
+                    ),
                   ),
                 ),
               ),
@@ -419,10 +411,15 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
 
 /// Info form item for displaying static content
 class FormInfo extends FormItem {
-  FormInfo({required super.key, required this.builder})
-    : super(required: false, autofocus: false);
+  FormInfo({required super.key, this.builder, this.text, this.divider = false})
+    : super(required: false);
 
-  final Widget Function(BuildContext) builder;
+  final Widget Function(BuildContext)? builder;
+  final String? text;
+  final bool divider;
+
+  @override
+  bool get isFocusable => false;
 
   @override
   dynamic getValue() => null;
@@ -443,8 +440,59 @@ class FormInfo extends FormItem {
     FocusNode? focusNode,
   }) {
     return Padding(
-      padding: .symmetric(horizontal: 12),
-      child: builder(context),
+      padding: .only(bottom: divider ? 8 : 0),
+      child: Container(
+        padding: .symmetric(horizontal: text != null ? 12 : 0),
+        decoration: divider
+            ? BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: context.theme.colors.border,
+                    width: 1,
+                  ),
+                ),
+              )
+            : null,
+        child: text != null
+            ? SelectableText(text!, style: context.theme.typography.base)
+            : builder!(context),
+      ),
+    );
+  }
+}
+
+/// Divider form item for visual separation between form items
+class FormDivider extends FormItem {
+  FormDivider({required super.key}) : super(required: false);
+
+  @override
+  bool get isFocusable => false;
+
+  @override
+  dynamic getValue() => null;
+
+  @override
+  void setValue(dynamic value) {
+    // Divider items don't have values
+  }
+
+  @override
+  bool isValid() => true; // Divider items are always valid
+
+  @override
+  Widget build(
+    BuildContext context,
+    bool highlighted, {
+    bool enabled = true,
+    FocusNode? focusNode,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: context.theme.colors.border, width: 1),
+        ),
+      ),
     );
   }
 }

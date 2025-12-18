@@ -419,9 +419,12 @@ class PriorityPage extends StatelessWidget {
                                                               .activity,
                                                         ),
                                                     header: (header) {
-                                                      if (header.priority == null ||
+                                                      if (header.priority ==
+                                                              null ||
                                                           header.priority!.id ==
-                                                          state.context.id) {
+                                                              state
+                                                                  .context
+                                                                  .id) {
                                                         return <
                                                           StaticCommandGroup
                                                         >[];
@@ -433,7 +436,8 @@ class PriorityPage extends StatelessWidget {
                                                               .title,
                                                           commands:
                                                               priorityCommands(
-                                                                header.priority!,
+                                                                header
+                                                                    .priority!,
                                                               ),
                                                         ),
                                                       ];
@@ -476,7 +480,7 @@ class PriorityPage extends StatelessWidget {
                                         // Skip if priority is null or this is the context priority (already added by outer CommandScope)
                                         if (header.priority == null ||
                                             header.priority!.id ==
-                                            state.context.id) {
+                                                state.context.id) {
                                           return <StaticCommandGroup>[];
                                         }
                                         return [
@@ -543,12 +547,10 @@ class PriorityPage extends StatelessWidget {
 
                                     // Check if previous item is also a header
                                     final prevItem = index > state.first
-                                        ? state.agendaItems[index - state.first - 1]
+                                        ? state.agendaItems[index -
+                                              state.first -
+                                              1]
                                         : null;
-                                    final followsHeader = prevItem?.when(
-                                      header: (_) => true,
-                                      activity: (_) => false,
-                                    ) ?? false;
 
                                     return Column(
                                       mainAxisSize: MainAxisSize.min,
@@ -585,7 +587,6 @@ class PriorityPage extends StatelessWidget {
                                               focusNode: focusNode,
                                               text: header.text,
                                               scheduleAt: header.scheduleAt,
-                                              followsHeader: followsHeader,
                                             ),
                                           ],
                                           activity: (agendaActivity) => [
@@ -614,7 +615,8 @@ class PriorityPage extends StatelessWidget {
                                       activity: (agendaActivity) =>
                                           agendaActivity.activity,
                                     );
-                                    if (activity?.todo != true || activity == null) {
+                                    if (activity?.todo != true ||
+                                        activity == null) {
                                       return null;
                                     }
                                     return (int newIndex) {

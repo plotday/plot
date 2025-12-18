@@ -2,6 +2,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/state/priorities.dart';
@@ -22,7 +23,12 @@ class PrioritiesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       scrollable: false,
-      header: Header(title: 'Priorities', commands: [NewPriority()]),
+      header: Header(
+        title: defaultTargetPlatform == TargetPlatform.macOS
+            ? null
+            : 'Priorities',
+        commands: [NewPriority()],
+      ),
       body: BlocBuilder<LayoutBloc, LayoutState>(
         builder: (context, layoutState) {
           return Column(

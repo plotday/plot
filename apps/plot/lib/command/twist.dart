@@ -9,15 +9,6 @@ import 'package:plot/api/twist_api.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
 
-/// Formats twist name with environment label if not public
-String _formatTwistName(String name, String environment) {
-  if (environment == 'public') {
-    return name;
-  }
-  final envLabel = environment[0].toUpperCase() + environment.substring(1);
-  return '$name ($envLabel)';
-}
-
 class ManageTwists extends ShowCommands {
   ManageTwists([Priority? priority])
     : super(
@@ -42,7 +33,7 @@ class ManageTwists extends ShowCommands {
         .toList();
 
     final addCommands = allTwists
-        .map((twist) => AddTwistForm(twist, defaultPriority: priority))
+        .map((twist) => ShowTwistInfo(twist, defaultPriority: priority))
         .toList();
 
     return Commands(
@@ -54,94 +45,18 @@ class ManageTwists extends ShowCommands {
   }
 }
 
-class EditTwistCommand extends ShowCommands {
+class EditTwistCommand extends ShowForm {
   EditTwistCommand(this.priorityTwist, {Priority? priority})
-    : _priority = priority,
-      super(
-        title: _formatTwistName(
-          priorityTwist.name,
-          priorityTwist.twistEnvironment,
-        ),
+    : super(
+        title: priorityTwist.name,
         icon: PlotIcon.settings,
-        commands: (context) => _getTwistCommands(priorityTwist, priority),
+        form: (context) => _buildForm(context, priorityTwist, priority),
       );
 
   final PriorityTwist priorityTwist;
-  final Priority? _priority;
 
-  @override
-  Widget buildBody(BuildContext context) {
-    // Load priority to show path
-    return FutureBuilder<Priority?>(
-      future: _priority != null
-          ? Future.value(_priority)
-          : Priority.getOne(priorityTwist.priorityId),
-      builder: (context, snapshot) {
-        final priority = snapshot.data;
-        if (priority == null) {
-          return Text(
-            _formatTwistName(
-              priorityTwist.name,
-              priorityTwist.twistEnvironment,
-            ),
-            style: context.theme.typography.base,
-          );
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _formatTwistName(
-                priorityTwist.name,
-                priorityTwist.twistEnvironment,
-              ),
-              style: context.theme.typography.base,
-            ),
-            if (priority.ancestorsLabel() != null) ...[
-              const SizedBox(height: 2),
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      priority.ancestorsLabel()!,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.theme.typography.sm.copyWith(
-                        color: context.theme.colors.mutedForeground,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    Priority.separator,
-                    style: context.theme.typography.sm.copyWith(
-                      color: context.theme.colors.mutedForeground,
-                    ),
-                  ),
-                  Flexible(
-                    child: Text(
-                      priority.title,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.theme.typography.sm.copyWith(
-                        color: context.theme.colors.mutedForeground,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ] else
-              Text(
-                priority.title,
-                style: context.theme.typography.sm.copyWith(
-                  color: context.theme.colors.mutedForeground,
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  static Future<Commands> _getTwistCommands(
+  static Future<FormData> _buildForm(
+    BuildContext context,
     PriorityTwist priorityTwist,
     Priority? priority,
   ) async {
@@ -160,26 +75,72 @@ class EditTwistCommand extends ShowCommands {
         orElse: () => throw Exception('Twist not found'),
       );
 
-      return Commands(
+      return FormData(
+        title: 'Edit ${priorityTwist.name}',
         groups: [
-          StaticCommandGroup(
-            infoBuilder: (context) =>
-                TwistDetails(twist: matchingTwist, priority: loadedPriority),
-            commands: [
-              ArchiveActivitiesCreatedByTwist(priorityTwist),
-              RemoveTwist(priorityTwist),
+          StaticFormGroup(
+            items: [
+              FormInfo(
+                key: 'info',
+                divider: true,
+                builder: (context) => TwistDetails(
+                  twist: matchingTwist,
+                  priority: loadedPriority,
+                ),
+              ),
+              FormTextInput(
+                key: 'name',
+                label: 'Name',
+                initialValue: priorityTwist.name,
+                required: true,
+              ),
+              FormButton(
+                key: 'save',
+                label: 'Save',
+                onSubmit: (values) {
+                  final name = values['name'] as String;
+                  return EditTwistName(priorityTwist, name: name);
+                },
+              ),
+              FormDivider(key: 'divider'),
+              FormButton(
+                key: 'archive',
+                label: 'Archive',
+                onSubmit: (_) => PromptToArchiveTwist(priorityTwist),
+              ),
             ],
           ),
         ],
       );
     } catch (e, t) {
       log.warning('Error loading twist details', e, t);
-      // Fallback to simple commands without details
-      return Commands(
+      // Fallback to simple form without details
+      return FormData(
+        title: 'Edit ${priorityTwist.name}',
         groups: [
-          StaticCommandGroup(
-            title: 'Twist Commands',
-            commands: [RemoveTwist(priorityTwist)],
+          StaticFormGroup(
+            items: [
+              FormTextInput(
+                key: 'name',
+                label: 'Name',
+                initialValue: priorityTwist.name,
+                required: true,
+              ),
+              FormButton(
+                key: 'save',
+                label: 'Save',
+                onSubmit: (values) {
+                  final name = values['name'] as String;
+                  return EditTwistName(priorityTwist, name: name);
+                },
+              ),
+              FormDivider(key: 'divider'),
+              FormButton(
+                key: 'archive',
+                label: 'Archive',
+                onSubmit: (_) => PromptToArchiveTwist(priorityTwist),
+              ),
+            ],
           ),
         ],
       );
@@ -187,10 +148,10 @@ class EditTwistCommand extends ShowCommands {
   }
 }
 
-class AddTwistForm extends ShowForm {
-  AddTwistForm(this.twist, {Priority? defaultPriority})
+class ShowTwistInfo extends ShowForm {
+  ShowTwistInfo(this.twist, {Priority? defaultPriority})
     : super(
-        title: 'Add ${_formatTwistName(twist.name, twist.environment)}',
+        title: _formatTwistName(twist.name, twist.environment),
         icon: PlotIcon.twist,
         form: (context) => _buildForm(context, twist, defaultPriority),
       );
@@ -211,13 +172,20 @@ class AddTwistForm extends ShowForm {
         defaultPriority ?? currentPriority ?? await Priority.getDefault();
 
     return FormData(
-      title: 'Add ${_formatTwistName(twist.name, twist.environment)}',
+      title: twist.name,
       groups: [
         StaticFormGroup(
           items: [
             FormInfo(
               key: 'info',
+              divider: true,
               builder: (context) => TwistDetails(twist: twist),
+            ),
+            FormTextInput(
+              key: 'name',
+              label: 'Name',
+              initialValue: twist.name,
+              required: true,
             ),
             FormSelect<Priority>(
               key: 'priority',
@@ -230,14 +198,11 @@ class AddTwistForm extends ShowForm {
             ),
             FormButton(
               key: 'add',
-              command: AddTwist(initialPriority, twist),
-              onSubmit: (context, values) async {
+              label: 'Add',
+              onSubmit: (values) {
                 final selectedPriority = values['priority'] as Priority;
-                final command = AddTwist(selectedPriority, twist);
-                if (!context.mounted) {
-                  return const CommandSkipped();
-                }
-                return await command.run(context);
+                final name = values['name'] as String;
+                return AddTwist(selectedPriority, twist, name: name);
               },
             ),
           ],
@@ -245,10 +210,19 @@ class AddTwistForm extends ShowForm {
       ],
     );
   }
+
+  /// Formats twist name with environment label if not public
+  static String _formatTwistName(String name, String environment) {
+    if (environment == 'public') {
+      return name;
+    }
+    final envLabel = environment[0].toUpperCase() + environment.substring(1);
+    return '$name ($envLabel)';
+  }
 }
 
 class AddTwist extends Command {
-  AddTwist(this.priority, this.twist)
+  AddTwist(this.priority, this.twist, {required this.name})
     : super(
         title: 'Add Twist',
         eventObject: EventObject.twist,
@@ -257,6 +231,7 @@ class AddTwist extends Command {
 
   final Priority priority;
   final Twist twist;
+  final String name;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -265,14 +240,44 @@ class AddTwist extends Command {
         priorityId: priority.id.toString(),
         twistId: twist.id,
         twistEnvironment: twist.environment,
+        name: name,
       );
 
-      return CommandMessage(
-        'Twist "${_formatTwistName(twist.name, twist.environment)}" added successfully',
-      );
+      return CommandMessage('Twist "$name" added successfully');
     } catch (e, t) {
       log.warning('Failed to add twist', e, t);
       return CommandMessage('Failed to add twist', isError: true);
+    }
+  }
+}
+
+class EditTwistName extends Command {
+  EditTwistName(this.priorityTwist, {this.name})
+    : super(
+        title: 'Save',
+        eventObject: EventObject.twist,
+        eventAction: EventAction.updated,
+      );
+
+  final PriorityTwist priorityTwist;
+  final String? name;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      if (name == null) {
+        return CommandMessage('Name is required', isError: true);
+      }
+
+      await TwistApi.updateTwist(
+        priorityTwistId: priorityTwist.id.toString(),
+        name: name!,
+      );
+
+      return CommandMessage('Twist name updated to "${name!}"');
+    } catch (e, t) {
+      log.warning('Failed to update twist name', e, t);
+      return CommandMessage('Failed to update twist name', isError: true);
     }
   }
 }
@@ -281,8 +286,7 @@ class RemoveTwist extends Command {
   RemoveTwist(this.twist)
     : super(
         title: 'Remove Twist',
-        subtitle:
-            'Remove ${_formatTwistName(twist.name, twist.twistEnvironment)} from this priority',
+        subtitle: 'Remove ${twist.name} from this priority',
         eventObject: EventObject.twist,
         eventAction: EventAction.archived,
         icon: FontAwesomeIcons.trash,
@@ -295,12 +299,71 @@ class RemoveTwist extends Command {
     try {
       await TwistApi.removeTwist(twist.id.toString());
 
-      return CommandMessage(
-        'Twist "${_formatTwistName(twist.name, twist.twistEnvironment)}" removed successfully',
-      );
+      return CommandMessage('Twist "${twist.name}" removed successfully');
     } catch (e, t) {
       log.warning('Failed to remove twist', e, t);
       return CommandMessage('Failed to remove twist', isError: true);
+    }
+  }
+}
+
+class PromptToArchiveTwist extends ShowForm {
+  PromptToArchiveTwist(this.twist)
+    : super(
+        title: 'Archive',
+        icon: PlotIcon.archived,
+        form: (context) => _buildForm(context, twist),
+      );
+
+  final PriorityTwist twist;
+
+  static Future<FormData> _buildForm(
+    BuildContext context,
+    PriorityTwist twist,
+  ) async {
+    return FormData(
+      title: 'Archive Twist',
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'info',
+              text:
+                  'Archiving this twist will remove it and archive the activities it has created.',
+            ),
+            FormButton(
+              key: 'archive',
+              label: 'Archive Twist',
+              onSubmit: (_) => _ArchiveTwistCommand(twist),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ArchiveTwistCommand extends Command {
+  _ArchiveTwistCommand(this.twist)
+    : super(
+        title: 'Archive Twist',
+        eventObject: EventObject.twist,
+        eventAction: EventAction.archived,
+      );
+
+  final PriorityTwist twist;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await TwistApi.archiveAndRemoveTwist(twist.id.toString());
+
+      return CommandMessage(
+        'Twist "${twist.name}" and its activities archived successfully',
+      );
+    } catch (e, t) {
+      log.warning('Failed to archive twist', e, t);
+      return CommandMessage('Failed to archive twist', isError: true);
     }
   }
 }
@@ -329,26 +392,17 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
           items: [
             FormInfo(
               key: 'info',
-              builder: (context) => SelectableText(
-                count == 0
-                    ? 'No activities were created by this twist.'
-                    : count == 1
-                    ? '1 activity was created by this twist and will be archived.'
-                    : '$count activities were created by this twist and will be archived.',
-                style: context.theme.typography.base,
-              ),
+              text: count == 0
+                  ? 'No activities were created by this twist.'
+                  : count == 1
+                  ? '1 activity was created by this twist and will be archived.'
+                  : '$count activities were created by this twist and will be archived.',
             ),
             if (count > 0)
               FormButton(
                 key: 'archive',
-                command: _ArchiveActivitiesCommand(twist, count),
-                onSubmit: (context, values) async {
-                  final command = _ArchiveActivitiesCommand(twist, count);
-                  if (!context.mounted) {
-                    return const CommandSkipped();
-                  }
-                  return await command.run(context);
-                },
+                label: 'Archive Activities',
+                onSubmit: (_) => _ArchiveActivitiesCommand(twist, count),
               ),
           ],
         ),

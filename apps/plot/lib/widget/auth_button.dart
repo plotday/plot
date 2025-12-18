@@ -358,7 +358,7 @@ class _AuthButtonState extends State<AuthButton> {
       onPress: _isLoading ? null : _onPress,
       style: _buildButtonStyle(context, config),
       prefix: _isLoading
-          ? Spinner()
+          ? Spinner(color: config.textColor, size: config.iconSize)
           : _ProviderIcon(provider: widget.provider, size: config.iconSize),
       child: Text(
         config.buttonText,

@@ -232,7 +232,6 @@ class NewPriority extends ShowForm {
                     key: 'title',
                     label: 'Priority Name',
                     required: true,
-                    autofocus: true,
                   ),
                   FormSelect<Priority>(
                     key: 'parent',
@@ -270,16 +269,12 @@ class NewPriority extends ShowForm {
                   ),
                   FormButton(
                     key: 'create',
-                    command: AddPriority(
-                      Future.value(
-                        Priority(title: '', parent: defaultParent, draft: true),
-                      ),
-                    ),
-                    onSubmit: (context, values) async {
+                    label: 'Create',
+                    onSubmit: (values) {
                       final title = values['title'] as String;
                       final selectedParent = values['parent'] as Priority;
                       final color = values['color'] as ThemeColor?;
-                      final command = AddPriority(
+                      return AddPriority(
                         Future.value(
                           Priority(
                             title: title,
@@ -289,10 +284,6 @@ class NewPriority extends ShowForm {
                           ),
                         ),
                       );
-                      if (!context.mounted) {
-                        return const CommandSkipped();
-                      }
-                      return await command.run(context);
                     },
                   ),
                 ],
@@ -326,7 +317,6 @@ class EditPriorityCommand extends ShowForm {
                     label: 'Priority Name',
                     initialValue: priority.title,
                     required: true,
-                    autofocus: true,
                   ),
                   FormSelect<Priority>(
                     key: 'parent',
@@ -379,18 +369,20 @@ class EditPriorityCommand extends ShowForm {
                   ),
                   FormButton(
                     key: 'save',
-                    command: EditPriority(Future.value(priority)),
-                    onSubmit: (context, values) async {
+                    label: 'Save',
+                    onSubmit: (values) {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
-                      final updatedPriority = priority.copyWith(
-                        title: title,
-                        parent: newParent,
-                        color: Value(color),
+                      return EditPriority(
+                        Future.value(
+                          priority.copyWith(
+                            title: title,
+                            parent: newParent,
+                            color: Value(color),
+                          ),
+                        ),
                       );
-                      await updatedPriority.save();
-                      return const CommandDone();
                     },
                   ),
                 ],

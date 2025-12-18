@@ -6,9 +6,9 @@ import 'package:plot/style/plot_colors.dart';
 
 /// Shared layout component for form tiles (FormTextField, FormSelect, FormButton).
 ///
-/// Provides a consistent two-layer Stack structure:
-/// - Background layer: splits at formTileSplitPoint (102px) with optional right background color
-/// - Content layer: label (80px) + spacer (10px) + content widget
+/// Provides a consistent single-column layout:
+/// - Background layer: optional background color for the entire content area
+/// - Content layer: label above content widget with small font
 class FormTileLayout extends StatelessWidget {
   const FormTileLayout({
     required this.label,
@@ -18,13 +18,13 @@ class FormTileLayout extends StatelessWidget {
     super.key,
   });
 
-  /// The label text displayed in the fixed-width prefix (right-aligned).
+  /// The label text displayed above the content in a small font.
   final String label;
 
-  /// The content widget displayed on the right side.
+  /// The content widget displayed below the label.
   final Widget content;
 
-  /// Optional background color for the right side (content area).
+  /// Optional background color for the content area.
   final Color? rightBackgroundColor;
 
   /// Whether this form tile is active (focused, hovered, or highlighted).
@@ -35,37 +35,29 @@ class FormTileLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Background layer (highlight only on right side)
-        Positioned.fill(
-          child: Row(
-            children: [
-              // Left side: label area without highlight
-              Container(width: formTileSplitPoint),
-              // Right side: content area with optional background color
-              Expanded(child: Container(color: rightBackgroundColor)),
-            ],
-          ),
-        ),
+        // Background layer
+        if (rightBackgroundColor != null)
+          Positioned.fill(child: Container(color: rightBackgroundColor)),
         // Content layer (with padding)
         Padding(
           padding: widgetPaddingSm,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                width: formTileLabelWidth,
-                child: Text(
-                  label,
-                  textAlign: TextAlign.end,
-                  style: context.theme.typography.sm.copyWith(
-                    color: isActive
-                        ? context.theme.colors.foreground
-                        : context.theme.plotColors.muted,
+              if (label.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    label,
+                    style: context.theme.typography.xs.copyWith(
+                      color: isActive
+                          ? context.theme.colors.foreground
+                          : context.theme.plotColors.muted,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: formTileSpacer),
-              Expanded(child: content),
+              content,
             ],
           ),
         ),

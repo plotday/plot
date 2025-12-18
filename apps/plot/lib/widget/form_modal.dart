@@ -96,14 +96,8 @@ class FormModalState extends State<_FormModal> {
     );
     _focusNodes = List.generate(totalCount, (_) => FocusNode());
 
-    // Find first enabled item for initial focus
-    _highlightedIndex = 0;
-    for (int i = 0; i < totalCount; i++) {
-      if (_isItemEnabled(i)) {
-        _highlightedIndex = i;
-        break;
-      }
-    }
+    // Find initial focus index based on form state
+    _highlightedIndex = _findInitialFocusIndex();
 
     // Add listeners to all text input controllers and select fields to rebuild on changes
     for (var group in _formGroups) {
@@ -116,13 +110,46 @@ class FormModalState extends State<_FormModal> {
       }
     }
 
-    // Request focus on first item after build
+    // Request focus on determined item after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_focusNodes.isNotEmpty && mounted) {
-        log.info('Initial focus request on first item (index 0)');
-        _focusNodes[0].requestFocus();
+      if (_focusNodes.isNotEmpty &&
+          mounted &&
+          _highlightedIndex < _focusNodes.length) {
+        log.info(
+          'Initial focus request on item (index $_highlightedIndex)',
+        );
+        _focusNodes[_highlightedIndex].requestFocus();
       }
     });
+  }
+
+  int _findInitialFocusIndex() {
+    final totalCount = _allItemsCount();
+
+    // First, look for first empty required field
+    for (int i = 0; i < totalCount; i++) {
+      final item = _getItemAtIndex(i);
+      if (item.required && !item.isValid() && _isItemEnabled(i)) {
+        return i;
+      }
+    }
+
+    // If all required fields are filled, find first button
+    for (int i = 0; i < totalCount; i++) {
+      final item = _getItemAtIndex(i);
+      if (item is FormButton && _isItemEnabled(i)) {
+        return i;
+      }
+    }
+
+    // Fallback to first enabled item
+    for (int i = 0; i < totalCount; i++) {
+      if (_isItemEnabled(i)) {
+        return i;
+      }
+    }
+
+    return 0;
   }
 
   void _onFormChanged() {
@@ -165,6 +192,10 @@ class FormModalState extends State<_FormModal> {
 
   bool _isItemEnabled(int index) {
     final item = _getItemAtIndex(index);
+    // Skip non-focusable items (e.g., FormInfo, FormDivider)
+    if (!item.isFocusable) {
+      return false;
+    }
     if (item is FormButton) {
       return _isFormValid();
     }
@@ -283,7 +314,7 @@ class FormModalState extends State<_FormModal> {
     }
 
     final primaryButton = _getPrimaryButton();
-    if (primaryButton == null || primaryButton.onSubmit == null) {
+    if (primaryButton == null) {
       return;
     }
 
@@ -293,7 +324,9 @@ class FormModalState extends State<_FormModal> {
 
     try {
       final values = _collectFormValues();
-      final result = await primaryButton.onSubmit!(widget.rootContext, values);
+      final command = primaryButton.onSubmit(values);
+
+      final result = await command.run(widget.rootContext);
 
       if (!mounted) return;
 
@@ -332,42 +365,25 @@ class FormModalState extends State<_FormModal> {
     });
 
     try {
-      if (button.onSubmit != null) {
-        final values = _collectFormValues();
-        final result = await button.onSubmit!(widget.rootContext, values);
+      final values = _collectFormValues();
+      final command = button.onSubmit(values);
 
-        if (!mounted) return const CommandSkipped();
+      final result = await command.run(widget.rootContext);
 
-        if (result is CommandMessage && result.isError) {
-          setState(() {
-            _error = result.message;
-          });
-          return const CommandDone();
-        }
+      if (!mounted) return const CommandSkipped();
 
-        Modal.popAll(context);
-        if (context.mounted && result is CommandRoute) {
-          result.go(widget.rootContext);
-        }
-        return result;
-      } else {
-        // Fallback to action's run method
-        final result = await button.command.run(widget.rootContext);
-        if (!mounted) return const CommandSkipped();
-
-        if (result is CommandMessage && result.isError) {
-          setState(() {
-            _error = result.message;
-          });
-          return const CommandDone();
-        }
-
-        Modal.popAll(context);
-        if (context.mounted && result is CommandRoute) {
-          result.go(widget.rootContext);
-        }
-        return result;
+      if (result is CommandMessage && result.isError) {
+        setState(() {
+          _error = result.message;
+        });
+        return const CommandDone();
       }
+
+      Modal.popAll(context);
+      if (context.mounted && result is CommandRoute) {
+        result.go(widget.rootContext);
+      }
+      return result;
     } catch (e, stackTrace) {
       log.warning('Error executing button', e, stackTrace);
       if (mounted) {
@@ -412,6 +428,10 @@ class FormModalState extends State<_FormModal> {
                 MoveListSelectionIntent(-1),
             SingleActivator(LogicalKeyboardKey.arrowDown):
                 MoveListSelectionIntent(1),
+            SingleActivator(LogicalKeyboardKey.tab):
+                MoveListSelectionIntent(1),
+            SingleActivator(LogicalKeyboardKey.tab, shift: true):
+                MoveListSelectionIntent(-1),
             SingleActivator(LogicalKeyboardKey.enter):
                 ActivateListSelectionIntent(),
           },
@@ -495,10 +515,11 @@ class FormModalState extends State<_FormModal> {
                     ),
                   ),
                   if (errorBox != null) errorBox,
-                  ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: totalItemCount,
-                    itemBuilder: (context, index) {
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: totalItemCount,
+                      itemBuilder: (context, index) {
                       final group = _getGroupAtIndex(index);
                       final item = _getItemAtIndex(index);
                       Widget? header;
@@ -557,6 +578,7 @@ class FormModalState extends State<_FormModal> {
                         ),
                       );
                     },
+                    ),
                   ),
                   const SizedBox(height: 8),
                 ],

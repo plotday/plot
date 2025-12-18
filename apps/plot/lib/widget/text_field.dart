@@ -111,7 +111,7 @@ class TextFieldState extends State<TextField> {
           style: widget.style == TextFieldStyle.outline
               ? null
               : (style) => style.copyWith(
-                  contentPadding: EdgeInsets.all(0),
+                  contentPadding: .all(0),
                   border: style.border.map(
                     (borderStyle) => borderStyle.copyWith(
                       borderSide: BorderSide(width: 0, style: BorderStyle.none),
