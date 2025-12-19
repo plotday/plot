@@ -280,24 +280,28 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   static Future<void> pullRange(DateRange range, Path? priorityPath) async {
     // Pull activities first (with limit of 200)
-    final activitiesRange = await Store.get.pullMore(
+    // For descending order (newest first), pullTo is the older/earlier boundary (range.start)
+    final activitiesRange = await Store.get.pullTo(
       Store.get.activities,
       ActivitiesBase(priorityPath: priorityPath?.value ?? ''),
-      range: (range.start?.toDateTime(), range.end?.toDateTime()),
+      pullTo: range.start?.toDateTime(),
+      ascending: false, // Activity pulls newest → oldest
     );
 
     if (activitiesRange == null) return;
 
     // Use the returned range for exceptions and tags
-    await Store.get.pullMore(
+    await Store.get.pullTo(
       Store.get.activityExceptions,
       ActivityExceptionsBase(priorityPath: priorityPath?.value ?? ''),
-      range: activitiesRange,
+      pullTo: activitiesRange.$1, // Use the oldest boundary from activities
+      ascending: false,
     );
-    await Store.get.pullMore(
+    await Store.get.pullTo(
       Store.get.activityTags,
       ActivityTagsBase(priorityPath: priorityPath?.value ?? ''),
-      range: activitiesRange,
+      pullTo: activitiesRange.$1, // Use the oldest boundary from activities
+      ascending: false,
     );
   }
 
