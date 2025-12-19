@@ -1,4 +1,5 @@
 import TurndownService from "turndown";
+import { parseHTML } from "linkedom/worker";
 
 import { type Database, safeQuery } from "@plotday/db";
 import {
@@ -24,6 +25,13 @@ import { ContactAccess } from "@plotday/twister/tools/plot";
 import { fromDbActivity } from "./converters";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";
+
+// Create global document polyfill for Turndown (required in Cloudflare Workers)
+// This runs once when the module is loaded
+if (typeof (globalThis as any).document === "undefined") {
+  const { document } = parseHTML("<!DOCTYPE html><html><body></body></html>");
+  (globalThis as any).document = document;
+}
 
 /**
  * Converts ActorType enum to database actor type string.

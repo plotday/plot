@@ -33,6 +33,7 @@
     "@supabase/supabase-js": "^2.79.0",
     "ai": "^5.0.76",
     "hono": "^4.6.15",
+    "linkedom": "^0.18.12",
     "stripe": "^17.5.0",
     "turndown": "^7.2.0",
     "typebox": "^1.0.35",
