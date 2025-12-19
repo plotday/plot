@@ -458,6 +458,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     final activities = await _get(
       id: id,
       archived: null,
+      draft: null,
       order: ActivityOrder.sorted,
     );
     if (activities.isEmpty) {
@@ -471,6 +472,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     return _getQuery(
       id: id,
       archived: null,
+      draft: null,
       order: ActivityOrder.sorted,
     ).watch().asyncMap((results) async {
       final activities = await _mapResultsToActivities(results, range: null);

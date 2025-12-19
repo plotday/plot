@@ -138,8 +138,8 @@ class NewEvent extends Command {
   }
 }
 
-class NextActivityThread extends Command {
-  NextActivityThread()
+class OpenNextActivity extends Command {
+  OpenNextActivity()
     : super(
         title: 'Next Activity Thread',
         eventObject: EventObject.activity,
@@ -183,8 +183,8 @@ class NextActivityThread extends Command {
   }
 }
 
-class PreviousActivityThread extends Command {
-  PreviousActivityThread()
+class OpenPreviousActivity extends Command {
+  OpenPreviousActivity()
     : super(
         title: 'Previous Activity Thread',
         eventObject: EventObject.activity,
@@ -286,46 +286,16 @@ class AddActivityWithNote extends Command {
     // Get PriorityBloc before async operations
     final priorityBloc = context.read<PriorityBloc>();
 
-    // Save the activity first (ensures it has an ID)
-    final savedActivity = _data.activity.copyWith(draft: false);
-    await savedActivity.save();
-
-    // Create and save the first note for this activity
-    if (_data.noteContent.trim().isNotEmpty) {
-      final note = Note(
-        id: Uuid.generate(),
-        activityId: savedActivity.id,
-        authorId: Base.actorId,
-        draft: false,
-        private: false,
-        content: _data.noteContent,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-      await note.save();
-
-      // Asynchronously generate a better title using AI (fire and forget)
-      // The activity is already saved with a fallback title, so this update
-      // will happen in the background without blocking the UI
-      savedActivity
-          .generateTitle(_data.noteContent)
-          .then((title) async {
-            if (title != savedActivity.title) {
-              await savedActivity.copyWith(title: Value(title)).save();
-            }
-          })
-          .catchError((Object e) {
-            // Error already logged by generateTitle(), just ignore here
-          });
-    }
+    // Add the activity (handles saving, note creation, title generation, and draft reset)
+    final savedActivity = await priorityBloc.add(
+      _data.activity,
+      noteContent: _data.noteContent,
+    );
 
     // Only navigate if requested
     if (!navigate) {
       return const CommandDone();
     }
-
-    // Update PriorityBloc to track the new activity
-    priorityBloc.setActivity(savedActivity);
 
     return CommandRoute(
       PriorityRoute(
@@ -356,44 +326,16 @@ class AddEvent extends Command {
     // Get PriorityBloc before async operations
     final priorityBloc = context.read<PriorityBloc>();
 
-    // Save the activity first (ensures it has an ID)
-    final savedActivity = _activity.copyWith(draft: false);
-    await savedActivity.save();
-
-    // Create and save note only if content is provided and not empty
-    if (_noteContent != null && _noteContent.trim().isNotEmpty) {
-      final note = Note(
-        id: Uuid.generate(),
-        activityId: savedActivity.id,
-        authorId: Base.actorId,
-        draft: false,
-        private: false,
-        content: _noteContent,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-      await note.save();
-
-      // Asynchronously generate a better title using AI (fire and forget)
-      savedActivity
-          .generateTitle(_noteContent)
-          .then((title) async {
-            if (title != savedActivity.title) {
-              await savedActivity.copyWith(title: Value(title)).save();
-            }
-          })
-          .catchError((Object e) {
-            // Error already logged by generateTitle(), just ignore here
-          });
-    }
+    // Add the activity (handles saving, note creation, title generation, and draft reset)
+    final savedActivity = await priorityBloc.add(
+      _activity,
+      noteContent: _noteContent,
+    );
 
     // Only navigate if requested
     if (!navigate) {
       return const CommandDone();
     }
-
-    // Update PriorityBloc to track the new activity
-    priorityBloc.setActivity(savedActivity);
 
     return CommandRoute(
       PriorityRoute(

@@ -241,10 +241,8 @@ class NewPriority extends ShowForm {
                       order: PriorityOrder.nested,
                       search: search,
                     ),
-                    labelBuilder: (p) => PriorityLabel(
-                      priority: p,
-                      fontSize: 12,
-                    ),
+                    labelBuilder: (p) =>
+                        PriorityLabel(priority: p, fontSize: 12),
                     titleBuilder: (p) => p.ancestorsLabel() != null
                         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
                         : p.title,
@@ -427,8 +425,8 @@ List<Command> priorityCommands(Priority priority) => [
 List<Command> currentPriorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
   NewActivity(),
-  NextActivityThread(),
-  PreviousActivityThread(),
+  OpenNextActivity(),
+  OpenPreviousActivity(),
 ];
 
 class SetTopPriority extends Command {

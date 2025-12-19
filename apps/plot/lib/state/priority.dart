@@ -394,15 +394,48 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Adds an activity by converting the current draft to a non-draft.
   /// Creates a fresh draft for the priority afterward.
-  Future<void> add(Activity activity) async {
+  /// If noteContent is provided, creates a note and asynchronously generates a title.
+  /// Returns the saved activity.
+  Future<Activity> add(Activity activity, {String? noteContent}) async {
     // Convert the draft to a non-draft
-    activity = activity.copyWith(draft: false);
-    await activity.save();
+    final savedActivity = activity.copyWith(draft: false);
+    await savedActivity.save();
+
+    // Create and save note if content is provided
+    if (noteContent != null && noteContent.trim().isNotEmpty) {
+      final note = Note(
+        id: Uuid.generate(),
+        activityId: savedActivity.id,
+        authorId: Base.actorId,
+        draft: false,
+        private: false,
+        content: noteContent,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      await note.save();
+
+      // Asynchronously generate a better title using AI (fire and forget)
+      // The activity is already saved with a fallback title, so this update
+      // will happen in the background without blocking the UI
+      savedActivity
+          .generateTitle(noteContent)
+          .then((title) async {
+            if (title != savedActivity.title) {
+              await savedActivity.copyWith(title: Value(title)).save();
+            }
+          })
+          .catchError((Object e) {
+            // Error already logged by generateTitle(), just ignore here
+          });
+    }
 
     // Create fresh draft for the priority
     final newDraft = Activity(priority: state.context, draft: true);
     await newDraft.save();
-    emit(state.copyWith(draft: newDraft));
+    emit(state.copyWith(draft: newDraft, activity: Value(savedActivity)));
+
+    return savedActivity;
   }
 
   Future<void> _loadSchedule(BoundedDateRange range, {Date? firstDate}) {
