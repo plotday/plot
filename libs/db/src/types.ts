@@ -48,6 +48,7 @@ export type Database = {
           duration: unknown
           embedding: unknown
           id: string
+          last_note_created_at: string | null
           meta: Json | null
           on: unknown
           order: number
@@ -97,6 +98,7 @@ export type Database = {
           duration?: unknown
           embedding?: unknown
           id?: string
+          last_note_created_at?: string | null
           meta?: Json | null
           on?: unknown
           order?: number
@@ -126,6 +128,7 @@ export type Database = {
           duration?: unknown
           embedding?: unknown
           id?: string
+          last_note_created_at?: string | null
           meta?: Json | null
           on?: unknown
           order?: number
@@ -175,13 +178,6 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -189,8 +185,15 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -809,13 +812,6 @@ export type Database = {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_contact_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -823,8 +819,15 @@ export type Database = {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -889,13 +892,6 @@ export type Database = {
             foreignKeyName: "priority_settings_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_settings_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -903,8 +899,15 @@ export type Database = {
             foreignKeyName: "priority_settings_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -978,13 +981,6 @@ export type Database = {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -992,8 +988,15 @@ export type Database = {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_twist_twist_id_twist_environment_fkey"
@@ -1059,13 +1062,6 @@ export type Database = {
             foreignKeyName: "priority_user_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_user_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1073,8 +1069,15 @@ export type Database = {
             foreignKeyName: "priority_user_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_user_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -1169,13 +1172,6 @@ export type Database = {
             foreignKeyName: "series_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "series_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1183,8 +1179,15 @@ export type Database = {
             foreignKeyName: "series_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "series_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -1261,13 +1264,6 @@ export type Database = {
             foreignKeyName: "session_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "session_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1275,8 +1271,15 @@ export type Database = {
             foreignKeyName: "session_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "session_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -1429,13 +1432,6 @@ export type Database = {
             foreignKeyName: "twist_admin_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "twist_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1443,8 +1439,15 @@ export type Database = {
             foreignKeyName: "twist_admin_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "twist_admin_publisher_id_fkey"
@@ -1622,6 +1625,7 @@ export type Database = {
           duration: unknown
           embedding: unknown
           id: string | null
+          last_note_created_at: string | null
           mentions: string[] | null
           meta: Json | null
           on: unknown
@@ -1673,13 +1677,6 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1687,8 +1684,15 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -1738,6 +1742,7 @@ export type Database = {
       }
       priority_child: {
         Row: {
+          archived_at: string | null
           child_id: string | null
           priority_id: string | null
         }
@@ -1796,13 +1801,6 @@ export type Database = {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1810,8 +1808,15 @@ export type Database = {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_twist_twist_id_twist_environment_fkey"
@@ -1872,13 +1877,6 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1886,18 +1884,17 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
-      }
-      priority_unread: {
-        Row: {
-          priority_id: string | null
-          unread: boolean | null
-          user_id: string | null
-        }
-        Relationships: []
       }
       user_activity: {
         Row: {
@@ -1976,13 +1973,6 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1990,8 +1980,15 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -2027,7 +2024,6 @@ export type Database = {
       user_activity_unread: {
         Row: {
           activity_id: string | null
-          last_note_created_at: string | null
           unread: boolean | null
           updated_at: string | null
           user_id: string | null
@@ -2127,20 +2123,20 @@ export type Database = {
         }
         Relationships: []
       }
-      user_priority_base: {
+      user_priority_expanded: {
         Row: {
           archived_at: string | null
-          color: number | null
-          created_at: string | null
-          created_by: string | null
-          id: string | null
-          path: unknown
-          pomodoro: number | null
-          root: boolean | null
-          title: string | null
-          top_order: number | null
+          joined_at: string | null
+          priority_id: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      user_priority_unread: {
+        Row: {
+          priority_id: string | null
+          unread: boolean | null
           updated_at: string | null
-          updated_by: number | null
           user_id: string | null
         }
         Relationships: []
@@ -2194,13 +2190,6 @@ export type Database = {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -2208,8 +2197,15 @@ export type Database = {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_base"
-            referencedColumns: ["id"]
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_twist_twist_id_twist_environment_fkey"

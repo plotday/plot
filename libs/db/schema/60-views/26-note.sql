@@ -3,7 +3,7 @@ CREATE OR REPLACE VIEW "public"."user_note" WITH ( security_invoker = TRUE)
 --
 AS
 SELECT
-    up.user_id,
+    upe.user_id,
     n.id,
     n.created_at,
     n.updated_at,
@@ -20,7 +20,7 @@ SELECT
 FROM
     note n
     JOIN activity a ON a.id = n.activity_id
-    JOIN user_priority up ON up.id = a.priority_id;
+    JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id;
 
 -- Aggregate note tags by note_id
 CREATE OR REPLACE VIEW "public"."note_tags" WITH ( security_invoker = TRUE)

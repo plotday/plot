@@ -1,53 +1,27 @@
--- View that indicates whether a priority has any unread activities for each user
-CREATE OR REPLACE VIEW "public"."priority_unread" WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW "public"."user_priority_unread" WITH ( security_invoker = TRUE)
 --
 AS
 SELECT
-    upb.user_id,
-    upb.id AS priority_id,
-    COALESCE(unread_check.unread, FALSE) AS unread
+    upe.user_id,
+    upe.priority_id,
+    TRUE AS unread,
+    -- The latest updated_at across relevant activities in the priority
+    MAX(GREATEST (COALESCE(ar.updated_at, 'epoch'), CASE
+        WHEN a.created_by = upe.user_id THEN COALESCE(a.last_note_created_at, 'epoch')
+        ELSE COALESCE(a.last_note_created_at, a.created_at)
+    END)) AS updated_at
 FROM
-    user_priority_base upb
-    LEFT JOIN contact c ON c.user_id = upb.user_id
-    -- Join to get when user was added to the priority root
-    LEFT JOIN LATERAL (
-        SELECT pu.created_at
-        FROM priority_user pu
-        JOIN priority p ON p.id = pu.priority_id
-        WHERE pu.user_id = upb.user_id
-          AND p.path @> upb.path
-        ORDER BY nlevel(p.path) ASC
-        LIMIT 1
-    ) member ON TRUE
-    LEFT JOIN LATERAL (
-        SELECT
-            TRUE AS unread
-        FROM
-            activity a
-        LEFT JOIN activity_read ar ON ar.user_id = upb.user_id
-            AND ar.activity_id = a.id
-    WHERE
-        a.priority_id = upb.id
+    user_priority_expanded upe
+    -- All non-archived activities for the priority after the user joined
+    JOIN activity a ON a.priority_id = upe.priority_id
         AND a.archived_at IS NULL
-        AND a.draft = FALSE
-        AND (
-            -- Activity created by another author and not read
-            (a.author_id <> c.id
-                -- Only activities created after user joined
-                AND (member.created_at IS NULL OR a.created_at >= member.created_at)
-                AND ar.read_at IS NULL)
-            -- OR activity has a note by another author newer than read_at
-            OR EXISTS (
-                SELECT
-                    1
-                FROM
-                    note n
-                WHERE
-                    n.activity_id = a.id
-                    AND n.archived_at IS NULL
-                    AND n.author_id <> c.id
-                    -- Only notes created after user joined
-                    AND (member.created_at IS NULL OR n.created_at >= member.created_at)
-                    AND (ar.read_at IS NULL
-                        OR n.created_at > ar.read_at)))
-    LIMIT 1) unread_check ON TRUE;
+        -- For self-created activities: only include if there are notes
+        -- For others: use standard logic
+        AND ((a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at)
+            OR ((a.created_by IS NULL OR a.created_by != upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
+    LEFT JOIN activity_read ar ON ar.user_id = upe.user_id
+        AND ar.activity_id = a.id
+GROUP BY
+    upe.user_id,
+    upe.priority_id;
+

@@ -1,26 +1,46 @@
--- Final user_priority view that combines user_priority_base with unread
+-- While priority_user defines the priority roots for a user,
+-- user_priority has a row for every priority (including children)
+-- the user can access, with unread status.
 CREATE OR REPLACE VIEW "public"."user_priority" WITH ( security_invoker = TRUE)
---
+-- for formatting
 AS
 SELECT
-    upb.user_id,
-    upb.id,
-    upb.created_at,
-    upb.updated_at,
-    upb.archived_at,
-    upb.created_by,
-    upb.updated_by,
-    upb.root,
-    upb.title,
-    upb.path,
-    upb.top_order,
-    upb.pomodoro,
-    upb.color,
-    COALESCE(pu.unread, FALSE) AS unread
+    pu.user_id,
+    p.id,
+    p.created_at,
+    GREATEST (settings.updated_at, pu.updated_at, p.updated_at, coalesce(upu.updated_at, 'epoch')) AS updated_at,
+    GREATEST (pu.archived_at, p.archived_at) AS archived_at,
+    p.created_by,
+    p.updated_by,
+    root.root
+    AND p.id = root.id AS root,
+    p.title,
+    CASE WHEN inherited_settings.path IS NOT NULL THEN
+        inherited_settings.path
+    WHEN user_root.path @> p.path THEN
+        p.path
+    ELSE
+        user_root.path || p.path
+    END AS path,
+    settings.top_order,
+    inherited_settings.pomodoro,
+    inherited_settings.color,
+    COALESCE(upu.unread, FALSE) AS unread
 FROM
-    user_priority_base upb
-    LEFT JOIN priority_unread pu ON pu.user_id = upb.user_id
-        AND pu.priority_id = upb.id;
+    priority_user pu
+    JOIN priority root ON pu.priority_id = root.id
+    JOIN priority user_root ON pu.user_id = user_root.created_by
+        AND user_root.root
+    JOIN priority p ON root.path @> p.path
+    LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
+        AND p.id = settings.priority_id
+    LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id
+        AND p.id = inherited_settings.priority_id
+        -- Latest updated_at in descendant activities
+    LEFT JOIN user_priority_unread upu ON upu.user_id = pu.user_id
+        AND upu.priority_id = p.id
+WHERE
+    pu.archived_at IS NULL;
 
 CREATE OR REPLACE FUNCTION public.handle_user_priority_upsert ()
     RETURNS TRIGGER

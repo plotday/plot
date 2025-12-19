@@ -35,7 +35,8 @@ CREATE TABLE "public"."activity" (
     "source" text,
     "created_by_twist_id" uuid,
     "embedding" halfvec (384),
-    "pick_priority" jsonb
+    "pick_priority" jsonb,
+    "last_note_created_at" timestamp with time zone
 );
 
 CREATE INDEX ON activity USING hnsw (embedding halfvec_cosine_ops);
@@ -67,6 +68,8 @@ COMMENT ON COLUMN "public"."activity"."source" IS 'External source identifier fo
 COMMENT ON COLUMN "public"."activity"."created_by_twist_id" IS 'The twist definition ID (twist_admin.id) that created this activity. Null for user-created activities. Used with source for per-twist deduplication.';
 
 COMMENT ON COLUMN "public"."activity"."pick_priority" IS 'The PickPriorityConfig used to automatically select this activity''s priority. Null if priority was explicitly specified. Used when moving activities to find similar activities to move. Not exposed to app or API.';
+
+COMMENT ON COLUMN "public"."activity"."last_note_created_at" IS 'Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for range_at computation and unread status in user_activity view.';
 
 COMMENT ON COLUMN "public"."activity_exception"."occurrence" IS 'Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM';
 
@@ -123,6 +126,12 @@ WHERE
 -- Includes priority_id to support common WHERE clauses
 -- Only indexes non-archived activities (most common case)
 CREATE INDEX idx_activity_created_at_priority ON "public"."activity" ("created_at" DESC, "priority_id")
+WHERE
+    archived_at IS NULL;
+
+-- Optimized for user_activity_unread and user_priority_unread views
+-- Supports efficient filtering and aggregation on last_note_created_at
+CREATE INDEX idx_activity_priority_archived_last_note ON "public"."activity" ("priority_id", "last_note_created_at", "created_at")
 WHERE
     archived_at IS NULL;
 

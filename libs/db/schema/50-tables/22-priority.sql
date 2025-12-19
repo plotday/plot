@@ -47,6 +47,12 @@ CREATE INDEX idx_priority_user_user_id ON "public"."priority_user" ("user_id")
 WHERE
     archived_at IS NULL;
 
+-- Optimized for user_priority_expanded GROUP BY operations
+-- Supports efficient aggregation by user_id and priority_id with created_at
+CREATE INDEX idx_priority_user_user_priority_archived ON "public"."priority_user" ("user_id", "priority_id", "created_at")
+WHERE
+    archived_at IS NULL;
+
 ALTER TABLE "public"."priority_user" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_priority_user_updated_at

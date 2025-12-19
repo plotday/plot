@@ -19,5 +19,6 @@ CREATE TRIGGER notify_activity_read_change
     FOR EACH ROW
     EXECUTE FUNCTION public.notify_internal_api_for_activity_read ();
 
-CREATE INDEX idx_activity_read_user_activity ON "public"."activity_read" ("user_id", "activity_id");
+-- Enhanced composite index supporting read_at comparisons in unread queries
+CREATE INDEX idx_activity_read_user_read ON "public"."activity_read" ("user_id", "activity_id", "read_at");
 

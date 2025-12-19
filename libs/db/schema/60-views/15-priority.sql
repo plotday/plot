@@ -21,10 +21,30 @@ CREATE OR REPLACE VIEW "public"."priority_child" WITH ( security_invoker = TRUE)
 AS
 SELECT
     p.id AS priority_id,
-    c.id AS child_id
+    c.id AS child_id,
+    c.archived_at AS archived_at
 FROM
     "public"."priority" p
     JOIN "public"."priority" c ON c.path <@ p.path;
+
+CREATE OR REPLACE VIEW "public"."user_priority_expanded" WITH ( security_invoker = TRUE)
+--
+AS
+SELECT
+    pu.user_id AS user_id,
+    c.child_id AS priority_id,
+    MIN(pu.created_at) AS joined_at,
+    CASE WHEN bool_or(pu.archived_at IS NULL) THEN
+        NULL
+    ELSE
+        LEAST (MIN(pu.archived_at), MIN(c.archived_at))
+    END AS archived_at
+FROM
+    priority_user pu
+    JOIN priority_child c ON pu.priority_id = c.priority_id
+GROUP BY
+    pu.user_id,
+    c.child_id;
 
 CREATE OR REPLACE VIEW "public"."priority_settings_inherited" WITH ( security_invoker = TRUE)
 -- for formatting
@@ -52,9 +72,7 @@ WITH inherited_sources AS (
         ps.path IS NOT NULL
         OR ps.pomodoro IS NOT NULL
         OR ps.color IS NOT NULL
-
     UNION ALL
-
     -- Get default colors from priority table
     SELECT
         pu.user_id,
@@ -84,68 +102,9 @@ ORDER BY
     user_id,
     priority_id,
     distance ASC, -- Closest ancestor first
-    source_type ASC; -- priority_settings.color before priority.color at same distance
+    source_type ASC;
 
--- While priority_user defines the priority roots for a user,
--- user_priority_base has a row for every priority (including children)
--- the user can access, with core fields only (no unread).
-CREATE OR REPLACE VIEW "public"."user_priority_base" WITH ( security_invoker = TRUE)
--- for formatting
-AS
-SELECT
-    pu.user_id,
-    p.id,
-    p.created_at,
-    GREATEST (settings.updated_at, pu.updated_at, p.updated_at, coalesce(activity_max.updated_at, 'epoch'), coalesce(ar_max.updated_at, 'epoch')) AS updated_at,
-    GREATEST (pu.archived_at, p.archived_at) AS archived_at,
-    p.created_by,
-    p.updated_by,
-    root.root
-    AND p.id = root.id AS root,
-    p.title,
-    CASE WHEN inherited_settings.path IS NOT NULL THEN
-        inherited_settings.path
-    WHEN user_root.path @> p.path THEN
-        p.path
-    ELSE
-        user_root.path || p.path
-    END AS path,
-    settings.top_order,
-    inherited_settings.pomodoro,
-    inherited_settings.color
-FROM
-    priority_user pu
-    JOIN priority root ON pu.priority_id = root.id
-    JOIN priority user_root ON pu.user_id = user_root.created_by
-        AND user_root.root
-    JOIN priority p ON root.path @> p.path
-    LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
-        AND p.id = settings.priority_id
-    LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id
-        AND p.id = inherited_settings.priority_id
-        -- Latest updated_at in descendant activities
-    LEFT JOIN LATERAL (
-        SELECT
-            MAX(a.updated_at) AS updated_at
-        FROM
-            activity a
-            JOIN priority ap ON ap.id = a.priority_id
-        WHERE
-            ap.path <@ p.path
-            AND a.archived_at IS NULL) activity_max ON TRUE
-    -- Latest updated_at in user's activity_reads
-    LEFT JOIN LATERAL (
-        SELECT
-            MAX(ar.updated_at) AS updated_at
-        FROM
-            activity_read ar
-            JOIN priority ap ON ap.id = ar.activity_id
-        WHERE
-            ar.user_id = pu.user_id
-            AND ap.path <@ p.path) ar_max ON TRUE
-WHERE
-    pu.archived_at IS NULL;
-
+-- priority_settings.color before priority.color at same distance
 SET check_function_bodies = OFF;
 
 CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid)

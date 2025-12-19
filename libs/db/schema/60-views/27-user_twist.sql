@@ -3,7 +3,7 @@ CREATE OR REPLACE VIEW "public"."user_twist" WITH ( security_invoker = TRUE)
 --
 AS
 SELECT
-    up.user_id,
+    upe.user_id,
     pt.id,
     pt.created_at,
     pt.updated_at,
@@ -16,4 +16,5 @@ SELECT
     pt.config
 FROM
     priority_twist pt
-    JOIN user_priority up ON up.id = pt.priority_id;
+    JOIN user_priority_expanded upe ON upe.priority_id = pt.priority_id;
+

@@ -28,74 +28,31 @@ GROUP BY
 
 CREATE OR REPLACE VIEW "public"."user_activity_unread" WITH ( security_invoker = TRUE)
 --
-AS SELECT DISTINCT ON (up.user_id, a.id)
-    up.user_id,
+AS
+SELECT
+    upe.user_id,
     a.id AS activity_id,
-    unread.updated_at IS NOT NULL AS unread,
-    GREATEST (ar.updated_at, unread.updated_at) AS updated_at,
-    last_note.created_at AS last_note_created_at
+    ar.read_at IS NULL AS unread,
+    GREATEST (COALESCE(ar.updated_at, 'epoch'), CASE
+        WHEN a.created_by = upe.user_id THEN COALESCE(a.last_note_created_at, 'epoch')
+        ELSE COALESCE(a.last_note_created_at, a.created_at)
+    END) AS updated_at
 FROM
-    user_priority up
-    JOIN contact c ON c.user_id = up.user_id
-    JOIN activity a ON a.priority_id = up.id
-    LEFT JOIN activity_read ar ON ar.user_id = up.user_id
+    -- All the user's priorities
+    user_priority_expanded upe
+    -- All non-archived activities in those priorities created after user joined
+    JOIN activity a ON a.priority_id = upe.priority_id
+        AND a.archived_at IS NULL
+        -- For self-created activities: only include if there are notes
+        -- For others: use standard logic
+        AND ((a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at)
+            OR ((a.created_by IS NULL OR a.created_by != upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
+    LEFT JOIN activity_read ar ON ar.user_id = upe.user_id
         AND ar.activity_id = a.id
-        -- Join to get when user was added to the priority root
-    LEFT JOIN LATERAL (
-        SELECT
-            pu.created_at
-        FROM
-            priority_user pu
-            JOIN priority p ON p.id = pu.priority_id
-            JOIN priority ap ON ap.id = a.priority_id
-        WHERE
-            pu.user_id = up.user_id
-            AND p.path @> ap.path
-        ORDER BY
-            nlevel (p.path) ASC
-        LIMIT 1) member ON TRUE
-    LEFT JOIN LATERAL (
-        -- Check for notes by another author newer than read_at
-        SELECT
-            MAX(GREATEST (a.updated_at, n.created_at)) AS updated_at
-        FROM
-            note n
-        WHERE
-            n.activity_id = a.id
-            AND n.archived_at IS NULL
-            AND n.author_id <> c.id
-            -- Only notes created after user joined the priority
-            AND (member.created_at IS NULL
-                OR n.created_at >= member.created_at)
-            AND (ar.read_at IS NULL
-                OR n.created_at > ar.read_at)
-        UNION ALL
-        -- Check if activity itself is by another author and not read
-        SELECT
-            a.updated_at
-        WHERE
-            a.author_id <> c.id
-            -- Only activities created after user joined the priority
-            AND (member.created_at IS NULL
-                OR a.created_at >= member.created_at)
-            AND ar.read_at IS NULL) unread ON TRUE
-    LEFT JOIN LATERAL (
-        -- Get the most recent note created_at for this activity
-        SELECT
-            MAX(n.created_at) AS created_at
-        FROM
-            note n
-        WHERE
-            n.activity_id = a.id
-            AND n.draft = FALSE
-            AND n.archived_at IS NULL) last_note ON TRUE
-    WHERE
-        up.archived_at IS NULL
-    ORDER BY
-        up.user_id,
-        a.id,
-        -- Prefer rows where unread is true (unread.updated_at IS NOT NULL)
-        unread.updated_at DESC NULLS LAST;
+        AND ar.read_at >= CASE
+            WHEN a.created_by = upe.user_id THEN a.last_note_created_at
+            ELSE COALESCE(a.last_note_created_at, a.created_at)
+        END;
 
 -- Add priority_path and mentions to activity view
 CREATE OR REPLACE VIEW "public"."activity_x" WITH ( security_invoker = TRUE)
@@ -128,14 +85,15 @@ CREATE OR REPLACE VIEW "public"."user_activity" WITH ( security_invoker = TRUE)
 --
 AS
 SELECT
-    up.user_id,
+    upe.user_id,
     a.id,
     a.created_at,
-    COALESCE(uau.updated_at, a.updated_at) AS updated_at,
+    -- updated_at includes last_note_created_at for sync
+    COALESCE(GREATEST (a.updated_at, a.last_note_created_at), a.updated_at) AS updated_at,
     a.author_id,
     a.assignee_id,
     a.updated_by,
-    a.archived_at,
+    COALESCE(a.archived_at, upe.archived_at) AS archived_at,
     a.priority_id,
     a.priority_path,
     a.type,
@@ -154,41 +112,32 @@ SELECT
     a.meta,
     a.source,
     a.created_by_twist_id,
-    uau.last_note_created_at,
-    (
-        SELECT
-            ARRAY ( SELECT DISTINCT
-                    unnest(n.mentions)
-                FROM
-                    note n
-                WHERE
-                    n.activity_id = a.id
-                    AND n.archived_at IS NULL
-                    AND n.mentions IS NOT NULL)) AS mentions,
-        CASE WHEN (a.done_at IS NOT NULL) THEN
-            tstzrange(a.done_at, a.done_at, '[]'::text)
-        WHEN (a.at IS NOT NULL) THEN
-            a.at
-        WHEN (a."on" IS NOT NULL) THEN
-            NULL::tstzrange
-        ELSE
-            tstzrange(GREATEST (a.created_at, COALESCE(uau.last_note_created_at, a.created_at)), GREATEST (a.created_at, COALESCE(uau.last_note_created_at, a.created_at)), '[]'::text)
-        END AS range_at,
-        CASE WHEN (a.done_at IS NOT NULL) THEN
-            NULL::daterange
-        WHEN (a.at IS NOT NULL) THEN
-            NULL::daterange
-        WHEN (a."on" IS NOT NULL) THEN
-            a."on"
-        ELSE
-            NULL::daterange
-        END AS range_on,
-        COALESCE(uau.unread, FALSE) AS unread
-    FROM (activity_x a
-        JOIN user_priority up ON (a.priority_id = up.id))
-    LEFT JOIN user_activity_unread uau ON (((uau.user_id = up.user_id)
-                AND (uau.activity_id = a.id)))
-WHERE (up.archived_at IS NULL);
+    a.last_note_created_at,
+    a.mentions,
+    CASE WHEN a.done_at IS NOT NULL THEN
+        tstzrange(a.done_at, a.done_at, '[]')
+    WHEN a.at IS NOT NULL THEN
+        a.at
+    WHEN a."on" IS NOT NULL THEN
+        NULL::tstzrange
+    ELSE
+        tstzrange(GREATEST (a.created_at, COALESCE(a.last_note_created_at, a.created_at)), GREATEST (a.created_at, COALESCE(a.last_note_created_at, a.created_at)), '[]')
+    END AS range_at,
+    CASE WHEN a.done_at IS NOT NULL THEN
+        NULL::daterange
+    WHEN a.at IS NOT NULL THEN
+        NULL::daterange
+    WHEN a."on" IS NOT NULL THEN
+        a."on"
+    ELSE
+        NULL::daterange
+    END AS range_on,
+    COALESCE(uau.unread, FALSE) AS unread
+FROM
+    activity_x a
+    JOIN user_priority_expanded upe ON a.priority_id = upe.priority_id
+    LEFT JOIN user_activity_unread uau ON uau.user_id = upe.user_id
+        AND uau.activity_id = a.id;
 
 CREATE OR REPLACE VIEW "public"."user_activity_exception" WITH ( security_invoker = TRUE)
 --
