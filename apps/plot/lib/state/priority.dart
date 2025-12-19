@@ -207,6 +207,21 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Updates the draft activity optimistically and saves it to the database.
   /// This provides instant UI updates while persisting changes.
   Future<void> updateDraft(Activity draft) async {
+    // Ignore updates for stale drafts - this can happen when ActivityEditor
+    // has a reference to an old draft that was already finalized
+    if (draft.id != state.draft.id) {
+      // Different draft ID - could be a priority switch or a stale draft
+      // Check if this draft is actually still a draft in the database
+      try {
+        final existingDraft = await Activity.getOne(draft.id);
+        if (!existingDraft.draft) {
+          return;
+        }
+      } catch (e) {
+        return;
+      }
+    }
+
     emit(state.copyWith(draft: draft));
     await draft.save();
   }
@@ -433,7 +448,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Create fresh draft for the priority
     final newDraft = Activity(priority: state.context, draft: true);
     await newDraft.save();
-    emit(state.copyWith(draft: newDraft, activity: Value(savedActivity)));
+
+    emit(state.copyWith(draft: newDraft));
 
     return savedActivity;
   }

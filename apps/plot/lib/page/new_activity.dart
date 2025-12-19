@@ -53,6 +53,7 @@ class NewActivityPageState extends State<NewActivityPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
     // Save the provider reference
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     // Register ActivityEditor with the focus coordination provider
