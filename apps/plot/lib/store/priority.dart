@@ -175,6 +175,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             );
           }).toList();
         })
+        .debounceTime(const Duration(milliseconds: 100))
         .distinct()
         .transform(
           ExpiringStreamTransformer((priorities) {
