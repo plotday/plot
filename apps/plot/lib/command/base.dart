@@ -283,12 +283,20 @@ abstract class CommandGroup {
       return commands;
     }
 
-    String searchLower = search.toLowerCase();
+    // Split search into individual words
+    List<String> searchWords = search.toLowerCase().trim().split(RegExp(r'\s+'));
+
     bool match(String? field) {
       if (field == null) return false;
-      return RegExp(
-        '\\b${RegExp.escape(searchLower)}',
-      ).hasMatch(field.toLowerCase());
+      String fieldLower = field.toLowerCase();
+
+      // All search words must prefix match at least one word in the field
+      return searchWords.every((searchWord) {
+        // Split field into words and check if any word starts with searchWord
+        return fieldLower.split(RegExp(r'\s+')).any((fieldWord) {
+          return fieldWord.startsWith(searchWord);
+        });
+      });
     }
 
     return commands
