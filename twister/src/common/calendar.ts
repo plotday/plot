@@ -89,9 +89,15 @@ export interface SyncOptions {
  *     }
  *   }
  *
- *   async onCalendarEvent(activity: NewActivityWithNotes) {
+ *   async onCalendarEvent(
+ *     activity: NewActivityWithNotes,
+ *     syncMeta: { initialSync: boolean }
+ *   ) {
  *     // Step 4: Process synced events
- *     await this.plot.createActivity(activity);
+ *     // Mark events as read during initial sync to avoid overwhelming the user
+ *     await this.plot.createActivity(activity, {
+ *       unread: !syncMeta.initialSync
+ *     });
  *   }
  * }
  * ```
@@ -133,18 +139,28 @@ export interface CalendarTool {
    *
    * @param authToken - Authorization token for calendar access
    * @param calendarId - ID of the calendar to sync
-   * @param callback - Function receiving (activity, ...extraArgs) for each synced event
+   * @param callback - Function receiving (activity, syncMeta, ...extraArgs) for each synced event.
+   *                   The syncMeta parameter contains { initialSync: boolean } to indicate if this is
+   *                   part of the initial sync or an incremental update.
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
    * @throws When auth token is invalid or calendar doesn't exist
    */
   startSync<
-    TCallback extends (activity: NewActivityWithNotes, ...args: any[]) => any
+    TCallback extends (
+      activity: NewActivityWithNotes,
+      syncMeta: { initialSync: boolean },
+      ...args: any[]
+    ) => any
   >(
     authToken: string,
     calendarId: string,
     callback: TCallback,
-    ...extraArgs: TCallback extends (activity: any, ...rest: infer R) => any
+    ...extraArgs: TCallback extends (
+      activity: any,
+      syncMeta: any,
+      ...rest: infer R
+    ) => any
       ? R
       : []
   ): Promise<void>;

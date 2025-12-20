@@ -502,8 +502,8 @@ export function transformOutlookEvent(
       : event.subject || null,
     start: isCancelled ? null : start,
     end: isCancelled ? null : end,
+    source: `outlook-calendar:${event.id}`,
     meta: {
-      source: `outlook-calendar:${event.id}`,
       id: event.id,
       calendarId: calendarId,
       webLink: event.webLink,

@@ -106,7 +106,8 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       end: null,
       notes: [
         {
-          content: "Connect a calendar account to get started. You can connect as many as you like.",
+          content:
+            "Connect a calendar account to get started. You can connect as many as you like.",
           links: [googleAuthLink, outlookAuthLink],
         },
       ],
@@ -181,13 +182,14 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
   async handleEvent(
     activity: NewActivityWithNotes,
+    syncMeta: { initialSync: boolean },
     _provider: CalendarProvider,
     _calendarId: string
   ): Promise<void> {
-    // Check if activity already exists based on meta.source
-    if (activity.meta?.source) {
+    // Check if activity already exists based on source
+    if (activity.source) {
       const existing = await this.tools.plot.getActivityBySource(
-        activity.meta.source
+        activity.source
       );
       if (existing) {
         // Activity already exists - update it if needed
@@ -201,7 +203,9 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       };
     }
 
-    await this.tools.plot.createActivity(activity);
+    await this.tools.plot.createActivity(activity, {
+      unread: !syncMeta.initialSync, // Mark as read during initial sync (initial import)
+    });
   }
 
   private async updateExistingEvent(
@@ -314,7 +318,8 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
     // Check for description changes
     if (
       existing.meta &&
-      existing.meta.descriptionHash !== quickHash(incoming.notes[0]?.content ?? "")
+      existing.meta.descriptionHash !==
+        quickHash(incoming.notes[0]?.content ?? "")
     ) {
       updatedDescription = incoming.notes[0]?.content ?? undefined;
       updates.meta = {
@@ -402,6 +407,12 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
     calendars: Calendar[],
     authToken: string
   ): Promise<void> {
+    const activity = await this.getParentActivity();
+    if (!activity) {
+      console.error("No parent activity found for calendar selection note");
+      return;
+    }
+
     const links: ActivityLink[] = [];
 
     // Create callback links for each calendar
@@ -431,16 +442,10 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
     // Create the calendar selection activity
     const providerName = provider === "google" ? "Google" : "Outlook";
-    await this.tools.plot.createActivity({
-      type: ActivityType.Action,
-      title: `Which calendars would you like to connect?`,
-      start: new Date(),
-      notes: [
-        {
-          content: `Which ${providerName} calendars you'd like to sync?`,
-          links,
-        },
-      ],
+    await this.tools.plot.createNote({
+      activity,
+      content: `Which ${providerName} calendars you'd like to sync?`,
+      links,
     });
   }
 

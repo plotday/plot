@@ -176,20 +176,60 @@ export type ActivityLink =
  * which is useful for synchronization, deduplication, and linking
  * back to external systems.
  *
+ * ## Source-Based Upsert
+ *
+ * When creating an activity with a `source` field, Plot automatically implements
+ * **upsert behavior**. If an activity with the same source already exists (created
+ * by the same twist definition), it will be **updated** instead of creating a duplicate.
+ * This enables safe, idempotent sync operations.
+ *
+ * ### How Source Uniqueness Works
+ *
+ * - **Scoped to twist definition**: Sources are unique per twist, not per twist instance.
+ *   Different instances of the same twist (installed in different priorities) share
+ *   the same source namespace.
+ * - **Independent twists**: Different twists can have activities with the same source value.
+ * - **Archived activities**: Archived activities don't conflict with active ones - you can
+ *   create a new activity with the same source after archiving.
+ * - **Optional**: Activities without sources are always created fresh - no deduplication.
+ *
+ * ### Upsert Behavior Details
+ *
+ * When an activity is upserted (updated instead of created):
+ * - **All provided fields** are updated with new values
+ * - **Tags** are merged (existing tags + new tags)
+ * - **Notes** are appended (existing notes kept, new ones added)
+ * - **Priority** is NOT changed (stays in original priority)
+ *
  * @example
  * ```typescript
- * const googleCalendarMeta: ActivityMeta = {
- *   type: "google-calendar-event",
- *   id: "event-123",
- *   calendarId: "primary",
- *   htmlLink: "https://calendar.google.com/event/123"
- * };
+ * // First call creates the activity
+ * await plot.createActivity({
+ *   type: ActivityType.Event,
+ *   title: "Team Meeting",
+ *   start: new Date("2024-01-15T10:00:00Z"),
+ *   source: "google-calendar:event-abc123",
+ *   meta: {
+ *     calendarId: "primary",
+ *     htmlLink: "https://calendar.google.com/event/abc123"
+ *   }
+ * });
+ *
+ * // Second call with same source updates the existing activity
+ * await plot.createActivity({
+ *   type: ActivityType.Event,
+ *   title: "Team Meeting (Updated)",  // Title will be updated
+ *   start: new Date("2024-01-15T14:00:00Z"),  // Time will be updated
+ *   source: "google-calendar:event-abc123"  // Same source = upsert
+ * });
+ *
+ * // Different twist, same source = creates new activity (independent)
+ * // Different source = creates new activity
+ * // No source = creates new activity (no deduplication)
  * ```
  */
 export type ActivityMeta = {
-  /** The type identifier for the source system */
-  source: string;
-  /** Additional source-specific properties */
+  /** Source-specific properties and metadata */
   [key: string]: any;
 };
 
@@ -242,6 +282,8 @@ export type ActivityCommon = {
   draft: boolean;
   /** Whether this activity is private (only visible to author) */
   private: boolean;
+  /** Whether this activity has been archived */
+  archived: boolean;
   /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
   tags: Tags | null;
   /** Array of actor IDs (users, contacts, or twists) mentioned in this activity via @-mentions */
@@ -339,6 +381,18 @@ export type Activity = ActivityCommon & {
    * Used to identify which occurrence of a recurring event this exception replaces.
    */
   occurrence: Date | null;
+  /**
+   * Unique identifier for this activity in the source system.
+   *
+   * Used for deduplication - activities with the same source are upserted instead
+   * of creating duplicates. Format is typically "source-name:external-id"
+   * (e.g., "google-calendar:event-123", "outlook:message-456").
+   *
+   * When provided, enables idempotent sync operations - calling createActivity()
+   * multiple times with the same source will update the existing activity rather
+   * than creating duplicates.
+   */
+  source: string | null;
   /** Metadata about the activity, typically from an external system that created it */
   meta: ActivityMeta | null;
 };
@@ -449,6 +503,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "assignee"
       | "draft"
       | "private"
+      | "source"
       | "meta"
       | "recurrenceRule"
       | "recurrenceDates"
@@ -504,6 +559,34 @@ export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
    * - 'html': HTML content that will be converted to markdown
    */
   noteType?: NoteType;
+};
+
+/**
+ * Options for creating activities.
+ */
+export type CreateActivityOptions = {
+  /**
+   * Whether the activity should be marked as unread for users.
+   * - true (default): Activity is unread for all users in the priority
+   * - false: Activity is marked as read for all users in the priority at creation time
+   *
+   * Use false for historical imports to avoid marking old items as unread.
+   */
+  unread?: boolean;
+};
+
+/**
+ * Options for creating notes.
+ */
+export type CreateNoteOptions = {
+  /**
+   * Whether the note should mark the parent activity as unread for users.
+   * - true (default): Activity becomes unread for users who haven't authored the note
+   * - false: Activity is marked as read for all users in the priority at note creation time
+   *
+   * Use false for historical imports to avoid marking old items as unread.
+   */
+  unread?: boolean;
 };
 
 /**

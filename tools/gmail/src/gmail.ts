@@ -382,7 +382,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     channelId: string,
     _authToken: string
   ): Promise<void> {
-    const callbackToken = await this.get<string>(
+    const callbackToken = await this.get<Callback>(
       `thread_callback_token_${channelId}`
     );
 
@@ -432,7 +432,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
         }
 
         // Call parent callback with single thread
-        await this.run(callbackToken as any, activityThread);
+        await this.run(callbackToken, activityThread);
       } catch (error) {
         console.error(`Failed to process Gmail thread ${thread.id}:`, error);
         // Continue processing other threads

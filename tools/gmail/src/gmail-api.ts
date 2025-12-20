@@ -390,11 +390,13 @@ export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
       recurrenceDates: null,
       recurrence: null,
       occurrence: null,
+      source: null,
       meta: null,
       mentions: null,
       tags: null,
       draft: false,
       private: false,
+      archived: false,
       notes: [],
     };
   }
@@ -420,8 +422,8 @@ export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
     recurrenceDates: null,
     recurrence: null,
     occurrence: null,
+    source: `gmail:${thread.id}`,
     meta: {
-      source: `gmail:${thread.id}`,
       threadId: thread.id,
       historyId: thread.historyId,
     },
@@ -429,6 +431,7 @@ export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
     tags: null,
     draft: false,
     private: false,
+    archived: false,
     notes: [],
   };
 
@@ -459,6 +462,7 @@ export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
       tags: null,
       draft: false,
       private: false,
+      archived: false,
     };
 
     activity.notes.push(note);

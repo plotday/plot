@@ -256,7 +256,8 @@ export class OutlookCalendar
     const syncCallback = await this.callback(
       this.syncOutlookBatch,
       calendarId,
-      authToken
+      authToken,
+      { initialSync: true }
     );
     await this.run(syncCallback);
   }
@@ -331,7 +332,8 @@ export class OutlookCalendar
   async syncOutlookBatch(
     _args: any,
     calendarId: string,
-    authToken: string
+    authToken: string,
+    syncMeta: { initialSync: boolean }
   ): Promise<void> {
     let api: GraphApi;
 
@@ -380,15 +382,17 @@ export class OutlookCalendar
 
             // Extract and create contacts from attendees
             let actorIds: ActorId[] = [];
+            let validAttendees: typeof outlookEvent.attendees = [];
             if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
-              const contacts: NewContact[] = outlookEvent.attendees
-                .filter(
-                  (att) => att.emailAddress?.address && att.type !== "resource"
-                )
-                .map((att) => ({
-                  email: att.emailAddress!.address!,
-                  name: att.emailAddress!.name,
-                }));
+              // Filter to get only valid attendees (with email, not resources)
+              validAttendees = outlookEvent.attendees.filter(
+                (att) => att.emailAddress?.address && att.type !== "resource"
+              );
+
+              const contacts: NewContact[] = validAttendees.map((att) => ({
+                email: att.emailAddress!.address!,
+                name: att.emailAddress!.name,
+              }));
 
               if (contacts.length > 0) {
                 const actors = await this.tools.plot.addContacts(contacts);
@@ -404,41 +408,44 @@ export class OutlookCalendar
               continue;
             }
 
-            // Determine user's RSVP status and set tags
+            // Determine RSVP status for all attendees and set tags
             let tags: Partial<Record<Tag, ActorId[]>> | null = null;
-            if (userEmail && outlookEvent.attendees) {
-              const userAttendee = outlookEvent.attendees.find(
-                (att) =>
-                  att.emailAddress?.address?.toLowerCase() ===
-                  userEmail.toLowerCase()
-              );
+            if (validAttendees.length > 0) {
+              const attendTags: ActorId[] = [];
+              const skipTags: ActorId[] = [];
+              const undecidedTags: ActorId[] = [];
 
-              if (userAttendee) {
-                // Find the user's ActorId from the contacts we just created
-                const userActorId = actorIds.find((_actorId, index) => {
-                  const attendee = outlookEvent.attendees![index];
-                  return (
-                    attendee.emailAddress?.address?.toLowerCase() ===
-                    userEmail.toLowerCase()
-                  );
-                });
-
-                if (userActorId) {
-                  tags = {};
-                  const response = userAttendee.status?.response;
+              // Iterate through valid attendees and group by response status
+              validAttendees.forEach((attendee, index) => {
+                const actorId = actorIds[index];
+                if (actorId) {
+                  const response = attendee.status?.response;
                   if (response === "accepted") {
-                    tags[Tag.Attend] = [userActorId];
+                    attendTags.push(actorId);
                   } else if (response === "declined") {
-                    tags[Tag.Skip] = [userActorId];
+                    skipTags.push(actorId);
                   } else if (
                     response === "tentativelyAccepted" ||
                     response === "none" ||
                     response === "notResponded"
                   ) {
-                    tags[Tag.Undecided] = [userActorId];
+                    undecidedTags.push(actorId);
                   }
-                  // organizer has no tags
+                  // organizer has no response status, so they won't get a tag
                 }
+              });
+
+              // Only set tags if we have at least one
+              if (
+                attendTags.length > 0 ||
+                skipTags.length > 0 ||
+                undecidedTags.length > 0
+              ) {
+                tags = {};
+                if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
+                if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
+                if (undecidedTags.length > 0)
+                  tags[Tag.Undecided] = undecidedTags;
               }
             }
 
@@ -485,16 +492,17 @@ export class OutlookCalendar
             // Build NewActivityWithNotes from the transformed activity
             const activityWithNotes: NewActivityWithNotes = {
               ...activity,
+              meta: activity.meta,
               tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
               notes,
             };
 
             // Call the event callback
-            const callbackToken = await this.get<string>(
+            const callbackToken = await this.get<Callback>(
               "event_callback_token"
             );
             if (callbackToken) {
-              await this.run(callbackToken as any, activityWithNotes);
+              await this.tools.callbacks.run(callbackToken, activityWithNotes, syncMeta);
             }
           } catch (error) {
             console.error(`Error processing event ${outlookEvent.id}:`, error);
@@ -577,7 +585,8 @@ export class OutlookCalendar
     const callback = await this.callback(
       this.syncOutlookBatch,
       calendarId,
-      authToken
+      authToken,
+      { initialSync: false }
     );
     await this.run(callback);
   }

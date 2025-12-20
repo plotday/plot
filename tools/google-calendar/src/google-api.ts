@@ -322,8 +322,8 @@ export function transformGoogleEvent(
       : event.summary || null,
     start: isCancelled ? null : start,
     end: isCancelled ? null : end,
+    source: `google-calendar:${event.id}`,
     meta: {
-      source: `google-calendar:${event.id}`,
       id: event.id,
       calendarId: calendarId,
       htmlLink: event.htmlLink,
@@ -423,4 +423,12 @@ export async function syncGoogleCalendar(
     events: data.items || [],
     state: nextState,
   };
+}
+
+/**
+ * Detects if a string contains HTML tags
+ */
+export function containsHtml(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return /<[a-z][\s\S]*>/i.test(text);
 }

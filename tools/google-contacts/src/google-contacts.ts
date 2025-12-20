@@ -81,7 +81,7 @@ class GoogleApi {
     switch (response.status) {
       case 400:
         const responseBody = await response.json();
-        if ((responseBody as any).status === "FAILED_PRECONDITION") {
+        if (responseBody.status === "FAILED_PRECONDITION") {
           return null;
         }
         throw new Error("Invalid request", { cause: responseBody });
@@ -271,7 +271,7 @@ export default class GoogleContacts
     const opaqueToken = crypto.randomUUID();
 
     // Create callback token for parent
-    const callbackToken = await (this.tools as any).callbacks.createFromParent(
+    const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
@@ -410,11 +410,11 @@ export default class GoogleContacts
     contacts: Contact[],
     authToken: string
   ): Promise<void> {
-    const callbackToken = await this.get<string>(
+    const callbackToken = await this.get<Callback>(
       `contacts_callback_token:${authToken}`
     );
     if (callbackToken) {
-      await this.run(callbackToken as any, contacts);
+      await this.run(callbackToken, contacts);
     }
   }
 

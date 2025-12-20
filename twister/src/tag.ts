@@ -14,7 +14,7 @@ export enum Tag {
   // Toggle tags
   Pinned = 100,
   Urgent = 101,
-  Todo = 102,
+  Inbox = 102,
   Goal = 103,
   Decision = 104,
   Waiting = 105,

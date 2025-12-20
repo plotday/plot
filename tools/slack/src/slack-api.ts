@@ -264,11 +264,13 @@ export function transformSlackThread(
       recurrenceDates: null,
       recurrence: null,
       occurrence: null,
+      source: null,
       meta: null,
       mentions: null,
       tags: null,
       draft: false,
       private: false,
+      archived: false,
       notes: [],
     };
   }
@@ -295,8 +297,8 @@ export function transformSlackThread(
     recurrenceDates: null,
     recurrence: null,
     occurrence: null,
+    source: `slack:${channelId}:${threadTs}`,
     meta: {
-      source: `slack:${channelId}:${threadTs}`,
       channelId: channelId,
       threadTs: threadTs,
     },
@@ -304,6 +306,7 @@ export function transformSlackThread(
     tags: null,
     draft: false,
     private: false,
+    archived: false,
     notes: [],
   };
 
@@ -325,6 +328,7 @@ export function transformSlackThread(
       tags: null,
       draft: false,
       private: false,
+      archived: false,
     };
 
     activity.notes.push(note);

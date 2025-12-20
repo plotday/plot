@@ -1,8 +1,11 @@
 import {
   type Activity,
+  type ActivityMeta,
   type ActivityUpdate,
   type Actor,
   type ActorId,
+  type CreateActivityOptions,
+  type CreateNoteOptions,
   ITool,
   type NewActivity,
   type NewActivityWithNotes,
@@ -160,7 +163,8 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createActivity(
-    activity: NewActivity | NewActivityWithNotes
+    activity: NewActivity | NewActivityWithNotes,
+    options?: CreateActivityOptions
   ): Promise<Activity>;
 
   /**
@@ -175,7 +179,8 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createActivities(
-    activities: (NewActivity | NewActivityWithNotes)[]
+    activities: (NewActivity | NewActivityWithNotes)[],
+    options?: CreateActivityOptions
   ): Promise<Activity[]>;
 
   /**
@@ -277,7 +282,7 @@ export abstract class Plot extends ITool {
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createNote(note: NewNote): Promise<Note>;
+  abstract createNote(note: NewNote, options?: CreateNoteOptions): Promise<Note>;
 
   /**
    * Creates multiple notes in a single batch operation.
@@ -343,11 +348,39 @@ export abstract class Plot extends ITool {
    * This method enables lookup of activities that were created from external
    * systems, using the metadata to locate the corresponding Plot activity.
    *
+   * By default, archived activities are excluded from the search. Set includeArchived
+   * to true to include them in the results.
+   *
    * @param source - The meta.source value to search for
+   * @param includeArchived - Whether to include archived activities in search (default: false)
    * @returns Promise resolving to the matching activity or null if not found
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getActivityBySource(source: string): Promise<Activity | null>;
+  abstract getActivityBySource(
+    source: string,
+    includeArchived?: boolean
+  ): Promise<Activity | null>;
+
+  /**
+   * Finds an activity by its metadata.
+   *
+   * This method enables lookup of activities that were created from external
+   * systems, using the metadata to locate the corresponding Plot activity.
+   * Uses JSON containment matching - the provided meta must be contained
+   * within the activity's meta field.
+   *
+   * By default, archived activities are excluded from the search. Set includeArchived
+   * to true to include them in the results.
+   *
+   * @param meta - The metadata to search for (uses JSON containment matching)
+   * @param includeArchived - Whether to include archived activities in search (default: false)
+   * @returns Promise resolving to the matching activity or null if not found
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getActivityByMeta(
+    meta: ActivityMeta,
+    includeArchived?: boolean
+  ): Promise<Activity | null>;
 
   /**
    * Creates a new priority in the Plot system.

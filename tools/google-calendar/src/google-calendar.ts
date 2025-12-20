@@ -35,6 +35,7 @@ import {
   GoogleApi,
   type GoogleEvent,
   type SyncState,
+  containsHtml,
   extractConferencingLinks,
   syncGoogleCalendar,
   transformGoogleEvent,
@@ -274,7 +275,8 @@ export class GoogleCalendar
       1,
       "full",
       authToken,
-      calendarId
+      calendarId,
+      { initialSync: true }
     );
     await this.run(syncCallback);
   }
@@ -340,7 +342,8 @@ export class GoogleCalendar
     batchNumber: number,
     mode: "full" | "incremental",
     authToken: string,
-    calendarId: string
+    calendarId: string,
+    syncMeta: { initialSync: boolean }
   ): Promise<void> {
     console.log(
       `Starting Google Calendar sync batch ${batchNumber} (${mode}) for calendar ${calendarId}`
@@ -369,7 +372,7 @@ export class GoogleCalendar
       const result = await syncGoogleCalendar(api, calendarId, state);
 
       if (result.events.length > 0) {
-        await this.processCalendarEvents(result.events, calendarId);
+        await this.processCalendarEvents(result.events, calendarId, syncMeta);
         console.log(
           `Synced ${result.events.length} events in batch ${batchNumber} for calendar ${calendarId}`
         );
@@ -383,7 +386,8 @@ export class GoogleCalendar
           batchNumber + 1,
           mode,
           authToken,
-          calendarId
+          calendarId,
+          syncMeta
         );
         await this.run(syncCallback);
       } else {
@@ -406,7 +410,8 @@ export class GoogleCalendar
 
   private async processCalendarEvents(
     events: GoogleEvent[],
-    calendarId: string
+    calendarId: string,
+    syncMeta: { initialSync: boolean }
   ): Promise<void> {
     // Get user email for RSVP tagging
     const userEmail = await this.get<string>("user_email");
@@ -420,13 +425,17 @@ export class GoogleCalendar
 
         // Extract and create contacts from attendees
         let actorIds: ActorId[] = [];
+        let validAttendees: typeof event.attendees = [];
         if (event.attendees && event.attendees.length > 0) {
-          const contacts: NewContact[] = event.attendees
-            .filter((att) => att.email && !att.resource) // Exclude resources
-            .map((att) => ({
-              email: att.email!,
-              name: att.displayName,
-            }));
+          // Filter to get only valid attendees (with email, not resources)
+          validAttendees = event.attendees.filter(
+            (att) => att.email && !att.resource
+          );
+
+          const contacts: NewContact[] = validAttendees.map((att) => ({
+            email: att.email!,
+            name: att.displayName,
+          }));
 
           if (contacts.length > 0) {
             const actors = await this.tools.plot.addContacts(contacts);
@@ -436,48 +445,53 @@ export class GoogleCalendar
 
         // Check if this is a recurring event instance (exception)
         if (event.recurringEventId && event.originalStartTime) {
-          await this.processEventException(event, calendarId);
+          await this.processEventException(event, calendarId, syncMeta);
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
 
-          // Determine user's RSVP status and set tags
+          // Determine RSVP status for all attendees and set tags
           let tags: Partial<Record<Tag, ActorId[]>> | null = null;
-          if (userEmail && event.attendees) {
-            const userAttendee = event.attendees.find(
-              (att) =>
-                att.self === true ||
-                att.email?.toLowerCase() === userEmail.toLowerCase()
-            );
+          if (validAttendees.length > 0) {
+            const attendTags: ActorId[] = [];
+            const skipTags: ActorId[] = [];
+            const undecidedTags: ActorId[] = [];
 
-            if (userAttendee) {
-              // Find the user's ActorId from the contacts we just created
-              const userActorId = actorIds.find((_actorId, index) => {
-                const attendee = event.attendees![index];
-                return (
-                  attendee.self === true ||
-                  attendee.email?.toLowerCase() === userEmail.toLowerCase()
-                );
-              });
-
-              if (userActorId) {
-                tags = {};
-                if (userAttendee.responseStatus === "accepted") {
-                  tags[Tag.Attend] = [userActorId];
-                } else if (userAttendee.responseStatus === "declined") {
-                  tags[Tag.Skip] = [userActorId];
+            // Iterate through valid attendees and group by response status
+            validAttendees.forEach((attendee, index) => {
+              const actorId = actorIds[index];
+              if (actorId) {
+                if (attendee.responseStatus === "accepted") {
+                  attendTags.push(actorId);
+                } else if (attendee.responseStatus === "declined") {
+                  skipTags.push(actorId);
                 } else if (
-                  userAttendee.responseStatus === "tentative" ||
-                  userAttendee.responseStatus === "needsAction"
+                  attendee.responseStatus === "tentative" ||
+                  attendee.responseStatus === "needsAction"
                 ) {
-                  tags[Tag.Undecided] = [userActorId];
+                  undecidedTags.push(actorId);
                 }
               }
+            });
+
+            // Only set tags if we have at least one
+            if (
+              attendTags.length > 0 ||
+              skipTags.length > 0 ||
+              undecidedTags.length > 0
+            ) {
+              tags = {};
+              if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
+              if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
+              if (undecidedTags.length > 0)
+                tags[Tag.Undecided] = undecidedTags;
             }
           }
 
           // Convert to full Activity and call callback
-          const callbackToken = await this.get<string>("event_callback_token");
+          const callbackToken = await this.get<Callback>(
+            "event_callback_token"
+          );
           if (callbackToken && activityData.type) {
             // Build links array for videoconferencing and calendar links
             const links: ActivityLink[] = [];
@@ -517,7 +531,8 @@ export class GoogleCalendar
 
             // Create note with description and/or links
             const notes: NewNote[] = [];
-            const description = activityData.meta?.description || event.description;
+            const description =
+              activityData.meta?.description || event.description;
             const hasDescription = description && description.trim().length > 0;
             const hasLinks = links.length > 0;
 
@@ -526,7 +541,7 @@ export class GoogleCalendar
                 activity: { id: "" }, // Will be filled in by the API
                 content: hasDescription ? description : null,
                 links: hasLinks ? links : null,
-                noteType: "text",
+                noteType: containsHtml(description) ? "html" : "text",
               });
             }
 
@@ -547,8 +562,7 @@ export class GoogleCalendar
               tags,
               notes,
             };
-
-            await this.run(callbackToken as any, activity);
+            await this.tools.callbacks.run(callbackToken, activity, syncMeta);
           }
         }
       } catch (error) {
@@ -560,7 +574,8 @@ export class GoogleCalendar
 
   private async processEventException(
     event: GoogleEvent,
-    calendarId: string
+    calendarId: string,
+    syncMeta: { initialSync: boolean }
   ): Promise<void> {
     // Similar to processCalendarEvents but for exceptions
     // This would find the master recurring activity and create an exception
@@ -573,7 +588,7 @@ export class GoogleCalendar
 
     const activityData = transformGoogleEvent(event, calendarId);
 
-    const callbackToken = await this.get<string>("event_callback_token");
+    const callbackToken = await this.get<Callback>("event_callback_token");
     if (callbackToken && activityData.type) {
       // Build links array for videoconferencing and calendar links
       const links: ActivityLink[] = [];
@@ -622,7 +637,7 @@ export class GoogleCalendar
           activity: { id: "" }, // Will be filled in by the API
           content: hasDescription ? description : null,
           links: hasLinks ? links : null,
-          noteType: "text",
+          noteType: containsHtml(description) ? "html" : "text",
         });
       }
 
@@ -642,8 +657,7 @@ export class GoogleCalendar
         meta: activityData.meta ?? null,
         notes,
       };
-
-      await this.run(callbackToken as any, activity);
+      await this.tools.callbacks.run(callbackToken, activity, syncMeta);
     }
   }
 
@@ -707,7 +721,8 @@ export class GoogleCalendar
       1,
       "incremental",
       authToken,
-      calendarId
+      calendarId,
+      { initialSync: false }
     );
     await this.run(syncCallback);
   }
