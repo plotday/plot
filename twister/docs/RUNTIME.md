@@ -426,14 +426,17 @@ for (const item of items) {
   await this.tools.plot.createActivity({
     type: ActivityType.Action,
     title: item.title,
+    notes: [{ content: item.description }],
   });
 }
 
-// ✅ FAST - Batch create
+// ✅ FAST - Batch create (always include initial notes)
 await this.tools.plot.createActivities(
   items.map((item) => ({
     type: ActivityType.Action,
     title: item.title,
+    source: `external:${item.id}`, // For deduplication
+    notes: [{ content: item.description }],
   }))
 );
 ```

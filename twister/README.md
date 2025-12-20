@@ -79,6 +79,11 @@ export default class MyTwist extends Twist<MyTwist> {
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: "Welcome! Your twist is now active.",
+      notes: [
+        {
+          content: "Your twist is ready to use. Check out the [documentation](https://twist.plot.day) to learn more.",
+        },
+      ],
     });
   }
 }
@@ -124,21 +129,37 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 
 [View all tools →](https://twist.plot.day/documents/Built-in_Tools.html)
 
-### Activities
+### Activities and Notes
 
-The core data type representing tasks, events, and notes.
+**Activity** represents something done or to be done (a task, event, or conversation).
+**Notes** represent updates and details on that activity.
+
+Think of an **Activity as a thread** and **Notes as messages in that thread**. Always create activities with an initial note, and add notes for updates rather than creating new activities.
 
 ```typescript
+// Create an activity with an initial note (thread with first message)
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request",
-  links: [
+  source: "github:pr:123", // For deduplication
+  notes: [
     {
-      type: ActivityLinkType.external,
-      title: "View PR",
-      url: "https://github.com/org/repo/pull/123",
+      content: "New PR ready for review",
+      links: [
+        {
+          type: ActivityLinkType.external,
+          title: "View PR",
+          url: "https://github.com/org/repo/pull/123",
+        },
+      ],
     },
   ],
+});
+
+// Add a note to existing activity (add message to thread)
+await this.tools.plot.createNote({
+  activity: { id: activityId },
+  content: "LGTM! Approved ✅",
 });
 ```
 
@@ -201,6 +222,11 @@ export default class WelcomeTwist extends Twist<WelcomeTwist> {
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: "Welcome to Plot! 👋",
+      notes: [
+        {
+          content: "This twist will help you get started with Plot.",
+        },
+      ],
     });
   }
 }

@@ -23,6 +23,12 @@ Plot provides a comprehensive set of built-in tools that give your twists powerf
 
 The Plot tool is the core interface for creating and managing activities and priorities.
 
+### Understanding Activities and Notes
+
+**Activity** represents something done or to be done (a task, event, or conversation), while **Notes** represent the updates and details on that activity.
+
+**Think of an Activity as a thread** on a messaging platform, and **Notes as the messages in that thread**. Always create activities with an initial note, and add notes to existing activities for updates rather than creating new activities.
+
 ### Setup
 
 ```typescript
@@ -40,13 +46,13 @@ build(build: ToolBuilder) {
 ```typescript
 import { ActivityLinkType, ActivityType } from "@plotday/twister";
 
-// Create a note
+// Create a note (thread with initial message)
 await this.tools.plot.createActivity({
   type: ActivityType.Note,
   title: "Q1 Planning Meeting Notes",
   notes: [
     {
-      note: "Discussed goals for Q1 and assigned action items.",
+      content: "Discussed goals for Q1 and assigned action items.",
     },
   ],
 });
@@ -55,9 +61,10 @@ await this.tools.plot.createActivity({
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request #123",
+  source: "github:pr:123", // For deduplication
   notes: [
     {
-      note: "Please review the changes and provide feedback",
+      content: "Please review the changes and provide feedback.",
       links: [
         {
           type: ActivityLinkType.external,
@@ -75,9 +82,10 @@ await this.tools.plot.createActivity({
   title: "Team standup",
   start: new Date("2025-02-01T10:00:00Z"),
   end: new Date("2025-02-01T10:30:00Z"),
+  source: "google-calendar:event:abc123", // For deduplication
   notes: [
     {
-      note: "Daily standup meeting to sync on progress",
+      content: "Daily standup meeting to sync on progress.",
     },
   ],
 });
@@ -125,43 +133,46 @@ const project = await this.tools.plot.createPriority({
 });
 ```
 
-### Activity Meta
+### Activity Source and Meta
 
-Use meta fields to store custom data and link external resources:
+Use the `source` field for deduplication and the `meta` field to store additional custom data:
 
 ```typescript
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review PR",
+  source: "github:pr:123", // For deduplication
   meta: {
     github_pr_id: "123",
     github_repo: "org/repo",
     review_status: "pending",
   },
+  notes: [
+    {
+      content: "Please review this pull request.",
+    },
+  ],
 });
 
-// Later, find by meta
-const activity = await this.tools.plot.getActivityBySource({
-  github_pr_id: "123",
-});
+// Later, find by source
+const activity = await this.tools.plot.getActivityBySource("github:pr:123");
 ```
 
 ### Creating and Managing Notes
 
 #### Creating Notes on New Activities
 
-**Best Practice:** Always create Activities with at least one initial Note containing detailed information. The `title` and `preview` are short summaries that may be truncated—detailed content should go in Notes.
+**Best Practice:** Always create Activities with at least one initial Note containing detailed information. The `title` is a short summary that may be truncated—detailed content should go in Notes.
 
 ```typescript
-// ✅ Recommended - Activity with initial Note
+// ✅ Recommended - Activity with initial Note (thread with first message)
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Customer feedback: Login issues",
-  preview: "User reports problems with SSO authentication",
-  meta: { source: "support-ticket:12345" },
+  source: "support-ticket:12345", // For deduplication
   notes: [
     {
-      note: "Customer reported:\n\n\"I'm unable to log in using Google SSO. The page redirects but then shows an error 'Invalid state parameter'.\"\n\nPriority: High\nAffected users: ~15 reports",
+      content: "Customer reported:\n\n\"I'm unable to log in using Google SSO. The page redirects but then shows an error 'Invalid state parameter'.\"\n\nPriority: High\nAffected users: ~15 reports",
       links: [
         {
           type: ActivityLinkType.external,
@@ -176,13 +187,13 @@ await this.tools.plot.createActivity({
 
 #### Adding Notes to Existing Activities
 
-**Best Practice:** For related content (email threads, chat conversations, workflows), add Notes to the existing Activity rather than creating new Activities.
+**Best Practice:** For related content (email threads, chat conversations, workflows), add Notes to the existing Activity rather than creating new Activities. Think of it like adding a message to an existing thread.
 
 ```typescript
-// Add a new Note to an existing Activity
+// Add a new Note to an existing Activity (add message to thread)
 await this.tools.plot.createNote({
   activity: { id: activity.id },
-  note: "Update: Engineering team has identified the root cause. Fix will be deployed in the next release.",
+  content: "Update: Engineering team has identified the root cause. Fix will be deployed in the next release.",
   links: [
     {
       type: ActivityLinkType.external,
@@ -195,35 +206,31 @@ await this.tools.plot.createNote({
 
 #### Pattern: Email Threads and Conversations
 
-Keep all messages in a thread or conversation within a single Activity:
+Keep all messages in a thread or conversation within a single Activity. Think of it like a messaging app - one thread, many messages:
 
 ```typescript
 async handleEmailThread(thread: EmailThread) {
+  const source = `email:thread:${thread.id}`;
+
   // Check if Activity exists for this thread
-  const existing = await this.tools.plot.getActivityBySource({
-    email_thread_id: thread.id,
-  });
+  const existing = await this.tools.plot.getActivityBySource(source);
 
   if (existing) {
-    // Add new messages as Notes
+    // Add new messages as Notes to the existing thread
     for (const message of thread.newMessages) {
       await this.tools.plot.createNote({
         activity: { id: existing.id },
-        note: message.body,
-        author: message.sender,
+        content: message.body,
       });
     }
   } else {
-    // Create new Activity with initial Note
-    const firstMessage = thread.messages[0];
+    // Create new thread with initial messages
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: thread.subject,
-      preview: firstMessage.body.substring(0, 100),
-      meta: { email_thread_id: thread.id },
+      source, // For future deduplication
       notes: thread.messages.map((msg) => ({
-        note: msg.body,
-        author: msg.sender,
+        content: msg.body,
       })),
     });
   }

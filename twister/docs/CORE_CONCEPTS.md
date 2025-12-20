@@ -202,6 +202,8 @@ async activate(priority: Pick<Priority, "id">) {
 
 Activities are the core data type in Plot, representing tasks, events, and notes.
 
+**Think of an Activity as a thread** on a messaging platform, and **Notes as the messages in that thread**. An Activity represents something done or to be done, while Notes represent the updates and details on that activity. Always create activities with an initial note, and add notes for updates rather than creating new activities.
+
 ### Activity Types
 
 - **Note** - Information without actionable requirements
@@ -211,25 +213,40 @@ Activities are the core data type in Plot, representing tasks, events, and notes
 ```typescript
 import { ActivityType } from "@plotday/twister";
 
-// Note
+// Note - Information without actionable requirements
 await this.tools.plot.createActivity({
   type: ActivityType.Note,
   title: "Meeting notes from sync",
+  notes: [
+    {
+      content: "Discussed Q1 roadmap and team priorities...",
+    },
+  ],
 });
 
-// Task
+// Task - Actionable item
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request",
   doneAt: null, // null = not done
+  notes: [
+    {
+      content: "PR adds new authentication flow. Please review for security concerns.",
+    },
+  ],
 });
 
-// Event
+// Event - Scheduled occurrence
 await this.tools.plot.createActivity({
   type: ActivityType.Event,
   title: "Team standup",
   start: new Date("2025-02-01T10:00:00Z"),
   end: new Date("2025-02-01T10:30:00Z"),
+  notes: [
+    {
+      content: "Daily sync meeting",
+    },
+  ],
 });
 ```
 
@@ -251,16 +268,16 @@ type Activity = {
 
 ### Activity Notes
 
-Activities can have multiple Notes attached to them. Notes contain detailed content and links:
+Activities can have multiple Notes attached to them, like messages in a thread. Notes contain detailed content and links:
 
 ```typescript
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Fix bug #123",
-  preview: "Critical bug affecting login flow",
+  source: "github:issue:123", // For deduplication
   notes: [
     {
-      note: "Users are unable to log in with SSO. Error occurs in auth middleware.",
+      content: "Users are unable to log in with SSO. Error occurs in auth middleware.",
       links: [
         {
           type: ActivityLinkType.external,
@@ -289,17 +306,19 @@ await this.tools.plot.createActivity({
 
 #### Always Create Activities with an Initial Note
 
-**In most cases, an Activity should be created with at least one initial Note.** The Activity's `title` and `preview` are just short summaries that may be truncated in the UI. Detailed information, context, and links should always go in Notes.
+**In most cases, an Activity should be created with at least one initial Note.** The Activity's `title` is just a short summary that may be truncated in the UI. Detailed information, context, and links should always go in Notes.
+
+Think of it like starting a new thread with a first message - the thread title gives context, but the real content is in the messages.
 
 ```typescript
-// ✅ GOOD - Activity with detailed Note
+// ✅ GOOD - Activity with detailed Note (thread with first message)
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review PR #456",
-  preview: "New authentication feature",
+  source: "github:pr:456", // For deduplication
   notes: [
     {
-      note: "Please review the OAuth 2.0 implementation. Key changes include:\n- Token refresh logic\n- Session management\n- Error handling for expired tokens",
+      content: "Please review the OAuth 2.0 implementation. Key changes include:\n- Token refresh logic\n- Session management\n- Error handling for expired tokens",
       links: [
         {
           type: ActivityLinkType.external,
@@ -311,21 +330,21 @@ await this.tools.plot.createActivity({
   ],
 });
 
-// ❌ BAD - Relying only on title and preview
+// ❌ BAD - Relying only on title
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
-  title:
-    "Review PR #456 - OAuth implementation with token refresh and session management",
-  preview: "New authentication feature with detailed changes",
-  // Missing Notes with full context
+  title: "Review PR #456 - OAuth implementation with token refresh and session management",
+  // Missing Notes with full context and links
 });
 ```
 
-**Why?** The title may be truncated when viewing Activity Notes, and detailed information is essential for understanding the full context.
+**Why?** Just as you wouldn't create a messaging thread without a first message, Activities need Notes to provide meaningful context and detail.
 
 #### Add Notes to Existing Activities for Related Content
 
 **Wherever possible, related messages should be added to an existing Activity rather than creating a new Activity.** This keeps conversations, workflows, and related information together.
+
+Think of it like replying to a message thread instead of starting a new thread for every reply.
 
 **Use this pattern for:**
 
@@ -336,43 +355,40 @@ await this.tools.plot.createActivity({
 - **Issue tracking** - All comments and status updates as Notes
 
 ```typescript
-// ✅ GOOD - Add to existing Activity
+// ✅ GOOD - Add reply to existing thread
 async onNewMessage(message: Message, threadId: string) {
-  // Find existing activity for this thread
-  const activity = await this.tools.plot.getActivityBySource({
-    thread_id: threadId,
-  });
+  // Find existing activity for this thread (check if thread exists)
+  const source = `chat:thread:${threadId}`;
+  const activity = await this.tools.plot.getActivityBySource(source);
 
   if (activity) {
-    // Add new message as a Note
+    // Add new message as a Note to the existing thread
     await this.tools.plot.createNote({
       activity: { id: activity.id },
-      note: message.text,
-      author: message.author,
+      content: message.text,
     });
   } else {
-    // Create new Activity with initial Note
+    // Create new thread with initial message
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: message.subject || "New conversation",
-      preview: message.text.substring(0, 100),
-      meta: { thread_id: threadId },
+      source, // For future deduplication
       notes: [
         {
-          note: message.text,
+          content: message.text,
         },
       ],
     });
   }
 }
 
-// ❌ BAD - Creating separate Activity for each message
+// ❌ BAD - Creating separate Activity for each message (new thread for every reply!)
 async onNewMessage(message: Message, threadId: string) {
   // This creates clutter - each message becomes its own Activity
   await this.tools.plot.createActivity({
     type: ActivityType.Note,
     title: `Message from ${message.author}`,
-    preview: message.text,
+    notes: [{ content: message.text }],
   });
 }
 ```

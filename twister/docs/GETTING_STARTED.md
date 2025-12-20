@@ -129,6 +129,11 @@ export default class MyTwist extends Twist<MyTwist> {
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: "Welcome! Your twist is now active.",
+      notes: [
+        {
+          content: "Your twist is ready to use. You can now start creating activities and automating your workflow.",
+        },
+      ],
     });
   }
 
@@ -213,15 +218,24 @@ Now that you have a basic twist running, explore:
 
 ## Common First Tasks
 
+### Understanding Activities and Notes
+
+**Activity** represents something done or to be done (a task, event, or conversation), while **Notes** represent the updates and details on that activity.
+
+Think of an **Activity as a thread** on a messaging platform, and **Notes as the messages in that thread**. Always create activities with an initial note, and add notes for updates rather than creating new activities.
+
 ### Creating Activities
+
+Always create activities with an initial note. The `notes` array can contain multiple notes (messages in the thread):
 
 ```typescript
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request",
+  source: "github:pr:123", // For deduplication
   notes: [
     {
-      note: "Please review the authentication changes and ensure they follow security best practices",
+      content: "Please review the authentication changes and ensure they follow security best practices.",
       links: [
         {
           type: ActivityLinkType.external,

@@ -17,14 +17,39 @@ Plot Twists are TypeScript classes that extend the `Twist` base class. Twists in
 - **Store intermediate state**: Use the Store tool to persist state between batches
 - **Examples**: Syncing large datasets, processing many API calls, or performing batch operations
 
-## twist Structure Pattern
+## Understanding Activities and Notes
+
+**CRITICAL CONCEPT**: An **Activity** represents something done or to be done (a task, event, or conversation), while **Notes** represent the updates and details on that activity.
+
+**Think of an Activity as a thread** on a messaging platform, and **Notes as the messages in that thread**.
+
+### Key Guidelines
+
+1. **Always create Activities with an initial Note** - The title is just a summary; detailed content goes in Notes
+2. **Add Notes to existing Activities for updates** - Don't create a new Activity for each related message
+3. **Use `source` field for deduplication** - Enables safe, idempotent sync from external systems
+4. **Most Activities should be `ActivityType.Note`** - Use `Action` only for tasks with `doneAt`, use `Event` only for items with `start`/`end`
+
+### Decision Tree
+
+```
+New event/task/conversation?
+  ├─ Yes → Create new Activity with initial Note
+  │         Include `source` field for deduplication
+  │
+  └─ No (update/reply/comment) → Check for existing Activity
+      ├─ Found → Add Note to existing Activity
+      └─ Not found → Create new Activity with initial Note
+```
+
+## Twist Structure Pattern
 
 ```typescript
 import {
   type Activity,
-  twist,
   type Priority,
   type ToolBuilder,
+  twist,
 } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
 
@@ -118,9 +143,14 @@ async activate(_priority: Pick<Priority, "id">) {
   );
 
   await this.tools.plot.createActivity({
-    type: ActivityType.Action,
+    type: ActivityType.Note,
     title: "Connect your account",
-    links: [authLink],
+    notes: [
+      {
+        content: "Click the link below to connect your account and start syncing.",
+        links: [authLink],
+      },
+    ],
   });
 }
 ```
@@ -129,8 +159,13 @@ async activate(_priority: Pick<Priority, "id">) {
 
 ```typescript
 const activity = await this.tools.plot.createActivity({
-  type: ActivityType.Action,
+  type: ActivityType.Note,
   title: "Setup",
+  notes: [
+    {
+      content: "Your twist is being set up. Configuration steps will appear here.",
+    },
+  ],
 });
 
 await this.set("setup_activity_id", activity.id);
@@ -180,11 +215,16 @@ const callbackLink: ActivityLink = {
   token: token,
 };
 
-// Add to activity
+// Add to activity note
 await this.tools.plot.createActivity({
-  type: ActivityType.Action,
+  type: ActivityType.Note,
   title: "Task with links",
-  links: [urlLink, callbackLink],
+  notes: [
+    {
+      content: "Click the links below to take action.",
+      links: [urlLink, callbackLink],
+    },
+  ],
 });
 ```
 
@@ -202,9 +242,14 @@ async activate(_priority: Pick<Priority, "id">) {
 
   // Create activity with auth link
   const activity = await this.tools.plot.createActivity({
-    type: ActivityType.Action,
+    type: ActivityType.Note,
     title: "Connect Google account",
-    links: [authLink],
+    notes: [
+      {
+        content: "Click below to connect your Google account and start syncing.",
+        links: [authLink],
+      },
+    ],
   });
 
   // Store for later use
@@ -222,7 +267,7 @@ async onAuthComplete(authResult: { authToken: string }, provider: string) {
 
 ## Sync Pattern
 
-Pattern for syncing external data with callbacks:
+Pattern for syncing external data - demonstrates adding Notes to existing Activities:
 
 ```typescript
 async startSync(calendarId: string): Promise<void> {
@@ -236,9 +281,30 @@ async startSync(calendarId: string): Promise<void> {
   );
 }
 
-async handleEvent(activity: Activity, calendarId: string): Promise<void> {
-  // Process incoming event from external service
-  await this.tools.plot.createActivity(activity);
+async handleEvent(
+  incomingActivity: NewActivityWithNotes,
+  calendarId: string
+): Promise<void> {
+  // Check if this activity already exists (using source for deduplication)
+  if (incomingActivity.source) {
+    const existing = await this.tools.plot.getActivityBySource(
+      incomingActivity.source
+    );
+
+    if (existing) {
+      // Add update as a Note to existing Activity (add message to thread)
+      if (incomingActivity.notes?.[0]?.content) {
+        await this.tools.plot.createNote({
+          activity: { id: existing.id },
+          content: incomingActivity.notes[0].content,
+        });
+      }
+      return;
+    }
+  }
+
+  // Create new Activity with initial Note (new thread with first message)
+  await this.tools.plot.createActivity(incomingActivity);
 }
 
 async stopSync(calendarId: string): Promise<void> {
@@ -278,7 +344,12 @@ private async createCalendarSelectionActivity(
   await this.tools.plot.createActivity({
     type: ActivityType.Note,
     title: "Which calendars would you like to connect?",
-    links,
+    notes: [
+      {
+        content: "Select the calendars you want to sync:",
+        links,
+      },
+    ],
   });
 }
 
@@ -334,9 +405,14 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
   // Process one batch (keep under time limit)
   const result = await this.fetchBatch(state.nextPageToken);
 
-  // Process results
+  // Process results (create activities with Notes)
   for (const item of result.items) {
-    await this.tools.plot.createActivity(item);
+    await this.tools.plot.createActivity({
+      type: ActivityType.Note,
+      title: item.title,
+      source: `external:${item.id}`, // For deduplication
+      notes: [{ content: item.description }],
+    });
   }
 
   if (result.nextPageToken) {
@@ -357,7 +433,12 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
     // Optionally notify user of completion
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
-      note: `Sync complete: ${state.itemsProcessed + result.items.length} items processed`,
+      title: "Sync complete",
+      notes: [
+        {
+          content: `Successfully processed ${state.itemsProcessed + result.items.length} items.`,
+        },
+      ],
     });
   }
 }
@@ -375,7 +456,12 @@ try {
 
   await this.tools.plot.createActivity({
     type: ActivityType.Note,
-    note: `Failed to complete operation: ${error.message}`,
+    title: "Operation failed",
+    notes: [
+      {
+        content: `Failed to complete operation: ${error.message}`,
+      },
+    ],
   });
 }
 ```
@@ -384,7 +470,10 @@ try {
 
 - **Don't use instance variables for state** - Anything stored in memory is lost after function execution. Always use the Store tool for data that needs to persist.
 - **Processing self-created activities** - Other users may change an Activity created by the twist, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
-- Most activity should be `type = ActivityType.Note` with a `title` and `note`, and no `start` or `end`. This represents a typical message. `start` and `end` should only be used for a note if it should be displayed for a specific date or time, such as a birthday.
+- **Always create Activities with Notes** - See "Understanding Activities and Notes" section above for the thread/message pattern and decision tree.
+- **Use correct Activity types** - Most should be `ActivityType.Note`. Only use `Action` for tasks with `doneAt`, and `Event` for items with `start`/`end`.
+- **Use `source` field for deduplication** - Always include `source` when syncing external data to enable safe, idempotent operations.
+- **Add Notes to existing Activities** - Check for existing Activities with `getActivityBySource()` before creating new ones. Think thread replies, not new threads.
 - Tools are declared in the `build` method and accessed via `this.tools.toolName` in twist methods.
 - **Don't forget runtime limits** - Each execution has ~10 seconds. Break long operations into batches with the Tasks tool. Process enough items per batch to be efficient, but few enough to stay under time limits.
 - **Always use Callbacks tool for persistent references** - Direct function references don't survive worker restarts.
