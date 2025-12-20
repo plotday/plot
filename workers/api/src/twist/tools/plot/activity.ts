@@ -1,6 +1,3 @@
-import TurndownService from "turndown";
-import { parseHTML } from "linkedom/worker";
-
 import { type Database, safeQuery } from "@plotday/db";
 import {
   type Activity,
@@ -26,13 +23,6 @@ import { fromDbActivity } from "./converters";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";
 
-// Create global document polyfill for Turndown (required in Cloudflare Workers)
-// This runs once when the module is loaded
-if (typeof (globalThis as any).document === "undefined") {
-  const { document } = parseHTML("<!DOCTYPE html><html><body></body></html>");
-  (globalThis as any).document = document;
-}
-
 /**
  * Converts ActorType enum to database actor type string.
  */
@@ -52,14 +42,16 @@ function actorTypeToString(type: ActorType): string {
 /**
  * Converts note content to Markdown based on the specified noteType.
  *
+ * @param ai - The Cloudflare Workers AI binding
  * @param note - The note content to convert
  * @param noteType - The format of the input note ('text', 'markdown', 'html', or null)
  * @returns The note content converted to Markdown
  */
-function convertNoteToMarkdown(
+async function convertNoteToMarkdown(
+  ai: Ai,
   note: string | null | undefined,
   noteType?: "text" | "markdown" | "html"
-): string | null {
+): Promise<string | null> {
   if (!note) return null;
 
   // Default to 'markdown' if noteType is not specified
@@ -67,13 +59,13 @@ function convertNoteToMarkdown(
 
   switch (type) {
     case "html": {
-      // Convert HTML to Markdown using Turndown
+      // Convert HTML to Markdown using Cloudflare Workers AI
       try {
-        const turndownService = new TurndownService({
-          headingStyle: "atx",
-          codeBlockStyle: "fenced",
+        const result = await ai.toMarkdown({
+          name: "note.html",
+          blob: new Blob([note], { type: "text/html" }),
         });
-        return turndownService.turndown(note);
+        return result.data;
       } catch (error) {
         // If conversion fails, return original note
         console.error("Failed to convert HTML to Markdown:", error);
@@ -309,8 +301,12 @@ export async function createActivity(
     // Find first note with content
     const firstNoteWithContent = activity.notes.find((note) => note.content);
     if (firstNoteWithContent && firstNoteWithContent.content) {
+      if (!plot.env) {
+        throw new Error("Plot env is required for HTML to Markdown conversion");
+      }
       // Convert note to markdown first if needed
-      const markdown = convertNoteToMarkdown(
+      const markdown = await convertNoteToMarkdown(
+        plot.env.AI,
         firstNoteWithContent.content,
         firstNoteWithContent.noteType
       );
@@ -1382,8 +1378,12 @@ export async function createActivities(
       // Find first note with content
       const firstNoteWithContent = activity.notes.find((note) => note.content);
       if (firstNoteWithContent && firstNoteWithContent.content) {
+        if (!plot.env) {
+          throw new Error("Plot env is required for HTML to Markdown conversion");
+        }
         // Convert note to markdown first if needed
-        const markdown = convertNoteToMarkdown(
+        const markdown = await convertNoteToMarkdown(
+          plot.env.AI,
           firstNoteWithContent.content,
           firstNoteWithContent.noteType
         );

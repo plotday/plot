@@ -33,9 +33,7 @@
     "@supabase/supabase-js": "^2.79.0",
     "ai": "^5.0.76",
     "hono": "^4.6.15",
-    "linkedom": "^0.18.12",
     "stripe": "^17.5.0",
-    "turndown": "^7.2.0",
     "typebox": "^1.0.35",
     "workers-ai-provider": "^2.0.0",
     "zod": "^4.0.10"
@@ -46,7 +44,6 @@
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
     "@types/node": "^20.14.2",
-    "@types/turndown": "^5.0.6",
     "vitest": "^2.1.8"
   },
   "nx": {
