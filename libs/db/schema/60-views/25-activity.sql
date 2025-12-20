@@ -33,10 +33,11 @@ SELECT
     upe.user_id,
     a.id AS activity_id,
     ar.read_at IS NULL AS unread,
-    GREATEST (COALESCE(ar.updated_at, 'epoch'), CASE
-        WHEN a.created_by = upe.user_id THEN COALESCE(a.last_note_created_at, 'epoch')
-        ELSE COALESCE(a.last_note_created_at, a.created_at)
-    END) AS updated_at
+    GREATEST (COALESCE(ar.updated_at, 'epoch'), CASE WHEN a.created_by = upe.user_id THEN
+            COALESCE(a.last_note_created_at, 'epoch')
+        ELSE
+            COALESCE(a.last_note_created_at, a.created_at)
+        END) AS updated_at
 FROM
     -- All the user's priorities
     user_priority_expanded upe
@@ -45,13 +46,18 @@ FROM
         AND a.archived_at IS NULL
         -- For self-created activities: only include if there are notes
         -- For others: use standard logic
-        AND ((a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at)
-            OR ((a.created_by IS NULL OR a.created_by != upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
+        AND ((a.created_by = upe.user_id
+                AND a.last_note_created_at IS NOT NULL
+                AND a.last_note_created_at > upe.joined_at)
+            OR ((a.created_by IS NULL
+                    OR a.created_by != upe.user_id)
+                AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
     LEFT JOIN activity_read ar ON ar.user_id = upe.user_id
         AND ar.activity_id = a.id
-        AND ar.read_at >= CASE
-            WHEN a.created_by = upe.user_id THEN a.last_note_created_at
-            ELSE COALESCE(a.last_note_created_at, a.created_at)
+        AND ar.read_at >= CASE WHEN a.created_by = upe.user_id THEN
+            a.last_note_created_at
+        ELSE
+            COALESCE(a.last_note_created_at, a.created_at)
         END;
 
 -- Add priority_path and mentions to activity view
@@ -145,32 +151,17 @@ AS
 SELECT
     ua.user_id,
     ua.id,
+    COALESCE(ae.archived_at, ua.archived_at) AS archived_at,
     ae.occurrence,
     ae.updated_at,
     ua.priority_path,
     ua.range_at,
     ua.range_on,
     -- exception overrides
-    CASE WHEN ae.archived_at IS NULL THEN
-        ae.at
-    ELSE
-        NULL
-    END AS at,
-    CASE WHEN ae.archived_at IS NULL THEN
-        ae.on
-    ELSE
-        NULL
-    END AS ON,
-    CASE WHEN ae.archived_at IS NULL THEN
-        ae.title
-    ELSE
-        NULL
-    END AS title,
-    CASE WHEN ae.archived_at IS NULL THEN
-        ae.note
-    ELSE
-        NULL
-    END AS note
+    ae.at,
+    ae.on,
+    ae.title,
+    ae.note
 FROM
     activity_exception ae
     JOIN user_activity ua ON ua.id = ae.activity_id;
@@ -181,6 +172,7 @@ AS
 SELECT
     ua.user_id,
     ua.id,
+    ua.archived_at,
     at.occurrence,
     at.updated_at,
     ua.priority_path,

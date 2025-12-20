@@ -140,13 +140,33 @@ abstract class BaseTable {
       bool more,
     )
   >
-  get({DateTimeRange? range, DateTime? updatedSince}) async {
+  get({
+    DateTimeRange? range,
+    DateTime? updatedSince,
+    bool initial = false,
+    bool archived = false,
+  }) async {
     var query = select();
     query = filterRange(query, range);
     if (updatedSince != null) {
       query = query.gt("updated_at", updatedSince);
     }
-    query = filter(query);
+
+    // Apply base filter (user_id, etc.)
+    query = filter(query, initial: initial, archived: archived);
+
+    // Apply archived_at filtering:
+    // - Update pulls (updatedSince != null): include all items
+    // - Archived sync: only archived items (archived_at IS NOT NULL)
+    // - Regular sync: only non-archived items (archived_at IS NULL)
+    if (updatedSince == null) {
+      if (archived) {
+        query = query.not("archived_at", "is", null);
+      } else {
+        query = query.filter("archived_at", "is", null);
+      }
+    }
+
     PostgrestTransformBuilder<PostgrestList> query2 = sort(query);
     if (limit != null) {
       query2 = query2.limit(limit!);
@@ -220,7 +240,11 @@ abstract class BaseTable {
     return query;
   }
 
-  PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
+  PostgrestFilterBuilder<T2> filter<T2>(
+    PostgrestFilterBuilder<T2> query, {
+    bool initial = false,
+    bool archived = false,
+  }) {
     return query.eq("user_id", Base.userId.toString());
   }
 
@@ -628,14 +652,13 @@ class Store extends _$Store {
     bool initial = false,
     (DateTime?, DateTime?)? range,
   }) async {
-    log.fine("pull(initial: $initial, ${baseTable.table}, range: $range)");
+    final entity = baseTable.fullName;
 
     // Update pulls don't support range parameter
     if (!initial && range != null) {
       throw ArgumentError('Update pulls do not support range parameter');
     }
 
-    final entity = baseTable.fullName;
     final syncState = await (select(
       syncStates,
     )..where((row) => row.entity.equals(entity))).getSingleOrNull();
@@ -645,9 +668,27 @@ class Store extends _$Store {
       return null;
     }
 
-    // Update pull: Skip if pulledAt doesn't exist (must do initial first)
+    // Update pull: If we didn't do an initial, just mark now as pullAt
+    // so we get updates from this point on.
     if (!initial && syncState?.pulledAt == null) {
-      log.warning("Pull before initial pull for entity $entity, skipping");
+      log.fine("No previous pulledAt for ${baseTable.table}, setting to now");
+      // Update pulledAt (and firstPulledAt on initial pull)
+      final lastUpdatedMicros = DateTime.now().microsecondsSinceEpoch;
+      await into(syncStates).insert(
+        SyncStatesCompanion.insert(
+          entity: entity,
+          pulledAt: Value(lastUpdatedMicros),
+          firstPulledAt: Value(lastUpdatedMicros),
+        ),
+        onConflict: DoUpdate(
+          (old) => SyncStatesCompanion(
+            entity: Value(entity),
+            pulledAt: Value(lastUpdatedMicros),
+            firstPulledAt: Value(lastUpdatedMicros),
+            // Preserve existing 'last' and 'noMore' values
+          ),
+        ),
+      );
       return null;
     }
 
@@ -672,7 +713,11 @@ class Store extends _$Store {
 
       log.fine("Requesting range $requestRange");
       var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
-          .get(range: requestRange, updatedSince: updatedSince));
+          .get(
+            range: requestRange,
+            updatedSince: updatedSince,
+            initial: initial,
+          ));
       final from = newRange?.start?.toString();
       final to = newRange?.end?.toString();
       more = batchMore;
@@ -778,8 +823,129 @@ class Store extends _$Store {
     return null;
   }
 
+  /// Helper method to generate archived entity name
+  static String getArchivedEntityName(String entity) => '${entity}_archived';
+
+  /// Pulls all archived items for entities that don't use pagination (all except Activity).
+  /// This is a one-time full fetch of all archived items.
+  /// Uses entity_archived suffix for tracking in SyncStates.
+  /// Only sets pulledAt timestamp (no pagination tracking).
+  Future<void> pullArchived<
+    TABLE extends SyncableTable,
+    DATA extends DataClass
+  >(TableInfo<TABLE, DATA> table, BaseTable baseTable) async {
+    final entity = getArchivedEntityName(baseTable.fullName);
+    log.fine("pullArchived(${baseTable.table})");
+
+    final syncState = await (select(
+      syncStates,
+    )..where((row) => row.entity.equals(entity))).getSingleOrNull();
+
+    // Skip if already pulled
+    if (syncState?.pulledAt != null) {
+      log.fine("Archived items already pulled for $entity, skipping");
+      return;
+    }
+
+    // Fetch all archived items (no range, no updatedSince, archived=true)
+    var (baseRows, lastUpdated, _, _) = await baseTable.get(archived: true);
+
+    if (baseRows.isNotEmpty) {
+      log.info(
+        "Pulled ${baseRows.length} archived rows from ${baseTable.table}",
+      );
+    }
+
+    final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
+      try {
+        return [baseTable.fromBase(r)];
+      } catch (e, stackTrace) {
+        log.warning(
+          "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
+          e,
+          stackTrace,
+        );
+        return [];
+      }
+    });
+
+    await batch((batch) {
+      batch.insertAllOnConflictUpdate(table, storeRows);
+    });
+
+    // Mark as pulled
+    final nowMicros =
+        lastUpdated?.toUtc().microsecondsSinceEpoch ??
+        DateTime.now().toUtc().microsecondsSinceEpoch;
+    await into(syncStates).insert(
+      SyncStatesCompanion.insert(entity: entity, pulledAt: Value(nowMicros)),
+      onConflict: DoUpdate(
+        (old) => SyncStatesCompanion(
+          entity: Value(entity),
+          pulledAt: Value(nowMicros),
+        ),
+      ),
+    );
+
+    if (baseRows.isNotEmpty) {
+      log.info("Synced archived ${baseTable.name}: ${baseRows.length} rows");
+    }
+  }
+
   // Queue for tracking in-progress pullTo calls to prevent concurrent pulls
   static final Map<String, Completer<(DateTime?, DateTime?)?>?> _pullQueue = {};
+
+  /// Gets sync states for an entity and all its ancestors.
+  ///
+  /// For priority-filtered entities like "activities:abc.def.ghi", this returns
+  /// sync states for:
+  /// - "activities:abc.def.ghi" (self)
+  /// - "activities:abc.def" (parent)
+  /// - "activities:abc" (grandparent)
+  ///
+  /// This allows descendant priorities to inherit sync progress from ancestors.
+  Future<List<SyncState>> _getAncestorSyncStates(String entityName) async {
+    // Parse entity name to extract path if present
+    // Format: "activities:{path}" or "activities:{path}_archived"
+    final parts = entityName.split(':');
+    if (parts.length < 2) {
+      // No path filtering, just return the single state if it exists
+      final state = await (select(
+        syncStates,
+      )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
+      return state != null ? [state] : [];
+    }
+
+    final baseName = parts[0]; // "activities"
+    final pathAndSuffix = parts[1]; // "abc.def.ghi" or "abc.def.ghi_archived"
+
+    // Check for archived suffix
+    final isArchived = pathAndSuffix.endsWith('_archived');
+    final pathValue = isArchived
+        ? pathAndSuffix.substring(0, pathAndSuffix.length - 9)
+        : pathAndSuffix;
+
+    // Build list of ancestor entity names by walking up the path
+    final ancestorEntityNames = <String>[];
+    final suffix = isArchived ? '_archived' : '';
+    Path? currentPath = Path(pathValue);
+
+    while (currentPath != null) {
+      ancestorEntityNames.add('$baseName:${currentPath.value}$suffix');
+      currentPath = currentPath.parent;
+    }
+
+    // Query all ancestor sync states in one query
+    if (ancestorEntityNames.isEmpty) {
+      return [];
+    }
+
+    final states = await (select(
+      syncStates,
+    )..where((row) => row.entity.isIn(ancestorEntityNames))).get();
+
+    return states;
+  }
 
   /// Pulls data up to a specific date boundary.
   ///
@@ -790,16 +956,23 @@ class Store extends _$Store {
   /// - Pulls from oldest (syncState.last) forward to [pullTo] (newer date)
   ///
   /// Updates only the 'last' timestamp in sync state (pagination boundary).
+  ///
+  /// For archived pagination (Activity only), set [archived] to true.
+  /// This uses a separate sync state with "_archived" suffix.
   Future<(DateTime?, DateTime?)?>
   pullTo<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
     DateTime? pullTo,
     bool ascending = true,
+    bool archived = false,
   }) async {
     // Queue concurrent pulls for the same entity+direction combination
     // This prevents overlapping pulls even with different pullTo values
-    final queueKey = '${baseTable.fullName}:$ascending';
+    final entityName = archived
+        ? getArchivedEntityName(baseTable.fullName)
+        : baseTable.fullName;
+    final queueKey = '$entityName:$ascending';
 
     if (_pullQueue.containsKey(queueKey)) {
       log.fine("Pull already in progress for $queueKey, waiting...");
@@ -810,38 +983,82 @@ class Store extends _$Store {
     _pullQueue[queueKey] = completer;
 
     try {
-      final entity = baseTable.fullName;
-      final syncState = await (select(
-        syncStates,
-      )..where((row) => row.entity.equals(entity))).getSingleOrNull();
+      // Get sync states for this entity and all ancestors
+      final ancestorSyncStates = await _getAncestorSyncStates(entityName);
+      final syncState = ancestorSyncStates
+          .where((s) => s.entity == entityName)
+          .firstOrNull;
 
       // Check if we've already reached the end (noMore flag)
       if (syncState?.noMore == true) {
         log.fine(
-          "No more data for entity $entity (noMore=true), skipping pull",
+          "No more data for entity $entityName (noMore=true), skipping pull",
         );
         completer.complete(null);
         return null;
       }
 
-      // Build requestRange based on pullTo and syncState.last
+      // Find the oldest sync boundary among ancestors (for descending)
+      // or newest boundary (for ascending)
+      // This allows us to inherit sync progress from parent priorities
+      final ancestorStates = ancestorSyncStates.where(
+        (s) => s.entity != entityName && s.last != null,
+      );
+
+      int? effectiveLast = syncState?.last;
+
+      if (ancestorStates.isNotEmpty) {
+        final ancestorLast = ancestorStates.fold<int?>(null, (oldest, current) {
+          if (oldest == null) return current.last;
+          // For descending (newest first): smaller microseconds = older date = further back
+          // We want the furthest back (oldest) boundary
+          // For ascending (oldest first): larger microseconds = newer date = further forward
+          // We want the furthest forward (newest) boundary
+          return ascending
+              ? (current.last! > oldest ? current.last : oldest)
+              : (current.last! < oldest ? current.last : oldest);
+        });
+
+        if (ancestorLast != null) {
+          if (effectiveLast == null) {
+            effectiveLast = ancestorLast;
+            log.fine(
+              "Inheriting sync boundary from ancestor: ${DateTime.fromMicrosecondsSinceEpoch(ancestorLast, isUtc: true)}",
+            );
+          } else {
+            // Use the better boundary (further back for descending, further forward for ascending)
+            final oldEffective = effectiveLast;
+            effectiveLast = ascending
+                ? (ancestorLast > effectiveLast ? ancestorLast : effectiveLast)
+                : (ancestorLast < effectiveLast ? ancestorLast : effectiveLast);
+
+            if (oldEffective != effectiveLast) {
+              log.fine(
+                "Using ancestor's better sync boundary: ${DateTime.fromMicrosecondsSinceEpoch(effectiveLast, isUtc: true)} (was: ${DateTime.fromMicrosecondsSinceEpoch(oldEffective, isUtc: true)})",
+              );
+            }
+          }
+        }
+      }
+
+      // Build requestRange based on pullTo and effectiveLast
       DateTimeRange? requestRange;
       var totalRows = 0;
       var more = false;
       DateTime? lastUpdated;
 
-      if (pullTo != null && syncState?.last != null) {
+      if (pullTo != null && effectiveLast != null) {
         final lastSynced = DateTime.fromMicrosecondsSinceEpoch(
-          syncState!.last!,
+          effectiveLast,
           isUtc: true,
         );
 
         if (ascending) {
           // Ascending: pull forward from last to pullTo
-          // Check if already synced
+          // Check if already synced (by self or ancestor)
           if (!pullTo.isAfter(lastSynced)) {
             log.fine(
-              "pullTo=$pullTo is already synced (last: $lastSynced), skipping pull",
+              "pullTo=$pullTo is already synced (effective last: $lastSynced), skipping pull",
             );
             completer.complete(null);
             return null;
@@ -849,10 +1066,10 @@ class Store extends _$Store {
           requestRange = DateTimeRange(lastSynced, pullTo);
         } else {
           // Descending: pull backward from pullTo to last
-          // Check if already synced
+          // Check if already synced (by self or ancestor)
           if (!pullTo.isBefore(lastSynced)) {
             log.fine(
-              "pullTo=$pullTo is already synced (last: $lastSynced), skipping pull",
+              "pullTo=$pullTo is already synced (effective last: $lastSynced), skipping pull",
             );
             completer.complete(null);
             return null;
@@ -864,10 +1081,10 @@ class Store extends _$Store {
         requestRange = ascending
             ? DateTimeRange(null, pullTo) // From beginning to pullTo
             : DateTimeRange(pullTo, null); // From pullTo to now
-      } else if (syncState?.last != null) {
+      } else if (effectiveLast != null) {
         // Pagination without specific target
         final currentLast = DateTime.fromMicrosecondsSinceEpoch(
-          syncState!.last!,
+          effectiveLast,
           isUtc: true,
         );
         requestRange = ascending
@@ -878,7 +1095,7 @@ class Store extends _$Store {
       log.fine("Requesting range $requestRange");
 
       var (baseRows, batchLastUpdated, newRange, batchMore) = await baseTable
-          .get(range: requestRange, updatedSince: null);
+          .get(range: requestRange, updatedSince: null, archived: archived);
       more = batchMore;
       if (batchLastUpdated != null) {
         lastUpdated = batchLastUpdated;
@@ -934,13 +1151,13 @@ class Store extends _$Store {
 
         await into(syncStates).insert(
           SyncStatesCompanion.insert(
-            entity: entity,
+            entity: entityName,
             last: Value(createdAtMicros),
             noMore: Value(!more),
           ),
           onConflict: DoUpdate(
             (old) => SyncStatesCompanion(
-              entity: Value(entity),
+              entity: Value(entityName),
               last: Value(createdAtMicros),
               noMore: Value(!more),
               // Preserve existing 'pulledAt' and 'firstPulledAt' values
@@ -950,10 +1167,13 @@ class Store extends _$Store {
       } else if (!more) {
         // No rows fetched but server says no more - set noMore flag
         await into(syncStates).insert(
-          SyncStatesCompanion.insert(entity: entity, noMore: const Value(true)),
+          SyncStatesCompanion.insert(
+            entity: entityName,
+            noMore: const Value(true),
+          ),
           onConflict: DoUpdate(
             (old) => SyncStatesCompanion(
-              entity: Value(entity),
+              entity: Value(entityName),
               noMore: const Value(true),
               // Preserve all other values
             ),
@@ -970,7 +1190,7 @@ class Store extends _$Store {
       // Return (oldest, null) to represent the range from oldest onwards
       final finalSyncState = await (select(
         syncStates,
-      )..where((row) => row.entity.equals(entity))).getSingleOrNull();
+      )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
 
       final result = finalSyncState?.last != null
           ? (
@@ -1012,43 +1232,21 @@ class Store extends _$Store {
   Future<void> _handleTableSync(String table) async {
     log.fine("Syncing $table");
     try {
-      switch (table) {
-        case 'priority':
-          if (!await Priority.push()) {
-            log.warning("Priority push failed during table sync");
-          }
-          await Priority.pull();
-          break;
-        case 'priority_twist':
-          if (!await PriorityTwist.push()) {
-            log.warning("PriorityTwist push failed during table sync");
-          }
-          await PriorityTwist.pullInitial();
-          await PriorityTwist.pullUpdates();
-          break;
-        case 'activity':
-        case 'activity_read':
-          if (!await Activity.push()) {
-            log.warning("Activity push failed during table sync");
-          }
-          await Activity.pull();
-          break;
-        case 'session':
-          if (!await Session.push()) {
-            log.warning("Session push failed during table sync");
-          }
-          await Session.pull();
-          break;
-        case 'note':
-          if (!await Note.push()) {
-            log.warning("Note push failed during table sync");
-          }
-          await Note.pullInitial();
-          await Note.pullUpdates();
-          break;
-        default:
-          log.warning("Unknown table update for $table");
+      // Map table name to SyncEntity using orchestrator
+      final entity = SyncOrchestrator.getEntityByTableName(table);
+
+      if (entity == null) {
+        log.warning("Unknown table update for $table");
+        return;
       }
+
+      // Use orchestrator for dependency-aware push
+      if (!await SyncOrchestrator.instance.push(entity)) {
+        log.warning("${entity.debugName} push failed during table sync");
+      }
+
+      // Pull updates for this entity
+      await SyncOrchestrator.instance.pull(entity);
     } catch (e, stackTrace) {
       log.warning("Error handling realtime update for $table", e, stackTrace);
     }
@@ -1177,7 +1375,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 183;
+  int get schemaVersion => 188;
 
   @override
   MigrationStrategy get migration {

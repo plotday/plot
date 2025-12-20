@@ -77,7 +77,6 @@ class SyncOrchestrator {
     dependsOn: [activity, actor],
     pushFn: Note.push,
     pullFn: () async {
-      await Note.pullInitial();
       await Note.pullUpdates();
     },
   );
@@ -96,6 +95,20 @@ class SyncOrchestrator {
   // PUBLIC API
   // ============================================================================
 
+  /// Maps database table names to SyncEntity instances
+  ///
+  /// Returns null for unknown table names.
+  static SyncEntity? getEntityByTableName(String table) {
+    return switch (table) {
+      'priority' => priority,
+      'priority_twist' => priorityTwist,
+      'activity' || 'activity_read' => activity,
+      'session' => session,
+      'note' => note,
+      _ => null,
+    };
+  }
+
   /// Syncs all entities: pull all (parents→children), then push all (children→parents)
   ///
   /// This replaces the old _syncAll() method with a dependency-aware version.
@@ -104,21 +117,29 @@ class SyncOrchestrator {
 
     // Phase 1: Pull all (parents → children)
     final pullLevels = _computePullLevels();
-    _syncOrchestratorLog.fine('Pull levels: ${pullLevels.map((l) => l.map((e) => e.debugName).toList()).toList()}');
+    _syncOrchestratorLog.fine(
+      'Pull levels: ${pullLevels.map((l) => l.map((e) => e.debugName).toList()).toList()}',
+    );
 
     for (var i = 0; i < pullLevels.length; i++) {
       final level = pullLevels[i];
-      _syncOrchestratorLog.fine('Pulling level $i: ${level.map((e) => e.debugName).toList()}');
+      _syncOrchestratorLog.fine(
+        'Pulling level $i: ${level.map((e) => e.debugName).toList()}',
+      );
       await _executePullLevel(level);
     }
 
     // Phase 2: Push all (children → parents)
     final pushLevels = _computePushLevels();
-    _syncOrchestratorLog.fine('Push levels: ${pushLevels.map((l) => l.map((e) => e.debugName).toList()).toList()}');
+    _syncOrchestratorLog.fine(
+      'Push levels: ${pushLevels.map((l) => l.map((e) => e.debugName).toList()).toList()}',
+    );
 
     for (var i = 0; i < pushLevels.length; i++) {
       final level = pushLevels[i];
-      _syncOrchestratorLog.fine('Pushing level $i: ${level.map((e) => e.debugName).toList()}');
+      _syncOrchestratorLog.fine(
+        'Pushing level $i: ${level.map((e) => e.debugName).toList()}',
+      );
       await _executePushLevel(level);
     }
 
@@ -132,7 +153,9 @@ class SyncOrchestrator {
   Future<bool> push(SyncEntity entity) async {
     // Check if already pushing
     if (_pushCompleters.containsKey(entity)) {
-      _syncOrchestratorLog.fine('Push already in progress for ${entity.debugName}, waiting...');
+      _syncOrchestratorLog.fine(
+        'Push already in progress for ${entity.debugName}, waiting...',
+      );
       return _pushCompleters[entity]!.future;
     }
 
@@ -142,18 +165,26 @@ class SyncOrchestrator {
     try {
       // Ensure dependencies are pushed first
       for (final dep in entity.dependsOn) {
-        _syncOrchestratorLog.fine('Ensuring dependency ${dep.debugName} is pushed before pushing ${entity.debugName}');
+        _syncOrchestratorLog.fine(
+          'Ensuring dependency ${dep.debugName} is pushed before pushing ${entity.debugName}',
+        );
         // Recursively push each dependency (will use existing completer if already in progress)
         await push(dep);
       }
 
       _syncOrchestratorLog.fine('Pushing ${entity.debugName}');
       final success = await entity.pushFn();
-      _syncOrchestratorLog.fine('Push ${entity.debugName}: ${success ? 'success' : 'failed'}');
+      _syncOrchestratorLog.fine(
+        'Push ${entity.debugName}: ${success ? 'success' : 'failed'}',
+      );
       completer.complete(success);
       return success;
     } catch (e, stackTrace) {
-      _syncOrchestratorLog.severe('Error pushing ${entity.debugName}', e, stackTrace);
+      _syncOrchestratorLog.severe(
+        'Error pushing ${entity.debugName}',
+        e,
+        stackTrace,
+      );
       completer.completeError(e, stackTrace);
       return false;
     } finally {
@@ -167,7 +198,9 @@ class SyncOrchestrator {
   Future<void> pull(SyncEntity entity) async {
     // Check if already pulling
     if (_pullCompleters.containsKey(entity)) {
-      _syncOrchestratorLog.fine('Pull already in progress for ${entity.debugName}, waiting...');
+      _syncOrchestratorLog.fine(
+        'Pull already in progress for ${entity.debugName}, waiting...',
+      );
       return _pullCompleters[entity]!.future;
     }
 
@@ -180,7 +213,11 @@ class SyncOrchestrator {
       _syncOrchestratorLog.fine('Pulled ${entity.debugName}');
       completer.complete();
     } catch (e, stackTrace) {
-      _syncOrchestratorLog.severe('Error pulling ${entity.debugName}', e, stackTrace);
+      _syncOrchestratorLog.severe(
+        'Error pulling ${entity.debugName}',
+        e,
+        stackTrace,
+      );
       completer.completeError(e, stackTrace);
     } finally {
       _pullCompleters.remove(entity);
@@ -282,10 +319,17 @@ class SyncOrchestrator {
     }
 
     // Check for circular dependencies
-    final processedCount = levels.fold<int>(0, (sum, level) => sum + level.length);
+    final processedCount = levels.fold<int>(
+      0,
+      (sum, level) => sum + level.length,
+    );
     if (processedCount < entities.length) {
-      final unprocessed = entities.where((e) => !levels.any((level) => level.contains(e)));
-      throw StateError('Circular dependency detected in sync entities: $unprocessed');
+      final unprocessed = entities.where(
+        (e) => !levels.any((level) => level.contains(e)),
+      );
+      throw StateError(
+        'Circular dependency detected in sync entities: $unprocessed',
+      );
     }
 
     return levels;

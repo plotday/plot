@@ -1994,6 +1994,7 @@ export type Database = {
       }
       user_activity_exception: {
         Row: {
+          archived_at: string | null
           at: unknown
           id: string | null
           note: string | null
@@ -2010,6 +2011,7 @@ export type Database = {
       }
       user_activity_tags: {
         Row: {
+          archived_at: string | null
           id: string | null
           occurrence: string | null
           priority_path: unknown
@@ -2094,6 +2096,7 @@ export type Database = {
       }
       user_note_tags: {
         Row: {
+          archived_at: string | null
           id: string | null
           priority_path: unknown
           range_at: unknown

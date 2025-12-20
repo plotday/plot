@@ -110,6 +110,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool self = true,
     PriorityOrder order = PriorityOrder.sorted,
   }) async {
+    // Trigger archived sync if needed
+    if (archived == true) {
+      await Store.get.pullArchived(table, PrioritiesBase());
+    } else if (archived == null) {
+      // Fetch both archived and non-archived
+      await Store.get.pullArchived(table, PrioritiesBase());
+    }
+
     final priorities = await _get(
       id: id,
       path: path,
@@ -133,6 +141,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool self = true,
     PriorityOrder order = PriorityOrder.sorted,
   }) {
+    // Trigger archived sync if needed
+    if (archived == true) {
+      Store.get.pullArchived(table, PrioritiesBase());
+    } else if (archived == null) {
+      // Fetch both archived and non-archived
+      Store.get.pullArchived(table, PrioritiesBase());
+    }
+
     // Watch priorities table
     final prioritiesStream = _get(
       id: id,

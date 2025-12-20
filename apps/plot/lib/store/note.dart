@@ -28,8 +28,12 @@ class NotesBase extends BaseTable {
   final ActivityId? activityId;
 
   @override
-  PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
-    query = super.filter(query); // Apply user_id filter
+  PostgrestFilterBuilder<T2> filter<T2>(
+    PostgrestFilterBuilder<T2> query, {
+    bool initial = false,
+    bool archived = false,
+  }) {
+    query = super.filter(query, initial: initial, archived: archived);
 
     // Add activity filtering if activityId is provided
     if (activityId != null) {
@@ -163,14 +167,6 @@ class Note extends Equatable implements Comparable<Note> {
     );
   }
 
-  /// Pull initial notes and tags (first-time sync).
-  /// Tracked in SyncStates as "notes".
-  static Future<void> pullInitial() async {
-    // Pull all notes (first time only)
-    await Store.get.pull(Store.get.notes, NotesBase(), initial: true);
-    await Store.get.pull(Store.get.noteTags, NoteTagsBase(), initial: true);
-  }
-
   /// Pull global updates for all notes and tags (updated since last sync).
   /// Tracked in SyncStates as "notes".
   static Future<void> pullUpdates() async {
@@ -229,6 +225,14 @@ class Note extends Equatable implements Comparable<Note> {
     // Extract special computed tags from filter
     if (mutableFilter?.remove(Tag.archived) == true) {
       archived = true;
+    }
+
+    // Trigger archived sync if needed
+    if (archived == true || archived == null) {
+      Store.get.pullArchived(
+        Store.get.notes,
+        NotesBase(activityId: activityId),
+      );
     }
 
     final n = Store.get.notes;

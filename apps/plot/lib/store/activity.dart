@@ -129,8 +129,12 @@ class ActivitiesBase extends BaseTable {
   }
 
   @override
-  PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
-    query = super.filter(query); // Apply user_id filter
+  PostgrestFilterBuilder<T2> filter<T2>(
+    PostgrestFilterBuilder<T2> query, {
+    bool initial = false,
+    bool archived = false,
+  }) {
+    query = super.filter(query, initial: initial, archived: archived);
 
     // Add priority path filtering if priorityPath is provided
     // Use ltree 'cd' operator (contained in / descendant of)
@@ -138,8 +142,9 @@ class ActivitiesBase extends BaseTable {
       query = query.filter('priority_path', 'cd', priorityPath);
     }
 
-    // Initial pull: fetch active OR unread activities
-    if (initial) {
+    // Initial pull (non-archived): fetch active OR unread activities
+    // Skip this filter for archived pulls (those use pullTo with archived=true)
+    if (initial && !archived) {
       final now = DateTime.now().toUtc().toIso8601String();
       final today = Date.today().toString();
 
@@ -243,30 +248,19 @@ enum ActivityOrder { sorted, reverse }
 class Activity extends Equatable implements Comparable<Activity> {
   static Future<void> pullInitial() async {
     // Pull active OR unread activities (no limit)
+    // We do this to ensure we can reflect which priorities have unread activities.
+    // We were going to do something similar for priorities with actions, but haven't yet.
     // This fetches all items that are either:
     // - Active: type=action, not done, not archived, scheduled for now/past or unscheduled
     // - Unread: unread=true, not archived, not draft
-    final activitiesRange = await Store.get.pull(
+    await Store.get.pull(
       Store.get.activities,
       ActivitiesBase(initial: true),
       initial: true,
     );
 
-    // Pull exceptions and tags for the same range if we got any activities
-    if (activitiesRange != null) {
-      await Store.get.pull(
-        Store.get.activityExceptions,
-        ActivityExceptionsBase(),
-        initial: true,
-        range: activitiesRange,
-      );
-      await Store.get.pull(
-        Store.get.activityTags,
-        ActivityTagsBase(),
-        initial: true,
-        range: activitiesRange,
-      );
-    }
+    // We don't pull exceptions or tags mostly because we don't have a good way of pulling the related
+    // ones, but also because those should come with pullTo.
   }
 
   static Future<void> pull() async {
@@ -278,7 +272,11 @@ class Activity extends Equatable implements Comparable<Activity> {
     await Store.get.pull(Store.get.activityTags, ActivityTagsBase());
   }
 
-  static Future<void> pullRange(DateRange range, Path? priorityPath) async {
+  static Future<void> pullRange(
+    DateRange range,
+    Path? priorityPath, {
+    bool archived = false,
+  }) async {
     // Pull activities first (with limit of 200)
     // For descending order (newest first), pullTo is the older/earlier boundary (range.start)
     final activitiesRange = await Store.get.pullTo(
@@ -286,6 +284,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       ActivitiesBase(priorityPath: priorityPath?.value ?? ''),
       pullTo: range.start?.toDateTime(),
       ascending: false, // Activity pulls newest → oldest
+      archived: archived,
     );
 
     if (activitiesRange == null) return;
@@ -296,12 +295,14 @@ class Activity extends Equatable implements Comparable<Activity> {
       ActivityExceptionsBase(priorityPath: priorityPath?.value ?? ''),
       pullTo: activitiesRange.$1, // Use the oldest boundary from activities
       ascending: false,
+      archived: archived,
     );
     await Store.get.pullTo(
       Store.get.activityTags,
       ActivityTagsBase(priorityPath: priorityPath?.value ?? ''),
       pullTo: activitiesRange.$1, // Use the oldest boundary from activities
       ascending: false,
+      archived: archived,
     );
   }
 
@@ -855,14 +856,21 @@ class Activity extends Equatable implements Comparable<Activity> {
     /* Augmentation */
     bool getParent = true, // Deprecated, kept for compatibility
   }) {
-    if (range != null) {
-      Activity.pullRange(range, priorityPath);
-    }
-
     // Create a copy of filter to avoid mutating the original
     final mutableFilter = filter != null ? List<Tag>.from(filter) : null;
     if (mutableFilter?.remove(Tag.archived) == true) {
       archived = true;
+    }
+
+    if (range != null) {
+      // Trigger sync for the date range
+      if (archived == null) {
+        // Fetch both archived and non-archived
+        Activity.pullRange(range, priorityPath, archived: false);
+        Activity.pullRange(range, priorityPath, archived: true);
+      } else {
+        Activity.pullRange(range, priorityPath, archived: archived);
+      }
     }
     final doNow = mutableFilter?.remove(Tag.now) == true;
     final doLater = mutableFilter?.remove(Tag.later) == true;

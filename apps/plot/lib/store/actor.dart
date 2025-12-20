@@ -27,8 +27,13 @@ class ActorsBase extends BaseTable {
   }
 
   @override
-  PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
+  PostgrestFilterBuilder<T2> filter<T2>(
+    PostgrestFilterBuilder<T2> query, {
+    bool initial = false,
+    bool archived = false,
+  }) {
     // Don't filter by user_id since actor view handles access control
+    // Don't call super.filter() to avoid user_id filtering
     return query;
   }
 }
@@ -44,10 +49,26 @@ class Actor extends ActorRow {
   }
 
   static Future<List<Actor>> get({bool? archived = false}) async {
+    // Trigger archived sync if needed
+    if (archived == true) {
+      await Store.get.pullArchived(table, ActorsBase());
+    } else if (archived == null) {
+      // Fetch both archived and non-archived
+      await Store.get.pullArchived(table, ActorsBase());
+    }
+
     return _get(archived: archived).get();
   }
 
   static Stream<List<Actor>> watch({bool? archived = false}) {
+    // Trigger archived sync if needed
+    if (archived == true) {
+      Store.get.pullArchived(table, ActorsBase());
+    } else if (archived == null) {
+      // Fetch both archived and non-archived
+      Store.get.pullArchived(table, ActorsBase());
+    }
+
     return _get(archived: archived).watch();
   }
 

@@ -23,8 +23,12 @@ class NoteTagsBase extends BaseTable {
   final Uuid? activityId;
 
   @override
-  PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
-    query = super.filter(query); // Apply user_id filter
+  PostgrestFilterBuilder<T2> filter<T2>(
+    PostgrestFilterBuilder<T2> query, {
+    bool initial = false,
+    bool archived = false,
+  }) {
+    query = super.filter(query, initial: initial, archived: archived);
 
     // Add priority path filtering if priorityPath is provided
     // Use ltree 'cd' operator (contained in / descendant of)

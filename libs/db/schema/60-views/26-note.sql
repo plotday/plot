@@ -55,6 +55,7 @@ SELECT
     ua.user_id,
     n.id,
     nt.updated_at,
+    ua.archived_at,
     ua.priority_path,
     ua.range_at,
     ua.range_on,
