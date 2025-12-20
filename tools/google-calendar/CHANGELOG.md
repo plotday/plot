@@ -1,5 +1,16 @@
 # @plotday/tool-google-calendar
 
+## 0.6.0
+
+### Added
+
+- Activity.source upsert behaviour ([`fe78a0f`](https://github.com/plotday/plot/commit/fe78a0f9fba7db4a015b807d908cf509f4675b02))
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.24.0
+
 ## 0.5.0
 
 ### Changed
