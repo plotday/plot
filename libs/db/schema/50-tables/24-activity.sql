@@ -11,7 +11,7 @@ CREATE TABLE "public"."activity" (
     -- Actor ID (contact ID or priority_twist_id) to credit with creating this activity
     "author_id" uuid NOT NULL,
     -- User ID (not contact ID) or priority_twist_id that created this activity
-    "created_by" uuid NOT NULL DEFAULT auth.uid(),
+    "created_by" uuid NOT NULL DEFAULT auth.uid (),
     "assignee_id" uuid, -- author
     "updated_by" integer NOT NULL DEFAULT 0,
     "archived_at" timestamp with time zone,
@@ -105,11 +105,6 @@ WHERE
 
 -- Speed up joins from priority to non-archived activities
 CREATE INDEX idx_activity_priority_archived ON "public"."activity" ("priority_id", "archived_at");
-
--- Ensure only one draft activity per user per priority (excluding archived drafts)
-CREATE UNIQUE INDEX idx_activity_unique_draft_per_user_priority ON "public"."activity" ("created_by", "priority_id")
-WHERE
-    draft = TRUE AND archived_at IS NULL;
 
 -- Index for efficient source lookups
 CREATE INDEX idx_activity_source ON "public"."activity" ("source")

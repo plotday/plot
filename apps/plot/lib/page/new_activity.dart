@@ -160,43 +160,11 @@ class NewActivityPageState extends State<NewActivityPage> {
     );
 
     if (result.present && result.value.id != state.draft.priority.id) {
-      final newPriorityId = result.value.id;
-
-      // Save current draft to old priority
-      await bloc.updateDraft(state.draft);
-
-      // Get current and new draft notes
-      final currentDraftNote = await Note.getDraftByActivity(state.draft.id);
-      final currentHasContent =
-          currentDraftNote?.content?.trim().isNotEmpty == true;
-
-      // Load or create draft for new priority
-      var newDraft = await Activity.getDraftByPriority(newPriorityId);
-      if (newDraft == null) {
-        newDraft = Activity(priority: result.value, draft: true);
-        await newDraft.save();
-      }
-
-      // Get new priority's draft note
-      final newDraftNote = await Note.getDraftByActivity(newDraft.id);
-      final newHasContent = newDraftNote?.content?.trim().isNotEmpty == true;
-
-      // Handle note content based on scenarios
-      if (currentHasContent && newHasContent) {
-        // Both have content: delete old note, use new note
-        if (currentDraftNote != null) {
-          await Note.archiveDraft(currentDraftNote.id);
-        }
-      } else if (currentHasContent && !newHasContent) {
-        // Only current has content: clear it
-        if (currentDraftNote != null) {
-          await Note.clearDraftContent(currentDraftNote.id);
-        }
-      }
-      // If only new has content or neither has content, no action needed
-
-      // Update bloc state with new draft
-      await bloc.updateDraft(newDraft);
+      log.info('[NewActivityPage._selectPriority] Switching priority from ${state.draft.priority.id} (${state.draft.priority.title}) to ${result.value.id} (${result.value.title})');
+      // Switch to new priority - PriorityBloc handles loading the new draft and note
+      // The ActivityEditor's deactivate method will save the current draft automatically
+      await bloc.setPriority(result.value);
+      log.info('[NewActivityPage._selectPriority] Priority switch complete');
     }
   }
 
@@ -286,9 +254,7 @@ class NewActivityPageState extends State<NewActivityPage> {
                                 final updatedDraft = state.draft.copyWith(
                                   at: Value(newAt),
                                 );
-                                await context.read<PriorityBloc>().updateDraft(
-                                  updatedDraft,
-                                );
+                                await context.read<PriorityBloc>().updateDraft(updatedDraft);
                               },
                             ),
                           ),

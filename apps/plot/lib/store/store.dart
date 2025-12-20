@@ -1375,7 +1375,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 188;
+  int get schemaVersion => 192;
 
   @override
   MigrationStrategy get migration {
@@ -1384,18 +1384,6 @@ class Store extends _$Store {
         await m.createAll();
         await ActivityFts.createTable(m.database);
         await NoteFts.createTable(m.database);
-
-        // Create unique partial indexes for draft constraints
-        await m.database.customStatement(
-          'CREATE UNIQUE INDEX idx_activity_unique_draft_per_priority '
-          'ON activities (priority_id) '
-          'WHERE draft = 1 AND archived_at IS NULL',
-        );
-        await m.database.customStatement(
-          'CREATE UNIQUE INDEX idx_note_unique_draft_per_activity '
-          'ON notes (activity_id) '
-          'WHERE draft = 1 AND archived_at IS NULL',
-        );
       },
       onUpgrade: (Migrator m, int from, int to) async {
         // For schema version 141, completely rebuild the database
@@ -1425,18 +1413,6 @@ class Store extends _$Store {
         await m.createAll();
         await ActivityFts.createTable(db);
         await NoteFts.createTable(db);
-
-        // Create unique partial indexes for draft constraints
-        await db.customStatement(
-          'CREATE UNIQUE INDEX idx_activity_unique_draft_per_priority '
-          'ON activities (priority_id) '
-          'WHERE draft = 1 AND archived_at IS NULL',
-        );
-        await db.customStatement(
-          'CREATE UNIQUE INDEX idx_note_unique_draft_per_activity '
-          'ON notes (activity_id) '
-          'WHERE draft = 1 AND archived_at IS NULL',
-        );
       },
     );
   }

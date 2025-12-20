@@ -488,36 +488,19 @@ class Activity extends Equatable implements Comparable<Activity> {
     });
   }
 
-  /// Get the draft activity for a specific priority
-  /// Returns null if no non-archived draft exists
+  /// Get the most recent draft activity for a specific priority
+  /// Returns the draft with the most recent updatedAt timestamp
   static Future<Activity?> getDraftByPriority(PriorityId priorityId) async {
     final drafts = await _get(
       priorityId: priorityId,
       draft: true,
-      archived: false,
+      archived: null,
       order: ActivityOrder.sorted,
     );
-    return drafts.isEmpty ? null : drafts.first;
-  }
-
-  /// Archive a draft activity by setting archivedAt
-  static Future<void> archiveDraft(ActivityId id) async {
-    final activity = await getOne(id);
-    if (!activity.draft) {
-      throw Exception('Cannot archive non-draft activity');
-    }
-    await activity.copyWith(archivedAt: Value(DateTime.now())).save();
-  }
-
-  /// Unarchive a draft activity by clearing archivedAt
-  static Future<void> unarchiveDraft(ActivityId id) async {
-    final db = Store.get;
-    await (db.update(db.activities)..where((a) => a.id.equalsValue(id))).write(
-      ActivitiesCompanion(
-        archivedAt: const Value(null),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
+    if (drafts.isEmpty) return null;
+    // Sort by updatedAt descending to get the most recent
+    drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return drafts.first;
   }
 
   // Note: _asNested method removed - path-based nesting is no longer supported.

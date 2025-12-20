@@ -198,6 +198,37 @@ class EditorState extends State<Editor> {
     });
   }
 
+  /// Resets the editor by clearing it and re-initializing with new content
+  void reset(String? content) {
+    setState(() {
+      // Clear the document first
+      _editor.execute([ClearDocumentRequest()]);
+
+      // If content is provided, deserialize and insert it
+      if (content != null && content.isNotEmpty) {
+        final newDocument = _deserializeMarkdownWithMentions(content);
+
+        // Remove the empty paragraph that ClearDocumentRequest leaves behind
+        if (_document.nodeCount > 0) {
+          for (int i = _document.nodeCount - 1; i >= 0; i--) {
+            final node = _document.getNodeAt(i);
+            if (node != null) {
+              _document.deleteNode(node.id);
+            }
+          }
+        }
+
+        // Insert all nodes from new document
+        for (final node in newDocument.toList()) {
+          _document.insertNodeAt(_document.nodeCount, node);
+        }
+      }
+
+      // Update isEmpty state
+      _isEmpty = serializeDocumentToMarkdown(_document).isEmpty;
+    });
+  }
+
   void _onDocumentChanged(DocumentChangeLog _) {
     _debouncer.debounce(
       duration: const Duration(milliseconds: 500),

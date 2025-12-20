@@ -31,6 +31,7 @@ class ActivityEditorState extends State<ActivityEditor> {
       GlobalKey<EditableAreaState>();
   bool _isEmpty = true;
   String _lastSavedContent = '';
+  Uuid? _lastDraftNoteId;
   FocusNode? _currentFocusNode;
 
   /// Request focus on the editor
@@ -41,14 +42,30 @@ class ActivityEditorState extends State<ActivityEditor> {
   @override
   void initState() {
     super.initState();
-    _lastSavedContent = widget.draft.preview ?? '';
+    // Get initial content from draft note instead of preview
+    final bloc = context.read<PriorityBloc>();
+    _lastSavedContent = bloc.state.draftNote?.content ?? '';
+    _lastDraftNoteId = bloc.state.draftNote?.id;
+    log.info('[ActivityEditor.initState] Initialized with draft ${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title}), content length=${_lastSavedContent.length}, draftNote=${bloc.state.draftNote?.id}');
   }
 
   @override
   void didUpdateWidget(ActivityEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.draft.preview != oldWidget.draft.preview) {
-      _lastSavedContent = widget.draft.preview ?? '';
+    final bloc = context.read<PriorityBloc>();
+    final newDraftNoteId = bloc.state.draftNote?.id;
+    final newContent = bloc.state.draftNote?.content ?? '';
+
+    // Reset editor if draft note ID changed
+    if (newDraftNoteId != _lastDraftNoteId) {
+      log.info('[ActivityEditor.didUpdateWidget] Draft note ID changed from $_lastDraftNoteId to $newDraftNoteId, resetting editor with content length=${newContent.length}, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})');
+      _editorKey.currentState?.reset(newContent);
+      _lastDraftNoteId = newDraftNoteId;
+      _lastSavedContent = newContent;
+    } else if (newContent != _lastSavedContent) {
+      // Update last saved content if it changed but ID didn't
+      log.info('[ActivityEditor.didUpdateWidget] Content changed from length ${_lastSavedContent.length} to ${newContent.length}, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})');
+      _lastSavedContent = newContent;
     }
   }
 
@@ -61,9 +78,11 @@ class ActivityEditorState extends State<ActivityEditor> {
   @override
   void deactivate() {
     // Save draft when navigating away
+    log.info('[ActivityEditor.deactivate] Deactivating editor, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})');
     final editorState = _editorKey.currentState;
     if (editorState != null) {
       final content = editorState.serialize();
+      log.info('[ActivityEditor.deactivate] Saving content with length ${content.length}');
       _saveDraft(content);
     }
     super.deactivate();
@@ -85,10 +104,31 @@ class ActivityEditorState extends State<ActivityEditor> {
     if (content == _lastSavedContent) return;
 
     final bloc = context.read<PriorityBloc>();
-    final updatedDraft = widget.draft.copyWith(
-      preview: Value(content.trim().isEmpty ? null : content),
-    );
-    await bloc.updateDraft(updatedDraft);
+    log.info('[ActivityEditor._saveDraft] Saving draft: content length=${content.length}, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})');
+
+    // Get or create draft note
+    final stateNote = bloc.state.draftNote;
+    final existingNote = stateNote?.activityId == widget.draft.id ? stateNote : null;
+
+    final Note note;
+    if (existingNote != null) {
+      // Update existing note
+      note = existingNote.copyWith(content: content);
+    } else {
+      // Create new draft note
+      note = Note(
+        id: Uuid.generate(),
+        activityId: widget.draft.id,
+        authorId: Base.actorId,
+        draft: true,
+        private: false,
+        content: content,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+    }
+
+    await bloc.updateDraft(widget.draft, note: note);
     _lastSavedContent = content;
   }
 
@@ -107,6 +147,9 @@ class ActivityEditorState extends State<ActivityEditor> {
               _currentFocusNode?.addListener(_onFocusChange);
             }
 
+            final initialContent = state.draftNote?.content;
+            log.info('[ActivityEditor.build] Building Editor with initialContent length=${initialContent?.length ?? 0}, draft=${state.draft.id}, priority=${state.draft.priority.id} (${state.draft.priority.title}), draftNote=${state.draftNote?.id}');
+
             final editor = Editor(
               key: _editorKey,
               hint: state.draft.type == .note
@@ -118,7 +161,7 @@ class ActivityEditorState extends State<ActivityEditor> {
               focusNode: focusNode,
               twists: state.twists,
               shrinkWrap: !widget.expand,
-              initialContent: widget.draft.preview,
+              initialContent: initialContent,
               onChange: (value) {
                 setState(() {
                   _isEmpty = value.trim().isEmpty;
@@ -164,9 +207,7 @@ class ActivityEditorState extends State<ActivityEditor> {
                       StartAction(
                         widget.draft,
                         onUpdate: (activity) {
-                          return context.read<PriorityBloc>().updateDraft(
-                            activity,
-                          );
+                          return context.read<PriorityBloc>().updateDraft(activity);
                         },
                       ),
                       selected: widget.draft.doNow,
@@ -176,9 +217,7 @@ class ActivityEditorState extends State<ActivityEditor> {
                           ? UnscheduleEvent(
                               widget.draft,
                               onUpdate: (activity) {
-                                return context.read<PriorityBloc>().updateDraft(
-                                  activity,
-                                );
+                                return context.read<PriorityBloc>().updateDraft(activity);
                               },
                             )
                           : ScheduleEvent(
@@ -188,9 +227,7 @@ class ActivityEditorState extends State<ActivityEditor> {
                                 DateTime.now().add(const Duration(hours: 1)),
                               ),
                               onUpdate: (activity) {
-                                return context.read<PriorityBloc>().updateDraft(
-                                  activity,
-                                );
+                                return context.read<PriorityBloc>().updateDraft(activity);
                               },
                             ),
                       selected: widget.draft.type == .event,

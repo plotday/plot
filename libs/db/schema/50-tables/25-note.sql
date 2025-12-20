@@ -40,11 +40,6 @@ CREATE INDEX idx_note_mentions ON "public"."note" USING gin ("mentions")
 WHERE
     mentions IS NOT NULL AND archived_at IS NULL;
 
--- Ensure only one draft note per user per activity (excluding archived drafts)
-CREATE UNIQUE INDEX idx_note_unique_draft_per_user_activity ON "public"."note" ("created_by", "activity_id")
-WHERE
-    draft = TRUE AND archived_at IS NULL;
-
 ALTER TABLE "public"."note" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_note_updated_at

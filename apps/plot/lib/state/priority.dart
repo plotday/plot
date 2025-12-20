@@ -4,6 +4,7 @@ import 'package:rxdart/rxdart.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:drift/drift.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/util/async.dart';
@@ -156,17 +157,73 @@ class PriorityBloc extends Cubit<PriorityState> {
     _tagsSubscription?.cancel();
 
     // Load or create draft for new priority
-    final existingDraft = await Activity.getDraftByPriority(newPriority.id);
-    final newDraft =
-        existingDraft ?? Activity(priority: newPriority, draft: true);
+    // Load the latest draft regardless of archived status, so we can reuse it
+    log.info(
+      '[setPriority] Switching to priority: ${newPriority.id} (${newPriority.title})',
+    );
+    final drafts = await Activity.get(
+      priorityId: newPriority.id,
+      draft: true,
+      archived: null, // Get both archived and non-archived
+    );
+    // Sort by updatedAt descending to get the latest
+    drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final existingDraft = drafts.firstOrNull;
+
+    Activity newDraft;
     if (existingDraft != null) {
-      log.fine("Loaded existing draft: $existingDraft");
+      newDraft = existingDraft;
+      log.info(
+        '[setPriority] Loaded existing draft: id=${existingDraft.id}, priority=${existingDraft.priority.id} (${existingDraft.priority.title}), archived=${existingDraft.archivedAt != null}',
+      );
     } else {
-      log.fine("Created new draft: $newDraft");
+      newDraft = Activity(priority: newPriority, draft: true);
+      log.info(
+        '[setPriority] Creating new draft for priority: id=${newDraft.id}, priority=${newPriority.id} (${newPriority.title})',
+      );
+    }
+
+    // Load draft note for the draft activity (also load archived notes)
+    // We get all draft notes (archived or not) and take the latest one
+    final draftNotes =
+        await (Store.get.select(Store.get.notes)
+              ..where((tbl) => tbl.activityId.equalsValue(newDraft.id))
+              ..where((tbl) => tbl.draft.equals(true))
+              ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)])
+              ..limit(1))
+            .get();
+    final draftNote = draftNotes.isEmpty
+        ? null
+        : Note(
+            id: draftNotes.first.id,
+            activityId: draftNotes.first.activityId,
+            authorId: draftNotes.first.authorId,
+            draft: draftNotes.first.draft,
+            private: draftNotes.first.private,
+            content: draftNotes.first.content,
+            links: draftNotes.first.links,
+            mentions: draftNotes.first.mentions,
+            createdAt: draftNotes.first.createdAt,
+            updatedAt: draftNotes.first.updatedAt,
+            archivedAt: draftNotes.first.archivedAt,
+          );
+
+    if (draftNote != null) {
+      log.info(
+        '[setPriority] Loaded draft note: id=${draftNote.id}, activityId=${draftNote.activityId}, content="${draftNote.content?.substring(0, draftNote.content!.length > 50 ? 50 : draftNote.content!.length) ?? ''}", archived=${draftNote.archivedAt != null}',
+      );
+    } else {
+      log.info('[setPriority] No draft note found for activity ${newDraft.id}');
     }
 
     // Set target priority without changing context (delay context update until data loads)
-    emit(state.copyWith(targetPriority: Value(newPriority), draft: newDraft));
+    emit(
+      state.copyWith(
+        targetPriority: Value(newPriority),
+        draft: newDraft,
+        draftNote: Value(draftNote),
+      ),
+    );
 
     // Reload with new priority
     _loadPriority();
@@ -204,26 +261,26 @@ class PriorityBloc extends Cubit<PriorityState> {
     emit(state.copyWith(draft: clearedDraft));
   }
 
-  /// Updates the draft activity optimistically and saves it to the database.
+  /// Updates the draft activity and optionally the note, saving both to the database.
   /// This provides instant UI updates while persisting changes.
-  Future<void> updateDraft(Activity draft) async {
-    // Ignore updates for stale drafts - this can happen when ActivityEditor
-    // has a reference to an old draft that was already finalized
-    if (draft.id != state.draft.id) {
-      // Different draft ID - could be a priority switch or a stale draft
-      // Check if this draft is actually still a draft in the database
-      try {
-        final existingDraft = await Activity.getOne(draft.id);
-        if (!existingDraft.draft) {
-          return;
-        }
-      } catch (e) {
-        return;
-      }
+  ///
+  /// [activity] - Required activity to update
+  /// [note] - Optional note to save (must be a draft note for this activity)
+  Future<void> updateDraft(Activity activity, {Note? note}) async {
+    if (activity.id == state.draft.id) {
+      emit(state.copyWith(draft: activity));
+    }
+    if (note != null && note.id == state.draftNote?.id) {
+      emit(state.copyWith(draftNote: Value(note)));
     }
 
-    emit(state.copyWith(draft: draft));
-    await draft.save();
+    await activity.save();
+    if (note != null) {
+      log.info(
+        '[updateDraft] Saving note: id=${note.id}, activityId=${note.activityId}, content length=${note.content?.length ?? 0}',
+      );
+      await note.save();
+    }
   }
 
   /// Gets an agenda item relative to the current activity by offset.

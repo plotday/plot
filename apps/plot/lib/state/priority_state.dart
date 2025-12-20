@@ -6,6 +6,7 @@ class PriorityState extends Equatable {
     required Priority context,
     Activity? activity,
     Activity? draft,
+    Note? draftNote,
     Map<Date, ScheduledDay> schedule = const {},
     int first = 0,
     Date? firstDate,
@@ -45,6 +46,7 @@ class PriorityState extends Equatable {
       context: context,
       activity: activity,
       draft: draft ?? Activity(priority: context, draft: true),
+      draftNote: draftNote,
       schedule: schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule,
       agendaItems: agenda.isNotEmpty ? List.unmodifiable(agenda) : agenda,
       first: firstDate != null
@@ -73,6 +75,7 @@ class PriorityState extends Equatable {
     required this.context,
     this.activity,
     required this.draft,
+    this.draftNote,
     required this.range,
     required this.previous,
     required this.next,
@@ -91,6 +94,7 @@ class PriorityState extends Equatable {
   final Priority context;
   final Activity? activity;
   final Activity draft;
+  final Note? draftNote;
   final Map<Date, ScheduledDay> schedule;
   final int first;
   final BoundedDateRange? range;
@@ -815,6 +819,7 @@ class PriorityState extends Equatable {
     Priority? context,
     Value<Activity?> activity = const Value.absent(),
     Activity? draft,
+    Value<Note?> draftNote = const Value.absent(),
     Map<Date, ScheduledDay>? schedule,
     int? first,
     Date? firstDate,
@@ -834,6 +839,7 @@ class PriorityState extends Equatable {
       context: context ?? this.context,
       activity: activity.or(this.activity),
       draft: draft ?? this.draft,
+      draftNote: draftNote.or(this.draftNote),
       schedule: schedule != null
           ? (schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule)
           : this.schedule,
@@ -872,6 +878,7 @@ class PriorityState extends Equatable {
     context,
     activity,
     draft,
+    draftNote,
     schedule,
     first,
     range,

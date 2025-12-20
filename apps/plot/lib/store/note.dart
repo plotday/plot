@@ -404,14 +404,13 @@ class Note extends Equatable implements Comparable<Note> {
     );
   }
 
-  /// Get the draft note for a specific activity
-  /// Returns null if no non-archived draft exists
+  /// Get the most recent draft note for a specific activity
+  /// Returns the draft with the most recent updatedAt timestamp
   static Future<Note?> getDraftByActivity(ActivityId activityId) async {
     final n = Store.get.notes;
     final query = Store.get.select(n)
       ..where((tbl) => tbl.activityId.equalsValue(activityId))
       ..where((tbl) => tbl.draft.equals(true))
-      ..where((tbl) => tbl.archivedAt.isNull())
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)])
       ..limit(1);
 
@@ -419,29 +418,6 @@ class Note extends Equatable implements Comparable<Note> {
     if (results.isEmpty) return null;
 
     return Note._fromStore(noteRow: results.first, tags: null);
-  }
-
-  /// Archive a draft note by setting archivedAt
-  static Future<void> archiveDraft(NoteId id) async {
-    await (Store.get.update(Store.get.notes)
-          ..where((n) => n.id.equalsValue(id)))
-        .write(NotesCompanion(archivedAt: Value(DateTime.now())));
-    await SyncOrchestrator.instance.push(SyncOrchestrator.note);
-  }
-
-  /// Clear content from a draft note (for reuse)
-  static Future<void> clearDraftContent(NoteId id) async {
-    await (Store.get.update(
-      Store.get.notes,
-    )..where((n) => n.id.equalsValue(id))).write(
-      NotesCompanion(
-        content: const Value(null),
-        links: const Value(null),
-        mentions: const Value(null),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
-    await SyncOrchestrator.instance.push(SyncOrchestrator.note);
   }
 
   NoteRow toRow() {

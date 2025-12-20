@@ -5,6 +5,7 @@ import 'package:plot/state/activity.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'logging.dart';
 
 class NoteEditor extends StatefulWidget {
   const NoteEditor({required this.draft, this.expand = false, super.key});
@@ -22,6 +23,7 @@ class NoteEditorState extends State<NoteEditor> {
       GlobalKey<EditableAreaState>();
   bool _isEmpty = true;
   String _lastSavedContent = '';
+  Uuid? _lastDraftNoteId;
   FocusNode? _currentFocusNode;
 
   /// Request focus on the editor
@@ -33,13 +35,23 @@ class NoteEditorState extends State<NoteEditor> {
   void initState() {
     super.initState();
     _lastSavedContent = widget.draft.content ?? '';
+    _lastDraftNoteId = widget.draft.id;
   }
 
   @override
   void didUpdateWidget(NoteEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.draft.content != oldWidget.draft.content) {
-      _lastSavedContent = widget.draft.content ?? '';
+    final newDraftNoteId = widget.draft.id;
+    final newContent = widget.draft.content ?? '';
+
+    // Reset editor if draft note ID changed
+    if (newDraftNoteId != _lastDraftNoteId) {
+      _editorKey.currentState?.reset(newContent);
+      _lastDraftNoteId = newDraftNoteId;
+      _lastSavedContent = newContent;
+    } else if (newContent != _lastSavedContent) {
+      // Update last saved content if it changed but ID didn't
+      _lastSavedContent = newContent;
     }
   }
 
@@ -76,19 +88,10 @@ class NoteEditorState extends State<NoteEditor> {
     if (content == _lastSavedContent) return;
 
     final activityBloc = context.read<ActivityBloc>();
-    final normalizedContent = content.trim().isEmpty ? null : content;
-
-    // Only save if:
-    // 1. Content is not empty, OR
-    // 2. Content was cleared (draft had content before, now doesn't)
-    final hadContent = _lastSavedContent.trim().isNotEmpty;
-    final hasContent = normalizedContent != null;
-
-    if (hasContent || hadContent) {
-      final updatedDraft = widget.draft.copyWith(content: normalizedContent);
-      await activityBloc.updateDraft(updatedDraft);
-      _lastSavedContent = content;
-    }
+    log.info('Saving draft note with content: $content');
+    final updatedDraft = widget.draft.copyWith(content: content);
+    await activityBloc.updateDraft(updatedDraft);
+    _lastSavedContent = content;
   }
 
   @override
