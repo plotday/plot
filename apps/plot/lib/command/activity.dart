@@ -242,9 +242,6 @@ class AddActivity extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Get PriorityBloc before async operations
-    final priorityBloc = context.read<PriorityBloc>();
-
     final activity = await _activity;
 
     // Save the activity directly
@@ -255,12 +252,23 @@ class AddActivity extends Command {
       return const CommandDone();
     }
 
-    // Update PriorityBloc to track the new activity
-    priorityBloc.setActivity(activity);
+    var routePriority = activity.priority;
+    if (context.mounted) {
+      final priorityBloc = context.read<PriorityBloc>();
+      final nowBloc = context.read<NowBloc>();
+
+      // Update PriorityBloc to track the new activity
+      priorityBloc.setActivity(activity);
+
+      // Get the currently displayed priority context to preserve it in navigation
+      if (nowBloc.loadedState.context != null) {
+        routePriority = nowBloc.loadedState.context!;
+      }
+    }
 
     return CommandRoute(
       PriorityRoute(
-        priorityIdString: activity.priority.id.toShortString(),
+        priorityIdString: routePriority.id.toShortString(),
         children: [
           ActivityRoute(activityIdString: activity.id.toShortString()),
         ],
@@ -283,10 +291,8 @@ class AddActivityWithNote extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Get PriorityBloc before async operations
-    final priorityBloc = context.read<PriorityBloc>();
-
     // Add the activity (handles saving, note creation, title generation, and draft reset)
+    final priorityBloc = context.read<PriorityBloc>();
     final savedActivity = await priorityBloc.add(
       _data.activity,
       noteContent: _data.noteContent,
@@ -297,9 +303,18 @@ class AddActivityWithNote extends Command {
       return const CommandDone();
     }
 
+    // Get the currently displayed priority context to preserve it in navigation
+    var routePriority = savedActivity.priority;
+    if (context.mounted) {
+      final nowBloc = context.read<NowBloc>();
+      if (nowBloc.loadedState.context != null) {
+        routePriority = nowBloc.loadedState.context!;
+      }
+    }
+
     return CommandRoute(
       PriorityRoute(
-        priorityIdString: savedActivity.priority.id.toShortString(),
+        priorityIdString: routePriority.id.toShortString(),
         children: [
           ActivityRoute(activityIdString: savedActivity.id.toShortString()),
         ],
@@ -323,10 +338,8 @@ class AddEvent extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Get PriorityBloc before async operations
-    final priorityBloc = context.read<PriorityBloc>();
-
     // Add the activity (handles saving, note creation, title generation, and draft reset)
+    final priorityBloc = context.read<PriorityBloc>();
     final savedActivity = await priorityBloc.add(
       _activity,
       noteContent: _noteContent,
@@ -337,9 +350,18 @@ class AddEvent extends Command {
       return const CommandDone();
     }
 
+    // Get the currently displayed priority context to preserve it in navigation
+    var routePriority = savedActivity.priority;
+    if (context.mounted) {
+      final nowBloc = context.read<NowBloc>();
+      if (nowBloc.loadedState.context != null) {
+        routePriority = nowBloc.loadedState.context!;
+      }
+    }
+
     return CommandRoute(
       PriorityRoute(
-        priorityIdString: savedActivity.priority.id.toShortString(),
+        priorityIdString: routePriority.id.toShortString(),
         children: [
           ActivityRoute(activityIdString: savedActivity.id.toShortString()),
         ],

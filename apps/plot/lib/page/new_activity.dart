@@ -160,11 +160,11 @@ class NewActivityPageState extends State<NewActivityPage> {
     );
 
     if (result.present && result.value.id != state.draft.priority.id) {
-      log.info('[NewActivityPage._selectPriority] Switching priority from ${state.draft.priority.id} (${state.draft.priority.title}) to ${result.value.id} (${result.value.title})');
-      // Switch to new priority - PriorityBloc handles loading the new draft and note
-      // The ActivityEditor's deactivate method will save the current draft automatically
-      await bloc.setPriority(result.value);
-      log.info('[NewActivityPage._selectPriority] Priority switch complete');
+      log.info('[NewActivityPage._selectPriority] Updating draft priority from ${state.draft.priority.id} (${state.draft.priority.title}) to ${result.value.id} (${result.value.title})');
+      // Update just the draft's priority without changing the global priority context
+      final updatedDraft = state.draft.copyWith(priority: result.value);
+      await bloc.updateDraft(updatedDraft);
+      log.info('[NewActivityPage._selectPriority] Draft priority update complete');
     }
   }
 
