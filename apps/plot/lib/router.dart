@@ -25,14 +25,34 @@ class AppRouter extends RootStackRouter {
 
   @override
   RouteType get defaultRouteType => PlatformResolver.current(
+    // Mobile platforms: native transitions
     iOSResolver: () => RouteType.cupertino(),
     androidResolver: () => RouteType.material(),
+    // Desktop platforms: immediate transitions (no animation)
+    macOSResolver: () => RouteType.custom(
+      duration: Duration.zero,
+      reverseDuration: Duration.zero,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          child,
+    ),
+    windowsResolver: () => RouteType.custom(
+      duration: Duration.zero,
+      reverseDuration: Duration.zero,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          child,
+    ),
+    linuxResolver: () => RouteType.custom(
+      duration: Duration.zero,
+      reverseDuration: Duration.zero,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          child,
+    ),
+    // Web fallback: immediate transitions
     defaultResolver: () => RouteType.custom(
-      duration: const Duration(milliseconds: 100),
-      reverseDuration: const Duration(milliseconds: 10),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(opacity: animation, child: child);
-      },
+      duration: Duration.zero,
+      reverseDuration: Duration.zero,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          child,
     ),
   );
 
