@@ -311,7 +311,7 @@ account.delete("/", async (c) => {
           Authorization: `Bearer ${c.env.RESEND_API_KEY}`,
         },
         body: JSON.stringify({
-          from: "Plot <info@xn--4bi.plot.day>",
+          from: "Plot <info@updates.plot.day>",
           to: ["team@plot.day"],
           subject: "Account Deletion Request",
           html: `

@@ -12,12 +12,14 @@ export default function EmailChange() {
       </Text>
       <Text style={otpCode}>{"{{ .Token }}"}</Text>
       <Text style={hint}>
-        If you didn't request this change, please ignore this email and your
-        email address will remain unchanged.
-      </Text>
-      <Text style={hint}>
         This code will expire in one hour for your security.
       </Text>
+      <Text style={hint}>
+        If you didn't request this change, please ignore this email and your
+        email address will remain unchanged. If you're concerned about your
+        account security, contact us at team@plot.day
+      </Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
     </EmailLayout>
   );
 }

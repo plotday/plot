@@ -7,13 +7,18 @@ export default function EmailConfirmation() {
     <EmailLayout preview="Confirm your email address for Plot">
       <Heading style={h1}>Welcome to Plot!</Heading>
       <Text style={text}>
-        Please confirm your email address by entering the code below in the app:
+        Thanks for signing up! To get started, please confirm your email
+        address by entering the verification code below:
       </Text>
       <Text style={otpCode}>{"{{ .Token }}"}</Text>
       <Text style={hint}>
-        If you didn't create a Plot account, you can safely ignore this email.
-        This code will expire in one hour for security your security.
+        This code will expire in one hour for your security.
       </Text>
+      <Text style={hint}>
+        If you didn't create a Plot account, you can safely ignore this email
+        and no account will be created.
+      </Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
     </EmailLayout>
   );
 }

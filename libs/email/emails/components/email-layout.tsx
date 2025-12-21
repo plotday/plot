@@ -40,6 +40,12 @@ export default function EmailLayout({ preview, children }: EmailLayoutProps) {
                 Plot
               </a>
             </Text>
+            <Text style={footerText}>
+              Need help? Contact{" "}
+              <a href="mailto:team@plot.day" style={footerLink}>
+                team@plot.day
+              </a>
+            </Text>
           </Section>
         </Container>
       </Body>
@@ -87,4 +93,9 @@ const footerText = {
   lineHeight: "16px",
   margin: "4px 0",
   textAlign: "center" as const,
+};
+
+const footerLink = {
+  color: "#9ca3af",
+  textDecoration: "underline",
 };

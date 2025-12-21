@@ -28,8 +28,8 @@ async function resend(apiKey: string, request: MailRequest) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      from: "Plot <info@xn--4bi.plot.day>",
-      reply_to: "Plot <info@plot.day>",
+      from: "Plot <info@updates.plot.day>",
+      reply_to: "Plot <team@plot.day>",
       to: request.to,
       subject: request.subject,
       html,

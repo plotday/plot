@@ -12,12 +12,14 @@ export default function PasswordReset() {
       </Text>
       <Text style={otpCode}>{"{{ .Token }}"}</Text>
       <Text style={hint}>
-        If you didn't request a password reset, you can safely ignore this
-        email. Your password will remain unchanged.
+        This code will expire in one hour for your security.
       </Text>
       <Text style={hint}>
-        This code will expire in one hour for security your security.
+        If you didn't request a password reset, you can safely ignore this
+        email. Your password will remain unchanged. If you're concerned about
+        your account security, contact us at team@plot.day
       </Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
     </EmailLayout>
   );
 }
