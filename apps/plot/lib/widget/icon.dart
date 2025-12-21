@@ -35,7 +35,7 @@ class PlotIcon {
   static const unpin = FontAwesomeIcons.thumbtackAngleSlash;
   static const next = FontAwesomeIcons.arrowDownToLine;
   static const previous = FontAwesomeIcons.arrowUpToLine;
-  static const note = FontAwesomeIcons.note;
+  static const note = FontAwesomeIcons.notes;
   static const reschedule = FontAwesomeIcons.calendarPen;
 
   // Tags

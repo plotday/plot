@@ -9,10 +9,10 @@ import 'logging.dart';
 
 /// Holds data for creating a new Activity with its first Note
 class ActivityWithNote {
-  ActivityWithNote({required this.activity, required this.noteContent});
+  ActivityWithNote({required this.activity, this.note});
 
   final Activity activity;
-  final String noteContent;
+  final Note? note;
 }
 
 class ActivityEditor extends StatefulWidget {
@@ -180,7 +180,7 @@ class ActivityEditorState extends State<ActivityEditor> {
                 // Use AddEvent for events, AddActivityWithNote for other types
                 if (widget.draft.type == ActivityType.event) {
                   await context.run(
-                    AddEvent(data.activity, body.trim().isEmpty ? null : body),
+                    AddEvent(data.activity, data.note),
                   );
                 } else {
                   await context.run(AddActivityWithNote(data));
@@ -303,6 +303,28 @@ class ActivityEditorState extends State<ActivityEditor> {
           : const Value.absent(),
     );
 
-    return ActivityWithNote(activity: activity, noteContent: body);
+    // Create note from draft note or create new one if content is provided
+    Note? note;
+    if (body.trim().isNotEmpty) {
+      final bloc = context.read<PriorityBloc>();
+      if (bloc.state.draftNote != null) {
+        // Use existing draft note and update its content
+        note = bloc.state.draftNote!.copyWith(content: body);
+      } else {
+        // Create new note if no draft note exists
+        note = Note(
+          id: Uuid.generate(),
+          activityId: widget.draft.id,
+          authorId: Base.actorId,
+          draft: true, // Will be set to false by PriorityBloc.add()
+          private: false,
+          content: body,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+      }
+    }
+
+    return ActivityWithNote(activity: activity, note: note);
   }
 }

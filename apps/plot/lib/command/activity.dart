@@ -295,7 +295,7 @@ class AddActivityWithNote extends Command {
     final priorityBloc = context.read<PriorityBloc>();
     final savedActivity = await priorityBloc.add(
       _data.activity,
-      noteContent: _data.noteContent,
+      note: _data.note,
     );
 
     // Only navigate if requested
@@ -324,7 +324,7 @@ class AddActivityWithNote extends Command {
 }
 
 class AddEvent extends Command {
-  AddEvent(this._activity, this._noteContent, {this.navigate = true})
+  AddEvent(this._activity, this._note, {this.navigate = true})
     : super(
         title: 'Add',
         eventObject: EventObject.activity,
@@ -333,7 +333,7 @@ class AddEvent extends Command {
       );
 
   final Activity _activity;
-  final String? _noteContent;
+  final Note? _note;
   final bool navigate;
 
   @override
@@ -342,7 +342,7 @@ class AddEvent extends Command {
     final priorityBloc = context.read<PriorityBloc>();
     final savedActivity = await priorityBloc.add(
       _activity,
-      noteContent: _noteContent,
+      note: _note,
     );
 
     // Only navigate if requested

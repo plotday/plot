@@ -466,32 +466,26 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Adds an activity by converting the current draft to a non-draft.
   /// Creates a fresh draft for the priority afterward.
-  /// If noteContent is provided, creates a note and asynchronously generates a title.
+  /// If note is provided, converts it from draft to published and asynchronously generates a title.
   /// Returns the saved activity.
-  Future<Activity> add(Activity activity, {String? noteContent}) async {
+  Future<Activity> add(Activity activity, {Note? note}) async {
     // Convert the draft to a non-draft
     final savedActivity = activity.copyWith(draft: false);
     await savedActivity.save();
 
-    // Create and save note if content is provided
-    if (noteContent != null && noteContent.trim().isNotEmpty) {
-      final note = Note(
-        id: Uuid.generate(),
+    // Convert draft note to published if provided
+    if (note != null && note.content != null && note.content!.trim().isNotEmpty) {
+      final publishedNote = note.copyWith(
         activityId: savedActivity.id,
-        authorId: Base.actorId,
         draft: false,
-        private: false,
-        content: noteContent,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
       );
-      await note.save();
+      await publishedNote.save();
 
       // Asynchronously generate a better title using AI (fire and forget)
       // The activity is already saved with a fallback title, so this update
       // will happen in the background without blocking the UI
       savedActivity
-          .generateTitle(noteContent)
+          .generateTitle(note.content!)
           .then((title) async {
             if (title != savedActivity.title) {
               await savedActivity.copyWith(title: Value(title)).save();
