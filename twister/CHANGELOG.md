@@ -1,5 +1,17 @@
 # @plotday/twister
 
+## 0.24.0
+
+### Added
+
+- Create activities with unread: false ([`fe78a0f`](https://github.com/plotday/plot/commit/fe78a0f9fba7db4a015b807d908cf509f4675b02))
+- Activity.source upsert behaviour ([`fe78a0f`](https://github.com/plotday/plot/commit/fe78a0f9fba7db4a015b807d908cf509f4675b02))
+
+### Changed
+
+- BREAKING: Remove Attachment and Link tags, as they are computed and read-only ([`4d32630`](https://github.com/plotday/plot/commit/4d32630101a8a0f4f7768318a9eeb85bdfe24127))
+- Tightened tag types. ([`4c73a88`](https://github.com/plotday/plot/commit/4c73a88c94fd5e75f35ab707b6975638296110d3))
+
 ## 0.23.0
 
 ### Added
