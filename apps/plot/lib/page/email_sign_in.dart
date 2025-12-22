@@ -6,15 +6,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
-import 'package:logging/logging.dart';
 import 'logging.dart';
 
 @RoutePage()
 class EmailSignInPage extends StatefulWidget {
-  const EmailSignInPage({this.returnTo, this.onSignIn, super.key});
+  const EmailSignInPage({this.returnTo, super.key});
 
   final String? returnTo;
-  final void Function()? onSignIn;
 
   @override
   State<EmailSignInPage> createState() => _EmailSignInPageState();
@@ -181,8 +179,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       // This will trigger UserPasswordRequired or UserWaitlisted state
       await context.read<UserBloc>().setPasswordSetupRequired(true);
 
-      // Stop the loading spinner
-      // Note: Navigation will be handled by the BlocListener
+      // Stop the loading kpinner
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -231,241 +228,196 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<UserBloc, UserState>(
-      listener: (context, state) {
-        // Handle all authenticated states to trigger appropriate navigation
-        if (widget.onSignIn != null) {
-          if (state is UserReady) {
-            Logger('plot.route').info('EmailSignInPage: UserReady detected, calling onSignIn callback');
-            widget.onSignIn!();
-          } else if (state is UserWaitlisted) {
-            Logger('plot.route').info('EmailSignInPage: UserWaitlisted detected, calling onSignIn callback');
-            widget.onSignIn!();
-          } else if (state is UserPasswordRequired) {
-            Logger('plot.route').info('EmailSignInPage: UserPasswordRequired detected, calling onSignIn callback');
-            widget.onSignIn!();
-          }
-        }
-      },
-      child: Scaffold(
-        center: true,
-        body: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              spacing: 8,
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Title
-                Text(
-                  _mode == _AuthMode.signUp
-                      ? 'Create your account'
-                      : 'Sign in to Plot',
-                  style: context.theme.typography.xl.copyWith(
-                    fontWeight: FontWeight.bold,
+    return Scaffold(
+      center: true,
+      body: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            spacing: 8,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Title
+              Text(
+                _mode == _AuthMode.signUp
+                    ? 'Create your account'
+                    : 'Sign in to Plot',
+                style: context.theme.typography.xl.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              // OTP sent confirmation with code entry
+              if (_mode == _AuthMode.otpSent) ...[
+                FAlert(
+                  title: const Text(
+                    'Check your email!\nWe sent a verification code to',
                   ),
+                  subtitle: Text(
+                    _emailController.text.trim(),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  'Enter the 6-digit code from your email:',
+                  style: context.theme.typography.base,
                   textAlign: TextAlign.center,
                 ),
 
-                // OTP sent confirmation with code entry
-                if (_mode == _AuthMode.otpSent) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.3),
-                      ),
+                // OTP input field
+                FTextField(
+                  controller: _otpController,
+                  hint: '000000',
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  autocorrect: false,
+                  maxLength: 6,
+                  onChange: (value) {
+                    if (value.length == 6) {
+                      _handleVerifyOtp();
+                    }
+                  },
+                  onSubmit: (_) => _handleVerifyOtp(),
+                ),
+
+                // Verify button
+                SizedBox(
+                  height: 44,
+                  child: FButton(
+                    onPress: _isLoading ? null : _handleVerifyOtp,
+                    style: FButtonStyle.primary(),
+                    child: _isLoading
+                        ? const Spinner()
+                        : const Text('Verify Code'),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Resend and try different email buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FButton(
+                      onPress: _isLoading ? null : _handleResendCode,
+                      style: FButtonStyle.ghost(),
+                      child: const Text('Resend code'),
                     ),
-                    child: Column(
-                      spacing: 4,
-                      children: [
-                        const Text(
-                          'Check your email!\nWe sent a verification code to\n',
-                          style: TextStyle(color: Color(0xFF10B981)),
-                          textAlign: TextAlign.center,
-                        ),
-                        Text(
-                          _emailController.text.trim(),
-                          style: const TextStyle(
-                            color: Color(0xFF10B981),
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+                    const SizedBox(width: 8),
+                    const Text('•'),
+                    const SizedBox(width: 8),
+                    FButton(
+                      onPress: () {
+                        setState(() {
+                          _mode = _AuthMode.signIn;
+                          _errorMessage = null;
+                          _otpController.clear();
+                        });
+                      },
+                      style: FButtonStyle.ghost(),
+                      child: const Text('Different email'),
                     ),
-                  ),
+                  ],
+                ),
+              ] else ...[
+                // Email field
+                FTextField(
+                  controller: _emailController,
+                  hint: 'your@email.com',
+                  label: const Text('Email'),
+                  keyboardType: TextInputType.emailAddress,
+                  autofocus: true,
+                  autocorrect: false,
+                  onSubmit: (_) => _mode == _AuthMode.signUp
+                      ? _handleSignUp()
+                      : _handleSignIn(),
+                ),
 
-                  const SizedBox(height: 8),
-
-                  Text(
-                    'Enter the 6-digit code from your email:',
-                    style: context.theme.typography.base,
-                    textAlign: TextAlign.center,
-                  ),
-
-                  // OTP input field
-                  FTextField(
-                    controller: _otpController,
-                    hint: '000000',
-                    label: const Text('Verification code'),
-                    keyboardType: TextInputType.number,
-                    autofocus: true,
-                    autocorrect: false,
-                    maxLength: 6,
-                    onSubmit: (_) => _handleVerifyOtp(),
-                  ),
-
-                  // Verify button
-                  SizedBox(
-                    height: 44,
-                    child: FButton(
-                      onPress: _isLoading ? null : _handleVerifyOtp,
-                      style: FButtonStyle.primary(),
-                      child: _isLoading
-                          ? const Spinner()
-                          : const Text('Verify code'),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Resend and try different email buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                // Password field (only in sign-in mode)
+                if (_mode == _AuthMode.signIn) ...[
+                  Column(
+                    spacing: 2,
                     children: [
-                      FButton(
-                        onPress: _isLoading ? null : _handleResendCode,
-                        style: FButtonStyle.ghost(),
-                        child: const Text('Resend code'),
+                      FTextField(
+                        controller: _passwordController,
+                        hint: 'Enter your password',
+                        label: const Text('Password'),
+                        obscureText: true,
+                        onSubmit: (_) => _handleSignIn(),
                       ),
-                      const SizedBox(width: 8),
-                      const Text('•'),
-                      const SizedBox(width: 8),
-                      FButton(
-                        onPress: () {
-                          setState(() {
-                            _mode = _AuthMode.signIn;
-                            _errorMessage = null;
-                            _otpController.clear();
-                          });
-                        },
-                        style: FButtonStyle.ghost(),
-                        child: const Text('Different email'),
+                      // Forgot password link
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          FButton(
+                            onPress: _isLoading ? null : _handlePasswordReset,
+                            style: FButtonStyle.ghost(),
+                            child: const Text('Reset password'),
+                          ),
+                          FButton(
+                            onPress: _isLoading
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _mode = _mode == _AuthMode.signUp
+                                          ? _AuthMode.signIn
+                                          : _AuthMode.signUp;
+                                      _passwordController.clear();
+                                      _errorMessage = null;
+                                    });
+                                  },
+                            style: FButtonStyle.ghost(),
+                            child: const Text('Sign up instead'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ] else ...[
-                  // Email field
-                  FTextField(
-                    controller: _emailController,
-                    hint: 'your@email.com',
-                    label: const Text('Email'),
-                    keyboardType: TextInputType.emailAddress,
-                    autofocus: true,
-                    autocorrect: false,
-                    onSubmit: (_) => _mode == _AuthMode.signUp
-                        ? _handleSignUp()
-                        : _handleSignIn(),
-                  ),
-
-                  // Password field (only in sign-in mode)
-                  if (_mode == _AuthMode.signIn) ...[
-                    Column(
-                      spacing: 2,
-                      children: [
-                        FTextField(
-                          controller: _passwordController,
-                          hint: 'Enter your password',
-                          label: const Text('Password'),
-                          obscureText: true,
-                          onSubmit: (_) => _handleSignIn(),
-                        ),
-                        // Forgot password link
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            FButton(
-                              onPress: _isLoading ? null : _handlePasswordReset,
-                              style: FButtonStyle.ghost(),
-                              child: const Text('Reset password'),
-                            ),
-                            FButton(
-                              onPress: _isLoading
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        _mode = _mode == _AuthMode.signUp
-                                            ? _AuthMode.signIn
-                                            : _AuthMode.signUp;
-                                        _passwordController.clear();
-                                        _errorMessage = null;
-                                      });
-                                    },
-                              style: FButtonStyle.ghost(),
-                              child: const Text('Sign up instead'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-
-                  // Submit button
-                  SizedBox(
-                    height: 44,
-                    child: FButton(
-                      onPress: _isLoading
-                          ? null
-                          : (_mode == _AuthMode.signUp
-                                ? _handleSignUp
-                                : _handleSignIn),
-                      style: FButtonStyle.primary(),
-                      child: _isLoading
-                          ? const Spinner()
-                          : Text(
-                              _mode == _AuthMode.signUp
-                                  ? 'Continue'
-                                  : 'Sign In',
-                            ),
-                    ),
-                  ),
-
-                  // Back button
-                  FButton(
-                    onPress: () => context.router.maybePop(),
-                    style: FButtonStyle.ghost(),
-                    child: const Text('Use another sign-in method'),
-                  ),
                 ],
 
-                // Error message
-                if (_errorMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFFEF4444).withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Color(0xFFEF4444)),
-                      textAlign: TextAlign.center,
-                    ),
+                // Submit button
+                SizedBox(
+                  height: 44,
+                  child: FButton(
+                    onPress: _isLoading
+                        ? null
+                        : (_mode == _AuthMode.signUp
+                              ? _handleSignUp
+                              : _handleSignIn),
+                    style: FButtonStyle.primary(),
+                    child: _isLoading
+                        ? const Spinner()
+                        : Text(
+                            _mode == _AuthMode.signUp ? 'Continue' : 'Sign In',
+                          ),
                   ),
-                ],
+                ),
 
-                const SizedBox(height: 16),
-                const TermsAgreement(),
+                // Back button
+                FButton(
+                  onPress: () => context.router.maybePop(),
+                  style: FButtonStyle.ghost(),
+                  child: const Text('Use another sign-in method'),
+                ),
               ],
-            ),
+
+              // Error message
+              if (_errorMessage != null) ...[
+                FAlert(
+                  style: FAlertStyle.destructive(),
+                  title: Text(_errorMessage!),
+                ),
+              ],
+
+              const SizedBox(height: 16),
+              const TermsAgreement(),
+            ],
           ),
         ),
       ),

@@ -93,9 +93,9 @@ FButtonStyles buildButtonStyles(
                   width: 1,
                 )
               : null,
-          color: colourScheme.colours.highlight
-              .withChroma(0.2)
-              .withLightness(colourScheme.brightness == .light ? 0.96 : 0.55)
+          color: colourScheme.colours.accentBackground
+              .withChroma(colourScheme.brightness == .light ? 0.05 : 0.2)
+              .withLightness(colourScheme.brightness == .light ? 0.97 : 0.55)
               .toColor(),
         ),
         WidgetState.any: BoxDecoration(

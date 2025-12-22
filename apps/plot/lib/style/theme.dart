@@ -12,6 +12,7 @@ import 'package:plot/style/scaffold.dart';
 import 'package:plot/style/bottom_navigation_bar.dart';
 import 'package:plot/style/toaster.dart';
 import 'package:plot/style/tooltip.dart';
+import 'package:plot/style/alert.dart';
 
 FThemeData buildTheme(ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
@@ -73,6 +74,12 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     ),
     tooltipStyle: buildTooltipStyle(
       theme.tooltipStyle,
+      colourScheme,
+      theme.style.borderRadius,
+      typography,
+    ),
+    alertStyles: buildAlertStyles(
+      theme.alertStyles,
       colourScheme,
       theme.style.borderRadius,
       typography,

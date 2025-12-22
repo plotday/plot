@@ -11,10 +11,9 @@ import 'logging.dart';
 
 @RoutePage()
 class PasswordSetupPage extends StatefulWidget {
-  const PasswordSetupPage({this.returnTo, this.onPasswordSet, super.key});
+  const PasswordSetupPage({this.returnTo, super.key});
 
   final String? returnTo;
-  final void Function()? onPasswordSet;
 
   @override
   State<PasswordSetupPage> createState() => _PasswordSetupPageState();
@@ -22,7 +21,6 @@ class PasswordSetupPage extends StatefulWidget {
 
 class _PasswordSetupPageState extends State<PasswordSetupPage> {
   String? _errorMessage;
-  String? _successMessage;
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
@@ -86,12 +84,11 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
       await context.read<UserBloc>().setPasswordSetupRequired(false);
 
       setState(() {
-        _successMessage = 'Password set successfully! Redirecting...';
         _isLoading = false;
       });
 
       // The BlocListener will handle navigation when the user state updates
-      // to UserReady or UserWaitlisted
+      // to UserReady (active users) or UserWaitlisted (waitlisted users)
     } on AuthException catch (e) {
       log.warning('Error updating password', e);
       if (!mounted) return;
@@ -110,14 +107,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<UserBloc, UserState>(
-      listener: (context, state) {
-        if (state is UserReady && widget.onPasswordSet != null) {
-          Logger('plot.route').info('PasswordSetupPage: UserReady detected, calling onPasswordSet callback');
-          widget.onPasswordSet!();
-        }
-      },
-      child: Scaffold(
+    return Scaffold(
         center: true,
         body: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
@@ -146,78 +136,48 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
                 const SizedBox(height: 8),
 
                 // Success message
-                if (_successMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Text(
-                      _successMessage!,
-                      style: const TextStyle(color: Color(0xFF10B981)),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ] else ...[
-                  // Password field
-                  FTextField(
-                    controller: _passwordController,
-                    hint: 'Enter your password',
-                    label: const Text('Password'),
-                    obscureText: true,
-                    autofocus: true,
-                    onSubmit: (_) => _handlePasswordUpdate(),
-                  ),
+                // Password field
+                FTextField(
+                  controller: _passwordController,
+                  hint: 'Enter your password',
+                  label: const Text('Password'),
+                  obscureText: true,
+                  autofocus: true,
+                  onSubmit: (_) => _handlePasswordUpdate(),
+                ),
 
-                  // Confirm password field
-                  FTextField(
-                    controller: _confirmPasswordController,
-                    hint: 'Re-enter your password',
-                    label: const Text('Confirm Password'),
-                    obscureText: true,
-                    onSubmit: (_) => _handlePasswordUpdate(),
-                  ),
+                // Confirm password field
+                FTextField(
+                  controller: _confirmPasswordController,
+                  hint: 'Re-enter your password',
+                  label: const Text('Confirm Password'),
+                  obscureText: true,
+                  onSubmit: (_) => _handlePasswordUpdate(),
+                ),
 
-                  // Submit button
-                  SizedBox(
-                    height: 44,
-                    child: FButton(
-                      onPress: _isLoading ? null : _handlePasswordUpdate,
-                      style: FButtonStyle.primary(),
-                      child: _isLoading
-                          ? const Spinner()
-                          : const Text('Set Password'),
-                    ),
+                // Submit button
+                SizedBox(
+                  height: 44,
+                  child: FButton(
+                    onPress: _isLoading ? null : _handlePasswordUpdate,
+                    style: FButtonStyle.primary(),
+                    child: _isLoading
+                        ? const Spinner()
+                        : const Text('Set Password'),
                   ),
-                ],
+                ),
 
                 // Error message
                 if (_errorMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFFEF4444).withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Color(0xFFEF4444)),
-                      textAlign: TextAlign.center,
-                    ),
+                  FAlert(
+                    style: FAlertStyle.destructive(),
+                    title: Text(_errorMessage!),
                   ),
                 ],
               ],
             ),
           ),
         ),
-      ),
     );
   }
 }

@@ -10,15 +10,13 @@ class TermsAgreement extends StatelessWidget {
     return DefaultTextStyle(
       style: context.theme.typography.base.copyWith(
         height: 1.5,
-        color: const Color(0xFF6B7280),
+        color: context.theme.colors.mutedForeground,
       ),
       child: Text.rich(
         TextSpan(
           style: const TextStyle(height: 1.5),
           children: [
-            const TextSpan(
-              text: 'By signing in, you agree to our\n',
-            ),
+            const TextSpan(text: 'By signing in, you agree to our\n'),
             WidgetSpan(
               alignment: PlaceholderAlignment.baseline,
               baseline: TextBaseline.alphabetic,

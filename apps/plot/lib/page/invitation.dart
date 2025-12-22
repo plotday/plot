@@ -11,9 +11,7 @@ import 'logging.dart';
 
 @RoutePage()
 class InvitationPage extends StatefulWidget {
-  const InvitationPage({this.onInvited, super.key});
-
-  final void Function()? onInvited;
+  const InvitationPage({super.key});
 
   @override
   State<InvitationPage> createState() => _InvitationPageState();
@@ -65,87 +63,70 @@ class _InvitationPageState extends State<InvitationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<UserBloc, UserState>(
-      listener: (context, state) {
-        if (state is UserReady && widget.onInvited != null) {
-          Logger('plot.route').info(
-            'InvitationPage: UserReady detected, calling onInvited callback',
-          );
-          widget.onInvited!();
-        }
-      },
-      child: Scaffold(
-        scrollable: false,
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Button.icon(SignOut()),
-              ),
+    return Scaffold(
+      scrollable: false,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Button.icon(SignOut()),
             ),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: 400),
-                  child: Column(
-                    spacing: 16,
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Invitation Code',
-                        style: context.theme.typography.xl2.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+          ),
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 400),
+                child: Column(
+                  spacing: 16,
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Invitation Code',
+                      style: context.theme.typography.xl2.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    Text(
+                      'Plot is currently in private testing. Please enter your invitation code to continue.',
+                      style: context.theme.typography.base.copyWith(
+                        height: 1.5,
+                      ),
+                    ),
+                    TextField(
+                      controller: _codeController,
+                      label: 'Invitation Code',
+                      autofocus: true,
+                      maxLines: 1,
+                      onSubmitted: (_) => _redeemCode(),
+                    ),
+                    FButton(
+                      onPress: _isSubmitting ? null : _redeemCode,
+                      style: FButtonStyle.primary(),
+                      child: _isSubmitting ? Spinner() : Text('Redeem Code'),
+                    ),
+                    if (_errorMessage != null)
+                      FAlert(
+                        style: FAlertStyle.destructive(),
+                        title: Text(_errorMessage ?? ''),
+                      ),
+                    Link(
+                      uri: Uri.parse('https://plot.day/start'),
+                      child: Text(
+                        "Don't have an invitation yet? Join the waitlist.",
+                        style: TextStyle(color: context.theme.colors.primary),
                         textAlign: TextAlign.center,
                       ),
-                      Text(
-                        'Plot is currently in private testing. Please enter your invitation code to continue.',
-                        style: context.theme.typography.base.copyWith(
-                          height: 1.5,
-                        ),
-                      ),
-                      TextField(
-                        controller: _codeController,
-                        label: 'Invitation Code',
-                        autofocus: true,
-                        maxLines: 1,
-                        onSubmitted: (_) => _redeemCode(),
-                      ),
-                      FButton(
-                        onPress: _isSubmitting ? null : _redeemCode,
-                        style: FButtonStyle.primary(),
-                        child: _isSubmitting
-                            ? Spinner(size: 12)
-                            : Text('Redeem Code'),
-                      ),
-                      Visibility(
-                        visible: _errorMessage != null,
-                        maintainSize: true,
-                        maintainAnimation: true,
-                        maintainState: true,
-                        child: FAlert(
-                          style: FAlertStyle.destructive(),
-                          title: Text(_errorMessage ?? ''),
-                        ),
-                      ),
-                      Link(
-                        uri: Uri.parse('https://plot.day/start'),
-                        child: Text(
-                          "Don't have an invitation yet? Join the waitlist.",
-                          style: TextStyle(color: context.theme.colors.primary),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

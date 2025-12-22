@@ -12,6 +12,7 @@ FTextFieldStyle buildTextFieldStyle(
   // ignore: unused_result
   return baseStyle.copyWith(
     cursorColor: colourScheme.muted,
+    fillColor: colourScheme.editableBackground,
     border: FWidgetStateMap({
       WidgetState.focused: OutlineInputBorder(
         borderSide: BorderSide(color: colourScheme.accent, width: borderWidth),
