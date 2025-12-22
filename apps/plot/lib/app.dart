@@ -1,6 +1,7 @@
 import 'package:plot/state/root_provider.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
+import 'package:plot/state/settings.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:flutter/material.dart' as material;
@@ -25,6 +26,7 @@ class AppState extends State<App> {
       providers: [
         BlocProvider(create: (_) => ThemeBloc()),
         BlocProvider(create: (_) => LocalPreferencesBloc()),
+        BlocProvider(create: (_) => SettingsBloc()),
       ],
       child: Directionality(
         textDirection: TextDirection.ltr,
@@ -98,6 +100,7 @@ class ErrorApp extends StatelessWidget {
       providers: [
         BlocProvider(create: (_) => ThemeBloc()),
         BlocProvider(create: (_) => LocalPreferencesBloc()),
+        BlocProvider(create: (_) => SettingsBloc()),
       ],
       child: PlatformBuilder(
         builder: (context) => material.MaterialApp(

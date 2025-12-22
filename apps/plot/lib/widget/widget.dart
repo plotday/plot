@@ -35,6 +35,7 @@ export 'select.dart';
 export 'select_modal.dart';
 export 'selectable_text.dart';
 export 'sliver.dart';
+export 'speech_dictation_button.dart';
 export 'spinner.dart';
 export 'squiggle.dart';
 export 'swipeable.dart';

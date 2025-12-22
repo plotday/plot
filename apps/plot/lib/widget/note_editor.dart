@@ -117,9 +117,14 @@ class NoteEditorState extends State<NoteEditor> {
               twists: state.twists,
               shrinkWrap: !widget.expand,
               initialContent: widget.draft.content,
-              onChange: (value) {
-                setState(() {
-                  _isEmpty = value.trim().isEmpty;
+              onIsEmptyChanged: (isEmpty) {
+                // Defer setState to avoid calling it during build
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() {
+                      _isEmpty = isEmpty;
+                    });
+                  }
                 });
               },
               onSubmitted: (body, {bool alt = false}) async {
@@ -134,15 +139,43 @@ class NoteEditorState extends State<NoteEditor> {
                 if (widget.expand)
                   Expanded(
                     key: const ValueKey('editor_expanded'),
-                    child: editor,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: editor),
+                        if (_isEmpty)
+                          SpeechDictationButton(
+                            onResult: (text) {
+                              _editorKey.currentState?.insertTextAtCursor(text);
+                            },
+                            onError: (error) {
+                              Alert.show(context, error);
+                            },
+                          ),
+                      ],
+                    ),
                   )
                 else
-                  editor,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: editor),
+                      if (_isEmpty)
+                        SpeechDictationButton(
+                          onResult: (text) {
+                            _editorKey.currentState?.insertTextAtCursor(text);
+                          },
+                          onError: (error) {
+                            Alert.show(context, error);
+                          },
+                        ),
+                    ],
+                  ),
                 // Bottom bar - stays at bottom, above keyboard
                 Row(
                   children: [
                     const Spacer(),
-                    // Right side: Save button
+                    // Right side: Save button (always visible)
                     Button.icon(
                       CommandWrapper(
                         AddNote(Future.value(widget.draft)),

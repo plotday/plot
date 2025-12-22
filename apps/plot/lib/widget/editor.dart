@@ -13,11 +13,14 @@ import 'package:forui/forui.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
+import 'package:plot/state/settings.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/command/command.dart';
 import 'sliver.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
 import 'editor_mention_popover.dart';
+import 'logging.dart';
 
 /// Information about a mention extracted from markdown
 class _MentionInfo {
@@ -130,6 +133,7 @@ class Editor extends StatefulWidget {
     this.autofocus = false,
     this.onSubmitted,
     this.onChange,
+    this.onIsEmptyChanged,
     this.focusNode,
     this.twists = const [],
     this.shrinkWrap = true,
@@ -141,6 +145,7 @@ class Editor extends StatefulWidget {
   final bool autofocus;
   final void Function(String value, {bool alt})? onSubmitted;
   final ValueChanged<String>? onChange;
+  final ValueChanged<bool>? onIsEmptyChanged;
   final FocusNode? focusNode;
   final List<PriorityTwist> twists;
   final bool shrinkWrap;
@@ -229,6 +234,43 @@ class EditorState extends State<Editor> {
     });
   }
 
+  /// Inserts text at the current cursor position
+  void insertTextAtCursor(String text) {
+    log.info("Inserting text at cursor: $text");
+    if (text.isEmpty) return;
+
+    setState(() {
+      // Get current cursor position
+      final selection = _composer.selection;
+      if (selection == null) {
+        // If no selection, append to the end of the document
+        final lastNode = _document.getNodeAt(_document.nodeCount - 1);
+        if (lastNode != null) {
+          final position = DocumentPosition(
+            nodeId: lastNode.id,
+            nodePosition: lastNode.endPosition,
+          );
+          _editor.execute([
+            InsertTextRequest(
+              documentPosition: position,
+              textToInsert: text,
+              attributions: {},
+            ),
+          ]);
+        }
+      } else {
+        // Insert at current cursor position
+        _editor.execute([
+          InsertTextRequest(
+            documentPosition: selection.extent,
+            textToInsert: text,
+            attributions: {},
+          ),
+        ]);
+      }
+    });
+  }
+
   void _onDocumentChanged(DocumentChangeLog _) {
     _debouncer.debounce(
       duration: const Duration(milliseconds: 500),
@@ -286,9 +328,12 @@ class EditorState extends State<Editor> {
   }
 
   void _onDocumentChange(List<EditEvent> changeList) {
+    final isEmpty = serializeDocumentToMarkdown(_document).isEmpty;
     setState(() {
-      _isEmpty = serializeDocumentToMarkdown(_document).isEmpty;
+      _isEmpty = isEmpty;
     });
+    // Notify parent immediately for instant UI updates
+    widget.onIsEmptyChanged?.call(isEmpty);
   }
 
   late final _documentChangeListener = FunctionalEditListener(
@@ -343,9 +388,13 @@ class EditorState extends State<Editor> {
       // Only update if document is currently empty (avoid overwriting user edits)
       if (_document.nodeCount == 1 &&
           _document.getNodeAt(0) is ParagraphNode &&
-          (_document.getNodeAt(0) as ParagraphNode).text.toPlainText().isEmpty) {
+          (_document.getNodeAt(0) as ParagraphNode).text
+              .toPlainText()
+              .isEmpty) {
         // Deserialize new content
-        final newDocument = _deserializeMarkdownWithMentions(widget.initialContent!);
+        final newDocument = _deserializeMarkdownWithMentions(
+          widget.initialContent!,
+        );
 
         // Replace document nodes by removing all and inserting new ones
         setState(() {
@@ -384,6 +433,7 @@ class EditorState extends State<Editor> {
   @override
   Widget build(BuildContext context) {
     bool isDark = context.read<ThemeBloc>().isDarkMode(context);
+    final settingsState = context.watch<SettingsBloc>().state;
 
     return OverlayPortal(
       controller: _mentionOverlayController,
@@ -393,11 +443,7 @@ class EditorState extends State<Editor> {
             ? const <ShortcutActivator, Intent>{
                 // When empty, shortcuts are handled at the page level
               }
-            : {
-                const SingleActivator(LogicalKeyboardKey.enter): SubmitIntent(),
-                const SingleActivator(LogicalKeyboardKey.enter, meta: true):
-                    SubmitIntent(alt: true),
-              },
+            : _buildShortcuts(settingsState.enterBehavior),
         child: Actions(
           actions: <Type, Action<Intent>>{
             SubmitIntent: CallbackAction<SubmitIntent>(
@@ -457,7 +503,7 @@ class EditorState extends State<Editor> {
               keyboardActions: [
                 if (_isEmpty) _bubbleArrowKeys,
                 _handleMentionPopoverNavigation,
-                _shiftEnterToInsertBlockNewline,
+                _buildEnterKeyHandler(settingsState.enterBehavior),
                 _handlePunctuationAfterMention,
                 _handleBackspaceOverMention,
                 // Use IME keyboard actions on mobile, regular keyboard actions on desktop
@@ -473,10 +519,80 @@ class EditorState extends State<Editor> {
     );
   }
 
-  void submit(bool alt) {
+  void submit(bool alt) async {
     final md = _serializeWithMentions(_document);
+
+    // Show first-time prompt if needed
+    final settingsBloc = context.read<SettingsBloc>();
+    if (!settingsBloc.state.hasBeenPromptedForEnterBehavior) {
+      await _showEnterBehaviorPrompt();
+      return;
+    }
+
     widget.onSubmitted?.call(md, alt: alt);
     clear();
+  }
+
+  /// Build shortcuts based on enter key behavior setting
+  Map<ShortcutActivator, Intent> _buildShortcuts(EnterBehavior behavior) {
+    switch (behavior) {
+      case EnterBehavior.enterSubmits:
+        // Mode 1: Enter=Submit, Shift-Enter=Newline, Cmd-Enter=Submit+DoNow
+        return {
+          const SingleActivator(LogicalKeyboardKey.enter): SubmitIntent(),
+          const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+              SubmitIntent(alt: true),
+        };
+      case EnterBehavior.enterNewline:
+        // Mode 2: Enter=Newline, Shift-Enter=Newline, Cmd-Enter=Submit
+        return {
+          const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+              SubmitIntent(),
+        };
+    }
+  }
+
+  /// Build enter key handler based on behavior setting
+  DocumentKeyboardAction _buildEnterKeyHandler(EnterBehavior behavior) {
+    return ({
+      required SuperEditorContext editContext,
+      required KeyEvent keyEvent,
+    }) {
+      if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+        return ExecutionInstruction.continueExecution;
+      }
+
+      if (keyEvent.logicalKey != LogicalKeyboardKey.enter &&
+          keyEvent.logicalKey != LogicalKeyboardKey.numpadEnter) {
+        return ExecutionInstruction.continueExecution;
+      }
+
+      switch (behavior) {
+        case EnterBehavior.enterSubmits:
+          // Mode 1: Block plain Enter (handled by Shortcuts), allow Shift-Enter
+          if (!HardwareKeyboard.instance.isShiftPressed) {
+            return ExecutionInstruction.blocked;
+          }
+          // Shift-Enter: insert newline
+          editContext.editor.execute([InsertNewlineAtCaretRequest()]);
+          return ExecutionInstruction.haltExecution;
+
+        case EnterBehavior.enterNewline:
+          // Mode 2: Allow plain Enter to insert newline, block Cmd-Enter
+          if (HardwareKeyboard.instance.isMetaPressed ||
+              HardwareKeyboard.instance.isControlPressed) {
+            return ExecutionInstruction.blocked;
+          }
+          // Plain Enter or Shift-Enter: insert newline
+          editContext.editor.execute([InsertNewlineAtCaretRequest()]);
+          return ExecutionInstruction.haltExecution;
+      }
+    };
+  }
+
+  /// Show first-time prompt for enter key behavior selection
+  Future<void> _showEnterBehaviorPrompt() async {
+    context.run(ChangeEnterBehavior());
   }
 
   /// Get the current editor content as markdown
@@ -912,31 +1028,6 @@ class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
     }
     return instructions;
   }
-}
-
-ExecutionInstruction _shiftEnterToInsertBlockNewline({
-  required SuperEditorContext editContext,
-  required KeyEvent keyEvent,
-}) {
-  if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
-    return ExecutionInstruction.continueExecution;
-  }
-
-  if (keyEvent.logicalKey != LogicalKeyboardKey.enter &&
-      keyEvent.logicalKey != LogicalKeyboardKey.numpadEnter) {
-    return ExecutionInstruction.continueExecution;
-  }
-
-  if (!HardwareKeyboard.instance.isShiftPressed) {
-    // Ignore in SuperEditor, but allow Shortcuts to handle it.
-    return ExecutionInstruction.blocked;
-  }
-
-  editContext.editor.execute([
-    InsertNewlineAtCaretRequest(super_editor.Editor.createNodeId()),
-  ]);
-
-  return ExecutionInstruction.haltExecution;
 }
 
 ExecutionInstruction _bubbleArrowKeys({

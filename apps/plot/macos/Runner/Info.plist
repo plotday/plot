@@ -47,5 +47,9 @@
         </array>
       </dict>
     </array>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>This app needs access to speech recognition to enable voice dictation in notes and activities.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app needs access to the microphone to enable voice dictation in notes and activities.</string>
   </dict>
 </plist>

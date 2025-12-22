@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:platform_builder/platform_builder.dart';
+import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:forui/forui.dart';
 
 class Spinner extends StatelessWidget {
@@ -21,17 +22,9 @@ class Spinner extends StatelessWidget {
           SizedBox(
             width: size,
             height: size,
-            child: FCircularProgress(
-              style:
-                  FCircularProgressStyle.inherit(
-                    colors: context.theme.colors,
-                    // ignore: unused_result
-                  ).copyWith(
-                    iconStyle: IconThemeData(
-                      color: color ?? context.theme.colors.mutedForeground,
-                      size: size,
-                    ),
-                  ),
+            child: SpinKitFadingCircle(
+              color: color ?? context.theme.colors.mutedForeground,
+              size: size,
             ),
           ),
         ],
