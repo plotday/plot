@@ -122,6 +122,10 @@ class BroadcastClient {
 
       _channel = createWebSocketChannel(wsUri, ['plot-v1', token]);
 
+      // Wait for connection to be established
+      // This will throw WebSocketChannelException if connection fails (e.g., HTTP 401)
+      await _channel!.ready;
+
       // Listen for messages
       _messageSubscription = _channel!.stream.listen(
         _handleMessage,
@@ -134,9 +138,18 @@ class BroadcastClient {
       _reconnectTimer?.cancel();
 
       log.info("WebSocket connected successfully");
+    } on WebSocketChannelException catch (e, stackTrace) {
+      log.warning("WebSocket connection failed", e, stackTrace);
+      // Check for auth errors during connection establishment
+      if (_isAuthError(e)) {
+        _shouldReconnect = false;
+        await _handleAuthError();
+      } else {
+        await _handleError(e);
+      }
     } catch (e, stackTrace) {
       log.warning("Failed to connect to WebSocket", e, stackTrace);
-      _handleError(e);
+      await _handleError(e);
     }
   }
 
@@ -176,8 +189,35 @@ class BroadcastClient {
     }
   }
 
+  /// Check if an error is an authentication error
+  bool _isAuthError(Object error) {
+    // Check typed WebSocketChannelException first
+    if (error is WebSocketChannelException) {
+      final message = error.message?.toLowerCase() ?? '';
+      final inner = error.inner?.toString().toLowerCase() ?? '';
+      return message.contains('401') ||
+          message.contains('unauthorized') ||
+          inner.contains('401') ||
+          inner.contains('unauthorized');
+    }
+
+    // Fallback to string matching for other error types
+    final errorString = error.toString().toLowerCase();
+    return errorString.contains('401') || errorString.contains('unauthorized');
+  }
+
+  /// Handle authentication errors by signing out the user
+  Future<void> _handleAuthError() async {
+    log.warning("WebSocket authentication failure detected - signing out user");
+    try {
+      await Base.client.auth.signOut();
+    } catch (e, stackTrace) {
+      log.warning("Error during auth failure sign-out", e, stackTrace);
+    }
+  }
+
   /// Handle WebSocket errors
-  void _handleError(dynamic error) {
+  Future<void> _handleError(Object error) async {
     log.warning("WebSocket error: $error");
     _isConnected = false;
 
@@ -186,15 +226,38 @@ class BroadcastClient {
       _channel = null;
     }
 
+    // Check if this is an authentication error and handle it
+    if (_isAuthError(error)) {
+      _shouldReconnect = false;
+      await _handleAuthError();
+      return;
+    }
+
     if (_shouldReconnect) {
       _scheduleReconnect();
     }
   }
 
   /// Handle WebSocket disconnection
-  void _handleDisconnection() {
-    log.info("WebSocket disconnected");
+  Future<void> _handleDisconnection() async {
+    final closeCode = _channel?.closeCode;
+    final closeReason = _channel?.closeReason;
+
+    log.info("WebSocket disconnected: code=$closeCode, reason=$closeReason");
     _isConnected = false;
+
+    // Check for authentication-related close codes
+    // 4401: Custom auth failure code (private use range 3000-4999)
+    // 1008: Policy violation (can indicate auth failure)
+    if (closeCode == 4401 || closeCode == 1008) {
+      _shouldReconnect = false;
+      if (_channel != null) {
+        _messageSubscription?.cancel();
+        _channel = null;
+      }
+      await _handleAuthError();
+      return;
+    }
 
     if (_channel != null) {
       _messageSubscription?.cancel();
