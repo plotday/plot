@@ -56,6 +56,7 @@ part 'activity_fts.dart';
 part 'note_fts.dart';
 part 'session.dart';
 part 'tag.dart';
+part 'user_settings.dart';
 
 part 'store.g.dart';
 
@@ -291,6 +292,7 @@ abstract class BaseTable {
     ActivityTags,
     NoteTags,
     Sessions,
+    UserSettings,
   ],
   include: {'priority.drift'},
 )
@@ -1375,7 +1377,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 192;
+  int get schemaVersion => 193;
 
   @override
   MigrationStrategy get migration {

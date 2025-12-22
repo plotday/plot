@@ -46,15 +46,23 @@ enum PriorityOrder { sorted, nested, recent }
 
 class PriorityAncestor {
   static List<PriorityAncestor> fromStore(PriorityAncestryData row) {
-    final ids = (jsonDecode(row.ancestors) as List)
-        .map((e) => Uuid.fromString(e as String))
-        .toList();
-    final titles = (jsonDecode(row.titles) as List)
-        .map((e) => e as String)
-        .toList();
-    final colors = (jsonDecode(row.colors) as List)
-        .map((e) => e as int?)
-        .toList();
+    // Parse raw arrays from JSON
+    final rawTitles = jsonDecode(row.titles) as List;
+    final rawIds = jsonDecode(row.ancestors) as List;
+    final rawColors = jsonDecode(row.colors) as List;
+
+    // Filter out NULL entries (from LEFT JOIN when ancestor doesn't exist)
+    final ids = <Uuid>[];
+    final titles = <String>[];
+    final colors = <int?>[];
+
+    for (int i = 0; i < rawTitles.length; i++) {
+      if (rawTitles[i] != null) {
+        titles.add(rawTitles[i] as String);
+        ids.add(Uuid.fromString(rawIds[i] as String));
+        colors.add(rawColors[i] as int?);
+      }
+    }
 
     // Compute display colors with inheritance
     int currentColorIndex = ThemeColor.defaultColor().index;
@@ -186,6 +194,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
               draft: p.draft,
               ancestors: p._ancestors,
               minAncestorTopOrder: p.minAncestorTopOrder,
+              displayColor: p.displayColor,
               active: activeIds.contains(p.id),
               unreadComputed: unreadIds.contains(p.id),
             );
@@ -292,6 +301,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         draft: p.draft,
         ancestors: p._ancestors,
         minAncestorTopOrder: p.minAncestorTopOrder,
+        displayColor: p.displayColor,
         active: activeIds.contains(p.id),
         unreadComputed: unreadIds.contains(p.id),
       );
@@ -644,6 +654,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Path? originalPath,
     bool? active,
     bool? unreadComputed,
+    ThemeColor? displayColor,
   }) : children = children ?? [],
        _ancestors = ancestors ??
            (ancestry == null
@@ -660,8 +671,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                : PriorityAncestor.fromStore(ancestry)),
        minAncestorTopOrder = minAncestorTopOrder ?? ancestry?.minAncestorTopOrder,
        _originalPath = originalPath ?? row.path,
-       displayColor =
-           row.color ??
+       displayColor = displayColor ?? row.color ??
            _computeDisplayColor(
              ancestry: ancestry,
              parent: parent,

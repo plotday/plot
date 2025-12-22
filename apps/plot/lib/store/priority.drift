@@ -30,7 +30,7 @@ WITH RECURSIVE ancestors (
     SELECT
         priority_id,
         path,
-        substr(path, 1, instr (substr(path, length(ancestor_path) + 2), '.') + length(ancestor_path)) ancestor_path,
+        substr(path, 1, length(ancestor_path) + instr (substr(path, length(ancestor_path) + 2), '.')) ancestor_path,
         depth + 1
     FROM
         ancestors
