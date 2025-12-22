@@ -178,8 +178,15 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       if (!mounted) return;
 
       // Set local flag to indicate password setup is required
-      // This will trigger UserPasswordRequired state and navigation to password setup
+      // This will trigger UserPasswordRequired or UserWaitlisted state
       await context.read<UserBloc>().setPasswordSetupRequired(true);
+
+      // Stop the loading spinner
+      // Note: Navigation will be handled by the BlocListener
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
     } on AuthException catch (e) {
       log.warning('Error verifying OTP', e);
       if (!mounted) return;
@@ -226,9 +233,18 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
   Widget build(BuildContext context) {
     return BlocListener<UserBloc, UserState>(
       listener: (context, state) {
-        if (state is UserReady && widget.onSignIn != null) {
-          Logger('plot.route').info('EmailSignInPage: UserReady detected, calling onSignIn callback');
-          widget.onSignIn!();
+        // Handle all authenticated states to trigger appropriate navigation
+        if (widget.onSignIn != null) {
+          if (state is UserReady) {
+            Logger('plot.route').info('EmailSignInPage: UserReady detected, calling onSignIn callback');
+            widget.onSignIn!();
+          } else if (state is UserWaitlisted) {
+            Logger('plot.route').info('EmailSignInPage: UserWaitlisted detected, calling onSignIn callback');
+            widget.onSignIn!();
+          } else if (state is UserPasswordRequired) {
+            Logger('plot.route').info('EmailSignInPage: UserPasswordRequired detected, calling onSignIn callback');
+            widget.onSignIn!();
+          }
         }
       },
       child: Scaffold(
