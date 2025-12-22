@@ -46,6 +46,10 @@
           "to": "TwistBuilder"
         }
       ]
+    },
+    {
+      "tag": "v11",
+      "new_sqlite_classes": ["SdkTokenStore"]
     }
   ],
   "env": {
@@ -141,6 +145,10 @@
           {
             "name": "TWIST_BUILDER",
             "class_name": "TwistBuilder"
+          },
+          {
+            "name": "SDK_TOKEN_STORE",
+            "class_name": "SdkTokenStore"
           }
         ]
       },
@@ -247,6 +255,10 @@
           {
             "name": "TWIST_BUILDER",
             "class_name": "TwistBuilder"
+          },
+          {
+            "name": "SDK_TOKEN_STORE",
+            "class_name": "SdkTokenStore"
           }
         ]
       },

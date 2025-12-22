@@ -4,7 +4,7 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "Storage" | "Broadcast" | "Usage" | "LogSubscriptions" | "CallbacksState" | "TwistBuilder" | "LogStream";
+		durableNamespaces: "Storage" | "Broadcast" | "Usage" | "LogSubscriptions" | "CallbacksState" | "TwistBuilder" | "LogStream" | "SdkTokenStore";
 	}
 	interface Env {
 		POSTHOG_API_KEY: string;

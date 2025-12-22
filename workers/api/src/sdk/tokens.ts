@@ -10,12 +10,6 @@ import { handleValidationError } from "../utils/validation";
 
 const tokens = new Hono<{ Bindings: Bindings }>();
 
-// In-memory session storage (for MVP - could be moved to KV or Durable Object for persistence)
-const sessionStore = new Map<
-  string,
-  { token: string; userId: string; email: string }
->();
-
 const CreateTokenSchema = z.object({
   name: z.string().optional(),
 });
@@ -120,13 +114,17 @@ tokens.delete("/token/:id", async (c) => {
 tokens.get("/session/:sessionId", async (c) => {
   const sessionId = c.req.param("sessionId");
 
-  const session = sessionStore.get(sessionId);
+  // Get session from Durable Object
+  const sdkTokenStoreId = c.env.SDK_TOKEN_STORE.idFromName(sessionId);
+  const sdkTokenStore = c.env.SDK_TOKEN_STORE.get(sdkTokenStoreId);
+  const session = await sdkTokenStore.get(sessionId);
+
   if (!session) {
     return new Response("Session not found or expired", { status: 404 });
   }
 
   // Return token and user info, then delete session
-  sessionStore.delete(sessionId);
+  await sdkTokenStore.delete(sessionId);
 
   return c.json({
     token: session.token,
@@ -197,17 +195,17 @@ tokens.post("/session/authorize", async (c) => {
     });
   }
 
-  // Store session with token for CLI to poll
-  sessionStore.set(sessionId, {
+  // Store session with token for CLI to poll in Durable Object
+  const sdkTokenStoreId = c.env.SDK_TOKEN_STORE.idFromName(sessionId);
+  const sdkTokenStore = c.env.SDK_TOKEN_STORE.get(sdkTokenStoreId);
+
+  await sdkTokenStore.set(sessionId, {
     token: tokenValue,
     userId,
     email: userEmail,
   });
 
-  // Set expiration to clean up after 5 minutes
-  setTimeout(() => {
-    sessionStore.delete(sessionId);
-  }, 5 * 60 * 1000);
+  // Expiration and cleanup are handled automatically by the Durable Object alarm
 
   return c.json({ success: true });
 });

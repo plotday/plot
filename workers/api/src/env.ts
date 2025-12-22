@@ -4,6 +4,7 @@ import { type Broadcast } from "./state/broadcast";
 import { type CallbacksState } from "./state/callbacks";
 import { type LogStream } from "./state/log-stream";
 import { type LogSubscriptions } from "./state/log-subscriptions";
+import { type SdkTokenStore } from "./state/sdk-token-store";
 import { type Storage } from "./state/storage";
 import { type Usage } from "./state/usage";
 import {
@@ -135,5 +136,6 @@ export type Bindings = {
   readonly USAGE: DurableObjectNamespace<Usage>;
   readonly LOG_SUBSCRIPTIONS: DurableObjectNamespace<LogSubscriptions>;
   readonly LOG_STREAM: DurableObjectNamespace<LogStream>;
+  readonly SDK_TOKEN_STORE: DurableObjectNamespace<SdkTokenStore>;
   readonly TWIST_MODULES_BUCKET: R2Bucket;
 };

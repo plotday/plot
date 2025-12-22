@@ -35,6 +35,7 @@ export { Usage } from "./state/usage";
 export { LogSubscriptions } from "./state/log-subscriptions";
 export { HttpProxy } from "./twist/http-proxy";
 export { LogStream } from "./state/log-stream";
+export { SdkTokenStore } from "./state/sdk-token-store";
 export { TwistTail } from "./twist/tail";
 
 export class TwistBuilder extends Container {
