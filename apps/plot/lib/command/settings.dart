@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -8,8 +9,11 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/select_modal.dart';
 import 'package:plot/state/theme.dart';
-import 'package:plot/base.dart';
+import 'package:plot/state/settings.dart';
+import 'package:plot/store/store.dart';
+import 'package:plot/style/layout.dart';
 import 'command.dart';
 import 'logging.dart';
 
@@ -25,7 +29,13 @@ final appearanceCommands = StaticCommandGroup(
 final settingsCommands = StaticCommandGroup(
   title: 'App',
   shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
-  commands: [ManageTwists(), ChangeAppearance(), CopyVersion(), SignOut()],
+  commands: [
+    ManageTwists(),
+    ChangeAppearance(),
+    ChangeEnterBehavior(),
+    CopyVersion(),
+    SignOut(),
+  ],
 );
 
 final signedOutSettingsCommands = StaticCommandGroup(
@@ -53,6 +63,66 @@ class ChangeAppearance extends ShowCommands {
         commands: (context) =>
             Future.value(Commands(groups: [appearanceCommands])),
       );
+}
+
+class ChangeEnterBehavior extends Command {
+  ChangeEnterBehavior()
+    : super(
+        title: 'Change Enter Key Behavior',
+        icon: FontAwesomeIcons.keyboard,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final modifierKey = Platform.isMacOS ? 'Cmd' : 'Ctrl';
+    final currentBehavior = context.read<SettingsBloc>().state.enterBehavior;
+
+    final result = await SelectModal.open<EnterBehavior>(
+      context,
+      items: (search) async => [
+        SelectGroup(
+          title: 'Enter Key Behavior',
+          items: [EnterBehavior.enterSubmits, EnterBehavior.enterNewline],
+        ),
+      ],
+      itemBuilder: (behavior) {
+        final title = behavior == EnterBehavior.enterSubmits
+            ? 'Enter saves the note'
+            : 'Enter adds a new line';
+        final subtitle = behavior == EnterBehavior.enterSubmits
+            ? 'Shift-Enter adds a new line and $modifierKey-Enter saves an action'
+            : '$modifierKey-Enter saves the note';
+
+        return Padding(
+          padding: widgetPaddingSm,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(subtitle, style: const TextStyle(fontSize: 14)),
+            ],
+          ),
+        );
+      },
+      selectedValue: currentBehavior,
+      prompt: 'Choose Enter key behavior',
+    );
+
+    if (context.mounted && result.present) {
+      try {
+        await context.read<SettingsBloc>().setEnterBehavior(result.value);
+        return const CommandDone();
+      } catch (e, t) {
+        log.warning("Change enter behavior failed", e, t);
+        return CommandMessage('Failed to change enter behavior', isError: true);
+      }
+    }
+
+    return const CommandDone();
+  }
 }
 
 class SignOut extends Command {

@@ -1517,6 +1517,24 @@ export type Database = {
           },
         ]
       }
+      user_settings: {
+        Row: {
+          enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_subscription: {
         Row: {
           billing_cycle_end: string
@@ -2491,6 +2509,7 @@ export type Database = {
     }
     Enums: {
       activity_type: "action" | "event" | "note"
+      enter_behavior: "enter_newline" | "enter_submits"
       subscription_plan: "free"
       subscription_status:
         | "active"
@@ -3149,6 +3168,7 @@ export const Constants = {
   public: {
     Enums: {
       activity_type: ["action", "event", "note"],
+      enter_behavior: ["enter_newline", "enter_submits"],
       subscription_plan: ["free"],
       subscription_status: [
         "active",

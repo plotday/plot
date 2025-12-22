@@ -530,13 +530,6 @@ class PriorityPage extends StatelessWidget {
                                     final current =
                                         state.agendaItems[index - state.first];
 
-                                    // Check if previous item is also a header
-                                    final prevItem = index > state.first
-                                        ? state.agendaItems[index -
-                                              state.first -
-                                              1]
-                                        : null;
-
                                     return Column(
                                       mainAxisSize: MainAxisSize.min,
                                       key: ValueKey(

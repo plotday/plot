@@ -538,7 +538,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
                         return Column(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             if (header != null) header,
                             if (info != null) info,

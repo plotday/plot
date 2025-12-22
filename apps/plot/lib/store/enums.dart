@@ -7,6 +7,8 @@ enum ActivityType { action, event, note }
 
 enum ActorType { user, contact, priorityTwist }
 
+enum EnterBehavior { enterNewline, enterSubmits }
+
 
 extension StringToEnum on String {
   T toEnum<T extends Enum>() {
@@ -14,6 +16,7 @@ extension StringToEnum on String {
     if (T == TagType) values = TagType.values as List<T>;
     if (T == ActivityType) values = ActivityType.values as List<T>;
     if (T == ActorType) values = ActorType.values as List<T>;
+    if (T == EnterBehavior) values = EnterBehavior.values as List<T>;
     if (values == null) {
       throw ArgumentError('Missing enum for $T');
     }

@@ -160,11 +160,15 @@ class NewActivityPageState extends State<NewActivityPage> {
     );
 
     if (result.present && result.value.id != state.draft.priority.id) {
-      log.info('[NewActivityPage._selectPriority] Updating draft priority from ${state.draft.priority.id} (${state.draft.priority.title}) to ${result.value.id} (${result.value.title})');
+      log.info(
+        '[NewActivityPage._selectPriority] Updating draft priority from ${state.draft.priority.id} (${state.draft.priority.title}) to ${result.value.id} (${result.value.title})',
+      );
       // Update just the draft's priority without changing the global priority context
       final updatedDraft = state.draft.copyWith(priority: result.value);
       await bloc.updateDraft(updatedDraft);
-      log.info('[NewActivityPage._selectPriority] Draft priority update complete');
+      log.info(
+        '[NewActivityPage._selectPriority] Draft priority update complete',
+      );
     }
   }
 
@@ -238,7 +242,6 @@ class NewActivityPageState extends State<NewActivityPage> {
                           child: ActivityEditor(
                             key: _activityEditorKey,
                             draft: state.draft,
-                            expand: false,
                           ),
                         ),
 
@@ -254,7 +257,9 @@ class NewActivityPageState extends State<NewActivityPage> {
                                 final updatedDraft = state.draft.copyWith(
                                   at: Value(newAt),
                                 );
-                                await context.read<PriorityBloc>().updateDraft(updatedDraft);
+                                await context.read<PriorityBloc>().updateDraft(
+                                  updatedDraft,
+                                );
                               },
                             ),
                           ),
