@@ -44,7 +44,7 @@ class _LoadingPageState extends State<LoadingPage> {
           crossAxisAlignment: CrossAxisAlignment.center,
           spacing: 16,
           children: [
-            if (_showSpinner) Spinner(),
+            if (_showSpinner) Spinner(size: 22),
             if (widget.message != null) Text(widget.message!),
           ],
         ),
