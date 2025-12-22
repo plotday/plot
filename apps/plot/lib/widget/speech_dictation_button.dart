@@ -119,17 +119,15 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
   @override
   Widget build(BuildContext context) {
     // Don't show button until initialization is complete
-    if (!_isInitialized) {
+    if (!_isInitialized || !_isAvailable) {
       return const SizedBox.shrink();
     }
 
-    final icon = FontAwesomeIcons.microphone;
-
     // Constrain to minimal height to prevent layout shift
     return FButton.icon(
-      onPress: _isAvailable ? _toggleListening : null,
+      onPress: _toggleListening,
       style: _buildButtonStyle(context),
-      child: Icon(icon, size: 15),
+      child: Icon(FontAwesomeIcons.microphone, size: 15),
     );
   }
 
