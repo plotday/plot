@@ -3,6 +3,7 @@ CREATE OR REPLACE FUNCTION public.sync_priority_contact_on_insert ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
+    SET search_path TO 'public'
     AS $function$
 DECLARE
     v_contact_id uuid;
@@ -11,12 +12,12 @@ BEGIN
     SELECT
         id INTO v_contact_id
     FROM
-        contact
+        public.contact
     WHERE
         user_id = NEW.user_id;
     -- Only create priority_contact if the user has a contact record
     IF v_contact_id IS NOT NULL THEN
-        INSERT INTO priority_contact (priority_id, contact_id, created_at, archived_at)
+        INSERT INTO public.priority_contact (priority_id, contact_id, created_at, archived_at)
             VALUES (NEW.priority_id, v_contact_id, NEW.created_at, NEW.archived_at)
         ON CONFLICT (priority_id, contact_id)
             DO NOTHING;
@@ -30,6 +31,7 @@ CREATE OR REPLACE FUNCTION public.sync_priority_contact_on_update ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
+    SET search_path TO 'public'
     AS $function$
 DECLARE
     v_contact_id uuid;
@@ -40,13 +42,13 @@ BEGIN
         SELECT
             id INTO v_contact_id
         FROM
-            contact
+            public.contact
         WHERE
             user_id = NEW.user_id;
         -- Update the corresponding priority_contact if it exists
         IF v_contact_id IS NOT NULL THEN
             UPDATE
-                priority_contact
+                public.priority_contact
             SET
                 archived_at = NEW.archived_at
             WHERE
@@ -63,6 +65,7 @@ CREATE OR REPLACE FUNCTION public.sync_priority_contact_on_delete ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
+    SET search_path TO 'public'
     AS $function$
 DECLARE
     v_contact_id uuid;
@@ -71,12 +74,12 @@ BEGIN
     SELECT
         id INTO v_contact_id
     FROM
-        contact
+        public.contact
     WHERE
         user_id = OLD.user_id;
     -- Delete the corresponding priority_contact if it exists
     IF v_contact_id IS NOT NULL THEN
-        DELETE FROM priority_contact
+        DELETE FROM public.priority_contact
         WHERE priority_id = OLD.priority_id
             AND contact_id = v_contact_id;
     END IF;
