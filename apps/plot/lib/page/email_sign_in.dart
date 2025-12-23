@@ -265,31 +265,9 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                 ),
 
                 // OTP input field
-                FTextField(
+                OtpInput(
                   controller: _otpController,
-                  hint: '000000',
-                  keyboardType: TextInputType.number,
-                  autofocus: true,
-                  autocorrect: false,
-                  maxLength: 6,
-                  onChange: (value) {
-                    if (value.length == 6) {
-                      _handleVerifyOtp();
-                    }
-                  },
-                  onSubmit: (_) => _handleVerifyOtp(),
-                ),
-
-                // Verify button
-                SizedBox(
-                  height: 44,
-                  child: FButton(
-                    onPress: _isLoading ? null : _handleVerifyOtp,
-                    style: FButtonStyle.primary(),
-                    child: _isLoading
-                        ? const Spinner()
-                        : const Text('Verify Code'),
-                  ),
+                  onComplete: _handleVerifyOtp,
                 ),
 
                 const SizedBox(height: 8),

@@ -21,6 +21,7 @@ export 'hoverable_link.dart';
 export 'icon.dart';
 export 'icon_input_row.dart';
 export 'input_tile.dart';
+export 'otp_input.dart';
 export 'link.dart';
 export 'list_tile.dart';
 export 'priority_selector.dart';

@@ -18,22 +18,27 @@ FButtonStyles buildButtonStyles(
       decoration: FWidgetStateMap({
         WidgetState.disabled: BoxDecoration(
           borderRadius: borderRadius,
-          color: colourScheme.colours.accent
-              .withChroma(0)
-              .withLightness(colourScheme.brightness == .light ? 0.95 : 0.27)
-              .toColor(),
+          color: colourScheme.brightness == .light
+              ? colourScheme.colours.accent.withLightness(0.95).toColor()
+              : colourScheme.colours.accentBackground
+                    .withLightness(0.3)
+                    .toColor(),
         ),
         WidgetState.hovered | WidgetState.pressed: BoxDecoration(
           borderRadius: borderRadius,
-          color: colourScheme.colours.accent
-              .withLightness(colourScheme.brightness == .light ? 0.58 : 0.45)
-              .toColor(),
+          color: colourScheme.brightness == .light
+              ? colourScheme.colours.accent.withLightness(0.58).toColor()
+              : colourScheme.colours.accentBackground
+                    .withLightness(0.33)
+                    .toColor(),
         ),
         WidgetState.any: BoxDecoration(
           borderRadius: borderRadius,
-          color: colourScheme.colours.accent
-              .withLightness(colourScheme.brightness == .light ? 0.62 : 0.42)
-              .toColor(),
+          color: colourScheme.brightness == .light
+              ? colourScheme.colours.accent.withLightness(0.62).toColor()
+              : colourScheme.colours.accentBackground
+                    .withLightness(0.3)
+                    .toColor(),
         ),
       }),
       // ignore: unused_result

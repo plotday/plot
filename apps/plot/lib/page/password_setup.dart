@@ -6,7 +6,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
-import 'package:logging/logging.dart';
 import 'logging.dart';
 
 @RoutePage()
@@ -21,6 +20,7 @@ class PasswordSetupPage extends StatefulWidget {
 
 class _PasswordSetupPageState extends State<PasswordSetupPage> {
   String? _errorMessage;
+  final _nameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
@@ -32,14 +32,23 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
   Future<void> _handlePasswordUpdate() async {
+    final name = _nameController.text.trim();
     final password = _passwordController.text;
     final confirmPassword = _confirmPasswordController.text;
+
+    if (name.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter your name';
+      });
+      return;
+    }
 
     if (password.isEmpty) {
       setState(() {
@@ -68,9 +77,9 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
     });
 
     try {
-      // Update the user's password
+      // Update the user's password and name
       final response = await Base.client.auth.updateUser(
-        UserAttributes(password: password),
+        UserAttributes(password: password, data: {'full_name': name}),
       );
 
       if (response.user == null) {
@@ -113,7 +122,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
             children: [
               // Title
               Text(
-                'Set your password',
+                'Complete your account',
                 style: context.theme.typography.lg.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -121,21 +130,28 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
               ),
 
               const Text(
-                'Choose a secure password for your account',
+                'Enter your name and choose a secure password',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xFF6B7280)),
               ),
 
               const SizedBox(height: 8),
 
-              // Success message
+              // Name field
+              FTextField(
+                controller: _nameController,
+                hint: 'Enter your name',
+                label: const Text('Name'),
+                autofocus: true,
+                onSubmit: (_) => _handlePasswordUpdate(),
+              ),
+
               // Password field
               FTextField(
                 controller: _passwordController,
                 hint: 'Enter your password',
                 label: const Text('Password'),
                 obscureText: true,
-                autofocus: true,
                 onSubmit: (_) => _handlePasswordUpdate(),
               ),
 
@@ -156,7 +172,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
                   style: FButtonStyle.primary(),
                   child: _isLoading
                       ? const Spinner()
-                      : const Text('Set Password'),
+                      : const Text('Create Account'),
                 ),
               ),
 
