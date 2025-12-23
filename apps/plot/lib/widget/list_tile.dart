@@ -289,42 +289,44 @@ class _ListTileState extends State<ListTile> {
                                               : MainAxisAlignment.start,
                                           spacing: 4,
                                           children: [
-                                            Text(
-                                              widget.title ??
-                                                  widget.command?.title ??
-                                                  'Untitled',
-                                              overflow: TextOverflow.ellipsis,
-                                              textAlign: widget.centered
-                                                  ? TextAlign.center
-                                                  : TextAlign.start,
-                                              style:
-                                                  (widget.textStyle ??
-                                                          (widget.style ==
-                                                                  ListTileStyle
-                                                                      .header
+                                            Flexible(
+                                              child: Text(
+                                                widget.title ??
+                                                    widget.command?.title ??
+                                                    'Untitled',
+                                                overflow: TextOverflow.ellipsis,
+                                                textAlign: widget.centered
+                                                    ? TextAlign.center
+                                                    : TextAlign.start,
+                                                style:
+                                                    (widget.textStyle ??
+                                                            (widget.style ==
+                                                                    ListTileStyle
+                                                                        .header
+                                                                ? context
+                                                                      .theme
+                                                                      .typography
+                                                                      .sm
+                                                                : context
+                                                                      .theme
+                                                                      .typography
+                                                                      .base))
+                                                        .copyWith(
+                                                          color: widget.selected
                                                               ? context
                                                                     .theme
-                                                                    .typography
-                                                                    .sm
-                                                              : context
+                                                                    .colors
+                                                                    .primary
+                                                              : widget.style ==
+                                                                    ListTileStyle
+                                                                        .header
+                                                              ? context
                                                                     .theme
-                                                                    .typography
-                                                                    .base))
-                                                      .copyWith(
-                                                        color: widget.selected
-                                                            ? context
-                                                                  .theme
-                                                                  .colors
-                                                                  .primary
-                                                            : widget.style ==
-                                                                  ListTileStyle
-                                                                      .header
-                                                            ? context
-                                                                  .theme
-                                                                  .plotColors
-                                                                  .muted
-                                                            : null,
-                                                      ),
+                                                                    .plotColors
+                                                                    .muted
+                                                              : null,
+                                                        ),
+                                              ),
                                             ),
                                             if (widget.subtitle != null)
                                               Expanded(
