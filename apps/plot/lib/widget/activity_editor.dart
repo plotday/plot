@@ -29,6 +29,7 @@ class ActivityEditorState extends State<ActivityEditor> {
   final GlobalKey<EditableAreaState> _editableAreaKey =
       GlobalKey<EditableAreaState>();
   bool _isEmpty = true;
+  bool _finalized = false;
   String _lastSavedContent = '';
   Uuid? _lastDraftNoteId;
   FocusNode? _currentFocusNode;
@@ -82,17 +83,19 @@ class ActivityEditorState extends State<ActivityEditor> {
 
   @override
   void deactivate() {
-    // Save draft when navigating away
+    // Save draft when navigating away (unless finalized)
     log.info(
-      '[ActivityEditor.deactivate] Deactivating editor, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})',
+      '[ActivityEditor.deactivate] Deactivating editor, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title}), finalized=$_finalized',
     );
-    final editorState = _editorKey.currentState;
-    if (editorState != null) {
-      final content = editorState.serialize();
-      log.info(
-        '[ActivityEditor.deactivate] Saving content with length ${content.length}',
-      );
-      _saveDraft(content);
+    if (!_finalized) {
+      final editorState = _editorKey.currentState;
+      if (editorState != null) {
+        final content = editorState.serialize();
+        log.info(
+          '[ActivityEditor.deactivate] Saving content with length ${content.length}',
+        );
+        _saveDraft(content);
+      }
     }
     super.deactivate();
   }
@@ -294,6 +297,8 @@ class ActivityEditorState extends State<ActivityEditor> {
     required List<PriorityTwist> twists,
     required bool alt,
   }) async {
+    _finalized = true;
+
     // Generate title from body (first line or first ~50 chars)
     String title;
     if (widget.draft.type == ActivityType.event && body.trim().isEmpty) {
