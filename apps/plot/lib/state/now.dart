@@ -67,10 +67,10 @@ class NowBloc extends Cubit<NowState> {
       setContext(priority);
     }
     if (loadedState.session?.priority?.id == priority?.id) return;
-    await loadedState.session?.copyWith(end: DateTime.now()).save();
+    await loadedState.session?.copyWith(end: Time.now()).save();
     await Session.resume(
       priority,
-      end: loadedState.endFor(priority) ?? DateTime.now().addMinutes(3),
+      end: loadedState.endFor(priority) ?? Time.now().addMinutes(3),
     );
   }
 }

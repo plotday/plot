@@ -183,7 +183,7 @@ class PriorityState extends Equatable {
     required Priority context,
   }) {
     final items = <AgendaItem>[];
-    final now = DateTime.now();
+    final now = Time.now();
     final today = Date.today();
 
     // Helper function to add activities grouped by priority

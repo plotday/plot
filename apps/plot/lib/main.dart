@@ -12,8 +12,9 @@ import 'base.dart';
 import 'logging.dart';
 import 'widget/window.dart';
 import 'widget/auth_button.dart';
+import 'util/time_service.dart' show Time;
 
-Future<void> run() async {
+Future<void> run(List<String> args) async {
   try {
     hierarchicalLoggingEnabled = true;
     recordStackTraceAtLevel = Level.SEVERE;
@@ -46,6 +47,10 @@ Future<void> run() async {
       }
     });
     WidgetsFlutterBinding.ensureInitialized();
+
+    // Initialize Time early to support frozen time for testing/screenshots
+    Time.init(args);
+
     await Window.init();
     await Env.init();
     await AppInfo.init();
@@ -69,7 +74,7 @@ Future<void> run() async {
   }
 }
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   // Initialize PostHog with error tracking enabled
   FlutterError.onError = (FlutterErrorDetails details) async {
     log.severe('Uncaught Flutter error', details.exception, details.stack);
@@ -80,5 +85,5 @@ Future<void> main() async {
     FlutterError.presentError(details);
   };
 
-  await run();
+  await run(args);
 }

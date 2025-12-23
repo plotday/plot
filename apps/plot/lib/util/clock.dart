@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'time_service.dart' show Time;
+
 class Clock {
   static final Clock _instance = Clock._init();
 
@@ -26,7 +28,7 @@ class Clock {
   }
 
   void _tick(Timer timer) {
-    _controller.sink.add(DateTime.now());
+    _controller.sink.add(Time.now());
   }
 
   void dispose() {

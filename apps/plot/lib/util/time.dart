@@ -5,17 +5,20 @@ import 'package:equatable/equatable.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:drift/drift.dart';
 
+import 'time_service.dart' show Time;
+
 export 'package:dart_date/dart_date.dart' hide Interval;
 export 'package:flutter/material.dart' show TimeOfDay;
+export 'time_service.dart' show Time;
 
 enum TimeDirection { descending, ascending }
 
 class Date extends Equatable implements Comparable<Date> {
-  static Date today() => DateTime.now().toLocal().toDate();
+  static Date today() => Time.now().toLocal().toDate();
 
   static Stream<Date> current() async* {
     while (true) {
-      DateTime now = DateTime.now().toLocal();
+      DateTime now = Time.now().toLocal();
       yield now.toDate();
 
       // Wait until the start of the next day
@@ -603,7 +606,7 @@ class DateTimeRange extends Equatable {
       "[${start?.toUtc().toIso8601String() ?? ''},${end?.toUtc().toIso8601String() ?? ''})";
 
   bool isNow() {
-    return includes(DateTime.now());
+    return includes(Time.now());
   }
 
   CustomDateRange toDateRange() {

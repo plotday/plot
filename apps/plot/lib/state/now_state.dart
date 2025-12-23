@@ -17,7 +17,7 @@ final class NowLoaded extends NowState {
     required ScheduledDay day,
     this.session,
     this.context,
-  }) : now = DateTime.now(),
+  }) : now = Time.now(),
        _day = day;
 
   final DateTime now;

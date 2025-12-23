@@ -64,7 +64,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
     if (!widget.now) return;
 
     // Calculate seconds until next minute boundary
-    final now = DateTime.now();
+    final now = Time.now();
     final secondsUntilNextMinute = 60 - now.second;
 
     // Start timer to next minute boundary
@@ -185,7 +185,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
         !isLastGapOfDay) {
       if (widget.now) {
         // Calculate elapsed and remaining times
-        final now = DateTime.now();
+        final now = Time.now();
         final isGap = widget.activity == null;
 
         // Only show elapsed for events (not gaps)
@@ -227,7 +227,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
     final isPast =
         widget.date != null && widget.date!.isBefore(Date.today()) ||
         widget.dateTimeRange?.end != null &&
-            widget.dateTimeRange!.end!.isBefore(DateTime.now());
+            widget.dateTimeRange!.end!.isBefore(Time.now());
 
     // Calculate duration: use gap duration if <1h, otherwise default to 1h
     final duration =
