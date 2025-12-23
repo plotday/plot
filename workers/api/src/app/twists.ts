@@ -1,17 +1,17 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
+import type { Bindings } from "../env";
 import { twistFactory } from "../twist";
 import {
   add as addTwist,
   archiveAndDeleteTwist,
   deleteTwist,
+  getAll as getAllTwists,
   getById as getTwistById,
   getByPriority as getTwistsByPriority,
-  getAll as getAllTwists,
   update as updateTwist,
 } from "../twist/management";
-import type { Bindings } from "../env";
 import { handleValidationError } from "../utils/validation";
 
 const twists = new Hono<{ Bindings: Bindings }>();
@@ -21,9 +21,9 @@ const TwistRequestSchema = z.object({
   priorityId: z.string(),
   twistId: z.string(),
   twistEnvironment: z
-    .enum(["personal", "private", "review"])
+    .enum(["personal", "private", "review", "public"])
     .optional()
-    .default("personal"),
+    .default("public"),
   name: z.string().optional(),
   config: z.record(z.string(), z.any()).optional(),
 });
