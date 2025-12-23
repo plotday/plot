@@ -91,7 +91,7 @@ class OklchColours {
         accent: lch(accentLightness, baseChroma),
         accentBackground: lch(0.94, 0.025),
         highlight: lch(1, 0, hue, 0.8),
-        foreground: lch(0.25, 0.01),
+        foreground: lch(0.35, 0.01),
         muted: lch(0.5, 0.005),
         border: lch(0.0, 0.0, 0.0, 0.2),
         barrier: lch(0.0, 0.0, 0.0, 0.3),
