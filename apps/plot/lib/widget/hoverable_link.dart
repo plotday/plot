@@ -6,14 +6,14 @@ class HoverableLink extends StatefulWidget {
   const HoverableLink({
     required this.text,
     required this.uri,
-    this.color = const Color(0xFF6B7280),
+    this.color,
     this.target,
     super.key,
   });
 
   final String text;
   final Uri uri;
-  final Color color;
+  final Color? color;
   final url_launcher.LinkTarget? target;
 
   @override
