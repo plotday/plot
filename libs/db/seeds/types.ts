@@ -45,7 +45,7 @@ export interface Priority {
 }
 
 export interface PrioritySettings {
-  color?: string; // Hex color code
+  color?: number; // Color index 0-7, or omit to inherit from parent priority
   path_override?: string;
   pomodoro_duration?: number; // Minutes
 }
@@ -71,7 +71,6 @@ export interface Activity {
   on?: string; // Date range (e.g., "+3d / +5d")
   duration?: string; // e.g., "30 minutes", "2 hours"
   recurrence_rule?: string; // iCalendar RRULE
-  mentions?: string[]; // Array of contact refs
   tags?: Tags;
   notes?: Note[]; // Notes associated with this activity
 }
@@ -179,9 +178,9 @@ export interface GeneratedPriority {
 export interface GeneratedPrioritySettings {
   priority_id: string; // UUID
   user_id: string; // UUID
-  color: string | null;
-  path_override: string | null;
-  pomodoro_duration: number | null;
+  color: number | null;
+  path: string | null;
+  pomodoro: number | null;
 }
 
 export interface GeneratedPriorityUser {
@@ -207,7 +206,6 @@ export interface GeneratedActivity {
   done_at: string | null; // ISO timestamp
   recurrence_rule: string | null;
   archived_at: string | null; // ISO timestamp
-  mentions: string | null; // Array literal
 }
 
 export interface GeneratedActivityTag {

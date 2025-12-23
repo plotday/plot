@@ -83,7 +83,7 @@ Priorities are hierarchical (like folders/projects) and use a tree structure.
 - `shared_with` (optional): Array of user refs to share this priority with
 
 **Settings fields:**
-- `color`: Hex color code (e.g., "#FF5733")
+- `color`: Integer 0-7 (corresponding to theme colors), or omit to inherit from parent priority. Most common to set colors only on children of root priority unless meant to stand out.
 - `path_override`: Custom path display override
 - `pomodoro_duration`: Duration in minutes
 
@@ -93,24 +93,26 @@ priorities:
     title: Work
     root: true
     settings:
-      color: "#3B82F6"
+      color: 0
     children:
       - ref: project-alpha
         title: Project Alpha
         settings:
-          color: "#10B981"
+          color: 1
         children:
           - ref: sprint-1
             title: Sprint 1
+            # No color - inherits from project-alpha
 
       - ref: project-beta
         title: Project Beta
+        # No color - inherits from work
 
   - ref: personal
     title: Personal
     root: false
     settings:
-      color: "#8B5CF6"
+      color: 2
 ```
 
 ## Activities
@@ -284,7 +286,7 @@ priorities:
     title: Work
     root: true
     settings:
-      color: "#3B82F6"
+      color: 0
     children:
       - ref: project-alpha
         title: Project Alpha

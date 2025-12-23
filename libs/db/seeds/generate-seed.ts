@@ -6,28 +6,28 @@
  * Generates SQL INSERT statements from YAML seed data definition.
  * See YAML_SPEC.md for format documentation.
  */
-
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { parse as parseYAML } from "yaml";
+
 import type {
-  SeedData,
-  Contact,
-  Priority,
   Activity,
-  Note,
+  Contact,
+  GeneratedActivity,
+  GeneratedActivityTag,
   GeneratedContact,
+  GeneratedNote,
+  GeneratedNoteTag,
   GeneratedPriority,
   GeneratedPrioritySettings,
   GeneratedPriorityUser,
-  GeneratedActivity,
-  GeneratedActivityTag,
-  GeneratedNote,
-  GeneratedNoteTag,
+  Note,
+  Priority,
   RefMap,
+  SeedData,
   ValidationError,
 } from "./types.js";
-import { TAG_IDS, ALL_TAGS } from "./types.js";
+import { ALL_TAGS, TAG_IDS } from "./types.js";
 
 // ============================================================================
 // Main entry point
@@ -144,7 +144,7 @@ function validate(data: SeedData): ValidationError[] {
         data.priorities[i],
         `priorities[${i}]`,
         priorityRefs,
-        errors,
+        errors
       );
     }
   }
@@ -158,7 +158,7 @@ function validate(data: SeedData): ValidationError[] {
         activityRefs,
         priorityRefs,
         contactRefs,
-        errors,
+        errors
       );
     }
   }
@@ -170,7 +170,7 @@ function validatePriority(
   priority: Priority,
   path: string,
   refs: Set<string>,
-  errors: ValidationError[],
+  errors: ValidationError[]
 ) {
   if (!priority.ref) {
     errors.push({ path: `${path}.ref`, message: "Missing ref" });
@@ -194,7 +194,7 @@ function validatePriority(
         priority.children[i],
         `${path}.children[${i}]`,
         refs,
-        errors,
+        errors
       );
     }
   }
@@ -207,7 +207,7 @@ function validateActivity(
   priorityRefs: Set<string>,
   contactRefs: Set<string>,
   errors: ValidationError[],
-  isChild = false,
+  isChild = false
 ) {
   if (activity.ref) {
     if (activityRefs.has(activity.ref)) {
@@ -232,7 +232,10 @@ function validateActivity(
       path: `${path}.priority_ref`,
       message: "Missing priority_ref",
     });
-  } else if (activity.priority_ref && !priorityRefs.has(activity.priority_ref)) {
+  } else if (
+    activity.priority_ref &&
+    !priorityRefs.has(activity.priority_ref)
+  ) {
     errors.push({
       path: `${path}.priority_ref`,
       message: `Unknown priority_ref: ${activity.priority_ref}`,
@@ -301,18 +304,6 @@ function validateActivity(
     }
   }
 
-  // Validate mentions
-  if (activity.mentions) {
-    for (const mention of activity.mentions) {
-      if (mention !== "user" && !contactRefs.has(mention)) {
-        errors.push({
-          path: `${path}.mentions`,
-          message: `Unknown mention: ${mention}`,
-        });
-      }
-    }
-  }
-
   // Validate notes
   if (activity.notes) {
     for (let i = 0; i < activity.notes.length; i++) {
@@ -320,7 +311,7 @@ function validateActivity(
         activity.notes[i],
         `${path}.notes[${i}]`,
         contactRefs,
-        errors,
+        errors
       );
     }
   }
@@ -330,7 +321,7 @@ function validateNote(
   note: Note,
   path: string,
   contactRefs: Set<string>,
-  errors: ValidationError[],
+  errors: ValidationError[]
 ) {
   // Validate author_ref
   if (
@@ -393,6 +384,12 @@ function generateSQL(data: SeedData): string {
   lines.push("");
   lines.push("BEGIN;");
   lines.push("");
+  lines.push("-- Cleanup existing data for this user");
+  lines.push(`DELETE FROM activity WHERE created_by = ${sqlString(userId)};`);
+  lines.push(`DELETE FROM priority_settings WHERE user_id = ${sqlString(userId)};`);
+  lines.push(`DELETE FROM priority_user WHERE user_id = ${sqlString(userId)};`);
+  lines.push(`DELETE FROM priority WHERE created_by = ${sqlString(userId)};`);
+  lines.push("");
 
   // Build reference maps
   const contactIdMap: RefMap<string> = { user: userId };
@@ -435,7 +432,7 @@ function generateSQL(data: SeedData): string {
         priorityIdMap,
         priorities,
         prioritySettings,
-        priorityUsers,
+        priorityUsers
       );
     }
   }
@@ -455,7 +452,7 @@ function generateSQL(data: SeedData): string {
         activities,
         activityTags,
         notes,
-        noteTags,
+        noteTags
       );
     }
   }
@@ -464,16 +461,26 @@ function generateSQL(data: SeedData): string {
 
   // Contacts
   if (contacts.length > 0) {
+    // Delete existing contacts with these emails first
+    const contactEmails = contacts.map((c) => sqlString(c.email)).join(", ");
+    lines.push("-- Cleanup existing contacts");
+    lines.push(`DELETE FROM contact WHERE email IN (${contactEmails});`);
+    lines.push("");
+
     lines.push("-- Contacts");
     lines.push(
-      "INSERT INTO contact (id, email, name, avatar_url, user_id, created_at, updated_at)",
+      "INSERT INTO contact (id, email, name, avatar_url, user_id, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < contacts.length; i++) {
       const c = contacts[i];
       const comma = i < contacts.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(c.id)}, ${sqlString(c.email)}, ${sqlString(c.name)}, ${sqlString(c.avatar_url)}, ${sqlString(c.user_id)}, NOW(), NOW())${comma}`,
+        `  (${sqlString(c.id)}, ${sqlString(c.email)}, ${sqlString(
+          c.name
+        )}, ${sqlString(c.avatar_url)}, ${sqlString(
+          c.user_id
+        )}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
@@ -483,14 +490,18 @@ function generateSQL(data: SeedData): string {
   if (priorities.length > 0) {
     lines.push("-- Priorities");
     lines.push(
-      "INSERT INTO priority (id, created_by, title, path, root, archived_at, created_at, updated_at)",
+      "INSERT INTO priority (id, created_by, title, path, root, archived_at, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < priorities.length; i++) {
       const p = priorities[i];
       const comma = i < priorities.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(p.id)}, ${sqlString(p.created_by)}, ${sqlString(p.title)}, ${sqlString(p.path)}, ${p.root}, ${sqlString(p.archived_at)}, NOW(), NOW())${comma}`,
+        `  (${sqlString(p.id)}, ${sqlString(p.created_by)}, ${sqlString(
+          p.title
+        )}, ${sqlString(p.path)}, ${p.root}, ${sqlString(
+          p.archived_at
+        )}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
@@ -500,16 +511,19 @@ function generateSQL(data: SeedData): string {
   if (priorityUsers.length > 0) {
     lines.push("-- Priority users");
     lines.push(
-      "INSERT INTO priority_user (priority_id, user_id, created_at, updated_at)",
+      "INSERT INTO priority_user (priority_id, user_id, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < priorityUsers.length; i++) {
       const pu = priorityUsers[i];
-      const comma = i < priorityUsers.length - 1 ? "," : ";";
+      const comma = i < priorityUsers.length - 1 ? "," : "";
       lines.push(
-        `  (${sqlString(pu.priority_id)}, ${sqlString(pu.user_id)}, NOW(), NOW())${comma}`,
+        `  (${sqlString(pu.priority_id)}, ${sqlString(
+          pu.user_id
+        )}, NOW(), NOW())${comma}`
       );
     }
+    lines.push("ON CONFLICT (user_id, priority_id) DO NOTHING;");
     lines.push("");
   }
 
@@ -517,14 +531,18 @@ function generateSQL(data: SeedData): string {
   if (prioritySettings.length > 0) {
     lines.push("-- Priority settings");
     lines.push(
-      "INSERT INTO priority_settings (priority_id, user_id, color, path_override, pomodoro_duration, created_at, updated_at)",
+      "INSERT INTO priority_settings (priority_id, user_id, color, path, pomodoro, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < prioritySettings.length; i++) {
       const ps = prioritySettings[i];
       const comma = i < prioritySettings.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, ${sqlString(ps.color)}, ${sqlString(ps.path_override)}, ${sqlString(ps.pomodoro_duration)}, NOW(), NOW())${comma}`,
+        `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, ${
+          ps.color !== null ? ps.color : "NULL"
+        }, ${sqlString(ps.path)}, ${
+          ps.pomodoro !== null ? ps.pomodoro : "NULL"
+        }, NOW())${comma}`
       );
     }
     lines.push("");
@@ -534,14 +552,26 @@ function generateSQL(data: SeedData): string {
   if (activities.length > 0) {
     lines.push("-- Activities");
     lines.push(
-      "INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, \"order\", draft, private, title, preview, at, \"on\", duration, done_at, recurrence_rule, archived_at, mentions, created_at, updated_at)",
+      'INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, "order", draft, private, title, preview, at, "on", duration, done_at, recurrence_rule, archived_at, created_at, updated_at)'
     );
     lines.push("VALUES");
     for (let i = 0; i < activities.length; i++) {
       const a = activities[i];
       const comma = i < activities.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(a.id)}, ${sqlString(a.author_id)}, ${sqlString(a.created_by)}, ${sqlString(a.assignee_id)}, ${sqlString(a.priority_id)}, ${sqlString(a.type)}, ${a.order}, ${a.draft}, ${a.private}, ${sqlString(a.title)}, ${sqlString(a.preview)}, ${a.at ? sqlString(a.at) : "NULL"}, ${a.on ? sqlString(a.on) : "NULL"}, ${a.duration ? sqlString(a.duration) : "NULL"}, ${sqlString(a.done_at)}, ${sqlString(a.recurrence_rule)}, ${sqlString(a.archived_at)}, ${a.mentions ? a.mentions : "NULL"}, NOW(), NOW())${comma}`,
+        `  (${sqlString(a.id)}, ${sqlString(a.author_id)}, ${sqlString(
+          a.created_by
+        )}, ${sqlString(a.assignee_id)}, ${sqlString(
+          a.priority_id
+        )}, ${sqlString(a.type)}, ${a.order}, ${a.draft}, ${
+          a.private
+        }, ${sqlString(a.title)}, ${sqlString(a.preview)}, ${
+          a.at ? sqlString(a.at) : "NULL"
+        }, ${a.on ? sqlString(a.on) : "NULL"}, ${
+          a.duration ? sqlString(a.duration) : "NULL"
+        }, ${sqlString(a.done_at)}, ${sqlString(
+          a.recurrence_rule
+        )}, ${sqlString(a.archived_at)}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
@@ -551,14 +581,16 @@ function generateSQL(data: SeedData): string {
   if (activityTags.length > 0) {
     lines.push("-- Activity tags");
     lines.push(
-      "INSERT INTO activity_tag (actor_id, activity_id, tag_id, occurrence, updated_at)",
+      "INSERT INTO activity_tag (actor_id, activity_id, tag_id, occurrence, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < activityTags.length; i++) {
       const at = activityTags[i];
       const comma = i < activityTags.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(at.actor_id)}, ${sqlString(at.activity_id)}, ${at.tag_id}, ${sqlString(at.occurrence)}, NOW())${comma}`,
+        `  (${sqlString(at.actor_id)}, ${sqlString(at.activity_id)}, ${
+          at.tag_id
+        }, ${sqlString(at.occurrence)}, NOW())${comma}`
       );
     }
     lines.push("");
@@ -568,14 +600,20 @@ function generateSQL(data: SeedData): string {
   if (notes.length > 0) {
     lines.push("-- Notes");
     lines.push(
-      "INSERT INTO note (id, activity_id, author_id, created_by, draft, private, note, links, mentions, created_at, updated_at)",
+      "INSERT INTO note (id, activity_id, author_id, created_by, draft, private, content, links, mentions, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < notes.length; i++) {
       const n = notes[i];
       const comma = i < notes.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(n.id)}, ${sqlString(n.activity_id)}, ${sqlString(n.author_id)}, ${sqlString(n.created_by)}, ${n.draft}, ${n.private}, ${sqlString(n.note)}, ${n.links ? sqlString(n.links) : "NULL"}, ${n.mentions ? n.mentions : "NULL"}, NOW(), NOW())${comma}`,
+        `  (${sqlString(n.id)}, ${sqlString(n.activity_id)}, ${sqlString(
+          n.author_id
+        )}, ${sqlString(n.created_by)}, ${n.draft}, ${n.private}, ${sqlString(
+          n.content
+        )}, ${n.links ? sqlString(n.links) : "NULL"}, ${
+          n.mentions ? sqlString(n.mentions) : "NULL"
+        }, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
@@ -584,15 +622,15 @@ function generateSQL(data: SeedData): string {
   // Note tags
   if (noteTags.length > 0) {
     lines.push("-- Note tags");
-    lines.push(
-      "INSERT INTO note_tag (actor_id, note_id, tag_id, updated_at)",
-    );
+    lines.push("INSERT INTO note_tag (actor_id, note_id, tag_id, updated_at)");
     lines.push("VALUES");
     for (let i = 0; i < noteTags.length; i++) {
       const nt = noteTags[i];
       const comma = i < noteTags.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(nt.actor_id)}, ${sqlString(nt.note_id)}, ${nt.tag_id}, NOW())${comma}`,
+        `  (${sqlString(nt.actor_id)}, ${sqlString(nt.note_id)}, ${
+          nt.tag_id
+        }, NOW())${comma}`
       );
     }
     lines.push("");
@@ -615,7 +653,7 @@ function processPriority(
   idMap: RefMap<string>,
   outPriorities: GeneratedPriority[],
   outSettings: GeneratedPrioritySettings[],
-  outUsers: GeneratedPriorityUser[],
+  outUsers: GeneratedPriorityUser[]
 ) {
   const id = generateUUID();
   idMap[priority.ref] = id;
@@ -648,8 +686,8 @@ function processPriority(
       priority_id: id,
       user_id: userId,
       color: priority.settings.color ?? null,
-      path_override: priority.settings.path_override ?? null,
-      pomodoro_duration: priority.settings.pomodoro_duration ?? null,
+      path: priority.settings.path_override ?? null,
+      pomodoro: priority.settings.pomodoro_duration ?? null,
     });
   }
 
@@ -664,7 +702,7 @@ function processPriority(
         idMap,
         outPriorities,
         outSettings,
-        outUsers,
+        outUsers
       );
     }
   }
@@ -681,7 +719,7 @@ function processActivity(
   outActivities: GeneratedActivity[],
   outTags: GeneratedActivityTag[],
   outNotes: GeneratedNote[],
-  outNoteTags: GeneratedNoteTag[],
+  outNoteTags: GeneratedNoteTag[]
 ): number {
   const id = generateUUID();
   if (activity.ref) {
@@ -700,11 +738,6 @@ function processActivity(
   // Parse schedule
   const at = activity.at ? parseTimestampRange(baseDate, activity.at) : null;
   const on = activity.on ? parseDateRange(baseDate, activity.on) : null;
-
-  // Parse mentions
-  const mentions = activity.mentions
-    ? `{${activity.mentions.map((ref) => sqlString(contactIdMap[ref])).join(",")}}`
-    : null;
 
   outActivities.push({
     id,
@@ -728,7 +761,6 @@ function processActivity(
     archived_at: activity.archived_at
       ? parseDateOffset(baseDate, activity.archived_at).toISOString()
       : null,
-    mentions,
   });
 
   // Process tags
@@ -750,14 +782,7 @@ function processActivity(
   // Process notes
   if (activity.notes) {
     for (const note of activity.notes) {
-      processNote(
-        note,
-        id,
-        userId,
-        contactIdMap,
-        outNotes,
-        outNoteTags,
-      );
+      processNote(note, id, userId, contactIdMap, outNotes, outNoteTags);
     }
   }
 
@@ -770,21 +795,19 @@ function processNote(
   userId: string,
   contactIdMap: RefMap<string>,
   outNotes: GeneratedNote[],
-  outNoteTags: GeneratedNoteTag[],
+  outNoteTags: GeneratedNoteTag[]
 ) {
   const id = generateUUID();
 
   // Resolve refs
-  const authorId = note.author_ref
-    ? contactIdMap[note.author_ref]
-    : userId;
+  const authorId = note.author_ref ? contactIdMap[note.author_ref] : userId;
 
   // Parse links
   const links = note.links ? JSON.stringify(note.links) : null;
 
   // Parse mentions
   const mentions = note.mentions
-    ? `{${note.mentions.map((ref) => sqlString(contactIdMap[ref])).join(",")}}`
+    ? `{${note.mentions.map((ref) => contactIdMap[ref]).join(",")}}`
     : null;
 
   outNotes.push({
@@ -794,7 +817,7 @@ function processNote(
     created_by: userId,
     draft: note.draft ?? false,
     private: note.private ?? false,
-    content: note.content ?? null,
+    content: note.note ?? null,
     links,
     mentions,
   });
@@ -826,8 +849,10 @@ function parseDateOffset(baseDate: string, offset: string): Date {
   if (!offset) {
     throw new Error(`Date offset is undefined or null`);
   }
-  if (typeof offset !== 'string') {
-    throw new Error(`Date offset must be a string, got ${typeof offset}: ${offset}`);
+  if (typeof offset !== "string") {
+    throw new Error(
+      `Date offset must be a string, got ${typeof offset}: ${offset}`
+    );
   }
 
   const base = new Date(baseDate + "T00:00:00Z");
@@ -917,7 +942,8 @@ function generateUUID(): string {
 }
 
 function generateRandomPath(length: number): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let result = "";
   for (let i = 0; i < length; i++) {
     result += chars[Math.floor(Math.random() * chars.length)];
@@ -937,7 +963,7 @@ function sqlString(value: string | number | null): string {
 
 function isValidUUID(uuid: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    uuid,
+    uuid
   );
 }
 

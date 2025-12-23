@@ -2,10 +2,14 @@
 #
 # This example demonstrates realistic project data for app screenshots.
 # Scenario: A software development team working on mobile app and API projects.
+#
+# Priority Colors: Use integers 0-7 (corresponding to theme colors), or omit to
+# inherit from parent priority. Most common to set colors only on children of
+# root priority unless meant to stand out.
 
 config:
-  baseDate: "2025-01-15"
-  userId: "a1b2c3d4-e5f6-4789-a012-b3c4d5e6f7a8"
+  baseDate: "2025-12-23"
+  userId: "95e815d2-b88d-4126-9608-f980057257f2"
 
 contacts:
   - ref: alice
@@ -33,12 +37,12 @@ priorities:
     title: Work
     root: true
     settings:
-      color: "#3B82F6"
+      color: 0
     children:
       - ref: mobile-app
         title: Mobile App Redesign
         settings:
-          color: "#10B981"
+          color: 1
         children:
           - ref: sprint-5
             title: Sprint 5
@@ -53,7 +57,7 @@ priorities:
       - ref: api-migration
         title: API v2 Migration
         settings:
-          color: "#F59E0B"
+          color: 2
         children:
           - ref: planning
             title: Planning
@@ -64,13 +68,13 @@ priorities:
       - ref: team
         title: Team & Admin
         settings:
-          color: "#8B5CF6"
+          color: 3
 
   - ref: personal
     title: Personal
     root: false
     settings:
-      color: "#EC4899"
+      color: 4
 
 activities:
   # ============================================================================
@@ -215,6 +219,7 @@ activities:
   - title: Implement new login screen
     type: action
     priority_ref: sprint-5
+    on: "-3d"
     done_at: "-3d 17:00"
     assignee_ref: alice
     tags:
@@ -229,6 +234,7 @@ activities:
   - title: Add password reset flow
     type: action
     priority_ref: sprint-5
+    on: "-2d"
     done_at: "-2d 14:30"
     assignee_ref: bob
     tags:
@@ -237,6 +243,7 @@ activities:
   - title: Update app icons and splash screen
     type: action
     priority_ref: sprint-5
+    on: "-1d"
     done_at: "-1d 11:00"
     assignee_ref: carol
     tags:
@@ -325,21 +332,21 @@ activities:
     type: event
     priority_ref: mobile-app
     at: "+1d 14:00 / +1d 15:00"
-    mentions: [alice, carol]
     tags:
       pinned: [user]
     notes:
       - note: "Review profile page designs with the team"
+        mentions: [alice, carol]
 
   - title: Architecture Discussion - API v2
     type: event
     priority_ref: api-migration
     at: "+2d 10:00 / +2d 11:30"
-    mentions: [david, bob]
     tags:
       pinned: [user]
     notes:
       - note: "Deep dive into API v2 architecture decisions"
+        mentions: [david, bob]
 
   - title: 1:1 with Alice
     type: event
@@ -378,6 +385,7 @@ activities:
     type: action
     priority_ref: personal
     on: "+5d"
+    assignee_ref: user
     tags:
       todo: [user]
     notes:
@@ -387,6 +395,7 @@ activities:
     type: action
     priority_ref: personal
     on: "+0d / +30d"
+    assignee_ref: user
     tags:
       goal: [user]
     notes:
@@ -403,6 +412,7 @@ activities:
     type: action
     priority_ref: team
     on: "+1d"
+    assignee_ref: user
     tags:
       todo: [user]
       star: [user]
@@ -413,6 +423,7 @@ activities:
     type: action
     priority_ref: team
     on: "+0d"
+    assignee_ref: user
     tags:
       todo: [user]
       urgent: [user]
