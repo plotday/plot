@@ -11,7 +11,7 @@ abstract class Env {
     await dotenv.load(fileName: ".env");
 
     posthogApiKey = getEnvOrThrow('POSTHOG_API_KEY');
-    posthogHost = getEnvOrThrow('POSTHOG_HOST');
+    posthogHost = getEnvOrThrow('POSTHOG_PROXY');
 
     supabaseUrl = _translateUrl(getEnvOrThrow('SUPABASE_URL'));
     supabaseAnonKey = getEnvOrThrow('SUPABASE_ANON_KEY');
