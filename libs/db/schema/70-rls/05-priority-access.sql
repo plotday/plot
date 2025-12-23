@@ -71,24 +71,10 @@ CREATE FUNCTION can_access_priority (_priority_id uuid)
             SELECT
                 1
             FROM
-                public.priority_user cu
-                JOIN public.priority c ON c.id = cu.priority_id
+                public.user_priority_expanded upe
             WHERE
-                cu.user_id = auth.uid ()
-                AND c.path @> (
-                    SELECT
-                        path
-                    FROM
-                        public.priority c2
-                    WHERE
-                        c2.id = _priority_id))
-            OR NOT EXISTS (
-                SELECT
-                    1
-                FROM
-                    public.priority_user cu
-                WHERE
-                    cu.priority_id = _priority_id);
+                upe.user_id = auth.uid ()
+                AND upe.priority_id = _priority_id);
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -101,17 +87,11 @@ CREATE FUNCTION can_access_priority (_priority_path ltree)
             SELECT
                 1
             FROM
-                public.priority_user cu
-                JOIN public.priority c ON c.id = cu.priority_id
+                public.priority_user pu
+                JOIN public.priority p ON p.id = pu.priority_id
             WHERE
-                cu.user_id = auth.uid ()
-                AND c.path @> (
-                    SELECT
-                        path
-                    FROM
-                        public.priority c2
-                    WHERE
-                        c2.path = _priority_path));
+                pu.user_id = auth.uid ()
+                AND p.path @> _priority_path);
 $$
 LANGUAGE sql
 SECURITY DEFINER;
