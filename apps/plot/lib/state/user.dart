@@ -62,12 +62,9 @@ class UserBloc extends Cubit<UserState> {
         emit(UserWaitlisted(currentUser));
       } else if (_passwordSetupRequired) {
         emit(UserPasswordRequired(currentUser));
-      } else {
-        // Password setup complete, initialize store if not already ready
-        if (state is! UserReady) {
-          await Store.start(currentUser);
-          emit(UserReady(currentUser));
-        }
+      } else if (state is! UserReady) {
+        await Store.start(currentUser);
+        emit(UserReady(currentUser));
       }
     }
   }

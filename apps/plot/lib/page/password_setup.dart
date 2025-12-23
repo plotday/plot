@@ -82,13 +82,6 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
       // Clear the local password setup flag
       // This will trigger UserReady state and allow navigation
       await context.read<UserBloc>().setPasswordSetupRequired(false);
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      // The BlocListener will handle navigation when the user state updates
-      // to UserReady (active users) or UserWaitlisted (waitlisted users)
     } on AuthException catch (e) {
       log.warning('Error updating password', e);
       if (!mounted) return;
@@ -108,76 +101,76 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        center: true,
-        body: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              spacing: 16,
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Title
-                Text(
-                  'Set your password',
-                  style: context.theme.typography.lg.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
+      center: true,
+      body: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            spacing: 16,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Title
+              Text(
+                'Set your password',
+                style: context.theme.typography.lg.copyWith(
+                  fontWeight: FontWeight.bold,
                 ),
+                textAlign: TextAlign.center,
+              ),
 
-                const Text(
-                  'Choose a secure password for your account',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF6B7280)),
+              const Text(
+                'Choose a secure password for your account',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF6B7280)),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Success message
+              // Password field
+              FTextField(
+                controller: _passwordController,
+                hint: 'Enter your password',
+                label: const Text('Password'),
+                obscureText: true,
+                autofocus: true,
+                onSubmit: (_) => _handlePasswordUpdate(),
+              ),
+
+              // Confirm password field
+              FTextField(
+                controller: _confirmPasswordController,
+                hint: 'Re-enter your password',
+                label: const Text('Confirm Password'),
+                obscureText: true,
+                onSubmit: (_) => _handlePasswordUpdate(),
+              ),
+
+              // Submit button
+              SizedBox(
+                height: 44,
+                child: FButton(
+                  onPress: _isLoading ? null : _handlePasswordUpdate,
+                  style: FButtonStyle.primary(),
+                  child: _isLoading
+                      ? const Spinner()
+                      : const Text('Set Password'),
                 ),
+              ),
 
-                const SizedBox(height: 8),
-
-                // Success message
-                // Password field
-                FTextField(
-                  controller: _passwordController,
-                  hint: 'Enter your password',
-                  label: const Text('Password'),
-                  obscureText: true,
-                  autofocus: true,
-                  onSubmit: (_) => _handlePasswordUpdate(),
+              // Error message
+              if (_errorMessage != null) ...[
+                FAlert(
+                  style: FAlertStyle.destructive(),
+                  title: Text(_errorMessage!),
                 ),
-
-                // Confirm password field
-                FTextField(
-                  controller: _confirmPasswordController,
-                  hint: 'Re-enter your password',
-                  label: const Text('Confirm Password'),
-                  obscureText: true,
-                  onSubmit: (_) => _handlePasswordUpdate(),
-                ),
-
-                // Submit button
-                SizedBox(
-                  height: 44,
-                  child: FButton(
-                    onPress: _isLoading ? null : _handlePasswordUpdate,
-                    style: FButtonStyle.primary(),
-                    child: _isLoading
-                        ? const Spinner()
-                        : const Text('Set Password'),
-                  ),
-                ),
-
-                // Error message
-                if (_errorMessage != null) ...[
-                  FAlert(
-                    style: FAlertStyle.destructive(),
-                    title: Text(_errorMessage!),
-                  ),
-                ],
               ],
-            ),
+            ],
           ),
         ),
+      ),
     );
   }
 }

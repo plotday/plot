@@ -178,12 +178,6 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       // Set local flag to indicate password setup is required
       // This will trigger UserPasswordRequired or UserWaitlisted state
       await context.read<UserBloc>().setPasswordSetupRequired(true);
-
-      // Stop the loading kpinner
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
     } on AuthException catch (e) {
       log.warning('Error verifying OTP', e);
       if (!mounted) return;

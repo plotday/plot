@@ -35,7 +35,9 @@ class RootProviderState extends State<RootProvider> {
   @override
   void initState() {
     Bloc.observer = BlocLogger();
-    routerConfig = router.config();
+    routerConfig = router.config(
+      reevaluateListenable: ReevaluateListenable.stream(userBloc.stream),
+    );
     super.initState();
   }
 
@@ -87,30 +89,10 @@ class RootProviderState extends State<RootProvider> {
           final themeBloc = context.read<ThemeBloc>();
 
           switch (state) {
-            case UserWaitlisted _:
-              await router.replaceAll([InvitationRoute()]);
-              break;
             case UserReady _:
               await prioritiesBloc.start();
               await nowBloc.start();
               _setupNowBlocListener(themeBloc);
-              // Navigate away from auth pages after successful sign-in
-              final currentPath = router.currentPath;
-              if (currentPath.startsWith('/login') ||
-                  currentPath.startsWith('/account/password') ||
-                  currentPath.startsWith('/invitation')) {
-                // Wait for NowBloc to load, then navigate to current priority
-                if (nowBloc.state is NowLoaded) {
-                  final priorityId = (nowBloc.state as NowLoaded).priority.id;
-                  await router.navigate(
-                    PriorityRoute(priorityIdString: priorityId.toShortString()),
-                  );
-                } else {
-                  log.warning(
-                    'RootProvider: NowBloc not loaded, cannot navigate to priority',
-                  );
-                }
-              }
               break;
             case UserSignedOut _:
               _teardownNowBlocListener();
@@ -122,6 +104,12 @@ class RootProviderState extends State<RootProvider> {
               // Wait for widget tree to update and dispose old widgets before removing Store
               await WidgetsBinding.instance.endOfFrame;
               await Store.stop();
+              break;
+            case UserWaitlisted _:
+              await router.replaceAll([InvitationRoute()]);
+              break;
+            case UserPasswordRequired _:
+              await router.replaceAll([PasswordSetupRoute()]);
               break;
             default:
               break;
