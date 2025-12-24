@@ -16,7 +16,7 @@ import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/command/command.dart';
-import 'package:plot/util/platform_stub.dart';
+import 'package:plot/util/platform.dart';
 import 'sliver.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';

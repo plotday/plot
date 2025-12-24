@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, Tar
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'shortcut_platform_stub.dart'
-    if (dart.library.html) 'shortcut_platform_web.dart';
+    if (dart.library.js_interop) 'shortcut_platform_web.dart';
 
 /// Formats a ShortcutActivator into a human-readable string for display
 String formatShortcut(ShortcutActivator? shortcut) {

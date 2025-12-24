@@ -1,3 +1,5 @@
+// DO NOT import this file directly! Import 'platform.dart' instead.
+// This file is specifically for web platforms.
 import 'package:web/web.dart';
 
 /// Web implementation for detecting if the current platform has a physical keyboard.

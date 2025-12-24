@@ -1,3 +1,5 @@
+// DO NOT import this file directly! Import 'platform.dart' instead.
+// This file uses dart:io which is not available on web platforms.
 import 'dart:io' show Platform;
 
 /// Non-web implementation for detecting if the current platform has a physical keyboard.

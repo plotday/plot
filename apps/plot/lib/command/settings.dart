@@ -1,4 +1,5 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +15,7 @@ import 'package:plot/state/theme.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/layout.dart';
-import 'package:plot/util/platform_stub.dart';
+import 'package:plot/util/platform.dart';
 import 'command.dart';
 import 'logging.dart';
 
@@ -78,7 +79,8 @@ class ChangeEnterBehavior extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final modifierKey = Platform.isMacOS ? 'Cmd' : 'Ctrl';
+    final modifierKey =
+        defaultTargetPlatform == TargetPlatform.macOS ? 'Cmd' : 'Ctrl';
     final currentBehavior = context.read<SettingsBloc>().state.enterBehavior;
 
     final result = await SelectModal.open<EnterBehavior>(

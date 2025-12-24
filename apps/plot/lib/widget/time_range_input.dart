@@ -2,8 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/util/platform_stub.dart'
-    if (dart.library.html) 'package:plot/util/platform_web.dart';
+import 'package:plot/util/platform.dart';
 
 /// A compound input widget for selecting a time range with chevron navigation.
 ///

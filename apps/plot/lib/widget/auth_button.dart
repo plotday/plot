@@ -1,7 +1,7 @@
-import 'dart:io' show Platform;
 import 'dart:async' show unawaited;
 
-import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, kReleaseMode, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -45,10 +45,11 @@ class AuthButton extends StatefulWidget {
     String? serverClientId;
     if (kIsWeb) {
       clientId = Env.googleClientId;
-    } else if (Platform.isAndroid) {
+    } else if (defaultTargetPlatform == TargetPlatform.android) {
       clientId = Env.googleAndroidClientId;
       serverClientId = Env.googleClientId;
-    } else if (Platform.isIOS || Platform.isMacOS) {
+    } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
       clientId = Env.googleIosClientId;
       serverClientId = Env.googleClientId;
     } else {
@@ -330,11 +331,13 @@ class _AuthButtonState extends State<AuthButton> {
     String? platform;
     if (kIsWeb) {
       platform = null;
-    } else if (Platform.isAndroid) {
+    } else if (defaultTargetPlatform == TargetPlatform.android) {
       platform = 'android';
-    } else if (Platform.isIOS) {
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       platform = 'ios';
-    } else if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+    } else if (defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux) {
       platform = 'desktop';
     }
 

@@ -549,7 +549,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                 onTap: () => _selectItem(item),
                                 child: Container(
                                   decoration: BoxDecoration(
-                                    color: (index == _highlightedIndex && hasPhysicalKeyboard())
+                                    color:
+                                        (index == _highlightedIndex &&
+                                            hasPhysicalKeyboard())
                                         ? context.theme.colors.secondary
                                         : null,
                                   ),
