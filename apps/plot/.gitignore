@@ -15,6 +15,7 @@ lib/store/store.g.dart
 
 # Build secrets
 .env
+.env.backup
 
 # IntelliJ related
 *.iml

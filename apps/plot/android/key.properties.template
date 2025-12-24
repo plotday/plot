@@ -1,0 +1,4 @@
+storePassword=op://Production/Android Signing/keystore_password
+keyPassword=op://Production/Android Signing/key_password
+keyAlias=plot-release
+storeFile=../plot-release.jks

@@ -10,6 +10,9 @@
   "scripts": {
     "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .env",
     "env:prod": "../../scripts/gen-env production $npm_package_config_deploy_vars > .env",
-    "lint": "flutter analyze"
+    "lint": "flutter analyze",
+    "build:macos": "(cp .env .env.backup 2>/dev/null || true) && pnpm run env:prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build macos --release; (mv .env.backup .env 2>/dev/null || true)",
+    "build:android:appbundle": "(cp .env .env.backup 2>/dev/null || true) && pnpm run env:prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build appbundle --release; (mv .env.backup .env 2>/dev/null || true)",
+    "build:android:apk": "(cp .env .env.backup 2>/dev/null || true) && pnpm run env:prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build apk --release; (mv .env.backup .env 2>/dev/null || true)"
   }
 }
