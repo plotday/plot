@@ -1,0 +1,19 @@
+.card {
+  text-decoration: none;
+  color: inherit;
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.card:hover {
+  background-color: light-dark(
+    color-mix(in srgb, var(--mantine-color-brand-6) 3%, white),
+    color-mix(
+      in srgb,
+      var(--mantine-color-brand-6) 10%,
+      var(--mantine-color-dark-6)
+    )
+  );
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
