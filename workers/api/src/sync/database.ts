@@ -46,25 +46,59 @@ export type DatabaseUpdateRequest = z.infer<typeof DatabaseUpdateRequestSchema>;
 
 // POST /update - Database update webhook
 database.post("/update", async (c) => {
-  const rawBody = await c.req.json();
-  const parseResult = DatabaseUpdateRequestSchema.safeParse(rawBody);
-  if (!parseResult.success) {
-    return handleValidationError(parseResult.error, rawBody);
+  try {
+    const rawBody = await c.req.json();
+    const parseResult = DatabaseUpdateRequestSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      // Log validation error to PostHog
+      c.var.postHog.captureException(
+        new Error("Validation error in /sync/update"),
+        undefined,
+        {
+          path: c.req.path,
+          method: c.req.method,
+          error_type: "validation",
+          validation_issues: parseResult.error.issues.map(issue => ({
+            path: issue.path.join("."),
+            message: issue.message,
+            code: issue.code,
+          })),
+          item_type: rawBody?.type,
+          event: rawBody?.event,
+          has_item: !!rawBody?.item,
+          has_previous: !!rawBody?.previous,
+        }
+      );
+      return handleValidationError(parseResult.error, rawBody);
+    }
+    const body = parseResult.data;
+
+    // Add message to the updates queue for processing
+    await c.env.UPDATES_QUEUE.send({
+      type: body.type,
+      event: body.event,
+      item: body.item,
+      previous: body.previous,
+      twists: body.twists,
+      users: body.users,
+      timestamp: body.timestamp,
+    });
+
+    return c.json({ success: true });
+  } catch (error) {
+    // Log any unexpected errors to PostHog
+    console.error("Error in /sync/update endpoint:", error);
+    c.var.postHog.captureException(error as Error, undefined, {
+      path: c.req.path,
+      method: c.req.method,
+      error_type: "unexpected",
+    });
+
+    return new Response(
+      `Internal server error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
   }
-  const body = parseResult.data;
-
-  // Add message to the updates queue for processing
-  await c.env.UPDATES_QUEUE.send({
-    type: body.type,
-    event: body.event,
-    item: body.item,
-    previous: body.previous,
-    twists: body.twists,
-    users: body.users,
-    timestamp: body.timestamp,
-  });
-
-  return c.json({ success: true });
 });
 
 export default database;

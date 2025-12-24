@@ -12,6 +12,18 @@ import {
  * Helper function for handling validation errors
  */
 export function handleValidationError(error: z.ZodError, rawData?: any): Response {
+  console.error("=== VALIDATION ERROR ===");
+
+  // Log raw data first for context
+  if (rawData) {
+    try {
+      console.error("Raw data received:");
+      console.error(JSON.stringify(rawData, null, 2));
+    } catch (e) {
+      console.error("Could not stringify raw data:", e);
+    }
+  }
+
   const messages = error.issues.map((e) => {
     const path = e.path.join(".");
     let suggestion = "";
@@ -29,24 +41,39 @@ export function handleValidationError(error: z.ZodError, rawData?: any): Respons
       // For union validation failures, try to determine which schema was closest
       const itemData = rawData?.item;
       if (itemData) {
+        console.error("\nDetailed validation errors for 'item' field:");
         const detailedErrors = getDetailedUnionErrors(itemData);
-        suggestion = `\n\nDetailed validation errors for each item type:\n${detailedErrors}`;
+        console.error(detailedErrors);
+        suggestion = ` (See detailed errors above)`;
       } else {
         suggestion = " (Item validation failed. Check that all required fields (id, created_by, author_id, etc.) are present and match the database schema in workers/api/src/types.ts)";
+      }
+    } else if (path.includes("previous") && e.code === "invalid_union") {
+      // For union validation failures on previous field
+      const previousData = rawData?.previous;
+      if (previousData) {
+        console.error("\nDetailed validation errors for 'previous' field:");
+        const detailedErrors = getDetailedUnionErrors(previousData);
+        console.error(detailedErrors);
+        suggestion = ` (See detailed errors above)`;
+      } else {
+        suggestion = " (Previous field validation failed. This should match the same schema as 'item')";
       }
     }
 
     return `${path}: ${e.message}${suggestion}`;
   });
 
-  console.warn("Validation error:", messages);
+  console.error("\nValidation issues:");
+  messages.forEach(msg => console.error(`  - ${msg}`));
+  console.error("=== END VALIDATION ERROR ===\n");
 
-  // Include a sample of the raw data if available (first 500 chars)
+  // Include a sample of the raw data if available (first 1000 chars for response)
   let dataSample = "";
   if (rawData) {
     try {
       const dataStr = JSON.stringify(rawData, null, 2);
-      dataSample = `\n\nData sample (first 500 chars):\n${dataStr.slice(0, 500)}${dataStr.length > 500 ? "..." : ""}`;
+      dataSample = `\n\nData sample (first 1000 chars):\n${dataStr.slice(0, 1000)}${dataStr.length > 1000 ? "..." : ""}`;
     } catch (e) {
       dataSample = "\n\n(Could not stringify data sample)";
     }
