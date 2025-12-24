@@ -65,7 +65,7 @@ CREATE TRIGGER prevent_priority_twist_immutable_changes
     EXECUTE FUNCTION prevent_priority_twist_immutable_changes ();
 
 CREATE TRIGGER notify_priority_twist_update
-    AFTER INSERT OR UPDATE OR DELETE ON "public"."priority_twist"
+    AFTER INSERT OR UPDATE ON "public"."priority_twist"
     FOR EACH ROW
     EXECUTE FUNCTION notify_internal_api_for_priority_twist ();
 

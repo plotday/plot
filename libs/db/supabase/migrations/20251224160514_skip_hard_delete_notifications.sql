@@ -1,12 +1,8 @@
-CREATE OR REPLACE FUNCTION get_api_root ()
-    RETURNS text
-    LANGUAGE plpgsql
-    STABLE
-    AS $$
-BEGIN
-    RETURN COALESCE(current_setting('plot.api_root', TRUE), 'http://host.docker.internal:8787/sync');
-END;
-$$;
+DROP TRIGGER IF EXISTS "notify_activity_read_change" ON "public"."activity_read";
+
+DROP TRIGGER IF EXISTS "notify_priority_twist_update" ON "public"."priority_twist";
+
+SET check_function_bodies = OFF;
 
 CREATE OR REPLACE FUNCTION public.notify_internal_api_for_activity ()
     RETURNS TRIGGER
@@ -127,7 +123,7 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.notify_internal_api_for_priority ()
+CREATE OR REPLACE FUNCTION public.notify_internal_api_for_activity_read ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -149,59 +145,17 @@ BEGIN
         event_type := 'updated';
         current_item := NEW;
     END IF;
-    -- Get users who have access to this priority (just the creator for now)
-    SELECT
-        jsonb_agg(jsonb_build_object('user_id', current_item.created_by)) INTO users_data;
-    -- Exit early if no users found
-    IF users_data IS NULL OR jsonb_array_length(users_data) = 0 THEN
-        RETURN COALESCE(NEW, OLD);
-    END IF;
-    -- Build enriched item
-    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', current_item.root, 'archived_at', current_item.archived_at, 'title', current_item.title, 'path', current_item.path, 'updated_by', current_item.updated_by);
-    -- Build the payload (no twists for priority)
-    payload := jsonb_build_object('type', 'priority', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'priority');
-    api_url := public.get_api_root () || '/update';
-    hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
-    signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
-    PERFORM
-        net.http_post (url := api_url, body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net', 'X-Plot-Signature', 'sha256=' || signature));
-    RETURN COALESCE(NEW, OLD);
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.notify_internal_api_for_session ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    AS $function$
-DECLARE
-    event_type text;
-    users_data jsonb;
-    enriched_item jsonb;
-    payload jsonb;
-    api_url text;
-    hmac_secret text;
-    signature text;
-    current_item record;
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        event_type := 'created';
-        current_item := NEW;
-    ELSIF TG_OP = 'UPDATE' THEN
-        event_type := 'updated';
-        current_item := NEW;
-    END IF;
-    -- Get user for this session
+    -- Get user for this activity_read record
     SELECT
         jsonb_agg(jsonb_build_object('user_id', current_item.user_id)) INTO users_data;
     -- Exit early if no users found
     IF users_data IS NULL OR jsonb_array_length(users_data) = 0 THEN
         RETURN COALESCE(NEW, OLD);
     END IF;
-    -- Build enriched item
-    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'archived_at', current_item.archived_at, 'user_id', current_item.user_id, 'priority_id', current_item.priority_id, 'at', current_item.at, 'precedence', current_item.precedence, 'pomodoro', current_item.pomodoro, 'pomodoro_at', current_item.pomodoro_at, 'updated_by', current_item.updated_by);
-    -- Build the payload (no twists for session)
-    payload := jsonb_build_object('type', 'session', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'session');
+    -- Build minimal enriched item (only what's needed for sync)
+    enriched_item := jsonb_build_object('user_id', current_item.user_id, 'activity_id', current_item.activity_id, 'read_at', current_item.read_at, 'updated_at', current_item.updated_at);
+    -- Build the payload (no twists for activity_read)
+    payload := jsonb_build_object('type', 'activity_read', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'activity_read');
     api_url := public.get_api_root () || '/update';
     hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
     signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
@@ -326,6 +280,48 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.notify_internal_api_for_priority ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    AS $function$
+DECLARE
+    event_type text;
+    users_data jsonb;
+    enriched_item jsonb;
+    payload jsonb;
+    api_url text;
+    hmac_secret text;
+    signature text;
+    current_item record;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        event_type := 'created';
+        current_item := NEW;
+    ELSIF TG_OP = 'UPDATE' THEN
+        event_type := 'updated';
+        current_item := NEW;
+    END IF;
+    -- Get users who have access to this priority (just the creator for now)
+    SELECT
+        jsonb_agg(jsonb_build_object('user_id', current_item.created_by)) INTO users_data;
+    -- Exit early if no users found
+    IF users_data IS NULL OR jsonb_array_length(users_data) = 0 THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
+    -- Build enriched item
+    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', current_item.root, 'archived_at', current_item.archived_at, 'title', current_item.title, 'path', current_item.path, 'updated_by', current_item.updated_by);
+    -- Build the payload (no twists for priority)
+    payload := jsonb_build_object('type', 'priority', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'priority');
+    api_url := public.get_api_root () || '/update';
+    hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
+    signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
+    PERFORM
+        net.http_post (url := api_url, body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net', 'X-Plot-Signature', 'sha256=' || signature));
+    RETURN COALESCE(NEW, OLD);
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.notify_internal_api_for_priority_twist ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -380,7 +376,7 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.notify_internal_api_for_activity_read ()
+CREATE OR REPLACE FUNCTION public.notify_internal_api_for_session ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -402,17 +398,17 @@ BEGIN
         event_type := 'updated';
         current_item := NEW;
     END IF;
-    -- Get user for this activity_read record
+    -- Get user for this session
     SELECT
         jsonb_agg(jsonb_build_object('user_id', current_item.user_id)) INTO users_data;
     -- Exit early if no users found
     IF users_data IS NULL OR jsonb_array_length(users_data) = 0 THEN
         RETURN COALESCE(NEW, OLD);
     END IF;
-    -- Build minimal enriched item (only what's needed for sync)
-    enriched_item := jsonb_build_object('user_id', current_item.user_id, 'activity_id', current_item.activity_id, 'read_at', current_item.read_at, 'updated_at', current_item.updated_at);
-    -- Build the payload (no twists for activity_read)
-    payload := jsonb_build_object('type', 'activity_read', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'activity_read');
+    -- Build enriched item
+    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'archived_at', current_item.archived_at, 'user_id', current_item.user_id, 'priority_id', current_item.priority_id, 'at', current_item.at, 'precedence', current_item.precedence, 'pomodoro', current_item.pomodoro, 'pomodoro_at', current_item.pomodoro_at, 'updated_by', current_item.updated_by);
+    -- Build the payload (no twists for session)
+    payload := jsonb_build_object('type', 'session', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'session');
     api_url := public.get_api_root () || '/update';
     hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
     signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
@@ -422,3 +418,31 @@ BEGIN
 END;
 $function$;
 
+CREATE TRIGGER notify_activity_read_change
+    AFTER INSERT OR UPDATE ON public.activity_read
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_internal_api_for_activity_read ();
+
+CREATE TRIGGER notify_priority_twist_update
+    AFTER INSERT OR UPDATE ON public.priority_twist
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_internal_api_for_priority_twist ();
+
+ALTER VIEW "public"."user_note" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_twist" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_expanded" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_settings_inherited" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child_twist" SET ( security_invoker = TRUE);

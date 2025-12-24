@@ -15,7 +15,7 @@ CREATE TRIGGER set_activity_read_updated_at
     EXECUTE FUNCTION update_updated_at ();
 
 CREATE TRIGGER notify_activity_read_change
-    AFTER INSERT OR UPDATE OR DELETE ON "public"."activity_read"
+    AFTER INSERT OR UPDATE ON "public"."activity_read"
     FOR EACH ROW
     EXECUTE FUNCTION public.notify_internal_api_for_activity_read ();
 
