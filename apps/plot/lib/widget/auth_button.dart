@@ -1,7 +1,7 @@
 import 'dart:io' show Platform;
 import 'dart:async' show unawaited;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -208,7 +208,16 @@ class _AuthButtonState extends State<AuthButton> {
       _onGoogleSignIn(account);
     } on GoogleSignInException catch (e, t) {
       if (e.code == GoogleSignInExceptionCode.canceled) {
-        log.info('Google sign-in cancelled by user');
+        // In release builds, cancellation can occur if the SHA-1 fingerprint
+        // is not registered in Google Cloud Console. Log additional context.
+        log.info('Google sign-in cancelled', {
+          'code': e.code.toString(),
+          'description': e.description,
+          'hint': kReleaseMode
+              ? 'If this happens immediately after account selection in release builds, '
+                    'verify the release keystore SHA-1 is registered in Google Cloud Console'
+              : null,
+        });
         return;
       }
       log.warning('Google sign-in failed', e, t);
