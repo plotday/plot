@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/app_info.dart';
@@ -15,6 +16,7 @@ import 'package:plot/state/theme.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/platform.dart';
 import 'command.dart';
 import 'logging.dart';
@@ -104,9 +106,19 @@ class ChangeEnterBehavior extends Command {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(
+                title,
+                style: context.theme.typography.base.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text(subtitle, style: const TextStyle(fontSize: 14)),
+              Text(
+                subtitle,
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.plotColors.muted,
+                ),
+              ),
             ],
           ),
         );
