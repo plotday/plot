@@ -228,6 +228,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                   child: Scaffold(
                     scrollable: false,
                     translucent: true,
+                    childPad: layoutStateForPanels.multiPanel,
                     header: Header(
                       title: state.activity.displayTitle,
                       prefixCommands: prefixActions,
@@ -269,13 +270,27 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                         Flexible(
                           flex: 1,
                           fit: FlexFit.tight,
-                          child: _buildActivityList(
-                            state,
-                            listController,
-                            context,
-                          ),
+                          child: layoutStateForPanels.multiPanel
+                              ? _buildActivityList(
+                                  state,
+                                  listController,
+                                  context,
+                                )
+                              : Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 16),
+                                  child: _buildActivityList(
+                                    state,
+                                    listController,
+                                    context,
+                                  ),
+                                ),
                         ),
-                        NoteEditor(key: _noteEditorKey, draft: state.draft),
+                        // Editor is edge-to-edge in single panel mode
+                        NoteEditor(
+                          key: _noteEditorKey,
+                          draft: state.draft,
+                          flushToBottom: !layoutStateForPanels.multiPanel,
+                        ),
                       ],
                     ),
                   ),

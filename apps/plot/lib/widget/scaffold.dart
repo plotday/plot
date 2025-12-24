@@ -15,6 +15,7 @@ class Scaffold extends StatelessWidget {
     this.translucent = false,
     this.scrollable = true,
     this.center = false,
+    this.childPad = true,
     super.key,
   });
 
@@ -24,6 +25,7 @@ class Scaffold extends StatelessWidget {
   final bool translucent;
   final bool scrollable;
   final bool center;
+  final bool childPad;
 
   Widget _buildBody(BuildContext context) {
     // Center mode: wrap in scrollable centered layout
@@ -74,7 +76,7 @@ class Scaffold extends StatelessWidget {
       header: header,
       sidebar: sidebar,
       footer: footer,
-      childPad: true,
+      childPad: childPad,
       child: wrappedBody,
     );
 

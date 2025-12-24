@@ -188,6 +188,7 @@ class NewActivityPageState extends State<NewActivityPage> {
               child: Scaffold(
                 translucent: true,
                 scrollable: false,
+                childPad: layoutState.multiPanel,
                 header:
                     layoutState.middlePanelVisible || !layoutState.multiPanel
                     ? null
@@ -202,6 +203,81 @@ class NewActivityPageState extends State<NewActivityPage> {
                       ),
                 body: LayoutBuilder(
                   builder: (context, constraints) {
+                    // Single panel mode: editor at bottom, edge-to-edge
+                    if (!layoutState.multiPanel) {
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          // Flexible space at top (takes remaining space)
+                          Spacer(),
+
+                          // PriorityLabel and Scheduler with horizontal padding
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            child: Column(
+                              children: [
+                                // PriorityLabel (centered, clickable, directly above editor)
+                                Center(
+                                  child: Tapable(
+                                    onTap: () => _selectPriority(context, state),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: context.theme.colors.border,
+                                          width: 1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(24),
+                                      ),
+                                      child: PriorityLabel(
+                                        priority: state.draft.priority,
+                                        muted: true,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                SizedBox(height: 16),
+
+                                // Scheduler (if event, between PriorityLabel and editor)
+                                if (state.draft.type == .event &&
+                                    state.draft.at != null) ...[
+                                  Center(
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(maxWidth: 340),
+                                      child: Scheduler(
+                                        value: state.draft.at!,
+                                        onChanged: (newAt) async {
+                                          final updatedDraft = state.draft.copyWith(
+                                            at: Value(newAt),
+                                          );
+                                          await context.read<PriorityBloc>().updateDraft(
+                                            updatedDraft,
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: 16),
+                                ],
+                              ],
+                            ),
+                          ),
+
+                          // ActivityEditor (at bottom, edge-to-edge)
+                          ActivityEditor(
+                            key: _activityEditorKey,
+                            draft: state.draft,
+                            flushToBottom: true,
+                          ),
+                        ],
+                      );
+                    }
+
+                    // Multi-panel mode: keep existing centered layout
                     return Column(
                       mainAxisAlignment: MainAxisAlignment.start,
                       children: [
@@ -242,6 +318,7 @@ class NewActivityPageState extends State<NewActivityPage> {
                           child: ActivityEditor(
                             key: _activityEditorKey,
                             draft: state.draft,
+                            flushToBottom: false,
                           ),
                         ),
 

@@ -16,9 +16,14 @@ class ActivityWithNote {
 }
 
 class ActivityEditor extends StatefulWidget {
-  const ActivityEditor({required this.draft, super.key});
+  const ActivityEditor({
+    required this.draft,
+    this.flushToBottom = false,
+    super.key,
+  });
 
   final Activity draft;
+  final bool flushToBottom;
 
   @override
   State<ActivityEditor> createState() => ActivityEditorState();
@@ -155,6 +160,7 @@ class ActivityEditorState extends State<ActivityEditor> {
         return EditableArea(
           key: _editableAreaKey,
           position: EditableAreaPosition.bottom,
+          flushToBottom: widget.flushToBottom,
           builder: (context, focusNode) {
             // Set up focus listener once
             if (_currentFocusNode != focusNode) {

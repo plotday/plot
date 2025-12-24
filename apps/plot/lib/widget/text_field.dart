@@ -139,6 +139,7 @@ class EditableArea extends StatefulWidget {
     required this.position,
     this.padding = true,
     this.autofocus = false,
+    this.flushToBottom = false,
     super.key,
   });
 
@@ -146,6 +147,7 @@ class EditableArea extends StatefulWidget {
   final EditableAreaPosition position;
   final bool padding;
   final bool autofocus;
+  final bool flushToBottom;
 
   @override
   EditableAreaState createState() => EditableAreaState();
@@ -239,17 +241,26 @@ class EditableAreaState extends State<EditableArea> {
         padding: widget.padding ? widgetPadding : EdgeInsets.zero,
         decoration: BoxDecoration(
           color: context.theme.plotColors.editableBackground,
-          borderRadius: widget.position == EditableAreaPosition.top
+          borderRadius: widget.flushToBottom
               ? null
-              : editorBorderRadius,
-          border: widget.position == EditableAreaPosition.top
+              : (widget.position == EditableAreaPosition.top
+                  ? null
+                  : editorBorderRadius),
+          border: widget.flushToBottom
               ? Border(
-                  bottom: BorderSide(
+                  top: BorderSide(
                     width: 1.0,
                     color: context.theme.colors.border,
                   ),
                 )
-              : Border.all(width: 1.0, color: context.theme.colors.border),
+              : (widget.position == EditableAreaPosition.top
+                  ? Border(
+                      bottom: BorderSide(
+                        width: 1.0,
+                        color: context.theme.colors.border,
+                      ),
+                    )
+                  : Border.all(width: 1.0, color: context.theme.colors.border)),
         ),
         child: widget.builder(context, _focusNode),
       ),

@@ -8,10 +8,16 @@ import 'package:plot/command/command.dart';
 import 'logging.dart';
 
 class NoteEditor extends StatefulWidget {
-  const NoteEditor({required this.draft, this.expand = false, super.key});
+  const NoteEditor({
+    required this.draft,
+    this.expand = false,
+    this.flushToBottom = false,
+    super.key,
+  });
 
   final Note draft;
   final bool expand;
+  final bool flushToBottom;
 
   @override
   State<NoteEditor> createState() => NoteEditorState();
@@ -101,6 +107,7 @@ class NoteEditorState extends State<NoteEditor> {
         return EditableArea(
           key: _editableAreaKey,
           position: EditableAreaPosition.bottom,
+          flushToBottom: widget.flushToBottom,
           builder: (context, focusNode) {
             // Set up focus listener once
             if (_currentFocusNode != focusNode) {
