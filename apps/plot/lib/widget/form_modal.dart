@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/list_view_selector.dart';
+import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
 import 'modal.dart';
 import 'logging.dart';
@@ -565,7 +566,7 @@ class FormModalState extends State<_FormModal> {
                               if (header != null) header,
                               item.build(
                                 context,
-                                index == _highlightedIndex,
+                                index == _highlightedIndex && hasPhysicalKeyboard(),
                                 enabled: item is FormButton
                                     ? _isFormValid()
                                     : true,
