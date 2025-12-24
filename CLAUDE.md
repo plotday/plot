@@ -263,3 +263,4 @@ await this.callback.deleteAll();
 - Only work locally. Never deploy. This includes workers, which only run locally.
 - When creating Cloudflare Durable Objects via idFromName(), ctx.id.name IS NOT SET inside the DO. If the DO needs the name (often the priorityTwistId), you MUST add a separate init() method to the DO and ensure it's called after creation to set the name.
 - In TypeScript, use static imports at the top of the file wherever possible.
+- **When adding new features**, update `docs/features.md` to reflect the new capabilities for marketing content generation.
