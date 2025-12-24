@@ -302,45 +302,17 @@ class RouteLogger extends AutoRouterObserver {
 
   /// Normalize route names to screen names
   /// Examples:
-  /// - PriorityRoute -> priority_detail
-  /// - ActivityRoute -> activity_detail
-  /// - NewActivityRoute -> new_activity
-  /// - PrioritiesRoute -> priorities_list
+  /// - PriorityRoute -> Priority
+  /// - NewActivityRoute -> New Activity
   String _normalizeScreenName(String routeName) {
-    // Remove "Route" suffix
-    String name = routeName.replaceAll('Route', '');
-
-    // Convert PascalCase to snake_case
-    String snakeCase = name.replaceAllMapped(
-      RegExp(r'([A-Z])'),
-      (match) => '_${match.group(0)!.toLowerCase()}',
-    );
-
-    // Remove leading underscore
-    if (snakeCase.startsWith('_')) {
-      snakeCase = snakeCase.substring(1);
-    }
-
-    // Map common patterns
-    if (snakeCase == 'priority') {
-      return 'priority_detail';
-    } else if (snakeCase == 'activity') {
-      return 'activity_detail';
-    } else if (snakeCase == 'priorities') {
-      return 'priorities_list';
-    } else if (snakeCase == 'sign_in') {
-      return 'sign_in';
-    } else if (snakeCase == 'email_sign_in') {
-      return 'email_sign_in';
-    } else if (snakeCase == 'password_setup') {
-      return 'password_setup';
-    } else if (snakeCase == 'invitation') {
-      return 'invitation';
-    } else if (snakeCase == 'new_activity') {
-      return 'new_activity';
-    }
-
-    return snakeCase;
+    return routeName
+        // Remove "Route" suffix
+        .replaceAll('Route', '')
+        // Add spaces before uppercase letters
+        .replaceAllMapped(
+          RegExp(r'(?<=[a-z])([A-Z])'),
+          (match) => ' ${match.group(0)!}',
+        );
   }
 
   @override

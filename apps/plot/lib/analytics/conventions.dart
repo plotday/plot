@@ -1,19 +1,19 @@
 /// PostHog Event Naming Convention
 ///
-/// Format: Category:Object:Action
+/// Format: [Category] Object Action
 ///
-/// Categories:
-/// - command: User-initiated actions (actions, CRUD operations)
-/// - navigation: Screen/route changes
-/// - error: Errors and failures
-/// - performance: Performance monitoring events
-/// - session: Authentication and session events
+/// Categories (capitalized, in brackets):
+/// - [Action]: User-initiated actions (CRUD operations)
+/// - [Navigation]: Screen/route changes
+/// - [Error]: Errors and failures
+/// - [Performance]: Performance monitoring events
+/// - [Session]: Authentication and session events
 ///
-/// Objects:
-/// - activity, priority, twist, tag, filter, etc.
-/// - screen names: priority_detail, activity_list, settings, etc.
+/// Objects (Title Case):
+/// - Activity, Priority, Twist, Tag, Filter, etc.
+/// - Screen names: Priority Detail, Activity List, Settings, etc.
 ///
-/// Actions:
+/// Actions (Title Case):
 /// - Past tense verbs from approved dictionary
 ///
 /// Verb Dictionary:
@@ -61,15 +61,15 @@
 /// - errored: Error occurred
 ///
 /// Examples:
-/// - action:activity:added
-/// - action:priority:updated
-/// - action:activity:removed
-/// - action:activity:restored
-/// - action:activity:tagged
-/// - navigation:priority_detail:viewed
-/// - error:activity:failed
-/// - performance:action:timed_out
-/// - session:user:signed_in
+/// - [Action] Activity Added
+/// - [Action] Priority Updated
+/// - [Action] Activity Archived
+/// - [Action] Activity Unarchived
+/// - [Action] Activity Tagged
+/// - [Navigation] Priority Detail Viewed
+/// - [Error] Activity Failed
+/// - [Performance] Action Timed Out
+/// - [Session] User Signed In
 
 library;
 
@@ -154,11 +154,22 @@ enum EventAction {
   final String value;
 }
 
+/// Helper to convert snake_case to Title Case
+String _toTitleCase(String snakeCase) {
+  return snakeCase
+      .split('_')
+      .map((word) => word[0].toUpperCase() + word.substring(1))
+      .join(' ');
+}
+
 /// Helper to build event names following the convention
 String buildEventName(
   EventCategory category,
   EventObject object,
   EventAction action,
 ) {
-  return '${category.value}:${object.value}:${action.value}';
+  final categoryFormatted = _toTitleCase(category.value);
+  final objectFormatted = _toTitleCase(object.value);
+  final actionFormatted = _toTitleCase(action.value);
+  return '[$categoryFormatted] $objectFormatted $actionFormatted';
 }

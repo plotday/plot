@@ -1,7 +1,7 @@
 /// Central PostHog analytics wrapper
 ///
 /// This file provides a centralized interface for tracking events following
-/// the Category:Object:Action naming convention.
+/// the [Category] Object Action naming convention.
 
 library;
 
@@ -62,7 +62,7 @@ class Analytics {
     Map<String, dynamic>? properties,
   ]) async {
     await track(
-      'navigation:$screenName:viewed',
+      '[Navigation] $screenName Viewed',
       properties,
     );
   }
@@ -75,8 +75,9 @@ class Analytics {
     String? stackTrace,
     String? context,
   }) async {
+    final objectFormatted = object[0].toUpperCase() + object.substring(1);
     await track(
-      'error:$object:failed',
+      '[Error] $objectFormatted Failed',
       buildErrorProperties(
         errorType: errorType,
         errorMessage: errorMessage,
