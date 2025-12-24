@@ -31,11 +31,12 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
   bool _isListening = false;
   bool _isAvailable = false;
   bool _isInitialized = false;
+  bool _isUnsupported = false;
 
   @override
   void initState() {
     super.initState();
-    _initSpeech();
+    // Don't initialize speech here - wait for user to tap the button
   }
 
   Future<void> _initSpeech() async {
@@ -58,12 +59,17 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
         setState(() => _isInitialized = true);
       }
       if (!_isAvailable) {
-        log.warning('Speech recognition not available');
+        // Permission denied or not available - don't show error, let user try again
+        log.warning('Speech recognition not available (likely permission denied)');
       }
     } catch (e) {
+      // Exception means device doesn't support speech recognition
       log.warning('Failed to initialize speech recognition: $e');
       if (mounted) {
-        setState(() => _isInitialized = true);
+        setState(() {
+          _isInitialized = true;
+          _isUnsupported = true;
+        });
         _handleError('Speech recognition is not available on this device');
       }
     }
@@ -77,8 +83,22 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
   }
 
   Future<void> _toggleListening() async {
+    // Initialize speech on first use
+    if (!_isInitialized) {
+      await _initSpeech();
+      // If initialization failed due to unsupported device, error already shown
+      if (_isUnsupported) {
+        return;
+      }
+      // If permission denied, button stays visible - user can try again later
+      if (!_isAvailable) {
+        return;
+      }
+    }
+
+    // Check if speech is available after initialization
     if (!_isAvailable) {
-      _handleError('Speech recognition is not available');
+      // Don't show error - user can try again if they change permissions
       return;
     }
 
@@ -118,12 +138,13 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
 
   @override
   Widget build(BuildContext context) {
-    // Don't show button until initialization is complete
-    if (!_isInitialized || !_isAvailable) {
+    // Only hide button if device doesn't support speech recognition
+    if (_isUnsupported) {
       return const SizedBox.shrink();
     }
 
-    // Constrain to minimal height to prevent layout shift
+    // Show button even if not initialized or permission denied
+    // User can tap to request permissions or try again
     return FButton.icon(
       onPress: _toggleListening,
       style: _buildButtonStyle(context),

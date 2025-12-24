@@ -16,6 +16,7 @@ import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/util/platform_stub.dart';
 import 'sliver.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
@@ -522,9 +523,10 @@ class EditorState extends State<Editor> {
   void submit(bool alt) async {
     final md = _serializeWithMentions(_document);
 
-    // Show first-time prompt if needed
+    // Show first-time prompt if needed (only on devices with physical keyboards)
     final settingsBloc = context.read<SettingsBloc>();
-    if (!settingsBloc.state.hasBeenPromptedForEnterBehavior) {
+    if (hasPhysicalKeyboard() &&
+        !settingsBloc.state.hasBeenPromptedForEnterBehavior) {
       await _showEnterBehaviorPrompt();
       return;
     }
@@ -565,6 +567,18 @@ class EditorState extends State<Editor> {
       if (keyEvent.logicalKey != LogicalKeyboardKey.enter &&
           keyEvent.logicalKey != LogicalKeyboardKey.numpadEnter) {
         return ExecutionInstruction.continueExecution;
+      }
+
+      // On mobile devices (without physical keyboards), Enter always adds newline
+      if (!hasPhysicalKeyboard()) {
+        // Allow plain Enter to insert newline
+        if (!HardwareKeyboard.instance.isMetaPressed &&
+            !HardwareKeyboard.instance.isControlPressed) {
+          editContext.editor.execute([InsertNewlineAtCaretRequest()]);
+          return ExecutionInstruction.haltExecution;
+        }
+        // Block Cmd-Enter (let it bubble up to shortcuts)
+        return ExecutionInstruction.blocked;
       }
 
       switch (behavior) {

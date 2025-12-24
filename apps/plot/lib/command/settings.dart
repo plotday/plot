@@ -14,6 +14,7 @@ import 'package:plot/state/theme.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/util/platform_stub.dart';
 import 'command.dart';
 import 'logging.dart';
 
@@ -32,7 +33,8 @@ final settingsCommands = StaticCommandGroup(
   commands: [
     ManageTwists(),
     ChangeAppearance(),
-    ChangeEnterBehavior(),
+    // Only show Enter Behavior setting on devices with physical keyboards
+    if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
     CopyVersion(),
     SignOut(),
   ],

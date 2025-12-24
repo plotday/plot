@@ -340,10 +340,7 @@ class AddEvent extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     // Add the activity (handles saving, note creation, title generation, and draft reset)
     final priorityBloc = context.read<PriorityBloc>();
-    final savedActivity = await priorityBloc.add(
-      _activity,
-      note: _note,
-    );
+    final savedActivity = await priorityBloc.add(_activity, note: _note);
 
     // Only navigate if requested
     if (!navigate) {
