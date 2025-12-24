@@ -6,6 +6,7 @@
  * Generates SQL INSERT statements from YAML seed data definition.
  * See YAML_SPEC.md for format documentation.
  */
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { parse as parseYAML } from "yaml";
@@ -37,21 +38,35 @@ async function main() {
   const { values, positionals } = parseArgs({
     options: {
       help: { type: "boolean", short: "h" },
+      apply: { type: "boolean" },
+      "db-url": { type: "string" },
     },
     allowPositionals: true,
   });
 
   if (values.help || positionals.length === 0) {
-    console.error(`Usage: generate-seed.ts <yaml-file>
+    console.error(`Usage: generate-seed.ts <yaml-file> [options]
 
 Generates SQL INSERT statements from YAML seed data definition.
 
 Options:
-  -h, --help    Show this help message
+  -h, --help              Show this help message
+  --apply                 Apply the seed directly to the database
+  --db-url <url>          Database connection string
+                          (default: postgresql://postgres:postgres@127.0.0.1:54322/postgres)
 
 Examples:
+  # Generate SQL and output to stdout
   pnpm gen-seed seeds/screenshot-data.yaml > seed.sql
+
+  # Pipe SQL directly to psql
   pnpm gen-seed my-data.yaml | psql -d plot_local
+
+  # Apply seed directly to default local database
+  pnpm gen-seed my-data.yaml --apply
+
+  # Apply seed to custom database
+  pnpm gen-seed my-data.yaml --apply --db-url postgresql://user:pass@host:port/db
 `);
     process.exit(values.help ? 0 : 1);
   }
@@ -72,11 +87,128 @@ Examples:
     }
 
     const sql = generateSQL(data);
-    console.log(sql);
+
+    if (values.apply) {
+      // Apply mode: execute SQL via psql
+      const dbUrl =
+        (values["db-url"] as string) ||
+        "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+
+      await applySQL(sql, dbUrl, data);
+    } else {
+      // Default mode: output SQL to stdout
+      console.log(sql);
+    }
   } catch (error) {
     console.error("Error:", error instanceof Error ? error.message : error);
     process.exit(1);
   }
+}
+
+// ============================================================================
+// Apply SQL
+// ============================================================================
+
+async function applySQL(
+  sql: string,
+  dbUrl: string,
+  data: SeedData
+): Promise<void> {
+  console.error(`Applying seed to database: ${dbUrl}`);
+  console.error("");
+
+  return new Promise((resolve, reject) => {
+    const psql = spawn("psql", [dbUrl], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    psql.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    psql.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    psql.on("error", (error) => {
+      if (error.message.includes("ENOENT")) {
+        console.error(
+          "Error: psql command not found. Please install PostgreSQL client tools."
+        );
+        reject(new Error("psql not found"));
+      } else {
+        console.error("Error spawning psql:", error.message);
+        reject(error);
+      }
+    });
+
+    psql.on("close", (code) => {
+      if (code === 0) {
+        console.error("✓ Seed applied successfully");
+        console.error("");
+        console.error("Summary:");
+
+        // Count entities from data
+        const contactCount = data.contacts?.length || 0;
+        const priorityCount = countPriorities(data.priorities || []);
+        const activityCount = data.activities?.length || 0;
+        const noteCount = countNotes(data.activities || []);
+
+        if (contactCount > 0) {
+          console.error(`  ${contactCount} contact(s)`);
+        }
+        if (priorityCount > 0) {
+          console.error(`  ${priorityCount} priorit${priorityCount === 1 ? "y" : "ies"}`);
+        }
+        if (activityCount > 0) {
+          console.error(
+            `  ${activityCount} activit${activityCount === 1 ? "y" : "ies"}`
+          );
+        }
+        if (noteCount > 0) {
+          console.error(`  ${noteCount} note(s)`);
+        }
+
+        resolve();
+      } else {
+        console.error("✗ Failed to apply seed");
+        console.error("");
+        if (stderr) {
+          console.error("Error output:");
+          console.error(stderr);
+        }
+        reject(new Error(`psql exited with code ${code}`));
+      }
+    });
+
+    // Write SQL to stdin
+    psql.stdin.write(sql);
+    psql.stdin.end();
+  });
+}
+
+function countPriorities(priorities: Priority[]): number {
+  let count = 0;
+  for (const priority of priorities) {
+    count++;
+    if (priority.children) {
+      count += countPriorities(priority.children);
+    }
+  }
+  return count;
+}
+
+function countNotes(activities: Activity[]): number {
+  let count = 0;
+  for (const activity of activities) {
+    if (activity.notes) {
+      count += activity.notes.length;
+    }
+  }
+  return count;
 }
 
 // ============================================================================
@@ -258,6 +390,29 @@ function validateActivity(
     });
   }
 
+  // Validate events have schedule (database constraint: activity_scheduled)
+  // Actions without schedule will auto-default to base date
+  if (
+    activity.type === "event" &&
+    !activity.recurrence_rule &&
+    !activity.at &&
+    !activity.on
+  ) {
+    errors.push({
+      path,
+      message:
+        "Events must have a schedule: use 'on' for all-day (e.g., 'on: \"+0d\"') or 'at' for timed events (e.g., 'at: \"+0d 09:00 / +0d 10:00\"')",
+    });
+  }
+
+  // Validate recurring activities cannot be marked done (database constraint: activity_no_complete_recurrence)
+  if (activity.recurrence_rule && activity.done_at) {
+    errors.push({
+      path,
+      message: "Recurring activities cannot be marked as done (done_at must be null). Remove either 'recurrence_rule' or 'done_at'.",
+    });
+  }
+
   // Validate author_ref
   if (
     activity.author_ref &&
@@ -279,6 +434,14 @@ function validateActivity(
     errors.push({
       path: `${path}.assignee_ref`,
       message: `Unknown assignee_ref: ${activity.assignee_ref}`,
+    });
+  }
+
+  // Validate action activities have assignee (database constraint: activity_action_assignee)
+  if (activity.type === "action" && !activity.assignee_ref) {
+    errors.push({
+      path: `${path}.assignee_ref`,
+      message: "Action activities must have an assignee_ref (use 'user' for self-assigned tasks)",
     });
   }
 
@@ -454,6 +617,13 @@ function generateSQL(data: SeedData): string {
         notes,
         noteTags
       );
+    }
+  }
+
+  // Auto-set 'on' for actions without scheduling
+  for (const activity of activities) {
+    if (activity.type === "action" && !activity.on && !activity.at) {
+      activity.on = `[${baseDate},)`;
     }
   }
 
@@ -914,18 +1084,16 @@ function parseDateRange(baseDate: string, range: string): string {
   const start = parts[0];
   const startDate = parseDateOffset(baseDate, start);
 
-  // If no end date, create a single-day range (start to start+1 day)
-  let endDate: Date;
-  if (parts[1]) {
-    endDate = parseDateOffset(baseDate, parts[1]);
-  } else {
-    endDate = new Date(startDate);
-    endDate.setUTCDate(endDate.getUTCDate() + 1);
-  }
-
   const startStr = startDate.toISOString().split("T")[0];
-  const endStr = endDate.toISOString().split("T")[0];
-  return `[${startStr},${endStr})`;
+
+  // If no end date, create an open-ended range
+  if (parts[1]) {
+    const endDate = parseDateOffset(baseDate, parts[1]);
+    const endStr = endDate.toISOString().split("T")[0];
+    return `[${startStr},${endStr})`;
+  } else {
+    return `[${startStr},)`;
+  }
 }
 
 // ============================================================================

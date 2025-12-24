@@ -39,7 +39,8 @@
     "test:run": "supabase db test",
     "supabase": "export $(pnpm --silent fake-env) && supabase",
     "migrate": "export $(pnpm --silent fake-env) && supabase db push",
-    "gen-seed": "tsx seeds/generate-seed.ts"
+    "gen-seed": "tsx seeds/generate-seed.ts",
+    "apply-seed": "tsx seeds/generate-seed.ts --apply"
   },
   "devDependencies": {
     "@plotday/tsconfig": "workspace:^",

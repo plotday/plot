@@ -1,0 +1,647 @@
+config:
+  baseDate: "2025-01-22"
+  userId: "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d"
+
+contacts:
+  - ref: user
+    email: jackson.lamb@sloughhouse.gov.uk
+    name: Jackson Lamb
+  - ref: catherine
+    email: catherine.standish@sloughhouse.gov.uk
+    name: Catherine Standish
+  - ref: river
+    email: river.cartwright@sloughhouse.gov.uk
+    name: River Cartwright
+  - ref: louisa
+    email: louisa.guy@sloughhouse.gov.uk
+    name: Louisa Guy
+  - ref: roddy
+    email: roddy.ho@sloughhouse.gov.uk
+    name: Roddy Ho
+  - ref: shirley
+    email: shirley.dander@sloughhouse.gov.uk
+    name: Shirley Dander
+  - ref: taverner
+    email: diana.taverner@regentspark.gov.uk
+    name: Diana Taverner
+  - ref: whelan
+    email: j.whelan@regentspark.gov.uk
+    name: James Whelan
+  - ref: medical
+    email: appointments@nhsmail.nhs.uk
+    name: NHS Appointments
+
+priorities:
+  - ref: everything
+    title: Everything
+    root: true
+    children:
+      - ref: containment
+        title: Containment operations
+        settings:
+          color: 1
+      - ref: admin
+        title: Administrative necessities
+        settings:
+          color: 3
+      - ref: team
+        title: Slow Horses
+        settings:
+          color: 2
+      - ref: personal
+        title: Personal
+        settings:
+          color: 4
+
+activities:
+  # Day -2: Setting pieces in motion
+  - type: note
+    priority_ref: containment
+    title: "Weekly threat digest - mostly harmless"
+    on: "-2d"
+    notes:
+      - content: |
+          **From: GCHQ Automated Briefing <briefing@gchq.gov.uk>**
+          **Subject: Weekly Threat Assessment - Week 3**
+
+          The usual chatter. Russian botnet activity (same as last week). Iranian phishing campaigns (amateur hour). Chinese economic espionage (professionally tedious).
+
+          One item worth a second glance: Uptick in comms around old Curtain network. Probably nothing. Dormant since '09.
+
+          Filed under: things that will bite someone in the arse if ignored.
+        source:
+          type: email
+          title: Weekly Threat Assessment - Week 3
+          href: mailto:briefing@gchq.gov.uk
+    tags:
+      pinned: [user]
+
+  - type: action
+    priority_ref: team
+    title: "River - check old East German networks"
+    assignee_ref: user
+    on: "-2d"
+    notes:
+      - content: |
+          Told River to pull old files on defunct GDR networks. Didn't tell him why. Let him think it's busywork.
+
+          He'll figure it out or he won't. Either way, I need someone looking at this who doesn't know they're looking at it.
+
+  - type: event
+    priority_ref: containment
+    title: "Call: Whelan (Regent's Park)"
+    at: "-2d 11:15 / -2d 11:23"
+    notes:
+      - content: |
+          Whelan fishing for information about Slough House workload. Asked if we had "capacity for additional oversight duties."
+
+          Translation: Regent's Park wants to bury something with us.
+
+          Told him we're drowning in paperwork. Which is true. Didn't mention we could handle it anyway. Let him think he's doing us a favour when he sends it over.
+        source:
+          type: call
+          title: Call with James Whelan
+    tags:
+      question: [user]
+
+  - type: note
+    priority_ref: personal
+    title: "GP surgery - missed call"
+    on: "-2d"
+    notes:
+      - content: |
+          **Voicemail from NHS Appointments**
+
+          "Mr Lamb, this is regarding your blood pressure follow-up. We haven't heard from you. Please call to schedule..."
+
+          [Deleted]
+        source:
+          type: voicemail
+          title: NHS Appointments
+
+  # Day -1: Pieces moving
+  - type: action
+    priority_ref: containment
+    title: "Review Curtain network files - something's off"
+    assignee_ref: user
+    on: "-1d"
+    tags:
+      urgent: [user]
+    notes:
+      - content: |
+          River pulled the files. Good lad, thorough when he wants to be.
+
+          Curtain network: Supposedly dismantled 2009. East German sleepers, rolled up during reunification cleanup. Everyone accounted for, files closed.
+
+          Except the chatter says otherwise. Someone's activated an old protocol. Either:
+          1. We missed someone (embarrassing)
+          2. Someone found the protocol and is playing dress-up (dangerous)
+          3. This is a provocation to see who responds (clever)
+
+          Need to know which without letting anyone know I'm looking.
+        mentions:
+          - river
+
+  - type: event
+    priority_ref: team
+    title: "Louisa - coffee, downstairs"
+    at: "-1d 14:30 / -1d 14:42"
+    notes:
+      - content: |
+          Louisa's good at reading between lines. Mentioned the Curtain network in passing, like it was trivia. Watched her make the connections.
+
+          She knows someone who might know someone. Didn't ask who. Don't need to.
+
+          She'll make inquiries. Quietly. That's why she's useful.
+        mentions:
+          - louisa
+    tags:
+      pinned: [user]
+
+  - type: action
+    priority_ref: team
+    title: "Roddy - trace old signal patterns"
+    assignee_ref: user
+    on: "-1d"
+    notes:
+      - content: |
+          Told Roddy to look for old East German signal patterns in current intercepts. Told him it's for "historical analysis."
+
+          He'll spend three days building an algorithm and emerge thinking he's a genius. Which is fine. I need the data, not the credit.
+        mentions:
+          - roddy
+
+  - type: note
+    priority_ref: admin
+    title: "Budget report - due next week"
+    on: "-1d"
+    notes:
+      - content: |
+          **From: Finance Department <finance@sloughhouse.gov.uk>**
+          **Subject: FY2025 Q1 Budget Report - Due 31 Jan**
+
+          Please submit your quarterly budget report including itemized expenses and headcount justification.
+
+          Thrilling.
+        source:
+          type: email
+          title: Budget Report Request
+          href: mailto:finance@sloughhouse.gov.uk
+
+  - type: event
+    priority_ref: containment
+    title: "Taverner - 'courtesy call'"
+    at: "-1d 16:45 / -1d 16:52"
+    notes:
+      - content: |
+          Diana called to "touch base." Which means she wants something or she's worried I want something.
+
+          Mentioned she's concerned about "historical network security." Interesting timing.
+
+          So Regent's Park knows something's happening with Curtain. Question is: are they ahead of it or behind it?
+
+          Told her Slough House remains committed to filing paperwork correctly. She laughed. Neither of us meant it.
+        mentions:
+          - taverner
+    tags:
+      warning: [user]
+
+  # Day 0 (Base date): The work gets real
+  - type: note
+    priority_ref: containment
+    title: "OPERATION CURTAIN CALL - active situation"
+    on: "+0d"
+    tags:
+      urgent: [user]
+      pinned: [user]
+      decision: [user]
+    notes:
+      - content: |
+          ## Situation Summary
+
+          **What we know:**
+          - Old GDR sleeper network (Curtain) supposedly dead since 2009
+          - Recent activation of old protocols detected in GCHQ intercepts
+          - Regent's Park is aware and nervous
+          - Three potential scenarios (see -1d notes)
+
+          **What we've learned (last 48hrs):**
+          - Louisa's contact confirms: two former Curtain assets made contact with handlers last week
+          - Roddy found signal pattern matches - someone using exact GDR encryption schema
+          - River's file review: one asset never properly accounted for - Hans Wetzel, dropped off radar 2009
+
+          **Working theory:**
+          Wetzel stayed dark for 15 years. Something triggered reactivation. Either he's being reactivated by external actor OR he's activating himself (why now?).
+
+          **Problem:**
+          Regent's Park will want to bring in heavy machinery. Surveillance teams, arrests, headlines. That'll spook whoever's actually running this.
+
+          **Better approach:**
+          Let them think we're watching the wrong thing. Meanwhile:
+          - River tracks Wetzel's old associates (he'll think it's academic research)
+          - Louisa works her contact network (she'll think she's helping)
+          - Roddy monitors signals (he'll think he's showing off)
+          - Shirley ready for physical surveillance if needed (she'll think she's finally getting real work)
+
+          **My job:**
+          Keep Regent's Park looking the wrong direction. Keep my team from knowing they're the right direction.
+
+          If this works, nothing happens. No arrests. No headlines. Wetzel goes back to sleep or gets quietly retired.
+
+          That's the job.
+        mentions:
+          - louisa
+          - river
+          - roddy
+          - shirley
+      - content: |
+          ---
+
+          **@plot, what did we decide about Hans Wetzel in the 2009 review?**
+        ai_query: true
+      - content: |
+          **Plot AI Response:**
+
+          Based on the 2009 Curtain Network Dissolution Review:
+
+          Hans Wetzel (Asset CUR-17) was flagged as "presumed deceased" after his last known address in Leipzig burned down in May 2009. No body recovered. German police ruled it accidental (faulty wiring).
+
+          Review committee decision: "Close file pending remains identification."
+
+          **Note:** No follow-up confirmation ever filed. Case closed on presumption, not evidence.
+
+  - type: event
+    priority_ref: team
+    title: "Team meeting - vague instructions"
+    at: "+0d 10:00 / +0d 10:17"
+    notes:
+      - content: |
+          Assignments delivered with appropriate vagueness:
+
+          - **River**: Continue archival research on defunct networks. "Historical value."
+          - **Louisa**: Maintain relationships with former contacts. "Good practice."
+          - **Roddy**: Pattern analysis on legacy encryption. "Training exercise."
+          - **Shirley**: Standby for potential field work. "Maybe."
+          - **Catherine**: Keep the office running. "As always."
+
+          River asked if this was connected to anything real. Told him everything's connected to everything. Technically true.
+
+          Louisa gave me a look. She knows. That's fine. She won't say.
+        mentions:
+          - river
+          - louisa
+          - roddy
+          - shirley
+          - catherine
+
+  - type: action
+    priority_ref: containment
+    title: "Feed Regent's Park false priority"
+    assignee_ref: user
+    on: "+0d"
+    notes:
+      - content: |
+          Called Whelan. Mentioned Slough House picked up "concerning chatter" about Russian botnet activity potentially targeting infrastructure.
+
+          It's real chatter (from the weekly briefing), just not particularly concerning. But it's the kind of thing that makes bureaucrats feel important.
+
+          Regent's Park will spin up a task force, write reports, have meetings. Keep them busy and feeling productive.
+
+          Meanwhile, I handle Curtain quietly.
+        mentions:
+          - whelan
+
+  - type: note
+    priority_ref: admin
+    title: "Expense report - taxi receipts"
+    on: "+0d"
+    notes:
+      - content: |
+          **From: Catherine Standish**
+
+          Jackson, you need to submit last month's expenses. I can't process the office budget until you do.
+
+          I know you have taxi receipts somewhere. Please find them.
+
+          - Catherine
+        source:
+          type: email
+          title: Expense Report Reminder
+          href: mailto:catherine.standish@sloughhouse.gov.uk
+        mentions:
+          - catherine
+
+  - type: event
+    priority_ref: personal
+    title: "Lunch - pub, alone"
+    at: "+0d 13:00 / +0d 14:15"
+    notes:
+      - content: |
+          Steak and kidney pie (questionable kidney provenance). Three pints (questionable life choices).
+
+          Thinking time. The work requires long periods of looking like you're doing nothing.
+
+  # Day +1: Threads tightening
+  - type: action
+    priority_ref: containment
+    title: "Analyze Roddy's signal intercepts"
+    assignee_ref: user
+    on: "+1d"
+    tags:
+      urgent: [user]
+    notes:
+      - content: |
+          Roddy's algorithm actually found something useful (don't tell him, it'll go to his head).
+
+          Signal pattern matches from three locations:
+          1. Leipzig (expected - Wetzel's old stomping ground)
+          2. London (unexpected - someone local)
+          3. Berlin (could be handler, could be coordination)
+
+          London signal is the interesting one. Someone in the UK is part of this. Either:
+          - Wetzel is here (ballsy)
+          - Someone's coordinating with Wetzel (smart)
+          - This is bigger than one washed-up GDR asset (problematic)
+
+          Need to identify London source without tipping anyone off.
+        mentions:
+          - roddy
+
+  - type: event
+    priority_ref: team
+    title: "Shirley - field assignment prep"
+    at: "+1d 11:30 / +1d 11:45"
+    notes:
+      - content: |
+          Told Shirley she might need to do some "light observation" in the next few days. Didn't specify what or where.
+
+          She's eager. Too eager. But she's good at not being seen, which is the skill we need.
+
+          Told her: "Look bored. Be invisible. Report what you see, not what you think it means."
+
+          She'll do fine.
+        mentions:
+          - shirley
+
+  - type: note
+    priority_ref: containment
+    title: "Louisa update - former asset locations"
+    on: "+1d"
+    notes:
+      - content: |
+          **Secure message from Louisa:**
+
+          "Two former Curtain assets confirmed contact with old handler last week. Both refused reactivation. Both nervous.
+
+          One mentioned a name: 'Der Geist' (The Ghost). Could be Wetzel, could be code name for someone else.
+
+          Handler asked about 'the London arrangement.' They didn't know what that meant.
+
+          - L"
+
+          ---
+
+          So there IS a London connection. And Wetzel (if it's him) is looking for something or someone here.
+
+          This is getting interesting.
+        source:
+          type: secure_message
+          title: Louisa - Curtain Update
+        mentions:
+          - louisa
+    tags:
+      warning: [user]
+
+  - type: action
+    priority_ref: team
+    title: "River - research London GDR connections"
+    assignee_ref: user
+    on: "+1d"
+    notes:
+      - content: |
+          Gave River a new assignment: research any GDR operations that had London components during the Cold War.
+
+          Framed it as: "Historical curiosity. Might be useful someday."
+
+          He's smart enough to find the connections. Not yet smart enough to see the pattern. That'll come.
+        mentions:
+          - river
+
+  - type: event
+    priority_ref: admin
+    title: "Budget meeting (unavoidable)"
+    at: "+1d 15:00 / +1d 15:47"
+    notes:
+      - content: |
+          Finance wants to know why Slough House needs its budget maintained when we "don't do anything important."
+
+          Explained that doing nothing important is expensive when done correctly.
+
+          They weren't amused. Approved the budget anyway. They always do. Slough House is a convenient line item for hiding things.
+
+  - type: note
+    priority_ref: personal
+    title: "Medical - another missed call"
+    on: "+1d"
+    notes:
+      - content: |
+          **Voicemail from Dr. Mehta**
+
+          "Mr Lamb, your blood pressure readings from last visit were concerning. We really need to discuss treatment options. Please call..."
+
+          [Deleted]
+
+          I'll die on my own schedule, thank you.
+        source:
+          type: voicemail
+          title: Dr. Mehta - Follow-up
+
+  # Day +2: Pieces in play
+  - type: note
+    priority_ref: containment
+    title: "River's findings - London connection identified"
+    on: "+2d"
+    tags:
+      urgent: [user]
+      pinned: [user]
+    notes:
+      - content: |
+          **From: River Cartwright**
+
+          Jackson,
+
+          Found something in the London archives. Operation LINDEN - 1987-1989. GDR ran a small network in London focused on defence contractor intelligence.
+
+          Network dissolved after the Wall fell, but one safehouse was never officially closed. Property in Shoreditch, purchased through shell company. Still owned by the same shell.
+
+          Address: 47B Kingsland Road.
+
+          Probably nothing, but thought you'd want to know.
+
+          - River
+
+          ---
+
+          Definitely not nothing.
+        source:
+          type: email
+          title: "Re: London GDR Research"
+          href: mailto:river.cartwright@sloughhouse.gov.uk
+        mentions:
+          - river
+
+  - type: action
+    priority_ref: containment
+    title: "Shirley - observe 47B Kingsland Road"
+    assignee_ref: user
+    on: "+2d"
+    tags:
+      urgent: [user]
+      waiting: [user]
+    notes:
+      - content: |
+          Sent Shirley to watch the Shoreditch address. Instructions:
+
+          - Don't approach
+          - Don't engage
+          - Look like you're waiting for someone who's late
+          - Note anyone coming or going
+          - Especially note anyone who looks like they're checking if they're being watched
+
+          If Wetzel (or whoever) is using the old safehouse, they'll check surveillance. Shirley's job is to not look like surveillance.
+        mentions:
+          - shirley
+
+  - type: event
+    priority_ref: containment
+    title: "Call: Taverner (escalation attempt)"
+    at: "+2d 14:20 / +2d 14:33"
+    notes:
+      - content: |
+          Diana called, concerned about "historical network reactivation risks." Wants to "coordinate response."
+
+          Translation: Regent's Park wants to take over.
+
+          Told her Slough House is monitoring the situation (true) and there's no evidence of active threat (technically true - we don't have *evidence* yet, just strong suspicion).
+
+          She doesn't believe me. I don't blame her. But she can't prove otherwise.
+
+          Bought myself another 48 hours before she escalates to committee level.
+        mentions:
+          - taverner
+    tags:
+      blocked: [taverner]
+
+  - type: action
+    priority_ref: admin
+    title: "Submit taxi receipts to Catherine"
+    assignee_ref: user
+    on: "+2d"
+    notes:
+      - content: |
+          Found receipts in jacket pocket (slightly stained, mostly legible).
+
+          Catherine will make them work. She always does.
+        mentions:
+          - catherine
+
+  - type: event
+    priority_ref: team
+    title: "Roddy - signal analysis update"
+    at: "+2d 16:00 / +2d 16:12"
+    notes:
+      - content: |
+          Roddy brought his analysis. Proud as a new father.
+
+          London signals are coming from... Shoreditch area. Consistent with River's address.
+
+          Signal pattern suggests old GDR one-time pad encryption. Someone's using the original materials.
+
+          Told Roddy it's "fascinating historical data." He beamed.
+
+          Everything's coming together. Now we just need to know who's in the safehouse and what they want.
+        mentions:
+          - roddy
+
+  - type: note
+    priority_ref: containment
+    title: "Working theory update - need to move soon"
+    on: "+2d"
+    tags:
+      decision: [user]
+    notes:
+      - content: |
+          **@plot, summarize what we know about the Curtain situation**
+        ai_query: true
+      - content: |
+          **Plot AI Summary:**
+
+          **Confirmed:**
+          - Old GDR Curtain network showing signs of reactivation
+          - Hans Wetzel (presumed dead 2009) likely alive and active
+          - Active safehouse in London (47B Kingsland Road)
+          - Signal intercepts confirm coordination between Leipzig, Berlin, and London
+          - Code name "Der Geist" (The Ghost) in circulation
+          - Former assets contacted but refused reactivation
+          - Regent's Park aware but not yet taking action
+
+          **Unknown:**
+          - Wetzel's current objective
+          - Who's running the reactivation (Wetzel solo? External handler?)
+          - What "the London arrangement" refers to
+          - Timeline for whatever they're planning
+
+          **Recommended next steps:**
+          - Await Shirley's surveillance report from Kingsland Road
+          - Maintain Regent's Park misdirection
+          - Prepare for quiet intervention if situation escalates
+      - content: |
+          ---
+
+          Good summary. Situation is nearly ready for resolution.
+
+          Once Shirley reports back, I'll know whether this needs a quiet conversation or a quiet removal.
+
+          Either way: no headlines, no credit, no mess. That's the standard.
+
+  - type: note
+    priority_ref: personal
+    title: "Reminder: Catherine's birthday next month"
+    on: "+2d"
+    notes:
+      - content: |
+          Need to remember this. She never mentions it, which means it matters.
+
+          Something thoughtful. Not flowers (too obvious). Book, maybe.
+        mentions:
+          - catherine
+
+  - type: action
+    priority_ref: team
+    title: "Weekly team review meeting"
+    assignee_ref: user
+    on: "+3d"
+    recurrence_rule: "FREQ=WEEKLY;BYDAY=FR"
+    notes:
+      - content: |
+          Friday ritual. Check in on the team without checking in too obviously.
+
+          They think it's administrative. It is, in the sense that keeping them functional is administrative work.
+
+  - type: note
+    priority_ref: containment
+    title: "Contingency: if Regent's Park moves first"
+    on: "+2d"
+    tags:
+      warning: [user]
+    notes:
+      - content: |
+          If Diana escalates to committee before I wrap this:
+
+          **Option A:** Share what we know, make it look like Slough House was building the case properly. Regent's Park gets the credit, Curtain gets messily resolved, headlines happen.
+
+          **Option B:** Accelerate resolution. Move on safehouse immediately, contain before Regent's Park mobilizes. Riskier, but cleaner.
+
+          **Option C:** Let Regent's Park have it, but fuck it up just enough that they need Slough House to clean up the mess. Satisfying, but petty.
+
+          Prefer none of these. Prefer the quiet option. But contingencies exist for when preferences fail.

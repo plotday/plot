@@ -1,16 +1,18 @@
-# Plot Seed Data YAML Specification
+# Plot Seed Data Specification
 
-This document defines the YAML format for generating seed data for the Plot application. This format is designed to be both human-readable and LLM-friendly for generating screenshot-quality test data.
+This document defines the YAML format for generating sample seed data for the Plot application. This format is designed to be both human-readable and LLM-friendly for generating screenshot-quality test data.
 
 ## Overview
 
 The seed data format allows you to define:
-- **Contacts**: People and their details
-- **Priorities**: Hierarchical project/folder structure
-- **Activities**: Tasks, events, and notes with associated note content
-- **Notes**: Content associated with activities (markdown, links, mentions)
-- **Tags**: Labels applied to activities and notes
-- **Settings**: User-specific priority settings
+
+- **Contacts**: People and their details. Use personal names, not titles.
+- **Priorities**: Hierarchical project/folder structure. All users have a single, root priority called Everything.
+  Below it are major areas of their life, like Work, Personal, Social. Add 1-3 levels below each of these.
+- **Activities**: Tasks, events, notes, messages, and documents
+- **Notes**: Updates and messages related to an activity (can contain links and mentions)
+- **Tags**: Either categorize activities (e.g. Urgent, Decision; use sparingly), or reactions (e.g. Yes, No, Volunteer)
+- **Settings**: User-specific priority settings, like colors
 
 All dates are specified as offsets from a base date, allowing identical data to be generated at different points in time.
 
@@ -18,22 +20,23 @@ All dates are specified as offsets from a base date, allowing identical data to 
 
 ```yaml
 config:
-  baseDate: "2025-01-15"    # Base date for all date offsets (YYYY-MM-DD)
-  userId: "uuid-string"      # UUID of the user to generate data for
+  baseDate: "2025-01-15" # Base date for all date offsets (YYYY-MM-DD)
+  userId: "uuid-string" # UUID of the user to generate data for
 
 contacts:
-  - # Contact definitions
+  -  # Contact definitions
 
 priorities:
-  - # Priority definitions
+  -  # Priority definitions
 
 activities:
-  - # Activity definitions
+  -  # Activity definitions
 ```
 
 ## Config Section
 
 **Required fields:**
+
 - `baseDate`: ISO date string (YYYY-MM-DD) - all date offsets are calculated from this
 - `userId`: UUID string - the user ID for whom all data is generated
 
@@ -48,6 +51,7 @@ config:
 Contacts represent people (users or non-users) who can be authors, assignees, or tag actors.
 
 **Fields:**
+
 - `ref` (required): Unique reference string for this contact (used in other definitions)
 - `email` (required): Email address (will be lowercased)
 - `name` (optional): Display name
@@ -55,6 +59,7 @@ Contacts represent people (users or non-users) who can be authors, assignees, or
 - `user_id` (optional): UUID if this contact is also a Plot user
 
 **Special refs:**
+
 - `user`: Always refers to the user specified in `config.userId`
 
 ```yaml
@@ -74,6 +79,7 @@ contacts:
 Priorities are hierarchical (like folders/projects) and use a tree structure.
 
 **Fields:**
+
 - `ref` (required): Unique reference string
 - `title` (required): Display title
 - `root` (optional, default: false): Whether this is a root priority (only one per user)
@@ -83,6 +89,7 @@ Priorities are hierarchical (like folders/projects) and use a tree structure.
 - `shared_with` (optional): Array of user refs to share this priority with
 
 **Settings fields:**
+
 - `color`: Integer 0-7 (corresponding to theme colors), or omit to inherit from parent priority. Most common to set colors only on children of root priority unless meant to stand out.
 - `path_override`: Custom path display override
 - `pomodoro_duration`: Duration in minutes
@@ -119,24 +126,29 @@ priorities:
 
 Activities can be tasks (actions), calendar events, or notes. They can have associated notes.
 
+**Activity Types:**
+
+- `action`: A task assigned to someone. Always requires an `assignee_ref`. Use `on` in the future to indicate something scheduled, and `done_at` to indicate completion.
+- `event`: A calendar event. Requires a scheduled time in `at`.
+- `note`: Everything else -- general notes, discussions, messages, and external documents. The content is in the notes.
+
 **Fields:**
+
 - `ref` (optional): Unique reference string (only needed if referenced elsewhere)
 - `title` (optional): Display title
 - `type` (required): One of `action`, `event`, `note`
 - `priority_ref` (required): Reference to a priority
 - `author_ref` (optional, default: "user"): Reference to contact or "user"
-- `assignee_ref` (optional): Reference to contact or "user"
-- `draft` (optional, default: false): Whether this is a draft
-- `private` (optional, default: false): Whether this is private
-- `archived_at` (optional): Date offset when archived
+- `assignee_ref` (**required for actions**, optional for events/notes): Reference to contact or "user"
+  - For `type: action`: **REQUIRED** - every action must have an assignee
+  - For `type: event` or `type: note`: Optional
+  - Use `assignee_ref: user` for self-assigned tasks
 - `done_at` (optional): Date offset when marked done
 - `at` (optional): Timestamp range for events (see Date Offsets)
-- `on` (optional): Date range for all-day events (see Date Offsets)
-- `duration` (optional): Duration string (e.g., "30 minutes", "2 hours")
+- `on` (optional): Scheduled dates for future actions (See Date Offsets)
 - `recurrence_rule` (optional): iCalendar RRULE string
-- `mentions` (optional): Array of contact refs mentioned
 - `tags` (optional): Object mapping tag names to actor arrays
-- `notes` (optional): Array of note objects (see Notes section)
+- `notes` (optional but typically at least one): Array of note objects (see Notes section)
 
 **Note:** Activities must have EITHER `at` (timestamp) OR `on` (date), not both.
 
@@ -146,7 +158,7 @@ activities:
     title: Daily Standup
     type: event
     priority_ref: project-alpha
-    at: "+0d 09:00 / +0d 09:30"  # Today 9:00-9:30 AM
+    at: "+0d 09:00 / +0d 09:30" # Today 9:00-9:30 AM
     recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
     tags:
       pinned: [user]
@@ -160,7 +172,7 @@ activities:
   - title: Write project proposal
     type: action
     priority_ref: project-beta
-    on: "+3d / +5d"  # 3-5 days from base date (all-day)
+    on: "+3d / +5d" # 3-5 days from base date (all-day)
     assignee_ref: bob
     tags:
       todo: [user]
@@ -178,14 +190,13 @@ activities:
 Notes are content associated with an activity, stored as separate entities that reference their parent activity.
 
 **Fields:**
+
 - `ref` (optional): Unique reference string (only needed if referenced elsewhere)
 - `author_ref` (optional, default: "user"): Reference to contact or "user"
 - `note` (optional): Markdown content
 - `links` (optional): Array of link objects
 - `mentions` (optional): Array of contact refs mentioned
 - `tags` (optional): Object mapping tag names to actor arrays
-- `draft` (optional, default: false): Whether this is a draft
-- `private` (optional, default: false): Whether this is private
 
 **Note:** Notes are always associated with an activity through the `notes` array in the activity definition.
 
@@ -215,18 +226,21 @@ All dates and times are specified as offsets from `config.baseDate`. Time-of-day
 **Format:** `[+/-]<number><unit> [HH:MM]`
 
 **Units:**
+
 - `d`: days
 - `w`: weeks
 - `M`: months
 - `y`: years
 
 **Examples:**
+
 - `+0d 14:00`: Today at 2:00 PM
 - `+7d 09:30`: 7 days from base date at 9:30 AM
 - `-2w 18:00`: 2 weeks before base date at 6:00 PM
 - `+1M`: 1 month from base date (all-day, no time specified)
 
 **Ranges** (for `at` and `on` fields):
+
 - `+0d 10:00 / +0d 11:00`: 10:00 AM to 11:00 AM today
 - `+3d / +5d`: 3-5 days from base date (all-day range)
 
@@ -234,21 +248,22 @@ All dates and times are specified as offsets from `config.baseDate`. Time-of-day
 
 ## Tags
 
-Tags are labels applied to activities. Multiple users can apply the same tag.
+Tags are labels applied to activities. Multiple users can apply the same count tag, while toggle tags can only have one actor.
+Use these sparingly and intentionally to reflect meaningful states or reactions.
 
 **Format:** Object with tag names as keys and arrays of actor refs as values.
 
 **Available tags:**
-- **Compute (system-managed)**: `now`, `later`, `done`, `archived`
+
 - **Toggle**: `pinned`, `urgent`, `todo`, `goal`, `decision`, `waiting`, `blocked`, `warning`, `question`, `star`, `idea`
 - **Count (reactions)**: `yes`, `no`, `volunteer`, `tada`
 
 ```yaml
 tags:
-  pinned: [user]              # User pinned this
-  urgent: [user, alice]       # User and Alice marked as urgent
-  todo: [user]                # User marked as to-do
-  yes: [user, alice, bob]     # Three people gave thumbs up
+  pinned: [user] # User pinned this
+  urgent: [user, alice] # User and Alice marked as urgent
+  todo: [user] # User marked as to-do
+  yes: [user, alice, bob] # Three people gave thumbs up
 ```
 
 ## Links
@@ -321,48 +336,85 @@ activities:
             title: API Docs
 ```
 
-## LLM Generation Guidelines
+## Common Mistakes
 
-When prompting an LLM to generate seed data:
+### Forgetting assignee_ref on actions
 
-1. **Specify the scenario**: "Generate seed data for a software team with 3 members working on 2 projects"
-2. **Request realistic data**: Ask for realistic titles, notes, and timing
-3. **Specify date context**: "Base date is 2025-01-15, generate activities for the current week and next week"
-4. **Request variety**: Ask for different activity types, tags, and thread depths
-5. **Ensure completeness**: Request contacts, priorities, and activities with threads
+Actions are tasks assigned to someone and **always require an assignee**.
 
-**Example prompt:**
-```
-Generate Plot seed data in YAML format for this scenario:
-- Base date: 2025-01-15
-- A software development team with 3 developers (Alice, Bob, Carol)
-- Two projects: "Mobile App Redesign" and "API v2 Migration"
-- Include daily standups (recurring), sprint planning meetings, various tasks
-- Some tasks should be completed, some in progress, some blocked
-- Include realistic notes and comments associated with activities
-- Use appropriate tags (urgent, todo, done, blocked, etc.)
-- Make it look like realistic project activity over 2 weeks
+❌ **Wrong:**
+
+```yaml
+- title: Complete documentation
+  type: action
+  on: "+1d"
+  tags:
+    todo: [user]
 ```
 
-## Validation Rules
+✓ **Correct:**
 
-The generator will validate:
-- All refs are unique within their type
-- All ref references exist
-- Activities have EITHER `at` OR `on`, not both
-- Recurring activities have a schedule (`at` or `on`)
-- Tag names are valid (see tag list above)
-- Actor refs in tags exist
-- Email addresses are properly formatted
-- Date offsets are valid syntax
-- Only one root priority per user
-- Contacts have unique emails
+```yaml
+- title: Complete documentation
+  type: action
+  on: "+1d"
+  assignee_ref: user # Required for all actions
+  tags:
+    todo: [user]
+```
 
-## Implementation Notes
+### Forgetting schedule for actions/events
 
-- Generated UUIDs use UUIDv4 for unique IDs
-- Activity ordering uses timestamp-based ordering
-- All timestamps include timezone (UTC)
-- Priority children create proper hierarchical ltree paths
-- Notes are stored as separate entities in the `note` table with references to their parent activity
-- Links are stored within notes, not directly on activities
+Actions and events must have a schedule (either `at` or `on`).
+
+❌ **Wrong:**
+
+```yaml
+- title: Team meeting
+  type: event
+  priority_ref: project
+```
+
+✓ **Correct:**
+
+```yaml
+- title: Team meeting
+  type: event
+  priority_ref: project
+  at: "+1d 14:00 / +1d 15:00" # Timed event
+  # OR: on: "+1d"  # All-day event
+```
+
+### Marking recurring activities as done
+
+Recurring activities cannot be marked as done.
+
+❌ **Wrong:**
+
+```yaml
+- title: Daily standup
+  type: event
+  at: "+0d 09:00 / +0d 09:30"
+  recurrence_rule: "FREQ=DAILY"
+  done_at: "+0d" # Cannot mark recurring as done
+```
+
+✓ **Correct:**
+
+```yaml
+- title: Daily standup
+  type: event
+  at: "+0d 09:00 / +0d 09:30"
+  recurrence_rule: "FREQ=DAILY"
+  # No done_at field
+```
+
+# Crafting Good Sample Data
+
+- Create intrigue, action, and/or humor, telling a story through the activities.
+- Populate a wholistic scope for their whole life while focusing on their work.
+- If the scenario lends itself to focus on a particular priority, add extra detail there. The screenshot will be made with that priority focused, which may list all priorities in the sidebar, and all events from all priorities in the timeline, but only notes and actions related to the focused priority.
+- Select a base date reasonable for the scenario, and make that the center of activity. Items before that date will show in the past, items after that date will show upcoming.
+- Add two full days of activities before the base date, current activities on the base date, and two full days after. The first and last day will likely be off screen for the screenshots.
+- Pick one activity to be the current focus and add a detailed set of notes.
+- The overriding goal is to demonstrate how Plot brings everything together in a way that drives clarity and action.
