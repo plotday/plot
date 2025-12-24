@@ -81,7 +81,7 @@ class OklchColours {
         : RayOklch.fromComponents(1.0, 0.0, 0.0);
 
     if (brightness == Brightness.light) {
-      const baseChroma = 0.2;
+      const baseChroma = 0.12;
       final accentLightness = _getAccentLightness(themeColor, brightness);
       return OklchColours(
         pureBackground: pureBackground,
@@ -89,7 +89,7 @@ class OklchColours {
         background: lch(0.965, 0.004),
         editableBackground: pureBackground,
         accent: lch(accentLightness, baseChroma),
-        accentBackground: lch(0.94, 0.025),
+        accentBackground: lch(0.96, 0.04),
         highlight: lch(1, 0, hue, 0.8),
         foreground: lch(0.35, 0.01),
         muted: lch(0.5, 0.005),
