@@ -214,6 +214,9 @@ class _ListTileState extends State<ListTile> {
                   top: 0,
                   bottom: 0,
                   left: 0,
+                  right: showDragBar && widget.reorderableIndex != null
+                      ? 0
+                      : null,
                 ) +
                 EdgeInsets.only(left: widget.indentLevel * 16),
             child: Row(
@@ -376,14 +379,20 @@ class _ListTileState extends State<ListTile> {
                 ),
                 // Drag bar at the end (outside main drag listener)
                 if (showDragBar && widget.reorderableIndex != null)
-                  ReorderableDragStartListener(
-                    index: widget.reorderableIndex!,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Icon(
-                        FontAwesomeIcons.gripDotsVertical,
-                        size: 12,
-                        color: context.theme.plotColors.muted,
+                  GestureDetector(
+                    // Prevent long press from propagating to parent (which opens command modal)
+                    onLongPress: () {},
+                    behavior: HitTestBehavior.opaque,
+                    child: ReorderableDragStartListener(
+                      index: widget.reorderableIndex!,
+                      child: Padding(
+                        // Larger padding for easier touch target (~44x44 logical pixels)
+                        padding: const EdgeInsets.all(12),
+                        child: Icon(
+                          FontAwesomeIcons.gripDotsVertical,
+                          size: 12,
+                          color: context.theme.plotColors.muted,
+                        ),
                       ),
                     ),
                   ),
