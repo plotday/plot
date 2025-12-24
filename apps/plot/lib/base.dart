@@ -222,11 +222,12 @@ class Base with WidgetsBindingObserver {
     final newUser = supaUser == null ? null : User(supaUser);
 
     // Skip if user hasn't changed (same ID and status)
-    // Exception: always process token refresh events to ensure session is updated
+    // Exception: always process token refresh and user updated events
     if (_initialized &&
         currentUser?.id == newUser?.id &&
         currentUser?.status == newUser?.status &&
-        event != supa.AuthChangeEvent.tokenRefreshed) {
+        event != supa.AuthChangeEvent.tokenRefreshed &&
+        event != supa.AuthChangeEvent.userUpdated) {
       log.info('User unchanged, skipping update');
       return;
     }
