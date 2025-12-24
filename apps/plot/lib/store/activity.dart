@@ -1478,6 +1478,9 @@ class Activity extends Equatable implements Comparable<Activity> {
   bool get doLater => todo && at?.start?.isAfter(DateTime.now()) == true;
   bool get todo => type == ActivityType.action && !done;
   bool get done => doneAt != null;
+  bool get isPast =>
+      at?.end?.isBefore(Time.now()) == true ||
+      on?.end?.isBefore(Date.today()) == true;
 
   String? get occurrence => _exception?.occurrence;
 
