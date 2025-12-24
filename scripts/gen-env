@@ -109,3 +109,20 @@ if [ $fail -eq 1 ]; then
 fi
 
 printf "%s" "$result" | op --account plotco inject
+
+# Generate key.properties for Android production builds
+if [ "$ENV" = "production" ]; then
+  KEY_PROPERTIES_TEMPLATE="$WORKSPACE_PATH/apps/plot/android/key.properties.template"
+  KEY_PROPERTIES_OUTPUT="$WORKSPACE_PATH/apps/plot/android/key.properties"
+
+  if [ -f "$KEY_PROPERTIES_TEMPLATE" ]; then
+    echo "Generating key.properties from template..." >&2
+    cat "$KEY_PROPERTIES_TEMPLATE" | op --account plotco inject > "$KEY_PROPERTIES_OUTPUT"
+    if [ $? -eq 0 ]; then
+      echo "✓ key.properties generated successfully" >&2
+    else
+      echo "✗ Failed to generate key.properties" >&2
+      exit 1
+    fi
+  fi
+fi
