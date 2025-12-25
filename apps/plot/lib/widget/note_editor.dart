@@ -183,22 +183,7 @@ class NoteEditorState extends State<NoteEditor> {
                   children: [
                     // Left side: Do Now toggle
                     Button.icon(
-                      CommandWrapper(
-                        ToggleNoteTag(
-                          widget.draft,
-                          Tag.now,
-                          Base.actorId,
-                        ),
-                        run: (action, context) async {
-                          // Get ActivityBloc before async gap
-                          final activityBloc = context.read<ActivityBloc>();
-                          final result = await action.run(context);
-                          // Update draft to trigger UI rebuild
-                          final updatedDraft = widget.draft.copyWith();
-                          await activityBloc.updateDraft(updatedDraft);
-                          return result;
-                        },
-                      ),
+                      ToggleNoteTag(widget.draft, Tag.now, Base.actorId),
                       selected: widget.draft.isAssignedTo(Base.actorId),
                     ),
                     const Spacer(),

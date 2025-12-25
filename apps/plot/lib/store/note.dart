@@ -440,12 +440,11 @@ class Note extends Equatable implements Comparable<Note> {
     // Save note row to local DB
     await Store.get.add(Store.get.notes, toRow().toCompanion(false));
 
-    // Save tags row if present
+    // Save tags row if present (local only - orchestrator will push in correct order)
     if (_tags != null) {
-      await Store.get.save(
+      await Store.get.add(
         Store.get.noteTags,
         _tags.toCompanion(false),
-        NoteTagsBase(),
       );
     }
 

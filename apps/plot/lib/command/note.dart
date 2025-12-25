@@ -195,6 +195,10 @@ class ToggleNoteTag extends NoteCommand {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final updatedNote = note.toggleTag(tag, actorId);
+      final activityBloc = context.read<ActivityBloc>();
+      if (activityBloc.state.draft.id == updatedNote.id) {
+        await activityBloc.updateDraft(updatedNote);
+      }
       await updatedNote.save();
       return const CommandDone();
     } catch (e, stackTrace) {
