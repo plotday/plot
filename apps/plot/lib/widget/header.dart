@@ -152,8 +152,7 @@ class _HeaderState extends State<Header> {
                     return KeyEventResult.ignored;
                   },
                   child: FTextField(
-                    controller: _searchController,
-                    focusNode: _searchFocusNode,
+                    control: .managed(controller: _searchController), focusNode: _searchFocusNode,
                     hint: 'Search…',
                     style: (style) => style.copyWith(
                       contentPadding: const EdgeInsets.symmetric(

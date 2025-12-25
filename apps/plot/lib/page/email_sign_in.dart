@@ -300,7 +300,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
               ] else ...[
                 // Email field
                 FTextField(
-                  controller: _emailController,
+                  control: .managed(controller: _emailController),
                   hint: 'your@email.com',
                   label: const Text('Email'),
                   keyboardType: TextInputType.emailAddress,
@@ -317,7 +317,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                     spacing: 2,
                     children: [
                       FTextField(
-                        controller: _passwordController,
+                        control: .managed(controller: _passwordController),
                         hint: 'Enter your password',
                         label: const Text('Password'),
                         obscureText: true,

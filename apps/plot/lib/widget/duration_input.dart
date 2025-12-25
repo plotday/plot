@@ -303,8 +303,7 @@ class _DurationInputState extends State<DurationInput> {
       children: [
         Flexible(
           child: FTextField(
-            controller: controller,
-            focusNode: focusNode,
+            control: .managed(controller: controller), focusNode: focusNode,
             autofocus: autofocus,
             textAlign: TextAlign.center,
             style: (style) => style.copyWith(

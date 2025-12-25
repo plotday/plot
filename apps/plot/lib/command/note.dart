@@ -81,7 +81,8 @@ class AssignNote extends NoteCommand {
       }
 
       // Assign the note by adding Tag.now for the actor
-      await note.assignTo(targetActorId);
+      final updatedNote = note.assignTo(targetActorId);
+      await updatedNote.save();
 
       return const CommandDone();
     } catch (e, stackTrace) {
@@ -120,7 +121,8 @@ class StartTask extends NoteCommand {
 
       // Assign the note by adding Tag.now for current user
       log.info('StartNote - calling note.assignTo($actorId)');
-      await note.assignTo(actorId);
+      final updatedNote = note.assignTo(actorId);
+      await updatedNote.save();
       log.info('StartNote - note.assignTo completed successfully');
 
       return const CommandDone();
@@ -164,7 +166,8 @@ class FinishNote extends NoteCommand {
       }
 
       // Complete the note for this actor (replaces Tag.now with Tag.done)
-      await note.completeFor(targetActorId);
+      final updatedNote = note.completeFor(targetActorId);
+      await updatedNote.save();
 
       return const CommandDone();
     } catch (e, stackTrace) {
@@ -191,7 +194,8 @@ class ToggleNoteTag extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await note.toggleTag(tag, actorId);
+      final updatedNote = note.toggleTag(tag, actorId);
+      await updatedNote.save();
       return const CommandDone();
     } catch (e, stackTrace) {
       log.severe('Error in ToggleNoteTag: $e', e, stackTrace);

@@ -139,7 +139,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
 
               // Name field
               FTextField(
-                controller: _nameController,
+                control: .managed(controller: _nameController),
                 hint: 'Enter your name',
                 label: const Text('Name'),
                 autofocus: true,
@@ -148,7 +148,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
 
               // Password field
               FTextField(
-                controller: _passwordController,
+                control: .managed(controller: _passwordController),
                 hint: 'Enter your password',
                 label: const Text('Password'),
                 obscureText: true,
@@ -157,7 +157,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
 
               // Confirm password field
               FTextField(
-                controller: _confirmPasswordController,
+                control: .managed(controller: _confirmPasswordController),
                 hint: 'Re-enter your password',
                 label: const Text('Confirm Password'),
                 obscureText: true,

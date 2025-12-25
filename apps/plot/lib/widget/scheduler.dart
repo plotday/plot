@@ -113,9 +113,9 @@ class Scheduler extends StatefulWidget {
 }
 
 class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
-  late FDateFieldController _dateController;
-  late FTimeFieldController _startTimeController;
-  late FTimeFieldController _endTimeController;
+  DateTime? _localDate;
+  FTime? _localStartTime;
+  FTime? _localEndTime;
 
   final FocusNode _dateFocusNode = FocusNode();
   final FocusNode _startTimeFocusNode = FocusNode();
@@ -130,34 +130,14 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
   void initState() {
     super.initState();
 
-    // Initialize date controller
-    _dateController = FDateFieldController(
-      vsync: this,
-      initialDate: widget.value.start,
-    );
-
-    // Initialize time controllers
-    final startTime = widget.value.start != null
+    // Initialize local state from widget.value
+    _localDate = widget.value.start;
+    _localStartTime = widget.value.start != null
         ? FTime.fromDateTime(widget.value.start!)
         : FTime.now();
-    final endTime = widget.value.end != null
+    _localEndTime = widget.value.end != null
         ? FTime.fromDateTime(widget.value.end!)
         : FTime.fromDateTime(DateTime.now().add(const Duration(hours: 1)));
-
-    _startTimeController = FTimeFieldController(
-      vsync: this,
-      initialTime: startTime,
-    );
-
-    _endTimeController = FTimeFieldController(
-      vsync: this,
-      initialTime: endTime,
-    );
-
-    // Add listeners
-    _dateController.addValueListener(_onDateChanged);
-    _startTimeController.addValueListener(_onStartTimeChanged);
-    _endTimeController.addValueListener(_onEndTimeChanged);
 
     // Add focus listeners to rebuild when focus changes
     _durationHoursFocusNode.addListener(() => setState(() {}));
@@ -175,9 +155,6 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _dateController.dispose();
-    _startTimeController.dispose();
-    _endTimeController.dispose();
     _dateFocusNode.dispose();
     _startTimeFocusNode.dispose();
     _endTimeFocusNode.dispose();
@@ -197,13 +174,15 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
   void _updateFromValue() {
     _updating = true;
     try {
-      if (widget.value.start != null) {
-        _dateController.value = widget.value.start;
-        _startTimeController.value = FTime.fromDateTime(widget.value.start!);
-      }
-      if (widget.value.end != null) {
-        _endTimeController.value = FTime.fromDateTime(widget.value.end!);
-      }
+      setState(() {
+        if (widget.value.start != null) {
+          _localDate = widget.value.start;
+          _localStartTime = FTime.fromDateTime(widget.value.start!);
+        }
+        if (widget.value.end != null) {
+          _localEndTime = FTime.fromDateTime(widget.value.end!);
+        }
+      });
     } finally {
       _updating = false;
     }
@@ -211,16 +190,25 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
 
   void _onDateChanged(DateTime? date) {
     if (_updating || date == null) return;
+    setState(() {
+      _localDate = date;
+    });
     _recalculateRange(newDate: date);
   }
 
   void _onStartTimeChanged(FTime? time) {
     if (_updating || time == null) return;
+    setState(() {
+      _localStartTime = time;
+    });
     _recalculateRange(newStartTime: time);
   }
 
   void _onEndTimeChanged(FTime? time) {
     if (_updating || time == null) return;
+    setState(() {
+      _localEndTime = time;
+    });
     _recalculateRange(newEndTime: time);
   }
 
@@ -230,9 +218,9 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
   }
 
   void _navigateTimeRange(Duration delta) {
-    final startTime = _startTimeController.value ?? FTime.now();
-    final endTime = _endTimeController.value ?? FTime.now();
-    final currentDate = _dateController.value ?? DateTime.now();
+    final startTime = _localStartTime ?? FTime.now();
+    final endTime = _localEndTime ?? FTime.now();
+    final currentDate = _localDate ?? DateTime.now();
 
     // Convert to DateTime for easier calculation
     var startDateTime = DateTime(
@@ -265,12 +253,14 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
       }
     }
 
-    // Update controllers
+    // Update local state
     _updating = true;
     try {
-      _dateController.value = startDateTime;
-      _startTimeController.value = FTime.fromDateTime(startDateTime);
-      _endTimeController.value = FTime.fromDateTime(endDateTime);
+      setState(() {
+        _localDate = startDateTime;
+        _localStartTime = FTime.fromDateTime(startDateTime);
+        _localEndTime = FTime.fromDateTime(endDateTime);
+      });
     } finally {
       _updating = false;
     }
@@ -292,9 +282,8 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
     _updating = true;
     try {
       // Get current values
-      DateTime date = newDate ?? _dateController.value ?? DateTime.now();
-      FTime startTime =
-          newStartTime ?? _startTimeController.value ?? FTime.now();
+      DateTime date = newDate ?? _localDate ?? DateTime.now();
+      FTime startTime = newStartTime ?? _localStartTime ?? FTime.now();
 
       // Build start DateTime
       DateTime start = DateTime(
@@ -310,7 +299,9 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
       if (newDuration != null) {
         // Duration changed, calculate end time
         end = start.add(newDuration);
-        _endTimeController.value = FTime.fromDateTime(end);
+        setState(() {
+          _localEndTime = FTime.fromDateTime(end);
+        });
       } else if (newEndTime != null) {
         // End time changed, calculate duration
         end = DateTime(
@@ -330,7 +321,9 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
         final currentDuration =
             widget.value.duration ?? const Duration(hours: 1);
         end = start.add(currentDuration);
-        _endTimeController.value = FTime.fromDateTime(end);
+        setState(() {
+          _localEndTime = FTime.fromDateTime(end);
+        });
       }
 
       // Validate and notify
@@ -356,12 +349,14 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
       start = now;
       end = start.add(const Duration(hours: 1));
 
-      // Update controllers to reflect corrected values
+      // Update local state to reflect corrected values
       _updating = true;
       try {
-        _dateController.value = start;
-        _startTimeController.value = FTime.fromDateTime(start);
-        _endTimeController.value = FTime.fromDateTime(end);
+        setState(() {
+          _localDate = start;
+          _localStartTime = FTime.fromDateTime(start);
+          _localEndTime = FTime.fromDateTime(end);
+        });
       } finally {
         _updating = false;
       }
@@ -372,10 +367,12 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
     if (end.isBefore(start) || end.difference(start) < minDuration) {
       end = start.add(minDuration);
 
-      // Update end time controller to reflect corrected value
+      // Update local state to reflect corrected value
       _updating = true;
       try {
-        _endTimeController.value = FTime.fromDateTime(end);
+        setState(() {
+          _localEndTime = FTime.fromDateTime(end);
+        });
       } finally {
         _updating = false;
       }
@@ -411,7 +408,8 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
         IconInputRow(
           icon: PlotIcon.event,
           content: DateInput(
-            controller: _dateController,
+            value: _localDate,
+            onChanged: _onDateChanged,
             focusNode: _dateFocusNode,
             backgroundColor: _dateFocusNode.hasFocus
                 ? theme.plotColors.editableBackground
@@ -423,18 +421,10 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
         IconInputRow(
           icon: PlotIcon.later,
           content: TimeRangeInput(
-            startTime: _startTimeController.value,
-            endTime: _endTimeController.value,
-            onStartTimeChanged: (time) {
-              if (time != null) {
-                _startTimeController.value = time;
-              }
-            },
-            onEndTimeChanged: (time) {
-              if (time != null) {
-                _endTimeController.value = time;
-              }
-            },
+            startTime: _localStartTime,
+            endTime: _localEndTime,
+            onStartTimeChanged: _onStartTimeChanged,
+            onEndTimeChanged: _onEndTimeChanged,
             onRangeShift: _navigateTimeRange,
             startTimeFocusNode: _startTimeFocusNode,
             endTimeFocusNode: _endTimeFocusNode,

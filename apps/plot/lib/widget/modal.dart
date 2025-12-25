@@ -219,7 +219,7 @@ class _ModalProviderState extends State<ModalProvider> {
                   ),
                   child: material.Material(
                     child: Container(
-                      color: context.theme.colors.background,
+                      color: dialogContext.theme.colors.background,
                       child: buildModalContent(dialogContext),
                     ),
                   ),

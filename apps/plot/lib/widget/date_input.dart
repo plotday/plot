@@ -14,15 +14,19 @@ import 'package:intl/intl.dart';
 /// - All wrapped in a common outline border
 class DateInput extends StatefulWidget {
   const DateInput({
-    required this.controller,
+    required this.value,
+    required this.onChanged,
     this.focusNode,
     this.autofocus = false,
     this.backgroundColor,
     super.key,
   });
 
-  /// The date field controller.
-  final FDateFieldController controller;
+  /// The current date value.
+  final DateTime? value;
+
+  /// Called when the date changes.
+  final ValueChanged<DateTime?> onChanged;
 
   /// Optional focus node for the date field.
   final FocusNode? focusNode;
@@ -55,7 +59,7 @@ class _DateInputState extends State<DateInput> {
   }
 
   void _navigateDate(int days) {
-    final currentDate = widget.controller.value ?? DateTime.now();
+    final currentDate = widget.value ?? DateTime.now();
     final newDate = currentDate.add(Duration(days: days));
 
     // Prevent navigating to past dates
@@ -67,7 +71,7 @@ class _DateInputState extends State<DateInput> {
       return;
     }
 
-    widget.controller.value = newDate;
+    widget.onChanged(newDate);
   }
 
   @override
@@ -93,7 +97,10 @@ class _DateInputState extends State<DateInput> {
         // Date field
         Expanded(
           child: FDateField.calendar(
-            controller: widget.controller,
+            control: .lifted(
+              date: widget.value,
+              onChange: widget.onChanged,
+            ),
             focusNode: _focusNode,
             format: DateFormat.yMMMEd(),
             textAlign: TextAlign.center,

@@ -247,10 +247,41 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   void initState() {
     super.initState();
     _controller = FResizableController.cascade();
+    _controller.addListener(_handleResize);
+  }
+
+  void _handleResize() async {
+    final regions = _controller.regions;
+    if (regions.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    double? newLeftWidth;
+    double? newMiddleRatio;
+
+    var mutableRegions = regions.toList();
+
+    if (widget.layoutState.leftPanelVisible && mutableRegions.isNotEmpty) {
+      newLeftWidth = mutableRegions[0].extent.current;
+      prefs.setDouble('layout_left_panel_width', newLeftWidth);
+      mutableRegions = mutableRegions.sublist(1);
+    }
+    if (widget.layoutState.middlePanelVisible && mutableRegions.length >= 2) {
+      newMiddleRatio = mutableRegions[0].extent.current / (mutableRegions[0].extent.current + mutableRegions[1].extent.current);
+      prefs.setDouble('layout_middle_panel_ratio', newMiddleRatio);
+    }
+
+    // Update state variables to prevent jumping on rebuild
+    if (newLeftWidth != null) {
+      widget.onLeftWidthChanged(newLeftWidth);
+    }
+    if (newMiddleRatio != null) {
+      widget.onMiddleRatioChanged(newMiddleRatio);
+    }
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_handleResize);
     _controller.dispose();
     super.dispose();
   }
@@ -268,43 +299,9 @@ class _HoverableResizableState extends State<_HoverableResizable> {
               children: [
                 // The actual resizable widget with default styling
                 FResizable(
-                  controller: _controller,
+                  control: .managedCascade(controller: _controller),
                   axis: Axis.horizontal,
                   divider: FResizableDivider.divider,
-                  onChange: (regions) async {
-                    final prefs = await SharedPreferences.getInstance();
-                    double? newLeftWidth;
-                    double? newMiddleRatio;
-
-                    if (widget.layoutState.leftPanelVisible &&
-                        regions[0].index == 0) {
-                      newLeftWidth = regions[0].extent.current;
-                      prefs.setDouble(
-                        'layout_left_panel_width',
-                        newLeftWidth,
-                      );
-                      regions = regions.sublist(1);
-                    }
-                    if (widget.layoutState.middlePanelVisible &&
-                        regions.length == 2) {
-                      newMiddleRatio =
-                          regions[0].extent.current /
-                          (regions[0].extent.current +
-                              regions[1].extent.current);
-                      prefs.setDouble(
-                        'layout_middle_panel_ratio',
-                        newMiddleRatio,
-                      );
-                    }
-
-                    // Update state variables to prevent jumping on rebuild
-                    if (newLeftWidth != null) {
-                      widget.onLeftWidthChanged(newLeftWidth);
-                    }
-                    if (newMiddleRatio != null) {
-                      widget.onMiddleRatioChanged(newMiddleRatio);
-                    }
-                  },
                   children: widget.regions,
                 ),
                 // Overlay hover detection and colored dividers

@@ -89,8 +89,7 @@ class _SearchWidgetState extends State<SearchWidget> {
               child: Focus(
                 onKeyEvent: _handleKeyEvent,
                 child: FTextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
+                  control: .managed(controller: _controller), focusNode: _focusNode,
                   hint: 'Search...',
                   style: (style) => style.copyWith(
                     contentPadding: const EdgeInsets.symmetric(

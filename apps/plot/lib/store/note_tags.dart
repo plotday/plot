@@ -136,7 +136,7 @@ class NoteTagsBase extends BaseTable {
           'update_note_tags',
           params: {
             'p_note_id': id,
-            'p_user_id': Base.userId.toString(),
+            'p_actor_id': Base.userId.toString(),
             'p_client_id': updatedBy,
             'p_tag_updates': tagsUpdated,
           },

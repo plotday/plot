@@ -98,8 +98,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
         _scheduleMarkAsRead();
       },
       listenWhen: (previous, current) =>
-          previous.notes != current.notes &&
-          current.activity.unread,
+          previous.notes != current.notes && current.activity.unread,
       child: BlocListener<ActivityBloc, ActivityState>(
         listener: (context, state) {
           // Focus NoteEditor when activity thread changes
@@ -277,7 +276,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                                   context,
                                 )
                               : Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 16),
+                                  padding: EdgeInsets.symmetric(horizontal: 8),
                                   child: _buildActivityList(
                                     state,
                                     listController,

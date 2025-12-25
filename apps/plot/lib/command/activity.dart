@@ -610,17 +610,19 @@ class PickScheduleActivity extends ShowPage {
               ),
             ),
             FCalendar(
-              controller: FCalendarController.date(
-                selectable: (date) {
-                  final today = DateTime.now();
-                  final todayStart = DateTime(
-                    today.year,
-                    today.month,
-                    today.day,
-                  );
-                  final dateStart = DateTime(date.year, date.month, date.day);
-                  return !dateStart.isBefore(todayStart);
-                },
+              control: .managedDate(
+                controller: FCalendarController.date(
+                  selectable: (date) {
+                    final today = DateTime.now();
+                    final todayStart = DateTime(
+                      today.year,
+                      today.month,
+                      today.day,
+                    );
+                    final dateStart = DateTime(date.year, date.month, date.day);
+                    return !dateStart.isBefore(todayStart);
+                  },
+                ),
               ),
               style: (style) =>
                   style.copyWith(decoration: const BoxDecoration()),

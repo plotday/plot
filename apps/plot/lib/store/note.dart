@@ -437,8 +437,17 @@ class Note extends Equatable implements Comparable<Note> {
   }
 
   Future<void> save() async {
-    // Save to local DB without automatic push
+    // Save note row to local DB
     await Store.get.add(Store.get.notes, toRow().toCompanion(false));
+
+    // Save tags row if present
+    if (_tags != null) {
+      await Store.get.save(
+        Store.get.noteTags,
+        _tags.toCompanion(false),
+        NoteTagsBase(),
+      );
+    }
 
     // Update activity's lastNoteCreatedAt to this note's createdAt (only for non-draft notes)
     if (!draft && archivedAt == null) {
@@ -548,96 +557,86 @@ class Note extends Equatable implements Comparable<Note> {
   // Tag manipulation methods
 
   /// Assign this note to an actor by adding Tag.now
-  Future<void> assignTo(ActorId actorId) async {
-    await _updateTag(Tag.now, actorId, add: true);
+  /// Returns a new Note instance with the tag added - caller must call save()
+  Note assignTo(ActorId actorId) {
+    // Only add Tag.now if the actor doesn't already have it
+    if (!hasTag(Tag.now, actorId)) {
+      return toggleTag(Tag.now, actorId);
+    }
+    return this;
   }
 
   /// Mark this note as complete for an actor by replacing Tag.now with Tag.done
-  Future<void> completeFor(ActorId actorId) async {
-    // Remove Tag.now and add Tag.done
-    await _updateTag(Tag.now, actorId, add: false);
-    await _updateTag(Tag.done, actorId, add: true);
+  /// Returns a new Note instance with tags updated - caller must call save()
+  Note completeFor(ActorId actorId) {
+    // Start with current note
+    Note updated = this;
+
+    // Remove Tag.now if the actor has it
+    if (hasTag(Tag.now, actorId)) {
+      updated = updated.toggleTag(Tag.now, actorId);
+    }
+
+    // Add Tag.done if the actor doesn't have it
+    if (!updated.hasTag(Tag.done, actorId)) {
+      updated = updated.toggleTag(Tag.done, actorId);
+    }
+
+    return updated;
   }
 
   /// Toggle a tag for a specific actor
-  Future<void> toggleTag(Tag tag, ActorId actorId) async {
+  /// Returns a new Note instance with the updated tag - caller must call save()
+  Note toggleTag(Tag tag, ActorId actorId) {
     final hasIt = hasTag(tag, actorId);
-    await _updateTag(tag, actorId, add: !hasIt);
-  }
+    final add = !hasIt;
 
-  /// Internal method to update a tag for an actor
-  Future<void> _updateTag(Tag tag, ActorId actorId, {required bool add}) async {
-    log.info(
-      'Note._updateTag called - noteId: $id, tag: ${tag.name}, actorId: $actorId, add: $add',
-    );
+    // Get current tags or create empty map
+    Map<Tag, List<ActorId>> currentTags = _tags?.tags != null
+        ? Map<Tag, List<ActorId>>.from(_tags!.tags!)
+        : {};
 
-    // Find existing tag row
-    final existing = await (Store.get.select(
-      Store.get.noteTags,
-    )..where((t) => t.id.equalsValue(id))).getSingleOrNull();
-
-    log.info(
-      'Note._updateTag - existing row: ${existing?.id}, existing tags: ${existing?.tags}',
-    );
-
-    Map<Tag, List<ActorId>> newTags = existing?.tags != null
-        ? Map<Tag, List<ActorId>>.from(existing!.tags!)
+    // Get current tag updates or create empty map
+    Map<int, bool> currentTagUpdates = _tags?.tagsUpdated != null
+        ? Map<int, bool>.from(_tags!.tagsUpdated!)
         : {};
 
     if (add) {
       // Add actor to tag
-      newTags.putIfAbsent(tag, () => []);
-      if (!newTags[tag]!.contains(actorId)) {
-        newTags[tag]!.add(actorId);
+      currentTags.putIfAbsent(tag, () => []);
+      if (!currentTags[tag]!.contains(actorId)) {
+        currentTags[tag]!.add(actorId);
       }
     } else {
       // Remove actor from tag
-      if (newTags[tag] != null) {
-        newTags[tag]!.remove(actorId);
-        if (newTags[tag]!.isEmpty) {
-          newTags.remove(tag);
+      if (currentTags[tag] != null) {
+        currentTags[tag]!.remove(actorId);
+        if (currentTags[tag]!.isEmpty) {
+          currentTags.remove(tag);
         }
       }
     }
 
-    log.info('Note._updateTag - newTags after modification: $newTags');
+    // Track which tag changed
+    currentTagUpdates[tag.id] = add;
 
-    // Track which tags changed
-    final tagUpdates = <int, bool>{tag.id: add};
+    // Create new tags row with updated data
+    final newTags = _tags?.copyWith(
+      updatedAt: DateTime.now(),
+      tags: Value(currentTags.isEmpty ? null : currentTags),
+      tagsUpdated: Value(currentTagUpdates),
+    ) ?? NoteTagsRow(
+      id: id,
+      updatedAt: DateTime.now(),
+      tags: currentTags.isEmpty ? null : currentTags,
+      tagsUpdated: currentTagUpdates.isEmpty ? null : currentTagUpdates,
+    );
 
-    if (existing == null) {
-      // Insert new row
-      log.info('Note._updateTag - inserting new row with id: $id');
-      await Store.get
-          .into(Store.get.noteTags)
-          .insert(
-            NoteTagsCompanion.insert(
-              id: Value(id),
-              tags: Value(newTags.isEmpty ? null : newTags),
-              tagsUpdated: Value(tagUpdates),
-              pending: const Value(2), // Mark for sync
-            ),
-          );
-      log.info('Note._updateTag - insert completed');
-    } else {
-      // Update existing row
-      log.info('Note._updateTag - updating existing row with id: $id');
-      await (Store.get.update(
-        Store.get.noteTags,
-      )..where((t) => t.id.equalsValue(id))).write(
-        NoteTagsCompanion(
-          tags: Value(newTags.isEmpty ? null : newTags),
-          tagsUpdated: Value({...?existing.tagsUpdated, ...tagUpdates}),
-          pending: const Value(2), // Mark for sync
-        ),
-      );
-      log.info('Note._updateTag - update completed');
-    }
-
-    // Push changes to server
-    log.info('Note._updateTag - pushing changes to server');
-    await Store.get.push(Store.get.noteTags, NoteTagsBase());
-    log.info('Note._updateTag - push completed');
+    // Return new Note instance with modified tags
+    return Note._fromStore(
+      noteRow: toRow(),
+      tags: newTags,
+    );
   }
 
   /// Extract mention UUIDs from markdown text.

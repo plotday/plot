@@ -189,12 +189,10 @@ class _OtpInputState extends State<OtpInput> {
                   focusNode: _keyboardListenerFocusNodes[index],
                   onKeyEvent: (event) => _handleKeyEvent(index, event),
                   child: FTextField(
-                    controller: _controllers[index],
-                    focusNode: _focusNodes[index],
+                    control: .managed(controller: _controllers[index], onChange: (value) => _handleTextChanged(index, value.text)), focusNode: _focusNodes[index],
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
                     autocorrect: false,
-                    onChange: (value) => _handleTextChanged(index, value),
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
                       _OtpTextInputFormatter(),

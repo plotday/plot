@@ -107,8 +107,7 @@ class TextFieldState extends State<TextField> {
           }
         },
         child: FTextField(
-          controller: _controller,
-          style: widget.style == TextFieldStyle.outline
+          control: .managed(controller: _controller), style: widget.style == TextFieldStyle.outline
               ? null
               : (style) => style.copyWith(
                   contentPadding: .all(0),

@@ -62,8 +62,6 @@ class TimeRangeInput extends StatefulWidget {
 
 class _TimeRangeInputState extends State<TimeRangeInput>
     with TickerProviderStateMixin {
-  late FTimeFieldController _startTimeController;
-  late FTimeFieldController _endTimeController;
   late FocusNode _startTimeFocusNode;
   late FocusNode _endTimeFocusNode;
 
@@ -72,25 +70,10 @@ class _TimeRangeInputState extends State<TimeRangeInput>
     super.initState();
     _startTimeFocusNode = widget.startTimeFocusNode ?? FocusNode();
     _endTimeFocusNode = widget.endTimeFocusNode ?? FocusNode();
-
-    _startTimeController = FTimeFieldController(
-      vsync: this,
-      initialTime: widget.startTime ?? FTime.now(),
-    );
-
-    _endTimeController = FTimeFieldController(
-      vsync: this,
-      initialTime: widget.endTime ?? FTime.now(),
-    );
-
-    _startTimeController.addValueListener(_onStartTimeChanged);
-    _endTimeController.addValueListener(_onEndTimeChanged);
   }
 
   @override
   void dispose() {
-    _startTimeController.dispose();
-    _endTimeController.dispose();
     if (widget.startTimeFocusNode == null) {
       _startTimeFocusNode.dispose();
     }
@@ -100,27 +83,8 @@ class _TimeRangeInputState extends State<TimeRangeInput>
     super.dispose();
   }
 
-  @override
-  void didUpdateWidget(TimeRangeInput oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.startTime != widget.startTime && widget.startTime != null) {
-      _startTimeController.value = widget.startTime;
-    }
-    if (oldWidget.endTime != widget.endTime && widget.endTime != null) {
-      _endTimeController.value = widget.endTime;
-    }
-  }
-
-  void _onStartTimeChanged(FTime? time) {
-    widget.onStartTimeChanged(time);
-  }
-
-  void _onEndTimeChanged(FTime? time) {
-    widget.onEndTimeChanged(time);
-  }
-
   void _shiftLeft15() {
-    final startTime = _startTimeController.value ?? FTime.now();
+    final startTime = widget.startTime ?? FTime.now();
     final minutes = startTime.minute;
 
     if (minutes % 15 != 0) {
@@ -135,7 +99,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
   }
 
   void _shiftRight15() {
-    final startTime = _startTimeController.value ?? FTime.now();
+    final startTime = widget.startTime ?? FTime.now();
     final minutes = startTime.minute;
 
     if (minutes % 15 != 0) {
@@ -150,7 +114,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
   }
 
   void _shiftLeft1Hour() {
-    final startTime = _startTimeController.value ?? FTime.now();
+    final startTime = widget.startTime ?? FTime.now();
     final minutes = startTime.minute;
 
     if (minutes % 15 == 0) {
@@ -165,7 +129,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
   }
 
   void _shiftRight1Hour() {
-    final startTime = _startTimeController.value ?? FTime.now();
+    final startTime = widget.startTime ?? FTime.now();
     final minutes = startTime.minute;
 
     if (minutes % 15 == 0) {
@@ -211,7 +175,10 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                 Flexible(
                   child: isTouch
                       ? FTimeField.picker(
-                          controller: _startTimeController,
+                          control: .lifted(
+                            time: widget.startTime,
+                            onChange: widget.onStartTimeChanged,
+                          ),
                           focusNode: _startTimeFocusNode,
                           prefixBuilder: null,
                           textAlign: TextAlign.right,
@@ -235,7 +202,10 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           builder: (context, style, states, child) => child,
                         )
                       : FTimeField(
-                          controller: _startTimeController,
+                          control: .lifted(
+                            time: widget.startTime,
+                            onChange: widget.onStartTimeChanged,
+                          ),
                           focusNode: _startTimeFocusNode,
                           prefixBuilder: null,
                           textAlign: TextAlign.right,
@@ -271,7 +241,10 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                 Flexible(
                   child: isTouch
                       ? FTimeField.picker(
-                          controller: _endTimeController,
+                          control: .lifted(
+                            time: widget.endTime,
+                            onChange: widget.onEndTimeChanged,
+                          ),
                           focusNode: _endTimeFocusNode,
                           prefixBuilder: null,
                           textAlign: TextAlign.left,
@@ -295,7 +268,10 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           builder: (context, style, states, child) => child,
                         )
                       : FTimeField(
-                          controller: _endTimeController,
+                          control: .lifted(
+                            time: widget.endTime,
+                            onChange: widget.onEndTimeChanged,
+                          ),
                           focusNode: _endTimeFocusNode,
                           prefixBuilder: null,
                           textAlign: TextAlign.left,
