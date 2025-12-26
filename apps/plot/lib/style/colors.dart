@@ -89,7 +89,7 @@ class OklchColours {
         background: lch(0.965, 0.004),
         editableBackground: pureBackground,
         accent: lch(accentLightness, baseChroma),
-        accentBackground: lch(0.96, 0.04),
+        accentBackground: lch(themeColor?.index == 7 ? 0.84 : 0.96, 0.04),
         highlight: lch(1, 0, hue, 0.8),
         foreground: lch(0.35, 0.01),
         muted: lch(0.5, 0.005),

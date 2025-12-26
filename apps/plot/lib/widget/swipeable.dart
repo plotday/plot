@@ -10,7 +10,7 @@ import 'package:plot/widget/widget.dart';
 class Swipeable extends StatefulWidget {
   final Widget child;
   final Command? startCommand; // Right swipe command
-  final Command? endCommand;   // Left swipe command
+  final Command? endCommand; // Left swipe command
 
   const Swipeable({
     required this.child,
@@ -23,9 +23,11 @@ class Swipeable extends StatefulWidget {
   State<Swipeable> createState() => _SwipeableState();
 }
 
-class _SwipeableState extends State<Swipeable> with SingleTickerProviderStateMixin {
+class _SwipeableState extends State<Swipeable>
+    with SingleTickerProviderStateMixin {
   static const double _activationThreshold = 100.0; // ~1/3 screen width (~33%)
-  static const double _dragStartThreshold = 8.0; // Threshold to distinguish swipe from scroll
+  static const double _dragStartThreshold =
+      8.0; // Threshold to distinguish swipe from scroll
 
   double _dragOffset = 0.0;
   double _startDragX = 0.0;
@@ -41,13 +43,14 @@ class _SwipeableState extends State<Swipeable> with SingleTickerProviderStateMix
       duration: const Duration(milliseconds: 250),
       vsync: this,
     );
-    _slideBackAnimation = Tween<double>(begin: 0, end: 0).animate(
-      CurvedAnimation(parent: _slideBackController, curve: Curves.easeOut),
-    )..addListener(() {
-        setState(() {
-          _dragOffset = _slideBackAnimation.value;
+    _slideBackAnimation =
+        Tween<double>(begin: 0, end: 0).animate(
+          CurvedAnimation(parent: _slideBackController, curve: Curves.easeOut),
+        )..addListener(() {
+          setState(() {
+            _dragOffset = _slideBackAnimation.value;
+          });
         });
-      });
   }
 
   @override
@@ -115,10 +118,7 @@ class _SwipeableState extends State<Swipeable> with SingleTickerProviderStateMix
     final command = _dragOffset > 0 ? widget.startCommand : widget.endCommand;
 
     // Animate slide back to original position
-    _slideBackAnimation = Tween<double>(
-      begin: _dragOffset,
-      end: 0,
-    ).animate(
+    _slideBackAnimation = Tween<double>(begin: _dragOffset, end: 0).animate(
       CurvedAnimation(parent: _slideBackController, curve: Curves.easeOut),
     );
 
@@ -155,17 +155,21 @@ class _SwipeableState extends State<Swipeable> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     return RawGestureDetector(
       gestures: <Type, GestureRecognizerFactory>{
-        HorizontalDragGestureRecognizer: GestureRecognizerFactoryWithHandlers<HorizontalDragGestureRecognizer>(
-          () => HorizontalDragGestureRecognizer(debugOwner: this)
-            ..dragStartBehavior = DragStartBehavior.down,
-          (HorizontalDragGestureRecognizer instance) {
-            instance
-              ..onStart = _onHorizontalDragStart
-              ..onUpdate = _onHorizontalDragUpdate
-              ..onEnd = _onHorizontalDragEnd
-              ..onCancel = _onHorizontalDragCancel;
-          },
-        ),
+        HorizontalDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+              HorizontalDragGestureRecognizer
+            >(
+              () =>
+                  HorizontalDragGestureRecognizer(debugOwner: this)
+                    ..dragStartBehavior = DragStartBehavior.down,
+              (HorizontalDragGestureRecognizer instance) {
+                instance
+                  ..onStart = _onHorizontalDragStart
+                  ..onUpdate = _onHorizontalDragUpdate
+                  ..onEnd = _onHorizontalDragEnd
+                  ..onCancel = _onHorizontalDragCancel;
+              },
+            ),
       },
       child: Stack(
         children: [
@@ -192,12 +196,18 @@ class _SwipeableState extends State<Swipeable> with SingleTickerProviderStateMix
 
     // Determine colors based on activation state
     final backgroundColor = _isActivated
-        ? context.colour.accent  // Primary color when activated
-        : context.colour.muted;  // Disabled/muted color when not activated
+        ? context
+              .colour
+              .accentBackground // Primary color when activated
+        : context.colour.accentBackground.withAlpha(
+            80,
+          ); // Disabled/muted color when not activated
 
     final foregroundColor = _isActivated
-        ? const Color(0xFFFFFFFF)  // White when activated
-        : context.colour.foreground.withValues(alpha: 0.5);  // Semi-transparent when not activated
+        ? context.colour.accent
+        : context.colour.foreground.withValues(
+            alpha: 0.5,
+          ); // Semi-transparent when not activated
 
     return Positioned(
       left: isRightSwipe ? 0 : null,
@@ -209,11 +219,7 @@ class _SwipeableState extends State<Swipeable> with SingleTickerProviderStateMix
         color: backgroundColor,
         child: Center(
           child: command.icon != null
-              ? Icon(
-                  command.icon,
-                  size: 20,
-                  color: foregroundColor,
-                )
+              ? Icon(command.icon, size: 20, color: foregroundColor)
               : Text(
                   command.title,
                   style: context.theme.typography.sm.copyWith(
