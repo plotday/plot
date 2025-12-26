@@ -449,7 +449,7 @@ class EditorState extends State<Editor> {
           actions: <Type, Action<Intent>>{
             SubmitIntent: CallbackAction<SubmitIntent>(
               onInvoke: (SubmitIntent intent) {
-                submit(intent.alt);
+                _submitFromKeyboard(intent.alt);
                 return KeyEventResult.handled;
               },
             ),
@@ -520,9 +520,8 @@ class EditorState extends State<Editor> {
     );
   }
 
-  void submit(bool alt) async {
-    final md = _serializeWithMentions(_document);
-
+  /// Submit from keyboard (Enter key) - includes first-time prompt check
+  void _submitFromKeyboard(bool alt) async {
     // Show first-time prompt if needed (only on devices with physical keyboards)
     final settingsBloc = context.read<SettingsBloc>();
     if (hasPhysicalKeyboard() &&
@@ -531,6 +530,12 @@ class EditorState extends State<Editor> {
       return;
     }
 
+    submit(alt);
+  }
+
+  /// Submit the editor content (called by save buttons and keyboard)
+  void submit(bool alt) async {
+    final md = _serializeWithMentions(_document);
     widget.onSubmitted?.call(md, alt: alt);
     clear();
   }

@@ -100,6 +100,7 @@ class _ModalProviderState extends State<ModalProvider> {
   final List<_ModalStackItem<dynamic>> _modalStack = [];
   final ValueNotifier<int> _modalStackNotifier = ValueNotifier<int>(0);
   final GlobalKey _rootContextKey = GlobalKey();
+  bool _usedRootNavigator = false;
 
   Future<Value<T>> push<T>(BuildContext context, Widget modal) async {
     final stackItem = _ModalStackItem<T>(modal);
@@ -110,6 +111,7 @@ class _ModalProviderState extends State<ModalProvider> {
       // Use root context if available, otherwise fall back to passed context
       final modalContext = _rootContextKey.currentContext ?? context;
       final multiPanel = context.isMultiPanel;
+      _usedRootNavigator = !multiPanel;
 
       final provider = _ModalProviderInherited._(
         modalStack: _modalStack,
@@ -205,7 +207,7 @@ class _ModalProviderState extends State<ModalProvider> {
         // Mobile: Use FSheet
         result =
             await showFSheet<Value<T>>(
-              context: context,
+              context: modalContext,
               side: FLayout.btt,
               useRootNavigator: true,
               barrierDismissible: true,
@@ -251,7 +253,7 @@ class _ModalProviderState extends State<ModalProvider> {
     // not if a cascaded pop already closed it
     if (shouldCloseDialog) {
       final modalContext = _rootContextKey.currentContext ?? context;
-      final navigator = Navigator.of(modalContext);
+      final navigator = Navigator.of(modalContext, rootNavigator: _usedRootNavigator);
       if (navigator.canPop()) {
         navigator.pop(result);
       } else {
@@ -277,7 +279,7 @@ class _ModalProviderState extends State<ModalProvider> {
     // not if a cascaded pop already closed it
     if (shouldCloseDialog) {
       final modalContext = _rootContextKey.currentContext ?? context;
-      final navigator = Navigator.of(modalContext);
+      final navigator = Navigator.of(modalContext, rootNavigator: _usedRootNavigator);
       if (navigator.canPop()) {
         navigator.pop(value);
       } else {
@@ -295,7 +297,7 @@ class _ModalProviderState extends State<ModalProvider> {
     }
     // Use the same context that was used to create the dialog
     final modalContext = _rootContextKey.currentContext ?? context;
-    await Navigator.of(modalContext).maybePop();
+    await Navigator.of(modalContext, rootNavigator: _usedRootNavigator).maybePop();
   }
 
   void _notifyStackChanged() {
