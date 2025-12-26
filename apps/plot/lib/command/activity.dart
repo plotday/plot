@@ -596,46 +596,48 @@ class PickScheduleActivity extends ShowPage {
     : super(
         title: 'Schedule Action',
         icon: PlotIcon.later,
-        builder: (context) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(
-                'Schedule Action',
-                style: context.theme.typography.xl2.copyWith(
-                  fontWeight: FontWeight.w600,
+        builder: (context) => SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'Schedule Action',
+                  style: context.theme.typography.xl2.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-            FCalendar(
-              control: .managedDate(
-                controller: FCalendarController.date(
-                  selectable: (date) {
-                    final today = DateTime.now();
-                    final todayStart = DateTime(
-                      today.year,
-                      today.month,
-                      today.day,
-                    );
-                    final dateStart = DateTime(date.year, date.month, date.day);
-                    return !dateStart.isBefore(todayStart);
-                  },
+              FCalendar(
+                control: .managedDate(
+                  controller: FCalendarController.date(
+                    selectable: (date) {
+                      final today = DateTime.now();
+                      final todayStart = DateTime(
+                        today.year,
+                        today.month,
+                        today.day,
+                      );
+                      final dateStart = DateTime(date.year, date.month, date.day);
+                      return !dateStart.isBefore(todayStart);
+                    },
+                  ),
                 ),
+                style: (style) =>
+                    style.copyWith(decoration: const BoxDecoration()),
+                onPress: (date) async {
+                  final actionReturn = await ScheduleAction(
+                    activity,
+                    when: date.toDate(),
+                  ).run(context);
+                  if (!context.mounted) return;
+                  Modal.pop(context, Value(actionReturn));
+                },
               ),
-              style: (style) =>
-                  style.copyWith(decoration: const BoxDecoration()),
-              onPress: (date) async {
-                final actionReturn = await ScheduleAction(
-                  activity,
-                  when: date.toDate(),
-                ).run(context);
-                if (!context.mounted) return;
-                Modal.pop(context, Value(actionReturn));
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       );
 }
