@@ -138,7 +138,7 @@ class ActivityTagsBase extends BaseTable {
           'update_activity_tags',
           params: {
             'p_activity_id': id,
-            'p_actor_id': Base.userId.toString(),
+            'p_actor_id': Base.actorId.toString(),
             'p_client_id': updatedBy,
             'p_tag_updates': tagsUpdated,
           },

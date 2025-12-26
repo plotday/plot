@@ -546,13 +546,9 @@ class Note extends Equatable implements Comparable<Note> {
     }
 
     // Format the output
-    if (displayNames.length <= 3) {
-      return displayNames.join(', ');
-    } else {
-      final first3 = displayNames.take(3).join(', ');
-      final remaining = displayNames.length - 3;
-      return '$first3 + $remaining more';
-    }
+    return displayNames.length <= 3
+        ? displayNames.join(', ')
+        : '${displayNames.take(3).join(', ')} + ${displayNames.length - 3} more';
   }
 
   // Tag manipulation methods
