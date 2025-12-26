@@ -39,6 +39,14 @@ class SyncOrchestrator {
     pullFn: Priority.pull,
   );
 
+  /// PriorityUser entity (depends on priority and actor)
+  static final priorityUser = SyncEntity(
+    debugName: 'priority_user',
+    dependsOn: [priority, actor],
+    pushFn: PriorityUser.push,
+    pullFn: PriorityUser.pull,
+  );
+
   /// PriorityTwist entity (depends on priority)
   static final priorityTwist = SyncEntity(
     debugName: 'priority_twist',
@@ -85,6 +93,7 @@ class SyncOrchestrator {
   static final allEntities = [
     actor,
     priority,
+    priorityUser,
     priorityTwist,
     activity,
     session,
@@ -101,6 +110,7 @@ class SyncOrchestrator {
   static SyncEntity? getEntityByTableName(String table) {
     return switch (table) {
       'priority' => priority,
+      'priority_user' => priorityUser,
       'priority_twist' => priorityTwist,
       'activity' || 'activity_read' => activity,
       'session' => session,
