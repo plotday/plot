@@ -147,7 +147,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                 }
 
                 List<FResizableRegion> regions = [
-                  if (layoutState.leftPanelVisible)
+                  if (layoutState.leftPanelVisible && leftWidth > 0)
                     FResizableRegion(
                       key: const ValueKey('LeftPanel'),
                       initialExtent: leftWidth,
@@ -164,7 +164,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                         ),
                       ),
                     ),
-                  if (layoutState.middlePanelVisible)
+                  if (layoutState.middlePanelVisible && middleWidth > 0)
                     FResizableRegion(
                       key: const ValueKey('MiddlePanel'),
                       initialExtent: middleWidth,
@@ -266,7 +266,9 @@ class _HoverableResizableState extends State<_HoverableResizable> {
       mutableRegions = mutableRegions.sublist(1);
     }
     if (widget.layoutState.middlePanelVisible && mutableRegions.length >= 2) {
-      newMiddleRatio = mutableRegions[0].extent.current / (mutableRegions[0].extent.current + mutableRegions[1].extent.current);
+      newMiddleRatio =
+          mutableRegions[0].extent.current /
+          (mutableRegions[0].extent.current + mutableRegions[1].extent.current);
       prefs.setDouble('layout_middle_panel_ratio', newMiddleRatio);
     }
 
@@ -308,13 +310,17 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                 if (_controller.regions.isNotEmpty)
                   for (var i = 0; i < _controller.regions.length - 1; i++)
                     Positioned(
-                      left: _controller.regions[i].offset.max - (_hitRegionExtent / 2),
+                      left:
+                          _controller.regions[i].offset.max -
+                          (_hitRegionExtent / 2),
                       top: 0,
                       child: MouseRegion(
                         opaque: false,
                         cursor: SystemMouseCursors.resizeLeftRight,
-                        onEnter: (_) => setState(() => _hoveredDividerIndex = i),
-                        onExit: (_) => setState(() => _hoveredDividerIndex = null),
+                        onEnter: (_) =>
+                            setState(() => _hoveredDividerIndex = i),
+                        onExit: (_) =>
+                            setState(() => _hoveredDividerIndex = null),
                         child: IgnorePointer(
                           child: SizedBox(
                             width: _hitRegionExtent,
@@ -343,4 +349,3 @@ class _HoverableResizableState extends State<_HoverableResizable> {
     );
   }
 }
-
