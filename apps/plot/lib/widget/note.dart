@@ -148,9 +148,9 @@ class NoteCommands extends StatelessWidget {
         .map((tag) async {
           final key = ValueKey(Object.hash(note.id, tag.id));
 
-          // Use FinishNote when clicking Tag.now (matching ActivityWidget behavior)
+          // Use FinishTask when clicking Tag.now (matching ActivityWidget behavior)
           final command = tag == Tag.now
-              ? FinishNote(note)
+              ? FinishTask(note)
               : ToggleNoteTag(note, tag, actorId);
 
           // Get actor names for tooltip
@@ -171,8 +171,10 @@ class NoteCommands extends StatelessWidget {
     // Get commands (only if showCommands is true)
     final commandButtons = showCommands
         ? [
-            Button.icon(StartTask(note)),
-            Button.icon(FinishNote(note)),
+            if (!note.isAssigned()) ...[
+              Button.icon(StartTask(note)),
+              Button.icon(FinishTask(note)),
+            ],
             // Add top tag buttons
             ...topNoteTags(
               note,
@@ -204,7 +206,7 @@ class NoteCommands extends StatelessWidget {
                   .map((tag) {
                     final key = ValueKey(Object.hash(note.id, tag.id));
                     final command = tag == Tag.now
-                        ? FinishNote(note)
+                        ? FinishTask(note)
                         : ToggleNoteTag(note, tag, actorId);
                     return Button.icon(command, key: key, selected: true);
                   })

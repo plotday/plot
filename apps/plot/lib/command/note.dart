@@ -133,8 +133,8 @@ class StartTask extends NoteCommand {
   }
 }
 
-class FinishNote extends NoteCommand {
-  FinishNote(super.note, {this.actorId})
+class FinishTask extends NoteCommand {
+  FinishTask(super.note, {this.actorId})
     : super(
         title: 'Mark Done',
         eventObject: EventObject.note,
@@ -258,11 +258,16 @@ List<StaticCommandGroup> noteCommandGroups(Note note) {
   ];
 }
 
-List<Command> noteCommands(Note note) => [
-  StartTask(note),
-  FinishNote(note),
-  ArchiveNote(note),
-];
+List<Command> noteCommands(Note note) {
+  final actorId = Base.actorId;
+  final isAssigned = note.isAssignedTo(actorId);
+
+  return [
+    if (!isAssigned) StartTask(note),
+    if (isAssigned) FinishTask(note),
+    ArchiveNote(note),
+  ];
+}
 
 /// Returns up to 3 tag suggestions for quick actions.
 /// The number shown is reduced by the count of non-hardcoded tags already on the note.

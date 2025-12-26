@@ -442,10 +442,7 @@ class Note extends Equatable implements Comparable<Note> {
 
     // Save tags row if present (local only - orchestrator will push in correct order)
     if (_tags != null) {
-      await Store.get.add(
-        Store.get.noteTags,
-        _tags.toCompanion(false),
-      );
+      await Store.get.add(Store.get.noteTags, _tags.toCompanion(false));
     }
 
     // Update activity's lastNoteCreatedAt to this note's createdAt (only for non-draft notes)
@@ -493,12 +490,17 @@ class Note extends Equatable implements Comparable<Note> {
   }
 
   /// Check if a specific actor has a given tag
-  bool hasTag(Tag tag, ActorId actorId) {
-    return tags[tag]?.contains(actorId) ?? false;
+  bool hasTag(Tag tag, [ActorId? actorId]) {
+    final actors = tags[tag];
+    if (actorId == null) {
+      return actors?.isNotEmpty == true;
+    }
+    return actors?.contains(actorId!) ?? false;
   }
 
   /// Check if a specific actor is assigned to this note (has Tag.now)
   bool isAssignedTo(ActorId actorId) => hasTag(Tag.now, actorId);
+  bool isAssigned() => hasTag(Tag.now);
 
   /// Check if a specific actor has completed this note (has Tag.done)
   bool isCompletedBy(ActorId actorId) => hasTag(Tag.done, actorId);
@@ -620,22 +622,21 @@ class Note extends Equatable implements Comparable<Note> {
     currentTagUpdates[tag.id] = add;
 
     // Create new tags row with updated data
-    final newTags = _tags?.copyWith(
-      updatedAt: DateTime.now(),
-      tags: Value(currentTags.isEmpty ? null : currentTags),
-      tagsUpdated: Value(currentTagUpdates),
-    ) ?? NoteTagsRow(
-      id: id,
-      updatedAt: DateTime.now(),
-      tags: currentTags.isEmpty ? null : currentTags,
-      tagsUpdated: currentTagUpdates.isEmpty ? null : currentTagUpdates,
-    );
+    final newTags =
+        _tags?.copyWith(
+          updatedAt: DateTime.now(),
+          tags: Value(currentTags.isEmpty ? null : currentTags),
+          tagsUpdated: Value(currentTagUpdates),
+        ) ??
+        NoteTagsRow(
+          id: id,
+          updatedAt: DateTime.now(),
+          tags: currentTags.isEmpty ? null : currentTags,
+          tagsUpdated: currentTagUpdates.isEmpty ? null : currentTagUpdates,
+        );
 
     // Return new Note instance with modified tags
-    return Note._fromStore(
-      noteRow: toRow(),
-      tags: newTags,
-    );
+    return Note._fromStore(noteRow: toRow(), tags: newTags);
   }
 
   /// Extract mention UUIDs from markdown text.
