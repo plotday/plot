@@ -35,7 +35,7 @@ class AppState extends State<App> {
             builder: (context) => Window(
               child: CommandProvider(
                 child: FTheme(
-                  data: buildTheme(context.colour),
+                  data: buildTheme(context, context.colour),
                   child: RootProvider(
                     builder: (routerConfig) => PlatformBuilder(
                       builder: (context) => AdaptiveTheme(

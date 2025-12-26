@@ -7,3 +7,9 @@ import 'dart:io' show Platform;
 bool hasPhysicalKeyboard() {
   return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 }
+
+/// Non-web implementation for detecting if the current platform is a mobile platform.
+/// Returns true for iOS and Android platforms.
+bool isMobilePlatform() {
+  return Platform.isIOS || Platform.isAndroid;
+}

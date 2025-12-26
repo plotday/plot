@@ -15,3 +15,13 @@ bool hasPhysicalKeyboard() {
   // Desktop browsers have keyboards, mobile browsers typically don't
   return !isMobileBrowser;
 }
+
+/// Web implementation for detecting if the current platform is a mobile platform.
+/// Returns true for mobile browsers (Android, iPhone, iPad, iPod).
+bool isMobilePlatform() {
+  final userAgent = window.navigator.userAgent.toLowerCase();
+  return userAgent.contains('android') ||
+      userAgent.contains('iphone') ||
+      userAgent.contains('ipad') ||
+      userAgent.contains('ipod');
+}

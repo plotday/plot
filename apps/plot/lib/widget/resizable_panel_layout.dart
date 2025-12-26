@@ -159,7 +159,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                         key: ValueKey('LeftPanelPositionProvider'),
                         position: HeaderPosition.left,
                         child: FAnimatedTheme(
-                          data: darkenTheme(context.theme, context.colour),
+                          data: darkenTheme(context, context.theme, context.colour),
                           child: widget.left,
                         ),
                       ),

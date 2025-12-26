@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
@@ -14,9 +15,9 @@ import 'package:plot/style/toaster.dart';
 import 'package:plot/style/tooltip.dart';
 import 'package:plot/style/alert.dart';
 
-FThemeData buildTheme(ColourSchemeData colourScheme) {
+FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
-  final typography = buildTypography(colorScheme);
+  final typography = buildTypography(context, colorScheme);
 
   final plotColors = PlotColors(
     barrier: colourScheme.barrier,
@@ -89,8 +90,13 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
   return theme;
 }
 
-FThemeData darkenTheme(FThemeData theme, ColourSchemeData colourScheme) {
+FThemeData darkenTheme(
+  BuildContext context,
+  FThemeData theme,
+  ColourSchemeData colourScheme,
+) {
   return buildTheme(
+    context,
     colourScheme.copyWith(
       darken: colourScheme.brightness == .light ? 1.02 : 1.1,
     ),
