@@ -135,7 +135,7 @@ class NoteEditorState extends State<NoteEditor> {
                 });
               },
               onSubmitted: (body, {bool alt = false}) async {
-                await context.run(AddNote(finalizeDraft(body)));
+                await context.run(AddNote(finalizeDraft(body, alt: alt)));
               },
             );
             return Column(
@@ -209,10 +209,17 @@ class NoteEditorState extends State<NoteEditor> {
     );
   }
 
-  Future<Note> finalizeDraft(String body) async {
-    return widget.draft.copyWith(
+  Future<Note> finalizeDraft(String body, {bool alt = false}) async {
+    Note note = widget.draft.copyWith(
       content: body.isEmpty ? null : body,
       draft: false,
     );
+
+    // If Cmd-Enter was pressed, assign the note to current user
+    if (alt && !note.isAssignedTo(Base.actorId)) {
+      note = note.assignTo(Base.actorId);
+    }
+
+    return note;
   }
 }
