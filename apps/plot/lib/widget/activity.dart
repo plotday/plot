@@ -67,7 +67,7 @@ class ActivityWidget extends StatelessWidget {
               width: 6,
               child: UnreadIndicator(
                 color: activity.priority.displayColor,
-                unread: true, //activity.unread,
+                unread: activity.unread,
               ),
             ),
             Padding(
