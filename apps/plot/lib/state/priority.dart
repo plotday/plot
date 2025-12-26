@@ -270,7 +270,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (activity.id == state.draft.id) {
       emit(state.copyWith(draft: activity));
     }
-    if (note != null && note.id == state.draftNote?.id) {
+    // Update draft note in state if:
+    // 1. The note ID matches the existing draft note ID (update case), OR
+    // 2. There is no existing draft note and the note belongs to the current draft activity (new draft note case)
+    if (note != null &&
+        (note.id == state.draftNote?.id ||
+         (state.draftNote == null && note.activityId == state.draft.id))) {
       emit(state.copyWith(draftNote: Value(note)));
     }
 
