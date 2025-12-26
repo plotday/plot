@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
-import 'package:super_editor_markdown/super_editor_markdown.dart';
 import 'package:flutter_debouncer/flutter_debouncer.dart';
 import 'package:follow_the_leader/follow_the_leader.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -458,6 +457,7 @@ class EditorState extends State<Editor> {
             behavior: HitTestBehavior.translucent,
             onTap: () => _editorFocusNode.requestFocus(),
             child: SuperEditor(
+              inputRole: 'plot-note-editor',
               autofocus: widget.autofocus,
               editor: _editor,
               focusNode: _editorFocusNode,
@@ -572,7 +572,7 @@ class EditorState extends State<Editor> {
   }
 
   /// Build enter key handler based on behavior setting
-  DocumentKeyboardAction _buildEnterKeyHandler(EnterBehavior behavior) {
+  SuperEditorKeyboardAction _buildEnterKeyHandler(EnterBehavior behavior) {
     return ({
       required SuperEditorContext editContext,
       required KeyEvent keyEvent,
@@ -652,7 +652,7 @@ class EditorState extends State<Editor> {
   }
 
   /// Keyboard action that handles navigation when mention popover is visible
-  DocumentKeyboardAction get _handleMentionPopoverNavigation {
+  SuperEditorKeyboardAction get _handleMentionPopoverNavigation {
     return ({
       required SuperEditorContext editContext,
       required KeyEvent keyEvent,
