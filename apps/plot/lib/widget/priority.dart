@@ -61,16 +61,25 @@ class PriorityWidget extends StatelessWidget {
             )
           : null,
       title: showAncestry ? null : priority.title,
-      body: showAncestry ? PriorityLabel(priority: priority, fontSize: textStyle?.fontSize, height: textStyle?.height) : null,
+      body: showAncestry
+          ? PriorityLabel(
+              priority: priority,
+              fontSize: textStyle?.fontSize,
+              height: textStyle?.height,
+            )
+          : null,
       selected: selected,
       selectedBorder: selectedBorder,
       highlighted: selected,
       onHover: onHover,
       indentLevel: indentLevel,
       textStyle: textStyle,
-      leadingIndicator: UnreadIndicator(
-        color: priority.displayColor,
-        unread: unread ?? priority.unread,
+      leadingBuilder: (isHovered, hasFocus) => SizedBox(
+        width: 16,
+        child: UnreadIndicator(
+          color: priority.displayColor,
+          unread: unread ?? priority.unread,
+        ),
       ),
     );
   }

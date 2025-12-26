@@ -514,140 +514,132 @@ class PriorityPage extends StatelessWidget {
                                     ),
                                   ],
                                 ),
-                                body: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
+                                body: BidirectionalList(
+                                  anchorOffset: 0.35,
+                                  controller: listController,
+                                  scrollController: ScrollControllerContext.of(
+                                    context,
                                   ),
-                                  child: BidirectionalList(
-                                    anchorOffset: 0.35,
-                                    controller: listController,
-                                    scrollController:
-                                        ScrollControllerContext.of(context),
-                                    first: state.first,
-                                    count: state.agendaItems.length,
-                                    doneStart: state.doneStart,
-                                    doneEnd: state.doneEnd,
-                                    fetcher: (first, count) => context
-                                        .read<PriorityBloc>()
-                                        .fetchMoreAgendaItems(first, count),
-                                    builder: (context, index, focusNode, {reorderableIndex}) {
-                                      final current = state
-                                          .agendaItems[index - state.first];
+                                  first: state.first,
+                                  count: state.agendaItems.length,
+                                  doneStart: state.doneStart,
+                                  doneEnd: state.doneEnd,
+                                  fetcher: (first, count) => context
+                                      .read<PriorityBloc>()
+                                      .fetchMoreAgendaItems(first, count),
+                                  builder: (context, index, focusNode, {reorderableIndex}) {
+                                    final current =
+                                        state.agendaItems[index - state.first];
 
-                                      return Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        key: ValueKey(
-                                          current.when(
-                                            header: (h) => h.date != null
-                                                ? 'header_date_${h.date}'
-                                                : h.dateTimeRange != null
-                                                ? 'header_event_${h.priority?.id ?? 'null'}_${h.dateTimeRange}'
-                                                : 'header_priority_${h.priority?.id ?? 'null'}',
-                                            activity: (a) =>
-                                                'activity_${a.activity.id}',
-                                          ),
+                                    return Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      key: ValueKey(
+                                        current.when(
+                                          header: (h) => h.date != null
+                                              ? 'header_date_${h.date}'
+                                              : h.dateTimeRange != null
+                                              ? 'header_event_${h.priority?.id ?? 'null'}_${h.dateTimeRange}'
+                                              : 'header_priority_${h.priority?.id ?? 'null'}',
+                                          activity: (a) =>
+                                              'activity_${a.activity.id}',
                                         ),
-                                        children: [
-                                          ...current.when(
-                                            header: (header) => [
-                                              AgendaHeader(
-                                                key: ValueKey(
-                                                  header.date != null
-                                                      ? 'agendaheader_date_${header.date}'
-                                                      : header.dateTimeRange !=
-                                                            null
-                                                      ? 'agendaheader_event_${header.priority?.id ?? 'null'}_${header.dateTimeRange}'
-                                                      : 'agendaheader_priority_${header.priority?.id ?? 'null'}',
-                                                ),
-                                                priority: header.priority,
-                                                priorityContext: state.context,
-                                                dateTimeRange:
-                                                    header.dateTimeRange,
-                                                date: header.date,
-                                                now: header.now,
-                                                activity: header.activity,
-                                                focusNode: focusNode,
-                                                text: header.text,
-                                                scheduleAt: header.scheduleAt,
+                                      ),
+                                      children: [
+                                        ...current.when(
+                                          header: (header) => [
+                                            AgendaHeader(
+                                              key: ValueKey(
+                                                header.date != null
+                                                    ? 'agendaheader_date_${header.date}'
+                                                    : header.dateTimeRange !=
+                                                          null
+                                                    ? 'agendaheader_event_${header.priority?.id ?? 'null'}_${header.dateTimeRange}'
+                                                    : 'agendaheader_priority_${header.priority?.id ?? 'null'}',
                                               ),
-                                            ],
-                                            activity: (agendaActivity) => [
-                                              ActivityWidget(
-                                                key: ValueKey(
-                                                  'activitywidget_${agendaActivity.activity.id}',
-                                                ),
-                                                activity:
-                                                    agendaActivity.activity,
-                                                selected:
-                                                    state.activity != null &&
-                                                    agendaActivity
-                                                            .activity
-                                                            .id ==
-                                                        state.activity!.id,
-                                                now: agendaActivity.now,
-                                                focusNode: focusNode,
-                                                context: state.context,
-                                                reorderableIndex:
-                                                    reorderableIndex,
+                                              priority: header.priority,
+                                              priorityContext: state.context,
+                                              dateTimeRange:
+                                                  header.dateTimeRange,
+                                              date: header.date,
+                                              now: header.now,
+                                              activity: header.activity,
+                                              focusNode: focusNode,
+                                              text: header.text,
+                                              scheduleAt: header.scheduleAt,
+                                            ),
+                                          ],
+                                          activity: (agendaActivity) => [
+                                            ActivityWidget(
+                                              key: ValueKey(
+                                                'activitywidget_${agendaActivity.activity.id}',
                                               ),
-                                            ],
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                    onReorder: (index) {
-                                      final item = state
-                                          .agendaItems[index - state.first];
-                                      final activity = item.when<Activity?>(
-                                        header: (header) => null,
-                                        activity: (agendaActivity) =>
-                                            agendaActivity.activity,
-                                      );
-                                      if (activity?.todo != true ||
-                                          activity == null) {
-                                        return null;
+                                              activity: agendaActivity.activity,
+                                              selected:
+                                                  state.activity != null &&
+                                                  agendaActivity.activity.id ==
+                                                      state.activity!.id,
+                                              now: agendaActivity.now,
+                                              focusNode: focusNode,
+                                              context: state.context,
+                                              reorderableIndex:
+                                                  reorderableIndex,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                  onReorder: (index) {
+                                    final item =
+                                        state.agendaItems[index - state.first];
+                                    final activity = item.when<Activity?>(
+                                      header: (header) => null,
+                                      activity: (agendaActivity) =>
+                                          agendaActivity.activity,
+                                    );
+                                    if (activity?.todo != true ||
+                                        activity == null) {
+                                      return null;
+                                    }
+                                    return (int newIndex) {
+                                      final oldListIndex = index - state.first;
+                                      final newListIndex =
+                                          newIndex - state.first;
+
+                                      // Calculate prev/next BEFORE modifying state
+                                      // so we get the correct adjacent items
+                                      var prevIndex = newListIndex - 1;
+                                      var nextIndex = newListIndex;
+                                      // Adjust for the item being removed from oldListIndex
+                                      if (oldListIndex < newListIndex) {
+                                        prevIndex++;
+                                        nextIndex++;
                                       }
-                                      return (int newIndex) {
-                                        final oldListIndex =
-                                            index - state.first;
-                                        final newListIndex =
-                                            newIndex - state.first;
+                                      AgendaItem? prev;
+                                      if (prevIndex >= 0 &&
+                                          prevIndex <
+                                              state.agendaItems.length) {
+                                        prev = state.agendaItems[prevIndex];
+                                      }
+                                      AgendaItem? next;
+                                      if (nextIndex <
+                                          state.agendaItems.length) {
+                                        next = state.agendaItems[nextIndex];
+                                      }
 
-                                        // Calculate prev/next BEFORE modifying state
-                                        // so we get the correct adjacent items
-                                        var prevIndex = newListIndex - 1;
-                                        var nextIndex = newListIndex;
-                                        // Adjust for the item being removed from oldListIndex
-                                        if (oldListIndex < newListIndex) {
-                                          prevIndex++;
-                                          nextIndex++;
-                                        }
-                                        AgendaItem? prev;
-                                        if (prevIndex >= 0 &&
-                                            prevIndex <
-                                                state.agendaItems.length) {
-                                          prev = state.agendaItems[prevIndex];
-                                        }
-                                        AgendaItem? next;
-                                        if (nextIndex <
-                                            state.agendaItems.length) {
-                                          next = state.agendaItems[nextIndex];
-                                        }
+                                      // Update state immediately to prevent jank
+                                      context
+                                          .read<PriorityBloc>()
+                                          .moveAgendaItem(
+                                            oldListIndex,
+                                            newListIndex,
+                                          );
 
-                                        // Update state immediately to prevent jank
-                                        context
-                                            .read<PriorityBloc>()
-                                            .moveAgendaItem(
-                                              oldListIndex,
-                                              newListIndex,
-                                            );
-
-                                        // Then update the database asynchronously with correct prev/next
-                                        // activity is guaranteed non-null here due to the check above
-                                        onReorderActivity(activity, prev, next);
-                                      };
-                                    },
-                                  ),
+                                      // Then update the database asynchronously with correct prev/next
+                                      // activity is guaranteed non-null here due to the check above
+                                      onReorderActivity(activity, prev, next);
+                                    };
+                                  },
                                 ),
                               ),
                             ),

@@ -10,13 +10,11 @@ import 'logging.dart';
 class NoteEditor extends StatefulWidget {
   const NoteEditor({
     required this.draft,
-    this.expand = false,
     this.flushToBottom = false,
     super.key,
   });
 
   final Note draft;
-  final bool expand;
   final bool flushToBottom;
 
   @override
@@ -106,6 +104,7 @@ class NoteEditorState extends State<NoteEditor> {
       builder: (context, state) {
         return EditableArea(
           key: _editableAreaKey,
+          padding: false,
           position: EditableAreaPosition.bottom,
           flushToBottom: widget.flushToBottom,
           builder: (context, focusNode) {
@@ -122,7 +121,7 @@ class NoteEditorState extends State<NoteEditor> {
               autofocus: true,
               focusNode: focusNode,
               twists: state.twists,
-              shrinkWrap: !widget.expand,
+              shrinkWrap: true,
               initialContent: widget.draft.content,
               onIsEmptyChanged: (isEmpty) {
                 // Defer setState to avoid calling it during build
@@ -138,35 +137,33 @@ class NoteEditorState extends State<NoteEditor> {
                 await context.run(AddNote(finalizeDraft(body, alt: alt)));
               },
             );
-            return Column(
-              mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 8,
-              children: [
-                if (widget.expand)
-                  Expanded(
-                    key: const ValueKey('editor_expanded'),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: editor),
-                        if (_isEmpty)
-                          SpeechDictationButton(
-                            onResult: (text) {
-                              _editorKey.currentState?.insertTextAtCursor(text);
-                            },
-                            onError: (error) {
-                              Alert.show(context, error);
-                            },
-                          ),
-                      ],
-                    ),
-                  )
-                else
+            return Padding(
+              padding: const EdgeInsets.only(
+                left: 12,
+                right: 12,
+                top: 4,
+                bottom: 12,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 4,
+                children: [
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: editor),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            top: 8,
+                            bottom: 4,
+                            left: 6,
+                            right: 6,
+                          ),
+                          child: editor,
+                        ),
+                      ),
+
                       if (_isEmpty)
                         SpeechDictationButton(
                           onResult: (text) {
@@ -178,30 +175,31 @@ class NoteEditorState extends State<NoteEditor> {
                         ),
                     ],
                   ),
-                // Bottom bar - stays at bottom, above keyboard
-                Row(
-                  children: [
-                    // Left side: Do Now toggle
-                    Button.icon(
-                      ToggleNoteTag(widget.draft, Tag.now, Base.actorId),
-                      selected: widget.draft.isAssignedTo(Base.actorId),
-                    ),
-                    const Spacer(),
-                    // Right side: Save button (always visible)
-                    Button.icon(
-                      CommandWrapper(
-                        AddNote(Future.value(widget.draft)),
-                        run: (action, context) async {
-                          _editorKey.currentState?.submit(false);
-                          return const CommandDone();
-                        },
+                  // Bottom bar - stays at bottom, above keyboard
+                  Row(
+                    children: [
+                      // Left side: Do Now toggle
+                      Button.icon(
+                        ToggleNoteTag(widget.draft, Tag.now, Base.actorId),
+                        selected: widget.draft.isAssignedTo(Base.actorId),
                       ),
-                      style: ButtonStyle.primary,
-                      enabled: !_isEmpty,
-                    ),
-                  ],
-                ),
-              ],
+                      const Spacer(),
+                      // Right side: Save button (always visible)
+                      Button.icon(
+                        CommandWrapper(
+                          AddNote(Future.value(widget.draft)),
+                          run: (action, context) async {
+                            _editorKey.currentState?.submit(false);
+                            return const CommandDone();
+                          },
+                        ),
+                        style: ButtonStyle.primary,
+                        enabled: !_isEmpty,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             );
           },
         );

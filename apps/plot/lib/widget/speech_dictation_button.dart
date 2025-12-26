@@ -60,7 +60,9 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
       }
       if (!_isAvailable) {
         // Permission denied or not available - don't show error, let user try again
-        log.warning('Speech recognition not available (likely permission denied)');
+        log.warning(
+          'Speech recognition not available (likely permission denied)',
+        );
       }
     } catch (e) {
       // Exception means device doesn't support speech recognition
@@ -161,7 +163,7 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
     return baseStyle.copyWith(
       // ignore: unused_result
       iconContentStyle: baseStyle.iconContentStyle.copyWith(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 8),
       ),
       decoration: baseStyle.decoration.map(
         (decoration) =>

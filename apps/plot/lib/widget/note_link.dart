@@ -93,7 +93,18 @@ class ExternalLinkButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: FButtonStyle.secondary(),
+      style:
+          // ignore: unused_result
+          context.theme.buttonStyles.secondary.copyWith(
+            contentStyle: context.theme.buttonStyles.secondary.contentStyle
+                // ignore: unused_result
+                .copyWith(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                ),
+          ),
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
       child: Text(link.title),

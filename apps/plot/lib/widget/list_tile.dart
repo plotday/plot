@@ -95,9 +95,6 @@ class ListTile extends StatefulWidget {
     /// Whether to show the keyboard shortcut (default: false).
     this.showShortcut = false,
 
-    /// Optional leading indicator widget (e.g., unread dot).
-    this.leadingIndicator,
-
     super.key,
   }) : subtitle = subtitle ?? command?.subtitle;
 
@@ -130,7 +127,6 @@ class ListTile extends StatefulWidget {
   final FocusNode? focusNode;
   final int? reorderableIndex;
   final bool showShortcut;
-  final Widget? leadingIndicator;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -198,7 +194,6 @@ class _ListTileState extends State<ListTile> {
           enabled: widget.reorderableIndex != null && !showDragBar,
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: tileBorderRadius,
               color: widget.selected
                   ? context.theme.colors.primaryForeground
                   : _focusNode.hasFocus ||
@@ -209,26 +204,16 @@ class _ListTileState extends State<ListTile> {
                   ? context.theme.plotColors.highlight
                   : null,
             ),
-            padding:
-                (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
-                  top: 0,
-                  bottom: 0,
-                  left: 0,
-                  right: showDragBar && widget.reorderableIndex != null
-                      ? 0
-                      : null,
-                ) +
-                EdgeInsets.only(left: widget.indentLevel * 16),
+            padding: EdgeInsets.only(left: widget.indentLevel * 16),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 12,
-                  child: Align(
-                    alignment: .centerLeft,
-                    child: widget.leadingIndicator,
-                  ),
+                  width: widget.leadingBuilder == null
+                      ? widget.padding?.resolve(null).left ?? 16
+                      : 0,
                 ),
+
                 ...[
                   if (widget.leadingBuilder != null)
                     widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
@@ -241,7 +226,7 @@ class _ListTileState extends State<ListTile> {
                       if (widget.icon != null || widget.command?.icon != null)
                         Icon(
                           widget.icon ?? widget.command?.icon,
-                          size: 16,
+                          size: 15,
                           color: context.theme.plotColors.muted,
                         ),
                       Expanded(
@@ -266,9 +251,7 @@ class _ListTileState extends State<ListTile> {
                                   // Calculate highlighted state
                                   final isHighlighted =
                                       _focusNode.hasFocus ||
-                                      (!widget.noHoverHighlight &&
-                                          !widget.disableInternalHover &&
-                                          _isHovered) ||
+                                      _isHovered ||
                                       widget.highlighted;
 
                                   final commandBody =
@@ -367,16 +350,13 @@ class _ListTileState extends State<ListTile> {
                             color: context.theme.plotColors.muted,
                           ),
                         ),
-                      ...[
-                        if (widget.trailingBuilder != null)
-                          widget.trailingBuilder!(
-                            _isHovered,
-                            _focusNode.hasFocus,
-                          ),
-                      ].whereType<Widget>(),
                     ],
                   ),
                 ),
+                ...[
+                  if (widget.trailingBuilder != null)
+                    widget.trailingBuilder!(_isHovered, _focusNode.hasFocus),
+                ].whereType<Widget>(),
                 // Drag bar at the end (outside main drag listener)
                 if (showDragBar && widget.reorderableIndex != null)
                   GestureDetector(
@@ -396,6 +376,13 @@ class _ListTileState extends State<ListTile> {
                       ),
                     ),
                   ),
+                SizedBox(
+                  width:
+                      (!(showDragBar && widget.reorderableIndex != null) &&
+                          widget.trailingBuilder == null
+                      ? widget.padding?.resolve(null).right ?? 16
+                      : 0),
+                ),
               ],
             ),
           ),

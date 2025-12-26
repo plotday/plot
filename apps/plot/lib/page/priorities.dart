@@ -22,6 +22,7 @@ class PrioritiesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      childPad: false,
       scrollable: false,
       header: Header(
         title: defaultTargetPlatform == TargetPlatform.macOS
@@ -53,10 +54,13 @@ class PrioritiesPage extends StatelessWidget {
               if (layoutState.multiPanel) ...[
                 ListTile(
                   title: 'Twists',
-                  trailingBuilder: (isHovered, hasFocus) => Icon(
-                    PlotIcon.twist,
-                    size: 16,
-                    color: context.theme.colors.mutedForeground,
+                  trailingBuilder: (isHovered, hasFocus) => Padding(
+                    padding: const .only(right: 16),
+                    child: Icon(
+                      PlotIcon.twist,
+                      size: 15,
+                      color: context.theme.colors.mutedForeground,
+                    ),
                   ),
                   command: CommandWrapper(ManageTwists(), icon: Value(null)),
                 ),
@@ -69,10 +73,13 @@ class PrioritiesPage extends StatelessWidget {
                           'User';
                       return ListTile(
                         title: userName,
-                        trailingBuilder: (isHovered, hasFocus) => Icon(
-                          PlotIcon.settings,
-                          size: 16,
-                          color: context.theme.colors.mutedForeground,
+                        trailingBuilder: (isHovered, hasFocus) => Padding(
+                          padding: const .only(right: 16),
+                          child: Icon(
+                            PlotIcon.settings,
+                            size: 15,
+                            color: context.theme.colors.mutedForeground,
+                          ),
                         ),
                         command: CommandWrapper(
                           ShowSettings(),
@@ -83,6 +90,7 @@ class PrioritiesPage extends StatelessWidget {
                     return const SizedBox.shrink();
                   },
                 ),
+                SizedBox(height: 12),
               ],
             ],
           );

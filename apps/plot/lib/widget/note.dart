@@ -25,10 +25,6 @@ class NoteWidget extends StatefulWidget {
 }
 
 class _NoteWidgetState extends State<NoteWidget> {
-  bool _isHovered = false;
-
-  bool get _showCommands => _isHovered || (widget.focusNode?.hasFocus ?? false);
-
   @override
   void initState() {
     super.initState();
@@ -54,68 +50,64 @@ class _NoteWidgetState extends State<NoteWidget> {
     setState(() {});
   }
 
-  void _setHovered(bool hovered) {
-    if (_isHovered != hovered) {
-      setState(() {
-        _isHovered = hovered;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final noteContent = widget.note.content ?? '';
     final noteLinks = widget.note.links ?? [];
 
-    return MouseRegion(
-      onEnter: (_) => _setHovered(true),
-      onExit: (_) => _setHovered(false),
-      child: ListTile(
-        padding: const EdgeInsets.only(left: 8, right: 8, top: 4),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (noteContent.isNotEmpty) Viewer(markdown: noteContent),
-            if (noteLinks.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: noteLinks
-                      .map((link) => NoteLinkWidget(link: link))
-                      .toList(),
-                ),
+    return ListTile(
+      padding: const .only(left: 10, right: 16, top: 8),
+      bodyBuilder: (context, highlighted) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (noteContent.isNotEmpty)
+            Padding(
+              padding: .symmetric(horizontal: 6),
+              child: Viewer(markdown: noteContent),
+            ),
+          if (noteLinks.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(
+                left: 6,
+                right: 6,
+                top: 8,
+                bottom: 4,
               ),
-            SizedBox(
-              height:
-                  35, // Fixed height matching icon button height (20px icon + 7.5px padding top/bottom)
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Flexible(
-                    child: NoteCommands(
-                      note: widget.note,
-                      showCommands: _showCommands,
-                    ),
-                  ),
-                  Text(
-                    widget.note.createdAt.toTimeAgo(),
-                    style: context.theme.typography.xs.copyWith(
-                      color: context.colour.muted,
-                    ),
-                  ),
-                ],
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: noteLinks
+                    .map((link) => NoteLinkWidget(link: link))
+                    .toList(),
               ),
             ),
-          ],
-        ),
-        selected: widget.selected,
-        focusNode: widget.focusNode,
-        onHover: widget.onHover,
-        reorderableIndex: widget.reorderableIndex,
-        noHoverHighlight: true,
+          SizedBox(
+            height: 30,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Flexible(
+                  child: NoteCommands(
+                    note: widget.note,
+                    showCommands: highlighted,
+                  ),
+                ),
+                Text(
+                  widget.note.createdAt.toTimeAgo(),
+                  style: context.theme.typography.xs.copyWith(
+                    color: context.colour.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
+      selected: widget.selected,
+      focusNode: widget.focusNode,
+      onHover: widget.onHover,
+      reorderableIndex: widget.reorderableIndex,
+      noHoverHighlight: true,
     );
   }
 }
@@ -215,11 +207,7 @@ class NoteCommands extends StatelessWidget {
         // Combine tags and commands
         final allButtons = [...loadedTagButtons, ...commandButtons];
 
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 4,
-          children: allButtons,
-        );
+        return Row(mainAxisSize: MainAxisSize.min, children: allButtons);
       },
     );
   }

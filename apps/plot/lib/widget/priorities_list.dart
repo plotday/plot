@@ -37,9 +37,12 @@ class PrioritiesList extends StatelessWidget {
             title: root.title,
             command: ChangeCurrentPriority(root),
             selected: selected?.id == root.id,
-            leadingIndicator: UnreadIndicator(
-              color: root.displayColor,
-              unread: root.unread,
+            leadingBuilder: (isHovered, hasFocus) => SizedBox(
+              width: 16,
+              child: UnreadIndicator(
+                color: root.displayColor,
+                unread: root.unread,
+              ),
             ),
             textStyle: itemStyle.copyWith(
               color: context.colour.colours.fromTheme(root.displayColor),

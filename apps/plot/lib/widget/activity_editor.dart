@@ -159,6 +159,7 @@ class ActivityEditorState extends State<ActivityEditor> {
       builder: (context, state) {
         return EditableArea(
           key: _editableAreaKey,
+          padding: false,
           position: EditableAreaPosition.bottom,
           flushToBottom: widget.flushToBottom,
           builder: (context, focusNode) {
@@ -216,81 +217,100 @@ class ActivityEditorState extends State<ActivityEditor> {
                 }
               },
             );
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 8,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: editor),
-                    if (_isEmpty)
-                      SpeechDictationButton(
-                        onResult: (text) {
-                          _editorKey.currentState?.insertTextAtCursor(text);
-                        },
-                        onError: (error) {
-                          Alert.show(context, error);
-                        },
+            return Padding(
+              padding: const EdgeInsets.only(
+                left: 12,
+                right: 12,
+                top: 4,
+                bottom: 12,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 4,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            top: 8,
+                            bottom: 4,
+                            left: 6,
+                            right: 6,
+                          ),
+                          child: editor,
+                        ),
                       ),
-                  ],
-                ),
-                // Bottom bar - stays at bottom, above keyboard
-                Row(
-                  children: [
-                    // Left side: Do Now toggle
-                    Button.icon(
-                      StartAction(
-                        widget.draft,
-                        onUpdate: (activity) {
-                          return context.read<PriorityBloc>().updateDraft(
-                            activity,
-                          );
-                        },
+                      if (_isEmpty)
+                        SpeechDictationButton(
+                          onResult: (text) {
+                            _editorKey.currentState?.insertTextAtCursor(text);
+                          },
+                          onError: (error) {
+                            Alert.show(context, error);
+                          },
+                        ),
+                    ],
+                  ),
+                  // Bottom bar - stays at bottom, above keyboard
+                  Row(
+                    children: [
+                      // Left side: Do Now toggle
+                      Button.icon(
+                        StartAction(
+                          widget.draft,
+                          onUpdate: (activity) {
+                            return context.read<PriorityBloc>().updateDraft(
+                              activity,
+                            );
+                          },
+                        ),
+                        selected: widget.draft.doNow,
                       ),
-                      selected: widget.draft.doNow,
-                    ),
-                    Button.icon(
-                      state.draft.type == .event
-                          ? UnscheduleEvent(
-                              widget.draft,
-                              onUpdate: (activity) {
-                                return context.read<PriorityBloc>().updateDraft(
-                                  activity,
-                                );
-                              },
-                            )
-                          : ScheduleEvent(
-                              widget.draft,
-                              at: DateTimeRange(
-                                DateTime.now(),
-                                DateTime.now().add(const Duration(hours: 1)),
+                      Button.icon(
+                        state.draft.type == .event
+                            ? UnscheduleEvent(
+                                widget.draft,
+                                onUpdate: (activity) {
+                                  return context
+                                      .read<PriorityBloc>()
+                                      .updateDraft(activity);
+                                },
+                              )
+                            : ScheduleEvent(
+                                widget.draft,
+                                at: DateTimeRange(
+                                  DateTime.now(),
+                                  DateTime.now().add(const Duration(hours: 1)),
+                                ),
+                                onUpdate: (activity) {
+                                  return context
+                                      .read<PriorityBloc>()
+                                      .updateDraft(activity);
+                                },
                               ),
-                              onUpdate: (activity) {
-                                return context.read<PriorityBloc>().updateDraft(
-                                  activity,
-                                );
-                              },
-                            ),
-                      selected: widget.draft.type == .event,
-                    ),
-                    const Spacer(),
-                    // Right side: Save button (always visible)
-                    Button.icon(
-                      CommandWrapper(
-                        AddActivity(Future.value(widget.draft)),
-                        run: (action, context) async {
-                          _editorKey.currentState?.submit(false);
-                          return const CommandDone();
-                        },
+                        selected: widget.draft.type == .event,
                       ),
-                      style: ButtonStyle.primary,
-                      enabled:
-                          !_isEmpty || widget.draft.type == ActivityType.event,
-                    ),
-                  ],
-                ),
-              ],
+                      const Spacer(),
+                      // Right side: Save button (always visible)
+                      Button.icon(
+                        CommandWrapper(
+                          AddActivity(Future.value(widget.draft)),
+                          run: (action, context) async {
+                            _editorKey.currentState?.submit(false);
+                            return const CommandDone();
+                          },
+                        ),
+                        style: ButtonStyle.primary,
+                        enabled:
+                            !_isEmpty ||
+                            widget.draft.type == ActivityType.event,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             );
           },
         );

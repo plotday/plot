@@ -227,7 +227,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                   child: Scaffold(
                     scrollable: false,
                     translucent: true,
-                    childPad: layoutStateForPanels.multiPanel,
+                    childPad: false,
                     header: Header(
                       title: state.activity.displayTitle,
                       prefixCommands: prefixActions,
@@ -269,26 +269,23 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                         Flexible(
                           flex: 1,
                           fit: FlexFit.tight,
-                          child: layoutStateForPanels.multiPanel
-                              ? _buildActivityList(
-                                  state,
-                                  listController,
-                                  context,
-                                )
-                              : Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 8),
-                                  child: _buildActivityList(
-                                    state,
-                                    listController,
-                                    context,
-                                  ),
-                                ),
+                          child: _buildActivityList(
+                            state,
+                            listController,
+                            context,
+                          ),
                         ),
-                        // Editor is edge-to-edge in single panel mode
-                        NoteEditor(
-                          key: _noteEditorKey,
-                          draft: state.draft,
-                          flushToBottom: !layoutStateForPanels.multiPanel,
+                        Padding(
+                          padding: .only(
+                            left: layoutStateForPanels.multiPanel ? 12 : 0,
+                            right: layoutStateForPanels.multiPanel ? 12 : 0,
+                            bottom: layoutStateForPanels.multiPanel ? 12 : 0,
+                          ),
+                          child: NoteEditor(
+                            key: _noteEditorKey,
+                            draft: state.draft,
+                            flushToBottom: !layoutStateForPanels.multiPanel,
+                          ),
                         ),
                       ],
                     ),

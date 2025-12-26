@@ -271,7 +271,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
       child: ListTile(
         command: command,
         focusNode: widget.focusNode,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
         bodyBuilder: (context, isHighlighted) {
           // Calculate background color based on date and highlighted state
           // When highlighted, composite the semi-transparent highlight color over

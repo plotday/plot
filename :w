@@ -64,7 +64,7 @@ class ActivityWidget extends StatelessWidget {
               top: 0,
               bottom: 0,
               left: 6,
-              width: 6,
+              width: 4,
               child: UnreadIndicator(
                 color: activity.priority.displayColor,
                 unread: true, //activity.unread,
