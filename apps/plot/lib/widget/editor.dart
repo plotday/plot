@@ -527,6 +527,18 @@ class EditorState extends State<Editor> {
     if (hasPhysicalKeyboard() &&
         !settingsBloc.state.hasBeenPromptedForEnterBehavior) {
       await _showEnterBehaviorPrompt();
+
+      // After prompt, complete the original action based on user's selection
+      if (!mounted) return;
+      final selectedBehavior = settingsBloc.state.enterBehavior;
+
+      if (selectedBehavior == EnterBehavior.enterSubmits) {
+        // User chose Enter to submit, so submit now
+        submit(alt);
+      } else {
+        // User chose Enter for newline, so insert newline
+        _editor.execute([InsertNewlineAtCaretRequest()]);
+      }
       return;
     }
 
