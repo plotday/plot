@@ -23,6 +23,13 @@ class UserSettingsBase extends BaseTable {
   Insertable<UserSettingsRow> fromBase(Map<String, dynamic> json) {
     return UserSettingsRow.fromJson(json);
   }
+
+  @override
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = super.toBase(row);
+    json.remove('updated_by');
+    return json;
+  }
 }
 
 class UserSettingsEntity {
