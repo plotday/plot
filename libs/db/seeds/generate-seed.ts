@@ -987,7 +987,7 @@ function processNote(
     created_by: userId,
     draft: note.draft ?? false,
     private: note.private ?? false,
-    content: note.note ?? null,
+    content: note.content ?? note.note ?? null,
     links,
     mentions,
   });

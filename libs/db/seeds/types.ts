@@ -78,7 +78,8 @@ export interface Activity {
 export interface Note {
   ref?: string; // Optional unique reference
   author_ref?: string; // Default: "user"
-  note?: string; // Markdown content
+  content?: string; // Markdown content (preferred)
+  note?: string; // Markdown content (alias for backward compatibility)
   links?: Link[];
   mentions?: string[]; // Array of contact refs
   tags?: Tags;
