@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/router.dart';
 import 'logging.dart';
 
 @RoutePage()
@@ -24,10 +25,19 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
+  bool _isPasswordReset = false;
 
   @override
   void initState() {
     super.initState();
+    _loadResetMode();
+  }
+
+  Future<void> _loadResetMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isPasswordReset = prefs.getBool('is_password_reset') ?? false;
+    });
   }
 
   @override
@@ -43,7 +53,8 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
     final password = _passwordController.text;
     final confirmPassword = _confirmPasswordController.text;
 
-    if (name.isEmpty) {
+    // Only validate name for new users (not password reset)
+    if (!_isPasswordReset && name.isEmpty) {
       setState(() {
         _errorMessage = 'Please enter your name';
       });
@@ -77,14 +88,21 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
     });
 
     try {
-      // Update the user's password and name
+      // Update the user's password (and name for new users)
       final response = await Base.client.auth.updateUser(
-        UserAttributes(password: password, data: {'full_name': name}),
+        UserAttributes(
+          password: password,
+          data: _isPasswordReset ? null : {'full_name': name},
+        ),
       );
 
       if (response.user == null) {
         throw Exception('Failed to update password');
       }
+
+      // Clear the reset mode flag
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('is_password_reset');
 
       if (!mounted) return;
 
@@ -107,6 +125,25 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
     }
   }
 
+  Future<void> _handleCancel() async {
+    // Get the user's email before clearing state
+    final userState = context.read<UserBloc>().state;
+    final email = userState is UserPasswordRequired
+        ? userState.user.primaryEmail
+        : null;
+
+    // Clear both flags and navigate back to sign-in page
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('is_password_reset');
+
+    if (!mounted) return;
+    await context.read<UserBloc>().setPasswordSetupRequired(false);
+
+    if (!mounted) return;
+    // Navigate to email sign-in page, which should automatically sign in
+    await context.router.navigate(EmailSignInRoute(email: email));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -122,36 +159,44 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
             children: [
               // Title
               Text(
-                'Complete your account',
+                _isPasswordReset
+                    ? 'Reset your password'
+                    : 'Complete your account',
                 style: context.theme.typography.lg.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
               ),
 
-              const Text(
-                'Enter your name and choose a secure password',
+              Text(
+                _isPasswordReset
+                    ? 'Choose a new secure password'
+                    : 'Enter your name and choose a secure password',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF6B7280)),
+                style: const TextStyle(color: Color(0xFF6B7280)),
               ),
 
               const SizedBox(height: 8),
 
-              // Name field
-              FTextField(
-                control: .managed(controller: _nameController),
-                hint: 'Enter your name',
-                label: const Text('Name'),
-                autofocus: true,
-                onSubmit: (_) => _handlePasswordUpdate(),
-              ),
+              // Name field (only for new users)
+              if (!_isPasswordReset)
+                FTextField(
+                  control: .managed(controller: _nameController),
+                  hint: 'Enter your name',
+                  label: const Text('Name'),
+                  autofocus: true,
+                  onSubmit: (_) => _handlePasswordUpdate(),
+                ),
 
               // Password field
               FTextField(
                 control: .managed(controller: _passwordController),
-                hint: 'Enter your password',
+                hint: _isPasswordReset
+                    ? 'Enter new password'
+                    : 'Enter your password',
                 label: const Text('Password'),
                 obscureText: true,
+                autofocus: _isPasswordReset,
                 onSubmit: (_) => _handlePasswordUpdate(),
               ),
 
@@ -172,9 +217,21 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
                   style: FButtonStyle.primary(),
                   child: _isLoading
                       ? const Spinner()
-                      : const Text('Create Account'),
+                      : Text(
+                          _isPasswordReset
+                              ? 'Reset Password'
+                              : 'Create Account',
+                        ),
                 ),
               ),
+
+              // Cancel button (only for password reset)
+              if (_isPasswordReset)
+                FButton(
+                  onPress: _isLoading ? null : _handleCancel,
+                  style: FButtonStyle.ghost(),
+                  child: const Text('Cancel and sign in'),
+                ),
 
               // Error message
               if (_errorMessage != null) ...[

@@ -37,6 +37,11 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     return next();
   }
 
+  // Allow public auth endpoints (no authentication required)
+  if (c.req.path === "/app/auth/send-code" && c.req.method === "POST") {
+    return next();
+  }
+
   // Allow OPTIONS requests through (CORS preflight)
   if (c.req.method === "OPTIONS") {
     return await next();

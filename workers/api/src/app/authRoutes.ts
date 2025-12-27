@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Callback } from "@plotday/twister/tools/callbacks";
 import type { AuthProvider } from "@plotday/twister/tools/integrations";
 
+import { createClient } from "@plotday/db";
 import { Integrations } from "../twist/tools/integrations";
 import type { Bindings } from "../env";
 import { handleValidationError } from "../utils/validation";
@@ -18,6 +19,10 @@ const AuthUrlRequestSchema = z.object({
   callback: z.string().optional(),
   redirectUri: z.url(),
   platform: z.enum(["ios", "android", "desktop"]).optional(),
+});
+
+const SendCodeRequestSchema = z.object({
+  email: z.string().email(),
 });
 
 // POST /auth - Handle OAuth redirects
@@ -87,6 +92,65 @@ authRoutes.get("/auth", async (c) => {
       });
     }
     return new Response("Internal server error", { status: 500 });
+  }
+});
+
+// POST /auth/send-code - Send OTP code via email (public endpoint, no auth required)
+// Sends welcome email for new users, password reset for existing users
+// Always returns success to prevent account enumeration
+authRoutes.post("/auth/send-code", async (c) => {
+  try {
+    const parseResult = SendCodeRequestSchema.safeParse(await c.req.json());
+
+    if (!parseResult.success) {
+      return handleValidationError(parseResult.error);
+    }
+
+    const { email } = parseResult.data;
+
+    // Create admin client to check user existence and send emails
+    const supabaseAdmin = createClient(
+      c.env.SUPABASE_URL,
+      c.env.SUPABASE_SERVICE_KEY
+    );
+
+    // Check if user already exists
+    const { data: users, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+
+    if (listError) {
+      console.error("Error checking user existence:", listError);
+      // Return success anyway to prevent account enumeration
+      return c.json({ success: true });
+    }
+
+    const existingUser = users.users.find((user) => user.email === email);
+
+    if (existingUser) {
+      // User exists - send password reset email (recovery template with OTP)
+      const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(
+        email
+      );
+
+      if (resetError) {
+        console.error("Error sending password reset email:", resetError);
+      }
+    } else {
+      // New user - send signup OTP email (confirmation template)
+      const { error: signupError } = await supabaseAdmin.auth.signInWithOtp({
+        email: email,
+      });
+
+      if (signupError) {
+        console.error("Error sending signup email:", signupError);
+      }
+    }
+
+    // Always return success to prevent account enumeration
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error in send-code endpoint:", error);
+    // Return success even on error to prevent account enumeration
+    return c.json({ success: true });
   }
 });
 

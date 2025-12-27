@@ -1,18 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
+import 'package:plot/env.dart';
 import 'package:plot/state/user.dart';
 import 'logging.dart';
 
 @RoutePage()
 class EmailSignInPage extends StatefulWidget {
-  const EmailSignInPage({this.returnTo, super.key});
+  const EmailSignInPage({this.returnTo, this.email, super.key});
 
   final String? returnTo;
+  final String? email;
 
   @override
   State<EmailSignInPage> createState() => _EmailSignInPageState();
@@ -25,14 +30,24 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _otpController = TextEditingController();
+  final _emailFocusNode = FocusNode();
   _AuthMode _mode = _AuthMode.signIn;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.email != null) {
+      _emailController.text = widget.email!;
+    }
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _otpController.dispose();
+    _emailFocusNode.dispose();
     super.dispose();
   }
 
@@ -96,21 +111,24 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      // Send OTP code for new account signup
-      await Base.client.auth.signInWithOtp(email: email);
+      // Send OTP code via API (handles both new users and existing users)
+      final response = await http.post(
+        Uri.parse('${Env.apiRoot}/auth/send-code'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email}),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to send verification code');
+      }
 
       // Successfully sent OTP
       setState(() {
         _mode = _AuthMode.otpSent;
         _isLoading = false;
       });
-    } on AuthException catch (e) {
-      log.warning('Error sending signup OTP', e);
-      setState(() {
-        _errorMessage = e.message;
-        _isLoading = false;
-      });
     } catch (e) {
+      log.warning('Error sending signup OTP', e);
       setState(() {
         _errorMessage = 'Failed to send verification code: $e';
         _isLoading = false;
@@ -134,17 +152,27 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      // Send OTP for password reset
-      await Base.client.auth.signInWithOtp(email: email);
+      // Send OTP via API (same endpoint as signup)
+      final response = await http.post(
+        Uri.parse('${Env.apiRoot}/auth/send-code'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email}),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to send verification code');
+      }
+
       if (!mounted) return;
       setState(() {
         _mode = _AuthMode.otpSent;
         _isLoading = false;
       });
-    } on AuthException catch (e) {
+    } catch (e) {
+      log.warning('Error sending password reset OTP', e);
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.message;
+        _errorMessage = 'Failed to send verification code: $e';
         _isLoading = false;
       });
     }
@@ -167,7 +195,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      await Base.client.auth.verifyOTP(
+      final response = await Base.client.auth.verifyOTP(
         email: email,
         token: token,
         type: OtpType.email,
@@ -175,9 +203,20 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
       if (!mounted) return;
 
+      // Check if user is new or existing
+      // New users won't have a full_name in their metadata yet
+      final user = response.user;
+      final isNewUser = user?.userMetadata?['full_name'] == null;
+
       // Set local flag to indicate password setup is required
       // This will trigger UserPasswordRequired or UserWaitlisted state
+      // and navigate to the password setup page with the appropriate mode
       await context.read<UserBloc>().setPasswordSetupRequired(true);
+
+      // Store whether this is a password reset (not a new signup)
+      // This will be used by the password setup page to show appropriate UI
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('is_password_reset', !isNewUser);
     } on AuthException catch (e) {
       log.warning('Error verifying OTP', e);
       if (!mounted) return;
@@ -203,18 +242,27 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      await Base.client.auth.signInWithOtp(email: email);
+      // Resend OTP via API
+      final response = await http.post(
+        Uri.parse('${Env.apiRoot}/auth/send-code'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email}),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to resend verification code');
+      }
 
       if (!mounted) return;
       setState(() {
         _isLoading = false;
         _otpController.clear();
       });
-    } on AuthException catch (e) {
+    } catch (e) {
       log.warning('Error resending code', e);
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.message;
+        _errorMessage = 'Failed to resend code: $e';
         _isLoading = false;
       });
     }
@@ -300,6 +348,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
               ] else ...[
                 // Email field
                 FTextField(
+                  focusNode: _emailFocusNode,
                   control: .managed(controller: _emailController),
                   hint: 'your@email.com',
                   label: const Text('Email'),
@@ -342,6 +391,9 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                                           : _AuthMode.signUp;
                                       _passwordController.clear();
                                       _errorMessage = null;
+                                    });
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      _emailFocusNode.requestFocus();
                                     });
                                   },
                             style: FButtonStyle.ghost(),
