@@ -215,15 +215,10 @@ class _ModalProviderState extends State<ModalProvider> {
               useSafeArea: true,
               mainAxisMaxRatio: 1,
               builder: (dialogContext) {
-                return Padding(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(modalContext).viewInsets.bottom,
-                  ),
-                  child: material.Material(
-                    child: Container(
-                      color: dialogContext.theme.colors.background,
-                      child: buildModalContent(dialogContext),
-                    ),
+                return material.Material(
+                  child: Container(
+                    color: dialogContext.theme.colors.background,
+                    child: buildModalContent(dialogContext),
                   ),
                 );
               },
@@ -253,7 +248,10 @@ class _ModalProviderState extends State<ModalProvider> {
     // not if a cascaded pop already closed it
     if (shouldCloseDialog) {
       final modalContext = _rootContextKey.currentContext ?? context;
-      final navigator = Navigator.of(modalContext, rootNavigator: _usedRootNavigator);
+      final navigator = Navigator.of(
+        modalContext,
+        rootNavigator: _usedRootNavigator,
+      );
       if (navigator.canPop()) {
         navigator.pop(result);
       } else {
@@ -279,7 +277,10 @@ class _ModalProviderState extends State<ModalProvider> {
     // not if a cascaded pop already closed it
     if (shouldCloseDialog) {
       final modalContext = _rootContextKey.currentContext ?? context;
-      final navigator = Navigator.of(modalContext, rootNavigator: _usedRootNavigator);
+      final navigator = Navigator.of(
+        modalContext,
+        rootNavigator: _usedRootNavigator,
+      );
       if (navigator.canPop()) {
         navigator.pop(value);
       } else {
@@ -297,7 +298,10 @@ class _ModalProviderState extends State<ModalProvider> {
     }
     // Use the same context that was used to create the dialog
     final modalContext = _rootContextKey.currentContext ?? context;
-    await Navigator.of(modalContext, rootNavigator: _usedRootNavigator).maybePop();
+    await Navigator.of(
+      modalContext,
+      rootNavigator: _usedRootNavigator,
+    ).maybePop();
   }
 
   void _notifyStackChanged() {
