@@ -403,8 +403,8 @@ class _ListTileState extends State<ListTile> {
                 if (showDragBar && widget.reorderableIndex != null)
                   ReorderableDragStartListener(
                     index: widget.reorderableIndex!,
-                    child: Padding(
-                      // Larger padding for easier touch target (~44x44 logical pixels)
+                    child: Container(
+                      color: Color(0x00000000),
                       padding: const EdgeInsets.only(left: 7.5, right: 16),
                       child: Icon(
                         FontAwesomeIcons.gripDotsVertical,
