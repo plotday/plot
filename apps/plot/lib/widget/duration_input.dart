@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/plot_icon_sizes.dart';
+
 /// A compound input widget for editing durations with +/- buttons and separate hour/minute fields.
 ///
 /// Provides:
@@ -287,7 +289,7 @@ class _DurationInputState extends State<DurationInput> {
     return FButton(
       style: (style) => theme.buttonStyles.ghost,
       onPress: onPressed,
-      child: Icon(icon, size: 14),
+      child: Icon(icon, size: theme.iconSizes.sm),
     );
   }
 

@@ -9,6 +9,7 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/header.dart';
@@ -58,7 +59,7 @@ class PrioritiesPage extends StatelessWidget {
                     padding: const .only(right: 16),
                     child: Icon(
                       PlotIcon.twist,
-                      size: 15,
+                      size: context.theme.iconSizes.base,
                       color: context.theme.colors.mutedForeground,
                     ),
                   ),
@@ -77,7 +78,7 @@ class PrioritiesPage extends StatelessWidget {
                           padding: const .only(right: 16),
                           child: Icon(
                             PlotIcon.settings,
-                            size: 15,
+                            size: context.theme.iconSizes.base,
                             color: context.theme.colors.mutedForeground,
                           ),
                         ),

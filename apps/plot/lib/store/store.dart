@@ -108,6 +108,7 @@ abstract class BaseTable {
     this.order = 'created_at',
     this.ascending = true,
     this.upsertAsUpdate = false,
+    this.supportsArchiving = true,
     String? name,
     this.filterName,
     this.limit,
@@ -124,6 +125,7 @@ abstract class BaseTable {
   final bool ascending;
   final int? limit;
   final bool upsertAsUpdate;
+  final bool supportsArchiving;
 
   Map<String, dynamic> toBase(DataClass row) {
     final json = row.toJson();
@@ -161,7 +163,8 @@ abstract class BaseTable {
     // - Update pulls (updatedSince != null): include all items
     // - Archived sync: only archived items (archived_at IS NOT NULL)
     // - Regular sync: only non-archived items (archived_at IS NULL)
-    if (updatedSince == null) {
+    // Skip for tables that don't support archiving
+    if (supportsArchiving && updatedSince == null) {
       if (archived) {
         query = query.not("archived_at", "is", null);
       } else {

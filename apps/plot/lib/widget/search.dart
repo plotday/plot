@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'icon.dart';
 
 /// Toggleable search widget that displays a search icon or input field.
@@ -104,7 +105,7 @@ class _SearchWidgetState extends State<SearchWidget> {
             FButton.icon(
               style: FButtonStyle.ghost(),
               onPress: _toggle,
-              child: Icon(PlotIcon.close, size: 14),
+              child: Icon(PlotIcon.close, size: context.theme.iconSizes.sm),
             ),
           ],
         ),
@@ -114,7 +115,7 @@ class _SearchWidgetState extends State<SearchWidget> {
     return FButton.icon(
       style: FButtonStyle.ghost(),
       onPress: _toggle,
-      child: Icon(PlotIcon.search, size: 14),
+      child: Icon(PlotIcon.search, size: context.theme.iconSizes.sm),
     );
   }
 }

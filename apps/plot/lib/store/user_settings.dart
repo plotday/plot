@@ -17,6 +17,7 @@ class UserSettingsBase extends BaseTable {
           name: "user_settings",
           order: 'updated_at',
           upsertAsUpdate: true,
+          supportsArchiving: false,
         );
 
   @override

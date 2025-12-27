@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/widget.dart';
 
 /// A widget that enables swipe gestures on touch devices to reveal and execute commands.
@@ -219,7 +220,7 @@ class _SwipeableState extends State<Swipeable>
         color: backgroundColor,
         child: Center(
           child: command.icon != null
-              ? Icon(command.icon, size: 20, color: foregroundColor)
+              ? Icon(command.icon, size: context.theme.iconSizes.lg, color: foregroundColor)
               : Text(
                   command.title,
                   style: context.theme.typography.sm.copyWith(

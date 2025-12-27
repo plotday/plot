@@ -1,11 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/plot_icon_sizes.dart';
+
 /// A row widget with an icon and expandable content.
 ///
 /// Used for scheduler-style inputs where a small icon precedes the input field.
-/// The icon is 14px with muted foreground color, and the content expands to fill
-/// the remaining space.
+/// The icon uses the theme's small icon size with muted foreground color, and
+/// the content expands to fill the remaining space.
 class IconInputRow extends StatelessWidget {
   const IconInputRow({
     required this.icon,
@@ -14,7 +16,7 @@ class IconInputRow extends StatelessWidget {
     super.key,
   });
 
-  /// The icon to display on the left side (14px size).
+  /// The icon to display on the left side.
   final IconData icon;
 
   /// The content widget that expands to fill the remaining space.
@@ -33,7 +35,7 @@ class IconInputRow extends StatelessWidget {
             padding: const EdgeInsets.only(right: 8),
             child: Icon(
               icon,
-              size: 14,
+              size: context.theme.iconSizes.sm,
               color: context.theme.colors.mutedForeground,
             ),
           ),

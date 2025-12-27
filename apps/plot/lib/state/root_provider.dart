@@ -104,6 +104,9 @@ class RootProviderState extends State<RootProvider> {
               // Wait for widget tree to update and dispose old widgets before removing Store
               await WidgetsBinding.instance.endOfFrame;
               await Store.stop();
+              // Clear actorId after all blocs and store are stopped to prevent
+              // race conditions with streams accessing actorId during cleanup
+              Base.clearActorId();
               break;
             case UserWaitlisted _:
               await router.replaceAll([InvitationRoute()]);

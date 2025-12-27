@@ -105,12 +105,13 @@ class _HeaderState extends State<Header> {
         // Build title with position-specific left buttons
         final titleChildren = <Widget>[
           // Avoid the window button area on the first panel
-          if (!layoutState.multiPanel ||
-              position == HeaderPosition.left ||
-              (!layoutState.leftPanelVisible &&
-                  position == HeaderPosition.middle) ||
-              (!layoutState.leftPanelVisible &&
-                  !layoutState.middlePanelVisible))
+          if (Window.toolbarPadding.horizontal != 0 &&
+              (!layoutState.multiPanel ||
+                  position == HeaderPosition.left ||
+                  (!layoutState.leftPanelVisible &&
+                      position == HeaderPosition.middle) ||
+                  (!layoutState.leftPanelVisible &&
+                      !layoutState.middlePanelVisible)))
             SizedBox(width: Window.toolbarPadding.horizontal),
           // Right sidebar toggle for right position when panel is open
           if (position == HeaderPosition.right &&
@@ -152,7 +153,8 @@ class _HeaderState extends State<Header> {
                     return KeyEventResult.ignored;
                   },
                   child: FTextField(
-                    control: .managed(controller: _searchController), focusNode: _searchFocusNode,
+                    control: .managed(controller: _searchController),
+                    focusNode: _searchFocusNode,
                     hint: 'Search…',
                     style: (style) => style.copyWith(
                       contentPadding: const EdgeInsets.symmetric(

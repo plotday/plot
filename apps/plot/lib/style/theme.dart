@@ -18,6 +18,7 @@ import 'package:plot/style/alert.dart';
 FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
   final typography = buildTypography(context, colorScheme);
+  final iconSizes = buildIconSizes(context);
 
   final plotColors = PlotColors(
     barrier: colourScheme.barrier,
@@ -29,7 +30,7 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
   var theme = FThemeData(
     colors: colorScheme,
     typography: typography,
-    extensions: [plotColors],
+    extensions: [plotColors, iconSizes],
   );
 
   final customTextFieldStyle = buildTextFieldStyle(
@@ -55,11 +56,13 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
       colourScheme,
       theme.style.borderRadius,
       typography,
+      iconSizes,
     ),
     sidebarStyle: buildSidebarStyle(
       theme.sidebarStyle,
       typography,
       colourScheme,
+      iconSizes,
     ),
     tileStyle: buildTileStyle(theme.tileStyle, theme.colors),
     scaffoldStyle: scaffoldStyle(style: theme.style, colors: theme.colors),
@@ -72,6 +75,7 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
       colourScheme,
       theme.style.borderRadius,
       typography,
+      iconSizes,
     ),
     tooltipStyle: buildTooltipStyle(
       theme.tooltipStyle,
@@ -84,6 +88,7 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
       colourScheme,
       theme.style.borderRadius,
       typography,
+      iconSizes,
     ),
   );
 

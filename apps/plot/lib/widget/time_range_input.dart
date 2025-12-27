@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
 
 /// A compound input widget for selecting a time range with chevron navigation.
@@ -325,7 +326,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
     return FButton(
       style: (style) => theme.buttonStyles.ghost,
       onPress: onPressed,
-      child: Icon(icon, size: 14),
+      child: Icon(icon, size: theme.iconSizes.sm),
     );
   }
 }

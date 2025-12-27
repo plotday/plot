@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'spinner.dart';
 
 enum ButtonStyle { primary, secondary, ghost }
@@ -160,7 +161,7 @@ class _ButtonState extends State<Button> {
                   style: fStyle,
                   onPress: onPress,
                   child: icon != null
-                      ? Icon(icon, size: 15)
+                      ? Icon(icon, size: context.theme.iconSizes.base)
                       : Text(
                           widget.command.title,
                           style: context.theme.typography.base.copyWith(
@@ -172,7 +173,7 @@ class _ButtonState extends State<Button> {
               : FButton(
                   style: fStyle,
                   onPress: onPress,
-                  prefix: icon != null ? Icon(icon, size: 15) : null,
+                  prefix: icon != null ? Icon(icon, size: context.theme.iconSizes.base) : null,
                   child: Text(widget.command.title),
                 );
         },

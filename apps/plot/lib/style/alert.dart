@@ -3,12 +3,14 @@ import 'package:forui/forui.dart';
 import 'package:prism_flutter/prism_flutter.dart';
 
 import 'package:plot/style/colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 
 FAlertStyles buildAlertStyles(
   FAlertStyles baseStyles,
   ColourSchemeData colourScheme,
   BorderRadius borderRadius,
   FTypography typography,
+  PlotIconSizes iconSizes,
 ) {
   // Create destructive color using the same formula as toFColorScheme
   final destructiveColor = RayOklch.fromComponents(
@@ -25,7 +27,7 @@ FAlertStyles buildAlertStyles(
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: colourScheme.accent.withValues(alpha: 0.2)),
       ),
-      iconStyle: IconThemeData(color: colourScheme.accent, size: 20),
+      iconStyle: IconThemeData(color: colourScheme.accent, size: iconSizes.lg),
       titleTextStyle: typography.base.copyWith(
         color: colourScheme.accent,
         fontWeight: FontWeight.w500,
@@ -39,7 +41,7 @@ FAlertStyles buildAlertStyles(
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: destructiveColor.withValues(alpha: 0.3)),
       ),
-      iconStyle: IconThemeData(color: destructiveColor, size: 20),
+      iconStyle: IconThemeData(color: destructiveColor, size: iconSizes.lg),
       titleTextStyle: typography.base.copyWith(
         color: destructiveColor,
         fontWeight: FontWeight.w500,

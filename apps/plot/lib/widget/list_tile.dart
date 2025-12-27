@@ -8,6 +8,7 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'logging.dart';
 
 enum ListTileStyle { item, header }
@@ -255,7 +256,9 @@ class _ListTileState extends State<ListTile> {
                               widget.command?.icon != null)
                             Icon(
                               widget.icon ?? widget.command?.icon,
-                              size: 15,
+                              size: widget.style == ListTileStyle.header
+                                  ? context.theme.iconSizes.sm
+                                  : context.theme.iconSizes.base,
                               color: context.theme.plotColors.muted,
                             ),
                           Expanded(
@@ -405,7 +408,7 @@ class _ListTileState extends State<ListTile> {
                       padding: const EdgeInsets.only(left: 7.5, right: 16),
                       child: Icon(
                         FontAwesomeIcons.gripDotsVertical,
-                        size: 12,
+                        size: context.theme.iconSizes.xs,
                         color: context.theme.plotColors.muted,
                       ),
                     ),

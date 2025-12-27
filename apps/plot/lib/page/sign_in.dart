@@ -142,7 +142,7 @@ class _SignInPageState extends State<SignInPage> {
                   );
                 },
                 style: FButtonStyle.secondary(),
-                prefix: const FaIcon(FontAwesomeIcons.envelope, size: 18),
+                prefix: const FaIcon(FontAwesomeIcons.envelope),
                 child: const Text('Continue with email'),
               ),
 

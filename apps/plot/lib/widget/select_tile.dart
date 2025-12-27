@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'icon.dart';
 import 'form_tile_layout.dart';
 
@@ -152,7 +153,7 @@ class _SelectTileState extends State<SelectTile> {
                 ),
                 Icon(
                   PlotIcon.verticalExpand,
-                  size: 12,
+                  size: context.theme.iconSizes.xs,
                   color: context.theme.plotColors.muted,
                 ),
               ],

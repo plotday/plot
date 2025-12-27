@@ -4,12 +4,14 @@ import 'package:prism_flutter/prism_flutter.dart';
 
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 
 FButtonStyles buildButtonStyles(
   FButtonStyles baseStyles,
   ColourSchemeData colourScheme,
   BorderRadius borderRadius,
   FTypography typography,
+  PlotIconSizes iconSizes,
 ) {
   return baseStyles.copyWith(
     // ignore: unused_result
@@ -60,9 +62,9 @@ FButtonStyles buildButtonStyles(
                 .withChroma(0)
                 .withLightness(0.50)
                 .toColor(),
-            size: 20,
+            size: iconSizes.base,
           ),
-          WidgetState.any: IconThemeData(color: Color(0xFFFFFFFF), size: 20),
+          WidgetState.any: IconThemeData(color: Color(0xFFFFFFFF), size: iconSizes.base),
         }),
       ),
       // ignore: unused_result
@@ -73,9 +75,9 @@ FButtonStyles buildButtonStyles(
                 .withChroma(0)
                 .withLightness(0.50)
                 .toColor(),
-            size: 20,
+            size: iconSizes.lg,
           ),
-          WidgetState.any: IconThemeData(color: Color(0xFFFFFFFF), size: 20),
+          WidgetState.any: IconThemeData(color: Color(0xFFFFFFFF), size: iconSizes.lg),
         }),
       ),
     ),
@@ -162,9 +164,9 @@ FButtonStyles buildButtonStyles(
         iconStyle: FWidgetStateMap({
           WidgetState.hovered | WidgetState.pressed: IconThemeData(
             color: colourScheme.foreground,
-            size: 20,
+            size: iconSizes.base,
           ),
-          WidgetState.any: IconThemeData(color: colourScheme.muted, size: 20),
+          WidgetState.any: IconThemeData(color: colourScheme.muted, size: iconSizes.base),
         }),
       ),
       // ignore: unused_result
@@ -172,9 +174,9 @@ FButtonStyles buildButtonStyles(
         iconStyle: FWidgetStateMap({
           WidgetState.hovered | WidgetState.pressed: IconThemeData(
             color: colourScheme.foreground,
-            size: 20,
+            size: iconSizes.lg,
           ),
-          WidgetState.any: IconThemeData(color: colourScheme.muted, size: 20),
+          WidgetState.any: IconThemeData(color: colourScheme.muted, size: iconSizes.lg),
         }),
       ),
     ),

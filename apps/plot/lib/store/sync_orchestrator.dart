@@ -31,6 +31,14 @@ class SyncOrchestrator {
     pullFn: Actor.pull,
   );
 
+  /// UserSettings entity (no dependencies, per-user settings)
+  static final userSettings = SyncEntity(
+    debugName: 'user_settings',
+    dependsOn: [],
+    pushFn: UserSettingsEntity.push,
+    pullFn: UserSettingsEntity.pull,
+  );
+
   /// Priority entity (depends on actor for createdBy)
   static final priority = SyncEntity(
     debugName: 'priority',
@@ -92,6 +100,7 @@ class SyncOrchestrator {
   /// All syncable entities in dependency order (for iteration)
   static final allEntities = [
     actor,
+    userSettings,
     priority,
     priorityUser,
     priorityTwist,
@@ -109,6 +118,7 @@ class SyncOrchestrator {
   /// Returns null for unknown table names.
   static SyncEntity? getEntityByTableName(String table) {
     return switch (table) {
+      'user_settings' => userSettings,
       'priority' => priority,
       'priority_user' => priorityUser,
       'priority_twist' => priorityTwist,

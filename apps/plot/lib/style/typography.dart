@@ -1,22 +1,25 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
+
+/// Font and icon sizes for desktop/web platforms and larger screens.
+const _desktopSizes = (xs: 11.0, sm: 13.0, base: 15.0, lg: 18.0, xl: 22.0);
+
+/// Font and icon sizes for mobile platforms with small screens.
+const _mobileSizes = (xs: 12.0, sm: 14.0, base: 16.0, lg: 20.0, xl: 24.0);
+
+/// Detects if we should use larger mobile fonts:
+/// - Mobile platform (iOS/Android, native or web)
+/// - Screen width < 660px (single-panel breakpoint)
+bool _useMobileFonts(BuildContext context) {
+  final screenWidth = MediaQuery.sizeOf(context).width;
+  return isMobilePlatform() && screenWidth < 660;
+}
 
 FTypography buildTypography(BuildContext context, FColors colorScheme) {
-  // Detect if we should use larger mobile fonts:
-  // - Mobile platform (iOS/Android, native or web)
-  // - Screen width < 660px (single-panel breakpoint)
-  final screenWidth = MediaQuery.sizeOf(context).width;
-  final useMobileFonts = isMobilePlatform() && screenWidth < 660;
-
-  // Font sizes for desktop/web platforms and larger screens
-  final desktopSizes = (xs: 11.0, sm: 13.0, base: 15.0, lg: 18.0, xl: 22.0);
-
-  // Larger font sizes for mobile platforms with small screens
-  final mobileSizes = (xs: 12.0, sm: 14.0, base: 16.0, lg: 20.0, xl: 24.0);
-
   // Choose the appropriate font sizes
-  final sizes = useMobileFonts ? mobileSizes : desktopSizes;
+  final sizes = _useMobileFonts(context) ? _mobileSizes : _desktopSizes;
 
   return FTypography.inherit(
     colors: colorScheme,
@@ -42,5 +45,21 @@ FTypography buildTypography(BuildContext context, FColors colorScheme) {
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
     ).base.copyWith(fontSize: sizes.xl),
+  );
+}
+
+/// Builds icon sizes that match the typography sizes.
+/// Icons should almost always use the base size, except when displayed
+/// with text of a different size (e.g., a ListTile header using the sm size).
+PlotIconSizes buildIconSizes(BuildContext context) {
+  // Choose the appropriate icon sizes to match font sizes
+  final sizes = _useMobileFonts(context) ? _mobileSizes : _desktopSizes;
+
+  return PlotIconSizes(
+    xs: sizes.xs,
+    sm: sizes.sm,
+    base: sizes.base,
+    lg: sizes.lg,
+    xl: sizes.xl,
   );
 }

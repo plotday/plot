@@ -40,6 +40,13 @@ class Base with WidgetsBindingObserver {
   static Uuid get userId => Injector.appInstance.get<Base>()._userId!;
   static ActorId get actorId => Injector.appInstance.get<Base>()._actorId!;
 
+  /// Clears the actor ID. This should be called after all blocs and Store
+  /// are stopped during sign-out to prevent race conditions with streams
+  /// that access actorId during cleanup.
+  static void clearActorId() {
+    Injector.appInstance.get<Base>()._actorId = null;
+  }
+
   static Future<void> init() async {
     try {
       log.info("Initializing Supabase (${Env.supabaseUrl})");
@@ -234,9 +241,13 @@ class Base with WidgetsBindingObserver {
 
     User? user = supaUser == null ? null : User(supaUser);
     _userId = user == null ? null : Uuid.fromString(user.id);
-    _actorId = user?.contactId == null
-        ? null
-        : ActorId.fromString(user!.contactId!);
+    // Don't clear _actorId here during sign-out - let it persist during bloc cleanup
+    // It will be cleared later by clearActorId() after Store.stop()
+    if (user != null) {
+      _actorId = user.contactId == null
+          ? null
+          : ActorId.fromString(user.contactId!);
+    }
     _initialized = true;
     if (user == null) {
       // User signing out

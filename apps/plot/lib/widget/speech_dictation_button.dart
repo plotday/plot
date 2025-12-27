@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'logging.dart';
 
 /// A button that enables speech dictation functionality.
@@ -150,7 +151,7 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
     return FButton.icon(
       onPress: _toggleListening,
       style: _buildButtonStyle(context),
-      child: Icon(FontAwesomeIcons.microphone, size: 15),
+      child: Icon(FontAwesomeIcons.microphone, size: context.theme.iconSizes.base),
     );
   }
 
