@@ -1014,18 +1014,45 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
 
   return Stylesheet(
     rules: [
+      // Default spacing for all blocks
       StyleRule(BlockSelector.all, (doc, docNode) {
         return {
           Styles.textStyle: baseStyle,
-          Styles.padding: const CascadingPadding.only(bottom: 14),
+          Styles.padding: const CascadingPadding.only(top: 8),
         };
       }),
-      StyleRule(BlockSelector.all.last(), (doc, docNode) {
-        return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+      // Remove bottom spacing from last element to prevent container edge gaps
+      StyleRule(BlockSelector.all.first(), (doc, docNode) {
+        return {Styles.padding: const CascadingPadding.only(top: 0)};
+      }),
+      // Headers: larger top margin for visual separation, smaller bottom for grouping
+      StyleRule(const BlockSelector("header1"), (doc, docNode) {
+        return {
+          Styles.padding: const CascadingPadding.only(top: 24, bottom: 8),
+        };
+      }),
+      StyleRule(const BlockSelector("header2"), (doc, docNode) {
+        return {
+          Styles.padding: const CascadingPadding.only(top: 24, bottom: 8),
+        };
+      }),
+      StyleRule(const BlockSelector("header3"), (doc, docNode) {
+        return {
+          Styles.padding: const CascadingPadding.only(top: 20, bottom: 8),
+        };
+      }),
+      StyleRule(const BlockSelector("header4"), (doc, docNode) {
+        return {
+          Styles.padding: const CascadingPadding.only(top: 20, bottom: 8),
+        };
       }),
       StyleRule(const BlockSelector("listItem"), (doc, docNode) {
-        return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+        return {Styles.padding: const CascadingPadding.only(top: 4)};
       }),
+      // Add spacing after the last item in a list (creates spacing after entire list)
+      // StyleRule(const BlockSelector("paragraph"), (doc, docNode) {
+      //   return {Styles.padding: const CascadingPadding.only(bottom: 14)};
+      // }),
     ],
     inlineTextStyler: (attributions, existingStyle) =>
         _inlineTextStyler(attributions, existingStyle, context, isDark),
