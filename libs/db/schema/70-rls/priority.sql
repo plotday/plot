@@ -1,7 +1,8 @@
--- Allow access to priority rows based on user’s access
+-- Allow access to priority rows based on user's access
+-- Also allow users to see priorities they created (needed for RETURNING clause before priority_user trigger runs)
 CREATE POLICY "Users can access their priorities" ON public.priority
     FOR SELECT TO authenticated
-        USING (can_access_priority (id));
+        USING (can_access_priority (id) OR created_by = auth.uid ());
 
 CREATE POLICY "Users change sharing for their priorities" ON public.priority_user
     FOR ALL TO authenticated

@@ -30,3 +30,4 @@ coverage
 .nx/workspace-data
 
 .claude
+.mcp.json

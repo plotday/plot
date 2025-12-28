@@ -91,6 +91,7 @@ CREATE FUNCTION can_access_priority (_priority_path ltree)
                 JOIN public.priority p ON p.id = pu.priority_id
             WHERE
                 pu.user_id = auth.uid ()
+                AND pu.archived_at IS NULL
                 AND p.path @> _priority_path);
 $$
 LANGUAGE sql
