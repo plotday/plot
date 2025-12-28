@@ -82,7 +82,9 @@ class Twist {
       tools: tools,
       environment: json['environment'] as String? ?? 'public',
       permissions: json['permissions'] != null
-          ? TwistPermissions.fromJson(json['permissions'] as Map<String, dynamic>)
+          ? TwistPermissions.fromJson(
+              json['permissions'] as Map<String, dynamic>,
+            )
           : null,
       version: json['version'] as String?,
       createdAt: json['created_at'] != null
@@ -98,16 +100,12 @@ class Twist {
 class TwistApi {
   /// Get all available twists for a priority
   static Future<List<Twist>> getAllTwists(Priority priority) async {
-    print('DEBUG: Fetching twists for priority ${priority.id}');
     final twistsData = await api.get<List<dynamic>>(
       '/twists?priorityId=${priority.id.toString()}',
     );
-    print('DEBUG: Received ${twistsData.length} twists from API');
-    print('DEBUG: Twists data: $twistsData');
     final twists = twistsData
         .map((json) => Twist.fromJson(json as Map<String, dynamic>))
         .toList();
-    print('DEBUG: Parsed ${twists.length} twist objects');
     return twists;
   }
 

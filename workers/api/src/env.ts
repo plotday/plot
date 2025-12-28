@@ -24,7 +24,7 @@ export type UpdateMessage = {
   item: UpdateItem;
   previous?: UpdateItem;
   twists: {
-    id: string;
+    id: number;
     environment: TwistEnvironment;
     priority_twist_id: string;
     config?: any;

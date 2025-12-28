@@ -20,7 +20,6 @@ class ManageTwists extends ShowCommands {
 
   static Future<Commands> _getTwistCommands(Priority? priority) async {
     final defaultPriority = priority ?? await Priority.getDefault();
-    print('DEBUG ManageTwists: Fetching twists for priority ${defaultPriority.id}');
     final results = await Future.wait([
       priority != null
           ? PriorityTwist.get(priority: priority, includeAncestors: false)
@@ -29,8 +28,6 @@ class ManageTwists extends ShowCommands {
     ]);
     final priorityTwists = results[0] as List<PriorityTwist>;
     final allTwists = results[1] as List<Twist>;
-    print('DEBUG ManageTwists: Found ${priorityTwists.length} installed twists');
-    print('DEBUG ManageTwists: Found ${allTwists.length} available twists');
 
     final editCommands = priorityTwists
         .map((twist) => EditTwistCommand(twist, priority: priority))
@@ -249,11 +246,7 @@ class AddTwist extends Command {
     } catch (e, t) {
       log.warning('Failed to add twist', e, t);
       if (e is ApiException) {
-        return CommandMessage(
-          e.description,
-          title: e.title,
-          isError: true,
-        );
+        return CommandMessage(e.description, title: e.title, isError: true);
       }
       return CommandMessage(e.toString(), isError: true);
     }
@@ -477,4 +470,3 @@ class _ArchiveActivitiesCommand extends Command {
     }
   }
 }
-

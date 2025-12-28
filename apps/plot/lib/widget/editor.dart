@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:super_editor/super_editor.dart' hide Editor;
@@ -372,8 +373,13 @@ class EditorState extends State<Editor> {
     _mentionLeaderLink = LeaderLink();
 
     // Don't call clear() if we have initial content
+    // Defer clear until after first frame to ensure SuperEditor layout is ready
     if (widget.initialContent == null || widget.initialContent!.isEmpty) {
-      clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          clear();
+        }
+      });
     }
   }
 
@@ -522,11 +528,21 @@ class EditorState extends State<Editor> {
 
   /// Submit from keyboard (Enter key) - includes first-time prompt check
   void _submitFromKeyboard(bool alt) async {
+    // Don't show prompt or submit if selecting a mention
+    if (_mentionDetector.composingMention != null) {
+      return;
+    }
+
     // Show first-time prompt if needed (only on devices with physical keyboards)
     final settingsBloc = context.read<SettingsBloc>();
     if (hasPhysicalKeyboard() &&
         !settingsBloc.state.hasBeenPromptedForEnterBehavior) {
-      await _showEnterBehaviorPrompt();
+      final result = await ChangeEnterBehavior().run(context);
+
+      // If user cancelled the prompt, do nothing (ignore the Enter press)
+      if (result is CommandSkipped) {
+        return;
+      }
 
       // After prompt, complete the original action based on user's selection
       if (!mounted) return;
@@ -619,11 +635,6 @@ class EditorState extends State<Editor> {
           return ExecutionInstruction.haltExecution;
       }
     };
-  }
-
-  /// Show first-time prompt for enter key behavior selection
-  Future<void> _showEnterBehaviorPrompt() async {
-    context.run(ChangeEnterBehavior());
   }
 
   /// Get the current editor content as markdown
@@ -719,7 +730,17 @@ class EditorState extends State<Editor> {
     if (hasMatches && !_mentionOverlayController.isShowing) {
       _mentionOverlayController.show();
     } else if (!hasMatches && _mentionOverlayController.isShowing) {
-      _mentionOverlayController.hide();
+      // Check if we're in the layout phase - if so, defer hiding the overlay
+      if (SchedulerBinding.instance.schedulerPhase ==
+          SchedulerPhase.persistentCallbacks) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _mentionOverlayController.isShowing) {
+            _mentionOverlayController.hide();
+          }
+        });
+      } else {
+        _mentionOverlayController.hide();
+      }
     }
   }
 

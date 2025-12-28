@@ -203,6 +203,17 @@ async function processUpdate(
           updatedBy
         );
 
+        // For priority_twist updates, also sync actor view since priority_twist is part of actor
+        if (type === "priority_twist") {
+          await broadcast.send(
+            {
+              type: "sync",
+              table: "actor",
+            },
+            updatedBy
+          );
+        }
+
         console.log(`Sent broadcast to user ${user.user_id} for table ${type}`);
       } catch (error) {
         console.error(

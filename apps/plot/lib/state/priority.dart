@@ -106,10 +106,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     Date newStart = moveStart < 0 && state.previous != null
         ? state.previous!
         : (moveStart < 0
-            ? currentRange.start.addDays(
-                (rangeDays * (moveStart / state.agendaItems.length)).floor(),
-              )
-            : currentRange.start);
+              ? currentRange.start.addDays(
+                  (rangeDays * (moveStart / state.agendaItems.length)).floor(),
+                )
+              : currentRange.start);
     Date newEnd = moveEnd > 0 && state.next != null
         ? state.next!
         : currentRange.end;
@@ -198,7 +198,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)])
               ..limit(1))
             .get();
-    final draftNote = draftNotes.isEmpty
+    Note? draftNote = draftNotes.isEmpty
         ? null
         : Note(
             id: draftNotes.first.id,
@@ -219,7 +219,20 @@ class PriorityBloc extends Cubit<PriorityState> {
         '[setPriority] Loaded draft note: id=${draftNote.id}, activityId=${draftNote.activityId}, content="${draftNote.content?.substring(0, draftNote.content!.length > 50 ? 50 : draftNote.content!.length) ?? ''}", archived=${draftNote.archivedAt != null}',
       );
     } else {
-      log.info('[setPriority] No draft note found for activity ${newDraft.id}');
+      // Create draft note in memory (will be saved when content is added)
+      draftNote = Note(
+        id: Uuid.generate(),
+        activityId: newDraft.id,
+        authorId: Base.actorId,
+        draft: true,
+        private: false,
+        content: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      log.info(
+        '[setPriority] Created draft note in state: id=${draftNote.id}, activityId=${newDraft.id}',
+      );
     }
 
     // Set target priority without changing context (delay context update until data loads)
@@ -281,7 +294,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // 2. There is no existing draft note and the note belongs to the current draft activity (new draft note case)
     if (note != null &&
         (note.id == state.draftNote?.id ||
-         (state.draftNote == null && note.activityId == state.draft.id))) {
+            (state.draftNote == null && note.activityId == state.draft.id))) {
       emit(state.copyWith(draftNote: Value(note)));
     }
 
@@ -485,7 +498,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     await savedActivity.save();
 
     // Convert draft note to published if provided
-    if (note != null && note.content != null && note.content!.trim().isNotEmpty) {
+    if (note != null &&
+        note.content != null &&
+        note.content!.trim().isNotEmpty) {
       final publishedNote = note.copyWith(
         activityId: savedActivity.id,
         draft: false,

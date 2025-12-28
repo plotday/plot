@@ -25,7 +25,7 @@ const DatabaseUpdateRequestSchema = z.object({
   previous: ItemSchema.optional(),
   twists: z.array(
     z.object({
-      id: z.string(),
+      id: z.number(),
       environment: z.enum(["personal", "private", "review", "public"]),
       version: z.string(),
       priority_twist_id: z.string(),

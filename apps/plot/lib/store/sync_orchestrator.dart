@@ -118,6 +118,7 @@ class SyncOrchestrator {
   /// Returns null for unknown table names.
   static SyncEntity? getEntityByTableName(String table) {
     return switch (table) {
+      'actor' => actor,
       'user_settings' => userSettings,
       'priority' => priority,
       'priority_user' => priorityUser,

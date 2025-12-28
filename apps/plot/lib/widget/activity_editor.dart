@@ -68,7 +68,12 @@ class ActivityEditorState extends State<ActivityEditor> {
       log.info(
         '[ActivityEditor.didUpdateWidget] Draft note ID changed from $_lastDraftNoteId to $newDraftNoteId, resetting editor with content length=${newContent.length}, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})',
       );
-      _editorKey.currentState?.reset(newContent);
+      // Defer reset until after current frame to avoid modifying overlay during layout
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _editorKey.currentState?.reset(newContent);
+        }
+      });
       _lastDraftNoteId = newDraftNoteId;
       _lastSavedContent = newContent;
     } else if (newContent != _lastSavedContent) {

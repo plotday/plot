@@ -152,6 +152,11 @@ twists.delete("/twist/:id/archive-activities", async (c) => {
               type: "sync",
               table: "priority_twist",
             });
+            // Also sync actor view since priority_twist is part of actor
+            await broadcast.send({
+              type: "sync",
+              table: "actor",
+            });
           } catch (broadcastError) {
             console.error(
               `Error broadcasting to user ${user.user_id}:`,
