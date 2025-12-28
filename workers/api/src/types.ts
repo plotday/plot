@@ -92,8 +92,8 @@ export const PriorityTwistItemSchema = z.object({
   updated_at: z.string(),
   archived_at: z.string().nullable(),
   priority_id: z.string(),
-  twist_id: z.string(),
-  twist_environment: z.string(),
+  twist_id: z.number(), // Changed from UUID to bigint in migration 20251227165305
+  twist_environment: z.string().optional(), // Not on priority_twist table, on twist table
   owner_id: z.string(),
   name: z.string(),
   config: z.record(z.string(), z.any()),

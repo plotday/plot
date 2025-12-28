@@ -55,8 +55,6 @@ export class Callbacks extends Tool implements ICallbackTool {
 
     const token = await this.callbacks.create({
       priorityTwistId: this.priorityTwistId,
-      twistId: this.twistId,
-      environment: this.environment,
       path: this.path,
       functionName,
       extraArgs,
@@ -75,8 +73,6 @@ export class Callbacks extends Tool implements ICallbackTool {
 
     const token = await this.callbacks.create({
       priorityTwistId: this.priorityTwistId,
-      twistId: this.twistId,
-      environment: this.environment,
       path: this.path.slice(0, -1),
       functionName,
       extraArgs,

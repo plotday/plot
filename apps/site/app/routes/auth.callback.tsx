@@ -57,11 +57,13 @@ export default function AuthCallback({ loaderData }: Route.ComponentProps) {
     const handleCallback = async () => {
       const error_code = searchParams.get("error");
       const error_description = searchParams.get("error_description");
+      const code = searchParams.get("code");
       const encodedReturnTo = searchParams.get("returnTo") || "/";
       const returnTo = encodedReturnTo === "/" ? "/" : decodeURIComponent(encodedReturnTo);
 
       console.log("Integrations callback - URL:", window.location.href);
       console.log("Integrations callback - error:", error_code, error_description);
+      console.log("Integrations callback - code:", code ? "present" : "missing");
       console.log("Integrations callback - returnTo:", returnTo);
 
       if (error_code) {
@@ -76,12 +78,32 @@ export default function AuthCallback({ loaderData }: Route.ComponentProps) {
         },
       });
 
-      // This will automatically exchange the code for a session using the stored verifier
-      const { data, error: authError } = await supabase.auth.getSession();
+      let data;
+      let authError;
 
-      if (authError || !data.session) {
-        console.error("Error getting session:", authError);
-        setError("Failed to complete authentication");
+      // If we have a code parameter (OAuth redirect), exchange it for a session
+      if (code) {
+        console.log("Exchanging OAuth code for session");
+        const result = await supabase.auth.exchangeCodeForSession(code);
+        data = result.data;
+        authError = result.error;
+      } else {
+        // Otherwise, try to get an existing session
+        console.log("Attempting to get existing session");
+        const result = await supabase.auth.getSession();
+        data = result.data;
+        authError = result.error;
+      }
+
+      if (authError) {
+        console.error("Authentication error:", authError.message, authError);
+        setError(`Failed to complete authentication: ${authError.message}`);
+        return;
+      }
+
+      if (!data.session) {
+        console.error("No session returned from Supabase");
+        setError("Failed to complete authentication: No session available");
         return;
       }
 

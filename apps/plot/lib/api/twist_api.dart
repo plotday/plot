@@ -1,7 +1,4 @@
-import 'dart:convert';
 import 'package:equatable/equatable.dart';
-import 'package:http/http.dart' as http;
-import 'package:plot/env.dart';
 import 'package:plot/store/store.dart';
 import 'api.dart' as api;
 import 'twist_permission.dart';
@@ -71,8 +68,12 @@ class Twist {
       }
     }
 
+    // Handle id as either int (bigint from database) or String
+    final idValue = json['id'];
+    final id = idValue is int ? idValue.toString() : idValue as String;
+
     return Twist(
-      id: json['id'] as String,
+      id: id,
       name: json['name'] as String,
       description: json['description'] as String?,
       authorName: json['author_name'] as String?,
@@ -97,12 +98,17 @@ class Twist {
 class TwistApi {
   /// Get all available twists for a priority
   static Future<List<Twist>> getAllTwists(Priority priority) async {
+    print('DEBUG: Fetching twists for priority ${priority.id}');
     final twistsData = await api.get<List<dynamic>>(
       '/twists?priorityId=${priority.id.toString()}',
     );
-    return twistsData
+    print('DEBUG: Received ${twistsData.length} twists from API');
+    print('DEBUG: Twists data: $twistsData');
+    final twists = twistsData
         .map((json) => Twist.fromJson(json as Map<String, dynamic>))
         .toList();
+    print('DEBUG: Parsed ${twists.length} twist objects');
+    return twists;
   }
 
   /// Remove a twist from a priority
@@ -140,25 +146,17 @@ class TwistApi {
     String? name,
     Map<String, dynamic>? config,
   }) async {
-    // Use custom HTTP call since server returns a string, not an object
-    final response = await http.post(
-      Uri.parse('${Env.apiRoot}/twist'),
-      headers: api.getHeaders(),
-      body: jsonEncode({
+    final response = await api.post<Map<String, dynamic>>(
+      '/twist',
+      body: {
         'priorityId': priorityId,
         'twistId': twistId,
         'twistEnvironment': twistEnvironment,
         if (name != null) 'name': name,
         if (config != null) 'config': config,
-      }),
+      },
     );
 
-    if (response.statusCode != 200) {
-      throw Exception('${response.statusCode} /twist ${response.body}');
-    }
-
-    // Server returns the priority twist ID as a JSON-encoded string
-    final decodedResponse = jsonDecode(response.body);
-    return decodedResponse.toString();
+    return response['id'].toString();
   }
 }

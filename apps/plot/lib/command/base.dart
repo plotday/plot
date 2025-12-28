@@ -25,8 +25,9 @@ class CommandSkipped extends CommandReturn {
 
 // Status message from running the command
 class CommandMessage extends CommandReturn {
-  const CommandMessage(this.message, {this.isError = false});
+  const CommandMessage(this.message, {this.title, this.isError = false});
   final String message;
+  final String? title;
   final bool isError;
 }
 
@@ -191,32 +192,15 @@ extension BuildContextCommandExtension on BuildContext {
 
       if (result is CommandMessage) {
         if (result.isError) {
-          final colors = theme.colors;
-          showFToast(
-            context: this,
-            alignment: FToastAlignment.topEnd,
-            title: const Text('Error'),
-            description: Text(result.message),
-            duration: const Duration(seconds: 5),
-            style: (style) => style.copyWith(
-              decoration: style.decoration.copyWith(color: colors.destructive),
-              iconStyle: style.iconStyle.copyWith(
-                color: colors.destructiveForeground,
-              ),
-              titleTextStyle: style.titleTextStyle.copyWith(
-                color: colors.destructiveForeground,
-              ),
-              descriptionTextStyle: style.descriptionTextStyle.copyWith(
-                color: colors.destructiveForeground,
-              ),
-            ),
+          showToast(
+            title: result.title,
+            message: result.message,
+            isError: true,
           );
         } else {
-          showFToast(
-            context: this,
-            alignment: FToastAlignment.topEnd,
-            title: Text(result.message),
-            duration: const Duration(seconds: 3),
+          showToast(
+            title: result.title,
+            message: result.message,
           );
         }
       } else if (result is CommandRoute) {

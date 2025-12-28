@@ -10,12 +10,12 @@ callbacks.post("/callback/:token", async (c) => {
   try {
     const token = c.req.param("token");
     if (!token) {
-      return new Response("Bad request (missing token)", { status: 400 });
+      return c.json({ message: "Bad request (missing token)" }, 400);
     }
 
     const link = await c.req.json();
     if (!link) {
-      return new Response("Bad request (missing link data)", { status: 400 });
+      return c.json({ message: "Bad request (missing link data)" }, 400);
     }
 
     const result = await Callbacks.HandleLinkCallback(
@@ -31,7 +31,7 @@ callbacks.post("/callback/:token", async (c) => {
     }
   } catch (error) {
     console.error("Error processing link callback:", error);
-    return new Response("Internal server error", { status: 500 });
+    return c.json({ message: "Internal server error" }, 500);
   }
 });
 

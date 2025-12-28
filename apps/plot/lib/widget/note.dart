@@ -11,6 +11,7 @@ class NoteWidget extends StatefulWidget {
     this.focusNode,
     this.onHover,
     this.reorderableIndex,
+    this.showAuthor = true,
     super.key,
   });
 
@@ -19,6 +20,7 @@ class NoteWidget extends StatefulWidget {
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
+  final bool showAuthor;
 
   @override
   State<NoteWidget> createState() => _NoteWidgetState();
@@ -92,12 +94,47 @@ class _NoteWidgetState extends State<NoteWidget> {
                     showCommands: highlighted,
                   ),
                 ),
-                Text(
-                  widget.note.createdAt.toTimeAgo(),
-                  style: context.theme.typography.xs.copyWith(
-                    color: context.colour.muted,
+                if (widget.showAuthor)
+                  FutureBuilder<String>(
+                    future: widget.note.getAuthorName(),
+                    builder: (context, snapshot) {
+                      final authorName = snapshot.data;
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (authorName != null && authorName.isNotEmpty) ...[
+                            Text(
+                              authorName,
+                              style: context.theme.typography.xs.copyWith(
+                                color: context.colour.muted,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '•',
+                              style: context.theme.typography.xs.copyWith(
+                                color: context.colour.muted,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Text(
+                            widget.note.createdAt.toTimeAgo(),
+                            style: context.theme.typography.xs.copyWith(
+                              color: context.colour.muted,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  )
+                else
+                  Text(
+                    widget.note.createdAt.toTimeAgo(),
+                    style: context.theme.typography.xs.copyWith(
+                      color: context.colour.muted,
+                    ),
                   ),
-                ),
               ],
             ),
           ),

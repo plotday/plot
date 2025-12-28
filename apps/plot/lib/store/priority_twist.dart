@@ -6,8 +6,8 @@ typedef PriorityTwistId = Uuid;
 class PriorityTwists extends Table
     with SyncableTable, UuidTable, CreatedTable, DeletableTable {
   BlobColumn get priorityId => blob().map(const UuidConverter())();
-  BlobColumn get twistId => blob().map(const UuidConverter())();
-  TextColumn get twistEnvironment => text()();
+  Int64Column get twistId => int64()(); // Changed from UUID to bigint
+  TextColumn get twistEnvironment => text()(); // Read from user_twist view (JOIN with twist table)
   TextColumn get name => text()();
   TextColumn get config => text().map(const JsonConverter())();
 }

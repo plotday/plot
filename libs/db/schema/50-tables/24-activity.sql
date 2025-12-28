@@ -33,7 +33,7 @@ CREATE TABLE "public"."activity" (
     "recurrence_dates" timestamptz[],
     "meta" jsonb,
     "source" text,
-    "created_by_twist_id" uuid,
+    "created_by_twist_id" bigint,
     "embedding" halfvec (384),
     "pick_priority" jsonb,
     "last_note_created_at" timestamp with time zone

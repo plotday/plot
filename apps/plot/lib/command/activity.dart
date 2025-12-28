@@ -475,7 +475,7 @@ class FinishAction extends _UpdateActivityCommand {
         eventAction: EventAction.finished,
         icon: stateIcon && activity.doNow
             ? FontAwesomeIcons.circle
-            : PlotIcon.done,
+            : FontAwesomeIcons.circleCheck,
         hoverIcon: stateIcon && activity.doNow
             ? FontAwesomeIcons.circleCheck
             : null,
@@ -594,7 +594,7 @@ class UnscheduleEvent extends _UpdateActivityCommand {
 class PickScheduleActivity extends ShowPage {
   PickScheduleActivity(Activity activity)
     : super(
-        title: 'Schedule Action',
+        title: activity.doLater ? 'Reschedule Action' : 'Schedule Action',
         icon: PlotIcon.later,
         builder: (context) => SingleChildScrollView(
           child: Column(
@@ -620,7 +620,11 @@ class PickScheduleActivity extends ShowPage {
                         today.month,
                         today.day,
                       );
-                      final dateStart = DateTime(date.year, date.month, date.day);
+                      final dateStart = DateTime(
+                        date.year,
+                        date.month,
+                        date.day,
+                      );
                       return !dateStart.isBefore(todayStart);
                     },
                   ),

@@ -4,11 +4,90 @@ import type { twistFactory as TwistFactory } from ".";
 import { type TwistEnvironment } from "../env";
 import { getUser } from "../utils/auth";
 
+/**
+ * Cleans up a failed twist installation by:
+ * 1. Archiving all activities created by the twist
+ * 2. Attempting to call deactivate (best effort, ignores errors)
+ * 3. Archiving the priority_twist record
+ *
+ * All cleanup steps are best-effort and continue even if individual steps fail.
+ * Errors are logged but not thrown to avoid masking the original installation error.
+ */
+async function cleanupFailedInstallation(
+  supabase: SupabaseClient,
+  priorityTwistId: string,
+  deactivate?: {
+    twistFactory: ReturnType<typeof TwistFactory>;
+    priorityId: string;
+    twistId: number;
+    environment: TwistEnvironment;
+  }
+): Promise<string[]> {
+  const warnings: string[] = [];
+
+  try {
+    // Step 1: Archive all activities created by this twist
+    console.log(`Cleaning up activities for failed installation ${priorityTwistId}`);
+    const { error: archiveError } = await supabase
+      .from("activity")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("created_by", priorityTwistId)
+      .is("archived_at", null);
+
+    if (archiveError) {
+      const msg = `Failed to archive activities during cleanup: ${archiveError.message}`;
+      console.error(msg);
+      warnings.push(msg);
+    }
+  } catch (error) {
+    const msg = `Error archiving activities during cleanup: ${error instanceof Error ? error.message : String(error)}`;
+    console.error(msg);
+    warnings.push(msg);
+  }
+
+  // Step 2: Try to call deactivate (best effort, may fail if activation was partial)
+  if (deactivate) {
+    try {
+      console.log(`Attempting to deactivate failed installation ${priorityTwistId}`);
+
+      const twistWrapper = await deactivate.twistFactory({
+        priorityId: deactivate.priorityId,
+        priorityTwistId: priorityTwistId,
+      });
+      await twistWrapper.deactivate();
+    } catch (error) {
+      // Deactivation errors are expected if activation failed partway through
+      console.warn(
+        `Deactivation failed during cleanup (expected if activation was incomplete): ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  // Step 3: Archive the priority_twist record
+  try {
+    console.log(`Archiving priority_twist record ${priorityTwistId}`);
+    await supabase
+      .from("priority_twist")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("id", priorityTwistId);
+  } catch (error) {
+    const msg = `Failed to archive priority_twist during cleanup: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    console.error(msg);
+    warnings.push(msg);
+  }
+
+  return warnings;
+}
+
 export async function add(
   supabase: SupabaseClient,
   supabaseAdmin: SupabaseClient,
   priority_id: string,
-  twist_id: string,
+  twist_id: number,
   twist_environment: TwistEnvironment,
   name?: string,
   config?: any,
@@ -21,19 +100,18 @@ export async function add(
     if (!priority_id || typeof priority_id !== "string") {
       throw new Error("priority_id is required and must be a string");
     }
-    if (!twist_id || typeof twist_id !== "string") {
-      throw new Error("twist_id is required and must be a string");
+    if (twist_id === undefined || twist_id === null || typeof twist_id !== "number") {
+      throw new Error("twist_id is required and must be a number");
     }
     if (!twist_environment || typeof twist_environment !== "string") {
       throw new Error("twist_environment is required and must be a string");
     }
 
     // Verify user has access to this twist
-    const { data: hasAccess, error: accessError } = await supabase.rpc(
+    const { data: hasAccess, error: accessError} = await supabase.rpc(
       "is_accessible_twist",
       {
         p_twist_id: twist_id,
-        p_twist_environment: twist_environment,
         p_priority_id: priority_id,
       }
     );
@@ -42,7 +120,7 @@ export async function add(
     }
     if (!hasAccess) {
       throw new Error(
-        `You do not have access to twist ${twist_id} (${twist_environment}) for this priority`
+        `You do not have access to twist ${twist_id} for this priority`
       );
     }
 
@@ -52,12 +130,11 @@ export async function add(
         .from("twist")
         .select("name")
         .eq("id", twist_id)
-        .eq("environment", twist_environment)
         .single()
     );
     if (!twistName) {
       throw new Error(
-        `Twist with id ${twist_id} (${twist_environment}) not found`
+        `Twist with id ${twist_id} not found`
       );
     }
     name ??= twistName;
@@ -91,7 +168,6 @@ export async function add(
     const twist: Database["public"]["Tables"]["priority_twist"]["Insert"] = {
       priority_id: priority_id,
       twist_id: twist_id,
-      twist_environment: twist_environment as any,
       name: name,
       owner_id: priority.created_by,
     };
@@ -105,14 +181,41 @@ export async function add(
 
     // Activate twist if requested
     if (activate) {
-      const twistWrapper = await activate.twistFactory({
-        id: twist_id,
-        environment: twist_environment,
-        version: activate.version,
-        priorityId: priority_id,
-        priorityTwistId: priorityTwist.id,
-      });
-      await twistWrapper.activate({ id: priority_id });
+      try {
+        const twistWrapper = await activate.twistFactory({
+          version: activate.version,
+          priorityId: priority_id,
+          priorityTwistId: priorityTwist.id,
+        });
+        await twistWrapper.activate({ id: priority_id });
+      } catch (activationError) {
+        // Activation failed - rollback the installation
+        console.error("Twist activation failed, rolling back installation:", activationError);
+
+        const cleanupWarnings = await cleanupFailedInstallation(
+          supabase,
+          priorityTwist.id,
+          {
+            twistFactory: activate.twistFactory,
+            priorityId: priority_id,
+            twistId: twist_id,
+            environment: twist_environment,
+          }
+        );
+
+        // Build error message with cleanup status
+        let errorMessage = `Failed to install twist: ${
+          activationError instanceof Error
+            ? activationError.message
+            : String(activationError)
+        }`;
+
+        if (cleanupWarnings.length > 0) {
+          errorMessage += `\n\nNote: Cleanup encountered issues:\n${cleanupWarnings.join("\n")}`;
+        }
+
+        throw new Error(errorMessage);
+      }
     }
 
     return priorityTwist;
@@ -163,8 +266,8 @@ export async function getAll(supabase: SupabaseClient, priorityId: string) {
         const { data: adminData } = await supabase
           .from("twist_admin")
           .select("publisher:publisher_id(name, email, url)")
-          .eq("id", twist.id)
-          .single();
+          .eq("id", twist.twist_admin_id)
+          .maybeSingle();
 
         if (adminData?.publisher) {
           return {
@@ -222,6 +325,8 @@ export async function getByPriority(
       throw new Error("priority_id is required and must be a string");
     }
 
+    console.log(`DEBUG getByPriority: Querying priority_child_twist for priority ${priority_id}`);
+
     const { data, error } = await supabase
       .from("priority_child_twist")
       .select("*, twist(permissions)")
@@ -229,7 +334,13 @@ export async function getByPriority(
       .is("archived_at", null);
 
     if (error) {
+      console.error(`DEBUG getByPriority: Query error:`, error);
       throw error;
+    }
+
+    console.log(`DEBUG getByPriority: Query returned ${data?.length || 0} rows`);
+    if (data && data.length > 0) {
+      console.log(`DEBUG getByPriority: First row:`, data[0]);
     }
 
     return data;
@@ -325,9 +436,10 @@ export async function deleteTwist(
     if (deactivate) {
       try {
         // Get twist metadata needed to create wrapper
+        // Need to join with twist table to get environment and twist_package_id
         const { data: priorityTwist, error: fetchError } = await supabase
           .from("priority_twist")
-          .select("twist_id, twist_environment, priority_id")
+          .select("twist_id, priority_id, twist!inner(environment, twist_admin_id)")
           .eq("id", priority_twist_id)
           .is("archived_at", null)
           .single();
@@ -338,13 +450,26 @@ export async function deleteTwist(
             fetchError?.message
           );
         } else {
-          const twistWrapper = await deactivate.twistFactory({
-            id: priorityTwist.twist_id,
-            environment: priorityTwist.twist_environment,
-            priorityId: priorityTwist.priority_id,
-            priorityTwistId: priority_twist_id,
-          });
-          await twistWrapper.deactivate();
+          // Get twist_package_id from twist_admin
+          const { data: adminData } = await supabase
+            .from("twist_admin")
+            .select("twist_package_id")
+            .eq("id", (priorityTwist.twist as any).twist_admin_id)
+            .single();
+
+          if (!adminData) {
+            console.warn(
+              `Could not fetch twist_package_id for deactivation`
+            );
+          } else {
+            const twistWrapper = await deactivate.twistFactory({
+              id: adminData.twist_package_id,
+              environment: (priorityTwist.twist as any).environment,
+              priorityId: priorityTwist.priority_id,
+              priorityTwistId: priority_twist_id,
+            });
+            await twistWrapper.deactivate();
+          }
         }
       } catch (deactivateError) {
         // Log deactivation errors but continue with deletion

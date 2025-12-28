@@ -117,15 +117,15 @@ CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid)
         twist.*
     FROM
         twist
-    LEFT JOIN twist_admin ON twist.id = twist_admin.id
-WHERE
-    twist.environment = 'public'
-    OR (twist.environment = 'personal'
-        AND twist.user_id = auth.uid ())
-    OR can_access_priority (twist_admin.priority_id)
+        JOIN twist_admin ON twist.twist_admin_id = twist_admin.id
+    WHERE
+        twist.environment = 'public'
+        OR (twist.environment = 'personal'
+            AND twist_admin.user_id = auth.uid ())
+        OR can_access_priority (twist_admin.priority_id)
 $function$;
 
-CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id uuid, p_twist_environment twist_environment, p_priority_id uuid)
+CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_priority_id uuid)
     RETURNS boolean
     LANGUAGE sql
     STABLE
@@ -137,13 +137,12 @@ CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id uuid, p_twist_
                 1
             FROM
                 twist
-            LEFT JOIN twist_admin ON twist.id = twist_admin.id
-        WHERE
-            twist.id = p_twist_id
-            AND twist.environment = p_twist_environment
-            AND (twist.environment = 'public'
-                OR (twist.environment = 'personal'
-                    AND twist.user_id = auth.uid ())
-                OR can_access_priority (twist_admin.priority_id)))
+                JOIN twist_admin ON twist.twist_admin_id = twist_admin.id
+            WHERE
+                twist.id = p_twist_id
+                AND (twist.environment = 'public'
+                    OR (twist.environment = 'personal'
+                        AND twist_admin.user_id = auth.uid ())
+                    OR can_access_priority (twist_admin.priority_id)))
 $function$;
 

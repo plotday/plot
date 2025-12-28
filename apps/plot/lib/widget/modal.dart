@@ -177,29 +177,31 @@ class _ModalProviderState extends State<ModalProvider> {
         result =
             await showFDialog<Value<T>>(
               context: modalContext,
-              builder: (dialogContext, _, _) => Column(
-                children: [
-                  SizedBox(height: anchorY),
-                  FDialog.raw(
-                    // ignore: unused_result
-                    style: dialogContext.theme.dialogStyle.copyWith(
-                      decoration: BoxDecoration(
-                        color: dialogContext.theme.colors.background,
-                        border: Border.all(
-                          color: dialogContext.theme.colors.border,
+              builder: (dialogContext, _, _) => FToaster(
+                child: Column(
+                  children: [
+                    SizedBox(height: anchorY),
+                    FDialog.raw(
+                      // ignore: unused_result
+                      style: dialogContext.theme.dialogStyle.copyWith(
+                        decoration: BoxDecoration(
+                          color: dialogContext.theme.colors.background,
+                          border: Border.all(
+                            color: dialogContext.theme.colors.border,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      builder: (context, style) => Padding(
+                        padding: EdgeInsets.all(1),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: buildModalContent(dialogContext),
+                        ),
                       ),
                     ),
-                    builder: (context, style) => Padding(
-                      padding: EdgeInsets.all(1),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: buildModalContent(dialogContext),
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ) ??
             Value.absent();
@@ -215,10 +217,12 @@ class _ModalProviderState extends State<ModalProvider> {
               useSafeArea: true,
               mainAxisMaxRatio: 1,
               builder: (dialogContext) {
-                return material.Material(
-                  child: Container(
-                    color: dialogContext.theme.colors.background,
-                    child: buildModalContent(dialogContext),
+                return FToaster(
+                  child: material.Material(
+                    child: Container(
+                      color: dialogContext.theme.colors.background,
+                      child: buildModalContent(dialogContext),
+                    ),
                   ),
                 );
               },

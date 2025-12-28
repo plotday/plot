@@ -23,7 +23,7 @@ summary.post("/summary", async (c) => {
     return c.json(await summarize(c.env.AI, body.body));
   } catch (error) {
     console.error("Error processing summary request:", error);
-    return c.json({ error: "Error processing request." }, 500);
+    return c.json({ message: "Error processing request." }, 500);
   }
 });
 

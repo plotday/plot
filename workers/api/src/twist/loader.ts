@@ -10,8 +10,8 @@ export async function getTwist({
   env,
   ctx,
   supabase,
-  id,
-  environment,
+  id: providedId,
+  environment: providedEnvironment,
   version,
   priorityId: _priorityId,
   priorityTwistId,
@@ -23,8 +23,8 @@ export async function getTwist({
   env: Bindings;
   ctx: { exports: ExecutionContext["exports"] };
   supabase: SupabaseClient;
-  id: string;
-  environment: TwistEnvironment;
+  id?: string;
+  environment?: TwistEnvironment;
   version?: string;
   priorityId: string;
   priorityTwistId: string;
@@ -33,22 +33,71 @@ export async function getTwist({
   logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
   module?: string;
 }) {
-  if (!version) {
-    const { data, error: twistError } = await supabase
-      .from("twist")
-      .select("version")
-      .eq("id", id)
-      .eq("environment", environment)
+  let id: string;
+  let environment: TwistEnvironment;
+
+  // If id and environment are provided, use them (deployment mode)
+  if (providedId && providedEnvironment) {
+    id = providedId;
+    environment = providedEnvironment;
+  } else {
+    // Runtime mode: look up from priorityTwistId
+    // Get twist_id from priority_twist
+    const { data: priorityTwistData, error: priorityTwistError } = await supabase
+      .from("priority_twist")
+      .select("twist_id")
+      .eq("id", priorityTwistId)
       .single();
 
-    if (twistError || !data) {
+    if (priorityTwistError || !priorityTwistData) {
       throw new Error(
-        `Failed to fetch twist metadata for ${id} (${environment}): ${
+        `Failed to fetch priority_twist: ${
+          priorityTwistError?.message || "No data found"
+        }`
+      );
+    }
+
+    const twistId = priorityTwistData.twist_id;
+
+    // Get twist metadata and twist_admin_id
+    const { data: twistData, error: twistError } = await supabase
+      .from("twist")
+      .select("version,twist_admin_id,environment")
+      .eq("id", twistId)
+      .single();
+
+    if (twistError || !twistData) {
+      throw new Error(
+        `Failed to fetch twist metadata for twist_id ${twistId}: ${
           twistError?.message || "No data found"
         }`
       );
     }
-    version ??= data.version;
+
+    version ??= twistData.version;
+    environment = twistData.environment;
+
+    // Get twist_package_id for R2 module loading
+    const { data: adminData, error: adminError } = await supabase
+      .from("twist_admin")
+      .select("twist_package_id")
+      .eq("id", twistData.twist_admin_id)
+      .single();
+
+    if (adminError || !adminData) {
+      throw new Error(
+        `Failed to fetch twist_package_id: ${
+          adminError?.message || "No data found"
+        }`
+      );
+    }
+
+    id = adminData.twist_package_id;
+  }
+
+  // TypeScript check: ensure id and environment are defined
+  if (!id || !environment) {
+    throw new Error("Failed to determine twist id and environment");
   }
 
   const config = await env.TWIST_CONFIG.get(`${id}:${version}`);
@@ -133,5 +182,7 @@ export async function getTwist({
   return {
     twist: worker.getEntrypoint<TwistEntrypoint>(),
     version,
+    id: id as string,
+    environment: environment as TwistEnvironment,
   };
 }

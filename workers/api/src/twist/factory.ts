@@ -31,24 +31,24 @@ export function twistFactory({
   }
   checkPermissions ??= true;
   return async ({
-    id,
-    environment,
+    id: providedId,
+    environment: providedEnvironment,
     version,
     priorityId,
     priorityTwistId,
   }: {
-    id: string;
-    environment: TwistEnvironment;
+    id?: string;
+    environment?: TwistEnvironment;
     version?: string;
     priorityId: string;
     priorityTwistId: string;
   }) => {
-    const { twist, version: resolvedVersion } = await getTwist({
+    const twistData = await getTwist({
       env,
       ctx,
       supabase,
-      id,
-      environment,
+      id: providedId,
+      environment: providedEnvironment,
       version,
       priorityId,
       priorityTwistId,
@@ -57,7 +57,10 @@ export function twistFactory({
       logSubscriptions: env.LOG_SUBSCRIPTIONS,
       module,
     });
-    version = resolvedVersion;
+    const twist = twistData.twist;
+    const id = twistData.id!;
+    const environment = twistData.environment!;
+    version = twistData.version!;
 
     // Track tool instances for permission collection
     const toolInstances: Array<{ path: string[]; id: string; options: any }> =

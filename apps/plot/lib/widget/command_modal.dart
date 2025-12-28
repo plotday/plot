@@ -1,10 +1,11 @@
 import 'package:flutter/widgets.dart';
-import 'package:forui/forui.dart';
 
+import 'package:plot/api/api_exception.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
 import 'list_tile.dart';
 import 'modal.dart';
+import 'toast.dart';
 import 'logging.dart';
 import 'select_modal.dart';
 
@@ -85,34 +86,17 @@ class CommandModal {
       } else if (result is CommandMessage) {
         if (result.isError) {
           // Show error toast
-          final colors = rootContext.theme.colors;
-          showFToast(
-            context: rootContext,
-            alignment: FToastAlignment.topEnd,
-            title: const Text('Error'),
-            description: Text(result.message),
-            duration: const Duration(seconds: 3),
-            style: (style) => style.copyWith(
-              decoration: style.decoration.copyWith(color: colors.destructive),
-              iconStyle: style.iconStyle.copyWith(
-                color: colors.destructiveForeground,
-              ),
-              titleTextStyle: style.titleTextStyle.copyWith(
-                color: colors.destructiveForeground,
-              ),
-              descriptionTextStyle: style.descriptionTextStyle.copyWith(
-                color: colors.destructiveForeground,
-              ),
-            ),
+          modalContext.showToast(
+            title: result.title,
+            message: result.message,
+            isError: true,
           );
           return result;
         } else {
           // Show success toast
-          showFToast(
-            context: rootContext,
-            alignment: FToastAlignment.topEnd,
-            title: Text(result.message),
-            duration: const Duration(seconds: 2),
+          modalContext.showToast(
+            title: result.title,
+            message: result.message,
           );
         }
       }
@@ -127,27 +111,17 @@ class CommandModal {
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
-      final colors = rootContext.theme.colors;
-      showFToast(
-        context: rootContext,
-        alignment: FToastAlignment.topEnd,
-        title: const Text('Error'),
-        description: const Text('Something went wrong'),
-        duration: const Duration(seconds: 3),
-        style: (style) => style.copyWith(
-          decoration: style.decoration.copyWith(color: colors.destructive),
-          iconStyle: style.iconStyle.copyWith(
-            color: colors.destructiveForeground,
-          ),
-          titleTextStyle: style.titleTextStyle.copyWith(
-            color: colors.destructiveForeground,
-          ),
-          descriptionTextStyle: style.descriptionTextStyle.copyWith(
-            color: colors.destructiveForeground,
-          ),
-        ),
+
+      final (title, message) = e is ApiException
+          ? (e.title, e.description)
+          : ('Error', 'Something went wrong');
+
+      modalContext.showToast(
+        title: title,
+        message: message,
+        isError: true,
       );
-      return const CommandMessage('Something went wrong', isError: true);
+      return CommandMessage(message, title: title, isError: true);
     }
     return const CommandDone();
   }

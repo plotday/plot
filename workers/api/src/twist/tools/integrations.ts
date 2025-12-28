@@ -97,8 +97,6 @@ export class Integrations extends Tool implements IAuth {
     }
     const callbackToken = await this.callbacks.create({
       priorityTwistId: this.priorityTwistId,
-      twistId: this.twistId,
-      environment: this.environment,
       path: this.path.slice(0, -1), // Remove this tool from path to target parent
       functionName: callbackFunctionName,
       extraArgs,
@@ -107,8 +105,6 @@ export class Integrations extends Tool implements IAuth {
     // Create wrapped callback to onAuth
     const onAuthCallback = await this.callbacks.create({
       priorityTwistId: this.priorityTwistId,
-      twistId: this.twistId,
-      environment: this.environment,
       path: this.path,
       functionName: "onAuth",
       extraArgs: [callbackToken],

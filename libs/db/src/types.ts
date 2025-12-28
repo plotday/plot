@@ -42,7 +42,7 @@ export type Database = {
           author_id: string
           created_at: string
           created_by: string
-          created_by_twist_id: string | null
+          created_by_twist_id: number | null
           done_at: string | null
           draft: boolean
           duration: unknown
@@ -92,7 +92,7 @@ export type Database = {
           author_id: string
           created_at?: string
           created_by?: string
-          created_by_twist_id?: string | null
+          created_by_twist_id?: number | null
           done_at?: string | null
           draft?: boolean
           duration?: unknown
@@ -122,7 +122,7 @@ export type Database = {
           author_id?: string
           created_at?: string
           created_by?: string
-          created_by_twist_id?: string | null
+          created_by_twist_id?: number | null
           done_at?: string | null
           draft?: boolean
           duration?: unknown
@@ -920,8 +920,7 @@ export type Database = {
           name: string
           owner_id: string
           priority_id: string
-          twist_environment: Database["public"]["Enums"]["twist_environment"]
-          twist_id: string
+          twist_id: number
           updated_at: string
         }
         Insert: {
@@ -932,8 +931,7 @@ export type Database = {
           name: string
           owner_id: string
           priority_id: string
-          twist_environment: Database["public"]["Enums"]["twist_environment"]
-          twist_id: string
+          twist_id: number
           updated_at?: string
         }
         Update: {
@@ -944,8 +942,7 @@ export type Database = {
           name?: string
           owner_id?: string
           priority_id?: string
-          twist_environment?: Database["public"]["Enums"]["twist_environment"]
-          twist_id?: string
+          twist_id?: number
           updated_at?: string
         }
         Relationships: [
@@ -999,11 +996,11 @@ export type Database = {
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "priority_twist_twist_id_twist_environment_fkey"
-            columns: ["twist_id", "twist_environment"]
+            foreignKeyName: "priority_twist_twist_id_fkey"
+            columns: ["twist_id"]
             isOneToOne: false
             referencedRelation: "twist"
-            referencedColumns: ["id", "environment"]
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1333,11 +1330,11 @@ export type Database = {
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
-          id: string
+          id: number
           name: string
           permissions: Json | null
+          twist_admin_id: number
           updated_at: string
-          user_id: string | null
           version: string
         }
         Insert: {
@@ -1345,11 +1342,11 @@ export type Database = {
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
-          id: string
+          id?: never
           name: string
           permissions?: Json | null
+          twist_admin_id: number
           updated_at?: string
-          user_id?: string | null
           version: string
         }
         Update: {
@@ -1357,17 +1354,17 @@ export type Database = {
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
-          id?: string
+          id?: never
           name?: string
           permissions?: Json | null
+          twist_admin_id?: number
           updated_at?: string
-          user_id?: string | null
           version?: string
         }
         Relationships: [
           {
-            foreignKeyName: "twist_id_fkey"
-            columns: ["id"]
+            foreignKeyName: "twist_twist_admin_id_fkey"
+            columns: ["twist_admin_id"]
             isOneToOne: false
             referencedRelation: "twist_admin"
             referencedColumns: ["id"]
@@ -1378,26 +1375,32 @@ export type Database = {
         Row: {
           auto_approve: boolean
           created_at: string
-          id: string
+          id: number
           priority_id: string | null
           publisher_id: number | null
+          twist_package_id: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           auto_approve?: boolean
           created_at?: string
-          id?: string
+          id?: never
           priority_id?: string | null
           publisher_id?: number | null
+          twist_package_id?: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           auto_approve?: boolean
           created_at?: string
-          id?: string
+          id?: never
           priority_id?: string | null
           publisher_id?: number | null
+          twist_package_id?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1637,7 +1640,7 @@ export type Database = {
           author_id: string | null
           created_at: string | null
           created_by: string | null
-          created_by_twist_id: string | null
+          created_by_twist_id: number | null
           done_at: string | null
           draft: boolean | null
           duration: unknown
@@ -1782,7 +1785,7 @@ export type Database = {
           twist_environment:
             | Database["public"]["Enums"]["twist_environment"]
             | null
-          twist_id: string | null
+          twist_id: number | null
           updated_at: string | null
           version: string | null
         }
@@ -1837,11 +1840,11 @@ export type Database = {
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "priority_twist_twist_id_twist_environment_fkey"
-            columns: ["twist_id", "twist_environment"]
+            foreignKeyName: "priority_twist_twist_id_fkey"
+            columns: ["twist_id"]
             isOneToOne: false
             referencedRelation: "twist"
-            referencedColumns: ["id", "environment"]
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1921,7 +1924,7 @@ export type Database = {
           at: unknown
           author_id: string | null
           created_at: string | null
-          created_by_twist_id: string | null
+          created_by_twist_id: number | null
           done_at: string | null
           draft: boolean | null
           duration: unknown
@@ -2174,7 +2177,7 @@ export type Database = {
           twist_environment:
             | Database["public"]["Enums"]["twist_environment"]
             | null
-          twist_id: string | null
+          twist_id: number | null
           updated_at: string | null
           user_id: string | null
         }
@@ -2229,11 +2232,11 @@ export type Database = {
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "priority_twist_twist_id_twist_environment_fkey"
-            columns: ["twist_id", "twist_environment"]
+            foreignKeyName: "priority_twist_twist_id_fkey"
+            columns: ["twist_id"]
             isOneToOne: false
             referencedRelation: "twist"
-            referencedColumns: ["id", "environment"]
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2360,11 +2363,11 @@ export type Database = {
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
-          id: string
+          id: number
           name: string
           permissions: Json | null
+          twist_admin_id: number
           updated_at: string
-          user_id: string | null
           version: string
         }[]
         SetofOptions: {
@@ -2388,11 +2391,7 @@ export type Database = {
       }
       insert_domain: { Args: { email: string }; Returns: number }
       is_accessible_twist: {
-        Args: {
-          p_priority_id: string
-          p_twist_environment: Database["public"]["Enums"]["twist_environment"]
-          p_twist_id: string
-        }
+        Args: { p_priority_id: string; p_twist_id: number }
         Returns: boolean
       }
       is_finite: { Args: { test: unknown }; Returns: boolean }

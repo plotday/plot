@@ -11,14 +11,15 @@ class ActivityState extends Equatable {
     this.search = '',
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
-  }) : notes = notes.isNotEmpty
-           ? List.unmodifiable(notes)
-           : notes,
+  }) : notes = notes.isNotEmpty ? List.unmodifiable(notes) : notes,
        filter = filter.isNotEmpty ? List.unmodifiable(filter) : filter,
        tags = tags.isNotEmpty ? List.unmodifiable(tags) : tags,
        tagSuggestions = tagSuggestions.isNotEmpty
            ? List.unmodifiable(tagSuggestions)
            : tagSuggestions,
+       hasOtherAuthors =
+           notes.firstWhereOrNull((note) => note.authorId != Base.actorId) !=
+           null,
        draft =
            draft ??
            Note(
@@ -39,6 +40,7 @@ class ActivityState extends Equatable {
   final String search;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
+  final bool hasOtherAuthors;
 
   ActivityState copyWith({
     Priority? context,
@@ -83,6 +85,7 @@ class ActivityState extends Equatable {
     search,
     tags,
     tagSuggestions,
+    hasOtherAuthors,
   ];
 
   @override
@@ -108,4 +111,3 @@ class ActivityDateGroup extends Equatable {
     return 'ActivityDateGroup(date: $date, activities: ${activities.length})';
   }
 }
-

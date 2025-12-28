@@ -19,7 +19,7 @@ const twists = new Hono<{ Bindings: Bindings }>();
 // Schemas
 const TwistRequestSchema = z.object({
   priorityId: z.string(),
-  twistId: z.string(),
+  twistId: z.coerce.number(), // Accept string or number, coerce to number (twist.id is bigint)
   twistEnvironment: z
     .enum(["personal", "private", "review", "public"])
     .optional()
@@ -37,7 +37,7 @@ const TwistUpdateRequestSchema = z.object({
 twists.get("/twists", async (c) => {
   const priorityId = c.req.query("priorityId");
   if (!priorityId) {
-    return new Response("Bad request (missing priorityId)", { status: 400 });
+    return c.json({ message: "Bad request (missing priorityId)" }, 400);
   }
 
   const twists = await getAllTwists(c.var.supabase, priorityId);
@@ -55,9 +55,11 @@ twists.get("/twist/:id", async (c) => {
 twists.get("/twist", async (c) => {
   const priorityId = c.req.query("priorityId");
   if (!priorityId) {
-    return new Response("Bad request (missing priorityId)", { status: 400 });
+    return c.json({ message: "Bad request (missing priorityId)" }, 400);
   }
+  console.log(`DEBUG: Fetching installed twists for priority ${priorityId}`);
   const twists = await getTwistsByPriority(c.var.supabase, priorityId);
+  console.log(`DEBUG: Found ${twists.length} installed twists:`, twists);
   return c.json(twists);
 });
 
@@ -86,14 +88,12 @@ twists.post("/twist", async (c) => {
         }),
       }
     );
-    return c.json(dbPriorityTwist.id);
+    return c.json({ id: dbPriorityTwist.id });
   } catch (error) {
     console.error("Error adding twist:", error);
     if (error instanceof Error) {
       console.warn(error.stack);
-      return new Response(`Error adding twist: ${error.message}`, {
-        status: 400,
-      });
+      return c.json({ message: `Error adding twist: ${error.message}` }, 400);
     }
     throw error;
   }
@@ -113,9 +113,7 @@ twists.patch("/twist/:id", async (c) => {
     return c.json(dbTwist);
   } catch (error) {
     if (error instanceof Error) {
-      return new Response(`Error updating twist: ${error.message}`, {
-        status: 400,
-      });
+      return c.json({ message: `Error updating twist: ${error.message}` }, 400);
     }
     throw error;
   }
@@ -131,7 +129,43 @@ twists.delete("/twist/:id", async (c) => {
 // DELETE /twist/:id/archive-activities - Archive activities and delete twist
 twists.delete("/twist/:id/archive-activities", async (c) => {
   const twistId = c.req.param("id");
-  await archiveAndDeleteTwist(c.var.supabase, twistId);
+  const result = await archiveAndDeleteTwist(c.var.supabase, twistId);
+
+  // Broadcast to all users with access to the priority
+  if (result?.priority_id) {
+    try {
+      // Get users with access to this priority
+      const usersResult = await c.var.supabase.rpc(
+        "get_users_with_priority_access",
+        {
+          target_priority_id: result.priority_id,
+        }
+      );
+
+      if (usersResult.data && usersResult.data.length > 0) {
+        // Send broadcast to each user
+        for (const user of usersResult.data) {
+          try {
+            const broadcastId = c.env.BROADCAST.idFromName(user.user_id);
+            const broadcast = c.env.BROADCAST.get(broadcastId);
+            await broadcast.send({
+              type: "sync",
+              table: "priority_twist",
+            });
+          } catch (broadcastError) {
+            console.error(
+              `Error broadcasting to user ${user.user_id}:`,
+              broadcastError
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error broadcasting twist archive:", error);
+      // Don't fail the request if broadcast fails
+    }
+  }
+
   return c.json({ success: true });
 });
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import 'package:plot/api/api_exception.dart';
 import 'package:plot/base.dart';
 import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
@@ -19,6 +20,45 @@ T _parseResponse<T>(http.Response response) {
     throw Exception(
       'Unsupported content type: ${response.headers['content-type']}',
     );
+  }
+}
+
+/// Extracts error message from API response
+/// Looks for JSON { "message": "..." } or { "error": "..." }, falls back to raw body
+String _parseErrorMessage(http.Response response) {
+  try {
+    if (_isJsonContentType(response.headers['content-type'])) {
+      final json = jsonDecode(response.body);
+      if (json is Map) {
+        if (json.containsKey('message')) {
+          return json['message'] as String;
+        }
+        if (json.containsKey('error')) {
+          return json['error'] as String;
+        }
+      }
+    }
+  } catch (e) {
+    // JSON parsing failed, fall back to raw body
+  }
+  return response.body;
+}
+
+/// Maps HTTP status codes to user-friendly error titles
+String _getErrorTitle(int statusCode) {
+  switch (statusCode) {
+    case 400:
+      return 'Invalid Request';
+    case 401:
+      return 'Unauthorized';
+    case 403:
+      return 'Access Denied';
+    case 404:
+      return 'Not Found';
+    case 500:
+      return 'Server Error';
+    default:
+      return 'Error';
   }
 }
 
@@ -55,7 +95,13 @@ Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
   );
   if (response.statusCode != 200) {
     await _checkAuthError(response, url);
-    throw Exception('${response.statusCode} $url ${response.body}');
+    final errorMessage = _parseErrorMessage(response);
+    throw ApiException(
+      statusCode: response.statusCode,
+      endpoint: url,
+      title: _getErrorTitle(response.statusCode),
+      description: errorMessage,
+    );
   }
   return _parseResponse(response);
 }
@@ -68,7 +114,13 @@ Future<T> put<T>(String url, {Map<String, dynamic> body = const {}}) async {
   );
   if (response.statusCode != 200) {
     await _checkAuthError(response, url);
-    throw Exception('${response.statusCode} $url ${response.body}');
+    final errorMessage = _parseErrorMessage(response);
+    throw ApiException(
+      statusCode: response.statusCode,
+      endpoint: url,
+      title: _getErrorTitle(response.statusCode),
+      description: errorMessage,
+    );
   }
   return _parseResponse(response);
 }
@@ -81,7 +133,13 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
   );
   if (response.statusCode != 200) {
     await _checkAuthError(response, url);
-    throw Exception('${response.statusCode} $url ${response.body}');
+    final errorMessage = _parseErrorMessage(response);
+    throw ApiException(
+      statusCode: response.statusCode,
+      endpoint: url,
+      title: _getErrorTitle(response.statusCode),
+      description: errorMessage,
+    );
   }
   return _parseResponse(response);
 }
@@ -93,7 +151,13 @@ Future<T> get<T>(String url) async {
   );
   if (response.statusCode != 200) {
     await _checkAuthError(response, url);
-    throw Exception('${response.statusCode} $url ${response.body}');
+    final errorMessage = _parseErrorMessage(response);
+    throw ApiException(
+      statusCode: response.statusCode,
+      endpoint: url,
+      title: _getErrorTitle(response.statusCode),
+      description: errorMessage,
+    );
   }
   return _parseResponse(response);
 }
@@ -105,7 +169,13 @@ Future<T> delete<T>(String url) async {
   );
   if (response.statusCode != 200) {
     await _checkAuthError(response, url);
-    throw Exception('${response.statusCode} $url ${response.body}');
+    final errorMessage = _parseErrorMessage(response);
+    throw ApiException(
+      statusCode: response.statusCode,
+      endpoint: url,
+      title: _getErrorTitle(response.statusCode),
+      description: errorMessage,
+    );
   }
   return _parseResponse(response);
 }

@@ -9,12 +9,20 @@ CREATE TYPE twist_environment AS ENUM (
 );
 
 CREATE TABLE "public"."twist_admin" (
-    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+    "id" bigint NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "twist_package_id" uuid NOT NULL DEFAULT gen_random_uuid (),
+    "user_id" uuid REFERENCES auth.users ON DELETE CASCADE,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "publisher_id" bigint REFERENCES public.publisher ON DELETE CASCADE,
     "priority_id" uuid REFERENCES public.priority ON DELETE CASCADE,
-    "auto_approve" boolean NOT NULL DEFAULT FALSE
+    "auto_approve" boolean NOT NULL DEFAULT FALSE,
+    CONSTRAINT "twist_admin_ownership_check" CHECK (
+        (publisher_id IS NOT NULL AND user_id IS NULL)
+        OR
+        (publisher_id IS NULL AND user_id IS NOT NULL)
+    ),
+    CONSTRAINT "twist_admin_package_user_unique" UNIQUE NULLS NOT DISTINCT ("twist_package_id", "user_id")
 );
 
 ALTER TABLE "public"."twist_admin" ENABLE ROW LEVEL SECURITY;
@@ -25,19 +33,20 @@ CREATE TRIGGER set_twist_admin_updated_at
     EXECUTE FUNCTION update_updated_at ();
 
 CREATE TABLE "public"."twist" (
-    "id" uuid NOT NULL REFERENCES public.twist_admin ON DELETE CASCADE,
+    "id" bigint NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "twist_admin_id" bigint NOT NULL REFERENCES public.twist_admin (id) ON DELETE CASCADE,
     "environment" twist_environment NOT NULL DEFAULT 'personal' ::twist_environment,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "archived_at" timestamp with time zone,
     "name" text NOT NULL,
     "description" text,
-    "user_id" uuid REFERENCES auth.users ON DELETE CASCADE,
     "version" text NOT NULL,
-    "permissions" jsonb,
-    PRIMARY KEY (id, environment),
-    CONSTRAINT "twist_owner_check" CHECK ((environment = 'personal' AND user_id IS NOT NULL) OR (environment != 'personal' AND user_id IS NULL))
+    "permissions" jsonb
 );
+
+CREATE INDEX idx_twist_admin_id ON "public"."twist" ("twist_admin_id");
+CREATE INDEX idx_twist_environment ON "public"."twist" ("environment");
 
 ALTER TABLE "public"."twist" ENABLE ROW LEVEL SECURITY;
 

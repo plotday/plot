@@ -74,6 +74,7 @@ class PrioritiesPage extends StatelessWidget {
                           'User';
                       return ListTile(
                         title: userName,
+                        subtitle: userState.user.primaryEmail,
                         trailingBuilder: (isHovered, hasFocus) => Padding(
                           padding: const .only(right: 16),
                           child: Icon(

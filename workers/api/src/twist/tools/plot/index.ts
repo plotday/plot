@@ -94,7 +94,7 @@ export function getActivityCache() {
 const TWIST_ID_CACHE = new Map<
   string,
   {
-    twist_id: string;
+    twist_id: number;
     timestamp: number;
   }
 >();
@@ -125,7 +125,7 @@ export class Plot extends Tool implements IPlot {
   public env?: Bindings;
   public ai: AI;
   private _actor?: Actor;
-  private _twistId?: string;
+  private _twistId?: number;
 
   /**
    * Returns permissions required by this Plot tool instance.
@@ -243,7 +243,7 @@ export class Plot extends Tool implements IPlot {
    * @param priorityTwistId - The priority_twist.id to look up
    * @returns The twist_id (twist definition ID) or null if not found
    */
-  async getTwistId(priorityTwistId: string): Promise<string | null> {
+  async getTwistId(priorityTwistId: string): Promise<number | null> {
     // Check worker-level cache first
     const cached = TWIST_ID_CACHE.get(priorityTwistId);
     if (cached && Date.now() - cached.timestamp < TWIST_ID_CACHE_TTL_MS) {

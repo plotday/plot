@@ -45,6 +45,7 @@ export 'tapable.dart';
 export 'terms_agreement.dart';
 export 'text_field.dart';
 export 'time.dart';
+export 'toast.dart';
 export 'toggle.dart';
 export 'twist_details.dart';
 export 'unread_indicator.dart';

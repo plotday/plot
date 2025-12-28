@@ -55,8 +55,6 @@ export class Tasks extends Tool implements IRun {
       // Schedule for later execution
       return await this.callbacks.create({
         priorityTwistId: this.priorityTwistId,
-        twistId: this.twistId,
-        environment: this.environment,
         path: this.path,
         functionName: "scheduledSend",
         extraArgs: [callback],

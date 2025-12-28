@@ -4,6 +4,7 @@ AS
 SELECT
     pt.*,
     t.version,
+    t.environment AS twist_environment,
     p.name AS author_name,
     p.email AS author_email,
     p.url AS author_url,
@@ -11,8 +12,8 @@ SELECT
 FROM
     priority_twist pt
     JOIN priority_child pc ON pt.priority_id = pc.priority_id
-    JOIN twist t ON pt.twist_id = t.id AND pt.twist_environment = t.environment
-    LEFT JOIN twist_admin ta ON t.id = ta.id
+    JOIN twist t ON pt.twist_id = t.id
+    JOIN twist_admin ta ON t.twist_admin_id = ta.id
     LEFT JOIN publisher p ON ta.publisher_id = p.id
 WHERE
     pt.archived_at IS NULL;

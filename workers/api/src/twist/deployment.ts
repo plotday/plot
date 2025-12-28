@@ -13,7 +13,7 @@ export interface DeployTwistOptions {
   env: Bindings;
   ctx: { exports: ExecutionContext["exports"] };
   supabase: SupabaseClient;
-  adminId: string;
+  twistAdminId: number;
   input: DeploymentInput;
   environment: Exclude<TwistEnvironment, "public">;
   name: string;
@@ -44,7 +44,7 @@ export async function deployTwist({
   env,
   ctx,
   supabase,
-  adminId,
+  twistAdminId,
   input,
   environment,
   name,
@@ -101,10 +101,21 @@ export async function deployTwist({
       onProgress?.("Deploying twist");
     }
 
+    // Get twist_package_id for storage
+    const { data: adminData } = await supabase
+      .from("twist_admin")
+      .select("twist_package_id")
+      .eq("id", twistAdminId)
+      .single();
+
+    if (!adminData) {
+      throw new Error("Failed to fetch twist_admin for storage");
+    }
+
     const storeResult = await storeTwistModule({
       env,
       ctx,
-      id: adminId,
+      id: adminData.twist_package_id,
       module: moduleCode,
       sourcemap: sourcemapCode,
       environment,
@@ -134,8 +145,8 @@ export async function deployTwist({
   // Check if twist already exists for this environment
   const { data: existingTwist } = await supabase
     .from("twist")
-    .select("name, description")
-    .eq("id", adminId)
+    .select("id, name, description")
+    .eq("twist_admin_id", twistAdminId)
     .eq("environment", environment)
     .maybeSingle();
 
@@ -144,13 +155,12 @@ export async function deployTwist({
     const { data: newTwist, error: createError } = await supabase
       .from("twist")
       .insert({
-        id: adminId,
+        twist_admin_id: twistAdminId,
         name,
         description,
         version,
         permissions: permissions as any,
         environment,
-        user_id: userId ?? null,
       })
       .select()
       .single();
@@ -170,8 +180,7 @@ export async function deployTwist({
     const { data: updatedTwist, error: updateError } = await supabase
       .from("twist")
       .update(updateData)
-      .eq("id", adminId)
-      .eq("environment", environment)
+      .eq("id", existingTwist.id)
       .select()
       .single();
 
@@ -184,9 +193,8 @@ export async function deployTwist({
     try {
       const { data: priorityTwists, error: fetchError } = await supabase
         .from("priority_twist")
-        .select("id, priority_id")
-        .eq("twist_id", adminId)
-        .eq("twist_environment", environment)
+        .select("id, priority_id, twist_id")
+        .eq("twist_id", existingTwist.id)
         .is("archived_at", null);
 
       if (fetchError) {
@@ -206,8 +214,6 @@ export async function deployTwist({
         const upgradeResults = await Promise.allSettled(
           priorityTwists.map(async (pa) => {
             const twistWrapper = await factory({
-              id: adminId,
-              environment,
               version, // Use NEW version
               priorityId: pa.priority_id,
               priorityTwistId: pa.id,
@@ -240,24 +246,23 @@ export async function deployTwist({
     const { data: twistAdmin, error: adminFetchError } = await supabase
       .from("twist_admin")
       .select("auto_approve")
-      .eq("id", adminId)
+      .eq("id", twistAdminId)
       .single();
 
     if (!adminFetchError && twistAdmin?.auto_approve) {
-      console.log(`Auto-approving twist ${adminId} to public environment`);
+      console.log(`Auto-approving twist (admin_id=${twistAdminId}) to public environment`);
 
       const { error: upsertPublicError } = await supabase.from("twist").upsert(
         {
-          id: adminId,
+          twist_admin_id: twistAdminId,
           environment: "public",
           name,
           description,
           version,
           permissions: permissions as any,
-          user_id: null,
         },
         {
-          onConflict: "id,environment",
+          onConflict: "twist_admin_id,environment",
         }
       );
 
@@ -265,7 +270,7 @@ export async function deployTwist({
         console.error("Error auto-deploying to public:", upsertPublicError);
       } else {
         console.log(
-          `Successfully auto-deployed twist ${adminId} to public environment`
+          `Successfully auto-deployed twist (admin_id=${twistAdminId}) to public environment`
         );
       }
     }

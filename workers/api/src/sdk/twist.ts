@@ -113,10 +113,10 @@ twist.post("/twist/generate", async (c) => {
 });
 
 // POST /twist/:id - Deploy twist
-// For personal environment: no id needed, authenticated by user token
-// For other environments: id is twist_admin.id (UUID), auth by user token (priority access) or publisher token
+// For personal environment: id is twist_package_id, authenticated by user token
+// For other environments: id is twist_package_id (UUID), auth by user token (priority access) or publisher token
 twist.post("/twist/:id", async (c) => {
-  const urlAdminId = c.req.param("id"); // This is twist_admin.id for non-personal
+  const urlPackageId = c.req.param("id"); // This is twist_package_id
   const userToken = c.var.userToken;
   const publisherToken = c.var.publisherToken;
   const user = c.var.user;
@@ -143,8 +143,9 @@ twist.post("/twist/:id", async (c) => {
     return new Response("Bad request: name is required", { status: 400 });
   }
 
-  let adminId: string | null = null;
+  let packageId: string | null = null;
   let userId: string | null = null;
+  let twistAdminId: number | null = null;
 
   if (environment === "personal") {
     // Personal environment: require user token
@@ -158,20 +159,21 @@ twist.post("/twist/:id", async (c) => {
     }
     userId = user.id;
 
-    // Validate admin_id is provided
-    if (!urlAdminId) {
-      return new Response("Bad request: twist admin ID required", {
+    // Validate package_id is provided
+    if (!urlPackageId) {
+      return new Response("Bad request: twist package ID required", {
         status: 400,
       });
     }
 
-    adminId = urlAdminId;
+    packageId = urlPackageId;
 
     // Check if twist_admin entry exists, create if not
     const { data: existingAdmin, error: adminCheckError } = await supabase
       .from("twist_admin")
       .select("id")
-      .eq("id", adminId)
+      .eq("twist_package_id", packageId)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (adminCheckError) {
@@ -184,31 +186,37 @@ twist.post("/twist/:id", async (c) => {
       );
     }
 
-    // Create twist_admin entry if it doesn't exist
-    if (!existingAdmin) {
-      const { error: createAdminError } = await supabase
+    if (existingAdmin) {
+      twistAdminId = existingAdmin.id;
+    } else {
+      // Create twist_admin entry if it doesn't exist
+      const { data: newAdmin, error: createAdminError } = await supabase
         .from("twist_admin")
         .insert({
-          id: adminId,
+          twist_package_id: packageId,
+          user_id: userId,
           publisher_id: null,
           priority_id: null,
-        });
+        })
+        .select("id")
+        .single();
 
-      if (createAdminError) {
+      if (createAdminError || !newAdmin) {
         console.error("Error creating twist_admin:", createAdminError);
         return new Response(
-          `Error creating twist_admin: ${createAdminError.message}`,
+          `Error creating twist_admin: ${createAdminError?.message}`,
           {
             status: 500,
           }
         );
       }
+      twistAdminId = newAdmin.id;
     }
   } else {
-    // Non-personal environment: require admin_id and validate access
-    if (!urlAdminId) {
+    // Non-personal environment: require package_id and validate access
+    if (!urlPackageId) {
       return new Response(
-        "Bad request: twist admin ID required for non-personal environment",
+        "Bad request: twist package ID required for non-personal environment",
         {
           status: 400,
         }
@@ -225,13 +233,15 @@ twist.post("/twist/:id", async (c) => {
       );
     }
 
-    adminId = urlAdminId;
+    packageId = urlPackageId;
 
     // Fetch twist_admin to validate it exists and for auth check
+    // For non-personal, user_id should be NULL
     const { data: twistAdmin, error: adminError } = await supabase
       .from("twist_admin")
-      .select("id, publisher_id, priority_id")
-      .eq("id", adminId)
+      .select("id, publisher_id, priority_id, user_id")
+      .eq("twist_package_id", packageId)
+      .is("user_id", null)
       .single();
 
     if (adminError || !twistAdmin) {
@@ -239,6 +249,8 @@ twist.post("/twist/:id", async (c) => {
         status: 404,
       });
     }
+
+    twistAdminId = twistAdmin.id;
 
     // Validate that publisher_id and priority_id are set for non-personal
     if (twistAdmin.publisher_id === null || twistAdmin.priority_id === null) {
@@ -296,7 +308,7 @@ twist.post("/twist/:id", async (c) => {
           env: c.env,
           ctx: c.executionCtx as ExecutionContext,
           supabase,
-          adminId: adminId!,
+          twistAdminId: twistAdminId!,
           input:
             module !== undefined
               ? { module, sourcemap }
@@ -323,7 +335,7 @@ twist.post("/twist/:id", async (c) => {
         const { data: finalTwist, error: finalError } = await supabase
           .from("twist")
           .select("*")
-          .eq("id", adminId)
+          .eq("twist_admin_id", twistAdminId)
           .eq("environment", environment)
           .single();
 
@@ -358,7 +370,7 @@ twist.post("/twist/:id", async (c) => {
         env: c.env,
         ctx: c.executionCtx as ExecutionContext,
         supabase,
-        adminId: adminId!,
+        twistAdminId: twistAdminId!,
         input:
           module !== undefined ? { module, sourcemap } : { source: source! },
         environment,
@@ -390,7 +402,7 @@ twist.post("/twist/:id", async (c) => {
     const { data: finalTwist, error: finalError } = await supabase
       .from("twist")
       .select("*")
-      .eq("id", adminId)
+      .eq("twist_admin_id", twistAdminId)
       .eq("environment", environment)
       .single();
 
@@ -413,7 +425,7 @@ twist.post("/twist/:id", async (c) => {
 
 // GET /twist/:id/logs - Stream twist logs via SSE
 twist.get("/twist/:id/logs", async (c) => {
-  const twistAdminId = c.req.param("id");
+  const twistPackageId = c.req.param("id");
   const environment = c.req.query("environment") || "personal";
   const userToken = c.var.userToken;
   const user = c.var.user;
@@ -429,30 +441,27 @@ twist.get("/twist/:id/logs", async (c) => {
 
   const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
 
-  // For personal environment, verify twist exists
+  // For personal environment, verify twist exists and user owns it
   // For other environments, verify user has access to the twist's priority
   if (environment === "personal") {
-    // Check if this is the user's twist
-    const { data: twist, error: twistError } = await supabase
-      .from("twist")
-      .select("id, user_id")
-      .eq("id", twistAdminId)
-      .eq("environment", environment)
+    // Check if twist_admin exists for this user and package
+    const { data: twistAdmin, error: adminError } = await supabase
+      .from("twist_admin")
+      .select("id")
+      .eq("twist_package_id", twistPackageId)
+      .eq("user_id", user.id)
       .maybeSingle();
 
-    if (twistError || !twist) {
+    if (adminError || !twistAdmin) {
       return new Response("Twist not found", { status: 404 });
-    }
-
-    if (twist.user_id !== user.id) {
-      return new Response("Forbidden", { status: 403 });
     }
   } else {
     // For non-personal environments, check priority access
     const { data: twistAdmin, error: adminError } = await supabase
       .from("twist_admin")
       .select("id, priority_id")
-      .eq("id", twistAdminId)
+      .eq("twist_package_id", twistPackageId)
+      .is("user_id", null)
       .single();
 
     if (adminError || !twistAdmin) {
@@ -488,7 +497,7 @@ twist.get("/twist/:id/logs", async (c) => {
   }
 
   // Get the LogStream Durable Object for this twist
-  const logStreamId = c.env.LOG_STREAM.idFromName(twistAdminId);
+  const logStreamId = c.env.LOG_STREAM.idFromName(twistPackageId);
   const logStream = c.env.LOG_STREAM.get(logStreamId);
 
   // Generate unique stream ID for this client

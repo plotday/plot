@@ -36,7 +36,7 @@ authRoutes.post("/auth", async (c) => {
     );
   } catch (error) {
     console.error("Error processing auth callback:", error);
-    return new Response("Internal server error", { status: 500 });
+    return c.json({ message: "Internal server error" }, 500);
   }
 });
 
@@ -78,20 +78,22 @@ authRoutes.get("/auth", async (c) => {
     });
 
     if (!result) {
-      return new Response("No client ID configured for this platform", {
-        status: 400,
-      });
+      return c.json(
+        { message: "No client ID configured for this platform" },
+        400
+      );
     }
 
     return c.json(result);
   } catch (error) {
     console.error("Error generating auth URL:", error);
     if (error instanceof Error) {
-      return new Response(`Error generating auth URL: ${error.message}`, {
-        status: 400,
-      });
+      return c.json(
+        { message: `Error generating auth URL: ${error.message}` },
+        400
+      );
     }
-    return new Response("Internal server error", { status: 500 });
+    return c.json({ message: "Internal server error" }, 500);
   }
 });
 

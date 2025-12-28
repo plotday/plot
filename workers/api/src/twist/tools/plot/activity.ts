@@ -337,10 +337,7 @@ export async function createActivity(
 
   // Convert NewActivity to database format
   // Note: created_by_twist_id and source are added by migration, not yet in generated types
-  const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] & {
-    created_by_twist_id?: string | null;
-    source?: string | null;
-  } = {
+  const dbActivity: any = {
     author_id: plot.priorityTwistId,
     created_by: plot.priorityTwistId,
     created_by_twist_id: twistId,

@@ -352,6 +352,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
         focusNode: focusNode,
         key: ValueKey(note.id),
         reorderableIndex: reorderableIndex,
+        showAuthor: state.hasOtherAuthors,
       );
     }
     return const SizedBox.shrink();

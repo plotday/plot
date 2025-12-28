@@ -10,11 +10,12 @@ SELECT
     pt.archived_at,
     pt.priority_id,
     pt.twist_id,
-    pt.twist_environment,
+    t.environment AS twist_environment,
     pt.owner_id,
     pt.name,
     pt.config
 FROM
     priority_twist pt
-    JOIN user_priority_expanded upe ON upe.priority_id = pt.priority_id;
+    JOIN user_priority_expanded upe ON upe.priority_id = pt.priority_id
+    JOIN twist t ON pt.twist_id = t.id;
 

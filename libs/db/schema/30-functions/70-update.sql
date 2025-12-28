@@ -368,7 +368,7 @@ BEGIN
         RETURN COALESCE(NEW, OLD);
     END IF;
     -- Build enriched item
-    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'twist_id', current_item.twist_id, 'twist_environment', current_item.twist_environment, 'owner_id', current_item.owner_id, 'name', current_item.name, 'config', current_item.config);
+    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'twist_id', current_item.twist_id, 'owner_id', current_item.owner_id, 'name', current_item.name, 'config', current_item.config);
     -- Build the payload
     payload := jsonb_build_object('type', 'priority_twist', 'event', event_type, 'item', enriched_item, 'twists', COALESCE(twists_data, '[]'::jsonb), 'users', COALESCE(users_data, '[]'::jsonb), 'timestamp', extract(epoch FROM now()), 'table', 'priority_twist');
     api_url := public.get_api_root () || '/update';

@@ -62,7 +62,7 @@ class Schedule extends Equatable {
           );
 
           if (range.start != null) {
-            previous = _tightenNextWithOccurrences(
+            final tightened = _tightenNextWithOccurrences(
               previous,
               days: days,
               range: CustomBoundedDateRange(
@@ -73,10 +73,12 @@ class Schedule extends Equatable {
               ),
               reverse: true,
             );
+            // Preserve previous if tightening returns null but we had a value
+            previous = tightened ?? previous;
           }
 
           if (range.end != null) {
-            next = _tightenNextWithOccurrences(
+            final tightened = _tightenNextWithOccurrences(
               next,
               days: days,
               range: CustomBoundedDateRange(
@@ -87,6 +89,8 @@ class Schedule extends Equatable {
               ),
               reverse: false,
             );
+            // Preserve next if tightening returns null but we had a value
+            next = tightened ?? next;
           }
 
           return Schedule(days: days, previous: previous, next: next);

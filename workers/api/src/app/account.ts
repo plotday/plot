@@ -33,7 +33,7 @@ account.post("/activate", async (c) => {
   const user = c.var.user;
 
   if (!user) {
-    return new Response("Unauthorized", { status: 401 });
+    return c.json({ message: "Unauthorized" }, 401);
   }
 
   // Step 1: Atomically validate and redeem invitation code
@@ -47,13 +47,13 @@ account.post("/activate", async (c) => {
 
   if (redeemError) {
     console.error("Failed to redeem invitation:", redeemError);
-    return new Response("Failed to redeem invitation", { status: 500 });
+    return c.json({ message: "Failed to redeem invitation" }, 500);
   }
 
   if (!(redeemResult as any).success) {
     return c.json(
-      { error: "Invalid invitation code or no remaining uses" },
-      { status: 400 }
+      { message: "Invalid invitation code or no remaining uses" },
+      400
     );
   }
 
@@ -65,9 +65,9 @@ account.post("/activate", async (c) => {
 
   if (pathError || !pathData) {
     console.error("Failed to generate path:", pathError);
-    return new Response(
-      `Failed to generate path: ${pathError?.message || "Unknown error"}`,
-      { status: 500 }
+    return c.json(
+      { message: `Failed to generate path: ${pathError?.message || "Unknown error"}` },
+      500
     );
   }
 
@@ -85,11 +85,9 @@ account.post("/activate", async (c) => {
 
   if (priorityError || !priority) {
     console.error("Failed to create root priority:", priorityError);
-    return new Response(
-      `Failed to create root priority: ${
-        priorityError?.message || "Unknown error"
-      }`,
-      { status: 500 }
+    return c.json(
+      { message: `Failed to create root priority: ${priorityError?.message || "Unknown error"}` },
+      500
     );
   }
 
@@ -103,9 +101,9 @@ account.post("/activate", async (c) => {
 
   if (settingsError) {
     console.error("Failed to create priority settings:", settingsError);
-    return new Response(
-      `Failed to create priority settings: ${settingsError.message}`,
-      { status: 500 }
+    return c.json(
+      { message: `Failed to create priority settings: ${settingsError.message}` },
+      500
     );
   }
 
@@ -179,9 +177,9 @@ account.post("/activate", async (c) => {
 
   if (subscriptionError) {
     console.error("Failed to create user_subscription:", subscriptionError);
-    return new Response(
-      `Failed to create subscription record: ${subscriptionError.message}`,
-      { status: 400 }
+    return c.json(
+      { message: `Failed to create subscription record: ${subscriptionError.message}` },
+      400
     );
   }
 
@@ -190,8 +188,11 @@ account.post("/activate", async (c) => {
     const { data: plotTwist, error: plotTwistError } = await c.var.supabase
       .from("twist")
       .select("id,version")
-      .eq("id", "0199b6f4-ae64-7718-8a02-44716f30358f")
+      .eq("name", "Plot")
       .eq("environment", "public")
+      .is("archived_at", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
       .maybeSingle();
 
     if (plotTwistError) {
@@ -233,9 +234,10 @@ account.post("/activate", async (c) => {
 
   if (statusError) {
     console.error("Failed to set user status:", statusError);
-    return new Response(`Failed to set user status: ${statusError.message}`, {
-      status: 500,
-    });
+    return c.json(
+      { message: `Failed to set user status: ${statusError.message}` },
+      500
+    );
   }
 
   return c.json({ success: true });
@@ -246,7 +248,7 @@ account.delete("/", async (c) => {
   const user = c.var.user;
 
   if (!user) {
-    return new Response("Unauthorized", { status: 401 });
+    return c.json({ message: "Unauthorized" }, 401);
   }
 
   try {
@@ -346,7 +348,7 @@ The account has been deactivated. Please complete manual data deletion within 14
     return c.json({ success: true });
   } catch (error) {
     console.error("Account deletion error:", error);
-    return new Response("Failed to delete account", { status: 500 });
+    return c.json({ message: "Failed to delete account" }, 500);
   }
 });
 

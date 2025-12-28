@@ -101,9 +101,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     final currentRange = state.range!;
     final rangeDays = currentRange.duration.inDays;
 
+    // Calculate new start: use previous boundary if available,
+    // otherwise calculate based on movement when moving backward
     Date newStart = moveStart < 0 && state.previous != null
         ? state.previous!
-        : currentRange.start;
+        : (moveStart < 0
+            ? currentRange.start.addDays(
+                (rangeDays * (moveStart / state.agendaItems.length)).floor(),
+              )
+            : currentRange.start);
     Date newEnd = moveEnd > 0 && state.next != null
         ? state.next!
         : currentRange.end;

@@ -48,6 +48,15 @@ class CustomSerializer extends ValueSerializer {
     if (json == null) {
       return null as T;
     }
+    // Handle BigInt conversion from int/String
+    // When PostgreSQL bigint values are small enough, they're deserialized as Dart int
+    if (T == BigInt) {
+      if (json is int) {
+        return BigInt.from(json) as T;
+      } else if (json is String) {
+        return BigInt.parse(json) as T;
+      }
+    }
     return _inner.fromJson<T>(json);
   }
 

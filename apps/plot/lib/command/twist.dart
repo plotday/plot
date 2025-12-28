@@ -5,6 +5,7 @@ import 'command.dart';
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
@@ -19,6 +20,7 @@ class ManageTwists extends ShowCommands {
 
   static Future<Commands> _getTwistCommands(Priority? priority) async {
     final defaultPriority = priority ?? await Priority.getDefault();
+    print('DEBUG ManageTwists: Fetching twists for priority ${defaultPriority.id}');
     final results = await Future.wait([
       priority != null
           ? PriorityTwist.get(priority: priority, includeAncestors: false)
@@ -27,6 +29,8 @@ class ManageTwists extends ShowCommands {
     ]);
     final priorityTwists = results[0] as List<PriorityTwist>;
     final allTwists = results[1] as List<Twist>;
+    print('DEBUG ManageTwists: Found ${priorityTwists.length} installed twists');
+    print('DEBUG ManageTwists: Found ${allTwists.length} available twists');
 
     final editCommands = priorityTwists
         .map((twist) => EditTwistCommand(twist, priority: priority))
@@ -69,9 +73,7 @@ class EditTwistCommand extends ShowForm {
       // Fetch all twists to find the matching one
       final allTwists = await TwistApi.getAllTwists(loadedPriority);
       final matchingTwist = allTwists.firstWhere(
-        (a) =>
-            a.id == priorityTwist.twistId.toString() &&
-            a.environment == priorityTwist.twistEnvironment,
+        (a) => a.id == priorityTwist.twistId.toString(),
         orElse: () => throw Exception('Twist not found'),
       );
 
@@ -246,7 +248,14 @@ class AddTwist extends Command {
       return CommandMessage('Twist "$name" added successfully');
     } catch (e, t) {
       log.warning('Failed to add twist', e, t);
-      return CommandMessage('Failed to add twist', isError: true);
+      if (e is ApiException) {
+        return CommandMessage(
+          e.description,
+          title: e.title,
+          isError: true,
+        );
+      }
+      return CommandMessage(e.toString(), isError: true);
     }
   }
 }
@@ -358,6 +367,16 @@ class _ArchiveTwistCommand extends Command {
     try {
       await TwistApi.archiveAndRemoveTwist(twist.id.toString());
 
+      // Update local database to immediately reflect the archive
+      await Store.get.save(
+        PriorityTwist.table,
+        twist.copyWith(
+          archivedAt: Value(DateTime.now()),
+          updatedAt: DateTime.now(),
+        ),
+        PriorityTwistsBase(),
+      );
+
       return CommandMessage(
         'Twist "${twist.name}" and its activities archived successfully',
       );
@@ -458,3 +477,4 @@ class _ArchiveActivitiesCommand extends Command {
     }
   }
 }
+

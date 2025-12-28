@@ -9,8 +9,6 @@ import { type TwistEnvironment, type Bindings } from "../env";
 export type CallbackData = {
   token: string;
   priorityTwistId: string;
-  twistId: string;
-  environment: TwistEnvironment;
   path: string[]; // tool hierarchy only
   version: string; // twist version
   functionName: string;
@@ -45,8 +43,6 @@ export class CallbacksState extends DurableObject<Bindings> {
         CREATE TABLE IF NOT EXISTS callbacks (
           token TEXT PRIMARY KEY,
           priority_twist_id TEXT NOT NULL,
-          twist_id TEXT NOT NULL,
-          environment TEXT NOT NULL,
           path TEXT NOT NULL,
           version TEXT NOT NULL,
           function_name TEXT NOT NULL,
@@ -84,8 +80,6 @@ export class CallbacksState extends DurableObject<Bindings> {
 
   async create({
     priorityTwistId,
-    twistId,
-    environment,
     path,
     version,
     functionName,
@@ -97,8 +91,6 @@ export class CallbacksState extends DurableObject<Bindings> {
     meta,
   }: {
     priorityTwistId: string;
-    twistId: string;
-    environment: TwistEnvironment;
     path: string[]; // tool hierarchy only
     version?: string;
     functionName: string;
@@ -116,18 +108,31 @@ export class CallbacksState extends DurableObject<Bindings> {
       );
     }
 
-    // Fetch version from database if not provided
+    // Fetch twist_id, environment, and version from database if version not provided
     if (!version) {
+      const { data: ptData, error: ptError } = await this.supabase
+        .from("priority_twist")
+        .select("twist_id")
+        .eq("id", priorityTwistId)
+        .single();
+
+      if (ptError || !ptData) {
+        throw new Error(
+          `Failed to fetch priority_twist ${priorityTwistId}: ${
+            ptError?.message || "No data found"
+          }`
+        );
+      }
+
       const { data, error } = await this.supabase
         .from("twist")
-        .select("version")
-        .eq("id", twistId)
-        .eq("environment", environment)
+        .select("version,environment")
+        .eq("id", ptData.twist_id)
         .single();
 
       if (error || !data?.version) {
         throw new Error(
-          `Failed to fetch version for twist ${twistId} (${environment}): ${
+          `Failed to fetch version for twist_id ${ptData.twist_id}: ${
             error?.message || "No version found"
           }`
         );
@@ -143,13 +148,11 @@ export class CallbacksState extends DurableObject<Bindings> {
     this.sql.exec(
       `
         INSERT INTO callbacks (
-          token, priority_twist_id, twist_id, environment, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          token, priority_twist_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       token,
       priorityTwistId,
-      twistId,
-      environment,
       JSON.stringify(path),
       version,
       functionName,
@@ -196,8 +199,6 @@ export class CallbacksState extends DurableObject<Bindings> {
     const callback: CallbackData = {
       token: rawCallback.token,
       priorityTwistId: rawCallback.priority_twist_id,
-      twistId: rawCallback.twist_id,
-      environment: rawCallback.environment,
       path: JSON.parse(rawCallback.path),
       version: rawCallback.version,
       functionName: rawCallback.function_name,
@@ -217,7 +218,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       return Promise.reject("Callback has expired");
     }
 
-    const { twistId, environment, path } = callback;
+    const { path } = callback;
 
     const twist = safeQuery(
       await this.supabase
@@ -233,8 +234,6 @@ export class CallbacksState extends DurableObject<Bindings> {
       supabase: this.supabase,
     });
     const twistWrapper = await factory({
-      id: twistId,
-      environment,
       version: callback.version,
       priorityId: twist.priority_id,
       priorityTwistId: callback.priorityTwistId,

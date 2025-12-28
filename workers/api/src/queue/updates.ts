@@ -76,8 +76,6 @@ async function processUpdate(
           supabase,
         });
         const twistWrapper = await factory({
-          id: twist.id,
-          environment: twist.environment,
           version: twist.version,
           priorityId: String(activityItem.priority_id),
           priorityTwistId: twist.priority_twist_id,
@@ -153,8 +151,6 @@ async function processUpdate(
           supabase,
         });
         const twistWrapper = await factory({
-          id: twist.id,
-          environment: twist.environment,
           version: twist.version,
           priorityId: String(noteItem.priority_id),
           priorityTwistId: twist.priority_twist_id,

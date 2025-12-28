@@ -516,6 +516,12 @@ class Note extends Equatable implements Comparable<Note> {
     return Note._formatActorNames(actorIds);
   }
 
+  /// Get the author name formatted for display
+  /// Returns "You" for current user or the actor's name
+  Future<String> getAuthorName() async {
+    return Note._formatActorNames([authorId]);
+  }
+
   /// Helper to format a list of actorIds into a display string
   /// - Replaces current user with "You"
   /// - Shows first 3 names + count if more exist

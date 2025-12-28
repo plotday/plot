@@ -2,11 +2,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/api/api_exception.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
 import 'modal.dart';
+import 'toast.dart';
 import 'logging.dart';
 
 class FormModal extends Modal {
@@ -56,7 +58,6 @@ class _FormModal extends StatefulWidget {
 class FormModalState extends State<_FormModal> {
   List<StaticFormGroup> _formGroups = [];
   List<FocusNode> _focusNodes = [];
-  String? _error;
   int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
 
   @override
@@ -116,9 +117,7 @@ class FormModalState extends State<_FormModal> {
       if (_focusNodes.isNotEmpty &&
           mounted &&
           _highlightedIndex < _focusNodes.length) {
-        log.info(
-          'Initial focus request on item (index $_highlightedIndex)',
-        );
+        log.info('Initial focus request on item (index $_highlightedIndex)');
         _focusNodes[_highlightedIndex].requestFocus();
       }
     });
@@ -308,9 +307,10 @@ class FormModalState extends State<_FormModal> {
   /// Execute form submission (triggered by Enter key or button click)
   Future<void> _submitForm() async {
     if (!_isFormValid()) {
-      setState(() {
-        _error = 'Please fill in all required fields';
-      });
+      context.showToast(
+        message: 'Please fill in all required fields',
+        isError: true,
+      );
       return;
     }
 
@@ -318,10 +318,6 @@ class FormModalState extends State<_FormModal> {
     if (primaryButton == null) {
       return;
     }
-
-    setState(() {
-      _error = null;
-    });
 
     try {
       final values = _collectFormValues();
@@ -332,9 +328,11 @@ class FormModalState extends State<_FormModal> {
       if (!mounted) return;
 
       if (result is CommandMessage && result.isError) {
-        setState(() {
-          _error = result.message;
-        });
+        context.showToast(
+          title: result.title,
+          message: result.message,
+          isError: true,
+        );
         return;
       }
 
@@ -345,9 +343,15 @@ class FormModalState extends State<_FormModal> {
     } catch (e, stackTrace) {
       log.warning('Error submitting form', e, stackTrace);
       if (mounted) {
-        setState(() {
-          _error = 'Something went wrong';
-        });
+        final (title, message) = e is ApiException
+            ? (e.title, e.description)
+            : ('Error', e.toString());
+
+        context.showToast(
+          title: title,
+          message: message,
+          isError: true,
+        );
       }
     }
   }
@@ -355,15 +359,12 @@ class FormModalState extends State<_FormModal> {
   /// Execute a specific button action
   Future<CommandReturn> _executeButton(FormButton button) async {
     if (!_isFormValid()) {
-      setState(() {
-        _error = 'Please fill in all required fields';
-      });
+      context.showToast(
+        message: 'Please fill in all required fields',
+        isError: true,
+      );
       return const CommandDone();
     }
-
-    setState(() {
-      _error = null;
-    });
 
     try {
       final values = _collectFormValues();
@@ -374,9 +375,11 @@ class FormModalState extends State<_FormModal> {
       if (!mounted) return const CommandSkipped();
 
       if (result is CommandMessage && result.isError) {
-        setState(() {
-          _error = result.message;
-        });
+        context.showToast(
+          title: result.title,
+          message: result.message,
+          isError: true,
+        );
         return const CommandDone();
       }
 
@@ -388,9 +391,15 @@ class FormModalState extends State<_FormModal> {
     } catch (e, stackTrace) {
       log.warning('Error executing button', e, stackTrace);
       if (mounted) {
-        setState(() {
-          _error = 'Something went wrong';
-        });
+        final (title, message) = e is ApiException
+            ? (e.title, e.description)
+            : ('Error', e.toString());
+
+        context.showToast(
+          title: title,
+          message: message,
+          isError: true,
+        );
       }
     }
     return const CommandDone();
@@ -398,14 +407,6 @@ class FormModalState extends State<_FormModal> {
 
   @override
   Widget build(BuildContext context) {
-    Widget? errorBox;
-    if (_error != null) {
-      errorBox = Container(
-        padding: const EdgeInsets.all(8),
-        child: Text(_error!),
-      );
-    }
-
     final totalItemCount = _allItemsCount();
 
     return ListViewSelector(
@@ -429,8 +430,7 @@ class FormModalState extends State<_FormModal> {
                 MoveListSelectionIntent(-1),
             SingleActivator(LogicalKeyboardKey.arrowDown):
                 MoveListSelectionIntent(1),
-            SingleActivator(LogicalKeyboardKey.tab):
-                MoveListSelectionIntent(1),
+            SingleActivator(LogicalKeyboardKey.tab): MoveListSelectionIntent(1),
             SingleActivator(LogicalKeyboardKey.tab, shift: true):
                 MoveListSelectionIntent(-1),
             SingleActivator(LogicalKeyboardKey.enter):
@@ -515,70 +515,70 @@ class FormModalState extends State<_FormModal> {
                       ],
                     ),
                   ),
-                  if (errorBox != null) errorBox,
                   Flexible(
                     child: ListView.builder(
                       shrinkWrap: true,
                       itemCount: totalItemCount,
                       itemBuilder: (context, index) {
-                      final group = _getGroupAtIndex(index);
-                      final item = _getItemAtIndex(index);
-                      Widget? header;
+                        final group = _getGroupAtIndex(index);
+                        final item = _getItemAtIndex(index);
+                        Widget? header;
 
-                      if (group.title != null &&
-                          (index == 0 ||
-                              group != _getGroupAtIndex(index - 1))) {
-                        header = Padding(
-                          padding: widgetPaddingSm,
-                          child: Text(
-                            group.title!,
-                            style: TextStyle(
-                              color: context.theme.colors.mutedForeground,
-                              fontSize: context.theme.typography.sm.fontSize,
+                        if (group.title != null &&
+                            (index == 0 ||
+                                group != _getGroupAtIndex(index - 1))) {
+                          header = Padding(
+                            padding: widgetPaddingSm,
+                            child: Text(
+                              group.title!,
+                              style: TextStyle(
+                                color: context.theme.colors.mutedForeground,
+                                fontSize: context.theme.typography.sm.fontSize,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return GestureDetector(
+                          onTap: () async {
+                            final item = _getItemAtIndex(index);
+                            if (item is FormButton) {
+                              if (_isFormValid()) {
+                                await _executeButton(item);
+                              }
+                            } else if (item is FormSelect) {
+                              if (item.enabled) {
+                                await item.activate(context);
+                              }
+                            }
+                          },
+                          child: MouseRegion(
+                            cursor: item is FormButton || item is FormSelect
+                                ? SystemMouseCursors.click
+                                : SystemMouseCursors.basic,
+                            onEnter: (_) => listController.setHovered(index),
+                            onExit: (_) => listController.setHovered(null),
+                            child: Column(
+                              key: ValueKey(index),
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (header != null) header,
+                                item.build(
+                                  context,
+                                  index == _highlightedIndex &&
+                                      hasPhysicalKeyboard(),
+                                  enabled: item is FormButton
+                                      ? _isFormValid()
+                                      : true,
+                                  focusNode: index < _focusNodes.length
+                                      ? _focusNodes[index]
+                                      : null,
+                                ),
+                              ],
                             ),
                           ),
                         );
-                      }
-
-                      return GestureDetector(
-                        onTap: () async {
-                          final item = _getItemAtIndex(index);
-                          if (item is FormButton) {
-                            if (_isFormValid()) {
-                              await _executeButton(item);
-                            }
-                          } else if (item is FormSelect) {
-                            if (item.enabled) {
-                              await item.activate(context);
-                            }
-                          }
-                        },
-                        child: MouseRegion(
-                          cursor: item is FormButton || item is FormSelect
-                              ? SystemMouseCursors.click
-                              : SystemMouseCursors.basic,
-                          onEnter: (_) => listController.setHovered(index),
-                          onExit: (_) => listController.setHovered(null),
-                          child: Column(
-                            key: ValueKey(index),
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (header != null) header,
-                              item.build(
-                                context,
-                                index == _highlightedIndex && hasPhysicalKeyboard(),
-                                enabled: item is FormButton
-                                    ? _isFormValid()
-                                    : true,
-                                focusNode: index < _focusNodes.length
-                                    ? _focusNodes[index]
-                                    : null,
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                      },
                     ),
                   ),
                   const SizedBox(height: 8),

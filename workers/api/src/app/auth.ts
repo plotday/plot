@@ -49,7 +49,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
 
   let tokens = c.req.header("Authorization");
   if (!tokens?.startsWith("Bearer ")) {
-    return new Response("Forbidden", { status: 403 });
+    return c.json({ message: "Forbidden" }, 403);
   }
   tokens = tokens.replace(/\s*Bearer\s+/, "");
   const [access_token, refresh_token] = tokens?.split("/");
@@ -60,7 +60,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   });
   const user = session.data?.user;
   if (!user) {
-    return new Response("Forbidden", { status: 403 });
+    return c.json({ message: "Forbidden" }, 403);
   }
   c.set("supabase", supabase);
   c.set("user", user);
