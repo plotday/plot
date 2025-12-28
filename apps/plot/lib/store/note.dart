@@ -96,6 +96,19 @@ class Note extends Equatable implements Comparable<Note> {
     );
   }
 
+  Note.draft({required this.activityId})
+    : draft = true,
+      private = false,
+      id = NoteId.generate(),
+      authorId = Base.actorId,
+      content = null,
+      links = null,
+      mentions = null,
+      createdAt = DateTime.now(),
+      updatedAt = DateTime.now(),
+      archivedAt = null,
+      _tags = null;
+
   const Note._internal({
     required this.id,
     required this.activityId,

@@ -66,17 +66,8 @@ class ActivityBloc extends Cubit<ActivityState> {
     await note.save();
 
     // Create fresh draft for the activity (in-memory only, will be saved when content is added)
-    final newDraft = Note(
-      id: Uuid.generate(),
-      activityId: state.activity.id,
-      authorId: Base.actorId,
-      draft: true,
-      private: false,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
     // Don't save empty draft - it will be saved when content is added via updateDraft()
-    emit(state.copyWith(draft: newDraft));
+    emit(state.copyWith(draft: Note.draft(activityId: state.activity.id)));
   }
 
   void _loadActivity() {

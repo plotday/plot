@@ -240,7 +240,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.copyWith(
         targetPriority: Value(newPriority),
         draft: newDraft,
-        draftNote: Value(draftNote),
+        draftNote: draftNote,
       ),
     );
 
@@ -286,16 +286,21 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// [activity] - Required activity to update
   /// [note] - Optional note to save (must be a draft note for this activity)
   Future<void> updateDraft(Activity activity, {Note? note}) async {
-    if (activity.id == state.draft.id) {
-      emit(state.copyWith(draft: activity));
+    if (activity.id != state.draft.id) {
+      log.warning(
+        '[updateDraft] Attempted to update draft with mismatched activity ID: ${activity.id} (expected ${state.draft.id})',
+      );
+      return;
     }
-    // Update draft note in state if:
-    // 1. The note ID matches the existing draft note ID (update case), OR
-    // 2. There is no existing draft note and the note belongs to the current draft activity (new draft note case)
-    if (note != null &&
-        (note.id == state.draftNote?.id ||
-            (state.draftNote == null && note.activityId == state.draft.id))) {
-      emit(state.copyWith(draftNote: Value(note)));
+
+    emit(state.copyWith(draft: activity));
+
+    if (note?.id == state.draftNote.id) {
+      emit(state.copyWith(draftNote: note));
+    } else {
+      log.warning(
+        "[updateDraft] Note ID does not match draft note ID: ${note?.id} (expected ${state.draftNote.id})",
+      );
     }
 
     await activity.save();
@@ -484,10 +489,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  Future<void> save(Activity activity) async {
-    await activity.save();
-  }
-
   /// Adds an activity by converting the current draft to a non-draft.
   /// Creates a fresh draft for the priority afterward.
   /// If note is provided, converts it from draft to published and asynchronously generates a title.
@@ -523,10 +524,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     // Create fresh draft for the priority
-    final newDraft = Activity(priority: state.context, draft: true);
-    await newDraft.save();
-
-    emit(state.copyWith(draft: newDraft));
+    final newDraft = Activity(priority: activity.priority, draft: true);
+    emit(
+      state.copyWith(
+        draft: newDraft,
+        draftNote: Note.draft(activityId: newDraft.id),
+      ),
+    );
 
     return savedActivity;
   }

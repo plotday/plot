@@ -49,10 +49,10 @@ class ActivityEditorState extends State<ActivityEditor> {
     super.initState();
     // Get initial content from draft note instead of preview
     final bloc = context.read<PriorityBloc>();
-    _lastSavedContent = bloc.state.draftNote?.content ?? '';
-    _lastDraftNoteId = bloc.state.draftNote?.id;
+    _lastSavedContent = bloc.state.draftNote.content ?? '';
+    _lastDraftNoteId = bloc.state.draftNote.id;
     log.info(
-      '[ActivityEditor.initState] Initialized with draft ${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title}), content length=${_lastSavedContent.length}, draftNote=${bloc.state.draftNote?.id}',
+      '[ActivityEditor.initState] Initialized with draft ${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title}), content length=${_lastSavedContent.length}, draftNote=${bloc.state.draftNote.id}',
     );
   }
 
@@ -60,20 +60,25 @@ class ActivityEditorState extends State<ActivityEditor> {
   void didUpdateWidget(ActivityEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     final bloc = context.read<PriorityBloc>();
-    final newDraftNoteId = bloc.state.draftNote?.id;
-    final newContent = bloc.state.draftNote?.content ?? '';
+    final newDraftNoteId = bloc.state.draftNote.id;
+    final newContent = bloc.state.draftNote.content ?? '';
 
     // Reset editor if draft note ID changed
     if (newDraftNoteId != _lastDraftNoteId) {
       log.info(
-        '[ActivityEditor.didUpdateWidget] Draft note ID changed from $_lastDraftNoteId to $newDraftNoteId, resetting editor with content length=${newContent.length}, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})',
+        '[ActivityEditor.didUpdateWidget] Draft note ID changed from $_lastDraftNoteId to $newDraftNoteId',
       );
-      // Defer reset until after current frame to avoid modifying overlay during layout
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _editorKey.currentState?.reset(newContent);
-        }
-      });
+      if (_lastDraftNoteId != null && newDraftNoteId == null) {
+        log.info(
+          '[ActivityEditor.didUpdateWidget] Resetting editor with content length=${newContent.length}, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})',
+        );
+        // Defer reset until after current frame to avoid modifying overlay during layout
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _editorKey.currentState?.reset(newContent);
+          }
+        });
+      }
       _lastDraftNoteId = newDraftNoteId;
       _lastSavedContent = newContent;
     } else if (newContent != _lastSavedContent) {
@@ -132,7 +137,7 @@ class ActivityEditorState extends State<ActivityEditor> {
 
     // Get or create draft note
     final stateNote = bloc.state.draftNote;
-    final existingNote = stateNote?.activityId == widget.draft.id
+    final existingNote = stateNote.activityId == widget.draft.id
         ? stateNote
         : null;
 
@@ -175,9 +180,9 @@ class ActivityEditorState extends State<ActivityEditor> {
               _currentFocusNode?.addListener(_onFocusChange);
             }
 
-            final initialContent = state.draftNote?.content;
+            final initialContent = state.draftNote.content;
             log.info(
-              '[ActivityEditor.build] Building Editor with initialContent length=${initialContent?.length ?? 0}, draft=${state.draft.id}, priority=${state.draft.priority.id} (${state.draft.priority.title}), draftNote=${state.draftNote?.id}',
+              '[ActivityEditor.build] Building Editor with initialContent length=${initialContent?.length ?? 0}, draft=${state.draft.id}, priority=${state.draft.priority.id} (${state.draft.priority.title}), draftNote=${state.draftNote.id}',
             );
 
             final editor = Editor(
@@ -376,22 +381,8 @@ class ActivityEditorState extends State<ActivityEditor> {
     Note? note;
     if (body.trim().isNotEmpty) {
       final bloc = context.read<PriorityBloc>();
-      if (bloc.state.draftNote != null) {
-        // Use existing draft note and update its content
-        note = bloc.state.draftNote!.copyWith(content: body);
-      } else {
-        // Create new note if no draft note exists
-        note = Note(
-          id: Uuid.generate(),
-          activityId: widget.draft.id,
-          authorId: Base.actorId,
-          draft: true, // Will be set to false by PriorityBloc.add()
-          private: false,
-          content: body,
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        );
-      }
+      // Use existing draft note and update its content
+      note = bloc.state.draftNote.copyWith(content: body);
     }
 
     return ActivityWithNote(activity: activity, note: note);

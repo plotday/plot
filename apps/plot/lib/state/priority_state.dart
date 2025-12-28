@@ -42,20 +42,22 @@ class PriorityState extends Equatable {
       }
     }
 
+    draft ??= Activity(priority: context, draft: true);
+
     return PriorityState._(
       context: context,
       activity: activity,
-      draft: draft ?? Activity(priority: context, draft: true),
-      draftNote: draftNote,
+      draft: draft,
+      draftNote: draftNote ?? Note.draft(activityId: draft.id),
       schedule: schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule,
       agendaItems: agenda.isNotEmpty ? List.unmodifiable(agenda) : agenda,
       first: firstDate != null
           ? -_findDate(agenda, firstDate)
           : range != null
-              ? first // Preserve first on updates (when range is set)
-              : (first != 0
-                  ? first
-                  : -_findNow(agenda)), // Calculate first only on initial load
+          ? first // Preserve first on updates (when range is set)
+          : (first != 0
+                ? first
+                : -_findNow(agenda)), // Calculate first only on initial load
       range: calculatedRange,
       next: next,
       previous: previous,
@@ -75,7 +77,7 @@ class PriorityState extends Equatable {
     required this.context,
     this.activity,
     required this.draft,
-    this.draftNote,
+    required this.draftNote,
     required this.range,
     required this.previous,
     required this.next,
@@ -94,7 +96,7 @@ class PriorityState extends Equatable {
   final Priority context;
   final Activity? activity;
   final Activity draft;
-  final Note? draftNote;
+  final Note draftNote;
   final Map<Date, ScheduledDay> schedule;
   final int first;
   final BoundedDateRange? range;
@@ -126,10 +128,9 @@ class PriorityState extends Equatable {
     const oneHour = Duration(hours: 1);
 
     // Filter events to only those that have valid time ranges
-    final scheduledEvents = events
-        .where((e) => e.at?.start != null && e.at?.end != null)
-        .toList()
-      ..sort((a, b) => a.at!.start!.compareTo(b.at!.start!));
+    final scheduledEvents =
+        events.where((e) => e.at?.start != null && e.at?.end != null).toList()
+          ..sort((a, b) => a.at!.start!.compareTo(b.at!.start!));
 
     if (scheduledEvents.isEmpty) {
       // No events scheduled, so the entire day starting from dayStart is a gap
@@ -150,7 +151,9 @@ class PriorityState extends Equatable {
       final currentEventEnd = scheduledEvents[i].at!.end!;
       final nextEventStart = scheduledEvents[i + 1].at!.start!;
 
-      final gapStart = currentEventEnd.isAfter(dayStart) ? currentEventEnd : dayStart;
+      final gapStart = currentEventEnd.isAfter(dayStart)
+          ? currentEventEnd
+          : dayStart;
       if (nextEventStart.difference(gapStart) >= oneHour) {
         return gapStart;
       }
@@ -204,10 +207,13 @@ class PriorityState extends Equatable {
           ..sort((a, b) {
             // Helper to get the timestamp for an activity (for past activities)
             DateTime? getTimestamp(Activity activity) {
-              if (activity.type == ActivityType.event && activity.at?.end != null) {
+              if (activity.type == ActivityType.event &&
+                  activity.at?.end != null) {
                 return activity.at!.end!;
               }
-              if (activity.type == ActivityType.action && activity.done && activity.doneAt != null) {
+              if (activity.type == ActivityType.action &&
+                  activity.done &&
+                  activity.doneAt != null) {
                 return activity.doneAt;
               }
               if (activity.type == ActivityType.note) {
@@ -257,11 +263,11 @@ class PriorityState extends Equatable {
           });
 
         // Add header only if there are multiple priorities or priority != skipHeaderFor
-        if (entry.key.id != skipHeaderFor?.id || prioritizedActivities.length > 1) {
-          items.add(AgendaHeaderItem(
-            priority: entry.key,
-            scheduleAt: scheduleAt,
-          ));
+        if (entry.key.id != skipHeaderFor?.id ||
+            prioritizedActivities.length > 1) {
+          items.add(
+            AgendaHeaderItem(priority: entry.key, scheduleAt: scheduleAt),
+          );
         }
         items.addAll(
           sortedActivities.map((Activity a) => AgendaActivityItem(a)),
@@ -298,9 +304,7 @@ class PriorityState extends Equatable {
           ),
         );
         // Add the event as an activity widget below the header
-        items.add(
-          AgendaActivityItem(event, now: current),
-        );
+        items.add(AgendaActivityItem(event, now: current));
       }
 
       // Split activities into todos vs notes/done
@@ -320,26 +324,37 @@ class PriorityState extends Equatable {
       );
 
       // Filter notes/done by time (agendaAt within event's time range)
-      final (matchingNotesAndDone, remainingNotesAndDone) = notesAndDone.partition(
-        (Activity a) {
-          if (event.at?.start == null || event.at?.end == null) return false;
-          final agendaAt = a.agendaAt;
-          return !agendaAt.isBefore(event.at!.start!) &&
-                 agendaAt.isBefore(event.at!.end!);
-        },
-      );
+      final (matchingNotesAndDone, remainingNotesAndDone) = notesAndDone
+          .partition((Activity a) {
+            if (event.at?.start == null || event.at?.end == null) return false;
+            final agendaAt = a.agendaAt;
+            return !agendaAt.isBefore(event.at!.start!) &&
+                agendaAt.isBefore(event.at!.end!);
+          });
 
       // Split matching notes/done into in-priority vs out-of-priority
       final inPriorityActivities = [...matchingTodos, ...matchingNotesAndDone]
-        .where((a) => event.priority.id == a.priority.id || event.priority.isParent(a.priority))
-        .toList();
+          .where(
+            (a) =>
+                event.priority.id == a.priority.id ||
+                event.priority.isParent(a.priority),
+          )
+          .toList();
 
       final outOfPriorityNotes = matchingNotesAndDone
-        .where((a) => !(event.priority.id == a.priority.id || event.priority.isParent(a.priority)))
-        .toList();
+          .where(
+            (a) =>
+                !(event.priority.id == a.priority.id ||
+                    event.priority.isParent(a.priority)),
+          )
+          .toList();
 
       // Add in-priority activities first
-      addActivitiesGrouped(inPriorityActivities, scheduleAt: scheduleAt, skipHeaderFor: event.priority);
+      addActivitiesGrouped(
+        inPriorityActivities,
+        scheduleAt: scheduleAt,
+        skipHeaderFor: event.priority,
+      );
 
       // Add out-of-priority notes after
       addActivitiesGrouped(outOfPriorityNotes, scheduleAt: scheduleAt);
@@ -373,7 +388,8 @@ class PriorityState extends Equatable {
         final nineAM = day.date.toStart().add(const Duration(hours: 9));
         final dayScheduleStart = isToday && now.isAfter(nineAM) ? now : nineAM;
         final dayScheduleEnd = day.date.toEnd();
-        final dayScheduleAt = _findFirstHourGap(
+        final dayScheduleAt =
+            _findFirstHourGap(
               dayScheduleStart,
               dayScheduleEnd,
               day.scheduled,
@@ -431,7 +447,10 @@ class PriorityState extends Equatable {
           // Apply "Now" header when not in an event (covers: gaps, after events, no events)
           if (currentEvent == null && beforeNowUnscheduled.isNotEmpty) {
             // Split activities into past and future
-            final (pastActivities, otherBeforeNowActivities) = beforeNowUnscheduled.partition(
+            final (
+              pastActivities,
+              otherBeforeNowActivities,
+            ) = beforeNowUnscheduled.partition(
               (activity) => !activity.todo && activity.agendaAt.isBefore(now),
             );
 
@@ -450,7 +469,11 @@ class PriorityState extends Equatable {
               }
 
               // Add past activities grouped by priority (include past events)
-              addActivitiesGrouped([...pastActivities, ...beforeNowScheduled], scheduleAt: dayScheduleAt, skipHeaderFor: context);
+              addActivitiesGrouped(
+                [...pastActivities, ...beforeNowScheduled],
+                scheduleAt: dayScheduleAt,
+                skipHeaderFor: context,
+              );
 
               // Group otherBeforeNowActivities by priority to combine "Now" header with first group
               if (otherBeforeNowActivities.isNotEmpty) {
@@ -468,8 +491,12 @@ class PriorityState extends Equatable {
                 items.add(
                   AgendaHeaderItem(
                     priority: firstPriority,
-                    dateTimeRange: afterNowScheduled.firstOrNull?.at?.start != null
-                        ? DateTimeRange(now, afterNowScheduled.firstOrNull!.at!.start!)
+                    dateTimeRange:
+                        afterNowScheduled.firstOrNull?.at?.start != null
+                        ? DateTimeRange(
+                            now,
+                            afterNowScheduled.firstOrNull!.at!.start!,
+                          )
                         : null,
                     now: true,
                     text: 'Now',
@@ -480,10 +507,13 @@ class PriorityState extends Equatable {
                 final sortedFirstGroup = firstGroupActivities.toList()
                   ..sort((a, b) {
                     DateTime? getTimestamp(Activity activity) {
-                      if (activity.type == ActivityType.event && activity.at?.end != null) {
+                      if (activity.type == ActivityType.event &&
+                          activity.at?.end != null) {
                         return activity.at!.end!;
                       }
-                      if (activity.type == ActivityType.action && activity.done && activity.doneAt != null) {
+                      if (activity.type == ActivityType.action &&
+                          activity.done &&
+                          activity.doneAt != null) {
                         return activity.doneAt;
                       }
                       if (activity.type == ActivityType.note) {
@@ -532,19 +562,24 @@ class PriorityState extends Equatable {
                     }
 
                     // Add priority header
-                    items.add(AgendaHeaderItem(
-                      priority: entry.key,
-                      scheduleAt: dayScheduleAt,
-                    ));
+                    items.add(
+                      AgendaHeaderItem(
+                        priority: entry.key,
+                        scheduleAt: dayScheduleAt,
+                      ),
+                    );
 
                     // Sort and add activities
                     final sortedActivities = entry.value.toList()
                       ..sort((a, b) {
                         DateTime? getTimestamp(Activity activity) {
-                          if (activity.type == ActivityType.event && activity.at?.end != null) {
+                          if (activity.type == ActivityType.event &&
+                              activity.at?.end != null) {
                             return activity.at!.end!;
                           }
-                          if (activity.type == ActivityType.action && activity.done && activity.doneAt != null) {
+                          if (activity.type == ActivityType.action &&
+                              activity.done &&
+                              activity.doneAt != null) {
                             return activity.doneAt;
                           }
                           if (activity.type == ActivityType.note) {
@@ -579,7 +614,9 @@ class PriorityState extends Equatable {
                       });
 
                     items.addAll(
-                      sortedActivities.map((Activity a) => AgendaActivityItem(a)),
+                      sortedActivities.map(
+                        (Activity a) => AgendaActivityItem(a),
+                      ),
                     );
                   }
                 }
@@ -588,8 +625,12 @@ class PriorityState extends Equatable {
                 items.add(
                   AgendaHeaderItem(
                     priority: null,
-                    dateTimeRange: afterNowScheduled.firstOrNull?.at?.start != null
-                        ? DateTimeRange(now, afterNowScheduled.firstOrNull!.at!.start!)
+                    dateTimeRange:
+                        afterNowScheduled.firstOrNull?.at?.start != null
+                        ? DateTimeRange(
+                            now,
+                            afterNowScheduled.firstOrNull!.at!.start!,
+                          )
                         : null,
                     now: true,
                     text: 'Now',
@@ -600,7 +641,8 @@ class PriorityState extends Equatable {
               remainingUnscheduled = afterNowUnscheduled;
             } else {
               // No past activities, use existing logic
-              if (beforeNowUnscheduled.isNotEmpty || beforeNowScheduled.isNotEmpty) {
+              if (beforeNowUnscheduled.isNotEmpty ||
+                  beforeNowScheduled.isNotEmpty) {
                 items.add(
                   AgendaHeaderItem(
                     priority: null,
@@ -610,13 +652,18 @@ class PriorityState extends Equatable {
                   ),
                 );
                 createdDateHeader = true;
-                addActivitiesGrouped([...beforeNowUnscheduled, ...beforeNowScheduled], scheduleAt: dayScheduleAt, skipHeaderFor: context);
+                addActivitiesGrouped(
+                  [...beforeNowUnscheduled, ...beforeNowScheduled],
+                  scheduleAt: dayScheduleAt,
+                  skipHeaderFor: context,
+                );
               }
               remainingUnscheduled = afterNowUnscheduled;
             }
           } else {
             // Use existing logic when there are still scheduled events
-            if (beforeNowUnscheduled.isNotEmpty || beforeNowScheduled.isNotEmpty) {
+            if (beforeNowUnscheduled.isNotEmpty ||
+                beforeNowScheduled.isNotEmpty) {
               items.add(
                 AgendaHeaderItem(
                   priority: null,
@@ -626,7 +673,11 @@ class PriorityState extends Equatable {
                 ),
               );
               createdDateHeader = true;
-              addActivitiesGrouped([...beforeNowUnscheduled, ...beforeNowScheduled], scheduleAt: dayScheduleAt, skipHeaderFor: context);
+              addActivitiesGrouped(
+                [...beforeNowUnscheduled, ...beforeNowScheduled],
+                scheduleAt: dayScheduleAt,
+                skipHeaderFor: context,
+              );
             }
             remainingUnscheduled = afterNowUnscheduled;
           }
@@ -804,12 +855,14 @@ class PriorityState extends Equatable {
       final nineAM = today.toStart().add(const Duration(hours: 9));
       final dayScheduleStart = now.isAfter(nineAM) ? now : nineAM;
 
-      items.add(AgendaHeaderItem(
-        priority: null,
-        date: today,
-        now: true,
-        scheduleAt: dayScheduleStart,
-      ));
+      items.add(
+        AgendaHeaderItem(
+          priority: null,
+          date: today,
+          now: true,
+          scheduleAt: dayScheduleStart,
+        ),
+      );
     }
 
     return items;
@@ -819,7 +872,7 @@ class PriorityState extends Equatable {
     Priority? context,
     Value<Activity?> activity = const Value.absent(),
     Activity? draft,
-    Value<Note?> draftNote = const Value.absent(),
+    Note? draftNote,
     Map<Date, ScheduledDay>? schedule,
     int? first,
     Date? firstDate,
@@ -839,7 +892,7 @@ class PriorityState extends Equatable {
       context: context ?? this.context,
       activity: activity.or(this.activity),
       draft: draft ?? this.draft,
-      draftNote: draftNote.or(this.draftNote),
+      draftNote: draftNote ?? this.draftNote,
       schedule: schedule != null
           ? (schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule)
           : this.schedule,

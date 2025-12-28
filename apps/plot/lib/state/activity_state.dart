@@ -20,17 +20,7 @@ class ActivityState extends Equatable {
        hasOtherAuthors =
            notes.firstWhereOrNull((note) => note.authorId != Base.actorId) !=
            null,
-       draft =
-           draft ??
-           Note(
-             id: Uuid.generate(),
-             activityId: activity.id,
-             authorId: Base.actorId,
-             draft: true,
-             private: false,
-             createdAt: DateTime.now(),
-             updatedAt: DateTime.now(),
-           );
+       draft = draft ?? Note.draft(activityId: activity.id);
 
   final Activity activity;
   final Note draft;
