@@ -13,7 +13,7 @@ import {
 import { IconInfoCircle } from "@tabler/icons-react";
 import { Form, Link, useActionData, useNavigation } from "react-router";
 
-import { getUser } from "../lib/supabase.server";
+import { createSupabaseServerClient, getUser } from "../lib/supabase.server";
 import type { Route } from "./+types/twister.login";
 
 export function meta(_: Route.MetaArgs) {
@@ -48,22 +48,17 @@ export async function action({ request, context }: Route.ActionArgs) {
 
   const apiUrl = context.cloudflare.env.API_ROOT || "https://api.plot.day";
 
-  // Get access token from cookies
-  const cookieHeader = request.headers.get("Cookie") ?? "";
-  const cookies = cookieHeader.split(";").reduce(
-    (acc, cookie) => {
-      const [name, ...rest] = cookie.trim().split("=");
-      if (name && rest.length > 0) {
-        acc[name] = rest.join("=");
-      }
-      return acc;
-    },
-    {} as Record<string, string>,
+  // Get access token from Supabase session (works with @supabase/ssr cookie format)
+  const { supabase } = createSupabaseServerClient(
+    request,
+    context.cloudflare.env,
   );
 
-  const accessToken = cookies["sb-access-token"];
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  if (!accessToken) {
+  if (!session?.access_token) {
     return { error: "No access token found" };
   }
 
@@ -72,7 +67,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
         sessionId,

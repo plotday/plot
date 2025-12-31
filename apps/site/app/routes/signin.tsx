@@ -1,7 +1,5 @@
 import { useState } from "react";
 
-import { createClient } from "@supabase/supabase-js";
-
 import {
   Alert,
   Button,
@@ -16,6 +14,7 @@ import {
 
 import { redirect, useSearchParams } from "react-router";
 
+import { createSupabaseBrowserClient } from "../lib/supabase.client";
 import { getUser } from "../lib/supabase.server";
 import type { Route } from "./+types/signin";
 
@@ -56,11 +55,10 @@ export default function SignIn({ loaderData }: Route.ComponentProps) {
   const [error, setError] = useState<string | null>(null);
 
   const getSupabaseClient = () => {
-    return createClient(loaderData.supabaseUrl, loaderData.supabaseAnonKey, {
-      auth: {
-        flowType: "pkce",
-      },
-    });
+    return createSupabaseBrowserClient(
+      loaderData.supabaseUrl,
+      loaderData.supabaseAnonKey,
+    );
   };
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {

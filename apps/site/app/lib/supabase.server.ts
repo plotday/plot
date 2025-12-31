@@ -1,5 +1,5 @@
 import type { Session } from "@supabase/supabase-js";
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 
 export interface SupabaseEnv {
   SUPABASE_URL: string;
@@ -23,75 +23,83 @@ function parseCookies(cookieHeader: string): Record<string, string> {
 }
 
 /**
- * Gets the Supabase auth tokens from cookies
+ * Creates a Supabase client for server-side operations with cookie storage
+ * This automatically handles PKCE code_verifier storage and session token management
  */
-function getAuthTokens(request: Request) {
+export function createSupabaseServerClient(request: Request, env: SupabaseEnv) {
   const cookieHeader = request.headers.get("Cookie") ?? "";
   const cookies = parseCookies(cookieHeader);
+  const responseHeaders = new Headers();
 
-  // Supabase stores access token and refresh token in cookies
-  const accessToken = cookies["sb-access-token"];
-  const refreshToken = cookies["sb-refresh-token"];
+  const supabase = createServerClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    cookies: {
+      getAll() {
+        return Object.entries(cookies).map(([name, value]) => ({ name, value }));
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          const cookieString = serializeCookie(name, value, options);
+          responseHeaders.append("Set-Cookie", cookieString);
+        });
+      },
+    },
+  });
 
-  return { accessToken, refreshToken };
+  return { supabase, headers: responseHeaders };
 }
 
 /**
- * Creates a Supabase client for server-side operations
+ * Serialize a cookie with options
  */
-export function createSupabaseServerClient(request: Request, env: SupabaseEnv) {
-  const { accessToken } = getAuthTokens(request);
+function serializeCookie(
+  name: string,
+  value: string,
+  options?: {
+    maxAge?: number;
+    path?: string;
+    sameSite?: "lax" | "strict" | "none";
+    secure?: boolean;
+    httpOnly?: boolean;
+  },
+): string {
+  const parts = [`${name}=${value}`];
 
-  // Create client with global auth header if token exists
-  const options = accessToken
-    ? {
-        global: {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        },
-      }
-    : {};
+  if (options?.maxAge !== undefined) {
+    parts.push(`Max-Age=${options.maxAge}`);
+  }
+  if (options?.path) {
+    parts.push(`Path=${options.path}`);
+  }
+  if (options?.sameSite) {
+    parts.push(`SameSite=${options.sameSite.charAt(0).toUpperCase() + options.sameSite.slice(1)}`);
+  }
+  if (options?.secure) {
+    parts.push("Secure");
+  }
+  if (options?.httpOnly) {
+    parts.push("HttpOnly");
+  }
 
-  const supabase = createClient(
-    env.SUPABASE_URL,
-    env.SUPABASE_ANON_KEY,
-    options,
-  );
-
-  return { supabase, headers: new Headers() };
+  return parts.join("; ");
 }
 
 /**
  * Gets the current authenticated user from the request
  */
 export async function getUser(request: Request, env: SupabaseEnv) {
-  const { accessToken } = getAuthTokens(request);
-  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
+  const { supabase, headers } = createSupabaseServerClient(request, env);
 
-  if (!accessToken) {
-    return { user: null, headers: new Headers() };
-  }
+  // Get user from Supabase auth (will use cookies automatically)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Verify the token by calling getUser with the access token
-  let user = null;
-  try {
-    const { data } = await supabase.auth.getClaims(accessToken);
-    user = data?.claims
-      ? {
-          ...data?.claims,
-          id: data.claims.sub,
-        }
-      : null;
-  } catch (error) {
-    console.error("Error fetching user claims:", error);
-  }
-
-  return { user, headers: new Headers() };
+  return { user, headers };
 }
 
 /**
  * Creates Set-Cookie headers for authentication tokens
+ * @deprecated Use createSupabaseServerClient with @supabase/ssr instead - it handles cookies automatically
  * Note: Not using HttpOnly because browser needs access to refresh token (per Supabase docs)
  */
 export function setAuthCookies(session: Session): string[] {
@@ -106,6 +114,7 @@ export function setAuthCookies(session: Session): string[] {
 
 /**
  * Creates Set-Cookie headers to clear authentication cookies
+ * @deprecated Use createSupabaseServerClient with @supabase/ssr instead - it handles cookies automatically
  */
 export function clearAuthCookies(): string[] {
   const clearOptions = "Max-Age=0; Path=/; SameSite=Lax; Secure";
