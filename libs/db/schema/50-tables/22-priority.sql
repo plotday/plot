@@ -23,9 +23,14 @@ CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
 ALTER TABLE "public"."priority" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_priority_updated_at
-    BEFORE UPDATE ON "public"."priority"
+    BEFORE INSERT OR UPDATE ON "public"."priority"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_priority_created_at
+    BEFORE INSERT ON "public"."priority"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 CREATE TRIGGER set_priority_created_by
     BEFORE INSERT ON "public"."priority"
@@ -56,9 +61,14 @@ WHERE
 ALTER TABLE "public"."priority_user" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_priority_user_updated_at
-    BEFORE UPDATE ON "public"."priority_user"
+    BEFORE INSERT OR UPDATE ON "public"."priority_user"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_priority_user_created_at
+    BEFORE INSERT ON "public"."priority_user"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 CREATE OR REPLACE FUNCTION insert_priority_user ()
     RETURNS TRIGGER
@@ -101,8 +111,8 @@ CREATE TABLE "public"."priority_settings" (
 
 ALTER TABLE "public"."priority_settings" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_priority_user_updated_at
-    BEFORE UPDATE ON "public"."priority_settings"
+CREATE TRIGGER set_priority_settings_updated_at
+    BEFORE INSERT OR UPDATE ON "public"."priority_settings"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 

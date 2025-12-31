@@ -15,7 +15,12 @@ CREATE TABLE "public"."series" (
 ALTER TABLE "public"."series" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_series_updated_at
-    BEFORE UPDATE ON "public"."series"
+    BEFORE INSERT OR UPDATE ON "public"."series"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_series_created_at
+    BEFORE INSERT ON "public"."series"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 

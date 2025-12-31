@@ -15,6 +15,11 @@ CREATE INDEX idx_usage_priority_twist_id ON "public"."usage" ("priority_twist_id
 ALTER TABLE "public"."usage" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_usage_updated_at
-    BEFORE UPDATE ON "public"."usage"
+    BEFORE INSERT OR UPDATE ON "public"."usage"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_usage_created_at
+    BEFORE INSERT ON "public"."usage"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();

@@ -17,10 +17,15 @@ CREATE INDEX idx_priority_twist_twist ON "public"."priority_twist" ("twist_id");
 
 ALTER TABLE "public"."priority_twist" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_twist_updated_at
-    BEFORE UPDATE ON "public"."priority_twist"
+CREATE TRIGGER set_priority_twist_updated_at
+    BEFORE INSERT OR UPDATE ON "public"."priority_twist"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_priority_twist_created_at
+    BEFORE INSERT ON "public"."priority_twist"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 -- Function to set owner_id to current user on INSERT
 CREATE OR REPLACE FUNCTION set_priority_twist_owner_id ()

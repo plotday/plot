@@ -19,6 +19,11 @@ CREATE INDEX idx_user_subscription_stripe_subscription_id ON "public"."user_subs
 ALTER TABLE "public"."user_subscription" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_user_subscription_updated_at
-    BEFORE UPDATE ON "public"."user_subscription"
+    BEFORE INSERT OR UPDATE ON "public"."user_subscription"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_user_subscription_created_at
+    BEFORE INSERT ON "public"."user_subscription"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();

@@ -10,7 +10,12 @@ CREATE TABLE "public"."publisher" (
 ALTER TABLE "public"."publisher" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_publisher_updated_at
-    BEFORE UPDATE ON "public"."publisher"
+    BEFORE INSERT OR UPDATE ON "public"."publisher"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_publisher_created_at
+    BEFORE INSERT ON "public"."publisher"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 

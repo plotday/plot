@@ -11,6 +11,11 @@ CREATE TABLE "public"."cost" (
 ALTER TABLE "public"."cost" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_cost_updated_at
-    BEFORE UPDATE ON "public"."cost"
+    BEFORE INSERT OR UPDATE ON "public"."cost"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_cost_created_at
+    BEFORE INSERT ON "public"."cost"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();

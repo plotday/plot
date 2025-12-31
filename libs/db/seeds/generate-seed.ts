@@ -455,6 +455,16 @@ function validateActivity(
         });
       }
 
+      // Warn about computed tags for activities - they will be filtered out during seed generation
+      // Activities compute all tags < 100 from their state properties
+      const tagId = TAG_IDS[tagName];
+      if (tagId && tagId < 100) {
+        errors.push({
+          path: `${path}.tags.${tagName}`,
+          message: `Computed tag "${tagName}" will be ignored - activity tags are calculated from activity state (doNow, doLater, done, archivedAt) and should not be in seed data`,
+        });
+      }
+
       const actors = activity.tags[tagName];
       for (const actor of actors) {
         if (actor !== "user" && !contactRefs.has(actor)) {
@@ -517,6 +527,17 @@ function validateNote(
         errors.push({
           path: `${path}.tags.${tagName}`,
           message: `Unknown tag: ${tagName}`,
+        });
+      }
+
+      // Warn about computed tags for notes - they will be filtered out during seed generation
+      // Notes can have 'now' (1) and 'done' (3) for per-user assignment/completion
+      // But not 'later' (2), 'archived' (4), 'attachment' (5), 'link' (6)
+      const tagId = TAG_IDS[tagName];
+      if (tagId && tagId < 100 && tagId !== 1 && tagId !== 3) {
+        errors.push({
+          path: `${path}.tags.${tagName}`,
+          message: `Computed tag "${tagName}" will be ignored - this tag is calculated from note state and should not be in seed data. Notes can only have 'now' and 'done' tags.`,
         });
       }
 
@@ -937,6 +958,11 @@ function processActivity(
   if (activity.tags) {
     for (const [tagName, actors] of Object.entries(activity.tags)) {
       const tagId = TAG_IDS[tagName];
+      // Skip all computed tags (tag_id 1-99) for activities
+      // Activities compute now, later, done, archived from their state properties
+      if (tagId < 100) {
+        continue;
+      }
       for (const actorRef of actors) {
         const actorId = contactIdMap[actorRef];
         outTags.push({
@@ -996,6 +1022,12 @@ function processNote(
   if (note.tags) {
     for (const [tagName, actors] of Object.entries(note.tags)) {
       const tagId = TAG_IDS[tagName];
+      // Skip most computed tags for notes, but allow 'now' (1) and 'done' (3)
+      // Notes use now/done tags for per-user assignment/completion tracking
+      // Block: later (2), archived (4), attachment (5), link (6)
+      if (tagId < 100 && tagId !== 1 && tagId !== 3) {
+        continue;
+      }
       for (const actorRef of actors) {
         const actorId = contactIdMap[actorRef];
         outNoteTags.push({

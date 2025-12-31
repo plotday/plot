@@ -14,9 +14,14 @@ CREATE TABLE "public"."token" (
 ALTER TABLE "public"."token" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_token_updated_at
-    BEFORE UPDATE ON "public"."token"
+    BEFORE INSERT OR UPDATE ON "public"."token"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_token_created_at
+    BEFORE INSERT ON "public"."token"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 -- RLS policies: Users can manage their own tokens
 CREATE POLICY "Users can view their own tokens" ON "public"."token"

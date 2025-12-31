@@ -10,7 +10,7 @@ CREATE TABLE "public"."activity_read" (
 ALTER TABLE "public"."activity_read" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_activity_read_updated_at
-    BEFORE UPDATE ON "public"."activity_read"
+    BEFORE INSERT OR UPDATE ON "public"."activity_read"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 

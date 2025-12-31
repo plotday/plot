@@ -14,7 +14,12 @@ CREATE TABLE "public"."contact" (
 ALTER TABLE "public"."contact" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_contact_updated_at
-    BEFORE UPDATE ON "public"."contact"
+    BEFORE INSERT OR UPDATE ON "public"."contact"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_contact_created_at
+    BEFORE INSERT ON "public"."contact"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 

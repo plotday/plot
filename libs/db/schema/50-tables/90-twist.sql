@@ -28,9 +28,14 @@ CREATE TABLE "public"."twist_admin" (
 ALTER TABLE "public"."twist_admin" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_twist_admin_updated_at
-    BEFORE UPDATE ON "public"."twist_admin"
+    BEFORE INSERT OR UPDATE ON "public"."twist_admin"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_twist_admin_created_at
+    BEFORE INSERT ON "public"."twist_admin"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 CREATE TABLE "public"."twist" (
     "id" bigint NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -55,8 +60,13 @@ WHERE
     environment IN ('public', 'review');
 
 CREATE TRIGGER set_twist_updated_at
-    BEFORE UPDATE ON "public"."twist"
+    BEFORE INSERT OR UPDATE ON "public"."twist"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_twist_created_at
+    BEFORE INSERT ON "public"."twist"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 -- Function to get twists accessible to a user for a given priority

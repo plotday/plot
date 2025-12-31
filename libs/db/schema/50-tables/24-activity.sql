@@ -135,9 +135,24 @@ ALTER TABLE "public"."activity" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."activity_exception" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_activity_updated_at
-    BEFORE UPDATE ON "public"."activity"
+    BEFORE INSERT OR UPDATE ON "public"."activity"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_activity_created_at
+    BEFORE INSERT ON "public"."activity"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
+
+CREATE TRIGGER set_activity_exception_updated_at
+    BEFORE INSERT OR UPDATE ON "public"."activity_exception"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_activity_exception_created_at
+    BEFORE INSERT ON "public"."activity_exception"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 CREATE OR REPLACE FUNCTION public.update_author_and_created_by ()
     RETURNS TRIGGER

@@ -43,9 +43,14 @@ WHERE
 ALTER TABLE "public"."note" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_note_updated_at
-    BEFORE UPDATE ON "public"."note"
+    BEFORE INSERT OR UPDATE ON "public"."note"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_note_created_at
+    BEFORE INSERT ON "public"."note"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 CREATE TRIGGER set_note_author_and_created_by
     BEFORE INSERT ON "public"."note"

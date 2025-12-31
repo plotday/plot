@@ -1,3 +1,36 @@
+-- Clean up any existing computed tags before adding constraints
+-- Archive computed tags (tag_id 1-99) in activity_tag table
+-- Activities compute all tags < 100 from their state
+UPDATE
+    "public"."activity_tag"
+SET
+    archived_at = now()
+WHERE
+    tag_id < 100
+    AND archived_at IS NULL;
+
+-- Archive computed tags in note_tag table (except now=1 and done=3)
+-- Notes use 'now' and 'done' tags for per-user assignment/completion tracking
+UPDATE
+    "public"."note_tag"
+SET
+    archived_at = now()
+WHERE
+    tag_id < 100
+    AND tag_id NOT IN (1, 3)
+    AND archived_at IS NULL;
+
+-- Prevent computed tags (tag_id 1-99) from being stored in activity_tag table
+-- Activities compute now, later, done, archived from their state properties
+ALTER TABLE "public"."activity_tag"
+    ADD CONSTRAINT activity_tag_no_computed_tags CHECK (tag_id >= 100 OR archived_at IS NOT NULL);
+
+-- Prevent most computed tags from being stored in note_tag table
+-- Allow tag_id 1 (now) and 3 (done) - used for per-user assignment/completion
+-- Block tag_id 2 (later), 4 (archived), 5 (attachment), 6 (link) - these are computed
+ALTER TABLE "public"."note_tag"
+    ADD CONSTRAINT note_tag_no_computed_tags CHECK (tag_id IN (1, 3) OR tag_id >= 100 OR archived_at IS NOT NULL);
+
 CREATE OR REPLACE FUNCTION public.update_note_tags (p_note_id uuid, p_actor_id uuid, p_client_id integer, p_tag_updates jsonb)
     RETURNS void
     LANGUAGE plpgsql
@@ -85,4 +118,40 @@ BEGIN
         END LOOP;
 END;
 $function$;
+
+ALTER VIEW "public"."user_note" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."note_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_note_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_twist" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."activity_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_unread" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."activity_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_exception" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_priority" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_priority_unread" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_child" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_priority_expanded" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_settings_inherited" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."actor" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_child_twist" SET (security_invoker = TRUE);
 

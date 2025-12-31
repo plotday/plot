@@ -2401,6 +2401,20 @@ export type Database = {
         Args: { p_new_parent_path: unknown; p_priority_id: string }
         Returns: undefined
       }
+      notify_internal_api_for_activity_from_record: {
+        Args: {
+          current_record: Record<string, unknown>
+          previous_record: Record<string, unknown>
+        }
+        Returns: undefined
+      }
+      notify_internal_api_for_note_from_record: {
+        Args: {
+          current_record: Record<string, unknown>
+          previous_record: Record<string, unknown>
+        }
+        Returns: undefined
+      }
       order_first: { Args: never; Returns: number }
       organization: {
         Args: { "": Database["public"]["Tables"]["contact"]["Row"] }
@@ -2421,7 +2435,6 @@ export type Database = {
         Args: { invitation_code: string; user_id: string }
         Returns: Json
       }
-      server_timestamp: { Args: never; Returns: string }
       set_user_status: {
         Args: { status: string; user_id: string }
         Returns: undefined

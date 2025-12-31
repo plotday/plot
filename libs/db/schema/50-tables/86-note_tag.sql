@@ -19,6 +19,11 @@ WHERE
 CREATE INDEX idx_note_tag_note_id_full ON "public"."note_tag" ("note_id");
 
 CREATE TRIGGER set_note_tag_updated_at
-    BEFORE UPDATE ON "public"."note_tag"
+    BEFORE INSERT OR UPDATE ON "public"."note_tag"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER notify_api_for_note_tag_change
+    AFTER INSERT OR UPDATE OR DELETE ON "public"."note_tag"
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_for_note_tag_change ();

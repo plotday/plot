@@ -28,10 +28,14 @@ ALTER TABLE "public"."session" ENABLE ROW LEVEL SECURITY;
 CREATE INDEX session_at_idx ON "session" USING spgist (at);
 
 CREATE TRIGGER set_session_updated_at
-    BEFORE UPDATE ON "public"."session"
+    BEFORE INSERT OR UPDATE ON "public"."session"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
+CREATE TRIGGER set_session_created_at
+    BEFORE INSERT ON "public"."session"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
 
 CREATE TRIGGER handle_session_changes
     AFTER INSERT OR UPDATE ON public.session

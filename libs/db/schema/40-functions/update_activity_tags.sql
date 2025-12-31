@@ -26,6 +26,11 @@ BEGIN
             is_adding := tag_record.value::boolean;
             -- Get tag type using the get_tag_type function
             current_tag_type := get_tag_type (tag_id_int);
+            -- Prevent insertion of computed tags (tag_id 1-99)
+            -- Computed tags should only exist as calculated values
+            IF current_tag_type = 'compute' THEN
+                RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - these tags are calculated from activity state', tag_id_int;
+            END IF;
             IF is_adding THEN
                 -- Adding a tag - use upsert to create or reactivate
                 INSERT INTO activity_tag (actor_id, activity_id, occurrence, tag_id, updated_at, archived_at, updated_by)
