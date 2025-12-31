@@ -266,7 +266,7 @@ export abstract class Plot extends ITool {
    * await this.plot.createNote({
    *   activity: { id: "activity-123" },
    *   note: "Discussion notes from the meeting...",
-   *   noteType: "markdown"
+   *   contentType: "markdown"
    * });
    *
    * // Create a note with links

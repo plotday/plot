@@ -558,7 +558,7 @@ export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
    * - 'markdown': Already in markdown format (default, no conversion)
    * - 'html': HTML content that will be converted to markdown
    */
-  noteType?: NoteType;
+  contentType?: ContentType;
 };
 
 /**
@@ -602,7 +602,7 @@ export type NoteUpdate = Pick<Note, "id"> &
      * - 'markdown': Already in markdown format (default, no conversion)
      * - 'html': HTML content that will be converted to markdown
      */
-    noteType?: NoteType;
+    contentType?: ContentType;
 
     /**
      * Full tags object from Note. Maps tag ID to array of actor IDs who added that tag.
@@ -685,4 +685,4 @@ export type NewContact = {
   avatar?: string;
 };
 
-export type NoteType = "text" | "markdown" | "html";
+export type ContentType = "text" | "markdown" | "html";

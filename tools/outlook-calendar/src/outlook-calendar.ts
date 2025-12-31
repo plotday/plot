@@ -484,7 +484,7 @@ export class OutlookCalendar
                 activity: { id: "" }, // Will be filled in by the API
                 content: hasDescription ? outlookEvent.body!.content! : null,
                 links: hasLinks ? links : null,
-                noteType:
+                contentType:
                   outlookEvent.body?.contentType === "html" ? "html" : "text",
               });
             }
