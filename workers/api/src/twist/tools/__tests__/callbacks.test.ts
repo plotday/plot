@@ -160,8 +160,6 @@ describe("Callbacks", () => {
 
       expect(mockCallbacksStub.deleteAll).toHaveBeenCalledWith({
         priorityTwistId: "pa-1",
-        twistId: "test-twist",
-        environment: "production",
         path: ["Tool1"],
       });
     });

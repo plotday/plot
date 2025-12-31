@@ -184,7 +184,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const result = this.sql
       .exec(
         `
-          SELECT token, priority_twist_id, twist_id, environment, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
+          SELECT token, priority_twist_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
           FROM callbacks
           WHERE token = ?
           `,
@@ -284,8 +284,6 @@ export class CallbacksState extends DurableObject<Bindings> {
     args:
       | {
           priorityTwistId: string;
-          twistId: string;
-          environment: TwistEnvironment;
           path?: string[];
           reallyDeleteEverything?: boolean;
         }
@@ -295,13 +293,11 @@ export class CallbacksState extends DurableObject<Bindings> {
       this.sql.exec("DELETE FROM callbacks");
       return;
     }
-    const { priorityTwistId, twistId, environment, path } = args;
+    const { priorityTwistId, path } = args;
     this.sql.exec(
-      "DELETE FROM callbacks WHERE priority_twist_id = ? AND twist_id = ? AND environment = ?" +
+      "DELETE FROM callbacks WHERE priority_twist_id = ?" +
         (path ? " AND path = ?" : ""),
-      ...(path
-        ? [priorityTwistId, twistId, environment, JSON.stringify(path)]
-        : [priorityTwistId, twistId, environment])
+      ...(path ? [priorityTwistId, JSON.stringify(path)] : [priorityTwistId])
     );
   }
 

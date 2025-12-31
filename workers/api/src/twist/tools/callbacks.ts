@@ -101,8 +101,6 @@ export class Callbacks extends Tool implements ICallbackTool {
   async deleteAll(): Promise<void> {
     await this.callbacks.deleteAll({
       priorityTwistId: this.priorityTwistId,
-      twistId: this.twistId,
-      environment: this.environment,
       path: this.path,
     });
   }

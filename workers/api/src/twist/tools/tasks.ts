@@ -73,8 +73,6 @@ export class Tasks extends Tool implements IRun {
   async cancelAllTasks(): Promise<void> {
     await this.callbacks.deleteAll({
       priorityTwistId: this.priorityTwistId,
-      twistId: this.twistId,
-      environment: this.environment,
       path: this.path,
     });
   }
