@@ -4,6 +4,7 @@ import * as path from "path";
 import prompts from "prompts";
 
 import { bundleTwist } from "../utils/bundle";
+import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
 import { handleSSEStream } from "../utils/sse";
 import { getGlobalTokenPath } from "../utils/token";
@@ -326,7 +327,11 @@ export async function deployCommand(options: DeployOptions) {
       // Show success with relevant info
       out.success(`Deployed to ${environment} environment`);
     } catch (error) {
-      out.error("Upload failed", String(error));
+      const errorInfo = handleNetworkError(error);
+      out.error("Upload failed", errorInfo.message);
+      if (errorInfo.details) {
+        console.error(out.colors.dim(errorInfo.details));
+      }
       process.exit(1);
     }
   } catch (error) {

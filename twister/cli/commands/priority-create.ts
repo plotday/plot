@@ -1,6 +1,7 @@
 import prompts from "prompts";
-import { getToken } from "../utils/token";
+import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
+import { getToken } from "../utils/token";
 
 interface PriorityCreateOptions {
   name?: string;
@@ -81,7 +82,11 @@ export async function priorityCreateCommand(options: PriorityCreateOptions) {
     );
     out.blank();
   } catch (error) {
-    out.error("Priority creation failed", String(error));
+    const errorInfo = handleNetworkError(error);
+    out.error("Priority creation failed", errorInfo.message);
+    if (errorInfo.details) {
+      console.error(out.colors.dim(errorInfo.details));
+    }
     process.exit(1);
   }
 }

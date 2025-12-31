@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
+import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
 
 interface LoginOptions {
@@ -55,6 +56,9 @@ async function pollForToken(
   sessionId: string,
   maxAttempts = 60
 ): Promise<SessionResponse> {
+  let consecutiveErrors = 0;
+  const maxConsecutiveErrors = 3;
+
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const response = await fetch(`${apiUrl}/v1/session/${sessionId}`);
@@ -64,14 +68,29 @@ async function pollForToken(
         if (data.token) {
           return data;
         }
+        // Reset error counter on successful request
+        consecutiveErrors = 0;
       } else if (response.status === 404) {
         // Session not found yet, continue polling
+        consecutiveErrors = 0;
       } else {
-        const errorText = await response.text();
-        return { error: `Server error: ${response.status} ${errorText}` };
+        const errorInfo = handleNetworkError(response);
+        return { error: errorInfo.message };
       }
     } catch (error) {
-      console.error("Polling error:", error);
+      consecutiveErrors++;
+
+      // If we've had too many consecutive errors, fail fast
+      if (consecutiveErrors >= maxConsecutiveErrors) {
+        const errorInfo = handleNetworkError(error);
+        return { error: errorInfo.message };
+      }
+
+      // Otherwise just log and continue
+      if (i === 0) {
+        // Only show error on first attempt to avoid spam
+        out.warning("Connection issue, retrying...");
+      }
     }
 
     // Wait 2 seconds before next poll

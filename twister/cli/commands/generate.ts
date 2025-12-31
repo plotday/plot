@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as path from "path";
 import prompts from "prompts";
 
+import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
 import { detectPackageManager } from "../utils/packageManager";
 import { handleSSEStream } from "../utils/sse";
@@ -349,7 +350,11 @@ export async function generateCommand(options: GenerateOptions) {
       `Run '${packageManager} run logs' to watch for activity`,
     ]);
   } catch (error) {
-    out.error("Generation failed", String(error));
+    const errorInfo = handleNetworkError(error);
+    out.error("Generation failed", errorInfo.message);
+    if (errorInfo.details) {
+      console.error(out.colors.dim(errorInfo.details));
+    }
     process.exit(1);
   }
 }

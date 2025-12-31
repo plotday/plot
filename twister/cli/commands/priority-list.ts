@@ -1,3 +1,4 @@
+import { handleNetworkError } from "../utils/network-error";
 import { getToken } from "../utils/token";
 
 interface PriorityListOptions {
@@ -57,7 +58,11 @@ export async function priorityListCommand(options: PriorityListOptions) {
       }`
     );
   } catch (error) {
-    console.error("\n✗ Failed to fetch priorities:", error);
+    const errorInfo = handleNetworkError(error);
+    console.error("\n✗ Failed to fetch priorities:", errorInfo.message);
+    if (errorInfo.details) {
+      console.error(errorInfo.details);
+    }
     process.exit(1);
   }
 }

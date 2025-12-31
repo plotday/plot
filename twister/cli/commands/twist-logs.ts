@@ -1,9 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
-import { getGlobalTokenPath } from "../utils/token";
 import { handleSSEStream } from "../utils/sse";
+import { getGlobalTokenPath } from "../utils/token";
 
 interface PackageJson {
   plotTwistId?: string;
@@ -192,7 +193,11 @@ export async function twistLogsCommand(options: TwistLogsOptions) {
       },
     });
   } catch (error) {
-    out.error("Connection failed", String(error));
+    const errorInfo = handleNetworkError(error);
+    out.error("Connection failed", errorInfo.message);
+    if (errorInfo.details) {
+      console.error(out.colors.dim(errorInfo.details));
+    }
     process.exit(1);
   }
 }

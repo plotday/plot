@@ -541,7 +541,7 @@ export class GoogleCalendar
                 activity: { id: "" }, // Will be filled in by the API
                 content: hasDescription ? description : null,
                 links: hasLinks ? links : null,
-                noteType: containsHtml(description) ? "html" : "text",
+                contentType: containsHtml(description) ? "html" : "text",
               });
             }
 
@@ -637,7 +637,7 @@ export class GoogleCalendar
           activity: { id: "" }, // Will be filled in by the API
           content: hasDescription ? description : null,
           links: hasLinks ? links : null,
-          noteType: containsHtml(description) ? "html" : "text",
+          contentType: containsHtml(description) ? "html" : "text",
         });
       }
 
