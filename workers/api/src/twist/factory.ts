@@ -219,6 +219,10 @@ export function twistFactory({
           return; // No instances of this tool
         }
 
+        console.log(
+          `Dispatching twist ${id} to tool ${toolName} (${toolPaths.length} instances)`
+        );
+
         const twistInit = {
           priorityTwistId,
           builtInToolFactory,

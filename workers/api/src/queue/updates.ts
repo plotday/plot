@@ -44,7 +44,23 @@ async function processUpdate(
 
         // Type assertion after guard
         const activityItem = item as ActivityItem;
-        const previousActivityItem = previous as ActivityItem | undefined;
+        let previousActivityItem = previous as ActivityItem | undefined;
+
+        // Skip processing if activity is draft
+        if (activityItem.draft) {
+          console.log(
+            `Skipping twist processing for ${twist.id} - activity ${activityItem.id} is draft`
+          );
+          continue;
+        }
+
+        // If transitioning from draft to non-draft, treat as creation
+        if (previousActivityItem?.draft === true && activityItem.draft === false) {
+          console.log(
+            `Activity ${activityItem.id} transitioned from draft to non-draft - treating as creation`
+          );
+          previousActivityItem = undefined;
+        }
 
         // Skip processing if this twist triggered the update
         const itemUpdatedBy = activityItem.updated_by;
@@ -119,7 +135,27 @@ async function processUpdate(
 
         // Type assertion after guard
         const noteItem = item as NoteItem;
-        const previousNoteItem = previous as NoteItem | undefined;
+        let previousNoteItem = previous as NoteItem | undefined;
+
+        // Skip processing if note is draft
+        if (noteItem.draft) {
+          console.log(
+            `Skipping twist processing for ${twist.id} - note ${noteItem.id} is draft`
+          );
+          continue;
+        }
+
+        // If transitioning from draft to non-draft, treat as creation
+        if (previousNoteItem?.draft === true && noteItem.draft === false) {
+          console.log(
+            `Note ${noteItem.id} transitioned from draft to non-draft - treating as creation`
+          );
+          previousNoteItem = undefined;
+        }
+
+        console.log(
+          `Processing note update for twist ${twist.id} (${twist.priority_twist_id}), note ${noteItem.id}, activity ${noteItem.activity_id}`
+        );
 
         // Skip processing if this twist triggered the update
         const itemUpdatedBy = noteItem.updated_by;

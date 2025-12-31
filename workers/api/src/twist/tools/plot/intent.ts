@@ -14,11 +14,6 @@ export async function matchIntent(
   plot: Plot,
   note: Note
 ): Promise<string | null> {
-  if (!plot.env) {
-    console.warn("Cannot match intent without env bindings");
-    return null;
-  }
-
   // Collect all intent descriptions (custom + built-in)
   const customIntents = plot.plotOptions?.note?.intents || [];
   const builtInIntentObjects = [
@@ -51,16 +46,11 @@ export async function matchIntent(
   };
 
   // Use AI to match intent
-  const prompt = `Given this note: "${content}"
-
-Select the best matching intent from the list below, or respond with "none" if no intent matches well.
-Given similar intents, prefer ones earlier in the list.
-Consider both the intent description and example phrases when matching.
-
-Available intents:
+  const prompt = `Available intents:
 ${allIntents.map((intent, i) => formatIntent(intent, i)).join("\n")}
 
-Respond with ONLY the intent number (e.g., "1", "2", etc.) or "none".`;
+Note:
+${content}`;
 
   try {
     const response = await plot.ai.prompt({
@@ -68,8 +58,11 @@ Respond with ONLY the intent number (e.g., "1", "2", etc.) or "none".`;
         speed: "fast",
         cost: "medium",
       },
-      system:
-        "You are a helpful intent classifier. Respond only with the intent number or 'none'.",
+      system: `You are a helpful intent classifier. 
+Select the best matching intent from the list below, or respond with "none" if no intent matches well.
+Given similar intents, prefer ones earlier in the list.
+Consider both the intent description and example phrases when matching.
+Respond only with the intent number (e.g., "1", "2", etc.) or "none".`,
       prompt,
     });
 
@@ -110,11 +103,16 @@ export async function handleIntent(
 ): Promise<{ optionPath: string[]; args: any[] } | null> {
   const matchedIntent = await matchIntent(plot, note);
 
+  console.log(
+    `Intent matching for note ${note.id}: matched=${matchedIntent ?? "none"}`
+  );
+
   if (!matchedIntent) {
     // No intent matched - create a reply note
     await createNote(plot, {
       activity: { id: note.activity.id },
-      content: "I didn't recognize what you're asking for. Try asking me 'What can you do?' to see what I can help with.",
+      content:
+        "I didn't recognize what you're asking for. Try asking me 'What can you do?' to see what I can help with.",
     });
     return null;
   }
@@ -157,11 +155,6 @@ async function handleDescribeCapabilities(
   plot: Plot,
   note: Note
 ): Promise<void> {
-  if (!plot.env) {
-    console.warn("Cannot describe capabilities without env bindings");
-    return;
-  }
-
   const customIntents = plot.plotOptions?.note?.intents || [];
 
   let description: string;
@@ -208,10 +201,7 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this twist can
  * Handles the "Remove yourself" built-in intent.
  * Soft-deletes the priority_twist by setting archived_at.
  */
-async function handleRemoveTwist(
-  plot: Plot,
-  note: Note
-): Promise<void> {
+async function handleRemoveTwist(plot: Plot, note: Note): Promise<void> {
   try {
     // Set archived_at on the priority_twist record
     const { error } = await plot.supabase
@@ -226,7 +216,8 @@ async function handleRemoveTwist(
     // Create farewell note
     await createNote(plot, {
       activity: { id: note.activity.id },
-      content: "I've been removed from this priority. You can add me back anytime if you need me!",
+      content:
+        "I've been removed from this priority. You can add me back anytime if you need me!",
     });
   } catch (error) {
     console.error("Error removing twist:", error);

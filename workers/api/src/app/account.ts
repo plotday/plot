@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { twistFactory } from "../twist";
-import * as twistManagement from "../twist/management";
 import type { Bindings } from "../env";
 import {
   createFreeSubscription,
@@ -11,6 +9,8 @@ import {
   createStripeCustomer,
   getBillingCycleDates,
 } from "../stripe/utils";
+import { twistFactory } from "../twist";
+import * as twistManagement from "../twist/management";
 import { handleValidationError } from "../utils/validation";
 
 const account = new Hono<{ Bindings: Bindings }>();
@@ -66,7 +66,11 @@ account.post("/activate", async (c) => {
   if (pathError || !pathData) {
     console.error("Failed to generate path:", pathError);
     return c.json(
-      { message: `Failed to generate path: ${pathError?.message || "Unknown error"}` },
+      {
+        message: `Failed to generate path: ${
+          pathError?.message || "Unknown error"
+        }`,
+      },
       500
     );
   }
@@ -79,6 +83,7 @@ account.post("/activate", async (c) => {
       title: "Everything",
       path: pathData,
       root: true,
+      color: 0,
     })
     .select()
     .single();
@@ -86,7 +91,11 @@ account.post("/activate", async (c) => {
   if (priorityError || !priority) {
     console.error("Failed to create root priority:", priorityError);
     return c.json(
-      { message: `Failed to create root priority: ${priorityError?.message || "Unknown error"}` },
+      {
+        message: `Failed to create root priority: ${
+          priorityError?.message || "Unknown error"
+        }`,
+      },
       500
     );
   }
@@ -102,7 +111,9 @@ account.post("/activate", async (c) => {
   if (settingsError) {
     console.error("Failed to create priority settings:", settingsError);
     return c.json(
-      { message: `Failed to create priority settings: ${settingsError.message}` },
+      {
+        message: `Failed to create priority settings: ${settingsError.message}`,
+      },
       500
     );
   }
@@ -178,7 +189,9 @@ account.post("/activate", async (c) => {
   if (subscriptionError) {
     console.error("Failed to create user_subscription:", subscriptionError);
     return c.json(
-      { message: `Failed to create subscription record: ${subscriptionError.message}` },
+      {
+        message: `Failed to create subscription record: ${subscriptionError.message}`,
+      },
       400
     );
   }
@@ -282,12 +295,10 @@ account.delete("/", async (c) => {
     const bannedUntil = new Date();
     bannedUntil.setDate(bannedUntil.getDate() + 14);
 
-    const { error: banError } = await c.var.supabaseAdmin.auth.admin.updateUserById(
-      user.id,
-      {
+    const { error: banError } =
+      await c.var.supabaseAdmin.auth.admin.updateUserById(user.id, {
         ban_duration: "336h", // 14 days in hours
-      }
-    );
+      });
 
     if (banError) {
       console.error("Failed to ban user:", banError);

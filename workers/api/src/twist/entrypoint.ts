@@ -365,7 +365,13 @@ export default class extends WorkerEntrypoint {
 
                 // Call the callback if it's a function, binding twist as 'this'
                 if (typeof callback === 'function') {
+                  console.log(
+                    \`Calling callback at path: \${callbackInfo.optionPath.join('.')}\`
+                  );
                   await callback.call(twist, ...callbackInfo.args);
+                  console.log(
+                    \`Callback completed at path: \${callbackInfo.optionPath.join('.')}\`
+                  );
                 }
               }
             }

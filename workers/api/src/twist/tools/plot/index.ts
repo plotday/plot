@@ -122,7 +122,7 @@ export class Plot extends Tool implements IPlot {
   public priorityId: string;
   public priorityTwistId: ActorId;
   public plotOptions?: typeof IPlot.Options;
-  public env?: Bindings;
+  public env: Bindings;
   public ai: AI;
   private _actor?: Actor;
   private _twistId?: number;
@@ -339,6 +339,9 @@ export class Plot extends Tool implements IPlot {
       // Dispatch intent matching if twist was mentioned in this note and it's a create
       const isMentioned = (currentNote.mentions ?? []).includes(
         this.priorityTwistId
+      );
+      console.log(
+        `Twist ${this.priorityTwistId} mention check for note ${currentNote.id}: isMentioned=${isMentioned}, isUpdate=${isUpdate}`
       );
       if (isMentioned && !isUpdate) {
         const result = await intentOps.handleIntent(this, currentNote);
@@ -681,8 +684,10 @@ export class Plot extends Tool implements IPlot {
     includeArchived?: boolean
   ): Promise<Activity | null> {
     // Query activities by source column directly (uses indexed column for performance)
-    let query = this.supabase.from("user_activity").select(
-      `
+    let query = this.supabase
+      .from("user_activity")
+      .select(
+        `
         *,
         author:actor!author_id(
           id,
@@ -705,7 +710,8 @@ export class Plot extends Tool implements IPlot {
           updated_at
         )
       `
-    ).eq("source", source);
+      )
+      .eq("source", source);
 
     // By default, exclude archived activities
     if (!includeArchived) {
@@ -736,7 +742,8 @@ export class Plot extends Tool implements IPlot {
       order: data.order ?? 0,
       priority_id: data.priority_id ?? "",
       private: data.private ?? false,
-      type: (data.type ?? "note") as Database["public"]["Enums"]["activity_type"],
+      type: (data.type ??
+        "note") as Database["public"]["Enums"]["activity_type"],
       updated_at: data.updated_at ?? new Date().toISOString(),
       updated_by: data.updated_by ?? 0,
       author: data.author,
