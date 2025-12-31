@@ -11,6 +11,7 @@ import 'package:plot/util/theme_color.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/widget/root_menu_bar.dart';
 import 'logging.dart';
 
 class RootProvider extends StatefulWidget {
@@ -118,23 +119,25 @@ class RootProviderState extends State<RootProvider> {
               break;
           }
         },
-        child: BlocBuilder<UserBloc, UserState>(
-          builder: (context, state) {
-            return switch (state) {
-              UserLoading _ => const LoadingPage(),
-              UserWaitlisted _ => widget.builder(routerConfig),
-              UserPasswordRequired _ => widget.builder(routerConfig),
-              UserSignedOut _ => widget.builder(routerConfig),
-              UserReady _ => BlocBuilder<NowBloc, NowState>(
-                builder: (context, state) {
-                  if (state is NowLoading) {
-                    return const LoadingPage();
-                  }
-                  return widget.builder(routerConfig);
-                },
-              ),
-            };
-          },
+        child: RootMenuBar(
+          child: BlocBuilder<UserBloc, UserState>(
+            builder: (context, state) {
+              return switch (state) {
+                UserLoading _ => const LoadingPage(),
+                UserWaitlisted _ => widget.builder(routerConfig),
+                UserPasswordRequired _ => widget.builder(routerConfig),
+                UserSignedOut _ => widget.builder(routerConfig),
+                UserReady _ => BlocBuilder<NowBloc, NowState>(
+                  builder: (context, state) {
+                    if (state is NowLoading) {
+                      return const LoadingPage();
+                    }
+                    return widget.builder(routerConfig);
+                  },
+                ),
+              };
+            },
+          ),
         ),
       ),
     );

@@ -4,7 +4,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/command/global.dart';
 import 'package:plot/page/loading.dart';
-import 'global_menu.dart';
+import 'app_context.dart';
 import 'modal.dart';
 
 @RoutePage(name: 'AppShellRoute')
@@ -15,7 +15,8 @@ class AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return FToaster(
       child: ModalProvider(
-        child: GlobalMenu(
+        child: Container(
+          key: AppContext.key,
           child: GlobalShortcuts(
             child: AutoRouter(placeholder: (context) => const LoadingPage()),
           ),
