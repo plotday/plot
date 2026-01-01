@@ -93,8 +93,9 @@ class CommandModal {
           );
           return result;
         } else {
-          // Show success toast
-          modalContext.showToast(
+          // Show success toast in root context (survives modal closure)
+          final toastContext = rootContext.mounted ? rootContext : modalContext;
+          toastContext.showToast(
             title: result.title,
             message: result.message,
           );
