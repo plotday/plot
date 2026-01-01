@@ -241,8 +241,7 @@ class NewPriority extends ShowForm {
                       order: PriorityOrder.nested,
                       search: search,
                     ),
-                    labelBuilder: (p) =>
-                        PriorityLabel(priority: p, fontSize: 12),
+                    labelBuilder: (p) => PriorityLabel(priority: p),
                     titleBuilder: (p) => p.ancestorsLabel() != null
                         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
                         : p.title,

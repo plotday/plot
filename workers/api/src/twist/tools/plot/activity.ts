@@ -18,6 +18,7 @@ import {
   type Tag,
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
+import LinkifyIt from "linkify-it";
 
 import { fromDbActivity } from "./converters";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
@@ -40,22 +41,22 @@ function actorTypeToString(type: ActorType): string {
 }
 
 /**
- * Converts note content to Markdown based on the specified noteType.
+ * Converts note content to Markdown based on the specified contentType.
  *
  * @param ai - The Cloudflare Workers AI binding
  * @param note - The note content to convert
- * @param noteType - The format of the input note ('text', 'markdown', 'html', or null)
+ * @param contentType - The format of the input note ('text', 'markdown', 'html', or null)
  * @returns The note content converted to Markdown
  */
 async function convertNoteToMarkdown(
   ai: Ai,
   note: string | null | undefined,
-  noteType?: "text" | "markdown" | "html"
+  contentType?: "text" | "markdown" | "html"
 ): Promise<string | null> {
   if (!note) return null;
 
-  // Default to 'markdown' if noteType is not specified
-  const type = noteType ?? "markdown";
+  // Default to 'markdown' if contentType is not specified
+  const type = contentType ?? "markdown";
 
   switch (type) {
     case "html": {
@@ -65,7 +66,21 @@ async function convertNoteToMarkdown(
           name: "note.html",
           blob: new Blob([note], { type: "text/html" }),
         });
-        return result.data;
+
+        // Check if conversion was successful
+        if (result.format === "markdown") {
+          return result.data;
+        }
+
+        // Handle error case (format === "error")
+        if ("error" in result) {
+          console.error("Failed to convert HTML to Markdown:", result.error);
+          return note;
+        }
+
+        // Fallback for unexpected format
+        console.error("Unexpected toMarkdown response format:", result);
+        return note;
       } catch (error) {
         // If conversion fails, return original note
         console.error("Failed to convert HTML to Markdown:", error);
@@ -83,8 +98,21 @@ async function convertNoteToMarkdown(
         .replace(/&#39;/g, "'")
         .replace(/&nbsp;/g, " ");
 
-      // Auto-link URLs - match http(s):// URLs
-      converted = converted.replace(/(https?:\/\/[^\s]+)/g, "[$1]($1)");
+      // Auto-link URLs using linkify-it for robust URL detection
+      const linkify = new LinkifyIt();
+      const matches = linkify.match(converted);
+
+      if (matches) {
+        // Process matches in reverse order to preserve string positions
+        for (let i = matches.length - 1; i >= 0; i--) {
+          const match = matches[i];
+          const markdownLink = `[${match.raw}](${match.url})`;
+          converted =
+            converted.substring(0, match.index) +
+            markdownLink +
+            converted.substring(match.lastIndex);
+        }
+      }
 
       // Preserve line breaks by converting single newlines to double newlines
       // This ensures text line breaks are preserved in Markdown rendering
@@ -167,6 +195,15 @@ export async function createActivity(
   activity: NewActivity | NewActivityWithNotes,
   options?: CreateActivityOptions
 ): Promise<Activity> {
+  console.log("[Plot createActivity] Received activity:", {
+    title: activity.title,
+    hasNotes: "notes" in activity,
+    notesCount: "notes" in activity ? activity.notes?.length : 0,
+    firstNoteContentType: "notes" in activity ? activity.notes?.[0]?.contentType : undefined,
+    activityKeys: Object.keys(activity),
+    firstNoteKeys: "notes" in activity && activity.notes?.[0] ? Object.keys(activity.notes[0]) : [],
+  });
+
   // Handle activity exceptions differently
   if (activity.recurrence && activity.occurrence) {
     return createActivityException(plot, activity, options);
@@ -301,6 +338,7 @@ export async function createActivity(
     // Find first note with content
     const firstNoteWithContent = activity.notes.find((note) => note.content);
     if (firstNoteWithContent && firstNoteWithContent.content) {
+      console.log("[createActivity] Preview generation - contentType:", firstNoteWithContent.contentType, "content length:", firstNoteWithContent.content?.length);
       if (!plot.env) {
         throw new Error("Plot env is required for HTML to Markdown conversion");
       }
@@ -308,8 +346,9 @@ export async function createActivity(
       const markdown = await convertNoteToMarkdown(
         plot.env.AI,
         firstNoteWithContent.content,
-        firstNoteWithContent.noteType
+        firstNoteWithContent.contentType
       );
+      console.log("[createActivity] Preview markdown length:", markdown?.length);
       previewText = createPreviewFromMarkdown(markdown);
     }
   }
@@ -423,17 +462,59 @@ export async function createActivity(
 
   // Add tags if provided
   if (activity.tags) {
-    const tagUpdates: Record<string, boolean> = {};
-    for (const tagId of Object.keys(activity.tags)) {
-      tagUpdates[tagId] = true; // true means adding the tag
-    }
+    // Build tag records with proper actor IDs from the tags object
+    const newTags = Object.entries(activity.tags)
+      .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
+      .flatMap(([tagId, actorIds]) =>
+        actorIds!.map((actorId) => ({
+          activity_id: dbResult.id,
+          tag_id: parseInt(tagId),
+          actor_id: actorId,
+          updated_by: plot.getUpdatedBy(),
+        }))
+      );
 
-    await plot.supabase.rpc("update_activity_tags", {
-      p_activity_id: dbResult.id,
-      p_actor_id: plot.priorityTwistId, // Use twist as the actor
-      p_client_id: plot.getUpdatedBy(),
-      p_tag_updates: tagUpdates,
-    });
+    if (newTags.length > 0) {
+      const { error: insertError } = await plot.supabase
+        .from("activity_tag")
+        .insert(newTags);
+
+      if (insertError) {
+        throw new Error(`Failed to insert tags: ${insertError.message}`);
+      }
+
+      // Ensure priority_contact entries exist for all contact actors
+      const uniqueActorIds = [...new Set(newTags.map((tag) => tag.actor_id))];
+
+      if (uniqueActorIds.length > 0) {
+        // Filter to only contact actors
+        const { data: contacts } = await plot.supabase
+          .from("contact")
+          .select("id")
+          .in("id", uniqueActorIds);
+
+        if (contacts && contacts.length > 0) {
+          // Batch upsert priority_contact entries
+          const priorityContacts = contacts.map((c) => ({
+            priority_id: targetPriorityId,
+            contact_id: c.id,
+            archived_at: null,
+          }));
+
+          const { error: linkError } = await plot.supabase
+            .from("priority_contact")
+            .upsert(priorityContacts, {
+              onConflict: "priority_id,contact_id",
+            });
+
+          if (linkError) {
+            console.warn(
+              `Failed to link contacts to priority: ${linkError.message}`
+            );
+          }
+        }
+      }
+    }
   }
 
   // Create initial notes if provided
@@ -552,6 +633,22 @@ export async function createNote(
     assignee: activityData.assignee ?? null,
   };
 
+  // Convert note content to markdown if needed
+  let contentToStore = note.content;
+  console.log("[createNote] contentType:", note.contentType, "content length:", note.content?.length);
+  if (note.content && note.contentType && note.contentType !== "markdown") {
+    if (!plot.env) {
+      throw new Error("Plot env is required for note content conversion");
+    }
+    console.log("[createNote] Converting content from", note.contentType, "to markdown");
+    contentToStore = await convertNoteToMarkdown(
+      plot.env.AI,
+      note.content,
+      note.contentType
+    );
+    console.log("[createNote] Conversion complete, new length:", contentToStore?.length);
+  }
+
   // Convert Note to database format
   const dbNote: Database["public"]["Tables"]["note"]["Insert"] = {
     author_id: plot.priorityTwistId,
@@ -559,7 +656,7 @@ export async function createNote(
     activity_id: note.activity.id,
     draft: note.draft ?? false,
     private: note.private ?? false,
-    content: note.content,
+    content: contentToStore,
     links: note.links ?? null,
     mentions: note.mentions ?? null,
     updated_by: plot.getUpdatedBy(),
@@ -916,6 +1013,58 @@ export async function updateActivity(
       if (insertError) {
         throw new Error(`Failed to insert new tags: ${insertError.message}`);
       }
+
+      // Ensure priority_contact entries exist for all contact actors
+      const uniqueActorIds = [...new Set(newTags.map((tag) => tag.actor_id))];
+
+      if (uniqueActorIds.length > 0) {
+        // Get priority_id from cache or query
+        const priorityId =
+          cached?.priority_id ??
+          (await (async () => {
+            const { data, error } = await plot.supabase
+              .from("activity")
+              .select("priority_id")
+              .eq("id", activity.id)
+              .single();
+
+            if (error || !data) {
+              throw new Error(
+                `Failed to get activity priority: ${
+                  error?.message ?? "Not found"
+                }`
+              );
+            }
+            return data.priority_id;
+          })());
+
+        // Filter to only contact actors
+        const { data: contacts } = await plot.supabase
+          .from("contact")
+          .select("id")
+          .in("id", uniqueActorIds);
+
+        if (contacts && contacts.length > 0) {
+          // Batch upsert priority_contact entries
+          const priorityContacts = contacts.map((c) => ({
+            priority_id: priorityId,
+            contact_id: c.id,
+            archived_at: null,
+          }));
+
+          const { error: linkError } = await plot.supabase
+            .from("priority_contact")
+            .upsert(priorityContacts, {
+              onConflict: "priority_id,contact_id",
+            });
+
+          if (linkError) {
+            console.warn(
+              `Failed to link contacts to priority: ${linkError.message}`
+            );
+          }
+        }
+      }
     }
   }
 
@@ -962,7 +1111,19 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
 
   // Handle basic fields
   if (note.content !== undefined) {
-    dbUpdate.content = note.content;
+    // Convert note content to markdown if needed
+    if (note.content && note.contentType && note.contentType !== "markdown") {
+      if (!plot.env) {
+        throw new Error("Plot env is required for note content conversion");
+      }
+      dbUpdate.content = await convertNoteToMarkdown(
+        plot.env.AI,
+        note.content,
+        note.contentType
+      );
+    } else {
+      dbUpdate.content = note.content;
+    }
   }
   if (note.links !== undefined) {
     dbUpdate.links = note.links;
@@ -1382,7 +1543,7 @@ export async function createActivities(
         const markdown = await convertNoteToMarkdown(
           plot.env.AI,
           firstNoteWithContent.content,
-          firstNoteWithContent.noteType
+          firstNoteWithContent.contentType
         );
         previewText = createPreviewFromMarkdown(markdown);
       }
@@ -1503,22 +1664,93 @@ export async function createActivities(
   }
 
   // Add tags for activities that have them
-  for (let i = 0; i < activities.length; i++) {
-    const activity = activities[i];
+  const allTags = activities.flatMap((activity, i) => {
+    if (!activity.tags) return [];
+
     const dbActivity = dbResult[i];
 
-    if (activity.tags) {
-      const tagUpdates: Record<string, boolean> = {};
-      for (const tagId of Object.keys(activity.tags)) {
-        tagUpdates[tagId] = true; // true means adding the tag
-      }
+    // Build tag records with proper actor IDs from the tags object
+    return Object.entries(activity.tags)
+      .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
+      .flatMap(([tagId, actorIds]) =>
+        actorIds!.map((actorId) => ({
+          activity_id: dbActivity.id,
+          tag_id: parseInt(tagId),
+          actor_id: actorId,
+          updated_by: plot.getUpdatedBy(),
+        }))
+      );
+  });
 
-      await plot.supabase.rpc("update_activity_tags", {
-        p_activity_id: dbActivity.id,
-        p_actor_id: plot.priorityTwistId, // Use twist as the actor
-        p_client_id: plot.getUpdatedBy(),
-        p_tag_updates: tagUpdates,
-      });
+  if (allTags.length > 0) {
+    const { error: insertError } = await plot.supabase
+      .from("activity_tag")
+      .insert(allTags);
+
+    if (insertError) {
+      throw new Error(`Failed to insert tags: ${insertError.message}`);
+    }
+
+    // Ensure priority_contact entries exist for all contact actors
+    const uniqueActorIds = [...new Set(allTags.map((tag) => tag.actor_id))];
+
+    if (uniqueActorIds.length > 0) {
+      // Filter to only contact actors
+      const { data: contacts } = await plot.supabase
+        .from("contact")
+        .select("id")
+        .in("id", uniqueActorIds);
+
+      if (contacts && contacts.length > 0) {
+        const contactIds = new Set(contacts.map((c) => c.id));
+
+        // Build priority_contact entries for each activity's priority
+        // Group tags by activity and priority to avoid duplicates
+        const priorityContactMap = new Map<string, Set<string>>();
+
+        allTags.forEach((tag) => {
+          if (!contactIds.has(tag.actor_id)) return;
+
+          // Find the priority for this activity
+          const activityIndex = dbResult.findIndex(
+            (db) => db.id === tag.activity_id
+          );
+          if (activityIndex === -1) return;
+
+          const priorityId = dbResult[activityIndex].priority_id;
+          const key = `${priorityId}:${tag.actor_id}`;
+
+          if (!priorityContactMap.has(key)) {
+            priorityContactMap.set(key, new Set([priorityId, tag.actor_id]));
+          }
+        });
+
+        // Convert map to array of priority_contact entries
+        const priorityContacts = Array.from(priorityContactMap.values()).map(
+          (set) => {
+            const [priorityId, contactId] = Array.from(set);
+            return {
+              priority_id: priorityId,
+              contact_id: contactId,
+              archived_at: null,
+            };
+          }
+        );
+
+        if (priorityContacts.length > 0) {
+          const { error: linkError } = await plot.supabase
+            .from("priority_contact")
+            .upsert(priorityContacts, {
+              onConflict: "priority_id,contact_id",
+            });
+
+          if (linkError) {
+            console.warn(
+              `Failed to link contacts to priorities: ${linkError.message}`
+            );
+          }
+        }
+      }
     }
   }
 

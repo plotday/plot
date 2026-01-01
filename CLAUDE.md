@@ -254,6 +254,194 @@ await this.callback.deleteAll();
 - Callbacks persist across worker restarts and timeouts
 - Use callbacks instead of direct function references in webhook, auth, and run tools
 
+### Google Tool Integration Pattern
+
+When building Google-based tools (calendar, contacts, gmail, etc.), use this pattern to enable cross-tool integration with a single OAuth flow and automatic data syncing.
+
+#### Pattern Overview
+
+This pattern allows one Google tool to:
+1. Request combined OAuth scopes for multiple tools in a single authorization flow
+2. Automatically trigger syncing in related tools after successful authorization
+3. Share authorization tokens explicitly across tool boundaries
+
+#### Implementation Steps
+
+**1. Export Scopes as Static Constants**
+
+Each tool should export its required scopes for reuse:
+
+```typescript
+export default class GoogleCalendar extends Tool<GoogleCalendar> {
+  static readonly SCOPES = [
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+  ];
+
+  async requestAuth(...) {
+    return await this.tools.integrations.request({
+      provider: AuthProvider.Google,
+      level: AuthLevel.User,
+      scopes: GoogleCalendar.SCOPES, // Use static constant
+    }, ...);
+  }
+}
+```
+
+**2. Add `syncWithAuth()` Method to Consumer Tools**
+
+Tools that can be triggered by other tools should implement a `syncWithAuth()` method:
+
+```typescript
+export default class GoogleContacts extends Tool<GoogleContacts> {
+  static readonly SCOPES = [
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/contacts.other.readonly",
+  ];
+
+  /**
+   * Start contact sync using an existing Authorization from another tool.
+   */
+  async syncWithAuth(
+    authorization: Authorization,
+    callback?: Function,
+    ...extraArgs: any[]
+  ): Promise<void> {
+    // Validate authorization has required scopes
+    const hasRequiredScopes = GoogleContacts.SCOPES.every(scope =>
+      authorization.scopes.includes(scope)
+    );
+
+    if (!hasRequiredScopes) {
+      throw new Error(`Authorization missing required scopes`);
+    }
+
+    // Generate opaque token for storage
+    const authToken = crypto.randomUUID();
+
+    // Get actual auth token via integrations
+    const token = await this.tools.integrations.get(authorization);
+
+    // Store and start sync
+    await this.set(`auth_token:${authToken}`, token);
+    // ... initialize and start sync
+  }
+}
+```
+
+**3. Add Dependency and Combine Scopes in Coordinator Tool**
+
+The coordinating tool (e.g., google-calendar) should:
+- Declare the consumer tool as a dependency
+- Combine scopes in `requestAuth()`
+- Trigger `syncWithAuth()` in `onAuthSuccess()`
+
+```typescript
+import GoogleContacts from "@plotday/tool-google-contacts";
+
+export class GoogleCalendar extends Tool<GoogleCalendar> {
+  static readonly SCOPES = [
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+  ];
+
+  build(build: ToolBuilder) {
+    return {
+      integrations: build(Integrations),
+      googleContacts: build(GoogleContacts), // Add dependency
+    };
+  }
+
+  async requestAuth(...): Promise<ActivityLink> {
+    // Combine scopes for single OAuth flow
+    const combinedScopes = [
+      ...GoogleCalendar.SCOPES,
+      ...GoogleContacts.SCOPES,
+    ];
+
+    return await this.tools.integrations.request({
+      provider: AuthProvider.Google,
+      scopes: combinedScopes, // Request combined scopes
+    }, this.onAuthSuccess, ...);
+  }
+
+  async onAuthSuccess(authorization: Authorization, ...): Promise<void> {
+    // Store authorization
+    await this.set(`authorization:${authToken}`, authorization);
+
+    // Trigger contacts sync with same authorization
+    try {
+      await this.tools.googleContacts.syncWithAuth(authorization);
+    } catch (error) {
+      // Log but don't fail calendar auth
+      console.error("Failed to start contacts sync:", error);
+    }
+
+    // Continue with calendar setup...
+  }
+}
+```
+
+**4. Update package.json Dependencies**
+
+Add the consumer tool as a workspace dependency:
+
+```json
+{
+  "dependencies": {
+    "@plotday/tool-google-contacts": "workspace:^",
+    "@plotday/twister": "workspace:^"
+  }
+}
+```
+
+#### Key Benefits
+
+- **Single OAuth Flow**: Users authorize once for all related Google tools
+- **Automatic Integration**: Contacts sync automatically when calendar is authorized
+- **Explicit Token Passing**: Authorization is passed as a parameter, avoiding path-dependent storage issues
+- **Independent Storage**: Each tool maintains its own storage namespace
+- **Scope Validation**: Consumer tools validate they have required scopes before syncing
+- **Graceful Degradation**: If consumer sync fails, coordinator auth still succeeds
+
+#### Extending the Pattern
+
+This pattern can be extended to other Google tools:
+
+```typescript
+// Gmail tool following the same pattern
+export class GoogleGmail extends Tool<GoogleGmail> {
+  static readonly SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+  ];
+
+  build(build: ToolBuilder) {
+    return {
+      integrations: build(Integrations),
+      googleContacts: build(GoogleContacts), // Reuse contacts integration
+    };
+  }
+
+  async requestAuth(...): Promise<ActivityLink> {
+    const combinedScopes = [
+      ...GoogleGmail.SCOPES,
+      ...GoogleContacts.SCOPES, // Add contacts scopes
+    ];
+    // ... same pattern as calendar
+  }
+}
+```
+
+#### Important Notes
+
+- **Tool Dependency**: The coordinator tool directly depends on consumer tools
+- **Workspace Packages**: Use `workspace:^` for local development
+- **Build Order**: Rebuild Twister, then rebuild all modified tools
+- **Scope Overlap**: Duplicate scopes in combined arrays are automatically deduplicated by OAuth provider
+- **Error Handling**: Always wrap consumer sync calls in try-catch to prevent coordinator failure
+- **Package Names**: Use full package names like `@plotday/tool-google-contacts` in imports and dependencies
+
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.

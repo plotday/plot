@@ -53,11 +53,10 @@ CREATE TABLE "public"."twist" (
 CREATE INDEX idx_twist_admin_id ON "public"."twist" ("twist_admin_id");
 CREATE INDEX idx_twist_environment ON "public"."twist" ("environment");
 
-ALTER TABLE "public"."twist" ENABLE ROW LEVEL SECURITY;
+-- Ensure each twist_admin can only have one twist per environment
+CREATE UNIQUE INDEX twist_admin_environment_unique ON "public"."twist" ("twist_admin_id", "environment");
 
-CREATE UNIQUE INDEX twist_name_unique_public_review ON public.twist (name)
-WHERE
-    environment IN ('public', 'review');
+ALTER TABLE "public"."twist" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_twist_updated_at
     BEFORE INSERT OR UPDATE ON "public"."twist"

@@ -4,6 +4,7 @@ CREATE TABLE "public"."priority" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "root" boolean NOT NULL DEFAULT FALSE,
+    "twist_development" boolean NOT NULL DEFAULT FALSE,
     -- All fields added below must be handled in handle_user_priority_upsert
     "archived_at" timestamp with time zone,
     "title" text NOT NULL,

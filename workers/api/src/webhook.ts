@@ -243,22 +243,29 @@ webhook.all(Network.PATH, async (c) => {
       params[key] = value;
     });
 
-    // Parse body based on content type
+    // Get raw body first (for signature verification)
+    let rawBody: string | undefined = undefined;
     let body: any = null;
     const contentType = c.req.header("content-type");
 
     if (method !== "GET" && method !== "HEAD") {
       try {
+        // Always get raw body first
+        rawBody = await c.req.text();
+
+        // Then parse based on content type
         if (contentType?.includes("application/json")) {
-          body = await c.req.json();
+          body = JSON.parse(rawBody);
         } else if (contentType?.includes("application/x-www-form-urlencoded")) {
-          body = await c.req.parseBody();
+          // Parse form data from raw body
+          const formData = new URLSearchParams(rawBody);
+          body = Object.fromEntries(formData.entries());
         } else {
-          body = await c.req.text();
+          body = rawBody;
         }
       } catch (error) {
         console.warn("Failed to parse callback request body:", error);
-        body = await c.req.text();
+        body = rawBody;
       }
     }
 
@@ -267,6 +274,7 @@ webhook.all(Network.PATH, async (c) => {
       headers,
       params,
       body,
+      rawBody,
     });
 
     // Return the result from the callback function

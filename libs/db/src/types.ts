@@ -721,6 +721,7 @@ export type Database = {
           path: unknown
           root: boolean
           title: string
+          twist_development: boolean
           updated_at: string
           updated_by: number
         }
@@ -733,6 +734,7 @@ export type Database = {
           path: unknown
           root?: boolean
           title: string
+          twist_development?: boolean
           updated_at?: string
           updated_by?: number
         }
@@ -745,6 +747,7 @@ export type Database = {
           path?: unknown
           root?: boolean
           title?: string
+          twist_development?: boolean
           updated_at?: string
           updated_by?: number
         }

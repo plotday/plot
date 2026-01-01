@@ -54,10 +54,7 @@ CREATE TRIGGER on_user_created_sync_contact
 CREATE TRIGGER on_user_updated_sync_contact
     BEFORE UPDATE ON auth.users
     FOR EACH ROW
-    WHEN (OLD.email IS DISTINCT FROM NEW.email OR
-          OLD.raw_app_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'full_name' OR
-          OLD.raw_app_meta_data ->> 'name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'name' OR
-          OLD.raw_app_meta_data ->> 'avatar_url' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'avatar_url')
+    WHEN (OLD.email IS DISTINCT FROM NEW.email OR OLD.raw_app_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'full_name' OR OLD.raw_app_meta_data ->> 'name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'name' OR OLD.raw_app_meta_data ->> 'avatar_url' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'avatar_url')
     EXECUTE FUNCTION public.sync_user_contact_trigger ();
 
 -- Migration function to populate user_id for existing users

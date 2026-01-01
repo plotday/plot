@@ -31,3 +31,8 @@ coverage
 
 .claude
 .mcp.json
+
+# Ruby bundler (for Fastlane)
+.bundle/
+vendor/bundle
+Gemfile.lock

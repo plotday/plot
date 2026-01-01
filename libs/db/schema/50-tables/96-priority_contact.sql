@@ -8,6 +8,3 @@ CREATE TABLE "public"."priority_contact" (
 );
 
 ALTER TABLE "public"."priority_contact" ENABLE ROW LEVEL SECURITY;
-
--- TODO: notify user when a priority contact is added/removed
-
