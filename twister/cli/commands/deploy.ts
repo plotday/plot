@@ -9,6 +9,29 @@ import * as out from "../utils/output";
 import { handleSSEStream } from "../utils/sse";
 import { getGlobalTokenPath } from "../utils/token";
 
+// Publisher types for API interaction
+interface Publisher {
+  id: number;
+  name: string;
+  email: string | null;
+  url: string | null;
+}
+
+interface NewPublisher {
+  name: string;
+  url?: string | null;
+}
+
+// Twist info response from GET /v1/twist/:id
+interface TwistInfo {
+  id: number;
+  twist_package_id: string;
+  priority_id: string | null;
+  publisher: Publisher | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface DeployOptions {
   dir: string;
   id?: string;
@@ -32,6 +55,113 @@ interface PackageJson {
     tools?: string[];
   };
   env?: Record<string, any>;
+}
+
+async function createNewPublisher(
+  apiUrl: string,
+  deployToken: string
+): Promise<number> {
+  // Try to get user's name for default
+  let defaultName = "";
+  try {
+    const userResponse = await fetch(`${apiUrl}/v1/twist/user`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${deployToken}`,
+      },
+    });
+    if (userResponse.ok) {
+      const userData = (await userResponse.json()) as {
+        name: string;
+        email: string;
+      };
+      defaultName = userData.name;
+    } else if (userResponse.status === 401) {
+      out.error(
+        "Authentication failed",
+        "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+      );
+      process.exit(1);
+    }
+  } catch (error) {
+    // Ignore error, just won't have default
+  }
+
+  // Prompt for publisher details
+  const response = await prompts([
+    {
+      type: "text",
+      name: "name",
+      message: "Publisher name:",
+      initial: defaultName,
+      validate: (value: string) => value.length > 0 || "Name is required",
+    },
+    {
+      type: "text",
+      name: "url",
+      message: "Publisher URL (optional):",
+      validate: (value: string) => {
+        if (!value) return true; // Optional
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return "Please enter a valid URL";
+        }
+      },
+    },
+  ]);
+
+  if (response.name === undefined) {
+    out.plain("\nDeployment cancelled.");
+    process.exit(0);
+  }
+
+  // Use default name if user pressed Enter with empty input
+  const publisherName = response.name || defaultName;
+
+  if (!publisherName) {
+    out.error("Publisher name is required");
+    process.exit(1);
+  }
+
+  // Create publisher via API
+  try {
+    out.progress(`Creating publisher "${publisherName}"...`);
+
+    const createResponse = await fetch(`${apiUrl}/v1/twist/publishers`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${deployToken}`,
+      },
+      body: JSON.stringify({
+        name: publisherName,
+        url: response.url || null,
+      } as NewPublisher),
+    });
+
+    if (!createResponse.ok) {
+      if (createResponse.status === 401) {
+        out.error(
+          "Authentication failed",
+          "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+        );
+        process.exit(1);
+      }
+      const errorText = await createResponse.text();
+      out.error("Failed to create publisher", errorText);
+      process.exit(1);
+    }
+
+    const publisher = (await createResponse.json()) as Publisher;
+    out.success(`Publisher "${publisher.name}" created`);
+    return publisher.id;
+  } catch (error) {
+    const errorInfo = handleNetworkError(error);
+    out.error("Failed to create publisher", errorInfo.message);
+    process.exit(1);
+  }
 }
 
 export async function deployCommand(options: DeployOptions) {
@@ -185,6 +315,136 @@ export async function deployCommand(options: DeployOptions) {
     }
   }
 
+  // Handle publisher selection for non-personal deployments
+  let publisherId: number | undefined;
+
+  if (environment !== "personal") {
+    // First, check if this twist already has a publisher set up
+    let needsPublisher = true;
+    const urlPath = deploymentId || "personal";
+
+    try {
+      const twistInfoResponse = await fetch(
+        `${options.apiUrl}/v1/twist/${urlPath}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${deployToken}`,
+          },
+        }
+      );
+
+      if (twistInfoResponse.ok) {
+        const twistInfo = (await twistInfoResponse.json()) as TwistInfo;
+        if (twistInfo.publisher) {
+          // Publisher already set, no need to prompt
+          needsPublisher = false;
+          publisherId = twistInfo.publisher.id;
+        }
+      } else if (twistInfoResponse.status === 401) {
+        // Authentication failure - exit with helpful message
+        out.error(
+          "Authentication failed",
+          "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+        );
+        process.exit(1);
+      } else if (twistInfoResponse.status !== 404) {
+        // Log non-404 errors, but continue with publisher setup
+        const errorText = await twistInfoResponse.text();
+        out.warning("Could not check existing twist status", [errorText]);
+      }
+      // 404 means twist not published yet, which is expected for first deployment
+    } catch (error) {
+      // Network errors, continue with publisher setup
+      const errorInfo = handleNetworkError(error);
+      out.warning("Could not check existing twist status", [
+        errorInfo.message,
+      ]);
+    }
+
+    // Only prompt for publisher if needed
+    if (needsPublisher) {
+      let publishers: Publisher[] = [];
+      let fetchSucceeded = false;
+
+      try {
+        // Fetch accessible publishers
+      const publishersResponse = await fetch(
+        `${options.apiUrl}/v1/twist/publishers`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${deployToken}`,
+          },
+        }
+      );
+
+      if (!publishersResponse.ok) {
+        if (publishersResponse.status === 401) {
+          // Authentication failure - exit with helpful message
+          out.error(
+            "Authentication failed",
+            "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+          );
+          process.exit(1);
+        }
+        const errorText = await publishersResponse.text();
+        out.warning("Failed to fetch publishers", [errorText]);
+      } else {
+        publishers = (await publishersResponse.json()) as Publisher[];
+        fetchSucceeded = true;
+      }
+    } catch (error) {
+      const errorInfo = handleNetworkError(error);
+      out.warning("Failed to fetch publishers", [errorInfo.message]);
+    }
+
+    // Always prompt for publisher, even if fetch failed
+    if (fetchSucceeded && publishers.length > 0) {
+      // Show selection UI with existing publishers + "New publisher" option
+      const choices = [
+        ...publishers.map((p) => ({
+          title: p.name,
+          description: p.url || undefined,
+          value: p.id,
+        })),
+        {
+          title: "New publisher",
+          description: "Create a new publisher",
+          value: -1,
+        },
+      ];
+
+      const response = await prompts({
+        type: "select",
+        name: "publisherId",
+        message: "Select a publisher for this twist:",
+        choices,
+      });
+
+      if (response.publisherId === undefined) {
+        out.plain("\nDeployment cancelled.");
+        process.exit(0);
+      }
+
+      if (response.publisherId === -1) {
+        // Create new publisher
+        publisherId = await createNewPublisher(options.apiUrl, deployToken!);
+      } else {
+        publisherId = response.publisherId;
+      }
+    } else {
+      // No existing publishers or fetch failed - create new one
+      if (!fetchSucceeded) {
+        out.info("Could not fetch existing publishers", [
+          "You can create a new publisher to continue",
+        ]);
+      }
+      publisherId = await createNewPublisher(options.apiUrl, deployToken!);
+      }
+    }
+  }
+
   // Build the twist
   let requestBody: {
     module: string;
@@ -192,6 +452,7 @@ export async function deployCommand(options: DeployOptions) {
     name: string;
     description?: string;
     environment: string;
+    publisherId?: number;
     dryRun?: boolean;
   };
 
@@ -226,6 +487,7 @@ export async function deployCommand(options: DeployOptions) {
       name: deploymentName!,
       description: deploymentDescription,
       environment: environment,
+      publisherId,
       dryRun: options.dryRun,
     };
 
@@ -262,11 +524,15 @@ export async function deployCommand(options: DeployOptions) {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          out.error(
+            "Authentication failed",
+            "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+          );
+          process.exit(1);
+        }
         const errorText = await response.text();
-        out.error(
-          `Upload failed: ${response.status} ${response.statusText}`,
-          errorText
-        );
+        out.error("Upload failed", errorText);
         process.exit(1);
       }
 

@@ -13,7 +13,7 @@ interface TypeFile {
   varName: string; // Valid JS identifier for imports (e.g., "toolsTwists")
 }
 
-// Generate SDK documentation files for LLM consumption
+// Generate Twister documentation files for LLM consumption
 const packageJsonPath = join(__dirname, "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 const srcDir = join(__dirname, "src");
@@ -35,7 +35,7 @@ for (const [exportPath, exportValue] of Object.entries(exports)) {
     exportPath === "." ||
     exportPath === "./tsconfig.base.json" ||
     exportPath === "./twist-guide" ||
-    exportPath === "./sdk-docs" ||
+    exportPath === "./creator-docs" ||
     exportPath.startsWith("./llm-docs") ||
     exportPath.startsWith("./utils/")
   ) {
@@ -59,7 +59,9 @@ for (const [exportPath, exportValue] of Object.entries(exports)) {
 
   // Build import path
   const importPath =
-    exportPath === "." ? "@plotday/sdk" : `@plotday/sdk${exportPath.slice(1)}`;
+    exportPath === "."
+      ? "@plotday/twister"
+      : `@plotday/twister${exportPath.slice(1)}`;
 
   // docFilePath mirrors the source file structure (e.g., "tools/twists.ts")
   // This is the path where the doc file will be written
@@ -82,9 +84,15 @@ typeFiles.sort((a, b) => {
   const aDepth = a.file.split("/").length;
   const bDepth = b.file.split("/").length;
 
-  if (a.importPath === "@plotday/sdk" && b.importPath !== "@plotday/sdk")
+  if (
+    a.importPath === "@plotday/twister" &&
+    b.importPath !== "@plotday/twister"
+  )
     return -1;
-  if (b.importPath === "@plotday/sdk" && a.importPath !== "@plotday/sdk")
+  if (
+    b.importPath === "@plotday/twister" &&
+    a.importPath !== "@plotday/twister"
+  )
     return 1;
   if (aDepth !== bDepth) return aDepth - bDepth;
   return a.file.localeCompare(b.file);
@@ -99,7 +107,7 @@ for (const { file, importPath, docFilePath, varName } of typeFiles) {
 
   // Skip if source file doesn't exist
   if (!existsSync(sourceFilePath)) {
-    console.warn(`Warning: SDK file not found: ${sourceFilePath}`);
+    console.warn(`Warning: Twister file not found: ${sourceFilePath}`);
     continue;
   }
 
@@ -139,7 +147,7 @@ const indexContent = `/**
  * This file is auto-generated during build. Do not edit manually.
  * Generated from: prebuild.ts
  *
- * Provides a mapping of SDK import paths to their source code documentation.
+ * Provides a mapping of Twister import paths to their source code documentation.
  */
 
 ${indexImports.join("\n")}

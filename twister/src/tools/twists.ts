@@ -6,7 +6,7 @@ import { type Callback, ITool } from "..";
 export interface TwistSource {
   /**
    * Package dependencies with version specifiers
-   * @example { "@plotday/sdk": "workspace:^", "@plotday/tool-google-calendar": "^1.0.0" }
+   * @example { "@plotday/twister": "workspace:^", "@plotday/tool-google-calendar": "^1.0.0" }
    */
   dependencies: Record<string, string>;
 
@@ -114,7 +114,7 @@ export abstract class Twists extends ITool {
    * - Create activities from events
    * `);
    *
-   * // source.dependencies: { "@plotday/sdk": "workspace:^", ... }
+   * // source.dependencies: { "@plotday/twister": "workspace:^", ... }
    * // source.files: { "index.ts": "export default class..." }
    * ```
    */

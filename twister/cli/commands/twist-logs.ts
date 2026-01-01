@@ -103,11 +103,15 @@ export async function twistLogsCommand(options: TwistLogsOptions) {
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        out.error(
+          "Authentication failed",
+          "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+        );
+        process.exit(1);
+      }
       const errorText = await response.text();
-      out.error(
-        `Failed to connect: ${response.status} ${response.statusText}`,
-        errorText
-      );
+      out.error("Failed to connect", errorText);
       process.exit(1);
     }
 

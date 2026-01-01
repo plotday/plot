@@ -186,11 +186,15 @@ export async function generateCommand(options: GenerateOptions) {
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        out.error(
+          "Authentication failed",
+          "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+        );
+        process.exit(1);
+      }
       const errorText = await response.text();
-      out.error(
-        `Generation failed: ${response.status} ${response.statusText}`,
-        errorText
-      );
+      out.error("Generation failed", errorText);
       process.exit(1);
     }
 
