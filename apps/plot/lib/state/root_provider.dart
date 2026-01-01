@@ -4,6 +4,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/cli_args.dart';
+import 'package:plot/command/command.dart';
+import 'package:plot/command/page_link.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
@@ -80,12 +82,9 @@ class RootProviderState extends State<RootProvider> {
   }
 
   void _navigateToUrl(BuildContext navigateContext, String url) {
-    navigateContext.router.navigatePath(
-      url,
-      onFailure: (failure) {
-        log.warning('Failed to navigate to CLI URL: $url', failure);
-      },
-    );
+    log.info('Navigating to CLI URL: $url');
+    // Use the OpenPageLink command for navigation
+    navigateContext.run(OpenPageLink(url));
   }
 
   @override
@@ -112,8 +111,6 @@ class RootProviderState extends State<RootProvider> {
                   CliArgs.url != null) {
                 _hasNavigatedToCliUrl = true;
                 final url = CliArgs.url!;
-                log.info('Navigating to CLI URL: $url');
-                // Parse and navigate to the URL
                 _navigateToUrl(context, url);
               }
               break;

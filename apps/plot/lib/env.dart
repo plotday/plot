@@ -10,6 +10,8 @@ abstract class Env {
     inAndroidEmulator = await _inAndroidEmuilator();
     await dotenv.load(fileName: ".env");
 
+    appBaseUrl = getEnvOrThrow('APP_BASE_URL');
+
     posthogApiKey = getEnvOrThrow('POSTHOG_API_KEY');
     posthogHost = getEnvOrThrow('POSTHOG_PROXY');
 
@@ -32,6 +34,8 @@ abstract class Env {
   }
 
   static late final bool inAndroidEmulator;
+
+  static late final String appBaseUrl;
 
   static String _translateUrl(String url) {
     if (inAndroidEmulator) {

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/user.dart';
 import 'command.dart';
+import 'page_link.dart';
 
 class GlobalShortcuts extends StatelessWidget {
   const GlobalShortcuts({required this.child, super.key});
@@ -17,6 +18,10 @@ class GlobalShortcuts extends StatelessWidget {
 
     // When signed in, show all commands
     return [
+      StaticCommandGroup(
+        title: 'Navigation',
+        commands: [CopyPageLink(), OpenCopiedPageLink()],
+      ),
       StaticCommandGroup(
         title: 'Priorities',
         commands: [PickCurrentPriority(), NewPriority()],

@@ -508,6 +508,7 @@ class EditorState extends State<Editor> {
                 ...defaultComponentBuilders,
               ],
               keyboardActions: [
+                _bubbleOverrideKeys,
                 if (_isEmpty) _bubbleArrowKeys,
                 _handleMentionPopoverNavigation,
                 _buildEnterKeyHandler(settingsState.enterBehavior),
@@ -517,7 +518,7 @@ class EditorState extends State<Editor> {
                 ...(_inputSource == TextInputSource.ime
                     ? defaultImeKeyboardActions
                     : defaultKeyboardActions),
-                _bubbleSpecialKeys,
+                _bubbleSpecialKeys, // Process meta key combos first to allow propagation
               ],
             ),
           ),
@@ -1125,6 +1126,31 @@ ExecutionInstruction _bubbleArrowKeys({
   return ExecutionInstruction.blocked;
 }
 
+// The SuperEditor defaults don't check from Meta-Shift combinations, so we
+// bubble them early to override the default handlers.
+ExecutionInstruction _bubbleOverrideKeys({
+  required SuperEditorContext editContext,
+  required KeyEvent keyEvent,
+}) {
+  if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Bubble up meta key combos by blocking SuperEditor from handling them
+  final isMetaPressed =
+      (HardwareKeyboard.instance.isMetaPressed ||
+          HardwareKeyboard.instance.isControlPressed) &&
+      HardwareKeyboard.instance.isShiftPressed;
+  if (isMetaPressed) {
+    log.info(
+      'Editor: Meta key combo detected - ${keyEvent.logicalKey.keyLabel} (bubbling to parent)',
+    );
+    return ExecutionInstruction.blocked;
+  }
+
+  return ExecutionInstruction.continueExecution;
+}
+
 ExecutionInstruction _bubbleSpecialKeys({
   required SuperEditorContext editContext,
   required KeyEvent keyEvent,
@@ -1137,11 +1163,14 @@ ExecutionInstruction _bubbleSpecialKeys({
     return ExecutionInstruction.blocked;
   }
 
-  // Bubble up meta key combos
+  // Bubble up meta key combos by blocking SuperEditor from handling them
   final isMetaPressed =
       HardwareKeyboard.instance.isMetaPressed ||
       HardwareKeyboard.instance.isControlPressed;
   if (isMetaPressed) {
+    log.info(
+      'Editor: Meta key combo detected - ${keyEvent.logicalKey.keyLabel} (bubbling to parent)',
+    );
     return ExecutionInstruction.blocked;
   }
 
