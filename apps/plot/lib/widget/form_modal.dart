@@ -1,3 +1,4 @@
+import 'package:auto_route/auto_route.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
@@ -336,9 +337,23 @@ class FormModalState extends State<_FormModal> {
         return;
       }
 
-      Modal.popAll(context);
-      if (context.mounted && result is CommandRoute) {
-        result.go(widget.rootContext);
+      // Capture route info before closing modal to avoid accessing deactivated widget
+      if (result is CommandRoute) {
+        final routeToNavigate = result.route;
+        final shouldReplace = result.replace;
+
+        Modal.popAll(context);
+
+        // Navigate using captured router reference
+        if (widget.rootContext.mounted) {
+          if (shouldReplace) {
+            await widget.rootContext.router.root.replace(routeToNavigate);
+          } else {
+            await widget.rootContext.router.root.navigate(routeToNavigate);
+          }
+        }
+      } else {
+        Modal.popAll(context);
       }
     } catch (e, stackTrace) {
       log.warning('Error submitting form', e, stackTrace);
@@ -383,9 +398,23 @@ class FormModalState extends State<_FormModal> {
         return const CommandDone();
       }
 
-      Modal.popAll(context);
-      if (context.mounted && result is CommandRoute) {
-        result.go(widget.rootContext);
+      // Capture route info before closing modal to avoid accessing deactivated widget
+      if (result is CommandRoute) {
+        final routeToNavigate = result.route;
+        final shouldReplace = result.replace;
+
+        Modal.popAll(context);
+
+        // Navigate using captured router reference
+        if (widget.rootContext.mounted) {
+          if (shouldReplace) {
+            await widget.rootContext.router.root.replace(routeToNavigate);
+          } else {
+            await widget.rootContext.router.root.navigate(routeToNavigate);
+          }
+        }
+      } else {
+        Modal.popAll(context);
       }
       return result;
     } catch (e, stackTrace) {
