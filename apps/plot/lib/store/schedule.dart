@@ -42,11 +42,11 @@ class Schedule extends Equatable {
           context: context,
           archived: archived,
         ).map((activity) => activity?.agendaAt.toDate()),
-        Activity.watchNext(range.end, context: context, archived: archived).map((
-          activity,
-        ) {
-          return activity?.agendaAt.toDate();
-        }),
+        Activity.watchNext(range.end, context: context, archived: archived).map(
+          (activity) {
+            return activity?.agendaAt.toDate();
+          },
+        ),
         (rangeMap, todaySchedule, previous, next) {
           final result = Map<Date, ScheduledDay>.from(rangeMap);
           // Only include today if it has events or activities and we have a schedule
@@ -179,7 +179,7 @@ class Schedule extends Equatable {
 
           final activityPath = activity.priority.path;
           return activityPath == context.path ||
-                 activityPath.isChild(context.path);
+              activityPath.isChild(context.path);
         }).toList();
 
         // Group activities by date
@@ -262,26 +262,22 @@ class ScheduledDay extends Equatable {
           expiry = now + Duration(seconds: 60 - now.second);
         } else {
           // Find the earliest event start or end following now (including boundary moments)
-          expiry = allActivities.fold(
-            null,
-            (DateTime? next, Activity a) {
-              // Check event start (after now or at same moment for boundary)
-              if (a.at?.start != null &&
-                  (a.at!.start!.isAfter(now) ||
-                      a.at!.start!.isAtSameMomentAs(now)) &&
-                  (next == null || next.isAfter(a.at!.start!))) {
-                return a.at!.start;
-              }
-              // Check event end (after now or at same moment for boundary)
-              if (a.at?.end != null &&
-                  (a.at!.end!.isAfter(now) ||
-                      a.at!.end!.isAtSameMomentAs(now)) &&
-                  (next == null || next.isAfter(a.at!.end!))) {
-                return a.at!.end;
-              }
-              return next;
-            },
-          );
+          expiry = allActivities.fold(null, (DateTime? next, Activity a) {
+            // Check event start (after now or at same moment for boundary)
+            if (a.at?.start != null &&
+                (a.at!.start!.isAfter(now) ||
+                    a.at!.start!.isAtSameMomentAs(now)) &&
+                (next == null || next.isAfter(a.at!.start!))) {
+              return a.at!.start;
+            }
+            // Check event end (after now or at same moment for boundary)
+            if (a.at?.end != null &&
+                (a.at!.end!.isAfter(now) || a.at!.end!.isAtSameMomentAs(now)) &&
+                (next == null || next.isAfter(a.at!.end!))) {
+              return a.at!.end;
+            }
+            return next;
+          });
         }
 
         List<Activity> dayActivities = [];

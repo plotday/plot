@@ -1,4 +1,5 @@
 import 'package:logging/logging.dart';
+import 'package:plot/cli_args.dart';
 
 /// Service that provides current time, with support for freezing time via
 /// command-line argument for testing and screenshots.
@@ -14,30 +15,17 @@ class Time {
 
   /// Initializes the Time service.
   ///
-  /// Parses command-line arguments for --frozen-time=ISO8601 format.
-  /// Example: --frozen-time=2024-12-25T14:30:00
-  static void init(List<String> args) {
+  /// Uses frozen time from CLI arguments if provided.
+  static void init() {
     if (_frozenTime != null) {
       _log.warning('Time already initialized');
       return;
     }
 
-    // Parse --frozen-time argument
-    for (final arg in args) {
-      if (arg.startsWith('--frozen-time=')) {
-        final timeStr = arg.substring('--frozen-time='.length);
-        try {
-          _frozenTime = DateTime.parse(timeStr);
-          _log.info('Time frozen to: $_frozenTime');
-        } catch (e) {
-          _log.warning(
-            'Invalid --frozen-time format: "$timeStr". '
-            'Expected ISO8601 format (e.g., 2024-12-25T14:30:00). '
-            'Error: $e',
-          );
-        }
-        break;
-      }
+    // Get frozen time from centralized CLI argument parser
+    _frozenTime = CliArgs.frozenTime;
+    if (_frozenTime != null) {
+      _log.info('Time frozen to: $_frozenTime');
     }
   }
 

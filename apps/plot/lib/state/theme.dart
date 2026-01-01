@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:plot/cli_args.dart';
 import 'package:plot/util/theme_color.dart';
 
 part 'theme_state.dart';
@@ -44,7 +45,16 @@ class ThemeBloc extends Cubit<ThemeState> {
       orElse: () => AppThemeMode.system,
     );
     final colorIndex = prefs.getInt('priority_color') ?? 0;
-    emit(state.copyWith(mode: mode, priorityColor: ThemeColor(colorIndex)));
+
+    // Override with CLI arguments if provided
+    AppThemeMode finalMode = mode;
+    if (CliArgs.darkMode) {
+      finalMode = AppThemeMode.dark;
+    } else if (CliArgs.lightMode) {
+      finalMode = AppThemeMode.light;
+    }
+
+    emit(state.copyWith(mode: finalMode, priorityColor: ThemeColor(colorIndex)));
   }
 
   /// Persist state to shared preferences

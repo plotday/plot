@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/cli_args.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
@@ -32,6 +33,7 @@ class RootProviderState extends State<RootProvider> {
 
   void Function()? _nowBlocListener;
   StreamSubscription<Priority>? _contextPriorityListener;
+  bool _hasNavigatedToCliUrl = false;
 
   @override
   void initState() {
@@ -77,6 +79,15 @@ class RootProviderState extends State<RootProvider> {
     _contextPriorityListener = null;
   }
 
+  void _navigateToUrl(BuildContext navigateContext, String url) {
+    navigateContext.router.navigatePath(
+      url,
+      onFailure: (failure) {
+        log.warning('Failed to navigate to CLI URL: $url', failure);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
@@ -94,6 +105,17 @@ class RootProviderState extends State<RootProvider> {
               await prioritiesBloc.start();
               await nowBloc.start();
               _setupNowBlocListener(themeBloc);
+
+              // Navigate to CLI URL if provided (only once)
+              if (context.mounted &&
+                  !_hasNavigatedToCliUrl &&
+                  CliArgs.url != null) {
+                _hasNavigatedToCliUrl = true;
+                final url = CliArgs.url!;
+                log.info('Navigating to CLI URL: $url');
+                // Parse and navigate to the URL
+                _navigateToUrl(context, url);
+              }
               break;
             case UserSignedOut _:
               _teardownNowBlocListener();

@@ -8,7 +8,9 @@ import 'package:posthog_flutter/posthog_flutter.dart';
 import 'app.dart';
 import 'app_info.dart';
 import 'env.dart';
+import 'auto_sign_in.dart';
 import 'base.dart';
+import 'cli_args.dart';
 import 'logging.dart';
 import 'widget/window.dart';
 import 'widget/auth_button.dart';
@@ -48,8 +50,11 @@ Future<void> run(List<String> args) async {
     });
     WidgetsFlutterBinding.ensureInitialized();
 
+    // Parse command-line arguments early
+    CliArgs.init(args);
+
     // Initialize Time early to support frozen time for testing/screenshots
-    Time.init(args);
+    Time.init();
 
     await Window.init();
     await Env.init();
@@ -64,6 +69,7 @@ Future<void> run(List<String> args) async {
     await Posthog().setup(config);
 
     await Base.init();
+    await AutoSignIn.init();
     await AuthButton.init();
     usePathUrlStrategy();
     log.info("Starting App");

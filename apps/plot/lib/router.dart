@@ -5,6 +5,7 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 
+import 'auto_sign_in.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
@@ -224,8 +225,18 @@ class AuthGuard extends AutoRouteGuard {
             resolver.route.name == EmailSignInRoute.page.name) {
           resolver.next();
         } else {
-          _logger.info('AuthGuard: Redirecting to SignInRoute');
-          resolver.redirectUntil(SignInRoute());
+          // If --user was provided without password, redirect to email sign-in
+          if (AutoSignIn.shouldNavigateToSignIn) {
+            _logger.info(
+              'AuthGuard: Redirecting to EmailSignInRoute with email: ${AutoSignIn.targetUser}',
+            );
+            resolver.redirectUntil(
+              EmailSignInRoute(email: AutoSignIn.targetUser),
+            );
+          } else {
+            _logger.info('AuthGuard: Redirecting to SignInRoute');
+            resolver.redirectUntil(SignInRoute());
+          }
         }
         break;
       case UserLoading():
