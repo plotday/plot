@@ -40,7 +40,7 @@ twists.get("/twists", async (c) => {
     return c.json({ message: "Bad request (missing priorityId)" }, 400);
   }
 
-  const twists = await getAllTwists(c.var.supabase, priorityId);
+  const twists = await getAllTwists(c.var.supabase, c.var.supabaseAdmin, priorityId);
   return c.json(twists);
 });
 

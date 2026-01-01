@@ -228,7 +228,11 @@ export async function add(
   }
 }
 
-export async function getAll(supabase: SupabaseClient, priorityId: string) {
+export async function getAll(
+  supabase: SupabaseClient,
+  supabaseAdmin: SupabaseClient,
+  priorityId: string
+) {
   try {
     if (!priorityId || typeof priorityId !== "string") {
       throw new Error("priorityId is required and must be a string");
@@ -263,22 +267,20 @@ export async function getAll(supabase: SupabaseClient, priorityId: string) {
         }
 
         // For other environments, get publisher info via twist_admin
-        const { data: adminData } = await supabase
+        // Use supabaseAdmin to bypass RLS on twist_admin table
+        const { data: adminData } = await supabaseAdmin
           .from("twist_admin")
-          .select("publisher:publisher_id(name, email, url)")
+          .select("*, publisher!publisher_id(name, email, url)")
           .eq("id", twist.twist_admin_id)
           .maybeSingle();
 
-        if (adminData?.publisher) {
-          return {
-            ...twist,
-            author_name: (adminData.publisher as any).name || null,
-            author_email: (adminData.publisher as any).email || null,
-            author_url: (adminData.publisher as any).url || null,
-          };
-        }
-
-        return twist;
+        // Always return author fields, even if null
+        return {
+          ...twist,
+          author_name: adminData?.publisher ? (adminData.publisher as any).name || null : null,
+          author_email: adminData?.publisher ? (adminData.publisher as any).email || null : null,
+          author_url: adminData?.publisher ? (adminData.publisher as any).url || null : null,
+        };
       })
     );
 
