@@ -36,7 +36,7 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.2
-  supabase_flutter: ^2.9.1
+  supabase_flutter: ^2.12.0
   flutter_bloc: ^9.1.1
   equatable: ^2.0.5
   bloc_concurrency: ^0.3.0
@@ -68,11 +68,8 @@ dependencies:
       url: git@github.com:plotday/font_awesome_flutter.git
   injector: ^3.0.0
   posthog_flutter: ^5.10.0
-  figma_squircle: # It was on 0.5.3 before being broken by Flutter 3.27.0. This is a fork that fixes it.
-    git:
-      url: https://github.com/Ax0elz/figma_squircle
   b: ^0.2.0
-  super_editor: ^0.3.0-dev.47
+  super_editor: ^0.3.0-dev.43 # https://github.com/Flutter-Bounty-Hunters/super_editor/issues/2882
   sliver_tools: ^0.2.12
   timeago: ^3.7.0
   stack_trace: ^1.12.0
