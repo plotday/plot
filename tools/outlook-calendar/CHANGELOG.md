@@ -1,5 +1,13 @@
 # @plotday/tool-outlook-calendar
 
+## 0.7.0
+
+### Changed
+
+- Breaking: Renamed Note noteType to contentType ([`844be3f`](https://github.com/plotday/plot/commit/844be3f7fcdcad7094734ce4a6d23594e3add068))
+- Updated dependencies:
+- @plotday/twister@0.25.0
+
 ## 0.6.0
 
 ### Added
