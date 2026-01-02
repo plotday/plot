@@ -69,7 +69,7 @@ dependencies:
   injector: ^3.0.0
   posthog_flutter: ^5.10.0
   b: ^0.2.0
-  super_editor: ^0.3.0-dev.43 # https://github.com/Flutter-Bounty-Hunters/super_editor/issues/2882
+  super_editor: 0.3.0-dev.43 # https://github.com/Flutter-Bounty-Hunters/super_editor/issues/2882
   sliver_tools: ^0.2.12
   timeago: ^3.7.0
   stack_trace: ^1.12.0
