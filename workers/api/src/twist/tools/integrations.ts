@@ -322,17 +322,17 @@ export class Integrations extends Tool implements IAuth {
         );
       }
 
-      const { code, clientId, redirectUri, pkce } = params;
+      const { code, clientId, redirectUri } = params;
       if (!code) throw new Error("Missing code parameter");
       if (!clientId) throw new Error("Missing clientId parameter");
       if (!redirectUri) throw new Error("Missing redirectUri parameter");
 
       // Exchange code for tokens using static helper
+      // Always include code_verifier if it exists in auth state (PKCE flow)
       const tokenResponse = await Integrations.exchangeCodeForTokens({
         clientId,
         code,
-        codeVerifier:
-          pkce && authState.codeVerifier ? authState.codeVerifier : undefined,
+        codeVerifier: authState.codeVerifier,
         provider: authState.provider,
         redirectUri,
         env,
@@ -538,8 +538,17 @@ export class Integrations extends Tool implements IAuth {
   }): Promise<{ url: string; clientId: string; state: string } | null> {
     const config = PROVIDER_CONFIGS[provider];
     if (!config) {
+      console.error(`Provider not supported:`, { provider });
       throw new Error(`Provider ${provider} not supported`);
     }
+
+    console.log(`Generating auth URL for ${provider}:`, {
+      level,
+      scopes,
+      platform,
+      redirectUri,
+      hasCallback: !!callback,
+    });
 
     // Generate fresh PKCE parameters for this specific OAuth flow
     const codeVerifier = Integrations.GenerateCodeVerifier();
@@ -565,12 +574,25 @@ export class Integrations extends Tool implements IAuth {
       } satisfies AuthState)
     );
 
-    const clientId = (env[
-      `${Integrations.EnvPrefix(provider, platform)}_ID` as keyof Bindings
-    ] ??
-      env[
-        `${Integrations.EnvPrefix(provider)}_ID` as keyof Bindings
-      ]) as string;
+    const platformEnvKey = `${Integrations.EnvPrefix(provider, platform)}_ID` as keyof Bindings;
+    const baseEnvKey = `${Integrations.EnvPrefix(provider)}_ID` as keyof Bindings;
+
+    const clientId = (env[platformEnvKey] ?? env[baseEnvKey]) as string;
+
+    if (!clientId) {
+      console.error(`No client ID found for ${provider}:`, {
+        platform,
+        platformEnvKey,
+        baseEnvKey,
+        availableAuthKeys: Object.keys(env).filter(k => k.startsWith('AUTH_')),
+      });
+      return null;
+    }
+
+    console.log(`Found client ID for ${provider}:`, {
+      clientId: clientId.substring(0, 10) + '...',
+      usedKey: env[platformEnvKey] ? platformEnvKey : baseEnvKey,
+    });
 
     const params = new URLSearchParams({
       response_type: "code",
@@ -586,6 +608,11 @@ export class Integrations extends Tool implements IAuth {
     });
 
     const url = `${config.authUrl}?${params.toString()}`;
+
+    console.log(`Successfully generated auth URL for ${provider}:`, {
+      authUrl: config.authUrl,
+      hasState: !!state,
+    });
 
     return { url, clientId, state };
   }

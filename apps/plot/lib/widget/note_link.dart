@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/widget/spinner.dart';
+import 'package:plot/widget/toast.dart';
 import 'package:plot/api/api.dart' as api;
 import 'logging.dart';
 
@@ -73,7 +74,12 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
       log.info('Callback executed successfully for: ${widget.link.title}');
     } catch (e) {
       log.warning('Failed to execute callback for ${widget.link.title}: $e');
-      // TODO: Show user-friendly error message
+      if (mounted) {
+        context.showToast(
+          message: 'Unable to complete action. Please try again.',
+          isError: true,
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {

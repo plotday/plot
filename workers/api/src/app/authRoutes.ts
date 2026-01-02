@@ -51,6 +51,10 @@ authRoutes.get("/auth", async (c) => {
     });
 
     if (!parseResult.success) {
+      console.error("Auth URL request validation failed:", {
+        error: parseResult.error,
+        query: c.req.query(),
+      });
       return handleValidationError(parseResult.error);
     }
 
@@ -66,6 +70,15 @@ authRoutes.get("/auth", async (c) => {
     // Use the scopes from the request or from query parameters
     const scopesToUse = requestScopes?.length > 0 ? requestScopes : scopes;
 
+    console.log("Generating auth URL:", {
+      provider,
+      level,
+      scopes: scopesToUse,
+      platform,
+      redirectUri,
+      hasCallback: !!callback,
+    });
+
     const result = await Integrations.GenerateAuthUrl({
       provider: provider as AuthProvider,
       level: level as any, // AuthLevel type
@@ -78,15 +91,32 @@ authRoutes.get("/auth", async (c) => {
     });
 
     if (!result) {
+      console.error("No client ID configured:", {
+        provider,
+        platform,
+        envKeys: Object.keys(c.env).filter(k => k.includes('AUTH')),
+      });
       return c.json(
         { message: "No client ID configured for this platform" },
         400
       );
     }
 
+    console.log("Successfully generated auth URL:", {
+      provider,
+      hasUrl: !!result.url,
+      hasClientId: !!result.clientId,
+      hasState: !!result.state,
+    });
+
     return c.json(result);
   } catch (error) {
-    console.error("Error generating auth URL:", error);
+    console.error("Error generating auth URL:", {
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      query: c.req.query(),
+    });
     if (error instanceof Error) {
       return c.json(
         { message: `Error generating auth URL: ${error.message}` },

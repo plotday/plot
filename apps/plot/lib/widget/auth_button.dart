@@ -11,8 +11,8 @@ import 'package:forui/forui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/env.dart';
-import 'package:plot/widget/alert.dart';
 import 'package:plot/widget/spinner.dart';
+import 'package:plot/widget/toast.dart';
 import 'package:plot/util/google_sign_in.dart' as web;
 import 'package:plot/store/store.dart' show AuthLink;
 import 'package:plot/store/types.dart' show AuthProvider;
@@ -222,12 +222,12 @@ class _AuthButtonState extends State<AuthButton> {
         return;
       }
       log.warning('Google sign-in failed', e, t);
-      final message = e.description ?? 'Google sign-in failed';
+      final message = 'Unable to connect with Google. Please try again.';
       if (widget.onError != null) {
         widget.onError!(message);
       } else {
         if (mounted) {
-          Alert.show(context, message);
+          context.showToast(message: message, isError: true);
         }
       }
       return;
@@ -266,22 +266,23 @@ class _AuthButtonState extends State<AuthButton> {
         return;
       }
       log.warning('Apple sign-in failed: ${e.code} - ${e.message}');
-      final message = e.message.isEmpty ? 'Apple sign-in failed' : e.message;
+      final message = 'Unable to connect with Apple. Please try again.';
       if (widget.onError != null) {
         widget.onError!(message);
       } else {
         if (mounted) {
-          Alert.show(context, message);
+          context.showToast(message: message, isError: true);
         }
       }
       return;
     } catch (e, t) {
       log.warning('Apple sign-in failed', e, t);
+      final message = 'Unable to connect with Apple. Please try again.';
       if (widget.onError != null) {
-        widget.onError!('Apple sign-in failed: $e');
+        widget.onError!(message);
       } else {
         if (mounted) {
-          Alert.show(context, 'Apple sign-in failed: $e');
+          context.showToast(message: message, isError: true);
         }
       }
       return;
@@ -296,7 +297,12 @@ class _AuthButtonState extends State<AuthButton> {
     setState(() => _isLoading = true);
 
     try {
+      log.info('Starting OAuth flow for ${widget.provider.name}');
       final authUrl = await _generateAuthUrl();
+      log.info('Generated auth URL for ${widget.provider.name}', {
+        'clientId': authUrl.clientId,
+        'hasState': authUrl.state.isNotEmpty,
+      });
 
       final result = await FlutterWebAuth2.authenticate(
         url: authUrl.url,
@@ -306,18 +312,29 @@ class _AuthButtonState extends State<AuthButton> {
       final responseUri = Uri.parse(result);
       final params = responseUri.queryParameters;
 
+      log.info('OAuth callback received for ${widget.provider.name}', {
+        'hasCode': params['code'] != null,
+      });
+
       await widget.onComplete(
         clientId: authUrl.clientId,
         redirectUri: Env.authCallbackUrl,
         code: params['code'],
         state: authUrl.state,
       );
-    } catch (e) {
+
+      log.info('OAuth flow completed successfully for ${widget.provider.name}');
+    } catch (e, t) {
+      log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
       if (mounted) {
+        // Create a user-friendly error message based on the provider
+        final providerName = widget.provider.name[0].toUpperCase() +
+                            widget.provider.name.substring(1);
+        final message = 'Unable to connect with $providerName. Please try again.';
         if (widget.onError != null) {
-          widget.onError!(e.toString());
+          widget.onError!(message);
         } else {
-          Alert.show(context, '$e');
+          context.showToast(message: message, isError: true);
         }
       }
     } finally {
@@ -353,8 +370,32 @@ class _AuthButtonState extends State<AuthButton> {
         if (platform != null) 'platform': platform,
       },
     );
-    final response = await api.get<Map<String, dynamic>>(uri.toString());
-    return _AuthUrlResult(response);
+
+    log.info('Requesting auth URL from API', {
+      'provider': link.provider.name,
+      'level': link.level,
+      'scopes': link.scopes.join(', '),
+      'platform': platform,
+      'uri': uri.toString(),
+    });
+
+    try {
+      final response = await api.get<Map<String, dynamic>>(uri.toString());
+      log.info('Received auth URL response from API', {
+        'provider': link.provider.name,
+        'hasUrl': response.containsKey('url'),
+        'hasClientId': response.containsKey('clientId'),
+        'hasState': response.containsKey('state'),
+      });
+      return _AuthUrlResult(response);
+    } catch (e, t) {
+      log.severe(
+        'Failed to generate auth URL from API for ${link.provider.name} (uri: ${uri.toString()})',
+        e,
+        t,
+      );
+      rethrow;
+    }
   }
 
   @override
@@ -555,6 +596,114 @@ class _AuthButtonState extends State<AuthButton> {
           buttonText: 'Continue with Discord',
         );
 
+      case AuthProvider.notion:
+        return _ProviderConfig(
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
+          borderColor: const Color(0xFFDADBDD),
+          horizontalPadding: 12,
+          hoverColor: const Color(0xFFF7F6F3),
+          focusColor: const Color(0xFF000000),
+          loadingColor: const Color(0xFF000000),
+          disabledTextColor: const Color(0xFF9AA0A6),
+          iconSize: 18,
+          spacing: 12,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          fontFamily: 'system-ui',
+          buttonText: 'Continue with Notion',
+        );
+
+      case AuthProvider.atlassian:
+        return _ProviderConfig(
+          backgroundColor: Colors.white,
+          textColor: const Color(0xFF172B4D),
+          borderColor: const Color(0xFFDFE1E6),
+          horizontalPadding: 12,
+          hoverColor: const Color(0xFFF4F5F7),
+          focusColor: const Color(0xFF0052CC),
+          loadingColor: const Color(0xFF0052CC),
+          disabledTextColor: const Color(0xFF8993A4),
+          iconSize: 18,
+          spacing: 12,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          fontFamily: 'system-ui',
+          buttonText: 'Continue with Atlassian',
+        );
+
+      case AuthProvider.linear:
+        return _ProviderConfig(
+          backgroundColor: const Color(0xFF5E6AD2), // Linear Purple
+          textColor: Colors.white,
+          borderColor: const Color(0xFF5E6AD2),
+          horizontalPadding: 16,
+          hoverColor: const Color(0xFF505AC0),
+          focusColor: const Color(0xFF505AC0),
+          loadingColor: Colors.white,
+          disabledTextColor: const Color(0xFFB5B9E8),
+          iconSize: 18,
+          spacing: 12,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          fontFamily: 'system-ui',
+          buttonText: 'Continue with Linear',
+        );
+
+      case AuthProvider.monday:
+        return _ProviderConfig(
+          backgroundColor: const Color(0xFFFF3D57), // Monday Red
+          textColor: Colors.white,
+          borderColor: const Color(0xFFFF3D57),
+          horizontalPadding: 16,
+          hoverColor: const Color(0xFFE63549),
+          focusColor: const Color(0xFFE63549),
+          loadingColor: Colors.white,
+          disabledTextColor: const Color(0xFFFFB5BF),
+          iconSize: 18,
+          spacing: 12,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          fontFamily: 'system-ui',
+          buttonText: 'Continue with Monday',
+        );
+
+      case AuthProvider.asana:
+        return _ProviderConfig(
+          backgroundColor: Colors.white,
+          textColor: const Color(0xFF151B26),
+          borderColor: const Color(0xFFE8ECEE),
+          horizontalPadding: 12,
+          hoverColor: const Color(0xFFFCF1F0),
+          focusColor: const Color(0xFFF95353),
+          loadingColor: const Color(0xFFF95353),
+          disabledTextColor: const Color(0xFF9CA6AF),
+          iconSize: 18,
+          spacing: 12,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          fontFamily: 'system-ui',
+          buttonText: 'Continue with Asana',
+        );
+
+      case AuthProvider.hubspot:
+        return _ProviderConfig(
+          backgroundColor: Colors.white,
+          textColor: const Color(0xFF33475B),
+          borderColor: const Color(0xFFCBD6E2),
+          horizontalPadding: 12,
+          hoverColor: const Color(0xFFF5F8FA),
+          focusColor: const Color(0xFFFF7A59),
+          loadingColor: const Color(0xFFFF7A59),
+          disabledTextColor: const Color(0xFF99ACC2),
+          iconSize: 18,
+          spacing: 12,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          fontFamily: 'system-ui',
+          buttonText: 'Continue with HubSpot',
+        );
+
       default:
         return _ProviderConfig(
           backgroundColor: Colors.white,
@@ -570,7 +719,7 @@ class _AuthButtonState extends State<AuthButton> {
           fontSize: 14,
           fontWeight: FontWeight.w500,
           fontFamily: 'Roboto',
-          buttonText: 'Continue with $provider',
+          buttonText: 'Continue with ${provider.name[0].toUpperCase()}${provider.name.substring(1)}',
         );
     }
   }
@@ -618,8 +767,13 @@ class _ProviderIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // In a real implementation, you'd use proper SVG assets or icon fonts
-    // This is a placeholder showing the structure
+    final icon = _getIcon();
+
+    // Return empty widget if no icon is available
+    if (icon == null) {
+      return const SizedBox.shrink();
+    }
+
     return SizedBox(
       width: size,
       height: size,
@@ -629,7 +783,7 @@ class _ProviderIcon extends StatelessWidget {
           borderRadius: BorderRadius.circular(size * 0.1),
         ),
         child: SvgPicture.asset(
-          _getIcon(),
+          icon,
           width: size * 0.7,
           height: size * 0.7,
         ),
@@ -643,13 +797,14 @@ class _ProviderIcon extends StatelessWidget {
       case AuthProvider.apple:
       case AuthProvider.github:
       case AuthProvider.discord:
+      case AuthProvider.monday:
         return Colors.white;
       default:
         return Colors.transparent;
     }
   }
 
-  String _getIcon() {
+  String? _getIcon() {
     switch (provider) {
       case AuthProvider.google:
         return "assets/google.svg";
@@ -663,8 +818,20 @@ class _ProviderIcon extends StatelessWidget {
         return "assets/github_dark.svg";
       case AuthProvider.discord:
         return "assets/discord.svg";
+      case AuthProvider.notion:
+        return "assets/notion.svg";
+      case AuthProvider.atlassian:
+        return "assets/atlassian.svg";
+      case AuthProvider.linear:
+        return "assets/linear.svg";
+      case AuthProvider.monday:
+        return "assets/monday.svg";
+      case AuthProvider.asana:
+        return "assets/asana.svg";
+      case AuthProvider.hubspot:
+        return "assets/hubspot.svg";
       default:
-        return "assets/google.svg";
+        return null; // No icon for unknown/other providers
     }
   }
 }

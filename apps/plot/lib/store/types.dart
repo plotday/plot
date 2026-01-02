@@ -5,7 +5,7 @@ import 'package:change_case/change_case.dart';
 
 import 'enums.dart';
 
-enum AuthProvider { google, microsoft, slack, apple, github, discord, other }
+enum AuthProvider { google, microsoft, slack, apple, github, discord, notion, atlassian, linear, monday, asana, hubspot, other }
 
 class EnumConverter<T extends Enum> extends TypeConverter<T, String>
     with JsonTypeConverter2<T, String, String> {
