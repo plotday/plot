@@ -42,7 +42,10 @@ class ManageTwists extends ShowCommands {
 
     return Commands(
       groups: [
-        StaticCommandGroup(title: 'Active Twists', commands: editCommands.toList()),
+        StaticCommandGroup(
+          title: 'Active Twists',
+          commands: editCommands.toList(),
+        ),
         StaticCommandGroup(title: 'Available Twists', commands: addCommands),
       ],
     );
@@ -339,6 +342,7 @@ class PromptToArchiveTwist extends ShowForm {
               text:
                   'Archiving this twist will remove it and archive the activities it has created.',
             ),
+            FormDivider(key: 'divider'),
             FormButton(
               key: 'archive',
               label: 'Archive Twist',
