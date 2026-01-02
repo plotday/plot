@@ -98,7 +98,7 @@ class OpenCopiedPageLink extends Command {
         title: 'Open Copied Page Link',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
-        icon: FontAwesomeIcons.arrowUpRightFromSquare,
+        icon: FontAwesomeIcons.link,
         shortcut: const SingleActivator(
           LogicalKeyboardKey.keyV,
           meta: true,
