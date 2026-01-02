@@ -7,7 +7,7 @@ app_package_name('day.plot.app')
 # tests_package_name('[package_name].test')
 
 # The path to the APK for the app
-app_apk_path('../../build/app/outputs/flutter-apk/app-release.apk')
+app_apk_path('../build/app/outputs/flutter-apk/app-release.apk')
 
 # The path to the APK for the tests
 # tests_apk_path('path/to/tests.apk')
@@ -16,7 +16,8 @@ app_apk_path('../../build/app/outputs/flutter-apk/app-release.apk')
 locales(['en-US'])
 
 # A list of device types to capture screenshots from
-device_types(['phone', 'sevenInch', 'tenInch'])
+# device_types(['phone', 'sevenInch', 'tenInch'])
+device_type('phone')
 
 # Clear all previously generated screenshots before creating new ones
 clear_previous_screenshots(true)

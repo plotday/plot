@@ -37,7 +37,7 @@ platform :android do
     # Generate screenshots using Screengrab
     screengrab(
       clear_previous_screenshots: true,
-      app_apk_path: "../../build/app/outputs/flutter-apk/app-release.apk"
+      app_apk_path: "../build/app/outputs/flutter-apk/app-release.apk"
     )
 
     UI.success("Screenshots generated successfully!")
