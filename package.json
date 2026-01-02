@@ -4,7 +4,7 @@
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.18.3",
   "scripts": {
-    "install": "[ \"$SKIP_PYTHON\" = \"1\" ] || npip install",
+    "install": "[ \"$SKIP_PYTHON\" = \"1\" ] || npip install; [ -f Gemfile ] && bundle install --quiet || true",
     "env": "nx run-many -t env --exclude plot --parallel=false",
     "build": "nx run-many -t build --exclude plot",
     "deploy:site": "nx deploy @plotday/site",

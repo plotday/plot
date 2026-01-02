@@ -249,6 +249,9 @@ importers:
 
   public/tools/google-calendar:
     dependencies:
+      '@plotday/tool-google-contacts':
+        specifier: workspace:^
+        version: link:../google-contacts
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister

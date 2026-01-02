@@ -1,0 +1,107 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Build the iOS app"
+  lane :build do
+    # Install CocoaPods dependencies
+    cocoapods(
+      clean_install: true,
+      podfile: "./Podfile"
+    )
+
+    # Build the Flutter iOS app
+    sh("cd ../.. && flutter build ios --release --no-codesign")
+
+    UI.success("iOS build completed successfully!")
+  end
+
+  desc "Build and archive the iOS app"
+  lane :archive do
+    # Ensure we have the latest provisioning profiles
+    # Note: Using automatic signing for now, can switch to match later
+
+    # Install CocoaPods dependencies
+    cocoapods(
+      clean_install: true,
+      podfile: "./Podfile"
+    )
+
+    # Build the Flutter iOS app with archive
+    sh("cd ../.. && flutter build ipa --release")
+
+    UI.success("iOS archive completed successfully!")
+  end
+
+  desc "Generate screenshots for App Store"
+  lane :screenshots do
+    snapshot
+    UI.success("Screenshots generated successfully!")
+  end
+
+  desc "Upload a new beta build to TestFlight"
+  lane :beta do
+    # Build and archive
+    archive
+
+    # Upload to TestFlight
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+      distribute_external: false,
+      notify_external_testers: false
+    )
+
+    UI.success("Beta build uploaded to TestFlight!")
+  end
+
+  desc "Upload metadata to App Store Connect"
+  lane :metadata do
+    upload_to_app_store(
+      skip_binary_upload: true,
+      skip_screenshots: false,
+      force: true
+    )
+
+    UI.success("Metadata uploaded to App Store Connect!")
+  end
+
+  desc "Deploy a new version to the App Store"
+  lane :release do
+    # Build and archive
+    archive
+
+    # Upload to App Store
+    upload_to_app_store(
+      submit_for_review: false,
+      automatic_release: false,
+      force: true,
+      skip_screenshots: true,
+      precheck_include_in_app_purchases: false
+    )
+
+    UI.success("Release uploaded to App Store Connect!")
+  end
+
+  desc "Run tests"
+  lane :test do
+    sh("cd ../.. && flutter test")
+    UI.success("Tests completed successfully!")
+  end
+
+  # Error handling
+  error do |lane, exception|
+    UI.error("Error in lane '#{lane}': #{exception}")
+  end
+end

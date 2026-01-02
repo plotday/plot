@@ -1,0 +1,137 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+default_platform(:mac)
+
+platform :mac do
+  desc "Build the macOS app"
+  lane :build do
+    # Install CocoaPods dependencies
+    cocoapods(
+      clean_install: true,
+      podfile: "./Podfile"
+    )
+
+    # Build the Flutter macOS app
+    sh("cd ../.. && flutter build macos --release")
+
+    UI.success("macOS build completed successfully!")
+  end
+
+  desc "Build DMG for direct distribution"
+  lane :build_dmg do
+    # Build the macOS app
+    build
+
+    # Note: DMG creation and signing is handled by the existing GitHub Actions workflow
+    # This lane ensures the app is built and ready for DMG packaging
+    # See .github/workflows/build-macos.yml for the full DMG workflow
+
+    UI.success("macOS app built and ready for DMG packaging!")
+  end
+
+  desc "Build and archive for Mac App Store"
+  lane :build_mas do
+    # Install CocoaPods dependencies
+    cocoapods(
+      clean_install: true,
+      podfile: "./Podfile"
+    )
+
+    # Build the Flutter macOS app for Mac App Store
+    # Note: Requires proper provisioning profile for Mac App Store distribution
+    sh("cd ../.. && flutter build macos --release")
+
+    # Create archive for Mac App Store
+    gym(
+      scheme: "Runner",
+      workspace: "./Runner.xcworkspace",
+      export_method: "app-store",
+      output_directory: "../../build/macos/Build/Products/Release",
+      skip_package_pkg: false,
+      installer_cert_name: ENV["MAC_INSTALLER_CERT_NAME"] || "3rd Party Mac Developer Installer"
+    )
+
+    UI.success("Mac App Store build completed successfully!")
+  end
+
+  desc "Generate screenshots for Mac App Store"
+  lane :screenshots do
+    snapshot
+    UI.success("Screenshots generated successfully!")
+  end
+
+  desc "Upload a new beta build to TestFlight (Mac)"
+  lane :beta do
+    # Build for Mac App Store
+    build_mas
+
+    # Upload to TestFlight
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+      distribute_external: false,
+      notify_external_testers: false,
+      platform: "osx"
+    )
+
+    UI.success("Beta build uploaded to TestFlight!")
+  end
+
+  desc "Upload metadata to Mac App Store Connect"
+  lane :metadata do
+    upload_to_app_store(
+      skip_binary_upload: true,
+      skip_screenshots: false,
+      force: true,
+      platform: "osx"
+    )
+
+    UI.success("Metadata uploaded to Mac App Store Connect!")
+  end
+
+  desc "Deploy a new version to the Mac App Store"
+  lane :release_mas do
+    # Build for Mac App Store
+    build_mas
+
+    # Upload to Mac App Store
+    upload_to_app_store(
+      submit_for_review: false,
+      automatic_release: false,
+      force: true,
+      skip_screenshots: true,
+      precheck_include_in_app_purchases: false,
+      platform: "osx"
+    )
+
+    UI.success("Release uploaded to Mac App Store Connect!")
+  end
+
+  desc "Create GitHub release with DMG (integrates with existing workflow)"
+  lane :release_dmg do
+    UI.message("DMG releases are handled by GitHub Actions workflow")
+    UI.message("See .github/workflows/build-macos.yml")
+    UI.message("This lane is a placeholder for future local DMG release automation")
+  end
+
+  desc "Run tests"
+  lane :test do
+    sh("cd ../.. && flutter test")
+    UI.success("Tests completed successfully!")
+  end
+
+  # Error handling
+  error do |lane, exception|
+    UI.error("Error in lane '#{lane}': #{exception}")
+  end
+end

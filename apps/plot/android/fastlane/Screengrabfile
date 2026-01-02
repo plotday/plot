@@ -1,0 +1,31 @@
+# Screengrabfile for Android screenshot generation
+
+# The package name of the app
+app_package_name('day.plot.app')
+
+# The package name of the tests bundle
+# tests_package_name('[package_name].test')
+
+# The path to the APK for the app
+app_apk_path('../../build/app/outputs/flutter-apk/app-release.apk')
+
+# The path to the APK for the tests
+# tests_apk_path('path/to/tests.apk')
+
+# A list of locales which should be used
+locales(['en-US'])
+
+# A list of device types to capture screenshots from
+device_types(['phone', 'sevenInch', 'tenInch'])
+
+# Clear all previously generated screenshots before creating new ones
+clear_previous_screenshots(true)
+
+# Where should the screenshots be stored?
+output_directory('./fastlane/screenshots')
+
+# Use adb to access the device via USB instead of the test instrumentation
+# use_adb_root(false)
+
+# For more information about all available options run
+# fastlane action screengrab
