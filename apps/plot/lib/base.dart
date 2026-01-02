@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:equatable/equatable.dart';
-import 'package:flutter/widgets.dart';
 import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
 
@@ -31,21 +30,7 @@ class User extends Equatable {
   List<Object?> get props => [id, primaryEmail, name, status];
 }
 
-/// Result of a session refresh attempt
-enum SessionRefreshResult {
-  /// Session was refreshed successfully
-  success,
-
-  /// Refresh failed due to a transient error (network, server issues)
-  /// User should remain signed in and refresh will be retried later
-  transientFailure,
-
-  /// Refresh failed due to a permanent error (invalid/expired refresh token)
-  /// User must re-authenticate
-  permanentFailure,
-}
-
-class Base with WidgetsBindingObserver {
+class Base {
   static supa.SupabaseClient get client =>
       Injector.appInstance.get<Base>()._client!;
   static Stream<User?> get user =>
@@ -75,128 +60,14 @@ class Base with WidgetsBindingObserver {
     }
   }
 
-  /// Checks if the current session is valid (exists and not expired)
-  static bool isSessionValid() {
-    final session = client.auth.currentSession;
-    if (session == null) return false;
-
-    final expiresAt = session.expiresAt;
-    if (expiresAt == null) return true; // No expiry means it's valid
-
-    final expiryTime = DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
-    return DateTime.now().isBefore(expiryTime);
-  }
-
-  /// Checks if the session is expiring soon (within 5 minutes)
-  static bool isSessionExpiringSoon() {
-    final session = client.auth.currentSession;
-    if (session == null) return false;
-
-    final expiresAt = session.expiresAt;
-    if (expiresAt == null) return false;
-
-    final expiryTime = DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
-    final fiveMinutesFromNow = DateTime.now().add(const Duration(minutes: 5));
-    return expiryTime.isBefore(fiveMinutesFromNow);
-  }
-
-  /// Refreshes the session with enhanced error handling
-  /// Returns SessionRefreshResult indicating success, transient failure, or permanent failure
-  static Future<SessionRefreshResult> refreshSession({
-    bool isBackground = false,
-  }) async {
-    SessionRefreshResult result;
-
-    try {
-      final session = client.auth.currentSession;
-      if (session == null) {
-        log.info('No session to refresh');
-        result = SessionRefreshResult.permanentFailure;
-        Injector.appInstance.get<Base>()._lastRefreshResult = result;
-        return result;
-      }
-
-      log.info(
-        '${isBackground ? "Background" : "Manual"} session refresh attempt',
-      );
-      final response = await client.auth.refreshSession();
-
-      if (response.session != null) {
-        log.info('Session refreshed successfully');
-        result = SessionRefreshResult.success;
-      } else {
-        log.warning('Session refresh returned null session (no error thrown)');
-        // Null session without exception is unusual - treat as permanent
-        result = SessionRefreshResult.permanentFailure;
-      }
-    } on supa.AuthException catch (e, stack) {
-      // Inspect the error to determine if it's transient or permanent
-      final errorCode = e is supa.AuthApiException ? e.code : null;
-      final statusCode = e is supa.AuthApiException ? e.statusCode : null;
-
-      log.warning(
-        'Session refresh failed: ${e.message} (code: $errorCode, status: $statusCode)',
-        e,
-        stack,
-      );
-
-      // Classify permanent failures - these require re-authentication
-      final permanentErrorCodes = {
-        'invalid_grant',
-        'token_expired',
-        'session_not_found',
-        'invalid_request',
-      };
-
-      if (errorCode != null && permanentErrorCodes.contains(errorCode)) {
-        log.warning(
-          'Permanent auth failure detected (code: $errorCode) - user must re-authenticate',
-        );
-        result = SessionRefreshResult.permanentFailure;
-      } else if (statusCode != null) {
-        // Parse status code and classify transient failures
-        final statusInt = int.tryParse(statusCode.toString());
-        if (statusInt != null && (statusInt == 429 || statusInt >= 500)) {
-          log.info(
-            'Transient failure detected (status: $statusCode) - will retry later',
-          );
-          result = SessionRefreshResult.transientFailure;
-        } else {
-          // Default to transient for unknown auth errors to avoid unnecessary sign-outs
-          log.info(
-            'Unknown auth error, treating as transient - will retry later',
-          );
-          result = SessionRefreshResult.transientFailure;
-        }
-      } else {
-        // Default to transient for unknown auth errors to avoid unnecessary sign-outs
-        log.info(
-          'Unknown auth error, treating as transient - will retry later',
-        );
-        result = SessionRefreshResult.transientFailure;
-      }
-    } catch (e, stack) {
-      // Network errors, timeouts, and other exceptions are transient
-      log.warning(
-        'Session refresh failed with non-auth error (likely network issue)',
-        e,
-        stack,
-      );
-      result = SessionRefreshResult.transientFailure;
-    }
-
-    // Store the result for use in _updateUser
-    Injector.appInstance.get<Base>()._lastRefreshResult = result;
-    return result;
+  static Future<supa.AuthResponse> refreshSession() async {
+    return await client.auth.refreshSession();
   }
 
   Base() : _client = supa.Supabase.instance.client, _userId = null {
     _client!.auth.onAuthStateChange.listen((data) {
       _handleAuthStateChange(data);
     });
-
-    // Register lifecycle observer to handle app resume
-    WidgetsBinding.instance.addObserver(this);
   }
 
   /// Handles auth state changes with improved logging and context
@@ -250,65 +121,10 @@ class Base with WidgetsBindingObserver {
   Uuid? _userId;
   ActorId? _actorId;
   DateTime? _signInTime;
-  AppLifecycleState? _lastLifecycleState;
-  SessionRefreshResult? _lastRefreshResult;
   final _currentUserController = BehaviorSubject<User?>();
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    log.info('App lifecycle state changed: $_lastLifecycleState -> $state');
-
-    // Handle app resuming from background or inactive state
-    if (_lastLifecycleState != null &&
-        (_lastLifecycleState == AppLifecycleState.paused ||
-            _lastLifecycleState == AppLifecycleState.inactive) &&
-        state == AppLifecycleState.resumed) {
-      log.info('App resumed, checking session validity');
-      _handleAppResume();
-    }
-
-    _lastLifecycleState = state;
-  }
-
-  /// Handles app resume by checking and refreshing session if needed
-  void _handleAppResume() {
-    // Don't await - run in background to avoid blocking
-    Future(() async {
-      if (!signedIn) {
-        log.info('Not signed in, skipping session check');
-        return;
-      }
-
-      // Check if session is expiring soon or already expired
-      if (!isSessionValid() || isSessionExpiringSoon()) {
-        log.info('Session invalid or expiring, attempting refresh');
-        final result = await refreshSession(isBackground: true);
-
-        // Log the result for debugging
-        switch (result) {
-          case SessionRefreshResult.success:
-            log.info('App resume: Session refreshed successfully');
-            break;
-          case SessionRefreshResult.transientFailure:
-            log.info(
-              'App resume: Session refresh failed (transient) - will retry on next resume',
-            );
-            break;
-          case SessionRefreshResult.permanentFailure:
-            log.warning(
-              'App resume: Session refresh failed (permanent) - user will be signed out',
-            );
-            break;
-        }
-      } else {
-        log.info('Session is valid, no refresh needed');
-      }
-    });
-  }
-
-  // Dispose of the StreamController and lifecycle observer
+  // Dispose of the StreamController
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _currentUserController.close();
   }
 
@@ -322,21 +138,13 @@ class Base with WidgetsBindingObserver {
     final currentUser = _currentUserController.valueOrNull;
     final newUser = supaUser == null ? null : User(supaUser);
 
-    // Handle failed token refresh - distinguish between transient and permanent failures
+    // Ignore failed token refreshes - treat as offline, not signed out
+    // Supabase will automatically retry token refresh
     if (event == supa.AuthChangeEvent.tokenRefreshed && supaUser == null) {
-      // Token refresh failed, check if it's transient or permanent
-      if (_lastRefreshResult == SessionRefreshResult.transientFailure) {
-        log.info(
-          'Token refresh failed with transient error - keeping user signed in',
-        );
-        // Keep the existing user session - don't sign out for transient failures
-        return;
-      } else if (_lastRefreshResult == SessionRefreshResult.permanentFailure) {
-        log.warning(
-          'Token refresh failed with permanent error - signing user out',
-        );
-        // Continue with sign-out for permanent failures
-      }
+      log.info(
+        'Token refresh failed (likely offline) - keeping user signed in, Supabase will retry',
+      );
+      return;
     }
 
     // Skip if user hasn't changed (same ID and status)
