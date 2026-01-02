@@ -8,6 +8,7 @@ import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
 import { handleSSEStream } from "../utils/sse";
 import { getGlobalTokenPath } from "../utils/token";
+import { checkAndReportWorkspaceDependencies } from "../utils/typecheck";
 
 // Publisher types for API interaction
 interface Publisher {
@@ -444,6 +445,9 @@ export async function deployCommand(options: DeployOptions) {
       }
     }
   }
+
+  // Check workspace dependencies first
+  checkAndReportWorkspaceDependencies(twistPath);
 
   // Build the twist
   let requestBody: {

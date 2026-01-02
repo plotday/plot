@@ -2,6 +2,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as out from "../utils/output";
+import { checkAndReportWorkspaceDependencies } from "../utils/typecheck";
 
 interface LintOptions {
   dir: string;
@@ -26,7 +27,10 @@ export function lintCommand(options: LintOptions) {
     process.exit(1);
   }
 
-  out.progress("Checking for errors...");
+  // Check workspace dependencies first
+  checkAndReportWorkspaceDependencies(twistPath);
+
+  out.progress("Checking twist for errors...");
 
   try {
     execSync("tsc --noEmit", {
