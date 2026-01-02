@@ -12,7 +12,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import type { Store as IStore } from "@plotday/twister/tools/store";
 
-import { type TwistEnvironment, type Bindings } from "../../env";
+import { type Bindings, type TwistEnvironment } from "../../env";
 import { PROVIDER_CONFIGS, type StoredTokenData } from "../../provider";
 import { CallbacksState } from "../../state/callbacks";
 import type { Storage } from "../../state/storage";
@@ -542,14 +542,6 @@ export class Integrations extends Tool implements IAuth {
       throw new Error(`Provider ${provider} not supported`);
     }
 
-    console.log(`Generating auth URL for ${provider}:`, {
-      level,
-      scopes,
-      platform,
-      redirectUri,
-      hasCallback: !!callback,
-    });
-
     // Generate fresh PKCE parameters for this specific OAuth flow
     const codeVerifier = Integrations.GenerateCodeVerifier();
     const codeChallenge = await Integrations.GenerateCodeChallenge(
@@ -574,8 +566,13 @@ export class Integrations extends Tool implements IAuth {
       } satisfies AuthState)
     );
 
-    const platformEnvKey = `${Integrations.EnvPrefix(provider, platform)}_ID` as keyof Bindings;
-    const baseEnvKey = `${Integrations.EnvPrefix(provider)}_ID` as keyof Bindings;
+    const platformEnvKey = `${Integrations.EnvPrefix(
+      provider,
+      platform
+    )}_ID` as keyof Bindings;
+    const baseEnvKey = `${Integrations.EnvPrefix(
+      provider
+    )}_ID` as keyof Bindings;
 
     const clientId = (env[platformEnvKey] ?? env[baseEnvKey]) as string;
 
@@ -584,15 +581,12 @@ export class Integrations extends Tool implements IAuth {
         platform,
         platformEnvKey,
         baseEnvKey,
-        availableAuthKeys: Object.keys(env).filter(k => k.startsWith('AUTH_')),
+        availableAuthKeys: Object.keys(env).filter((k) =>
+          k.startsWith("AUTH_")
+        ),
       });
       return null;
     }
-
-    console.log(`Found client ID for ${provider}:`, {
-      clientId: clientId.substring(0, 10) + '...',
-      usedKey: env[platformEnvKey] ? platformEnvKey : baseEnvKey,
-    });
 
     const params = new URLSearchParams({
       response_type: "code",
@@ -608,11 +602,6 @@ export class Integrations extends Tool implements IAuth {
     });
 
     const url = `${config.authUrl}?${params.toString()}`;
-
-    console.log(`Successfully generated auth URL for ${provider}:`, {
-      authUrl: config.authUrl,
-      hasState: !!state,
-    });
 
     return { url, clientId, state };
   }

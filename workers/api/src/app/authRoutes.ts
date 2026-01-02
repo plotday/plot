@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
+import { createClient } from "@plotday/db";
 import type { Callback } from "@plotday/twister/tools/callbacks";
 import type { AuthProvider } from "@plotday/twister/tools/integrations";
 
-import { createClient } from "@plotday/db";
-import { Integrations } from "../twist/tools/integrations";
 import type { Bindings } from "../env";
+import { Integrations } from "../twist/tools/integrations";
 import { handleValidationError } from "../utils/validation";
 
 const authRoutes = new Hono<{ Bindings: Bindings }>();
@@ -70,15 +70,6 @@ authRoutes.get("/auth", async (c) => {
     // Use the scopes from the request or from query parameters
     const scopesToUse = requestScopes?.length > 0 ? requestScopes : scopes;
 
-    console.log("Generating auth URL:", {
-      provider,
-      level,
-      scopes: scopesToUse,
-      platform,
-      redirectUri,
-      hasCallback: !!callback,
-    });
-
     const result = await Integrations.GenerateAuthUrl({
       provider: provider as AuthProvider,
       level: level as any, // AuthLevel type
@@ -94,7 +85,7 @@ authRoutes.get("/auth", async (c) => {
       console.error("No client ID configured:", {
         provider,
         platform,
-        envKeys: Object.keys(c.env).filter(k => k.includes('AUTH')),
+        envKeys: Object.keys(c.env).filter((k) => k.includes("AUTH")),
       });
       return c.json(
         { message: "No client ID configured for this platform" },
@@ -102,18 +93,11 @@ authRoutes.get("/auth", async (c) => {
       );
     }
 
-    console.log("Successfully generated auth URL:", {
-      provider,
-      hasUrl: !!result.url,
-      hasClientId: !!result.clientId,
-      hasState: !!result.state,
-    });
-
     return c.json(result);
   } catch (error) {
     console.error("Error generating auth URL:", {
       error,
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: error instanceof Error ? error.message : "Unknown error",
       stack: error instanceof Error ? error.stack : undefined,
       query: c.req.query(),
     });
@@ -147,7 +131,8 @@ authRoutes.post("/auth/send-code", async (c) => {
     );
 
     // Check if user already exists
-    const { data: users, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+    const { data: users, error: listError } =
+      await supabaseAdmin.auth.admin.listUsers();
 
     if (listError) {
       console.error("Error checking user existence:", listError);
@@ -159,9 +144,8 @@ authRoutes.post("/auth/send-code", async (c) => {
 
     if (existingUser) {
       // User exists - send password reset email (recovery template with OTP)
-      const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(
-        email
-      );
+      const { error: resetError } =
+        await supabaseAdmin.auth.resetPasswordForEmail(email);
 
       if (resetError) {
         console.error("Error sending password reset email:", resetError);

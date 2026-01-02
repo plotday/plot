@@ -3,7 +3,7 @@ import type { PostHog } from "posthog-node";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import type { Tasks as IRun } from "@plotday/twister/tools/tasks";
 
-import { type TwistEnvironment, type Bindings } from "../../env";
+import { type Bindings, type TwistEnvironment } from "../../env";
 import { type CallbacksState } from "../../state/callbacks";
 import { Tool } from "./tool";
 
@@ -104,7 +104,10 @@ export class Tasks extends Tool implements IRun {
         await callbacks.callCallback(message.body.token);
         message.ack();
       } catch (error) {
-        console.error(`Failed to execute callback ${message.body}:`, error);
+        console.error(
+          `Failed to execute callback ${message.body.token}:`,
+          error
+        );
         postHog.captureException(error as Error, undefined, {
           priority_twist_id: message.body.priorityTwistId,
           path: message.body.path.join("/"),
