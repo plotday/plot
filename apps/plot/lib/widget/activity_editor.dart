@@ -1,7 +1,4 @@
-import 'package:flutter_bloc/flutter_bloc.dart';
-
 import 'package:plot/store/store.dart';
-import 'package:plot/state/priority.dart';
 import 'package:plot/util/string.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
@@ -18,11 +15,17 @@ class ActivityWithNote {
 class ActivityEditor extends StatefulWidget {
   const ActivityEditor({
     required this.draft,
+    required this.draftNote,
+    required this.twists,
+    required this.onDraftChanged,
     this.flushToBottom = false,
     super.key,
   });
 
   final Activity draft;
+  final Note draftNote;
+  final List<PriorityTwist> twists;
+  final Future<void> Function(Activity activity, {Note? note}) onDraftChanged;
   final bool flushToBottom;
 
   @override
@@ -48,20 +51,18 @@ class ActivityEditorState extends State<ActivityEditor> {
   void initState() {
     super.initState();
     // Get initial content from draft note instead of preview
-    final bloc = context.read<PriorityBloc>();
-    _lastSavedContent = bloc.state.draftNote.content ?? '';
-    _lastDraftNoteId = bloc.state.draftNote.id;
+    _lastSavedContent = widget.draftNote.content ?? '';
+    _lastDraftNoteId = widget.draftNote.id;
     log.info(
-      '[ActivityEditor.initState] Initialized with draft ${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title}), content length=${_lastSavedContent.length}, draftNote=${bloc.state.draftNote.id}',
+      '[ActivityEditor.initState] Initialized with draft ${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title}), content length=${_lastSavedContent.length}, draftNote=${widget.draftNote.id}',
     );
   }
 
   @override
   void didUpdateWidget(ActivityEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final bloc = context.read<PriorityBloc>();
-    final newDraftNoteId = bloc.state.draftNote.id;
-    final newContent = bloc.state.draftNote.content ?? '';
+    final newDraftNoteId = widget.draftNote.id;
+    final newContent = widget.draftNote.content ?? '';
 
     // Reset editor if draft note ID changed
     if (newDraftNoteId != _lastDraftNoteId) {
@@ -130,15 +131,13 @@ class ActivityEditorState extends State<ActivityEditor> {
     // Only save if content has changed
     if (content == _lastSavedContent) return;
 
-    final bloc = context.read<PriorityBloc>();
     log.info(
       '[ActivityEditor._saveDraft] Saving draft: content length=${content.length}, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title})',
     );
 
     // Get or create draft note
-    final stateNote = bloc.state.draftNote;
-    final existingNote = stateNote.activityId == widget.draft.id
-        ? stateNote
+    final existingNote = widget.draftNote.activityId == widget.draft.id
+        ? widget.draftNote
         : null;
 
     final Note note;
@@ -159,74 +158,72 @@ class ActivityEditorState extends State<ActivityEditor> {
       );
     }
 
-    await bloc.updateDraft(widget.draft, note: note);
+    await widget.onDraftChanged(widget.draft, note: note);
     _lastSavedContent = content;
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(
-      builder: (context, state) {
-        return EditableArea(
-          key: _editableAreaKey,
-          padding: false,
-          position: EditableAreaPosition.bottom,
-          flushToBottom: widget.flushToBottom,
-          builder: (context, focusNode) {
-            // Set up focus listener once
-            if (_currentFocusNode != focusNode) {
-              _currentFocusNode?.removeListener(_onFocusChange);
-              _currentFocusNode = focusNode;
-              _currentFocusNode?.addListener(_onFocusChange);
-            }
+    return EditableArea(
+      key: _editableAreaKey,
+      padding: false,
+      position: EditableAreaPosition.bottom,
+      flushToBottom: widget.flushToBottom,
+      builder: (context, focusNode) {
+        // Set up focus listener once
+        if (_currentFocusNode != focusNode) {
+          _currentFocusNode?.removeListener(_onFocusChange);
+          _currentFocusNode = focusNode;
+          _currentFocusNode?.addListener(_onFocusChange);
+        }
 
-            final initialContent = state.draftNote.content;
-            log.info(
-              '[ActivityEditor.build] Building Editor with initialContent length=${initialContent?.length ?? 0}, draft=${state.draft.id}, priority=${state.draft.priority.id} (${state.draft.priority.title}), draftNote=${state.draftNote.id}',
-            );
+        final initialContent = widget.draftNote.content;
+        log.info(
+          '[ActivityEditor.build] Building Editor with initialContent length=${initialContent?.length ?? 0}, draft=${widget.draft.id}, priority=${widget.draft.priority.id} (${widget.draft.priority.title}), draftNote=${widget.draftNote.id}',
+        );
 
-            final editor = Editor(
-              key: _editorKey,
-              hint: state.draft.type == .note
-                  ? 'Add a note'
-                  : state.draft.type == .event
-                  ? 'Event details'
-                  : 'Describe the action',
-              autofocus: true,
-              focusNode: focusNode,
-              twists: state.twists,
-              shrinkWrap: true,
-              initialContent: initialContent,
-              onIsEmptyChanged: (isEmpty) {
-                // Defer setState to avoid calling it during build
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    setState(() {
-                      _isEmpty = isEmpty;
-                    });
-                  }
+        final editor = Editor(
+          key: _editorKey,
+          hint: widget.draft.type == .note
+              ? 'Add a note'
+              : widget.draft.type == .event
+              ? 'Event details'
+              : 'Describe the action',
+          autofocus: true,
+          focusNode: focusNode,
+          twists: widget.twists,
+          shrinkWrap: true,
+          initialContent: initialContent,
+          onIsEmptyChanged: (isEmpty) {
+            // Defer setState to avoid calling it during build
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _isEmpty = isEmpty;
                 });
-              },
-              onChange: (value) {
-                // Auto-save on content change (debounced by Editor's onChange)
-                _saveDraft(value);
-              },
-              onSubmitted: (body, {bool alt = false}) async {
-                final data = await finalizeDraft(
-                  body,
-                  twists: state.twists,
-                  alt: alt,
-                );
-                if (!context.mounted) return;
-
-                // Use AddEvent for events, AddActivityWithNote for other types
-                if (widget.draft.type == ActivityType.event) {
-                  await context.run(AddEvent(data.activity, data.note));
-                } else {
-                  await context.run(AddActivityWithNote(data));
-                }
-              },
+              }
+            });
+          },
+          onChange: (value) {
+            // Auto-save on content change (debounced by Editor's onChange)
+            _saveDraft(value);
+          },
+          onSubmitted: (body, {bool alt = false}) async {
+            final data = await finalizeDraft(
+              body,
+              twists: widget.twists,
+              alt: alt,
             );
+            if (!context.mounted) return;
+
+            // Use AddEvent for events, AddActivityWithNote for other types
+            if (widget.draft.type == ActivityType.event) {
+              await context.run(AddEvent(data.activity, data.note));
+            } else {
+              await context.run(AddActivityWithNote(data));
+            }
+          },
+        );
             return Padding(
               padding: const EdgeInsets.only(
                 left: 12,
@@ -268,25 +265,17 @@ class ActivityEditorState extends State<ActivityEditor> {
                     children: [
                       // Left side: Do Now toggle
                       Button.icon(
-                        StartAction(
+                        ToggleAction(
                           widget.draft,
-                          onUpdate: (activity) {
-                            return context.read<PriorityBloc>().updateDraft(
-                              activity,
-                            );
-                          },
+                          onUpdate: (activity) => widget.onDraftChanged(activity),
                         ),
                         selected: widget.draft.doNow,
                       ),
                       Button.icon(
-                        state.draft.type == .event
+                        widget.draft.type == .event
                             ? UnscheduleEvent(
                                 widget.draft,
-                                onUpdate: (activity) {
-                                  return context
-                                      .read<PriorityBloc>()
-                                      .updateDraft(activity);
-                                },
+                                onUpdate: (activity) => widget.onDraftChanged(activity),
                               )
                             : ScheduleEvent(
                                 widget.draft,
@@ -294,11 +283,7 @@ class ActivityEditorState extends State<ActivityEditor> {
                                   DateTime.now(),
                                   DateTime.now().add(const Duration(hours: 1)),
                                 ),
-                                onUpdate: (activity) {
-                                  return context
-                                      .read<PriorityBloc>()
-                                      .updateDraft(activity);
-                                },
+                                onUpdate: (activity) => widget.onDraftChanged(activity),
                               ),
                         selected: widget.draft.type == .event,
                       ),
@@ -324,8 +309,6 @@ class ActivityEditorState extends State<ActivityEditor> {
             );
           },
         );
-      },
-    );
   }
 
   Future<ActivityWithNote> finalizeDraft(
@@ -380,9 +363,8 @@ class ActivityEditorState extends State<ActivityEditor> {
     // Create note from draft note or create new one if content is provided
     Note? note;
     if (body.trim().isNotEmpty) {
-      final bloc = context.read<PriorityBloc>();
       // Use existing draft note and update its content
-      note = bloc.state.draftNote.copyWith(content: body);
+      note = widget.draftNote.copyWith(content: body);
     }
 
     return ActivityWithNote(activity: activity, note: note);

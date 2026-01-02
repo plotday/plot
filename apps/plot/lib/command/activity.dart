@@ -105,6 +105,29 @@ class NewActivity extends Command {
   }
 }
 
+class NewAction extends Command {
+  NewAction()
+    : super(
+        title: "New Action",
+        eventObject: EventObject.activity,
+        eventAction: EventAction.opened,
+        icon: PlotIcon.add,
+        shortcut: SingleActivator(LogicalKeyboardKey.keyT, meta: true),
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final priorityBloc = context.read<PriorityBloc>();
+    final priorityId = priorityBloc.state.context.id;
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: priorityId.toShortString(),
+        children: [NewActivityRoute(activityType: 'action')],
+      ),
+    );
+  }
+}
+
 class NewEvent extends Command {
   NewEvent({
     required this.priority,
@@ -420,8 +443,8 @@ abstract class _UpdateActivityCommand extends Command {
   final Future<void> Function(Activity) onUpdate;
 }
 
-class StartAction extends _UpdateActivityCommand {
-  StartAction(super.activity, {super.onUpdate, bool stateIcon = false})
+class ToggleAction extends _UpdateActivityCommand {
+  ToggleAction(super.activity, {super.onUpdate, bool stateIcon = false})
     : super(
         title: 'Do Now',
         eventObject: EventObject.activity,
@@ -462,6 +485,44 @@ class StartAction extends _UpdateActivityCommand {
         activity.copyWith(on: const Value(null), at: const Value(null)),
       );
     }
+
+    return const CommandDone();
+  }
+}
+
+class StartAction extends _UpdateActivityCommand {
+  StartAction(super.activity, {super.onUpdate, bool stateIcon = false})
+    : super(
+        title: 'Start Action',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.started,
+        icon: stateIcon ? activity.icon : PlotIcon.now,
+        hoverIcon: stateIcon ? PlotIcon.now : null,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Always start (never toggle off)
+    final hasDateTime = activity.at != null;
+
+    await onUpdate(
+      activity.copyWith(
+        type: ActivityType.action,
+        // If already has datetime scheduling, use current time; otherwise use date-based
+        at: hasDateTime
+            ? Value(
+                DateTimeRange(
+                  DateTime.now(),
+                  DateTime.now().add(Duration(hours: 1)),
+                ),
+              )
+            : const Value.absent(),
+        on: !hasDateTime
+            ? Value(CustomDateRange(Date.today(), null))
+            : const Value.absent(),
+        order: Order.first(),
+      ),
+    );
 
     return const CommandDone();
   }
@@ -990,11 +1051,11 @@ List<Command> activityCommands(
     // ActivityToNote - primary when done
     if (activity.done && !(skipPrimary && isToNotePrimary))
       ActivityToNote(activity, stateIcon: true),
-    // StartAction - primary when type==note or unscheduled action
+    // ToggleAction - primary when type==note or unscheduled action
     if (activity.type != ActivityType.event &&
         !activity.todo &&
         !(skipPrimary && isStartPrimary))
-      StartAction(activity),
+      ToggleAction(activity),
     // PickScheduleActivity - primary when doLater
     if (activity.type != ActivityType.event &&
         !(skipPrimary && isSchedulePrimary))
@@ -1033,7 +1094,7 @@ List<Command> topActivityTags(Activity activity, List<Tag> tagSuggestions) {
 /// Use `selected: true` on the button when activity.doNow.
 Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
   if (activity.type == ActivityType.note) {
-    return StartAction(activity, stateIcon: stateIcon);
+    return ToggleAction(activity, stateIcon: stateIcon);
   } else if (activity.type == ActivityType.event) {
     return RescheduleEvent(activity, stateIcon: stateIcon);
   } else if (activity.doNow) {
@@ -1044,6 +1105,6 @@ Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
     return ActivityToNote(activity, stateIcon: stateIcon);
   } else {
     // Fallback for actions that are not scheduled and not done
-    return StartAction(activity, stateIcon: stateIcon);
+    return ToggleAction(activity, stateIcon: stateIcon);
   }
 }

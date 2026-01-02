@@ -424,6 +424,7 @@ List<Command> priorityCommands(Priority priority) => [
 List<Command> currentPriorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
   NewActivity(),
+  NewAction(),
   OpenNextActivity(),
   OpenPreviousActivity(),
 ];

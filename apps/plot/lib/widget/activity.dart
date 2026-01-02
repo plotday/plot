@@ -32,7 +32,7 @@ class ActivityWidget extends StatelessWidget {
     if (activity.type == ActivityType.event) return null;
     return activity.doNow
         ? FinishAction(activity, stateIcon: true)
-        : StartAction(activity);
+        : ToggleAction(activity);
   }
 
   Command? _getSwipeLeftCommand() {

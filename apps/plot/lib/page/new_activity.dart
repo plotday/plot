@@ -31,12 +31,14 @@ class NewActivityPage extends StatefulWidget {
     @QueryParam('endTime') this.endTime,
     @QueryParam('duration') this.duration,
     @QueryParam('priorityId') this.priorityId,
+    @QueryParam('activityType') this.activityType,
   });
 
   final String? startTime;
   final String? endTime;
   final int? duration; // Duration in minutes
   final String? priorityId;
+  final String? activityType;
 
   @override
   State<NewActivityPage> createState() => NewActivityPageState();
@@ -78,6 +80,7 @@ class NewActivityPageState extends State<NewActivityPage> {
     DateTime? queryStartTime;
     DateTime? queryEndTime;
     Priority? queryPriority;
+    ActivityType? queryActivityType;
 
     if (widget.startTime != null) {
       try {
@@ -110,25 +113,74 @@ class NewActivityPageState extends State<NewActivityPage> {
       }
     }
 
+    // Parse activityType if provided
+    if (widget.activityType != null) {
+      try {
+        // Convert string to ActivityType enum
+        if (widget.activityType == 'action') {
+          queryActivityType = ActivityType.action;
+        } else if (widget.activityType == 'event') {
+          queryActivityType = ActivityType.event;
+        } else if (widget.activityType == 'note') {
+          queryActivityType = ActivityType.note;
+        }
+      } catch (e) {
+        log.warning('[NewActivityPage] Failed to parse activityType', e);
+      }
+    }
+
     // Apply to draft if any query parameters were provided
-    if (queryStartTime != null || queryPriority != null) {
+    if (queryStartTime != null || queryPriority != null || queryActivityType != null) {
       Activity updatedDraft;
       if (queryStartTime != null && queryEndTime != null) {
+        // StartTime takes precedence - create an event
         updatedDraft = currentDraft.copyWith(
           at: Value(DateTimeRange(queryStartTime, queryEndTime)),
           priority: queryPriority ?? currentDraft.priority,
           type: .event,
           draft: true,
         );
+        await bloc.updateDraft(updatedDraft);
+      } else if (queryActivityType != null) {
+        // Apply activity type if no startTime
+        if (queryActivityType == ActivityType.action) {
+          // Set activity type to action and start it in "Do Now" state
+          // This replicates what StartAction does
+          final hasDateTime = currentDraft.at != null;
+          updatedDraft = currentDraft.copyWith(
+            type: ActivityType.action,
+            priority: queryPriority ?? currentDraft.priority,
+            // Apply "Do Now" scheduling
+            at: hasDateTime
+                ? Value(
+                    DateTimeRange(
+                      DateTime.now(),
+                      DateTime.now().add(Duration(hours: 1)),
+                    ),
+                  )
+                : const Value.absent(),
+            on: !hasDateTime
+                ? Value(CustomDateRange(Date.today(), null))
+                : const Value.absent(),
+            order: Order.first(),
+            draft: true,
+          );
+          await bloc.updateDraft(updatedDraft);
+        } else {
+          updatedDraft = currentDraft.copyWith(
+            type: queryActivityType,
+            priority: queryPriority ?? currentDraft.priority,
+            draft: true,
+          );
+          await bloc.updateDraft(updatedDraft);
+        }
       } else if (queryPriority != null) {
         updatedDraft = currentDraft.copyWith(
           priority: queryPriority,
           draft: true,
         );
-      } else {
-        return; // No changes to apply
+        await bloc.updateDraft(updatedDraft);
       }
-      await bloc.updateDraft(updatedDraft);
     }
   }
 
@@ -271,6 +323,11 @@ class NewActivityPageState extends State<NewActivityPage> {
                           ActivityEditor(
                             key: _activityEditorKey,
                             draft: state.draft,
+                            draftNote: state.draftNote,
+                            twists: state.twists,
+                            onDraftChanged: (activity, {note}) async {
+                              await context.read<PriorityBloc>().updateDraft(activity, note: note);
+                            },
                             flushToBottom: true,
                           ),
                         ],
@@ -318,6 +375,11 @@ class NewActivityPageState extends State<NewActivityPage> {
                           child: ActivityEditor(
                             key: _activityEditorKey,
                             draft: state.draft,
+                            draftNote: state.draftNote,
+                            twists: state.twists,
+                            onDraftChanged: (activity, {note}) async {
+                              await context.read<PriorityBloc>().updateDraft(activity, note: note);
+                            },
                             flushToBottom: false,
                           ),
                         ),
