@@ -27,6 +27,8 @@ export type WebhookRequest = {
   params: Record<string, string>;
   /** Request body (parsed as JSON if applicable) */
   body: any;
+  /** Raw request body (for signature verification) */
+  rawBody?: string;
 };
 
 /**
