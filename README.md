@@ -15,8 +15,8 @@
    1. Build Twister: `cd public/twister && pnpm install && pnpm build && cd ../..`
    1. Note: The public repo is included as a git submodule in `public/` and linked as a workspace dependency in `pnpm-workspace.yaml`, allowing local development of Twister types before publishing
 1. `pnpm install`
-1. Add `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_KEY` from the `pnpm start` output to `.env.development.local`.
 1. `pnpm run env`
+1. `pnpm run start`
 
 ## Local dev
 
