@@ -352,7 +352,8 @@ class FormModalState extends State<_FormModal> {
             await widget.rootContext.router.root.navigate(routeToNavigate);
           }
         }
-      } else {
+      } else if (result is! CommandSkipped) {
+        // Don't popAll if command was skipped - the modal already popped itself
         Modal.popAll(context);
       }
     } catch (e, stackTrace) {
@@ -413,7 +414,8 @@ class FormModalState extends State<_FormModal> {
             await widget.rootContext.router.root.navigate(routeToNavigate);
           }
         }
-      } else {
+      } else if (result is! CommandSkipped) {
+        // Don't popAll if command was skipped - the modal already popped itself
         Modal.popAll(context);
       }
       return result;
@@ -432,6 +434,10 @@ class FormModalState extends State<_FormModal> {
       }
     }
     return const CommandDone();
+  }
+
+  void _cancel() {
+    Modal.pop<CommandReturn>(context, Value.absent());
   }
 
   @override
@@ -464,6 +470,7 @@ class FormModalState extends State<_FormModal> {
                 MoveListSelectionIntent(-1),
             SingleActivator(LogicalKeyboardKey.enter):
                 ActivateListSelectionIntent(),
+            SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
           },
           child: Actions(
             actions: {
@@ -512,6 +519,12 @@ class FormModalState extends State<_FormModal> {
                     return KeyEventResult.handled;
                   }
                   return KeyEventResult.ignored;
+                },
+              ),
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (intent) {
+                  _cancel();
+                  return KeyEventResult.handled;
                 },
               ),
             },
