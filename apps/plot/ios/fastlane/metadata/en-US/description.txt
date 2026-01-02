@@ -1,16 +1,17 @@
-Make progress on your priorities by organizing all yours tasks, documents, messages, and meetings in one focused workspace. When you choose a focus, you have the context you need to move forward with what matters.
+Make progress on your priorities by organizing all your tasks, documents, messages, and meetings in one focused workspace. When you choose what to focus on, you have the context and clarity to make real progress.
 
-PEAK PRODUCTIVITY:
+DESIGNED FOR PRODUCTIVE FOCUS
 
-• Unified Timeline: See all your activity and upcoming actions in a unified timeline
-• Zoom In, Zoom Out: Your areas of focus are nested so you can zoom right into a specific priority, or zoom out to see everything
-• Cross-Platform: Seamlessly sync across iOS, macOS, Android, and web (with Windows coming soon)
-• Work Offline: All your information is available offline, so you can stay productive without an internet connection
+• Unified Timeline: See all your activity and upcoming actions in one place
+• Flexible Timeboxing: Plan your day without messing with schedules
+• Zoom In, Zoom Out: Drill into a specific priority, or step back to see the big picture
+• Cross-Platform Sync: Access your work on iOS, macOS, Android, and web (Windows coming soon)
+• Works Offline: Your information is always available, even without an internet connection
 
-... WITH A TWIST:
+... WITH A TWIST
 
-• Add Plot Twists to integrate with your favorite apps and services and automate your workflows
-• Use pre-built Twists or create your own
-• Popular Twists include integrations with calendar apps, task managers, AI chat, note-taking apps, and communication tools
+• Plot Twists integrate your favorite apps and services and automate your routines
+• Use pre-built twists or create your own
+• Popular twists include calendars, task managers, AI chat, notes, and communication tools
 
-We all have more to do than time to do it. Grinding through endless to-do lists only keeps us from our most important work. Plot is designed to focus you on what matter most while ensuring you don't drop the ball on anything else.
+Plot is designed so you can do your best work even when there's more to do than time to do it.
