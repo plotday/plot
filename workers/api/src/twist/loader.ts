@@ -155,6 +155,7 @@ export async function getTwist({
     }
     return {
       compatibilityDate: "2025-10-01",
+      compatibilityFlags: ["nodejs_compat"],
       mainModule: "index.js",
       modules: {
         "index.js": TwistEntrypoint.Module,
