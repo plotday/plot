@@ -125,4 +125,40 @@ if [ "$ENV" = "production" ]; then
       exit 1
     fi
   fi
+
+  # Fetch Android signing keystore
+  KEYSTORE_OUTPUT="$WORKSPACE_PATH/apps/plot/plot-release.jks"
+  if [ ! -f "$KEYSTORE_OUTPUT" ]; then
+    echo "Fetching Android signing keystore from 1Password..." >&2
+    op read "op://Production/Android Signing/plot-release.jks" \
+      --account plotco \
+      --out-file "$KEYSTORE_OUTPUT" \
+      --file-mode 0600
+    if [ $? -eq 0 ]; then
+      echo "✓ Android signing keystore fetched successfully" >&2
+    else
+      echo "✗ Failed to fetch Android signing keystore" >&2
+      exit 1
+    fi
+  else
+    echo "✓ Android signing keystore already exists" >&2
+  fi
+
+  # Fetch Google Play API JSON key
+  PLAY_API_KEY_OUTPUT="$WORKSPACE_PATH/apps/plot/android/play-deployer-service-key.json"
+  if [ ! -f "$PLAY_API_KEY_OUTPUT" ]; then
+    echo "Fetching Google Play API key from 1Password..." >&2
+    op read "op://Production/Android Signing/Play Store/play-deployer-service-key.json" \
+      --account plotco \
+      --out-file "$PLAY_API_KEY_OUTPUT" \
+      --file-mode 0600
+    if [ $? -eq 0 ]; then
+      echo "✓ Google Play API key fetched successfully" >&2
+    else
+      echo "✗ Failed to fetch Google Play API key" >&2
+      exit 1
+    fi
+  else
+    echo "✓ Google Play API key already exists" >&2
+  fi
 fi
