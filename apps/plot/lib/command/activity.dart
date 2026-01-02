@@ -458,31 +458,21 @@ class ToggleAction extends _UpdateActivityCommand {
     final start = !activity.doNow;
 
     if (start) {
-      // Starting the task - preserve existing scheduling type or default to date-based
-      final hasDateTime = activity.at != null;
-
       await onUpdate(
         activity.copyWith(
           type: ActivityType.action,
-          // If already has datetime scheduling, use current time; otherwise use date-based
-          at: hasDateTime
-              ? Value(
-                  DateTimeRange(
-                    DateTime.now(),
-                    DateTime.now().add(Duration(hours: 1)),
-                  ),
-                )
-              : const Value.absent(),
-          on: !hasDateTime
-              ? Value(CustomDateRange(Date.today(), null))
-              : const Value.absent(),
+          on: Value(CustomDateRange(Date.today(), null)),
           order: Order.first(),
         ),
       );
     } else {
       // Stopping the task - clear scheduling
       await onUpdate(
-        activity.copyWith(on: const Value(null), at: const Value(null)),
+        activity.copyWith(
+          type: .note,
+          on: const Value(null),
+          at: const Value(null),
+        ),
       );
     }
 
@@ -502,24 +492,12 @@ class StartAction extends _UpdateActivityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Always start (never toggle off)
-    final hasDateTime = activity.at != null;
-
     await onUpdate(
       activity.copyWith(
         type: ActivityType.action,
         // If already has datetime scheduling, use current time; otherwise use date-based
-        at: hasDateTime
-            ? Value(
-                DateTimeRange(
-                  DateTime.now(),
-                  DateTime.now().add(Duration(hours: 1)),
-                ),
-              )
-            : const Value.absent(),
-        on: !hasDateTime
-            ? Value(CustomDateRange(Date.today(), null))
-            : const Value.absent(),
+        at: Value(null),
+        on: Value(CustomDateRange(Date.today(), null)),
         order: Order.first(),
       ),
     );

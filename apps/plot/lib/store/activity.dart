@@ -1529,6 +1529,13 @@ class Activity extends Equatable implements Comparable<Activity> {
   }) {
     final now = DateTime.now();
 
+    // on and at are mutually exclusive
+    if (at.present) {
+      on = Value(null);
+    } else if (on.present && this.at != null) {
+      at = Value(null);
+    }
+
     // If an action is incomplete and unscheduled, convert it to a note
     if (this.type == .action &&
         type != .event &&
