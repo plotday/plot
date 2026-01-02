@@ -1,5 +1,12 @@
 # @plotday/tool-slack
 
+## 0.4.1
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.25.0
+
 ## 0.4.0
 
 ### Added

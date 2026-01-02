@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.25.0
+
+### Changed
+
+- Breaking: Renamed Note noteType to contentType ([`844be3f`](https://github.com/plotday/plot/commit/844be3f7fcdcad7094734ce4a6d23594e3add068))
+
 ## 0.24.0
 
 ### Added

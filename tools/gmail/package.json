@@ -4,7 +4,7 @@
   "description": "Sync with Gmail inbox and messages",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
