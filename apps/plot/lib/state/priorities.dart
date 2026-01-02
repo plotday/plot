@@ -21,18 +21,26 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
   Future<void> start() {
     final completer = Completer<void>();
     stop();
-    _subscription = Priority.watch().listen((priorities) {
-      log.info('Root priorities updated: ${priorities.length} priorities');
-      emit(
-        state.copyWith(
-          priorities: priorities,
-          root: Priority.asNested(priorities).first,
-        ),
-      );
-      if (!completer.isCompleted) {
-        completer.complete();
-      }
-    });
+    _subscription = Priority.watch().listen(
+      (priorities) {
+        log.info('Root priorities updated: ${priorities.length} priorities');
+        emit(
+          state.copyWith(
+            priorities: priorities,
+            root: Priority.asNested(priorities).first,
+          ),
+        );
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      },
+      onError: (error, stackTrace) {
+        log.severe('Error watching priorities', error, stackTrace);
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
+      },
+    );
     return completer.future;
   }
 

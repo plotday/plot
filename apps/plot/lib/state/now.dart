@@ -37,12 +37,19 @@ class NowBloc extends Cubit<NowState> {
               context: state is NowLoaded ? (state as NowLoaded).context : null,
             );
           },
-        ).listen((state) {
-          emit(state);
-          if (!completer.isCompleted) {
-            completer.complete();
-          }
-        });
+        ).listen(
+          (state) {
+            emit(state);
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
+          },
+          onError: (error, stackTrace) {
+            if (!completer.isCompleted) {
+              completer.completeError(error, stackTrace);
+            }
+          },
+        );
     return completer.future;
   }
 

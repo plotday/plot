@@ -15,6 +15,7 @@ import 'package:plot/page/loading.dart';
 import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/root_menu_bar.dart';
+import 'package:plot/widget/toast.dart';
 import 'logging.dart';
 
 class RootProvider extends StatefulWidget {
@@ -101,17 +102,28 @@ class RootProviderState extends State<RootProvider> {
 
           switch (state) {
             case UserReady _:
-              await prioritiesBloc.start();
-              await nowBloc.start();
-              _setupNowBlocListener(themeBloc);
+              try {
+                await prioritiesBloc.start();
+                await nowBloc.start();
+                _setupNowBlocListener(themeBloc);
 
-              // Navigate to CLI URL if provided (only once)
-              if (context.mounted &&
-                  !_hasNavigatedToCliUrl &&
-                  CliArgs.url != null) {
-                _hasNavigatedToCliUrl = true;
-                final url = CliArgs.url!;
-                _navigateToUrl(context, url);
+                // Navigate to CLI URL if provided (only once)
+                if (context.mounted &&
+                    !_hasNavigatedToCliUrl &&
+                    CliArgs.url != null) {
+                  _hasNavigatedToCliUrl = true;
+                  final url = CliArgs.url!;
+                  _navigateToUrl(context, url);
+                }
+              } catch (error, stackTrace) {
+                log.severe('Failed to start app', error, stackTrace);
+                if (context.mounted) {
+                  context.showToast(
+                    message: 'Failed to load',
+                    isError: true,
+                  );
+                  await Base.client.auth.signOut();
+                }
               }
               break;
             case UserSignedOut _:
