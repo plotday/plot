@@ -10,13 +10,11 @@
 1. [Install pgFormatter](https://github.com/darold/pgFormatter): `brew install pgformatter`
 1. `brew install postgresql`
 1. `brew install cocoapods`
-1. **Initialize the public submodule**
-   1. Initialize and update submodules: `git submodule update --init --recursive`
-   1. Build Twister: `cd public/twister && pnpm install && pnpm build && cd ../..`
-   1. Note: The public repo is included as a git submodule in `public/` and linked as a workspace dependency in `pnpm-workspace.yaml`, allowing local development of Twister types before publishing
 1. `pnpm install`
 1. `pnpm run env`
 1. `pnpm run start`
+
+Note: The public repo is included as a git submodule in `public/` and linked as a workspace dependency in `pnpm-workspace.yaml`, allowing local development of Twister types before publishing.
 
 ## Local dev
 
