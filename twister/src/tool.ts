@@ -94,9 +94,9 @@ export abstract class Tool<TSelf> implements ITool {
    * const callback = await this.callback(this.onWebhook, "calendar", 123);
    * ```
    */
-  protected async callback(
-    fn: Function,
-    ...extraArgs: any[]
+  protected async callback<Fn extends (...args: any[]) => any>(
+    fn: Fn,
+    ...extraArgs: Parameters<Fn>
   ): Promise<Callback> {
     return this.tools.callbacks.create(fn, ...extraArgs);
   }

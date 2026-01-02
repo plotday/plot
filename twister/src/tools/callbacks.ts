@@ -64,9 +64,9 @@ export abstract class Callbacks extends ITool {
    * @returns Promise resolving to a persistent callback token
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract create(
-    fn: Function,
-    ...extraArgs: any[]
+  abstract create<Fn extends (...args: any[]) => any>(
+    fn: Fn,
+    ...extraArgs: Parameters<Fn>
   ): Promise<Callback>;
 
   /**
