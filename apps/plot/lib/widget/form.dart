@@ -8,6 +8,7 @@ import 'package:plot/analytics/analytics.dart';
 class ShowForm extends Command {
   ShowForm({
     required super.title,
+    super.subtitle,
     super.icon,
     super.shortcut,
     required this.form,

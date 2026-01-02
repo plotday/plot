@@ -29,9 +29,12 @@ class ManageTwists extends ShowCommands {
     final priorityTwists = results[0] as List<PriorityTwist>;
     final allTwists = results[1] as List<Twist>;
 
-    final editCommands = priorityTwists
-        .map((twist) => EditTwistCommand(twist, priority: priority))
-        .toList();
+    // Fetch priorities for each twist to get their paths
+    final editCommandsFutures = priorityTwists.map((twist) async {
+      final twistPriority = await Priority.getOne(twist.priorityId);
+      return EditTwistCommand(twist, priority: twistPriority);
+    });
+    final editCommands = await Future.wait(editCommandsFutures);
 
     final addCommands = allTwists
         .map((twist) => ShowTwistInfo(twist, defaultPriority: priority))
@@ -39,7 +42,7 @@ class ManageTwists extends ShowCommands {
 
     return Commands(
       groups: [
-        StaticCommandGroup(title: 'Active Twists', commands: editCommands),
+        StaticCommandGroup(title: 'Active Twists', commands: editCommands.toList()),
         StaticCommandGroup(title: 'Available Twists', commands: addCommands),
       ],
     );
@@ -47,14 +50,16 @@ class ManageTwists extends ShowCommands {
 }
 
 class EditTwistCommand extends ShowForm {
-  EditTwistCommand(this.priorityTwist, {Priority? priority})
+  EditTwistCommand(this.priorityTwist, {this.priority})
     : super(
         title: priorityTwist.name,
+        subtitle: priority?.ancestorsLabel(),
         icon: PlotIcon.settings,
         form: (context) => _buildForm(context, priorityTwist, priority),
       );
 
   final PriorityTwist priorityTwist;
+  final Priority? priority;
 
   static Future<FormData> _buildForm(
     BuildContext context,
@@ -151,6 +156,7 @@ class ShowTwistInfo extends ShowForm {
   ShowTwistInfo(this.twist, {Priority? defaultPriority})
     : super(
         title: _formatTwistName(twist.name, twist.environment),
+        subtitle: twist.description,
         icon: PlotIcon.twist,
         form: (context) => _buildForm(context, twist, defaultPriority),
       );

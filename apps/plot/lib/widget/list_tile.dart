@@ -313,6 +313,7 @@ class _ListTileState extends State<ListTile> {
                                               spacing: 4,
                                               children: [
                                                 Flexible(
+                                                  flex: 0,
                                                   child: Text(
                                                     widget.title ??
                                                         widget.command?.title ??
@@ -355,7 +356,7 @@ class _ListTileState extends State<ListTile> {
                                                   ),
                                                 ),
                                                 if (widget.subtitle != null)
-                                                  Expanded(
+                                                  Flexible(
                                                     child: Text(
                                                       widget.subtitle!,
                                                       overflow:
