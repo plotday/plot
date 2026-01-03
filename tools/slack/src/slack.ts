@@ -295,7 +295,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   }
 
   async syncBatch(
-    _args: any,
     batchNumber: number,
     mode: "full" | "incremental",
     authToken: string,

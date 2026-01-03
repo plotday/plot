@@ -531,9 +531,9 @@ export interface TextPart {
 }
 
 /**
- * Data content. Can either be a base64-encoded string, a Uint8Array, an ArrayBuffer, or a Buffer.
+ * Data content. Can either be a base64-encoded string, a Uint8Array, or an ArrayBuffer.
  */
-export type DataContent = string | Uint8Array | ArrayBuffer | Buffer;
+export type DataContent = string | Uint8Array | ArrayBuffer;
 
 /**
  * Image content part of a prompt. It contains an image.

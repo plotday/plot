@@ -404,7 +404,6 @@ export default class GoogleContacts
   }
 
   async syncBatch(
-    _args: any,
     batchNumber: number,
     authToken: string
   ): Promise<void> {

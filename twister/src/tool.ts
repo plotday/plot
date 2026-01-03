@@ -83,7 +83,7 @@ export abstract class Tool<TSelf> implements ITool {
   /**
    * Creates a persistent callback to a method on this tool.
    *
-   * ExtraArgs are strongly typed to match the method's signature after the first argument.
+   * ExtraArgs are strongly typed to match the method's signature.
    *
    * @param fn - The method to callback
    * @param extraArgs - Additional arguments to pass (type-checked, must be serializable)
