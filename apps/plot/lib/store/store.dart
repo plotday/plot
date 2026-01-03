@@ -657,14 +657,8 @@ class Store extends _$Store {
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
     bool initial = false,
-    (DateTime?, DateTime?)? range,
   }) async {
     final entity = baseTable.fullName;
-
-    // Update pulls don't support range parameter
-    if (!initial && range != null) {
-      throw ArgumentError('Update pulls do not support range parameter');
-    }
 
     final syncState = await (select(
       syncStates,
@@ -712,19 +706,8 @@ class Store extends _$Store {
     var upsertedInLoop = false;
 
     do {
-      DateTimeRange? requestRange;
-      if (range != null) {
-        requestRange = DateTimeRange(range.$1, range.$2);
-      }
-      // For updates, don't set requestRange - only use updatedSince filter
-
-      log.fine("Requesting range $requestRange");
       var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
-          .get(
-            range: requestRange,
-            updatedSince: updatedSince,
-            initial: initial,
-          ));
+          .get(updatedSince: updatedSince, initial: initial));
       final from = newRange?.start?.toString();
       final to = newRange?.end?.toString();
       more = batchMore;
@@ -900,7 +883,7 @@ class Store extends _$Store {
   }
 
   // Queue for tracking in-progress pullTo calls to prevent concurrent pulls
-  static final Map<String, Completer<(DateTime?, DateTime?)?>?> _pullQueue = {};
+  static final Map<String, Completer<DateTime?>?> _pullQueue = {};
 
   /// Gets sync states for an entity and all its ancestors.
   ///
@@ -962,12 +945,13 @@ class Store extends _$Store {
   /// For ascending order (oldest first, ascending=true):
   /// - Pulls from oldest (syncState.last) forward to [pullTo] (newer date)
   ///
+  /// Returns the new last value (what it pulled to).
+  ///
   /// Updates only the 'last' timestamp in sync state (pagination boundary).
   ///
   /// For archived pagination (Activity only), set [archived] to true.
   /// This uses a separate sync state with "_archived" suffix.
-  Future<(DateTime?, DateTime?)?>
-  pullTo<TABLE extends SyncableTable, DATA extends DataClass>(
+  Future<DateTime?> pullTo<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
     DateTime? pullTo,
@@ -986,7 +970,7 @@ class Store extends _$Store {
       return await _pullQueue[queueKey]!.future;
     }
 
-    final completer = Completer<(DateTime?, DateTime?)?>();
+    final completer = Completer<DateTime?>();
     _pullQueue[queueKey] = completer;
 
     try {
@@ -1070,7 +1054,7 @@ class Store extends _$Store {
             completer.complete(null);
             return null;
           }
-          requestRange = DateTimeRange(lastSynced, pullTo);
+          requestRange = DateTimeRange(lastSynced, null);
         } else {
           // Descending: pull backward from pullTo to last
           // Check if already synced (by self or ancestor)
@@ -1081,13 +1065,10 @@ class Store extends _$Store {
             completer.complete(null);
             return null;
           }
-          requestRange = DateTimeRange(pullTo, lastSynced);
+          // Fetch next page of items < last (older than current boundary)
+          // Don't limit by pullTo - just continue paginating backwards
+          requestRange = DateTimeRange(null, lastSynced);
         }
-      } else if (pullTo != null) {
-        // First pull with target
-        requestRange = ascending
-            ? DateTimeRange(null, pullTo) // From beginning to pullTo
-            : DateTimeRange(pullTo, null); // From pullTo to now
       } else if (effectiveLast != null) {
         // Pagination without specific target
         final currentLast = DateTime.fromMicrosecondsSinceEpoch(
@@ -1200,12 +1181,9 @@ class Store extends _$Store {
       )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
 
       final result = finalSyncState?.last != null
-          ? (
-              DateTime.fromMicrosecondsSinceEpoch(
-                finalSyncState!.last!,
-                isUtc: true,
-              ),
-              null as DateTime?,
+          ? DateTime.fromMicrosecondsSinceEpoch(
+              finalSyncState!.last!,
+              isUtc: true,
             )
           : null;
 
@@ -1382,7 +1360,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 204;
+  int get schemaVersion => 207;
 
   @override
   MigrationStrategy get migration {
