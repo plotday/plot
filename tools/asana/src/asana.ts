@@ -27,6 +27,7 @@ type SyncState = {
   offset: number;
   batchNumber: number;
   tasksProcessed: number;
+  initialSync: boolean;
 };
 
 /**
@@ -148,13 +149,21 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Start syncing tasks from an Asana project
    */
   async startSync<
-    TCallback extends (task: NewActivityWithNotes, ...args: any[]) => any
+    TCallback extends (
+      task: NewActivityWithNotes,
+      syncMeta: { initialSync: boolean },
+      ...args: any[]
+    ) => any
   >(
     authToken: string,
     projectId: string,
     callback: TCallback,
     options?: ProjectSyncOptions,
-    ...extraArgs: TCallback extends (task: any, ...rest: infer R) => any
+    ...extraArgs: TCallback extends (
+      task: any,
+      syncMeta: any,
+      ...rest: infer R
+    ) => any
       ? R
       : []
   ): Promise<void> {
@@ -198,6 +207,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       offset: 0,
       batchNumber: 1,
       tasksProcessed: 0,
+      initialSync: true,
     });
 
     // Queue first batch
@@ -268,8 +278,12 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         task,
         projectId
       );
-      // Execute the callback using the callback token
-      await this.tools.callbacks.run(callbackToken, activityWithNotes);
+      // Execute the callback using the callback token with syncMeta
+      await this.tools.callbacks.run(
+        callbackToken,
+        activityWithNotes,
+        { initialSync: state.initialSync }
+      );
     }
 
     // Check if more pages by checking if we got a full batch
@@ -280,6 +294,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         offset: state.offset + batchSize,
         batchNumber: state.batchNumber + 1,
         tasksProcessed: state.tasksProcessed + tasksResult.data.length,
+        initialSync: state.initialSync,
       });
 
       // Queue next batch
@@ -291,7 +306,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       );
       await this.tools.tasks.runTask(nextBatch);
     } else {
-      // Cleanup sync state
+      // Initial sync is complete - cleanup sync state
       await this.clear(`sync_state_${projectId}`);
     }
   }
@@ -423,8 +438,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
               projectId
             );
 
-            // Execute stored callback
-            await this.run(callbackToken, activityWithNotes);
+            // Execute stored callback - webhooks are never part of initial sync
+            await this.tools.callbacks.run(callbackToken, activityWithNotes, { initialSync: false });
           } catch (error) {
             console.warn("Failed to process Asana task webhook:", error);
           }

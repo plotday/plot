@@ -27,6 +27,7 @@ type SyncState = {
   after: string | null;
   batchNumber: number;
   issuesProcessed: number;
+  initialSync: boolean;
 };
 
 /**
@@ -133,13 +134,21 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Start syncing issues from a Linear team
    */
   async startSync<
-    TCallback extends (issue: NewActivityWithNotes, ...args: any[]) => any
+    TCallback extends (
+      issue: NewActivityWithNotes,
+      syncMeta: { initialSync: boolean },
+      ...args: any[]
+    ) => any
   >(
     authToken: string,
     projectId: string,
     callback: TCallback,
     options?: ProjectSyncOptions,
-    ...extraArgs: TCallback extends (issue: any, ...rest: infer R) => any
+    ...extraArgs: TCallback extends (
+      issue: any,
+      syncMeta: any,
+      ...rest: infer R
+    ) => any
       ? R
       : []
   ): Promise<void> {
@@ -218,6 +227,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       after: null,
       batchNumber: 1,
       issuesProcessed: 0,
+      initialSync: true,
     });
 
     // Queue first batch
@@ -272,8 +282,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         issue,
         projectId
       );
-      // Execute the callback using the callback token
-      await this.tools.callbacks.run(callbackToken, activityWithNotes);
+      // Execute the callback using the callback token with syncMeta
+      await this.tools.callbacks.run(
+        callbackToken,
+        activityWithNotes,
+        { initialSync: state.initialSync }
+      );
     }
 
     // Check if more pages
@@ -282,6 +296,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         after: issuesConnection.pageInfo.endCursor,
         batchNumber: state.batchNumber + 1,
         issuesProcessed: state.issuesProcessed + issuesConnection.nodes.length,
+        initialSync: state.initialSync,
       });
 
       // Queue next batch
@@ -293,7 +308,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       );
       await this.tools.tasks.runTask(nextBatch);
     } else {
-      // Cleanup sync state
+      // Initial sync is complete - cleanup sync state
       await this.clear(`sync_state_${projectId}`);
     }
   }
@@ -430,8 +445,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         projectId
       );
 
-      // Execute stored callback
-      await this.run(callbackToken, activityWithNotes);
+      // Execute stored callback - webhooks are never part of initial sync
+      await this.tools.callbacks.run(callbackToken, activityWithNotes, { initialSync: false });
     }
   }
 
