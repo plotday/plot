@@ -61,6 +61,7 @@ export async function bundleTwist(
     sourcemap,
     minify,
     logLevel: "silent",
+    conditions: ["@plotday/source"],
     // Mark Node.js built-ins as external - they'll be provided by Cloudflare Workers' nodejs_compat
     external: [
       "node:*",

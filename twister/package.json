@@ -1,7 +1,7 @@
 {
   "name": "@plotday/twister",
   "version": "0.25.0",
-  "description": "Plot Twist Creator - Build intelligent Twists that organize and prioritize your activities",
+  "description": "Plot Twist Creator - Build intelligent extensions that integrate and automate",
   "packageManager": "pnpm@10.18.3",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,136 +11,184 @@
   },
   "exports": {
     ".": {
+      "@plotday/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./twist": {
+      "@plotday/source": "./src/twist.ts",
       "types": "./dist/twist.d.ts",
       "default": "./dist/twist.js"
     },
     "./tool": {
+      "@plotday/source": "./src/tool.ts",
       "types": "./dist/tool.d.ts",
       "default": "./dist/tool.js"
     },
     "./plot": {
+      "@plotday/source": "./src/plot.ts",
       "types": "./dist/plot.d.ts",
       "default": "./dist/plot.js"
     },
     "./tag": {
+      "@plotday/source": "./src/tag.ts",
       "types": "./dist/tag.d.ts",
       "default": "./dist/tag.js"
     },
     "./tools/twists": {
+      "@plotday/source": "./src/tools/twists.ts",
       "types": "./dist/tools/twists.d.ts",
       "default": "./dist/tools/twists.js"
     },
     "./tools/ai": {
+      "@plotday/source": "./src/tools/ai.ts",
       "types": "./dist/tools/ai.d.ts",
       "default": "./dist/tools/ai.js"
     },
     "./tools/integrations": {
+      "@plotday/source": "./src/tools/integrations.ts",
       "types": "./dist/tools/integrations.d.ts",
       "default": "./dist/tools/integrations.js"
     },
     "./tools/callbacks": {
+      "@plotday/source": "./src/tools/callbacks.ts",
       "types": "./dist/tools/callbacks.d.ts",
       "default": "./dist/tools/callbacks.js"
     },
     "./tools/network": {
+      "@plotday/source": "./src/tools/network.ts",
       "types": "./dist/tools/network.d.ts",
       "default": "./dist/tools/network.js"
     },
     "./tools/plot": {
+      "@plotday/source": "./src/tools/plot.ts",
       "types": "./dist/tools/plot.d.ts",
       "default": "./dist/tools/plot.js"
     },
     "./tools/tasks": {
+      "@plotday/source": "./src/tools/tasks.ts",
       "types": "./dist/tools/tasks.d.ts",
       "default": "./dist/tools/tasks.js"
     },
     "./tools/store": {
+      "@plotday/source": "./src/tools/store.ts",
       "types": "./dist/tools/store.d.ts",
       "default": "./dist/tools/store.js"
     },
     "./utils/types": {
+      "@plotday/source": "./src/utils/types.ts",
       "types": "./dist/utils/types.d.ts",
       "default": "./dist/utils/types.js"
     },
     "./utils/hash": {
+      "@plotday/source": "./src/utils/hash.ts",
       "types": "./dist/utils/hash.d.ts",
       "default": "./dist/utils/hash.js"
     },
     "./common/calendar": {
+      "@plotday/source": "./src/common/calendar.ts",
       "types": "./dist/common/calendar.d.ts",
       "default": "./dist/common/calendar.js"
     },
     "./common/messaging": {
+      "@plotday/source": "./src/common/messaging.ts",
       "types": "./dist/common/messaging.d.ts",
       "default": "./dist/common/messaging.js"
     },
+    "./common/projects": {
+      "@plotday/source": "./src/common/projects.ts",
+      "types": "./dist/common/projects.d.ts",
+      "default": "./dist/common/projects.js"
+    },
     "./twist-guide": {
+      "@plotday/source": "./src/twist-guide.ts",
       "types": "./dist/twist-guide.d.ts",
       "default": "./dist/twist-guide.js"
     },
     "./creator-docs": {
+      "@plotday/source": "./src/creator-docs.ts",
       "types": "./dist/creator-docs.d.ts",
       "default": "./dist/creator-docs.js"
     },
     "./llm-docs": {
+      "@plotday/source": "./src/llm-docs/index.ts",
       "types": "./dist/llm-docs/index.d.ts",
       "default": "./dist/llm-docs/index.js"
     },
     "./llm-docs/index": {
+      "@plotday/source": "./src/llm-docs/index.ts",
       "types": "./dist/llm-docs/index.d.ts",
       "default": "./dist/llm-docs/index.js"
     },
     "./llm-docs/twist": {
+      "@plotday/source": "./src/llm-docs/twist.ts",
       "types": "./dist/llm-docs/twist.d.ts",
       "default": "./dist/llm-docs/twist.js"
     },
     "./llm-docs/plot": {
+      "@plotday/source": "./src/llm-docs/plot.ts",
       "types": "./dist/llm-docs/plot.d.ts",
       "default": "./dist/llm-docs/plot.js"
     },
     "./llm-docs/tag": {
+      "@plotday/source": "./src/llm-docs/tag.ts",
       "types": "./dist/llm-docs/tag.d.ts",
       "default": "./dist/llm-docs/tag.js"
     },
     "./llm-docs/tools/twists": {
+      "@plotday/source": "./src/llm-docs/tools/twists.ts",
       "types": "./dist/llm-docs/tools/twists.d.ts",
       "default": "./dist/llm-docs/tools/twists.js"
     },
     "./llm-docs/tools/ai": {
+      "@plotday/source": "./src/llm-docs/tools/ai.ts",
       "types": "./dist/llm-docs/tools/ai.d.ts",
       "default": "./dist/llm-docs/tools/ai.js"
     },
     "./llm-docs/tools/integrations": {
+      "@plotday/source": "./src/llm-docs/tools/integrations.ts",
       "types": "./dist/llm-docs/tools/integrations.d.ts",
       "default": "./dist/llm-docs/tools/integrations.js"
     },
     "./llm-docs/tools/callbacks": {
+      "@plotday/source": "./src/llm-docs/tools/callbacks.ts",
       "types": "./dist/llm-docs/tools/callbacks.d.ts",
       "default": "./dist/llm-docs/tools/callbacks.js"
     },
     "./llm-docs/tools/network": {
+      "@plotday/source": "./src/llm-docs/tools/network.ts",
       "types": "./dist/llm-docs/tools/network.d.ts",
       "default": "./dist/llm-docs/tools/network.js"
     },
     "./llm-docs/tools/plot": {
+      "@plotday/source": "./src/llm-docs/tools/plot.ts",
       "types": "./dist/llm-docs/tools/plot.d.ts",
       "default": "./dist/llm-docs/tools/plot.js"
     },
     "./llm-docs/tools/tasks": {
+      "@plotday/source": "./src/llm-docs/tools/tasks.ts",
       "types": "./dist/llm-docs/tools/tasks.d.ts",
       "default": "./dist/llm-docs/tools/tasks.js"
     },
     "./llm-docs/tools/store": {
+      "@plotday/source": "./src/llm-docs/tools/store.ts",
       "types": "./dist/llm-docs/tools/store.d.ts",
       "default": "./dist/llm-docs/tools/store.js"
     },
     "./llm-docs/common/calendar": {
+      "@plotday/source": "./src/llm-docs/common/calendar.ts",
       "types": "./dist/llm-docs/common/calendar.d.ts",
       "default": "./dist/llm-docs/common/calendar.js"
+    },
+    "./llm-docs/common/messaging": {
+      "@plotday/source": "./src/llm-docs/common/messaging.ts",
+      "types": "./dist/llm-docs/common/messaging.d.ts",
+      "default": "./dist/llm-docs/common/messaging.js"
+    },
+    "./llm-docs/common/projects": {
+      "@plotday/source": "./src/llm-docs/common/projects.ts",
+      "types": "./dist/llm-docs/common/projects.d.ts",
+      "default": "./dist/llm-docs/common/projects.js"
     },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },

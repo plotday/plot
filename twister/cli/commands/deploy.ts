@@ -1,3 +1,4 @@
+import { execSync } from "child_process";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
@@ -8,7 +9,6 @@ import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
 import { handleSSEStream } from "../utils/sse";
 import { getGlobalTokenPath } from "../utils/token";
-import { checkAndReportWorkspaceDependencies } from "../utils/typecheck";
 
 // Publisher types for API interaction
 interface Publisher {
@@ -446,8 +446,21 @@ export async function deployCommand(options: DeployOptions) {
     }
   }
 
-  // Check workspace dependencies first
-  checkAndReportWorkspaceDependencies(twistPath);
+  // Type-check before building
+  out.progress("Checking for type errors...");
+  try {
+    execSync("tsc --noEmit", {
+      cwd: twistPath,
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+  } catch (error: any) {
+    out.error("Found TypeScript errors");
+    if (error.stdout) {
+      console.error(error.stdout);
+    }
+    process.exit(1);
+  }
 
   // Build the twist
   let requestBody: {
