@@ -35,7 +35,7 @@ export default function EmailLayout({ preview, children }: EmailLayoutProps) {
           <Section style={content}>{children}</Section>
           <Section style={footer}>
             <Text style={footerText}>
-              © 2025{" "}
+              © 2026{" "}
               <a href="https://plot.day" style={footerText}>
                 Plot
               </a>
