@@ -25,6 +25,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@plotday/tool-google-contacts": "workspace:^",
     "@plotday/twister": "workspace:^"
   },
   "devDependencies": {

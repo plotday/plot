@@ -344,7 +344,8 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       // Add a new note with the updated description
       await this.tools.plot.createNote({
         activity: { id: existing.id },
-        content: `*Calendar description updated*: ${updatedDescription}`,
+        content: incoming.notes[0]?.content,
+        contentType: incoming.notes[0]?.contentType,
       });
     }
   }

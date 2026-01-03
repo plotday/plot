@@ -254,6 +254,11 @@ export default class GoogleContacts
 {
   static readonly id = "google-contacts";
 
+  static readonly SCOPES = [
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/contacts.other.readonly",
+  ];
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
@@ -263,11 +268,6 @@ export default class GoogleContacts
   async requestAuth<
     TCallback extends (auth: ContactAuth, ...args: any[]) => any
   >(callback: TCallback, ...extraArgs: any[]): Promise<any> {
-    const contactsScopes = [
-      "https://www.googleapis.com/auth/contacts.readonly",
-      "https://www.googleapis.com/auth/contacts.other.readonly",
-    ];
-
     const opaqueToken = crypto.randomUUID();
 
     // Create callback token for parent
@@ -281,7 +281,7 @@ export default class GoogleContacts
       {
         provider: AuthProvider.Google,
         level: AuthLevel.User,
-        scopes: contactsScopes,
+        scopes: GoogleContacts.SCOPES,
       },
       this.onAuthSuccess,
       opaqueToken,
@@ -338,6 +338,61 @@ export default class GoogleContacts
     await this.set(`sync_state:${authToken}`, initialState);
 
     // Start sync batch using run tool for long-running operation
+    const syncCallback = await this.callback(this.syncBatch, 1, authToken);
+    await this.run(syncCallback);
+  }
+
+  /**
+   * Start contact sync using an existing Authorization from another tool.
+   * This enables other Google tools (like calendar) to trigger contact syncing
+   * after they've obtained auth with combined scopes.
+   */
+  async syncWithAuth<
+    TCallback extends (contacts: Contact[], ...args: any[]) => any
+  >(
+    authorization: Authorization,
+    callback?: TCallback,
+    ...extraArgs: any[]
+  ): Promise<void> {
+    // Validate authorization has required contacts scopes
+    const hasRequiredScopes = GoogleContacts.SCOPES.every((scope) =>
+      authorization.scopes.includes(scope)
+    );
+
+    if (!hasRequiredScopes) {
+      throw new Error(
+        `Authorization missing required contacts scopes. Required: ${GoogleContacts.SCOPES.join(", ")}. Got: ${authorization.scopes.join(", ")}`
+      );
+    }
+
+    // Generate opaque token for storage
+    const authToken = crypto.randomUUID();
+
+    // Get actual auth token via integrations
+    const token = await this.tools.integrations.get(authorization);
+    if (!token) {
+      throw new Error("Failed to retrieve auth token from authorization");
+    }
+
+    // Store the auth token data
+    await this.set(`auth_token:${authToken}`, token);
+
+    // Setup callback if provided
+    if (callback) {
+      const callbackToken = await this.tools.callbacks.createFromParent(
+        callback,
+        ...extraArgs
+      );
+      await this.set(`contacts_callback_token:${authToken}`, callbackToken);
+    }
+
+    // Initialize sync state
+    const initialState: ContactSyncState = {
+      more: false,
+    };
+    await this.set(`sync_state:${authToken}`, initialState);
+
+    // Start sync batch
     const syncCallback = await this.callback(this.syncBatch, 1, authToken);
     await this.run(syncCallback);
   }

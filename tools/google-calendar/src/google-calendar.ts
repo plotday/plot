@@ -30,6 +30,7 @@ import {
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
+import GoogleContacts from "@plotday/tool-google-contacts";
 
 import {
   GoogleApi,
@@ -112,6 +113,11 @@ export class GoogleCalendar
   extends Tool<GoogleCalendar>
   implements CalendarTool
 {
+  static readonly SCOPES = [
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+  ];
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
@@ -127,6 +133,7 @@ export class GoogleCalendar
           updated: this.onActivityUpdated,
         },
       }),
+      googleContacts: build(GoogleContacts),
     };
   }
 
@@ -134,9 +141,11 @@ export class GoogleCalendar
     TCallback extends (auth: CalendarAuth, ...args: any[]) => any
   >(callback: TCallback, ...extraArgs: any[]): Promise<ActivityLink> {
     console.log("Requesting Google Calendar auth");
-    const calendarScopes = [
-      "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-      "https://www.googleapis.com/auth/calendar.events",
+
+    // Combine calendar and contacts scopes for single OAuth flow
+    const combinedScopes = [
+      ...GoogleCalendar.SCOPES,
+      ...GoogleContacts.SCOPES,
     ];
 
     // Generate opaque token for authorization
@@ -152,7 +161,7 @@ export class GoogleCalendar
       {
         provider: AuthProvider.Google,
         level: AuthLevel.User,
-        scopes: calendarScopes,
+        scopes: combinedScopes,
       },
       this.onAuthSuccess,
       authToken,
@@ -734,6 +743,17 @@ export class GoogleCalendar
   ): Promise<void> {
     // Store the actual auth token using opaque token as key
     await this.set(`authorization:${authToken}`, authResult);
+
+    // Trigger contacts sync with the same authorization
+    // This happens automatically when calendar auth succeeds
+    try {
+      console.log("Triggering Google Contacts sync");
+      await this.tools.googleContacts.syncWithAuth(authResult);
+      console.log("Google Contacts sync started successfully");
+    } catch (error) {
+      // Log error but don't fail calendar auth
+      console.error("Failed to start contacts sync:", error);
+    }
 
     const authSuccessResult: CalendarAuth = {
       authToken,
