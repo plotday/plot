@@ -341,7 +341,31 @@ export type Activity = ActivityCommon & {
    * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
    * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
-   * Null for activities without scheduled start times.
+   *
+   * **Activity Scheduling States** (for Actions):
+   * - **Do Now** (current/actionable): When creating a NewActivity of type Action, omitting `start` defaults to current time
+   * - **Do Later** (future scheduled): Set `start` to a future Date or date string
+   * - **Do Someday** (unscheduled backlog): Explicitly set `start: null`
+   *
+   * @example
+   * ```typescript
+   * // "Do Now" - defaults to current time when start is omitted
+   * await this.tools.plot.createActivity({ type: ActivityType.Action, title: "Urgent task" });
+   *
+   * // "Do Later" - scheduled for a specific time
+   * await this.tools.plot.createActivity({
+   *   type: ActivityType.Action,
+   *   title: "Future task",
+   *   start: new Date("2025-02-01")
+   * });
+   *
+   * // "Do Someday" - unscheduled backlog item
+   * await this.tools.plot.createActivity({
+   *   type: ActivityType.Action,
+   *   title: "Backlog task",
+   *   start: null
+   * });
+   * ```
    */
   start: Date | string | null;
   /**
@@ -447,6 +471,16 @@ export type PickPriorityConfig = {
  * The ID and author will be automatically assigned by the Plot system
  * based on the current execution context.
  *
+ * **Important: Scheduling Defaults for Actions**
+ *
+ * When creating an Activity of type `Action`, the `start` field determines its scheduling state:
+ * - **Omit `start`** → Defaults to current time → "Do Now" (appears in today's actionable list)
+ * - **Set `start: null`** → Unscheduled → "Do Someday" (backlog item, no specific time)
+ * - **Set `start` to future Date** → Scheduled → "Do Later" (appears on that date)
+ *
+ * For most external task integrations (project management, issue trackers), use `start: null`
+ * to create backlog items unless the task is explicitly marked as current/active.
+ *
  * Priority can be specified in three ways:
  * 1. Explicit priority: `priority: { id: "..." }` - Use specific priority (disables pickPriority)
  * 2. Pick priority config: `pickPriority: { ... }` - Auto-select based on similarity
@@ -454,26 +488,41 @@ export type PickPriorityConfig = {
  *
  * @example
  * ```typescript
- * // Explicit priority (disables automatic matching)
- * const newTask: NewActivity = {
+ * // "Do Now" - Action defaults to current time (actionable today)
+ * const urgentTask: NewActivity = {
  *   type: ActivityType.Action,
- *   title: "Review pull request",
- *   priority: { id: "work-project-123" }
+ *   title: "Review pull request"
+ *   // Omitting start defaults to new Date()
  * };
  *
- * // Automatic priority matching (default behavior)
- * const newNote: NewActivity = {
+ * // "Do Someday" - Backlog item (recommended for most synced tasks)
+ * const backlogTask: NewActivity = {
+ *   type: ActivityType.Action,
+ *   title: "Refactor user service",
+ *   start: null  // Explicitly set to null for backlog
+ * };
+ *
+ * // "Do Later" - Scheduled for specific date
+ * const futureTask: NewActivity = {
+ *   type: ActivityType.Action,
+ *   title: "Prepare Q1 review",
+ *   start: new Date("2025-03-15")
+ * };
+ *
+ * // Note (typically unscheduled)
+ * const note: NewActivity = {
  *   type: ActivityType.Note,
  *   title: "Meeting notes",
- *   content: "Discussed Q4 roadmap..."
- *   // Defaults to pickPriority: { content: true }
+ *   content: "Discussed Q4 roadmap...",
+ *   start: null  // Notes typically don't have scheduled times
  * };
  *
- * // Custom priority matching
- * const newEvent: NewActivity = {
+ * // Event (always has explicit start/end times)
+ * const event: NewActivity = {
  *   type: ActivityType.Event,
  *   title: "Team standup",
- *   pickPriority: { type: true, content: 50 }
+ *   start: new Date("2025-01-15T10:00:00"),
+ *   end: new Date("2025-01-15T10:30:00")
  * };
  * ```
  */

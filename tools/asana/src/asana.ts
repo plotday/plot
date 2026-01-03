@@ -1,0 +1,455 @@
+import * as asana from "asana";
+
+import {
+  type ActivityLink,
+  ActivityType,
+  type NewActivityWithNotes,
+} from "@plotday/twister";
+import type {
+  Project,
+  ProjectAuth,
+  ProjectSyncOptions,
+  ProjectTool,
+} from "@plotday/twister/common/projects";
+import { Tool, type ToolBuilder } from "@plotday/twister/tool";
+import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
+import {
+  AuthLevel,
+  AuthProvider,
+  type Authorization,
+  Integrations,
+} from "@plotday/twister/tools/integrations";
+import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
+import { Tasks } from "@plotday/twister/tools/tasks";
+
+type SyncState = {
+  offset: number;
+  batchNumber: number;
+  tasksProcessed: number;
+};
+
+/**
+ * Asana project management tool
+ *
+ * Implements the ProjectTool interface for syncing Asana projects and tasks
+ * with Plot activities.
+ */
+export class Asana extends Tool<Asana> implements ProjectTool {
+  build(build: ToolBuilder) {
+    return {
+      integrations: build(Integrations),
+      network: build(Network, { urls: ["https://app.asana.com/*"] }),
+      callbacks: build(Callbacks),
+      tasks: build(Tasks),
+      plot: build(Plot, { contact: { access: ContactAccess.Write } }),
+    };
+  }
+
+  /**
+   * Create Asana API client with auth token
+   */
+  private async getClient(authToken: string): Promise<asana.Client> {
+    const authorization = await this.get<Authorization>(
+      `authorization:${authToken}`
+    );
+    if (!authorization) {
+      throw new Error("Authorization no longer available");
+    }
+
+    const token = await this.tools.integrations.get(authorization);
+    if (!token) {
+      throw new Error("Authorization no longer available");
+    }
+
+    return asana.Client.create().useAccessToken(token.token);
+  }
+
+  /**
+   * Request Asana OAuth authorization
+   */
+  async requestAuth<
+    TCallback extends (auth: ProjectAuth, ...args: any[]) => any
+  >(
+    callback: TCallback,
+    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
+      ? R
+      : []
+  ): Promise<ActivityLink> {
+    const asanaScopes = ["default"];
+
+    // Generate opaque token for authorization
+    const authToken = crypto.randomUUID();
+
+    const callbackToken = await this.tools.callbacks.createFromParent(
+      callback,
+      ...extraArgs
+    );
+
+    // Request auth and return the activity link
+    return await this.tools.integrations.request(
+      {
+        provider: AuthProvider.Asana,
+        level: AuthLevel.User,
+        scopes: asanaScopes,
+      },
+      this.onAuthSuccess,
+      authToken,
+      callbackToken
+    );
+  }
+
+  /**
+   * Handle successful OAuth authorization
+   */
+  private async onAuthSuccess(
+    authorization: Authorization,
+    authToken: string,
+    callbackToken: Callback
+  ): Promise<void> {
+    // Store authorization for later use
+    await this.set(`authorization:${authToken}`, authorization);
+
+    // Execute the callback with the auth token
+    await this.run(callbackToken, { authToken });
+  }
+
+  /**
+   * Get list of Asana projects
+   */
+  async getProjects(authToken: string): Promise<Project[]> {
+    const client = await this.getClient(authToken);
+
+    // Get user's workspaces first
+    const workspaces = await client.workspaces.getWorkspaces();
+
+    const allProjects: Project[] = [];
+
+    // Get projects from each workspace
+    for (const workspace of workspaces.data) {
+      const projects = await client.projects.findByWorkspace(workspace.gid, {
+        limit: 100,
+      });
+
+      for (const project of projects.data) {
+        allProjects.push({
+          id: project.gid,
+          name: project.name,
+          description: null, // Asana doesn't return description in list
+          key: null, // Asana doesn't have project keys
+        });
+      }
+    }
+
+    return allProjects;
+  }
+
+  /**
+   * Start syncing tasks from an Asana project
+   */
+  async startSync<
+    TCallback extends (task: NewActivityWithNotes, ...args: any[]) => any
+  >(
+    authToken: string,
+    projectId: string,
+    callback: TCallback,
+    options?: ProjectSyncOptions,
+    ...extraArgs: TCallback extends (task: any, ...rest: infer R) => any
+      ? R
+      : []
+  ): Promise<void> {
+    // Setup webhook for real-time updates
+    await this.setupAsanaWebhook(authToken, projectId);
+
+    // Store callback for webhook processing
+    const callbackToken = await this.tools.callbacks.createFromParent(
+      callback,
+      ...extraArgs
+    );
+    await this.set(`callback_${projectId}`, callbackToken);
+
+    // Start initial batch sync
+    await this.startBatchSync(authToken, projectId, options);
+  }
+
+  /**
+   * Setup Asana webhook for real-time updates
+   * Note: Asana webhook API requires special permissions, so we skip for now
+   */
+  private async setupAsanaWebhook(
+    authToken: string,
+    projectId: string
+  ): Promise<void> {
+    // TODO: Implement Asana webhooks once we confirm the correct API
+    // The asana SDK webhook API may require special app permissions
+    console.log(`Asana webhooks not yet implemented for project ${projectId}`);
+  }
+
+  /**
+   * Initialize batch sync process
+   */
+  private async startBatchSync(
+    authToken: string,
+    projectId: string,
+    options?: ProjectSyncOptions
+  ): Promise<void> {
+    // Initialize sync state
+    await this.set(`sync_state_${projectId}`, {
+      offset: 0,
+      batchNumber: 1,
+      tasksProcessed: 0,
+    });
+
+    // Queue first batch
+    const batchCallback = await this.callback(
+      this.syncBatch,
+      authToken,
+      projectId,
+      options
+    );
+
+    await this.tools.tasks.runTask(batchCallback);
+  }
+
+  /**
+   * Process a batch of tasks
+   */
+  private async syncBatch(
+    authToken: string,
+    projectId: string,
+    options?: ProjectSyncOptions
+  ): Promise<void> {
+    const state = await this.get<SyncState>(`sync_state_${projectId}`);
+    if (!state) {
+      throw new Error(`Sync state not found for project ${projectId}`);
+    }
+
+    // Retrieve callback token from storage
+    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    if (!callbackToken) {
+      throw new Error(`Callback token not found for project ${projectId}`);
+    }
+
+    const client = await this.getClient(authToken);
+
+    // Build request params
+    const batchSize = 50;
+    const params: any = {
+      project: projectId,
+      limit: batchSize,
+      opt_fields: [
+        "name",
+        "notes",
+        "completed",
+        "completed_at",
+        "created_at",
+        "modified_at",
+      ].join(","),
+    };
+
+    if (state.offset > 0) {
+      params.offset = state.offset;
+    }
+
+    // Fetch batch of tasks using findAll
+    const tasksResult = await client.tasks.findAll(params);
+
+    // Process each task
+    for (const task of tasksResult.data) {
+      // Optionally filter by time
+      if (options?.timeMin) {
+        const createdAt = new Date(task.created_at);
+        if (createdAt < options.timeMin) {
+          continue;
+        }
+      }
+
+      const activityWithNotes = await this.convertTaskToActivity(
+        task,
+        projectId
+      );
+      // Execute the callback using the callback token
+      await this.tools.callbacks.run(callbackToken, activityWithNotes);
+    }
+
+    // Check if more pages by checking if we got a full batch
+    const hasMore = tasksResult.data.length === batchSize;
+
+    if (hasMore) {
+      await this.set(`sync_state_${projectId}`, {
+        offset: state.offset + batchSize,
+        batchNumber: state.batchNumber + 1,
+        tasksProcessed: state.tasksProcessed + tasksResult.data.length,
+      });
+
+      // Queue next batch
+      const nextBatch = await this.callback(
+        this.syncBatch,
+        authToken,
+        projectId,
+        options
+      );
+      await this.tools.tasks.runTask(nextBatch);
+    } else {
+      // Cleanup sync state
+      await this.clear(`sync_state_${projectId}`);
+    }
+  }
+
+  /**
+   * Convert an Asana task to a Plot Activity
+   */
+  private async convertTaskToActivity(
+    task: any,
+    projectId: string
+  ): Promise<NewActivityWithNotes> {
+    // Build notes array: description
+    const notes: Array<{ content: string }> = [];
+
+    if (task.notes) {
+      notes.push({ content: task.notes });
+    }
+
+    // Ensure at least one note exists
+    if (notes.length === 0) {
+      notes.push({ content: "" });
+    }
+
+    return {
+      type: ActivityType.Action,
+      title: task.name,
+      source: `asana:task:${projectId}:${task.gid}`,
+      doneAt: task.completed ? new Date(task.completed_at || Date.now()) : null,
+      notes,
+    };
+  }
+
+  /**
+   * Verify Asana webhook signature
+   * Asana uses HMAC-SHA256 with a shared secret
+   */
+  private async verifyAsanaSignature(
+    signature: string | undefined,
+    rawBody: string,
+    secret: string
+  ): Promise<boolean> {
+    if (!signature) {
+      console.warn("Asana webhook missing signature header");
+      return false;
+    }
+
+    // Compute HMAC-SHA256 signature
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const signatureBytes = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(rawBody)
+    );
+
+    // Convert to hex string
+    const expectedSignature = Array.from(new Uint8Array(signatureBytes))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    // Constant-time comparison
+    return signature === expectedSignature;
+  }
+
+  /**
+   * Handle incoming webhook events from Asana
+   */
+  private async onWebhook(
+    request: WebhookRequest,
+    projectId: string,
+    authToken: string
+  ): Promise<void> {
+    const payload = request.body as any;
+
+    // Asana webhook handshake
+    if (request.headers["x-hook-secret"]) {
+      // This is the initial handshake, respond with the secret
+      // Note: The network tool should handle this automatically
+      return;
+    }
+
+    // Verify webhook signature
+    const webhookId = await this.get<string>(`webhook_id_${projectId}`);
+    if (webhookId && request.rawBody) {
+      const signature = request.headers["x-hook-signature"];
+      // For Asana, the secret is the webhook ID itself
+      const isValid = await this.verifyAsanaSignature(
+        signature,
+        request.rawBody,
+        webhookId
+      );
+
+      if (!isValid) {
+        console.warn("Asana webhook signature verification failed");
+        return;
+      }
+    }
+
+    // Process events
+    if (payload.events && Array.isArray(payload.events)) {
+      const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+      if (!callbackToken) return;
+
+      const client = await this.getClient(authToken);
+
+      for (const event of payload.events) {
+        if (event.resource?.resource_type === "task") {
+          try {
+            // Fetch full task details
+            const task = await client.tasks.getTask(event.resource.gid, {
+              opt_fields: [
+                "name",
+                "notes",
+                "completed",
+                "completed_at",
+                "created_at",
+                "modified_at",
+              ].join(","),
+            });
+
+            const activityWithNotes = await this.convertTaskToActivity(
+              task,
+              projectId
+            );
+
+            // Execute stored callback
+            await this.run(callbackToken, activityWithNotes);
+          } catch (error) {
+            console.warn("Failed to process Asana task webhook:", error);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Stop syncing an Asana project
+   */
+  async stopSync(authToken: string, projectId: string): Promise<void> {
+    // TODO: Remove webhook when webhook support is implemented
+    await this.clear(`webhook_id_${projectId}`);
+
+    // Cleanup callback
+    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    if (callbackToken) {
+      await this.deleteCallback(callbackToken);
+      await this.clear(`callback_${projectId}`);
+    }
+
+    // Cleanup sync state
+    await this.clear(`sync_state_${projectId}`);
+  }
+}
+
+export default Asana;

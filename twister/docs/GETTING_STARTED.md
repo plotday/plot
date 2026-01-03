@@ -248,6 +248,39 @@ await this.tools.plot.createActivity({
 });
 ```
 
+#### Scheduling States for Actions
+
+**Important:** When creating Actions (tasks), the `start` field determines how they appear in Plot. By default, omitting `start` creates a "Do Now" task. For most integrations, you should explicitly set `start: null` to create backlog items.
+
+```typescript
+// "Do Now" - Actionable today (DEFAULT when start is omitted)
+// Use for urgent tasks or items actively in progress
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Fix critical bug in production",
+  notes: [{ content: "Users reporting login failures" }],
+  // Omitting start defaults to current time
+});
+
+// "Do Someday" - Backlog item (RECOMMENDED for most synced tasks)
+// Use for task backlog, future ideas, non-urgent items
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Refactor authentication module",
+  start: null, // Explicitly set to null for backlog
+  notes: [{ content: "Technical debt item to address later" }],
+});
+
+// "Do Later" - Scheduled for specific date
+// Use when task has a specific due date
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Submit expense report",
+  start: new Date("2025-01-31"), // Due date
+  notes: [{ content: "December expenses need to be submitted by end of month" }],
+});
+```
+
 ### Storing Data
 
 ```typescript

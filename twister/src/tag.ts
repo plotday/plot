@@ -10,6 +10,7 @@ export enum Tag {
   Later = 2,
   Done = 3,
   Archived = 4,
+  Someday = 7,
 
   // Toggle tags
   Pinned = 100,
