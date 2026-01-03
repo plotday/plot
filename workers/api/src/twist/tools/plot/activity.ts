@@ -433,13 +433,13 @@ export async function createActivity(
   }
 
   // Use upsert when source is provided for idempotent sync operations
-  // Unique constraint ensures (source, created_by_twist_id) is unique per twist
+  // Unique constraint ensures (source, created_by_twist_id, archived_at) is unique per twist
   const dbResult = safeQuery(
     await (activity.source && twistId
       ? plot.supabase
           .from("activity")
           .upsert(dbActivity, {
-            onConflict: "source,created_by_twist_id",
+            onConflict: "active_source,created_by_twist_id",
             ignoreDuplicates: false, // Update on conflict
           })
           .select()

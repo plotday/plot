@@ -36,7 +36,12 @@ CREATE TABLE "public"."activity" (
     "created_by_twist_id" bigint,
     "embedding" halfvec (384),
     "pick_priority" jsonb,
-    "last_note_created_at" timestamp with time zone
+    "last_note_created_at" timestamp with time zone,
+    "active_source" text GENERATED ALWAYS AS ( CASE WHEN archived_at IS NULL THEN
+        source
+    ELSE
+        NULL
+    END) STORED
 );
 
 CREATE INDEX ON activity USING hnsw (embedding halfvec_cosine_ops);
@@ -111,11 +116,8 @@ CREATE INDEX idx_activity_source ON "public"."activity" ("source")
 WHERE
     source IS NOT NULL;
 
--- Ensure one activity per source per twist definition (excluding archived)
--- Allows different twists to independently manage activities with the same source
-CREATE UNIQUE INDEX idx_activity_source_twist_unique ON "public"."activity" ("source", "created_by_twist_id")
-WHERE
-    source IS NOT NULL AND created_by_twist_id IS NOT NULL AND archived_at IS NULL;
+-- Ensure one activity per source per twist
+CREATE UNIQUE INDEX activity_source_twist_unique ON "public"."activity" ("active_source", "created_by_twist_id");
 
 -- Index for created_at sorting (critical for pagination queries)
 -- Includes priority_id to support common WHERE clauses
