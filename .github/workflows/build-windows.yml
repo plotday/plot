@@ -42,7 +42,6 @@ jobs:
             echo "Building prerelease from branch: $BRANCH_NAME"
           fi
 
-
       - name: Generate GitHub App Token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -89,6 +88,8 @@ jobs:
           R2_ACCESS_KEY_ID: op://Production/cloudflare/build uploads/r2 access key id
           R2_SECRET_ACCESS_KEY: op://Production/cloudflare/build uploads/r2 secret access key
           R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
+
+          WINDOWS_CERT_PASSWORD: op://Production/Windows Signing/password
 
       - name: Get version from pubspec.yaml
         id: version

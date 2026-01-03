@@ -161,4 +161,23 @@ if [ "$ENV" = "production" ]; then
   else
     echo "✓ Google Play API key already exists" >&2
   fi
+
+  # Fetch Windows signing certificate
+  WINDOWS_CERT_OUTPUT="$WORKSPACE_PATH/apps/plot/windows/plot-codesign.pfx"
+  if [ ! -f "$WINDOWS_CERT_OUTPUT" ]; then
+    echo "Fetching Windows signing certificate from 1Password..." >&2
+    mkdir -p "$(dirname "$WINDOWS_CERT_OUTPUT")"
+    op read "op://Production/Windows Signing/plot-codesign.pfx" \
+      --account plotco \
+      --out-file "$WINDOWS_CERT_OUTPUT" \
+      --file-mode 0600
+    if [ $? -eq 0 ]; then
+      echo "✓ Windows signing certificate fetched successfully" >&2
+    else
+      echo "✗ Failed to fetch Windows signing certificate" >&2
+      exit 1
+    fi
+  else
+    echo "✓ Windows signing certificate already exists" >&2
+  fi
 fi
