@@ -232,7 +232,7 @@ jobs:
           wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$VERSIONED_MSIX" --remote
 
           echo "MSIX uploaded successfully!"
-          echo "Download URL: https://downloads.plot.day/${R2_PATH}"
+          echo "Download URL: https://download.plot.day/${R2_PATH}"
 
       - name: Upload portable ZIP to R2
         shell: bash
@@ -249,7 +249,7 @@ jobs:
           wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$ZIP_FILE" --remote
 
           echo "ZIP uploaded successfully!"
-          echo "Download URL: https://downloads.plot.day/${R2_PATH}"
+          echo "Download URL: https://download.plot.day/${R2_PATH}"
 
       - name: Create and upload version manifest
         shell: bash
@@ -273,12 +273,12 @@ jobs:
             "buildNumber": ${{ steps.version.outputs.build_number }},
             "platform": "windows",
             "msix": {
-              "url": "https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/$MSIX_FILE",
+              "url": "https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/$MSIX_FILE",
               "size": $MSIX_SIZE,
               "sha256": "$MSIX_HASH"
             },
             "portable": {
-              "url": "https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/$ZIP_FILE",
+              "url": "https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/$ZIP_FILE",
               "size": $ZIP_SIZE,
               "sha256": "$ZIP_HASH"
             },
@@ -296,7 +296,7 @@ jobs:
           wrangler r2 object put "${R2_BUCKET_NAME}/latest-windows.json" --file="latest-windows.json" --remote
 
           echo "Manifest uploaded successfully!"
-          echo "Manifest URL: https://downloads.plot.day/latest-windows.json"
+          echo "Manifest URL: https://download.plot.day/latest-windows.json"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -339,12 +339,12 @@ jobs:
           ### Download
 
           #### MSIX Installer (Recommended)
-          - **File**: [Plot-${{ steps.version.outputs.new_version }}.msix](https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}.msix)
+          - **File**: [Plot-${{ steps.version.outputs.new_version }}.msix](https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}.msix)
           - **Size**: ${MSIX_SIZE} bytes
           - **SHA256**: \`${MSIX_HASH}\`
 
           #### Portable ZIP
-          - **File**: [Plot-${{ steps.version.outputs.new_version }}-portable.zip](https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}-portable.zip)
+          - **File**: [Plot-${{ steps.version.outputs.new_version }}-portable.zip](https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}-portable.zip)
           - **Size**: ${ZIP_SIZE} bytes
           - **SHA256**: \`${ZIP_HASH}\`
 
@@ -360,7 +360,7 @@ jobs:
 
           ### Auto-Update
 
-          For auto-update systems, see the [manifest JSON](https://downloads.plot.day/latest-windows.json).
+          For auto-update systems, see the [manifest JSON](https://download.plot.day/latest-windows.json).
           EOF
 
           # Create release
@@ -396,7 +396,7 @@ jobs:
             echo "- Portable ZIP: Plot-${{ steps.version.outputs.new_version }}-portable.zip"
             echo ""
             echo "### Download URLs"
-            echo "- MSIX: https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}.msix"
-            echo "- ZIP: https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}-portable.zip"
-            echo "- Manifest: https://downloads.plot.day/latest-windows.json"
+            echo "- MSIX: https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}.msix"
+            echo "- ZIP: https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}-portable.zip"
+            echo "- Manifest: https://download.plot.day/latest-windows.json"
           } >> "$GITHUB_STEP_SUMMARY"
