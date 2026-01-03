@@ -86,11 +86,11 @@ async function getOrCreateUser(
   loadEnvFromFile();
 
   const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     throw new Error(
-      "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables are required"
+      "SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables are required"
     );
   }
 

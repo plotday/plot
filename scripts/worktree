@@ -128,6 +128,9 @@ echo "Worktree: $BRANCH"
 echo "Location: $WORKTREE_DIR"
 echo "========================================="
 echo ""
+echo "Fetching submodules..."
+git submodule update --init --recursive
+echo ""
 echo "Running pnpm install..."
 pnpm install
 

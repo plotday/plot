@@ -93,7 +93,7 @@ try {
   // Update Supabase credentials
   envVars.set("SUPABASE_URL", apiUrl);
   envVars.set("SUPABASE_ANON_KEY", anonKey);
-  envVars.set("SUPABASE_SERVICE_ROLE_KEY", serviceKey);
+  envVars.set("SUPABASE_SERVICE_KEY", serviceKey);
 
   // Build new content
   const newLines: string[] = [];
@@ -118,7 +118,7 @@ try {
   console.log(`✓ Updated Supabase credentials in .env.development.local`);
   console.log(`  SUPABASE_URL=${apiUrl}`);
   console.log(`  SUPABASE_ANON_KEY=${anonKey.substring(0, 20)}...`);
-  console.log(`  SUPABASE_SERVICE_ROLE_KEY=${serviceKey.substring(0, 20)}...`);
+  console.log(`  SUPABASE_SERVICE_KEY=${serviceKey.substring(0, 20)}...`);
 } catch (error) {
   console.error("Error updating Supabase environment variables:", error);
   process.exit(1);

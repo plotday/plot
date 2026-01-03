@@ -7,7 +7,7 @@ Generate SQL seed data from YAML definitions for screenshots and testing.
 ```bash
 # Set required environment variables
 export SUPABASE_URL="http://127.0.0.1:54321"
-export SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+export SUPABASE_SERVICE_KEY="your-service-role-key"
 
 # Generate SQL to stdout
 pnpm gen-seed libs/db/seeds/screenshot-data.yaml
@@ -21,7 +21,7 @@ pnpm gen-seed my-data.yaml | psql -d plot_local
 
 ## Requirements
 
-- **Environment Variables**: The generator requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to create or lookup users via the Supabase Admin API
+- **Environment Variables**: The generator requires `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to create or lookup users via the Supabase Admin API
 - **Local Testing**: For local development, users are created with their email as the password for convenience
 
 ## Features
