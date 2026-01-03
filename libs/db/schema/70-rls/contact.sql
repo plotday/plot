@@ -1,3 +1,8 @@
+-- Allow users to view their own contact record
+CREATE POLICY "Users can view their own contact record" ON "public"."contact" AS permissive
+    FOR SELECT TO authenticated
+        USING (user_id = auth.uid());
+
 -- Allow users to access contacts linked to priorities they can access
 CREATE POLICY "Users can view contacts linked to their priorities" ON "public"."contact" AS permissive
     FOR SELECT TO authenticated
