@@ -1,3 +1,5 @@
+import LinkifyIt from "linkify-it";
+
 import { type Database, safeQuery } from "@plotday/db";
 import {
   type Activity,
@@ -18,7 +20,6 @@ import {
   type Tag,
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
-import LinkifyIt from "linkify-it";
 
 import { fromDbActivity } from "./converters";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
@@ -195,15 +196,6 @@ export async function createActivity(
   activity: NewActivity | NewActivityWithNotes,
   options?: CreateActivityOptions
 ): Promise<Activity> {
-  console.log("[Plot createActivity] Received activity:", {
-    title: activity.title,
-    hasNotes: "notes" in activity,
-    notesCount: "notes" in activity ? activity.notes?.length : 0,
-    firstNoteContentType: "notes" in activity ? activity.notes?.[0]?.contentType : undefined,
-    activityKeys: Object.keys(activity),
-    firstNoteKeys: "notes" in activity && activity.notes?.[0] ? Object.keys(activity.notes[0]) : [],
-  });
-
   // Handle activity exceptions differently
   if (activity.recurrence && activity.occurrence) {
     return createActivityException(plot, activity, options);
@@ -338,17 +330,12 @@ export async function createActivity(
     // Find first note with content
     const firstNoteWithContent = activity.notes.find((note) => note.content);
     if (firstNoteWithContent && firstNoteWithContent.content) {
-      console.log("[createActivity] Preview generation - contentType:", firstNoteWithContent.contentType, "content length:", firstNoteWithContent.content?.length);
-      if (!plot.env) {
-        throw new Error("Plot env is required for HTML to Markdown conversion");
-      }
       // Convert note to markdown first if needed
       const markdown = await convertNoteToMarkdown(
         plot.env.AI,
         firstNoteWithContent.content,
         firstNoteWithContent.contentType
       );
-      console.log("[createActivity] Preview markdown length:", markdown?.length);
       previewText = createPreviewFromMarkdown(markdown);
     }
   }
@@ -532,10 +519,12 @@ export async function createActivity(
   // This happens AFTER notes are created to ensure read_at timestamp is later than note timestamps
   if (options?.unread === false) {
     // Get all users with access to this priority (including inherited access from parent priorities)
-    const usersResult = await plot.supabase
-      .rpc("get_users_with_priority_access", {
-        target_priority_id: targetPriorityId
-      });
+    const usersResult = await plot.supabase.rpc(
+      "get_users_with_priority_access",
+      {
+        target_priority_id: targetPriorityId,
+      }
+    );
 
     if (usersResult.data && usersResult.data.length > 0) {
       // Create activity_read entries for all users
@@ -545,12 +534,14 @@ export async function createActivity(
         user_id: pu.user_id,
       }));
 
-      const insertResult = await plot.supabase.from("activity_read").insert(activityReadEntries);
+      const insertResult = await plot.supabase
+        .from("activity_read")
+        .insert(activityReadEntries);
       if (insertResult.error) {
-        console.error('[Plot] Failed to insert activity_read entries', {
+        console.error("[Plot] Failed to insert activity_read entries", {
           activityId: dbResult.id,
           count: activityReadEntries.length,
-          error: insertResult.error
+          error: insertResult.error,
         });
       }
     }
@@ -635,18 +626,12 @@ export async function createNote(
 
   // Convert note content to markdown if needed
   let contentToStore = note.content;
-  console.log("[createNote] contentType:", note.contentType, "content length:", note.content?.length);
   if (note.content && note.contentType && note.contentType !== "markdown") {
-    if (!plot.env) {
-      throw new Error("Plot env is required for note content conversion");
-    }
-    console.log("[createNote] Converting content from", note.contentType, "to markdown");
     contentToStore = await convertNoteToMarkdown(
       plot.env.AI,
       note.content,
       note.contentType
     );
-    console.log("[createNote] Conversion complete, new length:", contentToStore?.length);
   }
 
   // Convert Note to database format
@@ -669,10 +654,12 @@ export async function createNote(
   // Mark activity as read for all priority users if unread is false
   if (options?.unread === false) {
     // Get all users with access to this priority (including inherited access from parent priorities)
-    const usersResult = await plot.supabase
-      .rpc("get_users_with_priority_access", {
-        target_priority_id: activityData.priority_id
-      });
+    const usersResult = await plot.supabase.rpc(
+      "get_users_with_priority_access",
+      {
+        target_priority_id: activityData.priority_id,
+      }
+    );
 
     if (usersResult.data && usersResult.data.length > 0) {
       // Create or update activity_read entries for all users
@@ -689,11 +676,14 @@ export async function createNote(
           onConflict: "user_id,activity_id",
         });
       if (upsertResult.error) {
-        console.error('[Plot] Failed to upsert activity_read entries for note', {
-          activityId: note.activity.id,
-          count: activityReadEntries.length,
-          error: upsertResult.error
-        });
+        console.error(
+          "[Plot] Failed to upsert activity_read entries for note",
+          {
+            activityId: note.activity.id,
+            count: activityReadEntries.length,
+            error: upsertResult.error,
+          }
+        );
       }
     }
   }
@@ -1113,9 +1103,6 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
   if (note.content !== undefined) {
     // Convert note content to markdown if needed
     if (note.content && note.contentType && note.contentType !== "markdown") {
-      if (!plot.env) {
-        throw new Error("Plot env is required for note content conversion");
-      }
       dbUpdate.content = await convertNoteToMarkdown(
         plot.env.AI,
         note.content,
@@ -1349,7 +1336,8 @@ export async function getActivityByMeta(
       order: data.order ?? 0,
       priority_id: data.priority_id ?? "",
       private: data.private ?? false,
-      type: (data.type ?? "note") as Database["public"]["Enums"]["activity_type"],
+      type: (data.type ??
+        "note") as Database["public"]["Enums"]["activity_type"],
       updated_at: data.updated_at ?? new Date().toISOString(),
       updated_by: data.updated_by ?? 0,
       author: data.author,
@@ -1536,9 +1524,6 @@ export async function createActivities(
       // Find first note with content
       const firstNoteWithContent = activity.notes.find((note) => note.content);
       if (firstNoteWithContent && firstNoteWithContent.content) {
-        if (!plot.env) {
-          throw new Error("Plot env is required for HTML to Markdown conversion");
-        }
         // Convert note to markdown first if needed
         const markdown = await convertNoteToMarkdown(
           plot.env.AI,
@@ -1635,10 +1620,12 @@ export async function createActivities(
     // For each priority, get users and create activity_read entries
     for (const [priorityId, priorityActivities] of activitiesByPriority) {
       // Get all users with access to this priority (including inherited access from parent priorities)
-      const usersResult = await plot.supabase
-        .rpc("get_users_with_priority_access", {
-          target_priority_id: priorityId
-        });
+      const usersResult = await plot.supabase.rpc(
+        "get_users_with_priority_access",
+        {
+          target_priority_id: priorityId,
+        }
+      );
 
       if (usersResult.data && usersResult.data.length > 0) {
         // Create activity_read entries for all users and all activities in this priority
@@ -1651,12 +1638,17 @@ export async function createActivities(
         );
 
         if (activityReadEntries.length > 0) {
-          const insertResult = await plot.supabase.from("activity_read").insert(activityReadEntries);
+          const insertResult = await plot.supabase
+            .from("activity_read")
+            .insert(activityReadEntries);
           if (insertResult.error) {
-            console.error('[Plot] Failed to insert activity_read entries for batch activities', {
-              count: activityReadEntries.length,
-              error: insertResult.error
-            });
+            console.error(
+              "[Plot] Failed to insert activity_read entries for batch activities",
+              {
+                count: activityReadEntries.length,
+                error: insertResult.error,
+              }
+            );
           }
         }
       }

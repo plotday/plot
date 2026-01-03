@@ -340,9 +340,6 @@ export class Plot extends Tool implements IPlot {
       const isMentioned = (currentNote.mentions ?? []).includes(
         this.priorityTwistId
       );
-      console.log(
-        `Twist ${this.priorityTwistId} mention check for note ${currentNote.id}: isMentioned=${isMentioned}, isUpdate=${isUpdate}`
-      );
       if (isMentioned && !isUpdate) {
         const result = await intentOps.handleIntent(this, currentNote);
         if (result) {

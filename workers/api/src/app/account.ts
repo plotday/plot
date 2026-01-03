@@ -57,65 +57,128 @@ account.post("/activate", async (c) => {
     );
   }
 
-  // Step 2: Generate path for root priority
-  const { data: pathData, error: pathError } = await c.var.supabase.rpc(
-    "generate_path",
-    { parent: null }
-  );
+  // Step 2: Check if root priority already exists
+  const { data: existingPriority, error: existingPriorityError } =
+    await c.var.supabaseAdmin
+      .from("priority")
+      .select("id")
+      .eq("created_by", user.id)
+      .eq("root", true)
+      .maybeSingle();
 
-  if (pathError || !pathData) {
-    console.error("Failed to generate path:", pathError);
+  if (existingPriorityError) {
+    console.error(
+      "Failed to check for existing priority:",
+      existingPriorityError
+    );
     return c.json(
       {
-        message: `Failed to generate path: ${
-          pathError?.message || "Unknown error"
-        }`,
+        message: `Failed to check for existing priority: ${existingPriorityError.message}`,
       },
       500
     );
   }
 
-  // Step 3: Create root priority
-  const { data: priority, error: priorityError } = await c.var.supabaseAdmin
-    .from("priority")
-    .insert({
-      created_by: user.id,
-      title: "Everything",
-      path: pathData,
-      root: true,
-      color: 0,
-    })
-    .select()
-    .single();
+  let priority: { id: string } | null = null;
+  let shouldInstallPlotTwist = true;
 
-  if (priorityError || !priority) {
-    console.error("Failed to create root priority:", priorityError);
+  if (existingPriority) {
+    // Root priority already exists (e.g., from generate-seed script)
+    // Skip creating it and skip Plot twist installation
+    console.log(
+      "Root priority already exists, skipping creation and Plot twist installation"
+    );
+    priority = existingPriority;
+    shouldInstallPlotTwist = false;
+  } else {
+    // Step 3: Generate path for root priority
+    const { data: pathData, error: pathError } = await c.var.supabase.rpc(
+      "generate_path",
+      { parent: null }
+    );
+
+    if (pathError || !pathData) {
+      console.error("Failed to generate path:", pathError);
+      return c.json(
+        {
+          message: `Failed to generate path: ${
+            pathError?.message || "Unknown error"
+          }`,
+        },
+        500
+      );
+    }
+
+    // Step 4: Create root priority
+    const { data: newPriority, error: priorityError } =
+      await c.var.supabaseAdmin
+        .from("priority")
+        .insert({
+          created_by: user.id,
+          title: "Everything",
+          path: pathData,
+          root: true,
+          color: 0,
+        })
+        .select()
+        .single();
+
+    if (priorityError || !newPriority) {
+      console.error("Failed to create root priority:", priorityError);
+      return c.json(
+        {
+          message: `Failed to create root priority: ${
+            priorityError?.message || "Unknown error"
+          }`,
+        },
+        500
+      );
+    }
+
+    priority = newPriority;
+  }
+
+  // Step 4: Create priority settings (if they don't exist)
+  const { data: existingSettings, error: existingSettingsError } =
+    await c.var.supabaseAdmin
+      .from("priority_settings")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .eq("priority_id", priority.id)
+      .maybeSingle();
+
+  if (existingSettingsError) {
+    console.error(
+      "Failed to check for existing priority settings:",
+      existingSettingsError
+    );
     return c.json(
       {
-        message: `Failed to create root priority: ${
-          priorityError?.message || "Unknown error"
-        }`,
+        message: `Failed to check for existing priority settings: ${existingSettingsError.message}`,
       },
       500
     );
   }
 
-  // Step 4: Create priority settings
-  const { error: settingsError } = await c.var.supabaseAdmin
-    .from("priority_settings")
-    .insert({
-      user_id: user.id,
-      priority_id: priority.id,
-    });
+  if (!existingSettings) {
+    const { error: settingsError } = await c.var.supabaseAdmin
+      .from("priority_settings")
+      .insert({
+        user_id: user.id,
+        priority_id: priority.id,
+      });
 
-  if (settingsError) {
-    console.error("Failed to create priority settings:", settingsError);
-    return c.json(
-      {
-        message: `Failed to create priority settings: ${settingsError.message}`,
-      },
-      500
-    );
+    if (settingsError) {
+      console.error("Failed to create priority settings:", settingsError);
+      return c.json(
+        {
+          message: `Failed to create priority settings: ${settingsError.message}`,
+        },
+        500
+      );
+    }
+  } else {
+    console.log("Priority settings already exist, skipping creation");
   }
 
   // Step 5: Granular Stripe integration with fail-open behavior
@@ -196,47 +259,53 @@ account.post("/activate", async (c) => {
     );
   }
 
-  // Step 7: Install and activate Plot twist
-  try {
-    const { data: plotTwist, error: plotTwistError } = await c.var.supabase
-      .from("twist")
-      .select("id,version")
-      .eq("name", "Plot")
-      .eq("environment", "public")
-      .is("archived_at", null)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+  // Step 7: Install and activate Plot twist (skip if root priority already existed)
+  if (shouldInstallPlotTwist) {
+    try {
+      const { data: plotTwist, error: plotTwistError } = await c.var.supabase
+        .from("twist")
+        .select("id,version")
+        .eq("name", "Plot")
+        .eq("environment", "public")
+        .is("archived_at", null)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
-    if (plotTwistError) {
-      throw new Error(
-        `Plot twist not found: ${plotTwistError?.message || "Unknown error"}`
-      );
-    }
+      if (plotTwistError) {
+        throw new Error(
+          `Plot twist not found: ${plotTwistError?.message || "Unknown error"}`
+        );
+      }
 
-    if (plotTwist) {
-      await twistManagement.add(
-        c.var.supabase,
-        c.var.supabaseAdmin,
-        priority.id,
-        plotTwist.id,
-        "public",
-        "Plot",
-        undefined,
-        {
-          twistFactory: twistFactory({
-            env: c.env,
-            ctx: c.executionCtx as ExecutionContext,
-            supabase: c.var.supabaseAdmin,
-          }),
-          version: plotTwist.version,
-        }
-      );
-    } else {
-      console.warn("Plot twist not found, skipping installation.");
+      if (plotTwist) {
+        await twistManagement.add(
+          c.var.supabase,
+          c.var.supabaseAdmin,
+          priority.id,
+          plotTwist.id,
+          "public",
+          "Plot",
+          undefined,
+          {
+            twistFactory: twistFactory({
+              env: c.env,
+              ctx: c.executionCtx as ExecutionContext,
+              supabase: c.var.supabaseAdmin,
+            }),
+            version: plotTwist.version,
+          }
+        );
+      } else {
+        console.warn("Plot twist not found, skipping installation.");
+      }
+    } catch (error) {
+      console.error("Failed to add Plot twist:", error);
     }
-  } catch (error) {
-    console.error("Failed to add Plot twist:", error);
+  } else {
+    console.log(
+      "Skipping Plot twist installation (root priority already existed)"
+    );
   }
 
   // Step 8: Set user status to active
