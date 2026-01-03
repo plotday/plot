@@ -203,6 +203,9 @@ msix_config:
   msix_version: 1.1.0+34
   logo_path: assets/plot-512x512.png
   capabilities: internetClient
+  install_certificate: false
+  sign_msix: false
+  publisher: CN=Plot Technologies Inc.
 
 # NOTE: Android splash screen now uses custom vector drawables for crisp rendering:
 # - android/app/src/main/res/drawable/ic_splash_logo.xml (pre-Android 12)
