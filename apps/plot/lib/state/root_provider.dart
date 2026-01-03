@@ -118,12 +118,9 @@ class RootProviderState extends State<RootProvider> {
               } catch (error, stackTrace) {
                 log.severe('Failed to start app', error, stackTrace);
                 if (context.mounted) {
-                  context.showToast(
-                    message: 'Failed to load',
-                    isError: true,
-                  );
-                  await Base.client.auth.signOut();
+                  context.showToast(message: 'Failed to load', isError: true);
                 }
+                await Base.client.auth.signOut();
               }
               break;
             case UserSignedOut _:

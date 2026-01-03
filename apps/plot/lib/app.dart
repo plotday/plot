@@ -36,46 +36,51 @@ class AppState extends State<App> {
               child: CommandProvider(
                 child: FTheme(
                   data: buildTheme(context, context.colour),
-                  child: RootProvider(
-                    builder: (routerConfig) => PlatformBuilder(
-                      builder: (context) => AdaptiveTheme(
-                        light: material.ThemeData(
-                          colorScheme: material.ColorScheme.fromSeed(
-                            seedColor: const Color(0x002BDD66),
-                            brightness: material.Brightness.light,
-                          ),
-                        ),
-                        dark: material.ThemeData(
-                          colorScheme: material.ColorScheme.fromSeed(
-                            seedColor: const Color(0x002BDD66),
-                            brightness: material.Brightness.dark,
-                          ),
-                        ),
-                        debugShowFloatingThemeButton: true,
-                        initial: AdaptiveThemeMode.system,
-                        builder: (theme, darkTheme) =>
-                            material.MaterialApp.router(
-                              title: 'Plot',
-                              localizationsDelegates:
-                                  FLocalizations.localizationsDelegates,
-                              supportedLocales: FLocalizations.supportedLocales,
-                              theme: theme,
-                              darkTheme: darkTheme,
-                              routerConfig: routerConfig,
+                  child: FToaster(
+                    child: RootProvider(
+                      builder: (routerConfig) => PlatformBuilder(
+                        builder: (context) => AdaptiveTheme(
+                          light: material.ThemeData(
+                            colorScheme: material.ColorScheme.fromSeed(
+                              seedColor: const Color(0x002BDD66),
+                              brightness: material.Brightness.light,
                             ),
-                      ),
-                      macOSBuilder: (context) => macos.MacosApp.router(
-                        title: 'Plot',
-                        localizationsDelegates:
-                            FLocalizations.localizationsDelegates,
-                        supportedLocales: FLocalizations.supportedLocales,
-                        theme:
-                            (context.colour.brightness == Brightness.light
-                                    ? macos.MacosThemeData.light()
-                                    : macos.MacosThemeData.dark())
-                                .copyWith(primaryColor: context.colour.accent),
-                        debugShowCheckedModeBanner: false,
-                        routerConfig: routerConfig,
+                          ),
+                          dark: material.ThemeData(
+                            colorScheme: material.ColorScheme.fromSeed(
+                              seedColor: const Color(0x002BDD66),
+                              brightness: material.Brightness.dark,
+                            ),
+                          ),
+                          debugShowFloatingThemeButton: true,
+                          initial: AdaptiveThemeMode.system,
+                          builder: (theme, darkTheme) =>
+                              material.MaterialApp.router(
+                                title: 'Plot',
+                                localizationsDelegates:
+                                    FLocalizations.localizationsDelegates,
+                                supportedLocales:
+                                    FLocalizations.supportedLocales,
+                                theme: theme,
+                                darkTheme: darkTheme,
+                                routerConfig: routerConfig,
+                              ),
+                        ),
+                        macOSBuilder: (context) => macos.MacosApp.router(
+                          title: 'Plot',
+                          localizationsDelegates:
+                              FLocalizations.localizationsDelegates,
+                          supportedLocales: FLocalizations.supportedLocales,
+                          theme:
+                              (context.colour.brightness == Brightness.light
+                                      ? macos.MacosThemeData.light()
+                                      : macos.MacosThemeData.dark())
+                                  .copyWith(
+                                    primaryColor: context.colour.accent,
+                                  ),
+                          debugShowCheckedModeBanner: false,
+                          routerConfig: routerConfig,
+                        ),
                       ),
                     ),
                   ),

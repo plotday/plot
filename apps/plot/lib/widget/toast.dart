@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
+import 'logging.dart';
+
 /// Extension for showing toasts with consistent styling and timing
 extension ToastExtension on BuildContext {
   /// Show a toast notification
@@ -18,34 +20,38 @@ extension ToastExtension on BuildContext {
   }) {
     final colors = theme.colors;
 
-    if (isError) {
-      showFToast(
-        context: this,
-        alignment: FToastAlignment.topEnd,
-        title: Text(title ?? 'Error'),
-        description: Text(message),
-        duration: duration ?? const Duration(seconds: 5),
-        style: (style) => style.copyWith(
-          decoration: style.decoration.copyWith(color: colors.destructive),
-          iconStyle: style.iconStyle.copyWith(
-            color: colors.destructiveForeground,
+    try {
+      if (isError) {
+        showFToast(
+          context: this,
+          alignment: FToastAlignment.topEnd,
+          title: Text(title ?? 'Error'),
+          description: Text(message),
+          duration: duration ?? const Duration(seconds: 5),
+          style: (style) => style.copyWith(
+            decoration: style.decoration.copyWith(color: colors.destructive),
+            iconStyle: style.iconStyle.copyWith(
+              color: colors.destructiveForeground,
+            ),
+            titleTextStyle: style.titleTextStyle.copyWith(
+              color: colors.destructiveForeground,
+            ),
+            descriptionTextStyle: style.descriptionTextStyle.copyWith(
+              color: colors.destructiveForeground,
+            ),
           ),
-          titleTextStyle: style.titleTextStyle.copyWith(
-            color: colors.destructiveForeground,
-          ),
-          descriptionTextStyle: style.descriptionTextStyle.copyWith(
-            color: colors.destructiveForeground,
-          ),
-        ),
-      );
-    } else {
-      showFToast(
-        context: this,
-        alignment: FToastAlignment.topEnd,
-        title: Text(title ?? message),
-        description: title != null ? Text(message) : null,
-        duration: duration ?? const Duration(seconds: 3),
-      );
+        );
+      } else {
+        showFToast(
+          context: this,
+          alignment: FToastAlignment.topEnd,
+          title: Text(title ?? message),
+          description: title != null ? Text(message) : null,
+          duration: duration ?? const Duration(seconds: 3),
+        );
+      }
+    } catch (e, t) {
+      log.warning("Failed to show toast: $message", e, t);
     }
   }
 }
