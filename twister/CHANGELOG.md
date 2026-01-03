@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.25.1
+
+### Added
+
+- WebhookRequest.rawBody for signature verification ([`804d217`](https://github.com/plotday/plot/commit/804d21783512fd023940a6b281330fada22cf7bb))
+
+### Changed
+
+- BREAKING: Tightened callback types to catch mismatched arguments ([`9293f29`](https://github.com/plotday/plot/commit/9293f290f727cc76a7eb6fdcb1460a100f5117ef))
+
 ## 0.25.0
 
 ### Changed
