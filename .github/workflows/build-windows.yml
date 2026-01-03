@@ -1,0 +1,398 @@
+# Windows Build Workflow
+#
+# This workflow builds the Plot desktop app for Windows.
+# Currently configured for manual testing only - will be updated for Windows Store deployment.
+#
+# Features:
+# - Manual trigger only (workflow_dispatch)
+# - Branch detection for prereleases (main = production, other = prerelease)
+# - MSIX installer and portable ZIP distribution
+# - Cloudflare R2 upload for auto-update manifest
+#
+# Note: MSIX packages are not yet code-signed and will show SmartScreen warnings.
+# Code signing will be added when preparing for Windows Store submission.
+
+name: Build Windows App
+
+on:
+  # Manual trigger only - run this workflow to create a test build
+  workflow_dispatch:
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Detect branch and set prerelease flag
+        id: branch-detect
+        shell: bash
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+          if [[ "$BRANCH_NAME" == "main" ]]; then
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "Building production release from main branch"
+          else
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "Building prerelease from branch: $BRANCH_NAME"
+          fi
+
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        shell: bash
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          SUPABASE_URL: op://Production/Supabase/API/url
+          SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
+          POSTHOG_HOST: op://Production/PostHog/hostname
+          POSTHOG_PROJECT: op://Production/PostHog/username
+          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
+          POSTHOG_API_KEY: op://Production/PostHog/credential
+          GOOGLE_URL: op://Production/Google OAuth/url
+          GOOGLE_CLIENT_ID: op://Production/Google OAuth/username
+          GOOGLE_IOS_CLIENT_ID: op://Production/Google OAuth/iOS/client ID
+          GOOGLE_ANDROID_CLIENT_ID: op://Production/Google OAuth/Android/client ID
+          MICROSOFT_CLIENT_ID: op://Production/Microsoft OAuth/username
+
+          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
+          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
+          R2_ACCESS_KEY_ID: op://Production/cloudflare/build uploads/r2 access key id
+          R2_SECRET_ACCESS_KEY: op://Production/cloudflare/build uploads/r2 secret access key
+          R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
+
+      - name: Get version from pubspec.yaml
+        id: version
+        shell: bash
+        run: |
+          cd apps/plot
+          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
+
+          {
+            echo "new_version=$CURRENT_VERSION"
+            echo "version_name=$VERSION_NAME"
+            echo "build_number=$BUILD_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Building version: $CURRENT_VERSION"
+
+      - name: Update MSIX version in pubspec.yaml
+        shell: bash
+        run: |
+          cd apps/plot
+          VERSION_NAME="${{ steps.version.outputs.version_name }}"
+          BUILD_NUMBER="${{ steps.version.outputs.build_number }}"
+
+          # Convert semantic version to 4-part MSIX version (e.g., 1.0.0 -> 1.0.0.BUILD_NUMBER)
+          IFS='.' read -ra VERSION_PARTS <<< "$VERSION_NAME"
+          MAJOR="${VERSION_PARTS[0]}"
+          MINOR="${VERSION_PARTS[1]}"
+          PATCH="${VERSION_PARTS[2]}"
+          MSIX_VERSION="${MAJOR}.${MINOR}.${PATCH}.${BUILD_NUMBER}"
+
+          sed -i "s/msix_version: .*/msix_version: $MSIX_VERSION/" pubspec.yaml
+          echo "Updated MSIX version to $MSIX_VERSION (local only, not committed)"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
+
+      - name: Create production .env file
+        shell: bash
+        run: pnpm run env:prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\Pub\Cache
+            apps\plot\.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps\plot\.dart_tool\build
+            apps\plot\**\*.g.dart
+            apps\plot\**\*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build Windows app
+        run: |
+          cd apps/plot
+          flutter build windows --release
+
+      # NOTE: Code signing not yet implemented
+      # This MSIX package is unsigned and will trigger Windows SmartScreen warnings
+      # Code signing will be added when preparing for Windows Store deployment
+      # For testing purposes, users will need to accept the SmartScreen warning
+      - name: Create MSIX package
+        shell: bash
+        run: |
+          cd apps/plot
+          flutter pub run msix:create
+
+      - name: Create portable ZIP archive
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          # Create ZIP with version name
+          7z a "Plot-${{ steps.version.outputs.new_version }}-portable.zip" ./*
+
+          ls -lh "Plot-${{ steps.version.outputs.new_version }}-portable.zip"
+
+      - name: Install Node.js for wrangler
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Upload MSIX to R2
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          MSIX_FILE="plot.msix"
+          VERSIONED_MSIX="Plot-${{ steps.version.outputs.new_version }}.msix"
+
+          # Rename MSIX with version
+          mv "$MSIX_FILE" "$VERSIONED_MSIX"
+
+          R2_PATH="releases/${{ steps.version.outputs.new_version }}/windows/$VERSIONED_MSIX"
+
+          # Configure wrangler with R2 credentials
+          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
+          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+
+          echo "Uploading $VERSIONED_MSIX to R2 at $R2_PATH"
+          wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$VERSIONED_MSIX" --remote
+
+          echo "MSIX uploaded successfully!"
+          echo "Download URL: https://downloads.plot.day/${R2_PATH}"
+
+      - name: Upload portable ZIP to R2
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          ZIP_FILE="Plot-${{ steps.version.outputs.new_version }}-portable.zip"
+          R2_PATH="releases/${{ steps.version.outputs.new_version }}/windows/$ZIP_FILE"
+
+          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
+          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+
+          echo "Uploading $ZIP_FILE to R2 at $R2_PATH"
+          wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$ZIP_FILE" --remote
+
+          echo "ZIP uploaded successfully!"
+          echo "Download URL: https://downloads.plot.day/${R2_PATH}"
+
+      - name: Create and upload version manifest
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          MSIX_FILE="Plot-${{ steps.version.outputs.new_version }}.msix"
+          ZIP_FILE="Plot-${{ steps.version.outputs.new_version }}-portable.zip"
+
+          MSIX_SIZE=$(stat -c%s "$MSIX_FILE" 2>/dev/null || stat -f%z "$MSIX_FILE")
+          MSIX_HASH=$(sha256sum "$MSIX_FILE" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$MSIX_FILE" | awk '{print $1}')
+
+          ZIP_SIZE=$(stat -c%s "$ZIP_FILE" 2>/dev/null || stat -f%z "$ZIP_FILE")
+          ZIP_HASH=$(sha256sum "$ZIP_FILE" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$ZIP_FILE" | awk '{print $1}')
+
+          # Create manifest JSON
+          cat > latest-windows.json << EOF
+          {
+            "version": "${{ steps.version.outputs.new_version }}",
+            "versionName": "${{ steps.version.outputs.version_name }}",
+            "buildNumber": ${{ steps.version.outputs.build_number }},
+            "platform": "windows",
+            "msix": {
+              "url": "https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/$MSIX_FILE",
+              "size": $MSIX_SIZE,
+              "sha256": "$MSIX_HASH"
+            },
+            "portable": {
+              "url": "https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/$ZIP_FILE",
+              "size": $ZIP_SIZE,
+              "sha256": "$ZIP_HASH"
+            },
+            "releaseDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "minWindowsVersion": "10.0.17763.0"
+          }
+          EOF
+
+          cat latest-windows.json
+
+          # Upload manifest
+          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
+          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+
+          wrangler r2 object put "${R2_BUCKET_NAME}/latest-windows.json" --file="latest-windows.json" --remote
+
+          echo "Manifest uploaded successfully!"
+          echo "Manifest URL: https://downloads.plot.day/latest-windows.json"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-${{ steps.version.outputs.new_version }}
+          path: |
+            apps/plot/build/windows/x64/runner/Release/Plot-${{ steps.version.outputs.new_version }}.msix
+            apps/plot/build/windows/x64/runner/Release/Plot-${{ steps.version.outputs.new_version }}-portable.zip
+            apps/plot/build/windows/x64/runner/Release/latest-windows.json
+          retention-days: 30
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          MSIX_FILE="Plot-${{ steps.version.outputs.new_version }}.msix"
+          ZIP_FILE="Plot-${{ steps.version.outputs.new_version }}-portable.zip"
+          TAG_NAME="windows@${{ steps.version.outputs.new_version }}"
+          RELEASE_TITLE="Plot Windows ${{ steps.version.outputs.new_version }}"
+
+          # Read manifest for file metadata
+          MSIX_SIZE=$(cat latest-windows.json | grep -A 3 '"msix"' | grep '"size"' | sed 's/.*: \([0-9]*\).*/\1/')
+          MSIX_HASH=$(cat latest-windows.json | grep -A 3 '"msix"' | grep '"sha256"' | sed 's/.*: "\(.*\)".*/\1/')
+          ZIP_SIZE=$(cat latest-windows.json | grep -A 3 '"portable"' | grep '"size"' | sed 's/.*: \([0-9]*\).*/\1/')
+          ZIP_HASH=$(cat latest-windows.json | grep -A 3 '"portable"' | grep '"sha256"' | sed 's/.*: "\(.*\)".*/\1/')
+          RELEASE_DATE=$(cat latest-windows.json | grep '"releaseDate"' | sed 's/.*: "\(.*\)".*/\1/')
+
+          # Create release notes
+          cat > release-notes.md << EOF
+          ## Plot Windows ${{ steps.version.outputs.new_version }}
+
+          **Version:** ${{ steps.version.outputs.version_name }}
+          **Build Number:** ${{ steps.version.outputs.build_number }}
+          **Platform:** Windows
+          **Release Date:** ${RELEASE_DATE}
+
+          ### Download
+
+          #### MSIX Installer (Recommended)
+          - **File**: [Plot-${{ steps.version.outputs.new_version }}.msix](https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}.msix)
+          - **Size**: ${MSIX_SIZE} bytes
+          - **SHA256**: \`${MSIX_HASH}\`
+
+          #### Portable ZIP
+          - **File**: [Plot-${{ steps.version.outputs.new_version }}-portable.zip](https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}-portable.zip)
+          - **Size**: ${ZIP_SIZE} bytes
+          - **SHA256**: \`${ZIP_HASH}\`
+
+          ### Requirements
+
+          - **Minimum Windows Version:** Windows 10 version 1809 (build 17763) or later
+
+          ### Installation
+
+          **MSIX Package**: Double-click the .msix file to install. Windows will prompt you to install the app.
+
+          **Portable ZIP**: Extract the ZIP file and run \`plot.exe\`. No installation required.
+
+          ### Auto-Update
+
+          For auto-update systems, see the [manifest JSON](https://downloads.plot.day/latest-windows.json).
+          EOF
+
+          # Create release
+          PRERELEASE_FLAG=""
+          if [[ "${{ steps.branch-detect.outputs.is_prerelease }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+            echo "Creating prerelease from branch: ${{ steps.branch-detect.outputs.branch }}"
+          else
+            PRERELEASE_FLAG="--latest"
+            echo "Creating production release from main branch"
+          fi
+
+          gh release create "$TAG_NAME" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release-notes.md \
+            $PRERELEASE_FLAG \
+            "$MSIX_FILE" \
+            "$ZIP_FILE"
+
+          echo "Release created: $TAG_NAME"
+
+      - name: Build summary
+        shell: bash
+        run: |
+          {
+            echo "## ✅ Windows Build Complete"
+            echo ""
+            echo "**Version:** ${{ steps.version.outputs.new_version }}"
+            echo "**Platform:** Windows"
+            echo ""
+            echo "### Build Artifacts"
+            echo "- MSIX: Plot-${{ steps.version.outputs.new_version }}.msix"
+            echo "- Portable ZIP: Plot-${{ steps.version.outputs.new_version }}-portable.zip"
+            echo ""
+            echo "### Download URLs"
+            echo "- MSIX: https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}.msix"
+            echo "- ZIP: https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}-portable.zip"
+            echo "- Manifest: https://downloads.plot.day/latest-windows.json"
+          } >> "$GITHUB_STEP_SUMMARY"
