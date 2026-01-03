@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Help message
+if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+  cat <<EOF
+Usage: worktree <branch-name>
+
+Creates or switches to a git worktree for the specified branch.
+
+Arguments:
+  branch-name    Name of the branch (will be created if it doesn't exist)
+
+The worktree will be created at ../plot-<branch-name>
+
+After creating/switching to the worktree:
+1. Opens a new shell in the worktree directory
+2. Runs 'pnpm install' to set up dependencies
+3. Runs 'pnpm run env' to generate environment files
+4. The post-checkout hook automatically rebuilds Twister
+
+When you exit the shell:
+- If there are no uncommitted changes, you'll be prompted to remove the worktree
+- Cleanup uses 'rm -rf' + 'git worktree prune' (required for submodules)
+
+Examples:
+  pnpm worktree feature-auth
+  pnpm worktree fix-bug-123
+EOF
+  exit 0
+fi
+
+# Check for branch name argument
+if [[ $# -eq 0 ]]; then
+  echo "Error: Branch name required"
+  echo "Usage: worktree <branch-name>"
+  echo "Run 'pnpm worktree --help' for more information"
+  exit 1
+fi
+
+BRANCH="$1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+WORKTREE_DIR="$(cd "$REPO_DIR/.." && pwd)/plot-$BRANCH"
+
+# Validate we're in the plot directory
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+  echo "Error: Not in a git repository"
+  exit 1
+fi
+
+# Change to repo directory
+cd "$REPO_DIR"
+
+# Check if worktree already exists
+if [[ -d "$WORKTREE_DIR" ]]; then
+  echo "Worktree already exists at: $WORKTREE_DIR"
+  echo "Opening shell in worktree..."
+else
+  echo "Creating worktree for branch: $BRANCH"
+
+  # Check if branch exists
+  if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    echo "Using existing branch: $BRANCH"
+    git worktree add "$WORKTREE_DIR" "$BRANCH"
+  else
+    echo "Creating new branch: $BRANCH"
+    git worktree add -b "$BRANCH" "$WORKTREE_DIR"
+  fi
+
+  echo "Worktree created at: $WORKTREE_DIR"
+fi
+
+# Function to check for uncommitted changes
+check_for_changes() {
+  local worktree_dir="$1"
+  cd "$worktree_dir"
+
+  # Check main repo
+  if [[ -n "$(git status --short)" ]]; then
+    return 1
+  fi
+
+  # Check submodule
+  if [[ -d "public" ]]; then
+    cd public
+    if [[ -n "$(git status --short)" ]]; then
+      return 1
+    fi
+    cd ..
+  fi
+
+  return 0
+}
+
+# Function to cleanup worktree
+cleanup_worktree() {
+  local worktree_dir="$1"
+  local branch="$2"
+
+  echo ""
+  echo "Checking for uncommitted changes..."
+
+  if check_for_changes "$worktree_dir"; then
+    echo "No uncommitted changes found."
+    read -p "Remove worktree '$branch'? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      echo "Removing worktree..."
+      cd "$REPO_DIR"
+      rm -rf "$worktree_dir"
+      git worktree prune
+      echo "Worktree removed successfully"
+    else
+      echo "Worktree kept at: $worktree_dir"
+    fi
+  else
+    echo "Uncommitted changes detected. Worktree kept at: $worktree_dir"
+  fi
+}
+
+# Open shell in worktree
+cd "$WORKTREE_DIR"
+
+echo ""
+echo "========================================="
+echo "Worktree: $BRANCH"
+echo "Location: $WORKTREE_DIR"
+echo "========================================="
+echo ""
+echo "Running pnpm install..."
+pnpm install
+
+echo ""
+echo "Running pnpm run env..."
+pnpm run env
+
+echo ""
+echo "========================================="
+echo "Setup complete!"
+echo "You are now in the worktree shell."
+echo "Type 'exit' to return to the main repo."
+echo "========================================="
+echo ""
+
+# Start subshell
+bash
+
+# After exiting subshell, check for cleanup
+cleanup_worktree "$WORKTREE_DIR" "$BRANCH"

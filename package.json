@@ -32,6 +32,7 @@
     "start": "nx run-many -t start --exclude plot",
     "restart": "pnpm stop; pnpm start",
     "update": "pnpm update --latest --recursive",
+    "worktree": "./scripts/worktree",
     "prepare": "husky install",
     "tracker:pull": "pnpm --filter @plotday/tracker tracker:pull",
     "nopy": "nopy",
