@@ -23,7 +23,7 @@ CREATE TRIGGER set_activity_tag_updated_at
     EXECUTE FUNCTION update_updated_at ();
 
 CREATE TRIGGER notify_api_for_activity_tag_change
-    AFTER INSERT OR UPDATE OR DELETE ON "public"."activity_tag"
+    AFTER INSERT OR UPDATE ON "public"."activity_tag"
     FOR EACH ROW
     EXECUTE FUNCTION notify_for_activity_tag_change ();
 
