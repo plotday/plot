@@ -8,7 +8,7 @@
     "deploy_vars": "API_ROOT SUPABASE_URL SUPABASE_ANON_KEY POSTHOG_API_KEY POSTHOG_PROXY"
   },
   "scripts": {
-    "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .env",
+    "env": "bash ../../scripts/gen-env development $npm_package_config_deploy_vars > .env",
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "wrangler dev",
