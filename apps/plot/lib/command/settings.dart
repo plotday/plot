@@ -19,6 +19,7 @@ import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/platform.dart';
 import 'command.dart';
+import 'page_link.dart';
 import 'logging.dart';
 
 final appearanceCommands = StaticCommandGroup(
@@ -35,6 +36,7 @@ final settingsCommands = StaticCommandGroup(
   shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
   commands: [
     ManageTwists(),
+    CopyPageLink(), OpenCopiedPageLink(),
     ChangeAppearance(),
     // Only show Enter Behavior setting on devices with physical keyboards
     if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
@@ -81,8 +83,9 @@ class ChangeEnterBehavior extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final modifierKey =
-        defaultTargetPlatform == TargetPlatform.macOS ? 'Cmd' : 'Ctrl';
+    final modifierKey = defaultTargetPlatform == TargetPlatform.macOS
+        ? 'Cmd'
+        : 'Ctrl';
     final currentBehavior = context.read<SettingsBloc>().state.enterBehavior;
 
     final result = await SelectModal.open<EnterBehavior>(
