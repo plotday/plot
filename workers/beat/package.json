@@ -6,7 +6,7 @@
     "deploy_vars": "POSTHOG_HOST POSTHOG_ASSET_HOST"
   },
   "scripts": {
-    "env": "bash ../../scripts/gen-env development $npm_package_config_deploy_vars > .dev.vars",
+    "env": "bash ../../scripts/gen-env development > .dev.vars",
     "deploy": "bash ../../scripts/deploy-worker",
     "deploy:vars": "bash ../../scripts/deploy-worker-vars",
     "types": "wrangler types",
