@@ -138,6 +138,8 @@ jobs:
 
       - name: Create production .env file
         shell: bash
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
           cd apps/plot && pnpm run env:prod
 
