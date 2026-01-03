@@ -183,15 +183,15 @@ jobs:
           cd apps/plot
           flutter build windows --release
 
-      # NOTE: Code signing not yet implemented
-      # This MSIX package is unsigned and will trigger Windows SmartScreen warnings
-      # Code signing will be added when preparing for Windows Store deployment
-      # For testing purposes, users will need to accept the SmartScreen warning
+      # NOTE: MSIX package is signed with self-signed certificate
+      # Users must install the public certificate (plot-codesign.cer) to their
+      # Trusted People store to avoid SmartScreen warnings
+      # For Windows Store deployment, replace with CA-signed certificate
       - name: Create MSIX package
         shell: bash
         run: |
           cd apps/plot
-          flutter pub run msix:create
+          flutter pub run msix:create --certificate-password "$WINDOWS_CERT_PASSWORD"
 
       - name: Create portable ZIP archive
         shell: bash

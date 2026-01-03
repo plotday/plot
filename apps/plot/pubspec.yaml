@@ -207,7 +207,6 @@ msix_config:
   sign_msix: true
   publisher: CN=Plot Technologies Inc.
   certificate_path: windows/plot-codesign.pfx
-  certificate_password: ${WINDOWS_CERT_PASSWORD}
 
 # NOTE: Android splash screen now uses custom vector drawables for crisp rendering:
 # - android/app/src/main/res/drawable/ic_splash_logo.xml (pre-Android 12)
