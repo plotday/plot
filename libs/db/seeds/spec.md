@@ -21,7 +21,8 @@ All dates are specified as offsets from a base date, allowing identical data to 
 ```yaml
 config:
   baseDate: "2025-01-15" # Base date for all date offsets (YYYY-MM-DD)
-  userId: "uuid-string" # UUID of the user to generate data for
+  email: "user@example.com" # Email address (used as password for local testing)
+  userName: "User Name" # Display name for the user
 
 contacts:
   -  # Contact definitions
@@ -38,12 +39,14 @@ activities:
 **Required fields:**
 
 - `baseDate`: ISO date string (YYYY-MM-DD) - all date offsets are calculated from this
-- `userId`: UUID string - the user ID for whom all data is generated
+- `email`: Email address - the user will be created if it doesn't exist (email is used as password for local testing)
+- `userName`: Display name for the user
 
 ```yaml
 config:
   baseDate: "2025-01-15"
-  userId: "123e4567-e89b-12d3-a456-426614174000"
+  email: "alice@example.com"
+  userName: "Alice Johnson"
 ```
 
 ## Contacts
@@ -60,7 +63,7 @@ Contacts represent people (users or non-users) who can be authors, assignees, or
 
 **Special refs:**
 
-- `user`: Always refers to the user specified in `config.userId`
+- `user`: Always refers to the user specified in `config.email`
 
 ```yaml
 contacts:
@@ -138,14 +141,25 @@ Activities can be tasks (actions), calendar events, or notes. They can have asso
 - `title` (optional): Display title
 - `type` (required): One of `action`, `event`, `note`
 - `priority_ref` (required): Reference to a priority
+- `created` (**required for type: note**, optional for other types): Date offset when this activity was created (e.g., "-2d", "+1w 14:30")
+  - For `type: note`: **REQUIRED** - indicates when the note was created
+  - For `type: action` or `type: event`: Optional - defaults to current time if not specified
+  - Use negative offsets for past dates (e.g., "-2d" = 2 days before base date)
+  - Use positive offsets for future dates (rarely used)
 - `author_ref` (optional, default: "user"): Reference to contact or "user"
 - `assignee_ref` (**required for actions**, optional for events/notes): Reference to contact or "user"
   - For `type: action`: **REQUIRED** - every action must have an assignee
   - For `type: event` or `type: note`: Optional
   - Use `assignee_ref: user` for self-assigned tasks
 - `done_at` (optional): Date offset when marked done
-- `at` (optional): Timestamp range for events (see Date Offsets)
-- `on` (optional): Scheduled dates for future actions (See Date Offsets)
+- `at` (optional): Timestamp range for events and future reminders (see Date Offsets)
+  - For `type: event`: Can be past, present, or future timestamps
+  - For `type: note`: **FUTURE ONLY** (positive offsets) - use for reminders like birthdays
+  - For `type: action`: Not typically used (use `on` instead)
+- `on` (optional): Date range for scheduled dates (see Date Offsets)
+  - For `type: action`: Can be past, present, or future dates indicating when to start the task
+  - For `type: event`: Use `at` instead for timed events, or `on` for all-day events
+  - For `type: note`: **FUTURE ONLY** (positive offsets) - use for reminders
 - `recurrence_rule` (optional): iCalendar RRULE string
 - `tags` (optional): Object mapping tag names to actor arrays
 - `notes` (optional but typically at least one): Array of note objects (see Notes section)
@@ -163,10 +177,12 @@ activities:
     tags:
       pinned: [user]
     notes:
-      - note: "Yesterday: Completed API integration\n\nFinished the REST API integration with the new service"
+      - created: "+0d 09:30"
+        note: "Yesterday: Completed API integration\n\nFinished the REST API integration with the new service"
         author_ref: alice
 
-      - note: "Today: Working on frontend"
+      - created: "+0d 09:32"
+        note: "Today: Working on frontend"
         author_ref: alice
 
   - title: Write project proposal
@@ -178,11 +194,23 @@ activities:
       todo: [user]
       urgent: [user, alice]
     notes:
-      - note: "Use the proposal template for this"
+      - created: "+3d 10:00"
+        note: "Use the proposal template for this"
         links:
           - url: https://docs.example.com/proposal-template
             title: Proposal Template
             description: Use this template
+
+  - title: Team feedback from last week
+    type: note # Note activity type
+    priority_ref: project-alpha
+    created: "-5d 16:30" # Created 5 days ago at 4:30 PM
+    tags:
+      star: [user]
+    notes:
+      - created: "-5d 16:30"
+        note: "Great work on the sprint! The team really came together."
+        author_ref: alice
 ```
 
 ## Notes
@@ -192,6 +220,10 @@ Notes are content associated with an activity, stored as separate entities that 
 **Fields:**
 
 - `ref` (optional): Unique reference string (only needed if referenced elsewhere)
+- `created` (required): Date offset when this note was created (e.g., "-2d 14:30", "+1w 09:00")
+  - Use negative offsets for past dates (e.g., "-2d" = 2 days before base date)
+  - Use positive offsets for future dates (e.g., "+1d" = 1 day after base date)
+  - Should match or be close to the activity's schedule for realistic data
 - `author_ref` (optional, default: "user"): Reference to contact or "user"
 - `note` (optional): Markdown content
 - `links` (optional): Array of link objects
@@ -207,12 +239,14 @@ activities:
     priority_ref: project-alpha
     at: "+0d 14:00 / +0d 15:00"
     notes:
-      - note: "Great discussion about the architecture"
+      - created: "+0d 14:30"
+        note: "Great discussion about the architecture"
         author_ref: alice
         tags:
           star: [user]
 
-      - note: "Action items:\n- Set up repository\n- Create project board"
+      - created: "+0d 15:05"
+        note: "Action items:\n- Set up repository\n- Create project board"
         author_ref: user
         links:
           - url: https://github.com/org/repo
@@ -285,7 +319,8 @@ links:
 ```yaml
 config:
   baseDate: "2025-01-15"
-  userId: "123e4567-e89b-12d3-a456-426614174000"
+  email: "charlie@example.com"
+  userName: "Charlie Davis"
 
 contacts:
   - ref: alice
@@ -318,7 +353,8 @@ activities:
     tags:
       pinned: [user]
     notes:
-      - note: "Working on feature X"
+      - created: "+0d 09:15"
+        note: "Working on feature X"
         author_ref: alice
 
   - title: Complete API documentation
@@ -330,7 +366,8 @@ activities:
       todo: [user]
       urgent: [user]
     notes:
-      - note: "Reference the API documentation template"
+      - created: "+2d 10:00"
+        note: "Reference the API documentation template"
         links:
           - url: https://docs.example.com/api
             title: API Docs

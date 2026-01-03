@@ -1,6 +1,7 @@
 config:
   baseDate: "2025-03-12"
-  userId: "a0517921-1186-4fe9-9b8b-5d76e35ba384"
+  email: "carmy@thebearchicago.com"
+  userName: "Carmen Berzatto"
 
 contacts:
   - ref: user
@@ -68,11 +69,12 @@ activities:
   - type: note
     priority_ref: menu
     title: "Spring menu - dish lineup draft"
-    on: "-2d"
+    created: "-2d"
     tags:
       pinned: [user]
     notes:
-      - content: |
+      - created: "-2d"
+        content: |
           ## Spring 2025 Menu - Working Draft
 
           **Appetizers:**
@@ -103,7 +105,8 @@ activities:
     tags:
       urgent: [user]
     notes:
-      - content: |
+      - created: "-2d 10:00"
+        content: |
           Three concepts to test today:
 
           **Concept 1: Roasted cauliflower, tahini, za'atar, pickled raisins**
@@ -127,7 +130,8 @@ activities:
     title: "Family meal - dish testing"
     at: "-2d 15:00 / -2d 15:45"
     notes:
-      - content: |
+      - created: "-2d 16:00"
+        content: |
           **Results:**
 
           - Cauliflower: Everyone liked it. No one loved it. Richie said "it's nice." That's a death sentence.
@@ -153,9 +157,10 @@ activities:
   - type: note
     priority_ref: team
     title: "Supplier order - spring ingredients"
-    on: "-2d"
+    created: "-2d"
     notes:
-      - content: |
+      - created: "-2d 11:30"
+        content: |
           **From: Green City Produce <delivery@greencityproduce.com>**
           **Subject: Spring Availability - First Harvest**
 
@@ -183,7 +188,8 @@ activities:
     assignee_ref: user
     on: "-2d"
     notes:
-      - content: |
+      - created: "-2d 12:00"
+        content: |
           Need to lock in the ramps before someone else does. Limited window.
 
           Ordered:
@@ -196,9 +202,10 @@ activities:
   - type: note
     priority_ref: personal
     title: "Michelle - Sunday dinner this weekend?"
-    on: "-2d"
+    created: "-2d"
     notes:
-      - content: |
+      - created: "-2d 19:30"
+        content: |
           **iMessage from Michelle**
 
           "Sunday dinner this week? Haven't seen you in a while. I can cook so you don't have to think about food for once 😊"
@@ -221,7 +228,8 @@ activities:
     tags:
       todo: [user]
     notes:
-      - content: |
+      - created: "-1d 08:00"
+        content: |
           Sydney's right, we should commit to the cabbage. But I need to test it one more time.
 
           **Changes to try:**
@@ -239,7 +247,8 @@ activities:
     title: "Prep meeting - weekend service"
     at: "-1d 09:30 / -1d 10:15"
     notes:
-      - content: |
+      - created: "-1d 10:15"
+        content: |
           **Kitchen Slack - #prep-meeting notes**
 
           **Friday/Saturday service (Mar 14-15):**
@@ -273,9 +282,10 @@ activities:
   - type: note
     priority_ref: team
     title: "Cicero - quarterly check-in"
-    on: "-1d"
+    created: "-1d"
     notes:
-      - content: |
+      - created: "-1d 14:20"
+        content: |
           **From: Jimmy Cicero <jimmy@cicerogroup.com>**
           **Subject: Q1 Numbers Looking Good**
 
@@ -303,7 +313,8 @@ activities:
     title: "Sydney - menu lockdown conversation"
     at: "-1d 16:00 / -1d 16:28"
     notes:
-      - content: |
+      - created: "-1d 16:45"
+        content: |
           Met with Syd after service. She's frustrated.
 
           **Syd:** "The cabbage is good. It's better than good. We tested it twice. The team liked it. What are we waiting for?"
@@ -333,7 +344,8 @@ activities:
     assignee_ref: user
     on: "-1d"
     notes:
-      - content: |
+      - created: "-1d 18:00"
+        content: |
           Should text Michelle. Tell her I'll be there. Actually be there this time.
 
           Restaurant is closed Sunday. No excuse.
@@ -343,9 +355,10 @@ activities:
   - type: note
     priority_ref: service
     title: "Reservations update - Saturday full"
-    on: "-1d"
+    created: "-1d"
     notes:
-      - content: |
+      - created: "-1d 20:15"
+        content: |
           **Kitchen Slack - @channel**
 
           Saturday night fully booked + 6 person waitlist. Friday has 3 tables left.
@@ -363,13 +376,14 @@ activities:
   - type: note
     priority_ref: menu
     title: "CHARRED CABBAGE DECISION - Version 1, locked"
-    on: "+0d"
+    created: "+0d"
     tags:
       pinned: [user]
       decision: [user]
       goal: [user]
     notes:
-      - content: |
+      - created: "+0d 08:30"
+        content: |
           ## Charred Spring Cabbage
           ### Version 1.0 - LOCKED FOR MENU LAUNCH
 
@@ -432,12 +446,14 @@ activities:
           But yeah. We're launching on time.
         mentions:
           - sydney
-      - content: |
+      - created: "+0d 08:35"
+        content: |
           ---
 
           **@plot, add the cabbage dish to the spring menu lineup and mark the vegetarian slot as locked.**
         ai_query: true
-      - content: |
+      - created: "+0d 08:36"
+        content: |
           **Plot AI Response:**
 
           Spring menu updated:
@@ -451,7 +467,8 @@ activities:
     title: "Team meeting - menu lockdown announcement"
     at: "+0d 10:00 / +0d 10:30"
     notes:
-      - content: |
+      - created: "+0d 10:30"
+        content: |
           Announced to the team: menu is locked. Launch in 9 days.
 
           **Reactions:**
@@ -489,7 +506,8 @@ activities:
     tags:
       todo: [user]
     notes:
-      - content: |
+      - created: "+0d 11:00"
+        content: |
           Need to document everything:
           - Prep times
           - Cooking times
@@ -501,9 +519,10 @@ activities:
   - type: note
     priority_ref: team
     title: "Supplier confirmation - menu ingredients"
-    on: "+0d"
+    created: "+0d"
     notes:
-      - content: |
+      - created: "+0d 14:30"
+        content: |
           **Email thread with suppliers:**
 
           ✅ **North Shore Fish** - Halibut and daily crudo fish confirmed (Simon knows the menu)
@@ -524,7 +543,8 @@ activities:
     title: "Lunch break - actually taking one"
     at: "+0d 13:00 / +0d 13:45"
     notes:
-      - content: |
+      - created: "+0d 13:50"
+        content: |
           Walked to the park. Sat on a bench. Ate a sandwich.
 
           Didn't think about the menu. Didn't think about service. Just... existed for 45 minutes.
@@ -536,9 +556,10 @@ activities:
   - type: note
     priority_ref: personal
     title: "Michelle - confirmed for Sunday"
-    on: "+0d"
+    created: "+0d"
     notes:
-      - content: |
+      - created: "+0d 16:20"
+        content: |
           **iMessage to Michelle**
 
           "I'll be there Sunday. 6pm?"
@@ -562,7 +583,8 @@ activities:
     title: "Friday service - full menu + ramp special"
     at: "+1d 17:00 / +1d 23:30"
     notes:
-      - content: |
+      - created: "+1d 23:45"
+        content: |
           Friday night. Full room. Current menu (pre-spring launch) + ramp special.
 
           **Ramp special:** Ramp and ricotta pasta, brown butter, breadcrumbs (Marcus's idea, killed it)
@@ -588,7 +610,8 @@ activities:
     assignee_ref: user
     on: "+1d"
     notes:
-      - content: |
+      - created: "+1d 10:00"
+        content: |
           **Spring menu launch timeline:**
 
           **Mar 16-17 (Sat-Sun):** Final testing, recipe documentation
@@ -607,9 +630,10 @@ activities:
   - type: note
     priority_ref: service
     title: "Reservation update - launch week"
-    on: "+1d"
+    created: "+1d"
     notes:
-      - content: |
+      - created: "+1d 14:30"
+        content: |
           **Kitchen Slack - Richie**
 
           Launch week reservations:
@@ -632,7 +656,8 @@ activities:
     title: "Saturday service - last night of winter menu"
     at: "+2d 17:00 / +2d 23:45"
     notes:
-      - content: |
+      - created: "+2d 23:50"
+        content: |
           Last Saturday with the old menu. Full room. Smooth service.
 
           Took a moment during the push to look at the kitchen. Everyone in their zone. Everyone locked in.
@@ -655,7 +680,8 @@ activities:
     tags:
       star: [user]
     notes:
-      - content: |
+      - created: "+2d 22:00"
+        content: |
           Actually went. Actually stayed.
 
           Michelle made pasta (not trying to impress, just good simple food). We talked about not-restaurant things. I didn't check my phone.
@@ -682,7 +708,8 @@ activities:
     tags:
       todo: [user]
     notes:
-      - content: |
+      - created: "+3d 08:00"
+        content: |
           Need to finish documenting all seven dishes:
           - Full ingredient lists
           - Prep procedures
@@ -699,10 +726,12 @@ activities:
     title: "Monday prep - spring menu training"
     at: "+3d 09:00 / +3d 14:00"
     notes:
-      - content: |
+      - created: "+3d 08:30"
+        content: |
           **@plot, create a schedule for Monday's spring menu training session covering all seven dishes**
         ai_query: true
-      - content: |
+      - created: "+3d 08:31"
+        content: |
           **Plot AI Response:**
 
           **Monday Spring Menu Training Schedule (Mar 16, 9am-2pm)**
@@ -723,9 +752,10 @@ activities:
   - type: note
     priority_ref: service
     title: "Friends & family service - March 20"
-    on: "+3d"
+    created: "+3d"
     notes:
-      - content: |
+      - created: "+3d 11:00"
+        content: |
           **Kitchen Slack - Nat**
 
           Friends & family list for Wednesday rehearsal dinner:
@@ -753,7 +783,8 @@ activities:
     assignee_ref: user
     on: "+3d"
     notes:
-      - content: |
+      - created: "+3d 14:00"
+        content: |
           Even though it's locked, I want to run it one more time. Not to change it. To confirm I can execute it consistently.
 
           That's different from perfecting it. That's making sure I can deliver what I promised.
@@ -765,9 +796,10 @@ activities:
   - type: note
     priority_ref: bear
     title: "Spring menu press release"
-    on: "+2d"
+    created: "+2d"
     notes:
-      - content: |
+      - created: "+2d 16:00"
+        content: |
           **From: Nat**
 
           Draft press release for spring menu launch. Thoughts?
@@ -792,7 +824,8 @@ activities:
     at: "+4d 16:00 / +4d 16:30"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     notes:
-      - content: |
+      - created: "+4d 16:30"
+        content: |
           Standing Monday meeting. Check in on everyone. Make sure no one's drowning.
 
           It's not about the food. It's about the people making the food.
@@ -802,11 +835,12 @@ activities:
   - type: note
     priority_ref: menu
     title: "Post-launch: feedback and iteration plan"
-    on: "+3d"
+    created: "+3d"
     tags:
       goal: [user]
     notes:
-      - content: |
+      - created: "+3d 20:00"
+        content: |
           After launch, track:
           - Guest feedback (Richie listening on the floor)
           - Dish popularity (reservation notes, sales)

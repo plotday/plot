@@ -1,6 +1,7 @@
 config:
   baseDate: "2025-02-08"
-  userId: "d4e5f6a7-b8c9-4d5e-1f2a-3b4c5d6e7f8a"
+  email: "rebecca.welton@afcrichmond.com"
+  userName: "Rebecca Welton"
 
 contacts:
   - ref: user
@@ -65,11 +66,12 @@ activities:
   - type: note
     priority_ref: mens_team
     title: "Match review - Bournemouth loss (1-2)"
-    on: "-2d"
+    created: "-2d"
     tags:
       warning: [user]
     notes:
-      - content: |
+      - created: "-2d 09:00"
+        content: |
           **From: Performance Analytics Team**
           **Subject: Post-Match Analysis - AFC Richmond vs Bournemouth**
 
@@ -100,7 +102,8 @@ activities:
     assignee_ref: user
     on: "-2d"
     notes:
-      - content: |
+      - created: "-2d 10:00"
+        content: |
           Need to check in with Roy and Beard about the team's form. Not panic. Not pressure. Just... understanding.
 
           The team isn't falling apart. They're just stuck. There's a difference.
@@ -112,9 +115,10 @@ activities:
   - type: note
     priority_ref: community
     title: "Supporter sentiment - social media summary"
-    on: "-2d"
+    created: "-2d"
     notes:
-      - content: |
+      - created: "-2d 11:00"
+        content: |
           **From: Keeley Jones (PR & Marketing)**
           **Subject: Fan Sentiment Update**
 
@@ -151,7 +155,8 @@ activities:
     title: "Coffee with Barbara - weekly catchup"
     at: "-2d 10:00 / -2d 11:00"
     notes:
-      - content: |
+      - created: "-2d 11:15"
+        content: |
           Weekly Saturday coffee with Barbara. The one hour where I'm not the club owner, just... Rebecca.
 
           **Barbara:** "How's the team?"
@@ -184,7 +189,8 @@ activities:
     tags:
       pinned: [user]
     notes:
-      - content: |
+      - created: "-1d 14:50"
+        content: |
           Met with Roy in his office. Direct, as always.
 
           **Me:** "Tell me what you're seeing."
@@ -218,7 +224,8 @@ activities:
     title: "Meeting with Nate - separate check-in"
     at: "-1d 15:30 / -1d 16:15"
     notes:
-      - content: |
+      - created: "-1d 16:30"
+        content: |
           Met with Nate separately. He's back at Richmond after his West Ham stint, now as assistant manager. Still finding his footing.
 
           **Nate:** "I think I know what's wrong with the attack."
@@ -254,11 +261,12 @@ activities:
   - type: note
     priority_ref: womens_team
     title: "Women's team exploration - initial research"
-    on: "-1d"
+    created: "-1d"
     tags:
       idea: [user]
     notes:
-      - content: |
+      - created: "-1d 17:00"
+        content: |
           Thought that won't leave me alone: What if Richmond had a women's team?
 
           Not as a "nice to have." Not as a PR move. As a continuation of what Ted built here.
@@ -276,9 +284,10 @@ activities:
   - type: note
     priority_ref: personal
     title: "Rupert being Rupert (ignore)"
-    on: "-1d"
+    created: "-1d"
     notes:
-      - content: |
+      - created: "-1d 18:30"
+        content: |
           **Text from Rupert Mannion**
 
           "Saw the Bournemouth result. Shame about the form. If you need advice on running a football club properly, happy to help. - R"
@@ -304,7 +313,8 @@ activities:
       goal: [user]
       decision: [user]
     notes:
-      - content: |
+      - created: "+0d 07:30"
+        content: |
           ## AFC Richmond Women's Football Club
           ### Vision Document - Draft 1.0
 
@@ -459,10 +469,12 @@ activities:
           Because it's who we are.
 
           ---
-      - content: |
+      - created: "+0d 08:30"
+        content: |
           **@plot, what are the common challenges football clubs face when launching women's teams?**
         ai_query: true
-      - content: |
+      - created: "+0d 08:30"
+        content: |
           **Plot AI Response:**
 
           **Common challenges when establishing women's football teams:**
@@ -483,7 +495,8 @@ activities:
           - Set realistic timelines for competitive success
 
           Richmond's advantage: Established culture of belief and community could translate well if authentically applied to women's team.
-      - content: |
+      - created: "+0d 08:45"
+        content: |
           ---
 
           Good summary. Richmond has the culture advantage.
@@ -497,7 +510,8 @@ activities:
     title: "Morning office time - quiet work"
     at: "+0d 08:00 / +0d 09:30"
     notes:
-      - content: |
+      - created: "+0d 09:45"
+        content: |
           Early morning in the office before anyone else arrives. This is when I think clearest.
 
           Refined the women's team proposal. Checked the numbers again. They work. They're ambitious, but they work.
@@ -514,7 +528,8 @@ activities:
     tags:
       todo: [user]
     notes:
-      - content: |
+      - created: "+0d 10:00"
+        content: |
           Need to get this on the March board agenda.
 
           Will talk to Higgins first. Get his read on board receptiveness. He's good at knowing which battles need prep work.
@@ -524,9 +539,10 @@ activities:
   - type: note
     priority_ref: community
     title: "Supporter feedback - women's team interest"
-    on: "+0d"
+    created: "+0d"
     notes:
-      - content: |
+      - created: "+0d 11:00"
+        content: |
           **From: Richmond Supporters Trust**
           **Subject: Women's Football - Survey Results**
 
@@ -562,7 +578,8 @@ activities:
     title: "Lunch with Keeley - catch up"
     at: "+0d 12:30 / +0d 13:45"
     notes:
-      - content: |
+      - created: "+0d 14:00"
+        content: |
           Lunch with Keeley. Told her about the women's team proposal.
 
           **Keeley:** "Babe! This is brilliant!"
@@ -591,7 +608,8 @@ activities:
     title: "Higgins - women's team preliminary discussion"
     at: "+1d 10:00 / +1d 10:45"
     notes:
-      - content: |
+      - created: "+1d 11:00"
+        content: |
           Ran the women's team proposal by Higgins before taking it to the full board.
 
           **Higgins:** "This is wonderful, Rebecca. Really wonderful."
@@ -621,9 +639,10 @@ activities:
   - type: note
     priority_ref: mens_team
     title: "Upcoming fixture - Chelsea (away)"
-    on: "+1d"
+    created: "+1d"
     notes:
-      - content: |
+      - created: "+1d 12:00"
+        content: |
           **From: Performance Analytics**
           **Subject: Match Preview - Chelsea vs Richmond**
 
@@ -650,7 +669,8 @@ activities:
     at: "+1d 14:00 / +1d 15:00"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     notes:
-      - content: |
+      - created: "+1d 15:15"
+        content: |
           Standing Monday meeting with senior staff.
 
           **Agenda:**
@@ -666,10 +686,12 @@ activities:
     assignee_ref: user
     on: "+1d"
     notes:
-      - content: |
+      - created: "+1d 16:00"
+        content: |
           **@plot, summarize recent supporter sentiment and engagement trends**
         ai_query: true
-      - content: |
+      - created: "+1d 16:00"
+        content: |
           **Plot AI Response:**
 
           **Richmond Supporter Sentiment & Engagement (Last 30 days):**
@@ -693,7 +715,8 @@ activities:
           - Interest in women's team proposal growing organically
 
           **Assessment:** Fanbase is resilient but needs reassurance that club is stable and has vision beyond current form.
-      - content: |
+      - created: "+1d 16:15"
+        content: |
           ---
 
           Good. Supporters are patient. That's the Ted legacy.
@@ -706,9 +729,10 @@ activities:
   - type: note
     priority_ref: mens_team
     title: "Training report - confidence exercises"
-    on: "+2d"
+    created: "+2d"
     notes:
-      - content: |
+      - created: "+2d 10:00"
+        content: |
           **From: Roy Kent**
           **Subject: Training Update**
 
@@ -734,7 +758,8 @@ activities:
     title: "Evening walk - think time"
     at: "+2d 18:00 / +2d 19:00"
     notes:
-      - content: |
+      - created: "+2d 19:15"
+        content: |
           Walked through Richmond Green. Quiet evening, almost spring weather.
 
           Thought about the club. The men's team struggling but not broken. The women's team idea taking shape.
@@ -752,11 +777,12 @@ activities:
   - type: note
     priority_ref: womens_team
     title: "Potential coaching candidates - preliminary research"
-    on: "+2d"
+    created: "+2d"
     tags:
       idea: [user]
     notes:
-      - content: |
+      - created: "+2d 20:00"
+        content: |
           Started thinking about who could coach a Richmond women's team.
 
           **Criteria:**
@@ -780,7 +806,8 @@ activities:
     title: "Board dinner - informal"
     at: "+3d 19:00 / +3d 21:30"
     notes:
-      - content: |
+      - created: "+3d 21:45"
+        content: |
           Quarterly board dinner. Social, but also useful for reading the room.
 
           Mentioned the women's team idea casually. Gauged reactions.
@@ -808,7 +835,8 @@ activities:
     tags:
       todo: [user]
     notes:
-      - content: |
+      - created: "+3d 10:00"
+        content: |
           Need to tighten the numbers before board presentation:
           - 5-year projection (not just Year 1)
           - Sensitivity analysis (best/worst case scenarios)
@@ -821,9 +849,10 @@ activities:
   - type: note
     priority_ref: community
     title: "Trent Crimm - potential feature story"
-    on: "+3d"
+    created: "+3d"
     notes:
-      - content: |
+      - created: "+3d 11:30"
+        content: |
           **Email from Trent Crimm (The Independent)**
 
           Rebecca,
@@ -847,11 +876,12 @@ activities:
   - type: note
     priority_ref: operations
     title: "Looking ahead - Feb-March priorities"
-    on: "+3d"
+    created: "+3d"
     tags:
       pinned: [user]
     notes:
-      - content: |
+      - created: "+3d 12:00"
+        content: |
           **Immediate (Next 2 weeks):**
           - Support men's team through slump (patience, not panic)
           - Finalize women's team proposal financials
@@ -872,9 +902,10 @@ activities:
   - type: note
     priority_ref: personal
     title: "Reflection - what Ted built here"
-    on: "+3d"
+    created: "+3d"
     notes:
-      - content: |
+      - created: "+3d 22:00"
+        content: |
           Ted left almost two years ago. Sometimes it feels like yesterday. Sometimes it feels like a lifetime.
 
           What he built here wasn't about tactics or results. It was about belief.
@@ -908,7 +939,8 @@ activities:
     title: "Match day - Chelsea (A)"
     at: "+6d 12:30 / +6d 14:30"
     notes:
-      - content: |
+      - created: "+6d 14:45"
+        content: |
           Chelsea away. Difficult fixture. Low expectations, which ironically might help.
 
           Will be there. In the owner's box. Watching. Supporting.
@@ -922,11 +954,12 @@ activities:
   - type: note
     priority_ref: womens_team
     title: "March board presentation - draft outline"
-    on: "+4d"
+    created: "+4d"
     tags:
       todo: [user]
     notes:
-      - content: |
+      - created: "+4d 10:00"
+        content: |
           **Board Presentation Outline - Women's Team Proposal**
 
           1. **Context**: Women's football landscape, Richmond's culture, community demand
@@ -948,7 +981,8 @@ activities:
     assignee_ref: user
     on: "+4d"
     notes:
-      - content: |
+      - created: "+4d 11:00"
+        content: |
           Before going to the board, should meet with supporters trust. Get their detailed feedback, their concerns, their ideas.
 
           They're the ones who'll fill the stands. Their buy-in matters more than the board's, honestly.

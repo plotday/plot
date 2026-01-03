@@ -15,7 +15,8 @@ export interface SeedData {
 
 export interface Config {
   baseDate: string; // ISO date string (YYYY-MM-DD)
-  userId: string; // UUID of the user to generate data for
+  email: string; // Email address (used as both email and password for local testing)
+  userName: string; // Display name for the user
 }
 
 // ============================================================================
@@ -61,14 +62,15 @@ export interface Activity {
   title?: string;
   type: ActivityType;
   priority_ref: string; // Reference to a priority
+  created?: string; // Date offset (e.g., "-2d", "+1w 14:30") - REQUIRED for type: note
   author_ref?: string; // Default: "user"
   assignee_ref?: string;
   draft?: boolean; // Default: false
   private?: boolean; // Default: false
   archived_at?: string; // Date offset
   done_at?: string; // Date offset
-  at?: string; // Timestamp range (e.g., "+0d 10:00 / +0d 11:00")
-  on?: string; // Date range (e.g., "+3d / +5d")
+  at?: string; // Timestamp range (e.g., "+0d 10:00 / +0d 11:00") - For type: note, future only
+  on?: string; // Date range (e.g., "+3d / +5d") - For type: note, future only
   duration?: string; // e.g., "30 minutes", "2 hours"
   recurrence_rule?: string; // iCalendar RRULE
   tags?: Tags;
@@ -78,6 +80,7 @@ export interface Activity {
 export interface Note {
   ref?: string; // Optional unique reference
   author_ref?: string; // Default: "user"
+  created: string; // Date offset (e.g., "-2d", "+1w 14:30") - REQUIRED
   content?: string; // Markdown content (preferred)
   note?: string; // Markdown content (alias for backward compatibility)
   links?: Link[];
@@ -189,6 +192,11 @@ export interface GeneratedPriorityUser {
   user_id: string; // UUID
 }
 
+export interface GeneratedPriorityContact {
+  priority_id: string; // UUID
+  contact_id: string; // UUID
+}
+
 export interface GeneratedActivity {
   id: string; // UUID
   author_id: string; // UUID
@@ -207,6 +215,8 @@ export interface GeneratedActivity {
   done_at: string | null; // ISO timestamp
   recurrence_rule: string | null;
   archived_at: string | null; // ISO timestamp
+  created_at: string; // ISO timestamp
+  updated_at: string; // ISO timestamp
 }
 
 export interface GeneratedActivityTag {
@@ -226,6 +236,8 @@ export interface GeneratedNote {
   content: string | null;
   links: string | null; // JSONB
   mentions: string | null; // Array literal
+  created_at: string; // ISO timestamp
+  updated_at: string; // ISO timestamp
 }
 
 export interface GeneratedNoteTag {
@@ -245,4 +257,6 @@ export interface RefMap<T> {
 export interface ValidationError {
   path: string;
   message: string;
+  file?: string;
+  line?: number;
 }

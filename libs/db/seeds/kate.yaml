@@ -1,6 +1,7 @@
 config:
   baseDate: "2025-04-16"
-  userId: "c3d4e5f6-a7b8-4c5d-0e1f-2a3b4c5d6e7f"
+  email: "kate.wyler@state.gov"
+  userName: "Kate Wyler"
 
 contacts:
   - ref: user
@@ -61,11 +62,12 @@ activities:
   - type: note
     priority_ref: active
     title: "Climate financing proposal - initial review"
-    on: "-2d"
+    created: "-2d"
     tags:
       pinned: [user]
     notes:
-      - content: |
+      - created: "-2d 09:00"
+        content: |
           **CONFIDENTIAL - State Department Cable**
           **From: Regional Climate Office**
           **Subject: Multilateral Climate Finance Framework - Draft Proposal**
@@ -99,7 +101,8 @@ activities:
     tags:
       urgent: [user]
     notes:
-      - content: |
+      - created: "-2d 10:30"
+        content: |
           The proposal is good policy. The language will kill it.
 
           **Problem:** "Binding commitment" = political suicide
@@ -117,7 +120,8 @@ activities:
     title: "Stuart - pre-meeting alignment call"
     at: "-2d 14:00 / -2d 14:25"
     notes:
-      - content: |
+      - created: "-2d 14:30"
+        content: |
           **Signal call with Stuart Hayford (UK Foreign Office)**
 
           Stuart's on board with the climate proposal but worried about UK Treasury resistance.
@@ -141,9 +145,10 @@ activities:
   - type: note
     priority_ref: household
     title: "Hal - scheduling conflict"
-    on: "-2d"
+    created: "-2d"
     notes:
-      - content: |
+      - created: "-2d 16:00"
+        content: |
           **Signal message - Hal**
 
           "Paris conference moved to same week as your Berlin trip. Can we make it work or do I need to push Paris?"
@@ -180,7 +185,8 @@ activities:
     assignee_ref: user
     on: "-2d"
     notes:
-      - content: |
+      - created: "-2d 17:00"
+        content: |
           Veronica (EU Climate Envoy) is key ally. Need to brief her before the formal proposal goes wide.
 
           She'll help frame it for EU member states. But she needs to believe:
@@ -198,7 +204,8 @@ activities:
     title: "Veronica Penn - exploratory call"
     at: "-1d 10:00 / -1d 10:45"
     notes:
-      - content: |
+      - created: "-1d 11:00"
+        content: |
           **Video call with Veronica Penn (EU Climate Envoy)**
 
           Walked her through the proposal framework. Emphasized:
@@ -223,9 +230,10 @@ activities:
   - type: note
     priority_ref: active
     title: "Dennison update - White House concerns"
-    on: "-1d"
+    created: "-1d"
     notes:
-      - content: |
+      - created: "-1d 13:00"
+        content: |
           **From: William Dennison (Secretary of State)**
           **Subject: RE: Climate Finance Proposal**
 
@@ -255,10 +263,12 @@ activities:
     tags:
       urgent: [user]
     notes:
-      - content: |
+      - created: "-1d 14:00"
+        content: |
           **@plot, suggest revenue-generating mechanisms that could offset climate fund contributions**
         ai_query: true
-      - content: |
+      - created: "-1d 14:00"
+        content: |
           **Plot AI Response:**
 
           Potential revenue/offset mechanisms for climate finance proposal:
@@ -269,7 +279,8 @@ activities:
           4. **Repayment structure for middle-income recipients** - Not grants, but low-interest loans with long horizons
 
           Recommendation: Emphasize #3 (PPP structure). Plays well with both parties, reduces fiscal exposure, maintains commitment.
-      - content: |
+      - created: "-1d 14:15"
+        content: |
           ---
 
           Good. The PPP angle works.
@@ -285,7 +296,8 @@ activities:
     title: "Video call with Hal"
     at: "-1d 19:00 / -1d 19:35"
     notes:
-      - content: |
+      - created: "-1d 19:45"
+        content: |
           **Video call from hotel room**
 
           Caught up on life outside work (there isn't much, but we try).
@@ -317,9 +329,10 @@ activities:
   - type: note
     priority_ref: strategic
     title: "Billie - ground-level intelligence"
-    on: "-1d"
+    created: "-1d"
     notes:
-      - content: |
+      - created: "-1d 15:00"
+        content: |
           **Signal message - Billie Appiah (UK Embassy Staff)**
 
           "Kate, heads up: French delegation is drafting their own climate proposal. Heard it might conflict with yours. Want me to find out more?"
@@ -342,7 +355,8 @@ activities:
     title: "Austin Ganon - congressional liaison update"
     at: "-1d 16:00 / -1d 16:20"
     notes:
-      - content: |
+      - created: "-1d 16:30"
+        content: |
           **Call with Austin Ganon (State Dept Congressional Affairs)**
 
           Austin's been testing the climate proposal with key congressional offices.
@@ -376,7 +390,8 @@ activities:
       urgent: [user]
       decision: [user]
     notes:
-      - content: |
+      - created: "+0d 08:00"
+        content: |
           ## Global Climate Resilience Partnership (GCRP)
           ### Proposal - Version 4.0 (FINAL)
 
@@ -465,12 +480,14 @@ activities:
           - "Permanent fund" → "Pilot program with expansion path"
 
           **Same outcome. Different story. That's the work.**
-      - content: |
+      - created: "+0d 08:45"
+        content: |
           ---
 
           **@plot, identify potential opposition arguments and draft responses**
         ai_query: true
-      - content: |
+      - created: "+0d 08:45"
+        content: |
           **Plot AI Response:**
 
           **Likely opposition arguments with recommended responses:**
@@ -489,7 +506,8 @@ activities:
 
           **5. "This benefits China/India more than the US"**
           Response: "Only if we let them. US participation ensures US companies, US standards, and US influence shape the next generation of global infrastructure."
-      - content: |
+      - created: "+0d 09:00"
+        content: |
           ---
 
           Good. I'm ready to defend this.
@@ -503,7 +521,8 @@ activities:
     title: "Eidra - proposal review and feedback"
     at: "+0d 09:00 / +0d 09:45"
     notes:
-      - content: |
+      - created: "+0d 10:00"
+        content: |
           Walked Eidra through the final draft.
 
           **Eidra:** "You've basically transformed this into something completely different."
@@ -530,7 +549,8 @@ activities:
     tags:
       urgent: [user]
     notes:
-      - content: |
+      - created: "+0d 10:30"
+        content: |
           Materials needed for tomorrow's briefing:
           - Executive summary (2 pages max)
           - Budget impact analysis (emphasize guarantees vs direct spending)
@@ -547,7 +567,8 @@ activities:
     tags:
       warning: [user]
     notes:
-      - content: |
+      - created: "+0d 11:15"
+        content: |
           **Signal message - Billie**
 
           "French proposal is very similar to yours but emphasizes EU leadership and excludes private sector involvement. They're positioning it as 'pure climate commitment' vs 'profit-driven infrastructure.'
@@ -579,7 +600,8 @@ activities:
     title: "Lunch - actually taking a break"
     at: "+0d 12:30 / +0d 13:15"
     notes:
-      - content: |
+      - created: "+0d 13:20"
+        content: |
           Walked through the park near the office. Bought a sandwich from the cart.
 
           Sat on a bench. Didn't check my phone (much).
@@ -597,7 +619,8 @@ activities:
       urgent: [user]
       pinned: [user]
     notes:
-      - content: |
+      - created: "+1d 11:45"
+        content: |
           Briefed 12 congressional moderates on the climate proposal.
 
           **Their questions (translation in parentheses):**
@@ -631,7 +654,8 @@ activities:
     assignee_ref: user
     on: "+1d"
     notes:
-      - content: |
+      - created: "+1d 12:30"
+        content: |
           Need to update Stuart on US congressional support so he can use it to strengthen UK position internally.
 
           "US has congressional buy-in" is a powerful argument for UK Treasury to participate.
@@ -643,11 +667,12 @@ activities:
   - type: note
     priority_ref: active
     title: "White House preliminary feedback"
-    on: "+1d"
+    created: "+1d"
     tags:
       star: [user]
     notes:
-      - content: |
+      - created: "+1d 15:00"
+        content: |
           **From: Mara Tierney (Chief of Staff to SecState)**
 
           Kate,
@@ -673,7 +698,8 @@ activities:
     title: "Evening call with Hal - actual good news"
     at: "+1d 19:30 / +1d 20:00"
     notes:
-      - content: |
+      - created: "+1d 20:10"
+        content: |
           **Signal video call**
 
           Told Hal about the White House approval.
@@ -706,7 +732,8 @@ activities:
     title: "Stuart Hayford - update call"
     at: "+2d 09:00 / +2d 09:30"
     notes:
-      - content: |
+      - created: "+2d 09:40"
+        content: |
           **Video call with Stuart**
 
           Briefed him on congressional support and White House preliminary approval.
@@ -730,7 +757,8 @@ activities:
     title: "EU partner coordination - video conference"
     at: "+2d 14:00 / +2d 15:15"
     notes:
-      - content: |
+      - created: "+2d 15:30"
+        content: |
           **Video conference with EU partners (Veronica, Alouette, others)**
 
           Presented the final proposal. Emphasized EU co-leadership, shared governance, strategic partnership.
@@ -763,7 +791,8 @@ activities:
     tags:
       pinned: [user]
     notes:
-      - content: |
+      - created: "+2d 16:00"
+        content: |
           **Climate Finance Proposal - Advancement Timeline**
 
           **Week of Apr 21:**
@@ -798,10 +827,12 @@ activities:
     tags:
       todo: [user]
     notes:
-      - content: |
+      - created: "+2d 17:00"
+        content: |
           **@plot, draft a joint announcement statement for US-EU-UK climate partnership that emphasizes shared leadership and strategic infrastructure**
         ai_query: true
-      - content: |
+      - created: "+2d 17:00"
+        content: |
           **Plot AI Response:**
 
           **Draft Joint Announcement**
@@ -817,7 +848,8 @@ activities:
           GCRP will launch a pilot program in 2025, supporting climate resilience projects in three regions with proven economic and environmental benefits.
 
           [Additional quotes from EU and UK leadership]
-      - content: |
+      - created: "+2d 17:15"
+        content: |
           ---
 
           Good start. Will refine with State Department communications and coordinate with EU/UK messaging teams.
@@ -827,12 +859,13 @@ activities:
   - type: note
     priority_ref: household
     title: "Hal arrives Wednesday - dinner plans"
-    on: "+2d"
+    created: "+2d"
     tags:
       pinned: [user]
       star: [user]
     notes:
-      - content: |
+      - created: "+2d 18:00"
+        content: |
           **Signal - Hal**
 
           "Landing at Reagan Wednesday 3pm. Where should we have dinner?"
@@ -860,7 +893,8 @@ activities:
     at: "+3d 10:00 / +3d 11:00"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=TU"
     notes:
-      - content: |
+      - created: "+3d 11:15"
+        content: |
           Standing Tuesday meeting with immediate staff. Review active negotiations, upcoming travel, priority issues.
 
           This week's focus: Climate partnership advancement, upcoming EU meetings, congressional coordination.
@@ -873,7 +907,8 @@ activities:
       pinned: [user]
       star: [user]
     notes:
-      - content: |
+      - created: "+3d 22:00"
+        content: |
           Quiet restaurant. Good food. No phones on the table.
 
           Talked about everything except work (for the first hour, anyway). Then talked about work because we can't help it.
@@ -905,9 +940,10 @@ activities:
   - type: note
     priority_ref: policy
     title: "Reflection - how this works"
-    on: "+3d"
+    created: "+3d"
     notes:
-      - content: |
+      - created: "+3d 23:00"
+        content: |
           A year ago, someone said "we need a climate fund" and I thought "that's impossible."
 
           Not impossible. Just impossible with those words.
