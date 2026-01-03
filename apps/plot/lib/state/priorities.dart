@@ -34,7 +34,7 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
           completer.complete();
         }
       },
-      onError: (error, stackTrace) {
+      onError: (Object error, StackTrace? stackTrace) {
         log.severe('Error watching priorities', error, stackTrace);
         if (!completer.isCompleted) {
           completer.completeError(error, stackTrace);

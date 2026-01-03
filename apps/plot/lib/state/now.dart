@@ -44,7 +44,7 @@ class NowBloc extends Cubit<NowState> {
               completer.complete();
             }
           },
-          onError: (error, stackTrace) {
+          onError: (Object error, StackTrace? stackTrace) {
             if (!completer.isCompleted) {
               completer.completeError(error, stackTrace);
             }
