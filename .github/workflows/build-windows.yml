@@ -234,6 +234,28 @@ jobs:
           echo "MSIX uploaded successfully!"
           echo "Download URL: https://download.plot.day/${R2_PATH}"
 
+      - name: Upload MSIX to stable path
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          VERSIONED_MSIX="Plot-${{ steps.version.outputs.new_version }}.msix"
+          STABLE_PATH="windows"
+
+          # Configure wrangler with R2 credentials
+          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
+          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+
+          echo "Uploading $VERSIONED_MSIX to stable path: $STABLE_PATH"
+          wrangler r2 object put "${R2_BUCKET_NAME}/${STABLE_PATH}" \
+            --file="$VERSIONED_MSIX" \
+            --content-type="application/vnd.ms-appx" \
+            --content-disposition="attachment; filename=\"Plot.msix\"" \
+            --remote
+
+          echo "Stable MSIX uploaded successfully!"
+          echo "Stable URL: https://download.plot.day/${STABLE_PATH}"
+
       - name: Upload portable ZIP to R2
         shell: bash
         run: |
@@ -250,6 +272,28 @@ jobs:
 
           echo "ZIP uploaded successfully!"
           echo "Download URL: https://download.plot.day/${R2_PATH}"
+
+      - name: Upload ZIP to stable path
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          ZIP_FILE="Plot-${{ steps.version.outputs.new_version }}-portable.zip"
+          STABLE_PATH="windows-portable"
+
+          # Configure wrangler with R2 credentials
+          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
+          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+
+          echo "Uploading $ZIP_FILE to stable path: $STABLE_PATH"
+          wrangler r2 object put "${R2_BUCKET_NAME}/${STABLE_PATH}" \
+            --file="$ZIP_FILE" \
+            --content-type="application/zip" \
+            --content-disposition="attachment; filename=\"Plot-portable.zip\"" \
+            --remote
+
+          echo "Stable ZIP uploaded successfully!"
+          echo "Stable URL: https://download.plot.day/${STABLE_PATH}"
 
       - name: Create and upload version manifest
         shell: bash
@@ -395,7 +439,11 @@ jobs:
             echo "- MSIX: Plot-${{ steps.version.outputs.new_version }}.msix"
             echo "- Portable ZIP: Plot-${{ steps.version.outputs.new_version }}-portable.zip"
             echo ""
-            echo "### Download URLs"
+            echo "### Stable URLs (Latest Version)"
+            echo "- MSIX: https://download.plot.day/windows"
+            echo "- Portable ZIP: https://download.plot.day/windows-portable"
+            echo ""
+            echo "### Versioned URLs"
             echo "- MSIX: https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}.msix"
             echo "- ZIP: https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/windows/Plot-${{ steps.version.outputs.new_version }}-portable.zip"
             echo "- Manifest: https://download.plot.day/latest-windows.json"
