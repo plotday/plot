@@ -1,5 +1,16 @@
 # @plotday/twister
 
+## 0.26.0
+
+### Added
+
+- Note creation callback for new notes added to activities created by a twist ([`b0c756d`](https://github.com/plotday/plot/commit/b0c756ddd3b2f334f1a19248dbe9279b2777a5ec))
+- activity.update field in the Plot tool for seeing only what changed ([`b0c756d`](https://github.com/plotday/plot/commit/b0c756ddd3b2f334f1a19248dbe9279b2777a5ec))
+
+### Changed
+
+- BREAKING: Moved unread flag for new activity and notes into those items ([`c72a690`](https://github.com/plotday/plot/commit/c72a6902bf9798b666abc8d9cc652a18973920f1))
+
 ## 0.25.1
 
 ### Added
