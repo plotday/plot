@@ -16,9 +16,14 @@ class Window extends StatefulWidget {
   static late final EdgeInsetsGeometry toolbarPadding;
 
   static Future<void> init() async {
+    // Initialize cross-platform window manager on desktop platforms
     if (Platform.instance.isMacOS || Platform.instance.isWindows) {
-      // Initialize window manager
       await windowManager.ensureInitialized();
+      await _restoreWindowState();
+    }
+
+    // Initialize macOS-specific window styling
+    if (Platform.instance.isMacOS) {
       await WindowManipulator.initialize(enableWindowDelegate: false);
       await WindowManipulator.setMaterial(
         NSVisualEffectViewMaterial.windowBackground,
@@ -30,10 +35,7 @@ class Window extends StatefulWidget {
       await WindowManipulator.setToolbarStyle(
         toolbarStyle: NSWindowToolbarStyle.unifiedCompact,
       );
-      await _restoreWindowState();
-    }
 
-    if (Platform.instance.isMacOS) {
       toolbarHeight = await macos_win.WindowManipulator.getTitlebarHeight();
       final lastWindowButtonPos =
           await macos_win.WindowManipulator.getStandardWindowButtonPosition(
