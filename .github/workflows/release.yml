@@ -10,7 +10,7 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 # https://docs.npmjs.com/trusted-publishers
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   release:
