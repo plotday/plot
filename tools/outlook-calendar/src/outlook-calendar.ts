@@ -1,8 +1,8 @@
 import {
   type Activity,
-  type ActivityCommon,
   type ActivityLink,
   ActivityLinkType,
+  type ActivityUpdate,
   type ActorId,
   ConferencingProvider,
   type NewActivityWithNotes,
@@ -501,7 +501,11 @@ export class OutlookCalendar
               "event_callback_token"
             );
             if (callbackToken) {
-              await this.tools.callbacks.run(callbackToken, activityWithNotes, syncMeta);
+              await this.tools.callbacks.run(
+                callbackToken,
+                activityWithNotes,
+                syncMeta
+              );
             }
           } catch (error) {
             console.error(`Error processing event ${outlookEvent.id}:`, error);
@@ -606,20 +610,18 @@ export class OutlookCalendar
   }
 
   async onActivityUpdated(
-    activity: ActivityCommon,
-    changes?: {
-      previous: ActivityCommon;
+    activity: Activity,
+    changes: {
+      update: ActivityUpdate;
+      previous: Activity;
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
     }
   ): Promise<void> {
-    if (!changes) return;
-    // Cast to Activity to access Activity-specific fields
-    const activityFull = activity as Activity;
     // Only process calendar events
     if (
-      !activityFull.meta?.source ||
-      !activityFull.meta.source.startsWith("outlook-calendar:")
+      !activity.meta?.source ||
+      !activity.meta.source.startsWith("outlook-calendar:")
     ) {
       return;
     }
@@ -681,8 +683,8 @@ export class OutlookCalendar
     }
 
     // Extract calendar info from metadata
-    const eventId = activityFull.meta.id;
-    const calendarId = activityFull.meta.calendarId;
+    const eventId = activity.meta.id;
+    const calendarId = activity.meta.calendarId;
 
     if (!eventId || !calendarId) {
       console.warn("Missing event or calendar ID in activity metadata");

@@ -110,11 +110,12 @@ export abstract class Plot extends ITool {
        * This is often used to implement two-way sync with an external system.
        *
        * @param activity - The updated activity
-       * @param changes - Optional changes object containing the previous version and tag modifications
+       * @param changes - Changes to the activity and the previous version
        */
       updated?: (
         activity: Activity,
         changes: {
+          update: ActivityUpdate;
           previous: Activity;
           tagsAdded: Record<Tag, ActorId[]>;
           tagsRemoved: Record<Tag, ActorId[]>;
@@ -142,6 +143,17 @@ export abstract class Plot extends ITool {
        * ```
        */
       intents?: NoteIntentHandler[];
+      /**
+       * Called when a note is created on an activity created by this twist.
+       * This is often used to implement two-way sync with an external system,
+       * such as syncing notes as comments back to the source system.
+       *
+       * Notes created by the twist itself are automatically filtered out to prevent loops.
+       * The parent activity is available via note.activity.
+       *
+       * @param note - The newly created note
+       */
+      created?: (note: Note) => Promise<void>;
     };
     priority?: {
       access?: PriorityAccess;
@@ -282,7 +294,10 @@ export abstract class Plot extends ITool {
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createNote(note: NewNote, options?: CreateNoteOptions): Promise<Note>;
+  abstract createNote(
+    note: NewNote,
+    options?: CreateNoteOptions
+  ): Promise<Note>;
 
   /**
    * Creates multiple notes in a single batch operation.

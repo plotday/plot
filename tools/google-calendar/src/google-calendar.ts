@@ -1,8 +1,9 @@
+import GoogleContacts from "@plotday/tool-google-contacts";
 import {
   type Activity,
-  type ActivityCommon,
   type ActivityLink,
   ActivityLinkType,
+  ActivityUpdate,
   type ActorId,
   ConferencingProvider,
   type NewActivityWithNotes,
@@ -30,7 +31,6 @@ import {
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
-import GoogleContacts from "@plotday/tool-google-contacts";
 
 import {
   GoogleApi,
@@ -143,10 +143,7 @@ export class GoogleCalendar
     console.log("Requesting Google Calendar auth");
 
     // Combine calendar and contacts scopes for single OAuth flow
-    const combinedScopes = [
-      ...GoogleCalendar.SCOPES,
-      ...GoogleContacts.SCOPES,
-    ];
+    const combinedScopes = [...GoogleCalendar.SCOPES, ...GoogleContacts.SCOPES];
 
     // Generate opaque token for authorization
     const authToken = crypto.randomUUID();
@@ -491,8 +488,7 @@ export class GoogleCalendar
               tags = {};
               if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
               if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
-              if (undecidedTags.length > 0)
-                tags[Tag.Undecided] = undecidedTags;
+              if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
             }
           }
 
@@ -765,20 +761,18 @@ export class GoogleCalendar
   }
 
   async onActivityUpdated(
-    activity: ActivityCommon,
-    changes?: {
-      previous: ActivityCommon;
+    activity: Activity,
+    changes: {
+      update: ActivityUpdate;
+      previous: Activity;
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
     }
   ): Promise<void> {
-    if (!changes) return;
-    // Cast to Activity to access Activity-specific fields
-    const activityFull = activity as Activity;
     // Only process calendar events
     if (
-      !activityFull.meta?.source ||
-      !activityFull.meta.source.startsWith("google-calendar:")
+      !activity.meta?.source ||
+      !activity.meta.source.startsWith("google-calendar:")
     ) {
       return;
     }
@@ -840,8 +834,8 @@ export class GoogleCalendar
     }
 
     // Extract calendar info from metadata
-    const eventId = activityFull.meta.id;
-    const calendarId = activityFull.meta.calendarId;
+    const eventId = activity.meta.id;
+    const calendarId = activity.meta.calendarId;
 
     if (!eventId || !calendarId) {
       console.warn("Missing event or calendar ID in activity metadata");

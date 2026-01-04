@@ -340,6 +340,66 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   }
 
   /**
+   * Update task with new values
+   *
+   * @param authToken - Authorization token
+   * @param update - ActivityUpdate with changed fields
+   */
+  async updateIssue(
+    authToken: string,
+    update: import("@plotday/twister").ActivityUpdate
+  ): Promise<void> {
+    // Extract Asana task GID from source
+    const taskGid = update.source?.split(":").pop();
+    if (!taskGid) {
+      throw new Error("Invalid source format for Asana task");
+    }
+
+    const client = await this.getClient(authToken);
+    const updateFields: any = {};
+
+    // Handle title
+    if (update.title !== undefined) {
+      updateFields.name = update.title;
+    }
+
+    // Handle assignee
+    if (update.assignee !== undefined) {
+      updateFields.assignee = update.assignee?.id || null;
+    }
+
+    // Handle completion status based on doneAt
+    // Asana only has completed boolean (no In Progress state)
+    if (update.doneAt !== undefined) {
+      updateFields.completed = update.doneAt !== null;
+    }
+
+    // Apply updates if any fields changed
+    if (Object.keys(updateFields).length > 0) {
+      await client.tasks.updateTask(taskGid, updateFields);
+    }
+  }
+
+  /**
+   * Add a comment (story) to an Asana task
+   *
+   * @param authToken - Authorization token
+   * @param issueId - Asana task GID
+   * @param body - Comment text (markdown not directly supported, plain text)
+   */
+  async addIssueComment(
+    authToken: string,
+    issueId: string,
+    body: string
+  ): Promise<void> {
+    const client = await this.getClient(authToken);
+
+    await client.tasks.addComment(issueId, {
+      text: body,
+    });
+  }
+
+  /**
    * Verify Asana webhook signature
    * Asana uses HMAC-SHA256 with a shared secret
    */

@@ -392,6 +392,146 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   }
 
   /**
+   * Update issue with new values
+   *
+   * @param authToken - Authorization token
+   * @param update - ActivityUpdate with changed fields
+   */
+  async updateIssue(
+    authToken: string,
+    update: import("@plotday/twister").ActivityUpdate
+  ): Promise<void> {
+    // Extract Jira issue key from source
+    const issueKey = update.source?.split(":").pop();
+    if (!issueKey) {
+      throw new Error("Invalid source format for Jira issue");
+    }
+
+    const client = await this.getClient(authToken);
+
+    // Handle field updates (title, assignee)
+    const updateFields: any = {};
+
+    if (update.title !== undefined) {
+      updateFields.summary = update.title;
+    }
+
+    if (update.assignee !== undefined) {
+      updateFields.assignee = update.assignee
+        ? { id: update.assignee.id }
+        : null;
+    }
+
+    // Apply field updates if any
+    if (Object.keys(updateFields).length > 0) {
+      await client.issues.editIssue({
+        issueIdOrKey: issueKey,
+        fields: updateFields,
+      });
+    }
+
+    // Handle workflow state transitions based on start + doneAt combination
+    if (update.start !== undefined || update.doneAt !== undefined) {
+      // Get available transitions for this issue
+      const transitions = await client.issues.getTransitions({
+        issueIdOrKey: issueKey,
+      });
+
+      let targetTransition;
+
+      // Determine target state based on combination
+      if (update.doneAt !== undefined && update.doneAt !== null) {
+        // Completed - look for "Done", "Close", or "Resolve" transition
+        targetTransition = transitions.transitions?.find(
+          (t) =>
+            t.name?.toLowerCase() === "done" ||
+            t.name?.toLowerCase() === "close" ||
+            t.name?.toLowerCase() === "resolve" ||
+            t.to?.name?.toLowerCase() === "done" ||
+            t.to?.name?.toLowerCase() === "closed" ||
+            t.to?.name?.toLowerCase() === "resolved"
+        );
+      } else if (update.start !== undefined && update.start !== null) {
+        // In Progress - look for "Start Progress" or "In Progress" transition
+        targetTransition = transitions.transitions?.find(
+          (t) =>
+            t.name?.toLowerCase() === "start progress" ||
+            t.name?.toLowerCase() === "in progress" ||
+            t.to?.name?.toLowerCase() === "in progress"
+        );
+      } else if (
+        (update.start !== undefined && update.start === null) ||
+        (update.doneAt !== undefined && update.doneAt === null)
+      ) {
+        // Backlog/Todo - look for "To Do", "Open", or "Reopen" transition
+        targetTransition = transitions.transitions?.find(
+          (t) =>
+            t.name?.toLowerCase() === "reopen" ||
+            t.name?.toLowerCase() === "to do" ||
+            t.name?.toLowerCase() === "open" ||
+            t.to?.name?.toLowerCase() === "to do" ||
+            t.to?.name?.toLowerCase() === "open"
+        );
+      }
+
+      // Execute transition if found
+      if (targetTransition) {
+        await client.issues.doTransition({
+          issueIdOrKey: issueKey,
+          transition: {
+            id: targetTransition.id!,
+          },
+        });
+      }
+    }
+  }
+
+  /**
+   * Add a comment to a Jira issue
+   *
+   * @param authToken - Authorization token
+   * @param issueKey - Jira issue key (e.g., "PROJ-123")
+   * @param body - Comment text (converted to ADF format)
+   */
+  async addIssueComment(
+    authToken: string,
+    issueKey: string,
+    body: string
+  ): Promise<void> {
+    const client = await this.getClient(authToken);
+
+    // Convert plain text to Atlassian Document Format (ADF)
+    const adfBody = this.convertTextToADF(body);
+
+    await client.issueComments.addComment({
+      issueIdOrKey: issueKey,
+      comment: adfBody,
+    });
+  }
+
+  /**
+   * Convert plain text to Atlassian Document Format (ADF)
+   */
+  private convertTextToADF(text: string): any {
+    // Split text into paragraphs
+    const paragraphs = text.split("\n\n").filter((p) => p.trim());
+
+    return {
+      version: 1,
+      type: "doc",
+      content: paragraphs.map((paragraph) => ({
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: paragraph.trim(),
+          },
+        ],
+      })),
+    };
+  }
+
+  /**
    * Handle incoming webhook events from Jira
    */
   private async onWebhook(

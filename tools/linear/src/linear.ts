@@ -353,6 +353,102 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
+   * Update issue with new values
+   *
+   * @param authToken - Authorization token
+   * @param update - ActivityUpdate with changed fields
+   */
+  async updateIssue(
+    authToken: string,
+    update: import("@plotday/twister").ActivityUpdate
+  ): Promise<void> {
+    // Extract Linear issue ID from source
+    const issueId = update.source?.split(":").pop();
+    if (!issueId) {
+      throw new Error("Invalid source format for Linear issue");
+    }
+
+    const client = await this.getClient(authToken);
+    const issue = await client.issue(issueId);
+    const updateFields: any = {};
+
+    // Handle title
+    if (update.title !== undefined) {
+      updateFields.title = update.title;
+    }
+
+    // Handle assignee
+    if (update.assignee !== undefined) {
+      updateFields.assigneeId = update.assignee?.id || null;
+    }
+
+    // Handle state based on start + doneAt combination
+    if (update.start !== undefined || update.doneAt !== undefined) {
+      const team = await issue.team;
+      if (team) {
+        const states = await team.states();
+        let targetState;
+
+        // Determine target state based on combination
+        if (update.doneAt !== undefined && update.doneAt !== null) {
+          // Completed
+          targetState = states.nodes.find(
+            (s) =>
+              s.name === "Done" ||
+              s.name === "Completed" ||
+              s.type === "completed"
+          );
+        } else if (update.start !== undefined && update.start !== null) {
+          // In Progress (has start date, not done)
+          targetState = states.nodes.find(
+            (s) => s.name === "In Progress" || s.type === "started"
+          );
+        } else if (
+          (update.start !== undefined && update.start === null) ||
+          (update.doneAt !== undefined && update.doneAt === null)
+        ) {
+          // Backlog/Todo (no start date, not done)
+          targetState = states.nodes.find(
+            (s) =>
+              s.name === "Todo" ||
+              s.name === "Backlog" ||
+              s.type === "unstarted"
+          );
+        }
+
+        if (targetState) {
+          updateFields.stateId = targetState.id;
+        }
+      }
+    }
+
+    // Apply updates if any fields changed
+    if (Object.keys(updateFields).length > 0) {
+      await client.updateIssue(issueId, updateFields);
+    }
+  }
+
+  /**
+   * Add a comment to a Linear issue
+   *
+   * @param authToken - Authorization token
+   * @param issueId - Linear issue ID
+   * @param body - Comment text (markdown supported)
+   */
+  async addIssueComment(
+    authToken: string,
+    issueId: string,
+    body: string
+  ): Promise<void> {
+    const client = await this.getClient(authToken);
+
+    await client.createComment({
+      issueId,
+      body,
+    });
+  }
+
+  /**
    * Verify Linear webhook signature
    * Linear uses HMAC-SHA256 with the webhook secret
    */

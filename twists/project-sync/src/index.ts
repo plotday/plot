@@ -5,12 +5,18 @@ import {
   type Activity,
   ActivityLinkType,
   ActivityType,
+  ActivityUpdate,
+  ActorType,
   type NewActivityWithNotes,
+  type Note,
   type Priority,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import type { ProjectAuth, ProjectTool } from "@plotday/twister/common/projects";
+import type {
+  ProjectAuth,
+  ProjectTool,
+} from "@plotday/twister/common/projects";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
 
 type ProjectProvider = "linear" | "jira" | "asana";
@@ -32,7 +38,15 @@ export default class ProjectSync extends Twist<ProjectSync> {
       linear: build(Linear),
       jira: build(Jira),
       asana: build(Asana),
-      plot: build(Plot, { activity: { access: ActivityAccess.Create } }),
+      plot: build(Plot, {
+        activity: {
+          access: ActivityAccess.Create,
+          updated: this.onActivityUpdated,
+        },
+        note: {
+          created: this.onNoteCreated,
+        },
+      }),
     };
   }
 
@@ -55,7 +69,9 @@ export default class ProjectSync extends Twist<ProjectSync> {
   /**
    * Get stored auth for a provider
    */
-  private async getAuthToken(provider: ProjectProvider): Promise<string | null> {
+  private async getAuthToken(
+    provider: ProjectProvider
+  ): Promise<string | null> {
     const auths = await this.getStoredAuths();
     const auth = auths.find((a) => a.provider === provider);
     return auth?.authToken || null;
@@ -140,9 +156,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
     const projects = await tool.getProjects(auth.authToken);
 
     if (projects.length === 0) {
-      await this.updateOnboardingActivity(
-        `No ${provider} projects found.`
-      );
+      await this.updateOnboardingActivity(`No ${provider} projects found.`);
       return;
     }
 
@@ -154,9 +168,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
     }> = await Promise.all(
       projects.map(async (project) => ({
         type: ActivityLinkType.callback as const,
-        title: project.key
-          ? `${project.key}: ${project.name}`
-          : project.name,
+        title: project.key ? `${project.key}: ${project.name}` : project.name,
         callback: await this.callback(
           this.onProjectSelected,
           provider,
@@ -261,6 +273,134 @@ export default class ProjectSync extends Twist<ProjectSync> {
     await this.tools.plot.createActivity(issue, {
       unread: !syncMeta.initialSync,
     });
+  }
+
+  /**
+   * Parse source field to extract provider and issue information
+   * Format: "{provider}:issue:{projectId}:{issueId}"
+   * Examples:
+   *   - "linear:issue:team-abc:issue-123"
+   *   - "asana:task:proj-456:task-789"
+   *   - "jira:issue:PROJ:PROJ-42"
+   */
+  private parseSource(source: string): {
+    provider: ProjectProvider;
+    projectId: string;
+    issueId: string;
+  } | null {
+    const parts = source.split(":");
+    if (parts.length !== 4) return null;
+
+    const [provider, type, projectId, issueId] = parts;
+
+    // Validate provider
+    if (!["linear", "jira", "asana"].includes(provider)) {
+      return null;
+    }
+
+    // Validate type
+    if (!["issue", "task"].includes(type)) {
+      return null;
+    }
+
+    return {
+      provider: provider as ProjectProvider,
+      projectId,
+      issueId,
+    };
+  }
+
+  /**
+   * Called when an activity created by this twist is updated
+   * Syncs changes back to the external service
+   */
+  private async onActivityUpdated(
+    _activity: Activity,
+    changes: {
+      update: ActivityUpdate;
+      previous: Activity;
+      tagsAdded: Record<string, string[]>;
+      tagsRemoved: Record<string, string[]>;
+    }
+  ): Promise<void> {
+    // Only sync activities with a source (synced from external services)
+    if (!changes.update.source) return;
+
+    const parsed = this.parseSource(changes.update.source);
+    if (!parsed) return;
+
+    const { provider } = parsed;
+
+    // Get auth token for this provider
+    const authToken = await this.getAuthToken(provider);
+    if (!authToken) {
+      console.warn(`No auth token found for ${provider}, skipping sync`);
+      return;
+    }
+
+    const tool = this.getProviderTool(provider);
+
+    try {
+      // Sync all changes using the generic updateIssue method
+      if (tool.updateIssue) {
+        await tool.updateIssue(authToken, changes.update);
+        console.log(
+          `Synced activity update to ${provider} issue from source ${changes.update.source}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Failed to sync activity update to ${provider} issue ${changes.update.source}:`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Called when a note is created on an activity created by this twist
+   * Syncs the note as a comment to the external service
+   */
+  private async onNoteCreated(note: Note): Promise<void> {
+    // Get parent activity from note
+    const activity = note.activity;
+
+    // Only sync activities with a source (synced from external services)
+    if (!activity.source) return;
+
+    // Filter out notes created by twists
+    if (note.author.type === ActorType.Twist) {
+      return;
+    }
+
+    const parsed = this.parseSource(activity.source);
+    if (!parsed) return;
+
+    const { provider, issueId } = parsed;
+
+    // Get auth token for this provider
+    const authToken = await this.getAuthToken(provider);
+    if (!authToken) {
+      console.warn(`No auth token found for ${provider}, skipping sync`);
+      return;
+    }
+
+    const tool = this.getProviderTool(provider);
+
+    // Only sync if note has content
+    if (!note.content) return;
+
+    try {
+      // Sync note as comment
+      if (tool.addIssueComment) {
+        await tool.addIssueComment(authToken, issueId, note.content);
+        console.log(`Synced note to ${provider} issue ${issueId}`);
+      }
+    } catch (error) {
+      console.error(
+        `Failed to sync note to ${provider} issue ${issueId}:`,
+        error
+      );
+    }
   }
 
   /**

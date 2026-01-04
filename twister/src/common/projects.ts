@@ -1,4 +1,8 @@
-import type { ActivityLink, NewActivityWithNotes } from "../index";
+import type {
+  ActivityLink,
+  ActivityUpdate,
+  NewActivityWithNotes,
+} from "../index";
 
 /**
  * Represents a successful project management service authorization.
@@ -117,4 +121,39 @@ export interface ProjectTool {
    * @returns Promise that resolves when sync is stopped
    */
   stopSync(authToken: string, projectId: string): Promise<void>;
+
+  /**
+   * Updates an issue/task with new values.
+   *
+   * Optional method for bidirectional sync. When implemented, allows Plot to
+   * sync activity updates back to the external service.
+   *
+   * The update object contains only the fields that changed, plus id and source.
+   * Uses the combination of start and doneAt to determine workflow state:
+   * - doneAt set → Completed/Done state
+   * - doneAt null + start set → In Progress/Active state
+   * - doneAt null + start null → Backlog/Todo state
+   *
+   * @param authToken - Authorization token for access
+   * @param update - ActivityUpdate with changed fields (includes id and source)
+   * @returns Promise that resolves when the update is synced
+   */
+  updateIssue?(authToken: string, update: ActivityUpdate): Promise<void>;
+
+  /**
+   * Adds a comment to an issue/task.
+   *
+   * Optional method for bidirectional sync. When implemented, allows Plot to
+   * sync notes added to activities back as comments on the external service.
+   *
+   * @param authToken - Authorization token for access
+   * @param issueId - ID or key of the issue/task to comment on
+   * @param body - The comment text content
+   * @returns Promise that resolves when the comment is added
+   */
+  addIssueComment?(
+    authToken: string,
+    issueId: string,
+    body: string
+  ): Promise<void>;
 }
