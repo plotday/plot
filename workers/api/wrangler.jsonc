@@ -272,7 +272,13 @@
   },
   "observability": {
     "logs": {
-      "enabled": true
+      "enabled": true,
+      "destinations": ["posthog-logs"]
+    },
+    "traces": {
+      "enabled": true,
+      "destinations": ["posthog-logs"],
+      "head_sampling_rate": 0.1
     }
   }
 }
