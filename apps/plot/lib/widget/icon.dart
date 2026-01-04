@@ -40,7 +40,9 @@ class PlotIcon {
 
   // Tags
   static const now = FontAwesomeIcons.circlePlay;
+  static const inbox = FontAwesomeIcons.inbox;
   static const todo = FontAwesomeIcons.inbox;
+  static const rainbow = FontAwesomeIcons.rainbow;
   static const later = FontAwesomeIcons.clock;
   static const done = FontAwesomeIcons.check;
   static const pinned = FontAwesomeIcons.thumbtackAngle;

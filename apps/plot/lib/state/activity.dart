@@ -91,7 +91,7 @@ class ActivityBloc extends Cubit<ActivityState> {
       tags,
     ) {
       // Calculate tag suggestions: common tags first, then all other tags
-      const actionTags = [Tag.now, Tag.done, Tag.later, Tag.archived];
+      const actionTags = [Tag.now, Tag.done, Tag.later, Tag.someday, Tag.archived];
 
       // Common tags (excluding action tags)
       final commonTagsFiltered = tags

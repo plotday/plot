@@ -74,7 +74,7 @@ class ActivityWidget extends StatelessWidget {
               padding: const .only(left: 8.5),
               child: Button.icon(
                 primaryActivityCommand(activity),
-                selected: activity.doNow || now,
+                selected: activity.doNow,
                 selectedColor: activityColor,
                 forceHover: isHovered,
               ),
@@ -189,12 +189,19 @@ class ActivityCommands extends HookWidget {
     // Exclude Tag.done for done activities since it's shown as leading icon
     final activityTags = useMemoized(
       () => Tag.getAll(onlyAddable: true)
-          .where((tag) => activity.hasTag(tag))
-          .where((tag) => !(tag == Tag.now && activity.doNow))
-          .where((tag) => !(tag == Tag.later && activity.doLater))
-          .where((tag) => !(tag == Tag.done && activity.done))
+          .where(
+            (tag) =>
+                activity.hasTag(tag) &&
+                ![Tag.now, Tag.later, Tag.someday, Tag.done].contains(tag),
+          )
           .toList(),
-      [activity.tags, activity.doNow, activity.doLater, activity.done],
+      [
+        activity.tags,
+        activity.doNow,
+        activity.doLater,
+        activity.doSomeday,
+        activity.done,
+      ],
     );
 
     // Create futures to load actor names for tooltips - memoized to avoid recreating on every build
@@ -230,7 +237,7 @@ class ActivityCommands extends HookWidget {
         ? [
             ...activityCommands(
               activity,
-              skipActive: true,
+              skipInfrequent: true,
               skipPrimary: true, // Exclude primary command from trailing
             ).map((cmd) => Button.icon(cmd)),
             // Add top tag buttons

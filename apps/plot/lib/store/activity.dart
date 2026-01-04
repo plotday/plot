@@ -566,7 +566,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (fromDate == null) {
       return Stream.value(null);
     }
-    final startDate = fromDate.addDays(1);
+    final startDate = fromDate;
     final range = CustomDateRange(startDate, null) as DateRange;
 
     return _getQuery(
@@ -1388,6 +1388,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   ActorId? get assigneeId => _activity.assigneeId;
   ActivityType get type => _activity.type;
   DateTime? get doneAt => _exception?.doneAt ?? _activity.doneAt;
+  DateTime? get lastNoteCreatedAt => _activity.lastNoteCreatedAt;
   RecurrenceRule? get recurrenceRule => _activity.recurrenceRule;
   List<DateTime>? get recurrenceExdates => _activity.recurrenceExdates;
   List<DateTime>? get recurrenceDates => _activity.recurrenceDates;
@@ -1455,20 +1456,19 @@ class Activity extends Equatable implements Comparable<Activity> {
       at?.duration;
 
   DateTime get agendaAt {
-    // For non-todo activities (notes), use GREATEST(createdAt, doneAt, lastNoteCreatedAt)
-    if (type == ActivityType.note) {
-      final times = [
-        createdAt,
-        if (doneAt != null) doneAt!,
-        if (_activity.lastNoteCreatedAt != null) _activity.lastNoteCreatedAt!,
-      ];
+    // For events, return the end time
+    if (type == .event && at?.start != null) {
+      return at!.start!;
+    }
+
+    // For unscheduled activities, use GREATEST(createdAt, doneAt, lastNoteCreatedAt)
+    if ((on == null && at == null) || doneAt != null) {
+      final times = [createdAt, ?doneAt, ?_activity.lastNoteCreatedAt];
       times.sort((a, b) => b.compareTo(a)); // Sort descending
       return times.first; // Return the greatest (most recent)
     }
 
-    // For todos and events, use the existing logic
-    return doneAt ??
-        (doNow ? DateTime.now() : null) ??
+    return (doNow ? DateTime.now() : null) ??
         at?.start ??
         on?.start?.toDateTime() ??
         createdAt;
@@ -1476,11 +1476,15 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   bool get doNow => todo && at?.includes(DateTime.now()) == true;
   bool get doLater => todo && at?.start?.isAfter(DateTime.now()) == true;
-  bool get todo => type == ActivityType.action && !done;
+  bool get doSomeday => type == .action && on == null && at == null;
+  bool get todo => type == ActivityType.action && (on ?? at) != null && !done;
   bool get done => doneAt != null;
   bool get isPast =>
       at?.end?.isBefore(Time.now()) == true ||
       on?.end?.isBefore(Date.today()) == true;
+  bool get isFuture =>
+      at?.start?.isAfter(Time.now()) == true ||
+      on?.start?.isAfter(Date.today()) == true;
 
   String? get occurrence => _exception?.occurrence;
 
@@ -1488,8 +1492,8 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (done) return PlotIcon.done;
     if (doNow) return PlotIcon.now;
     if (doLater) return PlotIcon.later;
+    if (doSomeday) return PlotIcon.rainbow;
     if (type == ActivityType.event) return PlotIcon.event;
-    if (type == ActivityType.action) return PlotIcon.todo;
     return PlotIcon.note;
   }
 
@@ -1530,19 +1534,10 @@ class Activity extends Equatable implements Comparable<Activity> {
     final now = DateTime.now();
 
     // on and at are mutually exclusive
-    if (at.present) {
+    if (at.notNull) {
       on = Value(null);
-    } else if (on.present && this.at != null) {
+    } else if (on.notNull && this.at != null) {
       at = Value(null);
-    }
-
-    // If an action is incomplete and unscheduled, convert it to a note
-    if (this.type == .action &&
-        type != .event &&
-        at.or(this.at) == null &&
-        on.or(this.on) == null &&
-        doneAt.or(this.doneAt) == null) {
-      type = .note;
     }
 
     // Ensure assigneeId is set when converting to action type
@@ -2110,21 +2105,15 @@ class Activity extends Equatable implements Comparable<Activity> {
   }
 
   DateTime _getSortTime() {
-    switch (type) {
-      case ActivityType.note:
-        // For notes, use GREATEST(createdAt, doneAt, lastNoteCreatedAt)
-        final times = [
-          createdAt,
-          if (doneAt != null) doneAt!,
-          if (_activity.lastNoteCreatedAt != null) _activity.lastNoteCreatedAt!,
-        ];
-        times.sort((a, b) => b.compareTo(a)); // Sort descending
-        return times.first; // Return the greatest (most recent)
-      case ActivityType.action:
-        return (doneAt ?? at?.start ?? on?.start?.toDateTime())!;
-      case ActivityType.event:
-        return (at?.start ?? on?.start?.toDateTime())!;
-    }
+    final time = switch (type) {
+      ActivityType.action => doneAt ?? at?.start ?? on?.start?.toDateTime(),
+      ActivityType.event => at?.start ?? on?.start?.toDateTime(),
+      _ => null,
+    };
+    return time ??
+        [createdAt, ?doneAt, ?_activity.lastNoteCreatedAt]
+            .whereType<DateTime>()
+            .reduce((a, b) => a.isAfter(b) ? a : b); // Descending
   }
 
   @override

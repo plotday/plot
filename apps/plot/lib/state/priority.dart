@@ -420,15 +420,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     _tagsSubscription?.cancel();
     _tagsSubscription = Activity.watchTagsForPriority(priorityToLoad.path)
         .listen((tags) {
-          // Calculate tag suggestions: common tags first, then all other tags
-          const actionTags = [Tag.now, Tag.done, Tag.later, Tag.archived];
-
           // Common tags (excluding action tags)
           final commonTagsFiltered = tags
-              .where(
-                (tagData) =>
-                    !actionTags.contains(tagData.$1) && tagData.$1.addable,
-              )
+              .where((tagData) => tagData.$1.type != .compute)
               .map((tagData) => tagData.$1)
               .toList();
 
@@ -436,8 +430,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           final commonTagSet = commonTagsFiltered.toSet();
           final otherTags = Tag.getAll(onlyAddable: true)
               .where(
-                (tag) =>
-                    !actionTags.contains(tag) && !commonTagSet.contains(tag),
+                (tag) => tag.type != .compute && !commonTagSet.contains(tag),
               )
               .toList();
 

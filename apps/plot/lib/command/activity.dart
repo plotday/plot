@@ -483,7 +483,7 @@ class ToggleAction extends _UpdateActivityCommand {
 class StartAction extends _UpdateActivityCommand {
   StartAction(super.activity, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'Start Action',
+        title: 'Do Now',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon ? activity.icon : PlotIcon.now,
@@ -547,6 +547,7 @@ class ScheduleAction extends _UpdateActivityCommand {
         type: ActivityType.action,
         on: Value(CustomDateRange(when, null)),
         at: const Value(null), // Clear any existing datetime scheduling
+        doneAt: const Value(null), // Mark as not done if previously done
       ),
     );
     return const CommandDone();
@@ -630,10 +631,32 @@ class UnscheduleEvent extends _UpdateActivityCommand {
   }
 }
 
+class UnscheduleAction extends _UpdateActivityCommand {
+  UnscheduleAction(super.activity, {super.onUpdate})
+    : super(
+        title: 'Do Someday',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.unscheduled,
+        icon: PlotIcon.rainbow,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await onUpdate(
+      activity.copyWith(
+        type: .action,
+        on: const Value(null),
+        at: const Value(null),
+      ),
+    );
+    return const CommandDone();
+  }
+}
+
 class PickScheduleActivity extends ShowPage {
   PickScheduleActivity(Activity activity)
     : super(
-        title: activity.doLater ? 'Reschedule Action' : 'Schedule Action',
+        title: activity.doLater ? 'Reschedule' : 'Schedule to Do Later',
         icon: PlotIcon.later,
         builder: (context) => SingleChildScrollView(
           child: Column(
@@ -688,7 +711,7 @@ class PickScheduleActivity extends ShowPage {
 class ActivityToNote extends _UpdateActivityCommand {
   ActivityToNote(super.activity, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: activity.done ? 'Mark Not Done' : 'Convert to Note',
+        title: 'Convert to Note',
         eventObject: EventObject.activity,
         eventAction: EventAction.updated,
         icon: stateIcon ? activity.icon : PlotIcon.note,
@@ -1002,47 +1025,28 @@ List<StaticCommandGroup> activityCommandGroups(
 List<Command> activityCommands(
   Activity activity, {
   bool open = false,
-  bool skipActive = false,
+  bool skipInfrequent = false,
   bool skipPrimary = false,
 }) {
-  // Determine if each command is primary
-  final isFinishPrimary = activity.doNow;
-  final isSchedulePrimary = activity.doLater;
-  final isStartPrimary =
-      activity.type == ActivityType.note ||
-      (activity.todo && !activity.doNow && !activity.doLater);
-  final isReschedulePrimary = activity.type == ActivityType.event;
-  final isToNotePrimary = activity.done;
-
+  final primary = skipPrimary
+      ? null
+      : primaryActivityCommand(activity, stateIcon: false);
   return [
     if (open) ChangeCurrentActivity(activity),
-    // RescheduleEvent - primary when type==event
-    if (activity.type == ActivityType.event &&
-        !(skipPrimary && isReschedulePrimary))
-      RescheduleEvent(activity, stateIcon: true),
-    // FinishAction with stateIcon - primary when doNow
-    if (activity.type != ActivityType.event &&
-        activity.doNow &&
-        !skipActive &&
-        !(skipPrimary && isFinishPrimary))
-      FinishAction(activity, stateIcon: true),
-    // ActivityToNote - primary when done
-    if (activity.done && !(skipPrimary && isToNotePrimary))
-      ActivityToNote(activity, stateIcon: true),
-    // ToggleAction - primary when type==note or unscheduled action
-    if (activity.type != ActivityType.event &&
-        !activity.todo &&
-        !(skipPrimary && isStartPrimary))
-      ToggleAction(activity),
-    // PickScheduleActivity - primary when doLater
-    if (activity.type != ActivityType.event &&
-        !(skipPrimary && isSchedulePrimary))
+    ?primary,
+    if (activity.type != .event && !activity.doNow && primary is! StartAction)
+      StartAction(activity),
+    if (activity.type != .event && primary is! PickScheduleActivity)
       PickScheduleActivity(activity),
-    // FinishAction for non-doNow activities
-    if (activity.type != ActivityType.event && !activity.doNow)
-      FinishAction(activity, stateIcon: true),
+    if (activity.type != .event &&
+        !activity.doSomeday &&
+        primary is! UnscheduleAction)
+      UnscheduleAction(activity),
+    if (activity.type != .event && !activity.done && primary is! FinishAction)
+      FinishAction(activity),
     MoveActivityToPriority(activity),
-    if (!skipActive) ArchiveActivity(activity),
+    if (activity.type != .note && !skipInfrequent) ActivityToNote(activity),
+    if (!skipInfrequent) ArchiveActivity(activity),
   ];
 }
 
@@ -1071,18 +1075,18 @@ List<Command> topActivityTags(Activity activity, List<Tag> tagSuggestions) {
 /// This is shown as the leading command in ActivityWidget and as the primary action in ActivityPage header.
 /// Use `selected: true` on the button when activity.doNow.
 Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
-  if (activity.type == ActivityType.note) {
-    return ToggleAction(activity, stateIcon: stateIcon);
+  if (activity.type == ActivityType.note ||
+      activity.doSomeday ||
+      activity.done) {
+    return StartAction(activity, stateIcon: stateIcon);
   } else if (activity.type == ActivityType.event) {
     return RescheduleEvent(activity, stateIcon: stateIcon);
   } else if (activity.doNow) {
     return FinishAction(activity, stateIcon: stateIcon);
   } else if (activity.doLater) {
     return PickScheduleActivity(activity);
-  } else if (activity.done) {
-    return ActivityToNote(activity, stateIcon: stateIcon);
   } else {
     // Fallback for actions that are not scheduled and not done
-    return ToggleAction(activity, stateIcon: stateIcon);
+    return StartAction(activity, stateIcon: stateIcon);
   }
 }

@@ -21,6 +21,7 @@ import 'sliver.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
 import 'editor_mention_popover.dart';
+import 'task_component.dart';
 import 'logging.dart';
 
 /// Information about a mention extracted from markdown
@@ -504,7 +505,7 @@ class EditorState extends State<Editor> {
                       context,
                     ).copyWith(color: context.theme.plotColors.muted),
                   ),
-                TaskComponentBuilder(_editor),
+                PlotTaskComponentBuilder(_editor),
                 ...defaultComponentBuilders,
               ],
               keyboardActions: [
@@ -981,6 +982,14 @@ class ViewerState extends State<Viewer> {
         selectionStyle: SelectionStyles(
           selectionColor: context.theme.colors.primaryForeground,
         ),
+        componentBuilders: <ComponentBuilder>[
+          const BlockquoteComponentBuilder(),
+          const ParagraphComponentBuilder(),
+          const ListItemComponentBuilder(),
+          const ImageComponentBuilder(),
+          const HorizontalRuleComponentBuilder(),
+          PlotTaskComponentBuilder(_editor),
+        ],
         // contentTapDelegateFactory: (context) =>
         //     ViewerTapHandler(context.document, onTap: widget.onTap),
       ),

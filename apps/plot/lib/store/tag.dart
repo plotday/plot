@@ -22,6 +22,13 @@ enum Tag {
     type: TagType.compute,
     shortcodes: ['later', 'alarm_clock'],
   ),
+  someday(
+    7,
+    PlotIcon.rainbow,
+    'Do Someday',
+    type: TagType.compute,
+    shortcodes: ['someday'],
+  ),
   done(
     3,
     PlotIcon.done,

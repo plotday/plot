@@ -189,6 +189,19 @@ class PriorityState extends Equatable {
     final now = Time.now();
     final today = Date.today();
 
+    // Determine sort key: (order, timestamp)
+    // Order 0: Future events
+    // Order 1: Past activities (sorted by timestamp)
+    // Order 2: Incomplete actions
+    (int, DateTime?) getSortKey(Activity activity) {
+      // Future events (order 0)
+      if (activity.type == ActivityType.event &&
+          activity.at?.start?.isAfter(now) == true) {
+        return (0, activity.at!.start);
+      }
+      return (activity.todo ? 2 : 1, activity.agendaAt);
+    }
+
     // Helper function to add activities grouped by priority
     void addActivitiesGrouped(
       List<Activity> activities, {
@@ -205,45 +218,6 @@ class PriorityState extends Equatable {
         // Sort activities: future events first, past activities interleaved chronologically, incomplete actions last
         final sortedActivities = entry.value.toList()
           ..sort((a, b) {
-            // Helper to get the timestamp for an activity (for past activities)
-            DateTime? getTimestamp(Activity activity) {
-              if (activity.type == ActivityType.event &&
-                  activity.at?.end != null) {
-                return activity.at!.end!;
-              }
-              if (activity.type == ActivityType.action &&
-                  activity.done &&
-                  activity.doneAt != null) {
-                return activity.doneAt;
-              }
-              if (activity.type == ActivityType.note) {
-                return activity.createdAt;
-              }
-              return null;
-            }
-
-            // Determine sort key: (order, timestamp)
-            // Order 0: Future events
-            // Order 1: Past activities (sorted by timestamp)
-            // Order 2: Incomplete actions
-            (int, DateTime?) getSortKey(Activity activity) {
-              // Future events (order 0)
-              if (activity.type == ActivityType.event &&
-                  activity.at?.start != null &&
-                  activity.at!.start!.isAfter(now)) {
-                return (0, activity.at!.start);
-              }
-
-              // Past activities (order 1 + timestamp)
-              final timestamp = getTimestamp(activity);
-              if (timestamp != null) {
-                return (1, timestamp);
-              }
-
-              // Incomplete actions (order 2)
-              return (2, null);
-            }
-
             final (orderA, timestampA) = getSortKey(a);
             final (orderB, timestampB) = getSortKey(b);
 
@@ -506,35 +480,6 @@ class PriorityState extends Equatable {
                 // Sort first group's activities (same sorting logic as addActivitiesGrouped)
                 final sortedFirstGroup = firstGroupActivities.toList()
                   ..sort((a, b) {
-                    DateTime? getTimestamp(Activity activity) {
-                      if (activity.type == ActivityType.event &&
-                          activity.at?.end != null) {
-                        return activity.at!.end!;
-                      }
-                      if (activity.type == ActivityType.action &&
-                          activity.done &&
-                          activity.doneAt != null) {
-                        return activity.doneAt;
-                      }
-                      if (activity.type == ActivityType.note) {
-                        return activity.createdAt;
-                      }
-                      return null;
-                    }
-
-                    (int, DateTime?) getSortKey(Activity activity) {
-                      if (activity.type == ActivityType.event &&
-                          activity.at?.start != null &&
-                          activity.at!.start!.isAfter(now)) {
-                        return (0, activity.at!.start);
-                      }
-                      final timestamp = getTimestamp(activity);
-                      if (timestamp != null) {
-                        return (1, timestamp);
-                      }
-                      return (2, null);
-                    }
-
                     final (orderA, timestampA) = getSortKey(a);
                     final (orderB, timestampB) = getSortKey(b);
                     final orderComparison = orderA.compareTo(orderB);
@@ -572,35 +517,6 @@ class PriorityState extends Equatable {
                     // Sort and add activities
                     final sortedActivities = entry.value.toList()
                       ..sort((a, b) {
-                        DateTime? getTimestamp(Activity activity) {
-                          if (activity.type == ActivityType.event &&
-                              activity.at?.end != null) {
-                            return activity.at!.end!;
-                          }
-                          if (activity.type == ActivityType.action &&
-                              activity.done &&
-                              activity.doneAt != null) {
-                            return activity.doneAt;
-                          }
-                          if (activity.type == ActivityType.note) {
-                            return activity.createdAt;
-                          }
-                          return null;
-                        }
-
-                        (int, DateTime?) getSortKey(Activity activity) {
-                          if (activity.type == ActivityType.event &&
-                              activity.at?.start != null &&
-                              activity.at!.start!.isAfter(now)) {
-                            return (0, activity.at!.start);
-                          }
-                          final timestamp = getTimestamp(activity);
-                          if (timestamp != null) {
-                            return (1, timestamp);
-                          }
-                          return (2, null);
-                        }
-
                         final (orderA, timestampA) = getSortKey(a);
                         final (orderB, timestampB) = getSortKey(b);
                         final orderComparison = orderA.compareTo(orderB);

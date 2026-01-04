@@ -1501,7 +1501,10 @@ export async function createActivities(
           break;
         case ActivityType.Action:
           dbActivityType = "action";
-          activity.start ??= new Date();
+          // Default to now, but respect null
+          if (activity.start === undefined) {
+            activity.start = new Date();
+          }
           break;
         case ActivityType.Event:
           dbActivityType = "event";
