@@ -11,15 +11,20 @@ async function handleRequest(
   ctx: ExecutionContext,
   env: Env
 ): Promise<Response> {
-  const url = new URL(request.url);
-  const pathname = url.pathname;
-  const search = url.search;
-  const pathWithParams = pathname + search;
+  try {
+    const url = new URL(request.url);
+    const pathname = url.pathname;
+    const search = url.search;
+    const pathWithParams = pathname + search;
 
-  if (pathname.startsWith("/static/")) {
-    return retrieveStatic(request, pathWithParams, ctx, env);
-  } else {
-    return forwardRequest(request, pathWithParams, env);
+    if (pathname.startsWith("/static/")) {
+      return await retrieveStatic(request, pathWithParams, ctx, env);
+    } else {
+      return await forwardRequest(request, pathWithParams, env);
+    }
+  } catch (error) {
+    console.error("[handleRequest]", error);
+    return new Response("Internal Server Error", { status: 500 });
   }
 }
 
@@ -29,13 +34,18 @@ async function retrieveStatic(
   ctx: ExecutionContext,
   env: Env
 ): Promise<Response> {
-  const cache = caches.default;
-  let response = await cache.match(request);
-  if (!response) {
-    response = await fetch(`${env.POSTHOG_ASSET_HOST}${pathname}`);
-    ctx.waitUntil(cache.put(request, response.clone()));
+  try {
+    const cache = caches.default;
+    let response = await cache.match(request);
+    if (!response) {
+      response = await fetch(`${env.POSTHOG_ASSET_HOST}${pathname}`);
+      ctx.waitUntil(cache.put(request, response.clone()));
+    }
+    return response;
+  } catch (error) {
+    console.error("[retrieveStatic]", error);
+    return new Response("Static asset fetch error", { status: 500 });
   }
-  return response;
 }
 
 async function forwardRequest(
@@ -43,18 +53,26 @@ async function forwardRequest(
   pathWithSearch: string,
   env: Env
 ): Promise<Response> {
-  // Create a new request with the PostHog host URL
-  const newUrl = `${env.POSTHOG_HOST}${pathWithSearch}`;
-  const proxyRequest = new Request(newUrl, request);
+  try {
+    const newUrl = `${env.POSTHOG_HOST}${pathWithSearch}`;
+    const proxyRequest = new Request(newUrl, request);
 
-  // Remove cookie header to avoid leaking user cookies to PostHog
-  proxyRequest.headers.delete("cookie");
+    proxyRequest.headers.delete("cookie");
 
-  return await fetch(proxyRequest);
+    return await fetch(proxyRequest);
+  } catch (error) {
+    console.error("[forwardRequest]", error);
+    return new Response("Proxy error", { status: 500 });
+  }
 }
 
 export default {
   async fetch(request, env, ctx) {
-    return handleRequest(request, ctx, env);
+    try {
+      return await handleRequest(request, ctx, env);
+    } catch (error) {
+      console.error("[fetch]", error);
+      return new Response("Internal Server Error", { status: 500 });
+    }
   },
 } satisfies ExportedHandler<Env>;
