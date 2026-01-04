@@ -136,11 +136,14 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 
 Think of an **Activity as a thread** and **Notes as messages in that thread**. Always create activities with an initial note, and add notes for updates rather than creating new activities.
 
+**Action scheduling:** When creating Actions (tasks), omitting the `start` field defaults to "Do Now" (current time). For most integrations, explicitly set `start: null` to create backlog items ("Do Someday"), only using "Do Now" for urgent or in-progress tasks.
+
 ```typescript
 // Create an activity with an initial note (thread with first message)
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request",
+  start: null, // "Do Someday" - backlog item (recommended default)
   source: "github:pr:123", // For deduplication
   notes: [
     {

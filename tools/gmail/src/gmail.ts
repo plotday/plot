@@ -320,7 +320,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   }
 
   async syncBatch(
-    _args: any,
     batchNumber: number,
     mode: "full" | "incremental",
     authToken: string,

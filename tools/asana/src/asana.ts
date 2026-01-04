@@ -1,4 +1,4 @@
-import { type Issue, LinearClient } from "@linear/sdk";
+import * as asana from "asana";
 
 import {
   type ActivityLink,
@@ -24,23 +24,23 @@ import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 type SyncState = {
-  after: string | null;
+  offset: number;
   batchNumber: number;
-  issuesProcessed: number;
+  tasksProcessed: number;
   initialSync: boolean;
 };
 
 /**
- * Linear project management tool
+ * Asana project management tool
  *
- * Implements the ProjectTool interface for syncing Linear teams and issues
+ * Implements the ProjectTool interface for syncing Asana projects and tasks
  * with Plot activities.
  */
-export class Linear extends Tool<Linear> implements ProjectTool {
+export class Asana extends Tool<Asana> implements ProjectTool {
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
-      network: build(Network, { urls: ["https://api.linear.app/*"] }),
+      network: build(Network, { urls: ["https://app.asana.com/*"] }),
       callbacks: build(Callbacks),
       tasks: build(Tasks),
       plot: build(Plot, { contact: { access: ContactAccess.Write } }),
@@ -48,9 +48,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Create Linear API client with auth token
+   * Create Asana API client with auth token
    */
-  private async getClient(authToken: string): Promise<LinearClient> {
+  private async getClient(authToken: string): Promise<asana.Client> {
     const authorization = await this.get<Authorization>(
       `authorization:${authToken}`
     );
@@ -63,11 +63,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       throw new Error("Authorization no longer available");
     }
 
-    return new LinearClient({ accessToken: token.token });
+    return asana.Client.create().useAccessToken(token.token);
   }
 
   /**
-   * Request Linear OAuth authorization
+   * Request Asana OAuth authorization
    */
   async requestAuth<
     TCallback extends (auth: ProjectAuth, ...args: any[]) => any
@@ -77,7 +77,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       ? R
       : []
   ): Promise<ActivityLink> {
-    const linearScopes = ["read", "write"];
+    const asanaScopes = ["default"];
 
     // Generate opaque token for authorization
     const authToken = crypto.randomUUID();
@@ -90,9 +90,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     // Request auth and return the activity link
     return await this.tools.integrations.request(
       {
-        provider: AuthProvider.Linear,
+        provider: AuthProvider.Asana,
         level: AuthLevel.User,
-        scopes: linearScopes,
+        scopes: asanaScopes,
       },
       this.onAuthSuccess,
       authToken,
@@ -116,26 +116,41 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Get list of Linear teams (projects)
+   * Get list of Asana projects
    */
   async getProjects(authToken: string): Promise<Project[]> {
     const client = await this.getClient(authToken);
-    const teams = await client.teams();
 
-    return teams.nodes.map((team) => ({
-      id: team.id,
-      name: team.name,
-      description: team.description || null,
-      key: team.key,
-    }));
+    // Get user's workspaces first
+    const workspaces = await client.workspaces.getWorkspaces();
+
+    const allProjects: Project[] = [];
+
+    // Get projects from each workspace
+    for (const workspace of workspaces.data) {
+      const projects = await client.projects.findByWorkspace(workspace.gid, {
+        limit: 100,
+      });
+
+      for (const project of projects.data) {
+        allProjects.push({
+          id: project.gid,
+          name: project.name,
+          description: null, // Asana doesn't return description in list
+          key: null, // Asana doesn't have project keys
+        });
+      }
+    }
+
+    return allProjects;
   }
 
   /**
-   * Start syncing issues from a Linear team
+   * Start syncing tasks from an Asana project
    */
   async startSync<
     TCallback extends (
-      issue: NewActivityWithNotes,
+      task: NewActivityWithNotes,
       syncMeta: { initialSync: boolean },
       ...args: any[]
     ) => any
@@ -145,7 +160,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     callback: TCallback,
     options?: ProjectSyncOptions,
     ...extraArgs: TCallback extends (
-      issue: any,
+      task: any,
       syncMeta: any,
       ...rest: infer R
     ) => any
@@ -153,7 +168,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       : []
   ): Promise<void> {
     // Setup webhook for real-time updates
-    await this.setupLinearWebhook(authToken, projectId);
+    await this.setupAsanaWebhook(authToken, projectId);
 
     // Store callback for webhook processing
     const callbackToken = await this.tools.callbacks.createFromParent(
@@ -167,51 +182,16 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Setup Linear webhook for real-time updates
+   * Setup Asana webhook for real-time updates
+   * Note: Asana webhook API requires special permissions, so we skip for now
    */
-  private async setupLinearWebhook(
+  private async setupAsanaWebhook(
     authToken: string,
     projectId: string
   ): Promise<void> {
-    try {
-      const client = await this.getClient(authToken);
-
-      // Create webhook URL first (Linear requires valid URL at creation time)
-      const webhookUrl = await this.tools.network.createWebhook({
-        callback: this.onWebhook,
-        extraArgs: [projectId, authToken],
-      });
-
-      // Skip webhook setup for localhost (development mode)
-      if (
-        webhookUrl.includes("localhost") ||
-        webhookUrl.includes("127.0.0.1")
-      ) {
-        console.log("Skipping webhook setup for localhost URL:", webhookUrl);
-        return;
-      }
-
-      // Create webhook in Linear with the actual URL
-      const webhookPayload = await client.createWebhook({
-        url: webhookUrl,
-        teamId: projectId,
-        resourceTypes: ["Issue", "Comment"],
-      });
-
-      // Extract and store webhook ID and secret
-      const webhook = await webhookPayload.webhook;
-      if (webhook?.id) {
-        await this.set(`webhook_id_${projectId}`, webhook.id);
-      }
-      if (webhook?.secret) {
-        await this.set(`webhook_secret_${projectId}`, webhook.secret);
-      }
-    } catch (error) {
-      console.warn(
-        "Failed to set up Linear webhook, continuing with sync:",
-        error
-      );
-    }
+    // TODO: Implement Asana webhooks once we confirm the correct API
+    // The asana SDK webhook API may require special app permissions
+    console.log(`Asana webhooks not yet implemented for project ${projectId}`);
   }
 
   /**
@@ -224,9 +204,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   ): Promise<void> {
     // Initialize sync state
     await this.set(`sync_state_${projectId}`, {
-      after: null,
+      offset: 0,
       batchNumber: 1,
-      issuesProcessed: 0,
+      tasksProcessed: 0,
       initialSync: true,
     });
 
@@ -242,7 +222,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Process a batch of issues
+   * Process a batch of tasks
    */
   private async syncBatch(
     authToken: string,
@@ -261,25 +241,41 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     const client = await this.getClient(authToken);
-    const team = await client.team(projectId);
 
-    // Build filter
-    const filter: any = {};
-    if (options?.timeMin) {
-      filter.createdAt = { gte: options.timeMin };
+    // Build request params
+    const batchSize = 50;
+    const params: any = {
+      project: projectId,
+      limit: batchSize,
+      opt_fields: [
+        "name",
+        "notes",
+        "completed",
+        "completed_at",
+        "created_at",
+        "modified_at",
+      ].join(","),
+    };
+
+    if (state.offset > 0) {
+      params.offset = state.offset;
     }
 
-    // Fetch batch of issues (50 at a time)
-    const issuesConnection = await team.issues({
-      first: 50,
-      after: state.after || undefined,
-      filter: Object.keys(filter).length > 0 ? filter : undefined,
-    });
+    // Fetch batch of tasks using findAll
+    const tasksResult = await client.tasks.findAll(params);
 
-    // Process each issue
-    for (const issue of issuesConnection.nodes) {
-      const activityWithNotes = await this.convertIssueToActivity(
-        issue,
+    // Process each task
+    for (const task of tasksResult.data) {
+      // Optionally filter by time
+      if (options?.timeMin) {
+        const createdAt = new Date(task.created_at);
+        if (createdAt < options.timeMin) {
+          continue;
+        }
+      }
+
+      const activityWithNotes = await this.convertTaskToActivity(
+        task,
         projectId
       );
       // Execute the callback using the callback token with syncMeta
@@ -290,12 +286,14 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       );
     }
 
-    // Check if more pages
-    if (issuesConnection.pageInfo.hasNextPage) {
+    // Check if more pages by checking if we got a full batch
+    const hasMore = tasksResult.data.length === batchSize;
+
+    if (hasMore) {
       await this.set(`sync_state_${projectId}`, {
-        after: issuesConnection.pageInfo.endCursor,
+        offset: state.offset + batchSize,
         batchNumber: state.batchNumber + 1,
-        issuesProcessed: state.issuesProcessed + issuesConnection.nodes.length,
+        tasksProcessed: state.tasksProcessed + tasksResult.data.length,
         initialSync: state.initialSync,
       });
 
@@ -314,25 +312,17 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Convert a Linear issue to a Plot Activity
+   * Convert an Asana task to a Plot Activity
    */
-  private async convertIssueToActivity(
-    issue: Issue,
+  private async convertTaskToActivity(
+    task: any,
     projectId: string
   ): Promise<NewActivityWithNotes> {
-    const state = await issue.state;
-    const assignee = await issue.assignee;
-    const comments = await issue.comments();
-
-    // Build notes array: description + comments
+    // Build notes array: description
     const notes: Array<{ content: string }> = [];
 
-    if (issue.description) {
-      notes.push({ content: issue.description });
-    }
-
-    for (const comment of comments.nodes) {
-      notes.push({ content: comment.body });
+    if (task.notes) {
+      notes.push({ content: task.notes });
     }
 
     // Ensure at least one note exists
@@ -342,38 +332,24 @@ export class Linear extends Tool<Linear> implements ProjectTool {
 
     return {
       type: ActivityType.Action,
-      title: issue.title,
-      source: `linear:issue:${projectId}:${issue.id}`,
-      doneAt:
-        state?.name === "Done" || state?.name === "Completed"
-          ? new Date()
-          : null,
+      title: task.name,
+      source: `asana:task:${projectId}:${task.gid}`,
+      doneAt: task.completed ? new Date(task.completed_at || Date.now()) : null,
       notes,
     };
   }
 
   /**
-   * Verify Linear webhook signature
-   * Linear uses HMAC-SHA256 with the webhook secret
+   * Verify Asana webhook signature
+   * Asana uses HMAC-SHA256 with a shared secret
    */
-  private async verifyLinearSignature(
+  private async verifyAsanaSignature(
     signature: string | undefined,
     rawBody: string,
-    secret: string,
-    webhookTimestamp: number
+    secret: string
   ): Promise<boolean> {
     if (!signature) {
-      console.warn("Linear webhook missing signature header");
-      return false;
-    }
-
-    // Verify timestamp to prevent replay attacks (within 60 seconds)
-    const currentTime = Date.now();
-    const timeDiff = Math.abs(currentTime - webhookTimestamp);
-    if (timeDiff > 60000) {
-      console.warn(
-        `Linear webhook timestamp too old: ${timeDiff}ms (max 60000ms)`
-      );
+      console.warn("Asana webhook missing signature header");
       return false;
     }
 
@@ -402,72 +378,82 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Handle incoming webhook events from Linear
+   * Handle incoming webhook events from Asana
    */
   private async onWebhook(
     request: WebhookRequest,
     projectId: string,
-    authToken: string,
-    webhookSecret?: string
+    authToken: string
   ): Promise<void> {
     const payload = request.body as any;
 
+    // Asana webhook handshake
+    if (request.headers["x-hook-secret"]) {
+      // This is the initial handshake, respond with the secret
+      // Note: The network tool should handle this automatically
+      return;
+    }
+
     // Verify webhook signature
-    // Linear sends Linear-Signature header (not X-Linear-Signature)
-    const secret =
-      webhookSecret || (await this.get<string>(`webhook_secret_${projectId}`));
-    if (secret && request.rawBody) {
-      const signature = request.headers["linear-signature"];
-      const isValid = await this.verifyLinearSignature(
+    const webhookId = await this.get<string>(`webhook_id_${projectId}`);
+    if (webhookId && request.rawBody) {
+      const signature = request.headers["x-hook-signature"];
+      // For Asana, the secret is the webhook ID itself
+      const isValid = await this.verifyAsanaSignature(
         signature,
         request.rawBody,
-        secret,
-        payload.webhookTimestamp
+        webhookId
       );
 
       if (!isValid) {
-        console.warn("Linear webhook signature verification failed");
+        console.warn("Asana webhook signature verification failed");
         return;
       }
-    } else if (!secret) {
-      console.warn("Linear webhook secret not found, skipping verification");
     }
 
-    if (payload.type === "Issue" || payload.type === "Comment") {
+    // Process events
+    if (payload.events && Array.isArray(payload.events)) {
       const callbackToken = await this.get<Callback>(`callback_${projectId}`);
       if (!callbackToken) return;
 
       const client = await this.getClient(authToken);
-      const issue = await client.issue(payload.data.id);
 
-      const activityWithNotes = await this.convertIssueToActivity(
-        issue,
-        projectId
-      );
+      for (const event of payload.events) {
+        if (event.resource?.resource_type === "task") {
+          try {
+            // Fetch full task details
+            const task = await client.tasks.getTask(event.resource.gid, {
+              opt_fields: [
+                "name",
+                "notes",
+                "completed",
+                "completed_at",
+                "created_at",
+                "modified_at",
+              ].join(","),
+            });
 
-      // Execute stored callback - webhooks are never part of initial sync
-      await this.tools.callbacks.run(callbackToken, activityWithNotes, { initialSync: false });
+            const activityWithNotes = await this.convertTaskToActivity(
+              task,
+              projectId
+            );
+
+            // Execute stored callback - webhooks are never part of initial sync
+            await this.tools.callbacks.run(callbackToken, activityWithNotes, { initialSync: false });
+          } catch (error) {
+            console.warn("Failed to process Asana task webhook:", error);
+          }
+        }
+      }
     }
   }
 
   /**
-   * Stop syncing a Linear team
+   * Stop syncing an Asana project
    */
   async stopSync(authToken: string, projectId: string): Promise<void> {
-    // Remove webhook
-    const webhookId = await this.get<string>(`webhook_id_${projectId}`);
-    if (webhookId) {
-      try {
-        const client = await this.getClient(authToken);
-        await client.deleteWebhook(webhookId);
-      } catch (error) {
-        console.warn("Failed to delete Linear webhook:", error);
-      }
-      await this.clear(`webhook_id_${projectId}`);
-    }
-
-    // Cleanup webhook secret
-    await this.clear(`webhook_secret_${projectId}`);
+    // TODO: Remove webhook when webhook support is implemented
+    await this.clear(`webhook_id_${projectId}`);
 
     // Cleanup callback
     const callbackToken = await this.get<Callback>(`callback_${projectId}`);
@@ -481,4 +467,4 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 }
 
-export default Linear;
+export default Asana;

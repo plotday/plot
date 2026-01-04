@@ -250,6 +250,65 @@ await this.tools.plot.createActivity({
 });
 ```
 
+### Activity Scheduling States
+
+When creating Activities of type `Action` (tasks), the `start` field determines how they appear in Plot:
+
+- **"Do Now"** (Current/Actionable) - Tasks that should be done today
+- **"Do Later"** (Future Scheduled) - Tasks scheduled for a specific future date
+- **"Do Someday"** (Unscheduled Backlog) - Tasks without a specific timeline
+
+#### Default Behavior
+
+**Important:** When creating an Action, omitting the `start` field defaults to the current time, making it a "Do Now" task.
+
+For most integrations (project management tools, issue trackers), you should explicitly set `start: null` to create backlog items, only using "Do Now" for tasks that are actively in progress or urgent.
+
+```typescript
+// "Do Now" - Appears in today's actionable list
+// WARNING: This is the default when start is omitted!
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Urgent: Review security PR",
+  // Omitting start defaults to new Date()
+});
+
+// "Do Someday" - Backlog item (RECOMMENDED for most synced tasks)
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Refactor authentication service",
+  start: null, // Explicitly set to null for backlog
+});
+
+// "Do Later" - Scheduled for specific date
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Prepare Q1 review",
+  start: new Date("2025-03-15"), // Scheduled for future date
+});
+```
+
+#### When to Use Each State
+
+**Use "Do Now" (omit `start`)** when:
+
+- Task is actively being worked on
+- Task has a due date of today
+- Task is marked as "In Progress" in source system
+- Task is high priority AND explicitly assigned as current work
+
+**Use "Do Someday" (`start: null`)** when:
+
+- Syncing backlog items from project management tools
+- Task is in "To Do" or "Backlog" status
+- Task doesn't have a specific due date
+- This should be the **default for most integrations**
+
+**Use "Do Later" (future `start`)** when:
+
+- Task has a specific due date in the future
+- Task is scheduled for a particular day
+
 ### Activity Properties
 
 ```typescript

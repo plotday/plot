@@ -330,7 +330,6 @@ export class OutlookCalendar
   }
 
   async syncOutlookBatch(
-    _args: any,
     calendarId: string,
     authToken: string,
     syncMeta: { initialSync: boolean }

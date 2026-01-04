@@ -347,7 +347,6 @@ export class GoogleCalendar
   }
 
   async syncBatch(
-    _args: any,
     batchNumber: number,
     mode: "full" | "incremental",
     authToken: string,

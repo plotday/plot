@@ -2,7 +2,7 @@
   "name": "@plotday/twist-project-sync",
   "plotTwistId": "c3b70e90-2e32-4293-adc0-70b66b0b602b",
   "displayName": "Project Sync",
-  "description": "Sync project management tools like Linear",
+  "description": "Sync project management tools like Linear, Jira, and Asana",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "version": "0.1.0",
@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@plotday/twister": "workspace:^",
-    "@plotday/tool-linear": "workspace:^"
+    "@plotday/tool-linear": "workspace:^",
+    "@plotday/tool-jira": "workspace:^",
+    "@plotday/tool-asana": "workspace:^"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

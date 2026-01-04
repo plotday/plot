@@ -1,3 +1,5 @@
+import { Asana } from "@plotday/tool-asana";
+import { Jira } from "@plotday/tool-jira";
 import { Linear } from "@plotday/tool-linear";
 import {
   type Activity,
@@ -8,40 +10,113 @@ import {
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import type { ProjectAuth } from "@plotday/twister/common/projects";
+import type { ProjectAuth, ProjectTool } from "@plotday/twister/common/projects";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+
+type ProjectProvider = "linear" | "jira" | "asana";
+
+type StoredProjectAuth = {
+  provider: ProjectProvider;
+  authToken: string;
+};
 
 /**
  * Project Sync Twist
  *
- * Syncs project management tools (currently Linear) with Plot.
+ * Syncs project management tools (Linear, Jira, Asana) with Plot.
  * Converts issues and tasks into Plot activities with notes for comments.
  */
 export default class ProjectSync extends Twist<ProjectSync> {
   build(build: ToolBuilder) {
     return {
       linear: build(Linear),
+      jira: build(Jira),
+      asana: build(Asana),
       plot: build(Plot, { activity: { access: ActivityAccess.Create } }),
     };
   }
 
   /**
+   * Get the tool for a specific project provider
+   */
+  private getProviderTool(provider: ProjectProvider): ProjectTool {
+    switch (provider) {
+      case "linear":
+        return this.tools.linear;
+      case "jira":
+        return this.tools.jira;
+      case "asana":
+        return this.tools.asana;
+      default:
+        throw new Error(`Unknown provider: ${provider}`);
+    }
+  }
+
+  /**
+   * Get stored auth for a provider
+   */
+  private async getAuthToken(provider: ProjectProvider): Promise<string | null> {
+    const auths = await this.getStoredAuths();
+    const auth = auths.find((a) => a.provider === provider);
+    return auth?.authToken || null;
+  }
+
+  /**
+   * Store auth for a provider
+   */
+  private async addStoredAuth(
+    provider: ProjectProvider,
+    authToken: string
+  ): Promise<void> {
+    const auths = await this.getStoredAuths();
+    const existingIndex = auths.findIndex((a) => a.provider === provider);
+
+    if (existingIndex >= 0) {
+      auths[existingIndex].authToken = authToken;
+    } else {
+      auths.push({ provider, authToken });
+    }
+
+    await this.set("project_auths", auths);
+  }
+
+  /**
+   * Get all stored auths
+   */
+  private async getStoredAuths(): Promise<StoredProjectAuth[]> {
+    return (await this.get<StoredProjectAuth[]>("project_auths")) || [];
+  }
+
+  /**
    * Called when twist is activated
-   * Initiates the auth flow for Linear
+   * Presents auth options for all supported providers
    */
   async activate(priority: Pick<Priority, "id">) {
-    // Request Linear auth
-    const authLink = await this.tools.linear.requestAuth(this.onAuthComplete);
+    // Get auth links from all providers
+    const linearAuthLink = await this.tools.linear.requestAuth(
+      this.onAuthComplete,
+      "linear"
+    );
+    const jiraAuthLink = await this.tools.jira.requestAuth(
+      this.onAuthComplete,
+      "jira"
+    );
+    const asanaAuthLink = await this.tools.asana.requestAuth(
+      this.onAuthComplete,
+      "asana"
+    );
 
-    // Create onboarding activity
+    // Create onboarding activity with all provider options
+    // Using start: null to create a "Do Someday" item - setup task, not urgent
     const activity = await this.tools.plot.createActivity({
       type: ActivityType.Action,
-      title: "Connect Linear",
+      title: "Connect a project management tool",
+      start: null, // "Do Someday" - optional setup, not time-sensitive
       notes: [
         {
           content:
-            "Connect your Linear account to start syncing projects and issues to Plot.",
-          links: [authLink],
+            "Connect your project management account to start syncing projects and issues to Plot. Choose one:",
+          links: [linearAuthLink, jiraAuthLink, asanaAuthLink],
         },
       ],
     });
@@ -51,18 +126,23 @@ export default class ProjectSync extends Twist<ProjectSync> {
   }
 
   /**
-   * Called when Linear OAuth completes
+   * Called when OAuth completes for any provider
    * Fetches available projects and presents selection UI
    */
-  async onAuthComplete(auth: ProjectAuth) {
-    // Store auth token
-    await this.set("linear_auth", auth.authToken);
+  async onAuthComplete(auth: ProjectAuth, provider: ProjectProvider) {
+    // Store auth token for this provider
+    await this.addStoredAuth(provider, auth.authToken);
+
+    // Get the tool for this provider
+    const tool = this.getProviderTool(provider);
 
     // Fetch projects
-    const projects = await this.tools.linear.getProjects(auth.authToken);
+    const projects = await tool.getProjects(auth.authToken);
 
     if (projects.length === 0) {
-      await this.updateOnboardingActivity("No Linear teams found.");
+      await this.updateOnboardingActivity(
+        `No ${provider} projects found.`
+      );
       return;
     }
 
@@ -74,9 +154,12 @@ export default class ProjectSync extends Twist<ProjectSync> {
     }> = await Promise.all(
       projects.map(async (project) => ({
         type: ActivityLinkType.callback as const,
-        title: `${project.key}: ${project.name}`,
+        title: project.key
+          ? `${project.key}: ${project.name}`
+          : project.name,
         callback: await this.callback(
           this.onProjectSelected,
+          provider,
           project.id,
           project.name
         ),
@@ -88,7 +171,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
     if (activity) {
       await this.tools.plot.createNote({
         activity,
-        content: "Choose which Linear teams you'd like to sync to Plot:",
+        content: `Choose which ${provider} projects you'd like to sync to Plot:`,
         links,
       });
     }
@@ -98,16 +181,22 @@ export default class ProjectSync extends Twist<ProjectSync> {
    * Called when user selects a project to sync
    * Initiates the sync process for that project
    */
-  async onProjectSelected(args: any, projectId: string, projectName: string) {
-    const authToken = await this.get<string>("linear_auth");
+  async onProjectSelected(
+    args: any,
+    provider: ProjectProvider,
+    projectId: string,
+    projectName: string
+  ) {
+    const authToken = await this.getAuthToken(provider);
     if (!authToken) {
-      throw new Error("No Linear auth token found");
+      throw new Error(`No ${provider} auth token found`);
     }
 
-    // Track synced projects
+    // Track synced projects with provider
+    const syncKey = `${provider}:${projectId}`;
     const synced = (await this.get<string[]>("synced_projects")) || [];
-    if (!synced.includes(projectId)) {
-      synced.push(projectId);
+    if (!synced.includes(syncKey)) {
+      synced.push(syncKey);
       await this.set("synced_projects", synced);
     }
 
@@ -120,21 +209,30 @@ export default class ProjectSync extends Twist<ProjectSync> {
       });
     }
 
-    // Start sync (last 30 days)
-    await this.tools.linear.startSync(
+    // Get the tool for this provider
+    const tool = this.getProviderTool(provider);
+
+    // Start sync (full history as requested)
+    await tool.startSync(
       authToken,
       projectId,
       this.onIssue,
-      { timeMin: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      undefined, // No time filter - sync all issues
+      provider,
       projectId
     );
   }
 
   /**
-   * Called for each issue synced from Linear
+   * Called for each issue synced from any provider
    * Creates or updates Plot activities based on issue state
    */
-  async onIssue(issue: NewActivityWithNotes, projectId: string) {
+  async onIssue(
+    issue: NewActivityWithNotes,
+    syncMeta: { initialSync: boolean },
+    provider: ProjectProvider,
+    projectId: string
+  ) {
     // Check if issue already exists (using source for deduplication)
     if (issue.source) {
       const existing = await this.tools.plot.getActivityBySource(issue.source);
@@ -151,8 +249,18 @@ export default class ProjectSync extends Twist<ProjectSync> {
       }
     }
 
+    // Default synced issues to "Do Someday" (start: null) unless already scheduled
+    // This prevents flooding the "Do Now" list with all synced backlog items
+    // The issue.start will only be set if the tool explicitly scheduled it
+    if (issue.type === ActivityType.Action && !("start" in issue)) {
+      issue.start = null; // "Do Someday" - backlog item by default
+    }
+
     // Create new activity for new issue (new thread with initial note)
-    await this.tools.plot.createActivity(issue);
+    // Mark existing issues as read during initial sync to avoid overwhelming the user
+    await this.tools.plot.createActivity(issue, {
+      unread: !syncMeta.initialSync,
+    });
   }
 
   /**
@@ -161,17 +269,32 @@ export default class ProjectSync extends Twist<ProjectSync> {
    */
   async deactivate() {
     // Stop all syncs
-    const authToken = await this.get<string>("linear_auth");
+    const auths = await this.getStoredAuths();
     const synced = (await this.get<string[]>("synced_projects")) || [];
 
-    if (authToken) {
-      for (const projectId of synced) {
-        await this.tools.linear.stopSync(authToken, projectId);
+    for (const syncKey of synced) {
+      // Parse provider:projectId format
+      const [provider, projectId] = syncKey.split(":") as [
+        ProjectProvider,
+        string
+      ];
+
+      const authToken = await this.getAuthToken(provider);
+      if (authToken) {
+        const tool = this.getProviderTool(provider);
+        try {
+          await tool.stopSync(authToken, projectId);
+        } catch (error) {
+          console.warn(
+            `Failed to stop sync for ${provider}:${projectId}:`,
+            error
+          );
+        }
       }
     }
 
     // Cleanup
-    await this.clear("linear_auth");
+    await this.clear("project_auths");
     await this.clear("synced_projects");
     await this.clear("onboarding_activity_id");
   }

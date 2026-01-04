@@ -1,4 +1,4 @@
-import { type Issue, LinearClient } from "@linear/sdk";
+import { Version3Client } from "jira.js";
 
 import {
   type ActivityLink,
@@ -24,23 +24,23 @@ import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 type SyncState = {
-  after: string | null;
+  startAt: number;
   batchNumber: number;
   issuesProcessed: number;
   initialSync: boolean;
 };
 
 /**
- * Linear project management tool
+ * Jira project management tool
  *
- * Implements the ProjectTool interface for syncing Linear teams and issues
+ * Implements the ProjectTool interface for syncing Jira projects and issues
  * with Plot activities.
  */
-export class Linear extends Tool<Linear> implements ProjectTool {
+export class Jira extends Tool<Jira> implements ProjectTool {
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
-      network: build(Network, { urls: ["https://api.linear.app/*"] }),
+      network: build(Network, { urls: ["https://*.atlassian.net/*"] }),
       callbacks: build(Callbacks),
       tasks: build(Tasks),
       plot: build(Plot, { contact: { access: ContactAccess.Write } }),
@@ -48,9 +48,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Create Linear API client with auth token
+   * Create Jira API client with auth token
    */
-  private async getClient(authToken: string): Promise<LinearClient> {
+  private async getClient(authToken: string): Promise<Version3Client> {
     const authorization = await this.get<Authorization>(
       `authorization:${authToken}`
     );
@@ -63,11 +63,24 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       throw new Error("Authorization no longer available");
     }
 
-    return new LinearClient({ accessToken: token.token });
+    // Get the cloud ID from provider metadata
+    const cloudId = token.provider?.cloud_id;
+    if (!cloudId) {
+      throw new Error("Jira cloud ID not found in authorization");
+    }
+
+    return new Version3Client({
+      host: `https://api.atlassian.com/ex/jira/${cloudId}`,
+      authentication: {
+        oauth2: {
+          accessToken: token.token,
+        },
+      },
+    });
   }
 
   /**
-   * Request Linear OAuth authorization
+   * Request Jira OAuth authorization
    */
   async requestAuth<
     TCallback extends (auth: ProjectAuth, ...args: any[]) => any
@@ -77,7 +90,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       ? R
       : []
   ): Promise<ActivityLink> {
-    const linearScopes = ["read", "write"];
+    const jiraScopes = [
+      "read:jira-work",
+      "write:jira-work",
+      "read:jira-user",
+    ];
 
     // Generate opaque token for authorization
     const authToken = crypto.randomUUID();
@@ -90,9 +107,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     // Request auth and return the activity link
     return await this.tools.integrations.request(
       {
-        provider: AuthProvider.Linear,
+        provider: AuthProvider.Atlassian,
         level: AuthLevel.User,
-        scopes: linearScopes,
+        scopes: jiraScopes,
       },
       this.onAuthSuccess,
       authToken,
@@ -116,22 +133,26 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Get list of Linear teams (projects)
+   * Get list of Jira projects
    */
   async getProjects(authToken: string): Promise<Project[]> {
     const client = await this.getClient(authToken);
-    const teams = await client.teams();
 
-    return teams.nodes.map((team) => ({
-      id: team.id,
-      name: team.name,
-      description: team.description || null,
-      key: team.key,
+    // Get all projects the user has access to
+    const projects = await client.projects.searchProjects({
+      maxResults: 100,
+    });
+
+    return (projects.values || []).map((project) => ({
+      id: project.id,
+      name: project.name,
+      description: project.description || null,
+      key: project.key,
     }));
   }
 
   /**
-   * Start syncing issues from a Linear team
+   * Start syncing issues from a Jira project
    */
   async startSync<
     TCallback extends (
@@ -153,7 +174,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       : []
   ): Promise<void> {
     // Setup webhook for real-time updates
-    await this.setupLinearWebhook(authToken, projectId);
+    await this.setupJiraWebhook(authToken, projectId);
 
     // Store callback for webhook processing
     const callbackToken = await this.tools.callbacks.createFromParent(
@@ -167,51 +188,16 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Setup Linear webhook for real-time updates
+   * Setup Jira webhook for real-time updates
+   * Note: Webhook API varies by Jira version, so we skip for now
    */
-  private async setupLinearWebhook(
+  private async setupJiraWebhook(
     authToken: string,
     projectId: string
   ): Promise<void> {
-    try {
-      const client = await this.getClient(authToken);
-
-      // Create webhook URL first (Linear requires valid URL at creation time)
-      const webhookUrl = await this.tools.network.createWebhook({
-        callback: this.onWebhook,
-        extraArgs: [projectId, authToken],
-      });
-
-      // Skip webhook setup for localhost (development mode)
-      if (
-        webhookUrl.includes("localhost") ||
-        webhookUrl.includes("127.0.0.1")
-      ) {
-        console.log("Skipping webhook setup for localhost URL:", webhookUrl);
-        return;
-      }
-
-      // Create webhook in Linear with the actual URL
-      const webhookPayload = await client.createWebhook({
-        url: webhookUrl,
-        teamId: projectId,
-        resourceTypes: ["Issue", "Comment"],
-      });
-
-      // Extract and store webhook ID and secret
-      const webhook = await webhookPayload.webhook;
-      if (webhook?.id) {
-        await this.set(`webhook_id_${projectId}`, webhook.id);
-      }
-      if (webhook?.secret) {
-        await this.set(`webhook_secret_${projectId}`, webhook.secret);
-      }
-    } catch (error) {
-      console.warn(
-        "Failed to set up Linear webhook, continuing with sync:",
-        error
-      );
-    }
+    // TODO: Implement Jira webhooks once we confirm the correct API
+    // The jira.js library webhook API may vary by Jira version
+    console.log(`Jira webhooks not yet implemented for project ${projectId}`);
   }
 
   /**
@@ -224,7 +210,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   ): Promise<void> {
     // Initialize sync state
     await this.set(`sync_state_${projectId}`, {
-      after: null,
+      startAt: 0,
       batchNumber: 1,
       issuesProcessed: 0,
       initialSync: true,
@@ -261,23 +247,34 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     const client = await this.getClient(authToken);
-    const team = await client.team(projectId);
 
-    // Build filter
-    const filter: any = {};
+    // Build JQL query
+    let jql = `project = ${projectId}`;
     if (options?.timeMin) {
-      filter.createdAt = { gte: options.timeMin };
+      const timeMinStr = options.timeMin.toISOString().split("T")[0];
+      jql += ` AND created >= "${timeMinStr}"`;
     }
+    jql += ` ORDER BY created ASC`;
 
     // Fetch batch of issues (50 at a time)
-    const issuesConnection = await team.issues({
-      first: 50,
-      after: state.after || undefined,
-      filter: Object.keys(filter).length > 0 ? filter : undefined,
+    const batchSize = 50;
+    const searchResult = await client.issueSearch.searchForIssuesUsingJql({
+      jql,
+      startAt: state.startAt,
+      maxResults: batchSize,
+      fields: [
+        "summary",
+        "description",
+        "status",
+        "assignee",
+        "comment",
+        "created",
+        "updated",
+      ],
     });
 
     // Process each issue
-    for (const issue of issuesConnection.nodes) {
+    for (const issue of searchResult.issues || []) {
       const activityWithNotes = await this.convertIssueToActivity(
         issue,
         projectId
@@ -291,11 +288,14 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     // Check if more pages
-    if (issuesConnection.pageInfo.hasNextPage) {
+    const totalIssues = searchResult.total || 0;
+    const nextStartAt = state.startAt + batchSize;
+
+    if (nextStartAt < totalIssues) {
       await this.set(`sync_state_${projectId}`, {
-        after: issuesConnection.pageInfo.endCursor,
+        startAt: nextStartAt,
         batchNumber: state.batchNumber + 1,
-        issuesProcessed: state.issuesProcessed + issuesConnection.nodes.length,
+        issuesProcessed: state.issuesProcessed + (searchResult.issues?.length || 0),
         initialSync: state.initialSync,
       });
 
@@ -314,25 +314,34 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Convert a Linear issue to a Plot Activity
+   * Convert a Jira issue to a Plot Activity
    */
   private async convertIssueToActivity(
-    issue: Issue,
+    issue: any,
     projectId: string
   ): Promise<NewActivityWithNotes> {
-    const state = await issue.state;
-    const assignee = await issue.assignee;
-    const comments = await issue.comments();
+    const fields = issue.fields || {};
+    const status = fields.status?.name;
+    const comments = fields.comment?.comments || [];
 
     // Build notes array: description + comments
     const notes: Array<{ content: string }> = [];
 
-    if (issue.description) {
-      notes.push({ content: issue.description });
+    if (fields.description) {
+      // Jira uses Atlassian Document Format (ADF), need to convert to plain text
+      const description =
+        typeof fields.description === "string"
+          ? fields.description
+          : this.extractTextFromADF(fields.description);
+      notes.push({ content: description });
     }
 
-    for (const comment of comments.nodes) {
-      notes.push({ content: comment.body });
+    for (const comment of comments) {
+      const commentText =
+        typeof comment.body === "string"
+          ? comment.body
+          : this.extractTextFromADF(comment.body);
+      notes.push({ content: commentText });
     }
 
     // Ensure at least one note exists
@@ -342,10 +351,10 @@ export class Linear extends Tool<Linear> implements ProjectTool {
 
     return {
       type: ActivityType.Action,
-      title: issue.title,
-      source: `linear:issue:${projectId}:${issue.id}`,
+      title: fields.summary || issue.key,
+      source: `jira:issue:${projectId}:${issue.key}`,
       doneAt:
-        state?.name === "Done" || state?.name === "Completed"
+        status === "Done" || status === "Closed" || status === "Resolved"
           ? new Date()
           : null,
       notes,
@@ -353,92 +362,55 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Verify Linear webhook signature
-   * Linear uses HMAC-SHA256 with the webhook secret
+   * Extract plain text from Atlassian Document Format (ADF)
    */
-  private async verifyLinearSignature(
-    signature: string | undefined,
-    rawBody: string,
-    secret: string,
-    webhookTimestamp: number
-  ): Promise<boolean> {
-    if (!signature) {
-      console.warn("Linear webhook missing signature header");
-      return false;
+  private extractTextFromADF(adf: any): string {
+    if (!adf || typeof adf !== "object") {
+      return "";
     }
 
-    // Verify timestamp to prevent replay attacks (within 60 seconds)
-    const currentTime = Date.now();
-    const timeDiff = Math.abs(currentTime - webhookTimestamp);
-    if (timeDiff > 60000) {
-      console.warn(
-        `Linear webhook timestamp too old: ${timeDiff}ms (max 60000ms)`
-      );
-      return false;
-    }
+    let text = "";
 
-    // Compute HMAC-SHA256 signature
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-    const signatureBytes = await crypto.subtle.sign(
-      "HMAC",
-      key,
-      encoder.encode(rawBody)
-    );
+    const traverse = (node: any) => {
+      if (node.type === "text") {
+        text += node.text || "";
+      }
 
-    // Convert to hex string
-    const expectedSignature = Array.from(new Uint8Array(signatureBytes))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+      if (node.content && Array.isArray(node.content)) {
+        for (const child of node.content) {
+          traverse(child);
+        }
+        // Add newline after paragraphs
+        if (node.type === "paragraph") {
+          text += "\n";
+        }
+      }
+    };
 
-    // Constant-time comparison
-    return signature === expectedSignature;
+    traverse(adf);
+    return text.trim();
   }
 
   /**
-   * Handle incoming webhook events from Linear
+   * Handle incoming webhook events from Jira
    */
   private async onWebhook(
     request: WebhookRequest,
     projectId: string,
-    authToken: string,
-    webhookSecret?: string
+    authToken: string
   ): Promise<void> {
     const payload = request.body as any;
 
-    // Verify webhook signature
-    // Linear sends Linear-Signature header (not X-Linear-Signature)
-    const secret =
-      webhookSecret || (await this.get<string>(`webhook_secret_${projectId}`));
-    if (secret && request.rawBody) {
-      const signature = request.headers["linear-signature"];
-      const isValid = await this.verifyLinearSignature(
-        signature,
-        request.rawBody,
-        secret,
-        payload.webhookTimestamp
-      );
-
-      if (!isValid) {
-        console.warn("Linear webhook signature verification failed");
-        return;
-      }
-    } else if (!secret) {
-      console.warn("Linear webhook secret not found, skipping verification");
-    }
-
-    if (payload.type === "Issue" || payload.type === "Comment") {
+    // Jira webhook events have different structure
+    if (
+      payload.webhookEvent?.startsWith("jira:issue_") ||
+      payload.webhookEvent?.startsWith("comment_")
+    ) {
       const callbackToken = await this.get<Callback>(`callback_${projectId}`);
       if (!callbackToken) return;
 
-      const client = await this.getClient(authToken);
-      const issue = await client.issue(payload.data.id);
+      const issue = payload.issue;
+      if (!issue) return;
 
       const activityWithNotes = await this.convertIssueToActivity(
         issue,
@@ -451,23 +423,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Stop syncing a Linear team
+   * Stop syncing a Jira project
    */
   async stopSync(authToken: string, projectId: string): Promise<void> {
-    // Remove webhook
-    const webhookId = await this.get<string>(`webhook_id_${projectId}`);
-    if (webhookId) {
-      try {
-        const client = await this.getClient(authToken);
-        await client.deleteWebhook(webhookId);
-      } catch (error) {
-        console.warn("Failed to delete Linear webhook:", error);
-      }
-      await this.clear(`webhook_id_${projectId}`);
-    }
-
-    // Cleanup webhook secret
-    await this.clear(`webhook_secret_${projectId}`);
+    // TODO: Remove webhook when webhook support is implemented
+    await this.clear(`webhook_id_${projectId}`);
 
     // Cleanup callback
     const callbackToken = await this.get<Callback>(`callback_${projectId}`);
@@ -481,4 +441,4 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 }
 
-export default Linear;
+export default Jira;

@@ -91,6 +91,42 @@ await this.tools.plot.createActivity({
 });
 ```
 
+#### Action Scheduling States
+
+When creating Actions (tasks), the `start` field determines their scheduling state. **Important:** Omitting `start` defaults to "Do Now" (current time). For most integrations, explicitly set `start: null` to create backlog items.
+
+```typescript
+// "Do Now" - Actionable today (DEFAULT - use sparingly!)
+// Only use for tasks that are urgent or actively in progress
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Fix production bug",
+  notes: [{ content: "Critical issue affecting users" }],
+  // Omitting start defaults to new Date() - becomes "Do Now"
+});
+
+// "Do Someday" - Backlog item (RECOMMENDED default for most synced tasks)
+// Use for tasks from project management tools, backlog items, future work
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Refactor user service",
+  start: null, // Explicitly null for backlog
+  source: "linear:issue:ABC-123",
+  notes: [{ content: "Technical debt to address" }],
+});
+
+// "Do Later" - Scheduled for specific date
+// Use when task has a concrete due date
+await this.tools.plot.createActivity({
+  type: ActivityType.Action,
+  title: "Submit quarterly report",
+  start: new Date("2025-03-31"), // Due date
+  notes: [{ content: "Q1 report due end of March" }],
+});
+```
+
+**Best practice for integrations:** Default to `start: null` for synced tasks, and only set `start` to current time if the task is explicitly marked as current/in-progress in the source system.
+
 ### Updating Activities
 
 ```typescript

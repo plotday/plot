@@ -82,19 +82,29 @@ export interface ProjectTool {
    *
    * @param authToken - Authorization token for access
    * @param projectId - ID of the project to sync
-   * @param callback - Function receiving (issue, ...extraArgs) for each synced issue
+   * @param callback - Function receiving (issue, syncMeta, ...extraArgs) for each synced issue.
+   *                   The syncMeta parameter contains { initialSync: boolean } to indicate if this is
+   *                   part of the initial sync or an incremental update.
    * @param options - Optional configuration for limiting the sync scope (e.g., time range)
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
    */
   startSync<
-    TCallback extends (issue: NewActivityWithNotes, ...args: any[]) => any
+    TCallback extends (
+      issue: NewActivityWithNotes,
+      syncMeta: { initialSync: boolean },
+      ...args: any[]
+    ) => any
   >(
     authToken: string,
     projectId: string,
     callback: TCallback,
     options?: ProjectSyncOptions,
-    ...extraArgs: TCallback extends (issue: any, ...rest: infer R) => any
+    ...extraArgs: TCallback extends (
+      issue: any,
+      syncMeta: any,
+      ...rest: infer R
+    ) => any
       ? R
       : []
   ): Promise<void>;
