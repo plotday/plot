@@ -11,7 +11,7 @@
     "changeset": "changeset",
     "validate-changesets": "node .changeset/validate-changesets.js",
     "version-packages": "changeset version && node .changeset/reorganize-changelogs.js",
-    "release": "pnpm build && changeset publish",
+    "release": "pnpm build && changeset publish --provenance",
     "prepare": "husky"
   },
   "devDependencies": {
