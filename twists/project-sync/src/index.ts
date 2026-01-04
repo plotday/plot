@@ -241,7 +241,6 @@ export default class ProjectSync extends Twist<ProjectSync> {
    */
   async onIssue(
     issue: NewActivityWithNotes,
-    syncMeta: { initialSync: boolean },
     provider: ProjectProvider,
     projectId: string
   ) {
@@ -269,10 +268,8 @@ export default class ProjectSync extends Twist<ProjectSync> {
     }
 
     // Create new activity for new issue (new thread with initial note)
-    // Mark existing issues as read during initial sync to avoid overwhelming the user
-    await this.tools.plot.createActivity(issue, {
-      unread: !syncMeta.initialSync,
-    });
+    // Note: The unread field is already set by the tool based on sync type
+    await this.tools.plot.createActivity(issue);
   }
 
   /**

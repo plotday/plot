@@ -4,8 +4,6 @@ import {
   type ActivityUpdate,
   type Actor,
   type ActorId,
-  type CreateActivityOptions,
-  type CreateNoteOptions,
   ITool,
   type NewActivity,
   type NewActivityWithNotes,
@@ -175,8 +173,7 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createActivity(
-    activity: NewActivity | NewActivityWithNotes,
-    options?: CreateActivityOptions
+    activity: NewActivity | NewActivityWithNotes
   ): Promise<Activity>;
 
   /**
@@ -191,8 +188,7 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createActivities(
-    activities: (NewActivity | NewActivityWithNotes)[],
-    options?: CreateActivityOptions
+    activities: (NewActivity | NewActivityWithNotes)[]
   ): Promise<Activity[]>;
 
   /**
@@ -294,10 +290,7 @@ export abstract class Plot extends ITool {
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createNote(
-    note: NewNote,
-    options?: CreateNoteOptions
-  ): Promise<Note>;
+  abstract createNote(note: NewNote): Promise<Note>;
 
   /**
    * Creates multiple notes in a single batch operation.

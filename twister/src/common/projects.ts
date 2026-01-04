@@ -84,11 +84,14 @@ export interface ProjectTool {
    * When an issue is updated, tools should check for existing Activity using
    * getActivityBySource() and add a Note rather than creating a new Activity.
    *
+   * Tools implementing this should set issue.unread based on sync type:
+   * - Initial sync (historical data): Set issue.unread = false
+   * - Incremental updates (webhooks): Set issue.unread = true or leave undefined
+   *
    * @param authToken - Authorization token for access
    * @param projectId - ID of the project to sync
-   * @param callback - Function receiving (issue, syncMeta, ...extraArgs) for each synced issue.
-   *                   The syncMeta parameter contains { initialSync: boolean } to indicate if this is
-   *                   part of the initial sync or an incremental update.
+   * @param callback - Function receiving (issue, ...extraArgs) for each synced issue.
+   *                   The issue.unread field indicates whether this is from initial sync.
    * @param options - Optional configuration for limiting the sync scope (e.g., time range)
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
@@ -96,7 +99,6 @@ export interface ProjectTool {
   startSync<
     TCallback extends (
       issue: NewActivityWithNotes,
-      syncMeta: { initialSync: boolean },
       ...args: any[]
     ) => any
   >(
@@ -106,7 +108,6 @@ export interface ProjectTool {
     options?: ProjectSyncOptions,
     ...extraArgs: TCallback extends (
       issue: any,
-      syncMeta: any,
       ...rest: infer R
     ) => any
       ? R

@@ -282,7 +282,7 @@ export class GoogleCalendar
       "full",
       authToken,
       calendarId,
-      { initialSync: true }
+      true // initialSync = true for initial sync
     );
     await this.run(syncCallback);
   }
@@ -348,7 +348,7 @@ export class GoogleCalendar
     mode: "full" | "incremental",
     authToken: string,
     calendarId: string,
-    syncMeta: { initialSync: boolean }
+    initialSync: boolean
   ): Promise<void> {
     console.log(
       `Starting Google Calendar sync batch ${batchNumber} (${mode}) for calendar ${calendarId}`
@@ -377,7 +377,7 @@ export class GoogleCalendar
       const result = await syncGoogleCalendar(api, calendarId, state);
 
       if (result.events.length > 0) {
-        await this.processCalendarEvents(result.events, calendarId, syncMeta);
+        await this.processCalendarEvents(result.events, calendarId, initialSync);
         console.log(
           `Synced ${result.events.length} events in batch ${batchNumber} for calendar ${calendarId}`
         );
@@ -392,7 +392,7 @@ export class GoogleCalendar
           mode,
           authToken,
           calendarId,
-          syncMeta
+          initialSync // Pass through the initialSync boolean
         );
         await this.run(syncCallback);
       } else {
@@ -416,7 +416,7 @@ export class GoogleCalendar
   private async processCalendarEvents(
     events: GoogleEvent[],
     calendarId: string,
-    syncMeta: { initialSync: boolean }
+    initialSync: boolean
   ): Promise<void> {
     // Get user email for RSVP tagging
     const userEmail = await this.get<string>("user_email");
@@ -450,7 +450,7 @@ export class GoogleCalendar
 
         // Check if this is a recurring event instance (exception)
         if (event.recurringEventId && event.originalStartTime) {
-          await this.processEventException(event, calendarId, syncMeta);
+          await this.processEventException(event, calendarId, initialSync);
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
@@ -565,8 +565,9 @@ export class GoogleCalendar
               meta: activityData.meta ?? null,
               tags,
               notes,
+              unread: !initialSync, // false for initial sync, true for incremental updates
             };
-            await this.tools.callbacks.run(callbackToken, activity, syncMeta);
+            await this.tools.callbacks.run(callbackToken, activity);
           }
         }
       } catch (error) {
@@ -579,7 +580,7 @@ export class GoogleCalendar
   private async processEventException(
     event: GoogleEvent,
     calendarId: string,
-    syncMeta: { initialSync: boolean }
+    initialSync: boolean
   ): Promise<void> {
     // Similar to processCalendarEvents but for exceptions
     // This would find the master recurring activity and create an exception
@@ -660,8 +661,9 @@ export class GoogleCalendar
         occurrence: new Date(originalStartTime),
         meta: activityData.meta ?? null,
         notes,
+        unread: !initialSync, // false for initial sync, true for incremental updates
       };
-      await this.tools.callbacks.run(callbackToken, activity, syncMeta);
+      await this.tools.callbacks.run(callbackToken, activity);
     }
   }
 
@@ -726,7 +728,7 @@ export class GoogleCalendar
       "incremental",
       authToken,
       calendarId,
-      { initialSync: false }
+      false // initialSync = false for incremental updates
     );
     await this.run(syncCallback);
   }

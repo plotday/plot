@@ -136,7 +136,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   async startSync<
     TCallback extends (
       issue: NewActivityWithNotes,
-      syncMeta: { initialSync: boolean },
       ...args: any[]
     ) => any
   >(
@@ -146,7 +145,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     options?: ProjectSyncOptions,
     ...extraArgs: TCallback extends (
       issue: any,
-      syncMeta: any,
       ...rest: infer R
     ) => any
       ? R
@@ -282,11 +280,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         issue,
         projectId
       );
-      // Execute the callback using the callback token with syncMeta
+      // Set unread based on sync type (false for initial sync to avoid notification overload)
+      activityWithNotes.unread = !state.initialSync;
+      // Execute the callback using the callback token
       await this.tools.callbacks.run(
         callbackToken,
-        activityWithNotes,
-        { initialSync: state.initialSync }
+        activityWithNotes
       );
     }
 
@@ -541,8 +540,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         projectId
       );
 
-      // Execute stored callback - webhooks are never part of initial sync
-      await this.tools.callbacks.run(callbackToken, activityWithNotes, { initialSync: false });
+      // Webhooks are incremental updates - mark as unread
+      activityWithNotes.unread = true;
+
+      // Execute stored callback
+      await this.tools.callbacks.run(callbackToken, activityWithNotes);
     }
   }
 

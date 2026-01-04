@@ -182,7 +182,6 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
   async handleEvent(
     activity: NewActivityWithNotes,
-    syncMeta: { initialSync: boolean },
     _provider: CalendarProvider,
     _calendarId: string
   ): Promise<void> {
@@ -203,9 +202,8 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       };
     }
 
-    await this.tools.plot.createActivity(activity, {
-      unread: !syncMeta.initialSync, // Mark as read during initial sync (initial import)
-    });
+    // Note: The unread field is already set by the tool based on sync type
+    await this.tools.plot.createActivity(activity);
   }
 
   private async updateExistingEvent(

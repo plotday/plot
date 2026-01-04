@@ -94,10 +94,7 @@ export interface SyncOptions {
  *     syncMeta: { initialSync: boolean }
  *   ) {
  *     // Step 4: Process synced events
- *     // Mark events as read during initial sync to avoid overwhelming the user
- *     await this.plot.createActivity(activity, {
- *       unread: !syncMeta.initialSync
- *     });
+ *     await this.plot.createActivity(activity);
  *   }
  * }
  * ```
@@ -137,11 +134,14 @@ export interface CalendarTool {
    * event import and ongoing change notifications. The callback function
    * will be invoked for each synced event.
    *
+   * Tools implementing this should set activity.unread based on sync type:
+   * - Initial sync (historical data): Set activity.unread = false
+   * - Incremental updates (webhooks): Set activity.unread = true or leave undefined
+   *
    * @param authToken - Authorization token for calendar access
    * @param calendarId - ID of the calendar to sync
-   * @param callback - Function receiving (activity, syncMeta, ...extraArgs) for each synced event.
-   *                   The syncMeta parameter contains { initialSync: boolean } to indicate if this is
-   *                   part of the initial sync or an incremental update.
+   * @param callback - Function receiving (activity, ...extraArgs) for each synced event.
+   *                   The activity.unread field indicates whether this is from initial sync.
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
    * @throws When auth token is invalid or calendar doesn't exist
@@ -149,7 +149,6 @@ export interface CalendarTool {
   startSync<
     TCallback extends (
       activity: NewActivityWithNotes,
-      syncMeta: { initialSync: boolean },
       ...args: any[]
     ) => any
   >(
@@ -158,7 +157,6 @@ export interface CalendarTool {
     callback: TCallback,
     ...extraArgs: TCallback extends (
       activity: any,
-      syncMeta: any,
       ...rest: infer R
     ) => any
       ? R

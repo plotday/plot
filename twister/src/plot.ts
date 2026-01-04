@@ -538,7 +538,16 @@ export type NewActivity = Pick<Activity, "type"> &
         pickPriority?: PickPriorityConfig;
       }
     | {}
-  );
+  ) & {
+    /**
+     * Whether the activity should be marked as unread for users.
+     * - true (default): Activity is unread for all users in the priority
+     * - false: Activity is marked as read for all users in the priority at creation time
+     *
+     * Use false for historical imports to avoid marking old items as unread.
+     */
+    unread?: boolean;
+  };
 
 export type ActivityUpdate = Pick<Activity, "id"> &
   Partial<
@@ -608,26 +617,7 @@ export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
    * - 'html': HTML content that will be converted to markdown
    */
   contentType?: ContentType;
-};
 
-/**
- * Options for creating activities.
- */
-export type CreateActivityOptions = {
-  /**
-   * Whether the activity should be marked as unread for users.
-   * - true (default): Activity is unread for all users in the priority
-   * - false: Activity is marked as read for all users in the priority at creation time
-   *
-   * Use false for historical imports to avoid marking old items as unread.
-   */
-  unread?: boolean;
-};
-
-/**
- * Options for creating notes.
- */
-export type CreateNoteOptions = {
   /**
    * Whether the note should mark the parent activity as unread for users.
    * - true (default): Activity becomes unread for users who haven't authored the note

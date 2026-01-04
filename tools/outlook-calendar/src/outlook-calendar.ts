@@ -257,7 +257,7 @@ export class OutlookCalendar
       this.syncOutlookBatch,
       calendarId,
       authToken,
-      { initialSync: true }
+      true // initialSync = true for initial sync
     );
     await this.run(syncCallback);
   }
@@ -332,7 +332,7 @@ export class OutlookCalendar
   async syncOutlookBatch(
     calendarId: string,
     authToken: string,
-    syncMeta: { initialSync: boolean }
+    initialSync: boolean
   ): Promise<void> {
     let api: GraphApi;
 
@@ -494,6 +494,7 @@ export class OutlookCalendar
               meta: activity.meta,
               tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
               notes,
+              unread: !initialSync, // false for initial sync, true for incremental updates
             };
 
             // Call the event callback
@@ -503,8 +504,7 @@ export class OutlookCalendar
             if (callbackToken) {
               await this.tools.callbacks.run(
                 callbackToken,
-                activityWithNotes,
-                syncMeta
+                activityWithNotes
               );
             }
           } catch (error) {
@@ -589,7 +589,7 @@ export class OutlookCalendar
       this.syncOutlookBatch,
       calendarId,
       authToken,
-      { initialSync: false }
+      false // initialSync = false for incremental updates
     );
     await this.run(callback);
   }
