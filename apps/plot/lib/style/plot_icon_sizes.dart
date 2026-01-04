@@ -20,6 +20,16 @@ class PlotIconSizes extends ThemeExtension<PlotIconSizes> {
     required this.xl,
   });
 
+  /// Default icon sizes used as fallback when theme extension isn't registered.
+  /// This ensures error UI can render even when theme initialization fails.
+  static const PlotIconSizes fallback = PlotIconSizes(
+    xs: 12.0,
+    sm: 14.0,
+    base: 16.0,
+    lg: 18.0,
+    xl: 20.0,
+  );
+
   @override
   PlotIconSizes copyWith({
     double? xs,
@@ -52,5 +62,14 @@ class PlotIconSizes extends ThemeExtension<PlotIconSizes> {
 }
 
 extension PlotIconSizesExtension on FThemeData {
-  PlotIconSizes get iconSizes => extension<PlotIconSizes>();
+  /// Returns the PlotIconSizes theme extension, or a fallback if not registered.
+  /// This defensive approach prevents errors during startup failures when the
+  /// theme extension hasn't been initialized yet.
+  PlotIconSizes get iconSizes {
+    try {
+      return extension<PlotIconSizes>();
+    } catch (_) {
+      return PlotIconSizes.fallback;
+    }
+  }
 }
