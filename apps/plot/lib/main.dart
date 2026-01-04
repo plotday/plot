@@ -56,17 +56,19 @@ Future<void> run(List<String> args) async {
     // Initialize Time early to support frozen time for testing/screenshots
     Time.init();
 
-    await Window.init();
+    // Initialize Env first so PostHog can be set up early
     await Env.init();
-    await AppInfo.init();
 
-    // Initialize PostHog with environment variables
+    // Initialize PostHog immediately after Env so it's ready to capture startup errors
     final config = PostHogConfig(Env.posthogApiKey)
       ..host = Env.posthogHost
       ..captureApplicationLifecycleEvents = true
       ..errorTrackingConfig.captureFlutterErrors = true
       ..personProfiles = PostHogPersonProfiles.identifiedOnly;
     await Posthog().setup(config);
+
+    await Window.init();
+    await AppInfo.init();
 
     await Base.init();
     await AutoSignIn.init();
@@ -76,6 +78,15 @@ Future<void> run(List<String> args) async {
     return runApp(const App());
   } catch (error, stackTrace) {
     log.warning('Startup failed', error, stackTrace);
+
+    // Attempt to send error to PostHog if it was initialized before the error occurred
+    try {
+      await Posthog().captureException(error: error, stackTrace: stackTrace);
+    } catch (posthogError) {
+      // PostHog not initialized or failed - error is already logged above
+      log.fine('Could not send startup error to PostHog', posthogError);
+    }
+
     return runApp(ErrorApp(error: error.toString()));
   }
 }
@@ -89,6 +100,13 @@ Future<void> main(List<String> args) async {
       stackTrace: details.stack,
     );
     FlutterError.presentError(details);
+  };
+
+  // Catch async errors that occur outside of the Flutter framework
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    log.severe('Uncaught async error', error, stackTrace);
+    Posthog().captureException(error: error, stackTrace: stackTrace);
+    return true; // Marks the error as handled
   };
 
   await run(args);
