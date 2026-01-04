@@ -43,9 +43,14 @@ async function forwardRequest(
   pathWithSearch: string,
   env: Env
 ): Promise<Response> {
-  const originRequest = new Request(request);
-  originRequest.headers.delete("cookie");
-  return await fetch(`${env.POSTHOG_HOST}${pathWithSearch}`, originRequest);
+  // Create a new request with the PostHog host URL
+  const newUrl = `${env.POSTHOG_HOST}${pathWithSearch}`;
+  const proxyRequest = new Request(newUrl, request);
+
+  // Remove cookie header to avoid leaking user cookies to PostHog
+  proxyRequest.headers.delete("cookie");
+
+  return await fetch(proxyRequest);
 }
 
 export default {
