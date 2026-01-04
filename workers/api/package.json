@@ -33,7 +33,7 @@
     "ai": "^5.0.76",
     "hono": "^4.6.15",
     "linkify-it": "^5.0.0",
-    "posthog-node": "^5.17.4",
+    "posthog-node": "^5.18.1",
     "stripe": "^17.5.0",
     "typebox": "^1.0.35",
     "workers-ai-provider": "^2.0.0",

@@ -25,7 +25,7 @@
     "@supabase/supabase-js": "^2.79.0",
     "@tabler/icons-react": "^3.34.1",
     "isbot": "^5.1.30",
-    "posthog-js": "^1.310.1",
+    "posthog-js": "^1.313.0",
     "react": "^19.1.2",
     "react-dom": "^19.1.2",
     "react-router": "^7.9.2"
