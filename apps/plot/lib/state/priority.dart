@@ -469,7 +469,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activitySubscription = Activity.watchOne(activity.id).listen((
       watchedActivity,
     ) {
-      log.fine('Activity updated');
       emit(state.copyWith(activity: Value(watchedActivity)));
     });
   }

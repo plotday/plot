@@ -23,7 +23,6 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
     stop();
     _subscription = Priority.watch().listen(
       (priorities) {
-        log.info('Root priorities updated: ${priorities.length} priorities');
         emit(
           state.copyWith(
             priorities: priorities,

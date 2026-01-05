@@ -80,7 +80,6 @@ class ActivityBloc extends Cubit<ActivityState> {
 
     _subscriptions.add(
       Activity.watchOne(state.activity.id).listen((watchedActivity) {
-        log.info('Activity updated');
         emit(state.copyWith(activity: watchedActivity));
       }),
     );
@@ -91,7 +90,13 @@ class ActivityBloc extends Cubit<ActivityState> {
       tags,
     ) {
       // Calculate tag suggestions: common tags first, then all other tags
-      const actionTags = [Tag.now, Tag.done, Tag.later, Tag.someday, Tag.archived];
+      const actionTags = [
+        Tag.now,
+        Tag.done,
+        Tag.later,
+        Tag.someday,
+        Tag.archived,
+      ];
 
       // Common tags (excluding action tags)
       final commonTagsFiltered = tags
