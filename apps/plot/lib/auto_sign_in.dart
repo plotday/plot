@@ -28,7 +28,6 @@ class AutoSignIn {
 
     final targetUser = CliArgs.user;
     if (targetUser == null) {
-      _log.fine('No --user argument provided, skipping auto sign-in');
       return;
     }
 
@@ -72,9 +71,7 @@ class AutoSignIn {
           _signInInProgress = false;
         }
       } else {
-        _log.info(
-          'No password provided, user will need to sign in manually',
-        );
+        _log.info('No password provided, user will need to sign in manually');
         // The app will navigate to sign-in page with the email pre-filled
       }
     } catch (e, stack) {
