@@ -3,8 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:logging/logging.dart';
 import 'package:super_editor/super_editor.dart' show LogNames;
-import 'package:posthog_flutter/posthog_flutter.dart';
 
+import 'analytics/tracker.dart';
 import 'app.dart';
 import 'app_info.dart';
 import 'env.dart';
@@ -17,6 +17,7 @@ import 'widget/auth_button.dart';
 import 'util/time_service.dart' show Time;
 
 Future<void> run(List<String> args) async {
+  // Initialize logging first
   try {
     hierarchicalLoggingEnabled = true;
     recordStackTraceAtLevel = Level.SEVERE;
@@ -48,6 +49,18 @@ Future<void> run(List<String> args) async {
         print(record.stackTrace);
       }
     });
+
+    // Initialize Env first so Tracker can be set up early
+    await Env.init();
+
+    // Initialize Tracker immediately after Env so it's ready to capture startup errors
+    await Tracker.init();
+  } catch (error, stackTrace) {
+    log.warning('Logging initialization failed', error, stackTrace);
+    return runApp(ErrorApp(error: error.toString()));
+  }
+
+  try {
     WidgetsFlutterBinding.ensureInitialized();
 
     // Parse command-line arguments early
@@ -55,17 +68,6 @@ Future<void> run(List<String> args) async {
 
     // Initialize Time early to support frozen time for testing/screenshots
     Time.init();
-
-    // Initialize Env first so PostHog can be set up early
-    await Env.init();
-
-    // Initialize PostHog immediately after Env so it's ready to capture startup errors
-    final config = PostHogConfig(Env.posthogApiKey)
-      ..host = Env.posthogHost
-      ..captureApplicationLifecycleEvents = true
-      ..errorTrackingConfig.captureFlutterErrors = true
-      ..personProfiles = PostHogPersonProfiles.identifiedOnly;
-    await Posthog().setup(config);
 
     await Window.init();
     await AppInfo.init();
@@ -79,12 +81,12 @@ Future<void> run(List<String> args) async {
   } catch (error, stackTrace) {
     log.warning('Startup failed', error, stackTrace);
 
-    // Attempt to send error to PostHog if it was initialized before the error occurred
+    // Attempt to send error to Tracker if it was initialized before the error occurred
     try {
-      await Posthog().captureException(error: error, stackTrace: stackTrace);
-    } catch (posthogError) {
-      // PostHog not initialized or failed - error is already logged above
-      log.fine('Could not send startup error to PostHog', posthogError);
+      await Tracker.captureException(error, stackTrace);
+    } catch (e, t) {
+      // Tracker not initialized or failed - error is already logged above
+      log.warning('Could not send startup error to Tracker', e, t);
     }
 
     return runApp(ErrorApp(error: error.toString()));
@@ -92,22 +94,5 @@ Future<void> run(List<String> args) async {
 }
 
 Future<void> main(List<String> args) async {
-  // Initialize PostHog with error tracking enabled
-  FlutterError.onError = (FlutterErrorDetails details) async {
-    log.severe('Uncaught Flutter error', details.exception, details.stack);
-    await Posthog().captureException(
-      error: details.exception,
-      stackTrace: details.stack,
-    );
-    FlutterError.presentError(details);
-  };
-
-  // Catch async errors that occur outside of the Flutter framework
-  PlatformDispatcher.instance.onError = (error, stackTrace) {
-    log.severe('Uncaught async error', error, stackTrace);
-    Posthog().captureException(error: error, stackTrace: stackTrace);
-    return true; // Marks the error as handled
-  };
-
   await run(args);
 }

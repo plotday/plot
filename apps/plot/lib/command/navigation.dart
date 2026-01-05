@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/analytics/analytics.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/state/layout.dart';
 import 'command.dart';

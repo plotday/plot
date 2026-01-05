@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import 'package:plot/analytics/analytics.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/env.dart';
 import 'package:plot/router.dart';
 import 'command.dart';

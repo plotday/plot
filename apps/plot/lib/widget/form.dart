@@ -2,7 +2,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/select_tile.dart';
 import 'package:plot/command/base.dart';
 import 'package:plot/command/logging.dart';
-import 'package:plot/analytics/analytics.dart';
+import 'package:plot/analytics/tracker.dart';
 
 /// A action for showing a form
 class ShowForm extends Command {

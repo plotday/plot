@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'command.dart';
-import 'package:plot/analytics/analytics.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/color_dot.dart';

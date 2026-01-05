@@ -5,10 +5,9 @@ import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'package:plot/util/uuid.dart';
-import 'package:plot/analytics/analytics.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'env.dart';
 import 'logging.dart';
 
@@ -177,34 +176,33 @@ class Base {
         final sessionDurationMs = DateTime.now()
             .difference(_signInTime!)
             .inMilliseconds;
-        await Analytics.instance.trackSession(EventAction.signedOut, {
+        await Tracker.trackSession(EventAction.signedOut, {
           PropertyKey.sessionDurationMs: sessionDurationMs,
         });
       } else {
-        await Analytics.instance.trackSession(EventAction.signedOut);
+        await Tracker.trackSession(EventAction.signedOut);
       }
 
-      await Posthog().flush();
-      await Posthog().reset();
+      await Tracker.reset();
       _signInTime = null;
     } else {
       // User signing in or being updated
       if (event == supa.AuthChangeEvent.signedIn) {
         log.info('Processing sign in: ${user.primaryEmail}');
-        await Posthog().identify(
-          userId: user.id,
-          userProperties: {
+        await Tracker.identify(
+          user.id,
+          properties: {
             ...(user.primaryEmail == null ? {} : {"email": user.primaryEmail!}),
             ...(user.name == null ? {} : {"name": user.name!}),
           },
-          userPropertiesSetOnce: {
+          propertiesSetOnce: {
             "signed_up_time": DateTime.now().toUtc().toIso8601String(),
           },
         );
 
         // Track sign in event
         _signInTime = DateTime.now();
-        await Analytics.instance.trackSession(EventAction.signedIn);
+        await Tracker.trackSession(EventAction.signedIn);
       } else if (event == supa.AuthChangeEvent.tokenRefreshed) {
         log.info('Token refreshed, session updated');
       }

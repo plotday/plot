@@ -8,7 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/analytics/analytics.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/select_modal.dart';

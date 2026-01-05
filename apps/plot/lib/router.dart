@@ -12,7 +12,7 @@ import 'state/priority.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
-import 'analytics/analytics.dart';
+import 'analytics/tracker.dart';
 
 export 'package:auto_route/auto_route.dart';
 
@@ -282,7 +282,7 @@ class RouteLogger extends AutoRouterObserver {
         }
 
         // Track navigation to PostHog
-        Analytics.instance.trackNavigation(
+        Tracker.trackNavigation(
           screenName,
           buildNavigationProperties(
             screenName: screenName,
@@ -297,7 +297,7 @@ class RouteLogger extends AutoRouterObserver {
         const navigationThresholdMs = 1000;
         if (timeOnPreviousScreenMs != null &&
             timeOnPreviousScreenMs > navigationThresholdMs) {
-          Analytics.instance.trackPerformance(
+          Tracker.trackPerformance(
             object: EventObject.navigation,
             durationMs: timeOnPreviousScreenMs,
             thresholdMs: navigationThresholdMs,

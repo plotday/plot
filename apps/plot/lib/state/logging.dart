@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:logging/logging.dart';
 
-import 'package:plot/analytics/analytics.dart';
+import 'package:plot/analytics/tracker.dart';
 
 final Logger log = Logger('plot.state');
 
@@ -22,7 +22,7 @@ class BlocLogger extends BlocObserver {
 
     // Track error to PostHog
     final blocName = _normalizeBlocName(bloc.runtimeType.toString());
-    Analytics.instance.trackError(
+    Tracker.trackError(
       blocName,
       errorType: error.runtimeType.toString(),
       errorMessage: error.toString(),

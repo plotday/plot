@@ -3,7 +3,7 @@ import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/util/value.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/analytics/analytics.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'provider.dart';
 import 'logging.dart';
 
@@ -212,7 +212,7 @@ extension BuildContextCommandExtension on BuildContext {
       errorMessage = e.toString();
 
       // Track error event using explicit enum values
-      await Analytics.instance.trackError(
+      await Tracker.trackError(
         command.eventObject.value,
         errorType: errorType,
         errorMessage: errorMessage,
@@ -226,7 +226,7 @@ extension BuildContextCommandExtension on BuildContext {
       final durationMs = DateTime.now().difference(startTime).inMilliseconds;
 
       // Track command execution using explicit enum values
-      await Analytics.instance.trackAction(
+      await Tracker.trackAction(
         command.eventObject,
         command.eventAction,
         buildActionProperties(
@@ -241,7 +241,7 @@ extension BuildContextCommandExtension on BuildContext {
       // Track performance issue if command took too long
       const performanceThresholdMs = 2000;
       if (durationMs > performanceThresholdMs) {
-        await Analytics.instance.trackPerformance(
+        await Tracker.trackPerformance(
           object: EventObject.action,
           durationMs: durationMs,
           thresholdMs: performanceThresholdMs,
