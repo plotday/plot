@@ -1,4 +1,4 @@
-import type { ActivityLink, NewActivityWithNotes } from "../index";
+import type { ActivityLink, NewActivityWithNotes, SyncUpdate } from "../index";
 
 /**
  * Represents successful calendar authorization.
@@ -90,11 +90,24 @@ export interface SyncOptions {
  *   }
  *
  *   async onCalendarEvent(
- *     activity: NewActivityWithNotes,
+ *     syncUpdate: SyncUpdate,
  *     syncMeta: { initialSync: boolean }
  *   ) {
  *     // Step 4: Process synced events
- *     await this.plot.createActivity(activity);
+ *     if ('activityId' in syncUpdate) {
+ *       // Update existing activity
+ *       if (syncUpdate.update) {
+ *         await this.plot.updateActivity(syncUpdate.update);
+ *       }
+ *       if (syncUpdate.notes) {
+ *         for (const note of syncUpdate.notes) {
+ *           await this.plot.createNote(note);
+ *         }
+ *       }
+ *     } else {
+ *       // Create new activity
+ *       await this.plot.createActivity(syncUpdate);
+ *     }
  *   }
  * }
  * ```
@@ -134,21 +147,23 @@ export interface CalendarTool {
    * event import and ongoing change notifications. The callback function
    * will be invoked for each synced event.
    *
-   * Tools implementing this should set activity.unread based on sync type:
-   * - Initial sync (historical data): Set activity.unread = false
-   * - Incremental updates (webhooks): Set activity.unread = true or leave undefined
+   * Tools implementing this should:
+   * - Generate UUIDs for new activities and notes using Uuid.Generate()
+   * - Track activity IDs locally to detect updates vs new items
+   * - Send NewActivityWithNotes for new events
+   * - Send update object with activityId for changed events
+   * - Set activity.unread = false for initial sync, true for incremental updates
    *
    * @param authToken - Authorization token for calendar access
    * @param calendarId - ID of the calendar to sync
-   * @param callback - Function receiving (activity, ...extraArgs) for each synced event.
-   *                   The activity.unread field indicates whether this is from initial sync.
+   * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced event
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
    * @throws When auth token is invalid or calendar doesn't exist
    */
   startSync<
     TCallback extends (
-      activity: NewActivityWithNotes,
+      syncUpdate: SyncUpdate,
       ...args: any[]
     ) => any
   >(
@@ -156,7 +171,7 @@ export interface CalendarTool {
     calendarId: string,
     callback: TCallback,
     ...extraArgs: TCallback extends (
-      activity: any,
+      syncUpdate: any,
       ...rest: infer R
     ) => any
       ? R

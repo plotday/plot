@@ -10,9 +10,11 @@ import {
   type NewActivityWithNotes,
   type Note,
   type Priority,
+  type SyncUpdate,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
+import { Uuid } from "@plotday/twister/utils/uuid";
 import type {
   ProjectAuth,
   ProjectTool,
@@ -255,13 +257,19 @@ export default class ProjectSync extends Twist<ProjectSync> {
    * Creates or updates Plot activities based on issue state
    */
   async onIssue(
-    issue: NewActivityWithNotes,
+    syncUpdate: SyncUpdate,
     provider: ProjectProvider,
     projectId: string
   ) {
-    // Check if issue already exists (using source for deduplication)
-    if (issue.source) {
-      const existing = await this.tools.plot.getActivityBySource(issue.source);
+    // Only handle new issues, not updates
+    if ("activityId" in syncUpdate) return;
+
+    const issue = syncUpdate;
+
+    // Check if issue already exists (using meta.source for deduplication)
+    const sourceId = issue.meta?.source as string | undefined;
+    if (sourceId) {
+      const existing = await this.tools.plot.getActivityByMeta({ source: sourceId });
 
       if (existing) {
         // Issue exists - add update as Note to the thread
@@ -332,9 +340,10 @@ export default class ProjectSync extends Twist<ProjectSync> {
     }
   ): Promise<void> {
     // Only sync activities with a source (synced from external services)
-    if (!changes.update.source) return;
+    const sourceId = changes.previous.meta?.source as string | undefined;
+    if (!sourceId) return;
 
-    const parsed = this.parseSource(changes.update.source);
+    const parsed = this.parseSource(sourceId);
     if (!parsed) return;
 
     const { provider } = parsed;
@@ -353,12 +362,12 @@ export default class ProjectSync extends Twist<ProjectSync> {
       if (tool.updateIssue) {
         await tool.updateIssue(authToken, changes.update);
         console.log(
-          `Synced activity update to ${provider} issue from source ${changes.update.source}`
+          `Synced activity update to ${provider} issue from source ${sourceId}`
         );
       }
     } catch (error) {
       console.error(
-        `Failed to sync activity update to ${provider} issue ${changes.update.source}:`,
+        `Failed to sync activity update to ${provider} issue ${sourceId}:`,
         error
       );
     }
@@ -373,14 +382,15 @@ export default class ProjectSync extends Twist<ProjectSync> {
     const activity = note.activity;
 
     // Only sync activities with a source (synced from external services)
-    if (!activity.source) return;
+    const sourceId = activity.meta?.source as string | undefined;
+    if (!sourceId) return;
 
     // Filter out notes created by twists
     if (note.author.type === ActorType.Twist) {
       return;
     }
 
-    const parsed = this.parseSource(activity.source);
+    const parsed = this.parseSource(sourceId);
     if (!parsed) return;
 
     const { provider, issueId } = parsed;
@@ -451,7 +461,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
    * Get the parent onboarding activity reference
    */
   private async getParentActivity(): Promise<Pick<Activity, "id"> | undefined> {
-    const id = await this.get<string>("onboarding_activity_id");
+    const id = await this.get<Uuid>("onboarding_activity_id");
     return id ? { id } : undefined;
   }
 

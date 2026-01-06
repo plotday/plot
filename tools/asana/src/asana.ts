@@ -5,13 +5,13 @@ import {
   ActivityType,
   type NewActivityWithNotes,
 } from "@plotday/twister";
-import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
 import type {
   Project,
   ProjectAuth,
   ProjectSyncOptions,
   ProjectTool,
 } from "@plotday/twister/common/projects";
+import type { NewContact } from "@plotday/twister/plot";
 import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
@@ -150,19 +150,13 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Start syncing tasks from an Asana project
    */
   async startSync<
-    TCallback extends (
-      task: NewActivityWithNotes,
-      ...args: any[]
-    ) => any
+    TCallback extends (task: NewActivityWithNotes, ...args: any[]) => any
   >(
     authToken: string,
     projectId: string,
     callback: TCallback,
     options?: ProjectSyncOptions,
-    ...extraArgs: TCallback extends (
-      task: any,
-      ...rest: infer R
-    ) => any
+    ...extraArgs: TCallback extends (task: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void> {
@@ -288,10 +282,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       // Set unread based on sync type (false for initial sync to avoid notification overload)
       activityWithNotes.unread = !state.initialSync;
       // Execute the callback using the callback token
-      await this.tools.callbacks.run(
-        callbackToken,
-        activityWithNotes
-      );
+      await this.tools.callbacks.run(callbackToken, activityWithNotes);
     }
 
     // Check if more pages by checking if we got a full batch
@@ -329,34 +320,23 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     const createdBy = task.created_by;
     const assignee = task.assignee;
 
-    // Create contacts for created_by and assignee
-    const contacts: NewContact[] = [];
+    // Prepare author and assignee contacts - will be passed directly as NewContact
+    let authorContact: NewContact | undefined;
+    let assigneeContact: NewContact | undefined;
+
     if (createdBy?.email) {
-      contacts.push({
+      authorContact = {
         email: createdBy.email,
         name: createdBy.name,
         avatar: createdBy.photo?.image_128x128,
-      });
+      };
     }
-    if (assignee?.email && assignee.email !== createdBy?.email) {
-      contacts.push({
+    if (assignee?.email) {
+      assigneeContact = {
         email: assignee.email,
         name: assignee.name,
         avatar: assignee.photo?.image_128x128,
-      });
-    }
-
-    let authorActor: Actor | undefined;
-    let assigneeActor: Actor | undefined;
-
-    if (contacts.length > 0) {
-      const actors = await this.tools.plot.addContacts(contacts);
-      if (createdBy?.email) {
-        authorActor = actors.find((a) => a.email === createdBy.email);
-      }
-      if (assignee?.email) {
-        assigneeActor = actors.find((a) => a.email === assignee.email);
-      }
+      };
     }
 
     // Build notes array: description
@@ -374,9 +354,12 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     return {
       type: ActivityType.Action,
       title: task.name,
-      source: `asana:task:${projectId}:${task.gid}`,
-      author: authorActor,
-      assignee: assigneeActor,
+      meta: {
+        source: `asana:task:${projectId}:${task.gid}`,
+        taskGid: task.gid,
+      },
+      author: authorContact,
+      assignee: assigneeContact,
       doneAt: task.completed ? new Date(task.completed_at || Date.now()) : null,
       notes,
     };
@@ -392,8 +375,9 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     authToken: string,
     update: import("@plotday/twister").ActivityUpdate
   ): Promise<void> {
-    // Extract Asana task GID from source
-    const taskGid = update.source?.split(":").pop();
+    // Extract Asana task GID from meta
+    const source = update.meta?.source as string | undefined;
+    const taskGid = source?.split(":").pop();
     if (!taskGid) {
       throw new Error("Invalid source format for Asana task");
     }

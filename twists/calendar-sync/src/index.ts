@@ -9,10 +9,12 @@ import {
   type ActorId,
   type NewActivityWithNotes,
   type Priority,
+  type SyncUpdate,
   type Tag,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
+import { Uuid } from "@plotday/twister/utils/uuid";
 import type {
   Calendar,
   CalendarAuth,
@@ -83,7 +85,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
   }
 
   private async getParentActivity(): Promise<Pick<Activity, "id"> | undefined> {
-    const id = await this.get<string>("connect_calendar_activity_id");
+    const id = await this.get<Uuid>("connect_calendar_activity_id");
     return id ? { id } : undefined;
   }
 
@@ -181,20 +183,27 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
   }
 
   async handleEvent(
-    activity: NewActivityWithNotes,
+    syncUpdate: SyncUpdate,
     _provider: CalendarProvider,
     _calendarId: string
   ): Promise<void> {
+    // Only handle new events, not updates
+    if ("activityId" in syncUpdate) return;
+
+    const activity = syncUpdate;
+
     // Check if activity already exists based on source
-    if (activity.source) {
-      const existing = await this.tools.plot.getActivityBySource(
-        activity.source
-      );
+    const sourceId = activity.meta?.source as string | undefined;
+    if (sourceId) {
+      const existing = await this.tools.plot.getActivityByMeta({
+        source: sourceId,
+      });
       if (existing) {
         // Activity already exists - update it if needed
         await this.updateExistingEvent(existing, activity);
         return;
       }
+    } else {
       activity.meta = {
         ...activity.meta,
         // Add a hash so we can add a new note if it changes
@@ -349,8 +358,8 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
   }
 
   private haveTagsChanged(
-    existingTags: Partial<Record<Tag, ActorId[]>> | null,
-    incomingTags: Partial<Record<Tag, ActorId[]>>
+    existingTags: Partial<Record<Tag, ActorId[]>>,
+    incomingTags: any // NewTags or Tags
   ): boolean {
     // Convert both to JSON for simple comparison
     // This works for most cases, though a more sophisticated comparison

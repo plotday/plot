@@ -2,6 +2,7 @@ import type {
   ActivityLink,
   ActivityUpdate,
   NewActivityWithNotes,
+  SyncUpdate,
 } from "../index";
 
 /**
@@ -76,29 +77,27 @@ export interface ProjectTool {
   /**
    * Begins synchronizing issues from a specific project.
    *
-   * Issues and tasks are converted to ActivityWithNotes objects.
-   * Each object contains an Activity (with issue title and metadata) and Notes array
-   * (description as first note, followed by comments).
-   * The Activity.source should be set for deduplication.
+   * Issues and tasks are converted to SyncUpdate objects, which can be either
+   * new items or updates to existing items.
    *
-   * When an issue is updated, tools should check for existing Activity using
-   * getActivityBySource() and add a Note rather than creating a new Activity.
-   *
-   * Tools implementing this should set issue.unread based on sync type:
-   * - Initial sync (historical data): Set issue.unread = false
-   * - Incremental updates (webhooks): Set issue.unread = true or leave undefined
+   * Tools implementing this should:
+   * - Generate UUIDs for new activities and notes using Uuid.Generate()
+   * - Track activity IDs locally to detect updates vs new items
+   * - Send NewActivityWithNotes for new issues
+   * - Send update object with activityId for changed issues or new comments
+   * - Track description note ID and hash to detect description changes
+   * - Set activity.unread = false for initial sync, true for incremental updates
    *
    * @param authToken - Authorization token for access
    * @param projectId - ID of the project to sync
-   * @param callback - Function receiving (issue, ...extraArgs) for each synced issue.
-   *                   The issue.unread field indicates whether this is from initial sync.
+   * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced issue
    * @param options - Optional configuration for limiting the sync scope (e.g., time range)
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
    */
   startSync<
     TCallback extends (
-      issue: NewActivityWithNotes,
+      syncUpdate: SyncUpdate,
       ...args: any[]
     ) => any
   >(
@@ -107,7 +106,7 @@ export interface ProjectTool {
     callback: TCallback,
     options?: ProjectSyncOptions,
     ...extraArgs: TCallback extends (
-      issue: any,
+      syncUpdate: any,
       ...rest: infer R
     ) => any
       ? R

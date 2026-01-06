@@ -27,19 +27,20 @@ Plot Twists are TypeScript classes that extend the `Twist` base class. Twists in
 
 1. **Always create Activities with an initial Note** - The title is just a summary; detailed content goes in Notes
 2. **Add Notes to existing Activities for updates** - Don't create a new Activity for each related message
-3. **Use `source` field for deduplication** - Enables safe, idempotent sync from external systems
+3. **Track external items using generated UUIDs** - Store mappings between external IDs and Plot UUIDs for deduplication
 4. **Most Activities should be `ActivityType.Note`** - Use `Action` only for tasks with `doneAt`, use `Event` only for items with `start`/`end`
 
 ### Decision Tree
 
 ```
 New event/task/conversation?
-  ├─ Yes → Create new Activity with initial Note
-  │         Include `source` field for deduplication
+  ├─ Yes → Generate UUID with Uuid.Generate()
+  │         Create new Activity with that UUID
+  │         Store mapping: external_id → activity_uuid
   │
-  └─ No (update/reply/comment) → Check for existing Activity
-      ├─ Found → Add Note to existing Activity
-      └─ Not found → Create new Activity with initial Note
+  └─ No (update/reply/comment) → Look up mapping by external_id
+      ├─ Found → Add Note to existing Activity using stored UUID
+      └─ Not found → Create new Activity with UUID + store mapping
 ```
 
 ## Twist Structure Pattern
@@ -52,6 +53,7 @@ import {
   twist,
 } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
+import { Uuid } from "@plotday/twister/utils/uuid";
 
 export default class MyTwist extends Twist<MyTwist> {
   build(build: ToolBuilder) {
@@ -285,26 +287,38 @@ async handleEvent(
   incomingActivity: NewActivityWithNotes,
   calendarId: string
 ): Promise<void> {
-  // Check if this activity already exists (using source for deduplication)
-  if (incomingActivity.source) {
-    const existing = await this.tools.plot.getActivityBySource(
-      incomingActivity.source
-    );
+  // Extract external event ID from meta (adapt based on your tool's data)
+  const externalId = incomingActivity.meta?.eventId;
 
-    if (existing) {
-      // Add update as a Note to existing Activity (add message to thread)
-      if (incomingActivity.notes?.[0]?.content) {
-        await this.tools.plot.createNote({
-          activity: { id: existing.id },
-          content: incomingActivity.notes[0].content,
-        });
-      }
-      return;
-    }
+  if (!externalId) {
+    console.error("Event missing external ID");
+    return;
   }
 
+  // Check if we've already synced this event
+  const mappingKey = `event_mapping:${calendarId}:${externalId}`;
+  const existingActivityId = await this.get<Uuid>(mappingKey);
+
+  if (existingActivityId) {
+    // Event already exists - add update as a Note (add message to thread)
+    if (incomingActivity.notes?.[0]?.content) {
+      await this.tools.plot.createNote({
+        activity: { id: existingActivityId },
+        content: incomingActivity.notes[0].content,
+      });
+    }
+    return;
+  }
+
+  // New event - generate UUID and store mapping
+  const activityId = Uuid.Generate();
+  await this.set(mappingKey, activityId);
+
   // Create new Activity with initial Note (new thread with first message)
-  await this.tools.plot.createActivity(incomingActivity);
+  await this.tools.plot.createActivity({
+    ...incomingActivity,
+    id: activityId,
+  });
 }
 
 async stopSync(calendarId: string): Promise<void> {
@@ -407,12 +421,22 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
 
   // Process results (create activities with Notes)
   for (const item of result.items) {
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
-      title: item.title,
-      source: `external:${item.id}`, // For deduplication
-      notes: [{ content: item.description }],
-    });
+    // Check if already synced
+    const mappingKey = `item_mapping:${resourceId}:${item.id}`;
+    const existingId = await this.get<Uuid>(mappingKey);
+
+    if (!existingId) {
+      // New item - generate UUID and store mapping
+      const activityId = Uuid.Generate();
+      await this.set(mappingKey, activityId);
+
+      await this.tools.plot.createActivity({
+        id: activityId,
+        type: ActivityType.Note,
+        title: item.title,
+        notes: [{ id: Uuid.Generate(), content: item.description }],
+      });
+    }
   }
 
   if (result.nextPageToken) {
@@ -472,8 +496,8 @@ try {
 - **Processing self-created activities** - Other users may change an Activity created by the twist, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
 - **Always create Activities with Notes** - See "Understanding Activities and Notes" section above for the thread/message pattern and decision tree.
 - **Use correct Activity types** - Most should be `ActivityType.Note`. Only use `Action` for tasks with `doneAt`, and `Event` for items with `start`/`end`.
-- **Use `source` field for deduplication** - Always include `source` when syncing external data to enable safe, idempotent operations.
-- **Add Notes to existing Activities** - Check for existing Activities with `getActivityBySource()` before creating new ones. Think thread replies, not new threads.
+- **Track external items with UUID mappings** - Generate UUIDs with `Uuid.Generate()` and store mappings (`external_id → uuid`) for deduplication. Never rely on the `source` field.
+- **Add Notes to existing Activities** - Look up stored UUID mappings before creating new Activities. Think thread replies, not new threads.
 - Tools are declared in the `build` method and accessed via `this.tools.toolName` in twist methods.
 - **Don't forget runtime limits** - Each execution has ~10 seconds. Break long operations into batches with the Tasks tool. Process enough items per batch to be efficient, but few enough to stay under time limits.
 - **Always use Callbacks tool for persistent references** - Direct function references don't survive worker restarts.

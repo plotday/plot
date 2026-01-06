@@ -85,6 +85,11 @@
       "types": "./dist/utils/hash.d.ts",
       "default": "./dist/utils/hash.js"
     },
+    "./utils/uuid": {
+      "@plotday/source": "./src/utils/uuid.ts",
+      "types": "./dist/utils/uuid.d.ts",
+      "default": "./dist/utils/uuid.js"
+    },
     "./common/calendar": {
       "@plotday/source": "./src/common/calendar.ts",
       "types": "./dist/common/calendar.d.ts",
@@ -218,12 +223,14 @@
     "dotenv": "^16.4.5",
     "esbuild": "^0.24.0",
     "prompts": "^2.4.2",
-    "typebox": "^1.0.35"
+    "typebox": "^1.0.35",
+    "uuid": "^11.0.5"
   },
   "devDependencies": {
     "@types/asana": "^0.18.17",
     "@types/node": "^25.0.3",
     "@types/prompts": "^2.4.9",
+    "@types/uuid": "^10.0.0",
     "tsx": "^4.19.2",
     "typedoc": "^0.28.14",
     "typedoc-plugin-missing-exports": "^4.1.2",

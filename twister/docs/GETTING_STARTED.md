@@ -232,7 +232,7 @@ Always create activities with an initial note. The `notes` array can contain mul
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request",
-  source: "github:pr:123", // For deduplication
+  // Tracked via UUID mapping
   notes: [
     {
       content: "Please review the authentication changes and ensure they follow security best practices.",

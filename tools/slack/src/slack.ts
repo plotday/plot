@@ -1,6 +1,6 @@
 import {
   type ActivityLink,
-  type ActivityWithNotes,
+  type SyncUpdate,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -199,13 +199,15 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   }
 
   async startSync<
-    TCallback extends (thread: ActivityWithNotes, ...args: any[]) => any
+    TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any
   >(
     authToken: string,
     channelId: string,
     callback: TCallback,
     options?: MessageSyncOptions,
-    ...extraArgs: any[]
+    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
+      ? R
+      : []
   ): Promise<void> {
     console.log("Starting Slack sync for channel", channelId);
 
@@ -366,70 +368,12 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
     for (const thread of threads) {
       try {
-        // Transform Slack thread to ActivityWithNotes
+        // Transform Slack thread to NewActivityWithNotes
         const activityThread = transformSlackThread(thread, channelId);
 
         if (activityThread.notes.length === 0) continue;
 
-        // Extract unique Slack user IDs from notes
-        const userIdSet = new Set<string>();
-
-        for (const note of activityThread.notes) {
-          // Add author if it's a Slack user
-          if (note.author.id.startsWith("slack:")) {
-            const userId = note.author.id.replace("slack:", "");
-            userIdSet.add(userId);
-          }
-
-          // Add mentioned users
-          if (note.mentions) {
-            for (const mentionId of note.mentions) {
-              if (mentionId.startsWith("slack:")) {
-                const userId = mentionId.replace("slack:", "");
-                userIdSet.add(userId);
-              }
-            }
-          }
-        }
-
-        // Fetch user info and create contacts
-        const userIdToActor = new Map<string, any>();
-        for (const userId of userIdSet) {
-          const user = await api.getUser(userId);
-          if (user && user.profile?.email) {
-            const [actor] = await this.tools.plot.addContacts([
-              {
-                email: user.profile.email,
-                name:
-                  user.profile?.display_name ||
-                  user.profile?.real_name ||
-                  user.name,
-                avatar: user.profile?.image_72,
-              },
-            ]);
-            if (actor) {
-              userIdToActor.set(userId, actor);
-            }
-          }
-        }
-
-        // Update note authors with real Actor objects
-        for (const note of activityThread.notes) {
-          if (note.author.id.startsWith("slack:")) {
-            const userId = note.author.id.replace("slack:", "");
-            const actor = userIdToActor.get(userId);
-            if (actor) {
-              note.author = actor;
-            }
-          }
-        }
-
-        // Set activity author to the first message's author
-        if (activityThread.notes.length > 0) {
-          activityThread.author = activityThread.notes[0].author;
-        }
-
-        // Call parent callback with single thread
+        // Call parent callback with the thread (contacts will be created by the API)
         await this.run(callbackToken, activityThread);
       } catch (error) {
         console.error(`Failed to process thread:`, error);

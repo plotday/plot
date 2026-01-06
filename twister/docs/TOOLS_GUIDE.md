@@ -58,12 +58,14 @@ await this.tools.plot.createActivity({
 });
 
 // Create a task with a note containing links
+const activityId = Uuid.Generate();
 await this.tools.plot.createActivity({
+  id: activityId,
   type: ActivityType.Action,
   title: "Review pull request #123",
-  source: "github:pr:123", // For deduplication
   notes: [
     {
+      id: Uuid.Generate(),
       content: "Please review the changes and provide feedback.",
       links: [
         {
@@ -78,13 +80,14 @@ await this.tools.plot.createActivity({
 
 // Create an event with description in a note
 await this.tools.plot.createActivity({
+  id: Uuid.Generate(),
   type: ActivityType.Event,
   title: "Team standup",
   start: new Date("2025-02-01T10:00:00Z"),
   end: new Date("2025-02-01T10:30:00Z"),
-  source: "google-calendar:event:abc123", // For deduplication
   notes: [
     {
+      id: Uuid.Generate(),
       content: "Daily standup meeting to sync on progress.",
     },
   ],
@@ -169,15 +172,21 @@ const project = await this.tools.plot.createPriority({
 });
 ```
 
-### Activity Source and Meta
+### Activity Meta and UUID Tracking
 
-Use the `source` field for deduplication and the `meta` field to store additional custom data:
+Use the `meta` field to store additional custom data and track external items using UUID mappings:
 
 ```typescript
+// Generate UUID for the activity
+const activityId = Uuid.Generate();
+
+// Store mapping from external ID to Plot UUID
+await this.set("pr_mapping:123", activityId);
+
 await this.tools.plot.createActivity({
+  id: activityId,
   type: ActivityType.Action,
   title: "Review PR",
-  source: "github:pr:123", // For deduplication
   meta: {
     github_pr_id: "123",
     github_repo: "org/repo",
@@ -185,13 +194,21 @@ await this.tools.plot.createActivity({
   },
   notes: [
     {
+      id: Uuid.Generate(),
       content: "Please review this pull request.",
     },
   ],
 });
 
-// Later, find by source
-const activity = await this.tools.plot.getActivityBySource("github:pr:123");
+// Later, find by looking up the mapping
+const storedActivityId = await this.get<Uuid>("pr_mapping:123");
+if (storedActivityId) {
+  // Use the stored UUID to update or add notes
+  await this.tools.plot.createNote({
+    activity: { id: storedActivityId },
+    content: "PR has been updated",
+  });
+}
 ```
 
 ### Creating and Managing Notes
@@ -202,10 +219,13 @@ const activity = await this.tools.plot.getActivityBySource("github:pr:123");
 
 ```typescript
 // ✅ Recommended - Activity with initial Note (thread with first message)
+const activityId = Uuid.Generate();
+await this.set("ticket_mapping:12345", activityId); // Track for deduplication
+
 await this.tools.plot.createActivity({
+  id: activityId,
   type: ActivityType.Action,
   title: "Customer feedback: Login issues",
-  source: "support-ticket:12345", // For deduplication
   notes: [
     {
       content: "Customer reported:\n\n\"I'm unable to log in using Google SSO. The page redirects but then shows an error 'Invalid state parameter'.\"\n\nPriority: High\nAffected users: ~15 reports",
@@ -246,26 +266,31 @@ Keep all messages in a thread or conversation within a single Activity. Think of
 
 ```typescript
 async handleEmailThread(thread: EmailThread) {
-  const source = `email:thread:${thread.id}`;
+  const mappingKey = `email_thread_mapping:${thread.id}`;
 
   // Check if Activity exists for this thread
-  const existing = await this.tools.plot.getActivityBySource(source);
+  const existingActivityId = await this.get<Uuid>(mappingKey);
 
-  if (existing) {
+  if (existingActivityId) {
     // Add new messages as Notes to the existing thread
     for (const message of thread.newMessages) {
       await this.tools.plot.createNote({
-        activity: { id: existing.id },
+        activity: { id: existingActivityId },
+        id: Uuid.Generate(),
         content: message.body,
       });
     }
   } else {
     // Create new thread with initial messages
+    const activityId = Uuid.Generate();
+    await this.set(mappingKey, activityId);
+
     await this.tools.plot.createActivity({
+      id: activityId,
       type: ActivityType.Note,
       title: thread.subject,
-      source, // For future deduplication
       notes: thread.messages.map((msg) => ({
+        id: Uuid.Generate(),
         content: msg.body,
       })),
     });

@@ -1,11 +1,9 @@
 import { ActivityType } from "@plotday/twister";
 import type {
-  ActivityWithNotes,
-  Actor,
-  ActorId,
-  ActorType,
-  Note,
-} from "@plotday/twister";
+  NewActivityWithNotes,
+  NewActor,
+} from "@plotday/twister/plot";
+import { Uuid } from "@plotday/twister/utils/uuid";
 
 export type GmailLabel = {
   id: string;
@@ -240,35 +238,11 @@ export function parseEmailAddress(headerValue: string): EmailAddress {
   };
 }
 
-/**
- * Converts an EmailAddress to an Actor.
- */
-function emailAddressToActor(emailAddress: EmailAddress): Actor {
-  return {
-    id: `contact:${emailAddress.email}` as ActorId,
-    type: 2 as ActorType, // ActorType.Contact
-    email: emailAddress.email,
-    name: emailAddress.name,
-  };
-}
 
 /**
- * Parses multiple email addresses from a header value (comma-separated).
+ * Parses email addresses and returns NewActor[] for mentions.
  */
-function parseEmailAddresses(headerValue: string | null): Actor[] {
-  if (!headerValue) return [];
-
-  return headerValue
-    .split(",")
-    .map((addr) => addr.trim())
-    .filter((addr) => addr.length > 0)
-    .map((addr) => emailAddressToActor(parseEmailAddress(addr)));
-}
-
-/**
- * Parses email addresses and returns just the ActorIds for mentions.
- */
-function parseEmailAddressIds(headerValue: string | null): ActorId[] {
+function parseEmailAddressesToNewActors(headerValue: string | null): NewActor[] {
   if (!headerValue) return [];
 
   return headerValue
@@ -277,7 +251,10 @@ function parseEmailAddressIds(headerValue: string | null): ActorId[] {
     .filter((addr) => addr.length > 0)
     .map((addr) => {
       const parsed = parseEmailAddress(addr);
-      return `contact:${parsed.email}` as ActorId;
+      return {
+        email: parsed.email,
+        name: parsed.name || undefined,
+      } as NewActor;
     });
 }
 
@@ -367,36 +344,15 @@ function extractAttachments(
 }
 
 /**
- * Transforms a Gmail thread into an ActivityWithNotes structure.
+ * Transforms a Gmail thread into a NewActivityWithNotes structure.
  * The subject becomes the Activity title, and each email becomes a Note.
  */
-export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
+export function transformGmailThread(thread: GmailThread): NewActivityWithNotes {
   if (!thread.messages || thread.messages.length === 0) {
     // Return empty structure for invalid threads
     return {
-      id: `gmail:${thread.id}` as any,
       type: ActivityType.Note,
-      author: { id: "system" as ActorId, type: 1 as ActorType, name: null },
-      title: null,
-      assignee: null,
-      doneAt: null,
-      start: null,
-      end: null,
-      recurrenceUntil: null,
-      recurrenceCount: null,
-      priority: null as any,
-      recurrenceRule: null,
-      recurrenceExdates: null,
-      recurrenceDates: null,
-      recurrence: null,
-      occurrence: null,
-      source: null,
-      meta: null,
-      mentions: null,
-      tags: null,
-      draft: false,
-      private: false,
-      archived: false,
+      title: "",
       notes: [],
     };
   }
@@ -405,33 +361,15 @@ export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
   const subject = getHeader(parentMessage, "Subject");
 
   // Create Activity
-  const activity: ActivityWithNotes = {
-    id: `gmail:${thread.id}` as any,
+  const activity: NewActivityWithNotes = {
     type: ActivityType.Note,
-    author: { id: "system" as ActorId, type: 1 as ActorType, name: null },
     title: subject || "Email",
-    assignee: null,
-    doneAt: null,
     start: new Date(parseInt(parentMessage.internalDate)),
-    end: null,
-    recurrenceUntil: null,
-    recurrenceCount: null,
-    priority: null as any,
-    recurrenceRule: null,
-    recurrenceExdates: null,
-    recurrenceDates: null,
-    recurrence: null,
-    occurrence: null,
-    source: `gmail:${thread.id}`,
     meta: {
       threadId: thread.id,
       historyId: thread.historyId,
+      source: `gmail:${thread.id}`,
     },
-    mentions: null,
-    tags: null,
-    draft: false,
-    private: false,
-    archived: false,
     notes: [],
   };
 
@@ -446,23 +384,21 @@ export function transformGmailThread(thread: GmailThread): ActivityWithNotes {
 
     const body = extractBody(message.payload);
 
-    // Combine to and cc for mentions
-    const mentions: ActorId[] = [
-      ...parseEmailAddressIds(to),
-      ...parseEmailAddressIds(cc),
+    // Combine to and cc for mentions - convert to NewActor[]
+    const mentions: NewActor[] = [
+      ...parseEmailAddressesToNewActors(to),
+      ...parseEmailAddressesToNewActors(cc),
     ];
 
-    const note: Note = {
-      id: `gmail:${thread.id}:${message.id}` as any,
-      activity: activity,
-      author: emailAddressToActor(sender),
+    // Create NewNote (Omit<NewNote, "activity">)
+    const note = {
+      id: Uuid.Generate(),
+      author: {
+        email: sender.email,
+        name: sender.name || undefined,
+      } as NewActor,
       content: body || message.snippet,
-      links: null,
-      mentions: mentions.length > 0 ? mentions : null,
-      tags: null,
-      draft: false,
-      private: false,
-      archived: false,
+      mentions: mentions.length > 0 ? mentions : undefined,
     };
 
     activity.notes.push(note);

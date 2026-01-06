@@ -6,12 +6,14 @@ import {
   type ActorId,
   ConferencingProvider,
   type NewActivityWithNotes,
+  type NewActor,
   type NewContact,
   type NewNote,
   Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
+import { Uuid } from "@plotday/twister/utils/uuid";
 import type {
   Calendar,
   CalendarAuth,
@@ -379,37 +381,24 @@ export class OutlookCalendar
               continue;
             }
 
-            // Extract and create contacts from organizer and attendees
-            let actorIds: ActorId[] = [];
+            // Extract contacts from organizer and attendees
             let validAttendees: typeof outlookEvent.attendees = [];
-            let authorActor = undefined;
 
-            // Create contact for organizer (author)
+            // Prepare author contact (organizer) - will be passed directly as NewContact
+            let authorContact: NewContact | undefined = undefined;
             if (outlookEvent.organizer?.emailAddress?.address) {
-              const organizerContact: NewContact = {
+              authorContact = {
                 email: outlookEvent.organizer.emailAddress.address,
                 name: outlookEvent.organizer.emailAddress.name,
               };
-              const [author] = await this.tools.plot.addContacts([organizerContact]);
-              authorActor = author;
             }
 
-            // Create contacts for attendees
+            // Prepare attendee contacts for tags
             if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
               // Filter to get only valid attendees (with email, not resources)
               validAttendees = outlookEvent.attendees.filter(
                 (att) => att.emailAddress?.address && att.type !== "resource"
               );
-
-              const contacts: NewContact[] = validAttendees.map((att) => ({
-                email: att.emailAddress!.address!,
-                name: att.emailAddress!.name,
-              }));
-
-              if (contacts.length > 0) {
-                const actors = await this.tools.plot.addContacts(contacts);
-                actorIds = actors.map((actor) => actor.id);
-              }
             }
 
             // Transform the Outlook event to a Plot activity
@@ -420,31 +409,33 @@ export class OutlookCalendar
               continue;
             }
 
-            // Determine RSVP status for all attendees and set tags
-            let tags: Partial<Record<Tag, ActorId[]>> | null = null;
+            // Determine RSVP status for all attendees and set tags with NewActor[]
+            let tags: Partial<Record<Tag, NewActor[]>> | null = null;
             if (validAttendees.length > 0) {
-              const attendTags: ActorId[] = [];
-              const skipTags: ActorId[] = [];
-              const undecidedTags: ActorId[] = [];
+              const attendTags: NewActor[] = [];
+              const skipTags: NewActor[] = [];
+              const undecidedTags: NewActor[] = [];
 
               // Iterate through valid attendees and group by response status
-              validAttendees.forEach((attendee, index) => {
-                const actorId = actorIds[index];
-                if (actorId) {
-                  const response = attendee.status?.response;
-                  if (response === "accepted") {
-                    attendTags.push(actorId);
-                  } else if (response === "declined") {
-                    skipTags.push(actorId);
-                  } else if (
-                    response === "tentativelyAccepted" ||
-                    response === "none" ||
-                    response === "notResponded"
-                  ) {
-                    undecidedTags.push(actorId);
-                  }
-                  // organizer has no response status, so they won't get a tag
+              validAttendees.forEach((attendee) => {
+                const newActor: NewActor = {
+                  email: attendee.emailAddress!.address!,
+                  name: attendee.emailAddress!.name,
+                };
+
+                const response = attendee.status?.response;
+                if (response === "accepted") {
+                  attendTags.push(newActor);
+                } else if (response === "declined") {
+                  skipTags.push(newActor);
+                } else if (
+                  response === "tentativelyAccepted" ||
+                  response === "none" ||
+                  response === "notResponded"
+                ) {
+                  undecidedTags.push(newActor);
                 }
+                // organizer has no response status, so they won't get a tag
               });
 
               // Only set tags if we have at least one
@@ -485,7 +476,7 @@ export class OutlookCalendar
             }
 
             // Create note with description and/or links
-            const notes: NewNote[] = [];
+            const notes: Omit<NewNote, "activity">[] = [];
             const hasDescription =
               outlookEvent.body?.content &&
               outlookEvent.body.content.trim().length > 0;
@@ -493,7 +484,7 @@ export class OutlookCalendar
 
             if (hasDescription || hasLinks) {
               notes.push({
-                activity: { id: "" }, // Will be filled in by the API
+                id: Uuid.Generate(),
                 content: hasDescription ? outlookEvent.body!.content! : null,
                 links: hasLinks ? links : null,
                 contentType:
@@ -504,7 +495,7 @@ export class OutlookCalendar
             // Build NewActivityWithNotes from the transformed activity
             const activityWithNotes: NewActivityWithNotes = {
               ...activity,
-              author: authorActor,
+              author: authorContact,
               meta: activity.meta,
               tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
               notes,

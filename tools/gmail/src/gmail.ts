@@ -1,6 +1,6 @@
 import {
   type ActivityLink,
-  type ActivityWithNotes,
+  type SyncUpdate,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -199,13 +199,15 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   }
 
   async startSync<
-    TCallback extends (thread: ActivityWithNotes, ...args: any[]) => any
+    TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any
   >(
     authToken: string,
     channelId: string,
     callback: TCallback,
     options?: MessageSyncOptions,
-    ...extraArgs: any[]
+    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
+      ? R
+      : []
   ): Promise<void> {
     console.log("Starting Gmail sync for channel", channelId);
 
@@ -392,45 +394,12 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
     for (const thread of threads) {
       try {
-        // Transform Gmail thread to ActivityWithNotes
+        // Transform Gmail thread to NewActivityWithNotes
         const activityThread = transformGmailThread(thread);
 
         if (activityThread.notes.length === 0) continue;
 
-        // Extract unique actors from notes for contact creation
-        const actorMap = new Map<string, { email: string; name?: string }>();
-
-        for (const note of activityThread.notes) {
-          // Add author
-          if (note.author.email) {
-            actorMap.set(note.author.email, {
-              email: note.author.email,
-              name: note.author.name || undefined,
-            });
-          }
-
-          // Add mentioned actors
-          if (note.mentions) {
-            for (const mentionId of note.mentions) {
-              // Extract email from ActorId (format: "contact:email@example.com")
-              const email = mentionId.replace("contact:", "");
-              if (email !== mentionId) {
-                // Only add if it's actually a contact: ID
-                actorMap.set(email, {
-                  email,
-                  name: undefined,
-                });
-              }
-            }
-          }
-        }
-
-        // Create contacts for all unique actors
-        if (actorMap.size > 0) {
-          await this.tools.plot.addContacts(Array.from(actorMap.values()));
-        }
-
-        // Call parent callback with single thread
+        // Call parent callback with the thread (contacts will be created by the API)
         await this.run(callbackToken, activityThread);
       } catch (error) {
         console.error(`Failed to process Gmail thread ${thread.id}:`, error);

@@ -1,11 +1,9 @@
 import { ActivityType } from "@plotday/twister";
 import type {
-  ActivityWithNotes,
-  Actor,
-  ActorId,
-  ActorType,
-  Note,
-} from "@plotday/twister";
+  NewActivityWithNotes,
+  NewActor,
+} from "@plotday/twister/plot";
+import { Uuid } from "@plotday/twister/utils/uuid";
 
 export type SlackChannel = {
   id: string;
@@ -193,21 +191,21 @@ function parseUserMentions(text: string): string[] {
 }
 
 /**
- * Parses user mentions and returns ActorIds for the mentions field.
+ * Parses user mentions and returns NewActor[] for the mentions field.
  */
-function parseUserMentionIds(text: string): ActorId[] {
+function parseUserMentionNewActors(text: string): NewActor[] {
   const userIds = parseUserMentions(text);
-  return userIds.map((userId) => `slack:${userId}` as ActorId);
+  return userIds.map((userId) => ({
+    id: `slack:${userId}` as any,
+  }));
 }
 
 /**
- * Converts a Slack user ID to an Actor.
+ * Converts a Slack user ID to a NewActor.
  */
-function slackUserToActor(userId: string): Actor {
+function slackUserToNewActor(userId: string): NewActor {
   return {
-    id: `slack:${userId}` as ActorId,
-    type: 2 as ActorType, // ActorType.Contact
-    name: null,
+    id: `slack:${userId}` as any,
   };
 }
 
@@ -236,41 +234,20 @@ function formatSlackText(text: string): string {
 }
 
 /**
- * Transforms a Slack message thread into an ActivityWithNotes structure.
+ * Transforms a Slack message thread into a NewActivityWithNotes structure.
  * The first message snippet becomes the Activity title, and each message becomes a Note.
  */
 export function transformSlackThread(
   messages: SlackMessage[],
   channelId: string
-): ActivityWithNotes {
+): NewActivityWithNotes {
   const parentMessage = messages[0];
 
   if (!parentMessage) {
     // Return empty structure for invalid threads
     return {
-      id: `slack:${channelId}:empty` as any,
       type: ActivityType.Note,
-      author: { id: "system" as ActorId, type: 1 as ActorType, name: null },
       title: "Empty thread",
-      assignee: null,
-      doneAt: null,
-      start: null,
-      end: null,
-      recurrenceUntil: null,
-      recurrenceCount: null,
-      priority: null as any,
-      recurrenceRule: null,
-      recurrenceExdates: null,
-      recurrenceDates: null,
-      recurrence: null,
-      occurrence: null,
-      source: null,
-      meta: null,
-      mentions: null,
-      tags: null,
-      draft: false,
-      private: false,
-      archived: false,
       notes: [],
     };
   }
@@ -280,33 +257,15 @@ export function transformSlackThread(
   const title = firstText.substring(0, 50) || "Slack message";
 
   // Create Activity
-  const activity: ActivityWithNotes = {
-    id: `slack:${channelId}:${threadTs}` as any,
+  const activity: NewActivityWithNotes = {
     type: ActivityType.Note,
-    author: { id: "system" as ActorId, type: 1 as ActorType, name: null },
     title,
-    assignee: null,
-    doneAt: null,
     start: new Date(parseFloat(parentMessage.ts) * 1000),
-    end: null,
-    recurrenceUntil: null,
-    recurrenceCount: null,
-    priority: null as any,
-    recurrenceRule: null,
-    recurrenceExdates: null,
-    recurrenceDates: null,
-    recurrence: null,
-    occurrence: null,
-    source: `slack:${channelId}:${threadTs}`,
     meta: {
+      source: `slack:${channelId}:${threadTs}`,
       channelId: channelId,
       threadTs: threadTs,
     },
-    mentions: null,
-    tags: null,
-    draft: false,
-    private: false,
-    archived: false,
     notes: [],
   };
 
@@ -316,19 +275,14 @@ export function transformSlackThread(
     if (!userId) continue; // Skip messages without user
 
     const text = formatSlackText(message.text);
-    const mentions = parseUserMentionIds(message.text);
+    const mentions = parseUserMentionNewActors(message.text);
 
-    const note: Note = {
-      id: `slack:${channelId}:${message.ts}` as any,
-      activity: activity,
-      author: slackUserToActor(userId),
+    // Create NewNote (Omit<NewNote, "activity">)
+    const note = {
+      id: Uuid.Generate(),
+      author: slackUserToNewActor(userId),
       content: text,
-      links: null,
-      mentions: mentions.length > 0 ? mentions : null,
-      tags: null,
-      draft: false,
-      private: false,
-      archived: false,
+      mentions: mentions.length > 0 ? mentions : undefined,
     };
 
     activity.notes.push(note);

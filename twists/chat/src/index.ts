@@ -136,7 +136,7 @@ You can provide either or both inline and standalone links. Only use standalone 
           activity,
           content: task,
           tags: {
-            [Tag.Now]: [note.author.id],
+            [Tag.Now]: [{ id: note.author.id }],
           },
         })
       ) ?? []),

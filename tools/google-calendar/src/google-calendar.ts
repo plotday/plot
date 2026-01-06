@@ -7,12 +7,16 @@ import {
   type ActorId,
   ConferencingProvider,
   type NewActivityWithNotes,
+  type NewActor,
   type NewContact,
   type NewNote,
+  type SyncUpdate,
   Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
+import { Uuid } from "@plotday/twister/utils/uuid";
+import { quickHash } from "@plotday/twister/utils/hash";
 import {
   type Calendar,
   type CalendarAuth,
@@ -41,6 +45,23 @@ import {
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
+
+/**
+ * Stores the mapping between Google Calendar events and Plot activities.
+ * Used for tracking which events have been synced and detecting changes.
+ */
+type SyncMapping = {
+  /** External Google Calendar event ID */
+  externalId: string;
+  /** Tool-generated UUID for the Plot activity */
+  activityId: Uuid;
+  /** Tool-generated UUID for the description note */
+  descriptionNoteId?: Uuid;
+  /** Hash of the description content for change detection */
+  descriptionHash?: string;
+  /** Timestamp of last sync */
+  lastSyncedAt: string;
+};
 
 /**
  * Google Calendar integration tool.
@@ -428,37 +449,24 @@ export class GoogleCalendar
           continue;
         }
 
-        // Extract and create contacts from organizer and attendees
-        let actorIds: ActorId[] = [];
+        // Extract contacts from organizer and attendees
         let validAttendees: typeof event.attendees = [];
-        let authorActor = undefined;
 
-        // Create contact for organizer (author)
+        // Prepare author contact (organizer) - will be passed directly as NewContact
+        let authorContact: NewContact | undefined = undefined;
         if (event.organizer?.email) {
-          const organizerContact: NewContact = {
+          authorContact = {
             email: event.organizer.email,
             name: event.organizer.displayName,
           };
-          const [author] = await this.tools.plot.addContacts([organizerContact]);
-          authorActor = author;
         }
 
-        // Create contacts for attendees
+        // Prepare attendee contacts for tags
         if (event.attendees && event.attendees.length > 0) {
           // Filter to get only valid attendees (with email, not resources)
           validAttendees = event.attendees.filter(
             (att) => att.email && !att.resource
           );
-
-          const contacts: NewContact[] = validAttendees.map((att) => ({
-            email: att.email!,
-            name: att.displayName,
-          }));
-
-          if (contacts.length > 0) {
-            const actors = await this.tools.plot.addContacts(contacts);
-            actorIds = actors.map((actor) => actor.id);
-          }
         }
 
         // Check if this is a recurring event instance (exception)
@@ -468,27 +476,29 @@ export class GoogleCalendar
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
 
-          // Determine RSVP status for all attendees and set tags
-          let tags: Partial<Record<Tag, ActorId[]>> | null = null;
+          // Determine RSVP status for all attendees and set tags with NewActor[]
+          let tags: Partial<Record<Tag, NewActor[]>> | null = null;
           if (validAttendees.length > 0) {
-            const attendTags: ActorId[] = [];
-            const skipTags: ActorId[] = [];
-            const undecidedTags: ActorId[] = [];
+            const attendTags: NewActor[] = [];
+            const skipTags: NewActor[] = [];
+            const undecidedTags: NewActor[] = [];
 
             // Iterate through valid attendees and group by response status
-            validAttendees.forEach((attendee, index) => {
-              const actorId = actorIds[index];
-              if (actorId) {
-                if (attendee.responseStatus === "accepted") {
-                  attendTags.push(actorId);
-                } else if (attendee.responseStatus === "declined") {
-                  skipTags.push(actorId);
-                } else if (
-                  attendee.responseStatus === "tentative" ||
-                  attendee.responseStatus === "needsAction"
-                ) {
-                  undecidedTags.push(actorId);
-                }
+            validAttendees.forEach((attendee) => {
+              const newActor: NewActor = {
+                email: attendee.email!,
+                name: attendee.displayName,
+              };
+
+              if (attendee.responseStatus === "accepted") {
+                attendTags.push(newActor);
+              } else if (attendee.responseStatus === "declined") {
+                skipTags.push(newActor);
+              } else if (
+                attendee.responseStatus === "tentative" ||
+                attendee.responseStatus === "needsAction"
+              ) {
+                undecidedTags.push(newActor);
               }
             });
 
@@ -505,57 +515,69 @@ export class GoogleCalendar
             }
           }
 
-          // Convert to full Activity and call callback
-          const callbackToken = await this.get<Callback>(
-            "event_callback_token"
-          );
-          if (callbackToken && activityData.type) {
-            // Build links array for videoconferencing and calendar links
-            const links: ActivityLink[] = [];
-            const seenUrls = new Set<string>();
+          // Build links array for videoconferencing and calendar links
+          const links: ActivityLink[] = [];
+          const seenUrls = new Set<string>();
 
-            // Extract all conferencing links (Zoom, Teams, Webex, etc.)
-            const conferencingLinks = extractConferencingLinks(event);
-            for (const link of conferencingLinks) {
-              if (!seenUrls.has(link.url)) {
-                seenUrls.add(link.url);
-                links.push({
-                  type: ActivityLinkType.conferencing,
-                  url: link.url,
-                  provider: link.provider,
-                });
-              }
-            }
-
-            // Add Google Meet link from hangoutLink if not already added
-            if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
-              seenUrls.add(event.hangoutLink);
+          // Extract all conferencing links (Zoom, Teams, Webex, etc.)
+          const conferencingLinks = extractConferencingLinks(event);
+          for (const link of conferencingLinks) {
+            if (!seenUrls.has(link.url)) {
+              seenUrls.add(link.url);
               links.push({
                 type: ActivityLinkType.conferencing,
-                url: event.hangoutLink,
-                provider: ConferencingProvider.googleMeet,
+                url: link.url,
+                provider: link.provider,
               });
             }
+          }
 
-            // Add calendar link
-            if (event.htmlLink) {
-              links.push({
-                type: ActivityLinkType.external,
-                title: "View in Calendar",
-                url: event.htmlLink,
-              });
-            }
+          // Add Google Meet link from hangoutLink if not already added
+          if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
+            seenUrls.add(event.hangoutLink);
+            links.push({
+              type: ActivityLinkType.conferencing,
+              url: event.hangoutLink,
+              provider: ConferencingProvider.googleMeet,
+            });
+          }
+
+          // Add calendar link
+          if (event.htmlLink) {
+            links.push({
+              type: ActivityLinkType.external,
+              title: "View in Calendar",
+              url: event.htmlLink,
+            });
+          }
+
+          // Prepare description content
+          const description =
+            activityData.meta?.description || event.description;
+          const hasDescription = description && description.trim().length > 0;
+          const hasLinks = links.length > 0;
+          const descriptionHash = hasDescription ? quickHash(description) : undefined;
+
+          // Check for existing mapping
+          const mappingKey = `sync:${calendarId}:${event.id}`;
+          const existingMapping = await this.get<SyncMapping>(mappingKey);
+
+          const callbackToken = await this.get<Callback>("event_callback_token");
+          if (!callbackToken || !activityData.type) {
+            continue;
+          }
+
+          if (!existingMapping) {
+            // NEW EVENT: Generate UUIDs and create mapping
+            const activityId = Uuid.Generate();
+            const descriptionNoteId = (hasDescription || hasLinks) ? Uuid.Generate() : undefined;
 
             // Create note with description and/or links
             const notes: NewNote[] = [];
-            const description =
-              activityData.meta?.description || event.description;
-            const hasDescription = description && description.trim().length > 0;
-            const hasLinks = links.length > 0;
-
             if (hasDescription || hasLinks) {
               notes.push({
-                activity: { id: "" }, // Will be filled in by the API
+                id: descriptionNoteId!,
+                activity: { id: activityId },
                 content: hasDescription ? description : null,
                 links: hasLinks ? links : null,
                 contentType: containsHtml(description) ? "html" : "text",
@@ -563,25 +585,93 @@ export class GoogleCalendar
             }
 
             const activity: NewActivityWithNotes = {
+              id: activityId,
               type: activityData.type,
               start: activityData.start || null,
               end: activityData.end || null,
               recurrenceUntil: activityData.recurrenceUntil || null,
               recurrenceCount: activityData.recurrenceCount || null,
               doneAt: null,
-              title: activityData.title || null,
-              author: authorActor,
+              title: activityData.title || "",
+              author: authorContact,
               recurrenceRule: activityData.recurrenceRule || null,
               recurrenceExdates: activityData.recurrenceExdates || null,
               recurrenceDates: activityData.recurrenceDates || null,
               recurrence: null,
               occurrence: null,
               meta: activityData.meta ?? null,
-              tags,
+              tags: tags || undefined,
               notes,
               unread: !initialSync, // false for initial sync, true for incremental updates
             };
+
+            // Store mapping
+            const mapping: SyncMapping = {
+              externalId: event.id,
+              activityId,
+              descriptionNoteId,
+              descriptionHash,
+              lastSyncedAt: new Date().toISOString(),
+            };
+            await this.set(mappingKey, mapping);
+
+            // Send new activity
             await this.tools.callbacks.run(callbackToken, activity);
+          } else {
+            // EXISTING EVENT: Detect changes and send update
+            const update: ActivityUpdate = { id: existingMapping.activityId };
+            let hasChanges = false;
+            const newNotes: NewNote[] = [];
+
+            // Check for activity field changes
+            if (activityData.title !== undefined) {
+              update.title = activityData.title || "";
+              hasChanges = true;
+            }
+            if (activityData.start !== undefined) {
+              update.start = activityData.start || null;
+              hasChanges = true;
+            }
+            if (activityData.end !== undefined) {
+              update.end = activityData.end || null;
+              hasChanges = true;
+            }
+            if (activityData.meta !== undefined) {
+              update.meta = activityData.meta ?? null;
+              hasChanges = true;
+            }
+
+            // Check for description changes
+            if (descriptionHash !== existingMapping.descriptionHash) {
+              const newDescriptionNoteId = Uuid.Generate();
+              newNotes.push({
+                id: newDescriptionNoteId,
+                activity: { id: existingMapping.activityId },
+                content: hasDescription ? description : null,
+                links: hasLinks ? links : null,
+                contentType: containsHtml(description) ? "html" : "text",
+              });
+
+              // Update mapping with new description note
+              existingMapping.descriptionNoteId = newDescriptionNoteId;
+              existingMapping.descriptionHash = descriptionHash;
+            }
+
+            // Send update if there are changes
+            if (hasChanges || newNotes.length > 0) {
+              const syncUpdate: SyncUpdate = {
+                activityId: existingMapping.activityId,
+                update: hasChanges ? update : undefined,
+                notes: newNotes.length > 0 ? newNotes : undefined,
+              };
+
+              // Update mapping timestamp
+              existingMapping.lastSyncedAt = new Date().toISOString();
+              await this.set(mappingKey, existingMapping);
+
+              // Send update
+              await this.tools.callbacks.run(callbackToken, syncUpdate);
+            }
           }
         }
       } catch (error) {
@@ -608,52 +698,67 @@ export class GoogleCalendar
     const activityData = transformGoogleEvent(event, calendarId);
 
     const callbackToken = await this.get<Callback>("event_callback_token");
-    if (callbackToken && activityData.type) {
-      // Build links array for videoconferencing and calendar links
-      const links: ActivityLink[] = [];
-      const seenUrls = new Set<string>();
+    if (!callbackToken || !activityData.type) {
+      return;
+    }
 
-      // Extract all conferencing links (Zoom, Teams, Webex, etc.)
-      const conferencingLinks = extractConferencingLinks(event);
-      for (const link of conferencingLinks) {
-        if (!seenUrls.has(link.url)) {
-          seenUrls.add(link.url);
-          links.push({
-            type: ActivityLinkType.conferencing,
-            url: link.url,
-            provider: link.provider,
-          });
-        }
-      }
+    // Build links array for videoconferencing and calendar links
+    const links: ActivityLink[] = [];
+    const seenUrls = new Set<string>();
 
-      // Add Google Meet link from hangoutLink if not already added
-      if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
-        seenUrls.add(event.hangoutLink);
+    // Extract all conferencing links (Zoom, Teams, Webex, etc.)
+    const conferencingLinks = extractConferencingLinks(event);
+    for (const link of conferencingLinks) {
+      if (!seenUrls.has(link.url)) {
+        seenUrls.add(link.url);
         links.push({
           type: ActivityLinkType.conferencing,
-          url: event.hangoutLink,
-          provider: ConferencingProvider.googleMeet,
+          url: link.url,
+          provider: link.provider,
         });
       }
+    }
 
-      // Add calendar link
-      if (event.htmlLink) {
-        links.push({
-          type: ActivityLinkType.external,
-          title: "View in Calendar",
-          url: event.htmlLink,
-        });
-      }
+    // Add Google Meet link from hangoutLink if not already added
+    if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
+      seenUrls.add(event.hangoutLink);
+      links.push({
+        type: ActivityLinkType.conferencing,
+        url: event.hangoutLink,
+        provider: ConferencingProvider.googleMeet,
+      });
+    }
+
+    // Add calendar link
+    if (event.htmlLink) {
+      links.push({
+        type: ActivityLinkType.external,
+        title: "View in Calendar",
+        url: event.htmlLink,
+      });
+    }
+
+    // Prepare description content
+    const description = activityData.meta?.description || event.description;
+    const hasDescription = description && description.trim().length > 0;
+    const hasLinks = links.length > 0;
+    const descriptionHash = hasDescription ? quickHash(description) : undefined;
+
+    // Check for existing mapping
+    const mappingKey = `sync:${calendarId}:${event.id}`;
+    const existingMapping = await this.get<SyncMapping>(mappingKey);
+
+    if (!existingMapping) {
+      // NEW EXCEPTION: Generate UUIDs and create mapping
+      const activityId = Uuid.Generate();
+      const descriptionNoteId = (hasDescription || hasLinks) ? Uuid.Generate() : undefined;
 
       // Create note with description and/or links
       const notes: NewNote[] = [];
-      const description = activityData.meta?.description || event.description;
-      const hasDescription = description && description.trim().length > 0;
-      const hasLinks = links.length > 0;
-
       if (hasDescription || hasLinks) {
         notes.push({
-          activity: { id: "" }, // Will be filled in by the API
+          id: descriptionNoteId!,
+          activity: { id: activityId },
           content: hasDescription ? description : null,
           links: hasLinks ? links : null,
           contentType: containsHtml(description) ? "html" : "text",
@@ -661,13 +766,14 @@ export class GoogleCalendar
       }
 
       const activity: NewActivityWithNotes = {
+        id: activityId,
         type: activityData.type,
         start: activityData.start || null,
         end: activityData.end || null,
         recurrenceUntil: activityData.recurrenceUntil || null,
         recurrenceCount: activityData.recurrenceCount || null,
         doneAt: null,
-        title: activityData.title || null,
+        title: activityData.title || "",
         recurrenceRule: null,
         recurrenceExdates: null,
         recurrenceDates: null,
@@ -677,7 +783,74 @@ export class GoogleCalendar
         notes,
         unread: !initialSync, // false for initial sync, true for incremental updates
       };
+
+      // Store mapping
+      const mapping: SyncMapping = {
+        externalId: event.id,
+        activityId,
+        descriptionNoteId,
+        descriptionHash,
+        lastSyncedAt: new Date().toISOString(),
+      };
+      await this.set(mappingKey, mapping);
+
+      // Send new activity
       await this.tools.callbacks.run(callbackToken, activity);
+    } else {
+      // EXISTING EXCEPTION: Detect changes and send update
+      const update: ActivityUpdate = { id: existingMapping.activityId };
+      let hasChanges = false;
+      const newNotes: NewNote[] = [];
+
+      // Check for activity field changes
+      if (activityData.title !== undefined) {
+        update.title = activityData.title || "";
+        hasChanges = true;
+      }
+      if (activityData.start !== undefined) {
+        update.start = activityData.start || null;
+        hasChanges = true;
+      }
+      if (activityData.end !== undefined) {
+        update.end = activityData.end || null;
+        hasChanges = true;
+      }
+      if (activityData.meta !== undefined) {
+        update.meta = activityData.meta ?? null;
+        hasChanges = true;
+      }
+
+      // Check for description changes
+      if (descriptionHash !== existingMapping.descriptionHash) {
+        const newDescriptionNoteId = Uuid.Generate();
+        newNotes.push({
+          id: newDescriptionNoteId,
+          activity: { id: existingMapping.activityId },
+          content: hasDescription ? description : null,
+          links: hasLinks ? links : null,
+          contentType: containsHtml(description) ? "html" : "text",
+        });
+
+        // Update mapping with new description note
+        existingMapping.descriptionNoteId = newDescriptionNoteId;
+        existingMapping.descriptionHash = descriptionHash;
+      }
+
+      // Send update if there are changes
+      if (hasChanges || newNotes.length > 0) {
+        const syncUpdate: SyncUpdate = {
+          activityId: existingMapping.activityId,
+          update: hasChanges ? update : undefined,
+          notes: newNotes.length > 0 ? newNotes : undefined,
+        };
+
+        // Update mapping timestamp
+        existingMapping.lastSyncedAt = new Date().toISOString();
+        await this.set(mappingKey, existingMapping);
+
+        // Send update
+        await this.tools.callbacks.run(callbackToken, syncUpdate);
+      }
     }
   }
 

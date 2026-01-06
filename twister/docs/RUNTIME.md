@@ -431,12 +431,13 @@ for (const item of items) {
 }
 
 // ✅ FAST - Batch create (always include initial notes)
+// Note: Store UUID mappings separately for tracking
 await this.tools.plot.createActivities(
   items.map((item) => ({
+    id: Uuid.Generate(),
     type: ActivityType.Action,
     title: item.title,
-    source: `external:${item.id}`, // For deduplication
-    notes: [{ content: item.description }],
+    notes: [{ id: Uuid.Generate(), content: item.description }],
   }))
 );
 ```

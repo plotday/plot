@@ -1,7 +1,9 @@
 import { type Tag } from "./tag";
 import { type Callback } from "./tools/callbacks";
+import { Uuid } from "./utils/uuid";
 
 export { Tag } from "./tag";
+export { Uuid } from "./utils/uuid";
 
 /**
  * Represents a unique user, contact, or twist in Plot.
@@ -172,60 +174,34 @@ export type ActivityLink =
 /**
  * Represents metadata about an activity, typically from an external system.
  *
- * Activity metadata enables tracking where activities originated from,
- * which is useful for synchronization, deduplication, and linking
- * back to external systems.
- *
- * ## Source-Based Upsert
- *
- * When creating an activity with a `source` field, Plot automatically implements
- * **upsert behavior**. If an activity with the same source already exists (created
- * by the same twist definition), it will be **updated** instead of creating a duplicate.
- * This enables safe, idempotent sync operations.
- *
- * ### How Source Uniqueness Works
- *
- * - **Scoped to twist definition**: Sources are unique per twist, not per twist instance.
- *   Different instances of the same twist (installed in different priorities) share
- *   the same source namespace.
- * - **Independent twists**: Different twists can have activities with the same source value.
- * - **Archived activities**: Archived activities don't conflict with active ones - you can
- *   create a new activity with the same source after archiving.
- * - **Optional**: Activities without sources are always created fresh - no deduplication.
- *
- * ### Upsert Behavior Details
- *
- * When an activity is upserted (updated instead of created):
- * - **All provided fields** are updated with new values
- * - **Tags** are merged (existing tags + new tags)
- * - **Notes** are appended (existing notes kept, new ones added)
- * - **Priority** is NOT changed (stays in original priority)
+ * Activity metadata enables storing additional information about activities,
+ * which is useful for synchronization, linking back to external systems,
+ * and storing tool-specific data.
  *
  * @example
  * ```typescript
- * // First call creates the activity
+ * // Calendar event metadata
  * await plot.createActivity({
  *   type: ActivityType.Event,
  *   title: "Team Meeting",
  *   start: new Date("2024-01-15T10:00:00Z"),
- *   source: "google-calendar:event-abc123",
  *   meta: {
  *     calendarId: "primary",
- *     htmlLink: "https://calendar.google.com/event/abc123"
+ *     htmlLink: "https://calendar.google.com/event/abc123",
+ *     conferenceData: { ... }
  *   }
  * });
  *
- * // Second call with same source updates the existing activity
+ * // Project issue metadata
  * await plot.createActivity({
- *   type: ActivityType.Event,
- *   title: "Team Meeting (Updated)",  // Title will be updated
- *   start: new Date("2024-01-15T14:00:00Z"),  // Time will be updated
- *   source: "google-calendar:event-abc123"  // Same source = upsert
+ *   type: ActivityType.Action,
+ *   title: "Fix login bug",
+ *   meta: {
+ *     projectId: "TEAM",
+ *     issueNumber: 123,
+ *     url: "https://linear.app/team/issue/TEAM-123"
+ *   }
  * });
- *
- * // Different twist, same source = creates new activity (independent)
- * // Different source = creates new activity
- * // No source = creates new activity (no deduplication)
  * ```
  */
 export type ActivityMeta = {
@@ -233,14 +209,22 @@ export type ActivityMeta = {
   [key: string]: any;
 };
 
+/**
+ * Tags on an item, along with the actors who added each tag.
+ */
 export type Tags = { [K in Tag]?: ActorId[] };
+
+/**
+ * A set of tags to add to an item, along with the actors adding each tag.
+ */
+export type NewTags = { [K in Tag]?: NewActor[] };
 
 /**
  * Common fields shared by both Activity and Note entities.
  */
 export type ActivityCommon = {
   /** Unique identifier for the activity */
-  id: string;
+  id: Uuid;
   /**
    * When this activity was originally created in its source system.
    *
@@ -250,7 +234,7 @@ export type ActivityCommon = {
    *
    * Defaults to the current time when creating new activities.
    */
-  createdAt: Date | null;
+  createdAt: Date;
   /** Information about who created the activity */
   author: Actor;
   /** Whether this activity is in draft state (not shown in do now view) */
@@ -260,14 +244,14 @@ export type ActivityCommon = {
   /** Whether this activity has been archived */
   archived: boolean;
   /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
-  tags: Tags | null;
+  tags: Tags;
   /** Array of actor IDs (users, contacts, or twists) mentioned in this activity via @-mentions */
-  mentions: ActorId[] | null;
+  mentions: ActorId[];
 };
 
 export type Activity = ActivityCommon & {
   /** The display title/summary of the activity */
-  title: string | null;
+  title: string;
   /** The type of activity (Note, Task, or Event) */
   type: ActivityType;
   /**
@@ -380,18 +364,6 @@ export type Activity = ActivityCommon & {
    * Used to identify which occurrence of a recurring event this exception replaces.
    */
   occurrence: Date | null;
-  /**
-   * Unique identifier for this activity in the source system.
-   *
-   * Used for deduplication - activities with the same source are upserted instead
-   * of creating duplicates. Format is typically "source-name:external-id"
-   * (e.g., "google-calendar:event-123", "outlook:message-456").
-   *
-   * When provided, enables idempotent sync operations - calling createActivity()
-   * multiple times with the same source will update the existing activity rather
-   * than creating duplicates.
-   */
-  source: string | null;
   /** Metadata about the activity, typically from an external system that created it */
   meta: ActivityMeta | null;
 };
@@ -443,8 +415,9 @@ export type PickPriorityConfig = {
  * Type for creating new activities.
  *
  * Requires only the activity type, with all other fields optional.
- * The ID and author will be automatically assigned by the Plot system
- * based on the current execution context.
+ * The author will be automatically assigned by the Plot system based on
+ * the current execution context. The ID can be optionally provided by
+ * tools for tracking and update detection purposes.
  *
  * **Important: Scheduling Defaults for Actions**
  *
@@ -502,7 +475,12 @@ export type PickPriorityConfig = {
  * ```
  */
 export type NewActivity = Pick<Activity, "type"> &
-  Partial<Omit<Activity, "id" | "author" | "type" | "priority" | "mentions">> &
+  Partial<
+    Omit<
+      Activity,
+      "author" | "assignee" | "type" | "priority" | "tags" | "mentions"
+    >
+  > &
   (
     | {
         /** Explicit priority (required when specified) - disables automatic priority matching */
@@ -514,6 +492,21 @@ export type NewActivity = Pick<Activity, "type"> &
       }
     | {}
   ) & {
+    /**
+     * The person that created the item. By default, it will be the twist itself.
+     */
+    author?: NewActor;
+
+    /**
+     * The person that assigned to the item.
+     */
+    assignee?: NewActor | null;
+
+    /**
+     * All tags to set on the new activity.
+     */
+    tags?: NewTags;
+
     /**
      * Whether the activity should be marked as unread for users.
      * - true (default): Activity is unread for all users in the priority
@@ -536,7 +529,6 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "assignee"
       | "draft"
       | "private"
-      | "source"
       | "meta"
       | "recurrenceRule"
       | "recurrenceDates"
@@ -547,11 +539,10 @@ export type ActivityUpdate = Pick<Activity, "id"> &
     >
   > & {
     /**
-     * Full tags object from Activity. Maps tag ID to array of actor IDs who added that tag.
-     * Only allowed for activities created by the twist.
-     * Use twistTags instead for adding/removing the twist's tags on other activities.
+     * Tags to change on the activity. Use an empty array of NewActor to remove a tag.
+     * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
      */
-    tags?: { [K in Tag]?: ActorId[] };
+    tags?: NewTags;
 
     /**
      * Add or remove the twist's tags.
@@ -560,6 +551,45 @@ export type ActivityUpdate = Pick<Activity, "id"> &
      */
     twistTags?: Partial<Record<Tag, boolean>>;
   };
+
+/**
+ * Represents a sync update from a tool.
+ *
+ * Tools that sync from external sources can send either:
+ * - A new activity with notes (for newly discovered items)
+ * - An update to an existing activity with optional new notes (for changed items)
+ *
+ * This allows tools to manage their own update detection logic locally,
+ * providing Plot with the appropriate operation to perform.
+ *
+ * @example
+ * ```typescript
+ * // Send a new activity
+ * const newItem: SyncUpdate = {
+ *   type: ActivityType.Event,
+ *   title: "New Meeting",
+ *   id: Uuid.Generate(), // Tool-generated ID
+ *   notes: [{ id: Uuid.Generate(), content: "Description" }]
+ * };
+ *
+ * // Send an update to existing activity
+ * const update: SyncUpdate = {
+ *   activityId: existingActivityId,
+ *   update: { title: "Updated Meeting Title" },
+ *   notes: [{ id: Uuid.Generate(), content: "New comment" }]
+ * };
+ * ```
+ */
+export type SyncUpdate =
+  | NewActivityWithNotes
+  | {
+      /** ID of the activity to update */
+      activityId: string;
+      /** Optional updates to the activity itself */
+      update?: ActivityUpdate;
+      /** Optional new notes to add to the activity */
+      notes?: NewNote[];
+    };
 
 /**
  * Represents a note within an activity.
@@ -580,10 +610,18 @@ export type Note = ActivityCommon & {
  * Type for creating new notes.
  *
  * Requires the activity reference, with all other fields optional.
+ * The id field can be optionally provided by tools for tracking purposes.
  */
-export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
+export type NewNote = Partial<
+  Omit<Note, "author" | "activity" | "tags" | "mentions">
+> & {
   /** Reference to the parent activity (required) */
   activity: Pick<Activity, "id">;
+
+  /**
+   * The person that created the item, or leave undefined to use the twist as author.
+   */
+  author?: NewActor;
 
   /**
    * Format of the note content. Determines how the note is processed:
@@ -592,6 +630,17 @@ export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
    * - 'html': HTML content that will be converted to markdown
    */
   contentType?: ContentType;
+
+  /**
+   * Tags to change on the activity. Use an empty array of NewActor to remove a tag.
+   * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
+   */
+  tags?: NewTags;
+
+  /**
+   * Change the mentions on the note.
+   */
+  mentions?: NewActor[];
 
   /**
    * Whether the note should mark the parent activity as unread for users.
@@ -607,9 +656,7 @@ export type NewNote = Partial<Omit<Note, "id" | "author" | "activity">> & {
  * Type for updating existing notes.
  */
 export type NoteUpdate = Pick<Note, "id"> &
-  Partial<
-    Pick<Note, "draft" | "private" | "content" | "links" | "mentions">
-  > & {
+  Partial<Pick<Note, "draft" | "private" | "content" | "links">> & {
     /**
      * Format of the note content. Determines how the note is processed:
      * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
@@ -619,11 +666,10 @@ export type NoteUpdate = Pick<Note, "id"> &
     contentType?: ContentType;
 
     /**
-     * Full tags object from Note. Maps tag ID to array of actor IDs who added that tag.
-     * Only allowed for notes created by the twist.
-     * Use twistTags instead for adding/removing the twist's tags on other notes.
+     * Tags to change on the note. Use an empty array of NewActor to remove a tag.
+     * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
      */
-    tags?: { [K in Tag]?: ActorId[] };
+    tags?: NewTags;
 
     /**
      * Add or remove the twist's tags.
@@ -631,6 +677,11 @@ export type NoteUpdate = Pick<Note, "id"> &
      * This is allowed on all notes the twist has access to.
      */
     twistTags?: Partial<Record<Tag, boolean>>;
+
+    /**
+     * Change the mentions on the note.
+     */
+    mentions?: NewActor[];
   };
 
 /**
@@ -659,6 +710,16 @@ export type Actor = {
   /** Display name (undefined if not included due to permissions, null if not set) */
   name?: string | null;
 };
+
+/**
+ * An existing or new contact.
+ */
+export type NewActor =
+  | {
+      /** Unique identifier for the actor */
+      id: ActorId;
+    }
+  | NewContact;
 
 /**
  * Enumeration of author types that can create activities.

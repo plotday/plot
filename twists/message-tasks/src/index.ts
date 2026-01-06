@@ -8,9 +8,11 @@ import {
   ActivityType,
   type NewActivityWithNotes,
   type Priority,
+  type SyncUpdate,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
+import { Uuid } from "@plotday/twister/utils/uuid";
 import type {
   MessageChannel,
   MessageSyncOptions,
@@ -36,7 +38,7 @@ type ChannelConfig = {
 
 type ThreadTask = {
   threadId: string;
-  taskId: string;
+  taskId: Uuid;
   createdAt: string;
   lastChecked: string;
 };
@@ -74,7 +76,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   private async getOnboardingActivity(): Promise<
     Pick<Activity, "id"> | undefined
   > {
-    const id = await this.get<string>("onboarding_activity_id");
+    const id = await this.get<Uuid>("onboarding_activity_id");
     return id ? { id } : undefined;
   }
 
@@ -132,7 +134,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
   private async storeThreadTask(
     threadId: string,
-    taskId: string
+    taskId: Uuid
   ): Promise<void> {
     const tasks = (await this.get<ThreadTask[]>("thread_tasks")) || [];
     tasks.push({
@@ -336,10 +338,14 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   // ============================================================================
 
   async onMessageThread(
-    thread: NewActivityWithNotes,
+    syncUpdate: SyncUpdate,
     provider: MessageProvider,
     channelId: string
   ): Promise<void> {
+    // Only handle new threads, not updates
+    if ("activityId" in syncUpdate) return;
+
+    const thread = syncUpdate;
     if (!thread.notes || thread.notes.length === 0) return;
 
     const threadId = thread.meta?.source as string;

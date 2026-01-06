@@ -333,7 +333,7 @@ Activities can have multiple Notes attached to them, like messages in a thread. 
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Fix bug #123",
-  source: "github:issue:123", // For deduplication
+  // Tracked via UUID mapping
   notes: [
     {
       content: "Users are unable to log in with SSO. Error occurs in auth middleware.",
@@ -374,7 +374,7 @@ Think of it like starting a new thread with a first message - the thread title g
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review PR #456",
-  source: "github:pr:456", // For deduplication
+  // Tracked via UUID mapping
   notes: [
     {
       content: "Please review the OAuth 2.0 implementation. Key changes include:\n- Token refresh logic\n- Session management\n- Error handling for expired tokens",
@@ -431,7 +431,7 @@ async onNewMessage(message: Message, threadId: string) {
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: message.subject || "New conversation",
-      source, // For future deduplication
+      // Tracked via UUID mapping
       notes: [
         {
           content: message.text,

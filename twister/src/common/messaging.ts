@@ -1,4 +1,4 @@
-import type { ActivityLink, NewActivityWithNotes } from "../index";
+import type { ActivityLink, NewActivityWithNotes, SyncUpdate } from "../index";
 
 /**
  * Represents a successful messaging service authorization.
@@ -72,25 +72,31 @@ export interface MessagingTool {
   /**
    * Begins synchronizing messages from a specific channel.
    *
-   * Email threads and chat conversations are converted to ActivityWithNotes objects.
-   * Each object contains an Activity (with subject/title) and Notes array (one per message).
-   * The Activity.id can be used as a stable conversation identifier.
+   * Email threads and chat conversations are converted to SyncUpdate objects,
+   * which can be either new items or updates to existing items.
+   *
+   * Tools implementing this should:
+   * - Generate UUIDs for new activities and notes using Uuid.Generate()
+   * - Track activity IDs locally to detect updates vs new threads
+   * - Send NewActivityWithNotes for new threads
+   * - Send update object with activityId and new notes for new messages in existing threads
+   * - Set activity.unread = false for initial sync, true for incremental updates
    *
    * @param authToken - Authorization token for access
    * @param channelId - ID of the channel (e.g., channel, inbox) to sync
-   * @param callback - Function receiving (thread, ...extraArgs) for each synced conversation
+   * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced conversation
    * @param options - Optional configuration for limiting the sync scope (e.g., time range)
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
    */
   startSync<
-    TCallback extends (thread: NewActivityWithNotes, ...args: any[]) => any
+    TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any
   >(
     authToken: string,
     channelId: string,
     callback: TCallback,
     options?: MessageSyncOptions,
-    ...extraArgs: TCallback extends (thread: any, ...rest: infer R) => any
+    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void>;

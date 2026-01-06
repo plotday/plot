@@ -144,7 +144,7 @@ await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request",
   start: null, // "Do Someday" - backlog item (recommended default)
-  source: "github:pr:123", // For deduplication
+  // Tracked via UUID mapping
   notes: [
     {
       content: "New PR ready for review",

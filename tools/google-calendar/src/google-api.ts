@@ -319,11 +319,11 @@ export function transformGoogleEvent(
     type: isCancelled ? ActivityType.Note : (isAllDay ? ActivityType.Note : ActivityType.Event),
     title: isCancelled
       ? `Cancelled: ${event.summary || "Event"}`
-      : event.summary || null,
+      : event.summary || "",
     start: isCancelled ? null : start,
     end: isCancelled ? null : end,
-    source: `google-calendar:${event.id}`,
     meta: {
+      source: `google-calendar:${event.id}`,
       id: event.id,
       calendarId: calendarId,
       htmlLink: event.htmlLink,

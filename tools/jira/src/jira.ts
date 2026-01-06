@@ -317,34 +317,23 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     const reporter = fields.reporter || fields.creator;
     const assignee = fields.assignee;
 
-    // Create contacts for reporter and assignee
-    const contacts: NewContact[] = [];
+    // Prepare author and assignee contacts - will be passed directly as NewContact
+    let authorContact: NewContact | undefined;
+    let assigneeContact: NewContact | undefined;
+
     if (reporter?.emailAddress) {
-      contacts.push({
+      authorContact = {
         email: reporter.emailAddress,
         name: reporter.displayName,
         avatar: reporter.avatarUrls?.["48x48"],
-      });
+      };
     }
-    if (assignee?.emailAddress && assignee.emailAddress !== reporter?.emailAddress) {
-      contacts.push({
+    if (assignee?.emailAddress) {
+      assigneeContact = {
         email: assignee.emailAddress,
         name: assignee.displayName,
         avatar: assignee.avatarUrls?.["48x48"],
-      });
-    }
-
-    let authorActor: Actor | undefined;
-    let assigneeActor: Actor | undefined;
-
-    if (contacts.length > 0) {
-      const actors = await this.tools.plot.addContacts(contacts);
-      if (reporter?.emailAddress) {
-        authorActor = actors.find((a) => a.email === reporter.emailAddress);
-      }
-      if (assignee?.emailAddress) {
-        assigneeActor = actors.find((a) => a.email === assignee.emailAddress);
-      }
+      };
     }
 
     // Build notes array: description + comments
@@ -375,9 +364,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     return {
       type: ActivityType.Action,
       title: fields.summary || issue.key,
-      source: `jira:issue:${projectId}:${issue.key}`,
-      author: authorActor,
-      assignee: assigneeActor,
+      meta: {
+        source: `jira:issue:${projectId}:${issue.key}`,
+        issueKey: issue.key,
+      },
+      author: authorContact,
+      assignee: assigneeContact,
       doneAt:
         status === "Done" || status === "Closed" || status === "Resolved"
           ? new Date()
@@ -423,8 +415,9 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * @param update - ActivityUpdate with changed fields
    */
   async updateIssue(authToken: string, update: ActivityUpdate): Promise<void> {
-    // Extract Jira issue key from source
-    const issueKey = update.source?.split(":").pop();
+    // Extract Jira issue key from meta
+    const source = update.meta?.source as string | undefined;
+    const issueKey = source?.split(":").pop();
     if (!issueKey) {
       throw new Error("Invalid source format for Jira issue");
     }

@@ -4,14 +4,17 @@ import {
   type ActivityLink,
   ActivityType,
   type NewActivityWithNotes,
+  type NewNote,
+  type SyncUpdate,
+  ActivityUpdate as TwisterActivityUpdate,
 } from "@plotday/twister";
-import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
 import type {
   Project,
   ProjectAuth,
   ProjectSyncOptions,
   ProjectTool,
 } from "@plotday/twister/common/projects";
+import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
 import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
@@ -23,12 +26,31 @@ import {
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
+import { quickHash } from "@plotday/twister/utils/hash";
+import { Uuid } from "@plotday/twister/utils/uuid";
 
 type SyncState = {
   after: string | null;
   batchNumber: number;
   issuesProcessed: number;
   initialSync: boolean;
+};
+
+/**
+ * Stores the mapping between Linear issues and Plot activities.
+ * Used for tracking which issues have been synced and detecting changes.
+ */
+type SyncMapping = {
+  /** External Linear issue ID */
+  externalId: string;
+  /** Tool-generated UUID for the Plot activity */
+  activityId: Uuid;
+  /** Tool-generated UUID for the description note */
+  descriptionNoteId?: Uuid;
+  /** Hash of the description content for change detection */
+  descriptionHash?: string;
+  /** Timestamp of last sync */
+  lastSyncedAt: string;
 };
 
 /**
@@ -135,19 +157,13 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Start syncing issues from a Linear team
    */
   async startSync<
-    TCallback extends (
-      issue: NewActivityWithNotes,
-      ...args: any[]
-    ) => any
+    TCallback extends (issue: NewActivityWithNotes, ...args: any[]) => any
   >(
     authToken: string,
     projectId: string,
     callback: TCallback,
     options?: ProjectSyncOptions,
-    ...extraArgs: TCallback extends (
-      issue: any,
-      ...rest: infer R
-    ) => any
+    ...extraArgs: TCallback extends (issue: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void> {
@@ -277,17 +293,16 @@ export class Linear extends Tool<Linear> implements ProjectTool {
 
     // Process each issue
     for (const issue of issuesConnection.nodes) {
-      const activityWithNotes = await this.convertIssueToActivity(
+      const syncUpdate = await this.convertIssueToSyncUpdate(
         issue,
-        projectId
+        projectId,
+        state.initialSync
       );
-      // Set unread based on sync type (false for initial sync to avoid notification overload)
-      activityWithNotes.unread = !state.initialSync;
-      // Execute the callback using the callback token
-      await this.tools.callbacks.run(
-        callbackToken,
-        activityWithNotes
-      );
+
+      if (syncUpdate) {
+        // Execute the callback using the callback token
+        await this.tools.callbacks.run(callbackToken, syncUpdate);
+      }
     }
 
     // Check if more pages
@@ -314,70 +329,161 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Convert a Linear issue to a Plot Activity
+   * Convert a Linear issue to a SyncUpdate
    */
-  private async convertIssueToActivity(
+  private async convertIssueToSyncUpdate(
     issue: Issue,
-    projectId: string
-  ): Promise<NewActivityWithNotes> {
+    projectId: string,
+    initialSync: boolean
+  ): Promise<SyncUpdate | null> {
     const state = await issue.state;
     const creator = await issue.creator;
     const assignee = await issue.assignee;
     const comments = await issue.comments();
 
-    // Create contacts for creator and assignee
-    const contacts: NewContact[] = [];
+    // Prepare author and assignee contacts - will be passed directly as NewContact
+    let authorContact: NewContact | undefined;
+    let assigneeContact: NewContact | undefined;
+
     if (creator?.email) {
-      contacts.push({
+      authorContact = {
         email: creator.email,
         name: creator.name,
         avatar: creator.avatarUrl,
-      });
+      };
     }
-    if (assignee?.email && assignee.email !== creator?.email) {
-      contacts.push({
+    if (assignee?.email) {
+      assigneeContact = {
         email: assignee.email,
         name: assignee.name,
         avatar: assignee.avatarUrl,
-      });
+      };
     }
 
-    let authorActor: Actor | undefined;
-    let assigneeActor: Actor | undefined;
+    // Prepare description content
+    const description = issue.description || "";
+    const hasDescription = description.trim().length > 0;
+    const descriptionHash = hasDescription ? quickHash(description) : undefined;
 
-    if (contacts.length > 0) {
-      const actors = await this.tools.plot.addContacts(contacts);
-      if (creator?.email) {
-        authorActor = actors.find((a) => a.email === creator.email);
+    // Check for existing mapping
+    const mappingKey = `sync:${projectId}:${issue.id}`;
+    const existingMapping = await this.get<SyncMapping>(mappingKey);
+
+    if (!existingMapping) {
+      // NEW ISSUE: Generate UUIDs and create mapping
+      const activityId = Uuid.Generate();
+      const descriptionNoteId = hasDescription ? Uuid.Generate() : undefined;
+
+      // Build notes array: description + comments
+      const notes: NewNote[] = [];
+
+      if (hasDescription) {
+        notes.push({
+          id: descriptionNoteId!,
+          activity: { id: activityId },
+          content: description,
+        });
       }
-      if (assignee?.email) {
-        assigneeActor = actors.find((a) => a.email === assignee.email);
+
+      // Add comments as notes
+      for (const comment of comments.nodes) {
+        notes.push({
+          id: Uuid.Generate(),
+          activity: { id: activityId },
+          content: comment.body,
+        });
       }
-    }
 
-    // Build notes array: description + comments
-    const notes: Array<{ content: string }> = [];
+      const activity: NewActivityWithNotes = {
+        id: activityId,
+        type: ActivityType.Action,
+        title: issue.title,
+        author: authorContact,
+        assignee: assigneeContact,
+        doneAt:
+          state?.name === "Done" || state?.name === "Completed"
+            ? new Date()
+            : null,
+        meta: {
+          linearId: issue.id,
+          projectId,
+          url: issue.url,
+        },
+        notes,
+        unread: !initialSync, // false for initial sync, true for incremental updates
+      };
 
-    if (issue.description) {
-      notes.push({ content: issue.description });
-    }
+      // Store mapping
+      const mapping: SyncMapping = {
+        externalId: issue.id,
+        activityId,
+        descriptionNoteId,
+        descriptionHash,
+        lastSyncedAt: new Date().toISOString(),
+      };
+      await this.set(mappingKey, mapping);
 
-    for (const comment of comments.nodes) {
-      notes.push({ content: comment.body });
-    }
+      return activity;
+    } else {
+      // EXISTING ISSUE: Detect changes and send update
+      const update: TwisterActivityUpdate = { id: existingMapping.activityId };
+      let hasChanges = false;
+      const newNotes: NewNote[] = [];
 
-    return {
-      type: ActivityType.Action,
-      title: issue.title,
-      source: `linear:issue:${projectId}:${issue.id}`,
-      author: authorActor,
-      assignee: assigneeActor,
-      doneAt:
+      // Check for title changes
+      if (issue.title) {
+        update.title = issue.title;
+        hasChanges = true;
+      }
+
+      // Check for state changes
+      const doneAt =
         state?.name === "Done" || state?.name === "Completed"
           ? new Date()
-          : null,
-      notes,
-    };
+          : null;
+      update.doneAt = doneAt;
+      hasChanges = true;
+
+      // Check for description changes
+      if (descriptionHash !== existingMapping.descriptionHash) {
+        const newDescriptionNoteId = Uuid.Generate();
+        newNotes.push({
+          id: newDescriptionNoteId,
+          activity: { id: existingMapping.activityId },
+          content: description,
+        });
+
+        // Update mapping with new description note
+        existingMapping.descriptionNoteId = newDescriptionNoteId;
+        existingMapping.descriptionHash = descriptionHash;
+      }
+
+      // Add new comments as notes
+      for (const comment of comments.nodes) {
+        newNotes.push({
+          id: Uuid.Generate(),
+          activity: { id: existingMapping.activityId },
+          content: comment.body,
+        });
+      }
+
+      // Send update if there are changes
+      if (hasChanges || newNotes.length > 0) {
+        const syncUpdate: SyncUpdate = {
+          activityId: existingMapping.activityId,
+          update: hasChanges ? update : undefined,
+          notes: newNotes.length > 0 ? newNotes : undefined,
+        };
+
+        // Update mapping timestamp
+        existingMapping.lastSyncedAt = new Date().toISOString();
+        await this.set(mappingKey, existingMapping);
+
+        return syncUpdate;
+      }
+
+      return null; // No changes
+    }
   }
 
   /**
@@ -390,10 +496,10 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     authToken: string,
     update: import("@plotday/twister").ActivityUpdate
   ): Promise<void> {
-    // Extract Linear issue ID from source
-    const issueId = update.source?.split(":").pop();
+    // Get the Linear issue ID from activity meta
+    const issueId = update.meta?.linearId as string | undefined;
     if (!issueId) {
-      throw new Error("Invalid source format for Linear issue");
+      throw new Error("Linear issue ID not found in activity meta");
     }
 
     const client = await this.getClient(authToken);
@@ -564,16 +670,16 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       const client = await this.getClient(authToken);
       const issue = await client.issue(payload.data.id);
 
-      const activityWithNotes = await this.convertIssueToActivity(
+      const syncUpdate = await this.convertIssueToSyncUpdate(
         issue,
-        projectId
+        projectId,
+        false // incremental update, not initial sync
       );
 
-      // Webhooks are incremental updates - mark as unread
-      activityWithNotes.unread = true;
+      if (!syncUpdate) return;
 
-      // Execute stored callback
-      await this.tools.callbacks.run(callbackToken, activityWithNotes);
+      // Execute stored callback (unread flag already set by convertIssueToSyncUpdate)
+      await this.tools.callbacks.run(callbackToken, syncUpdate);
     }
   }
 
