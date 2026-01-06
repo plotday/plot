@@ -30,8 +30,13 @@ export async function handleSSEStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let result: any = null;
+  let receivedAnyEvent = false;
+  let receivedResultEvent = false;
 
   try {
+    // currentEvent persists across chunk reads to handle events split across multiple chunks
+    let currentEvent: Partial<SSEEvent> = {};
+
     while (true) {
       const { done, value } = await reader.read();
 
@@ -48,12 +53,12 @@ export async function handleSSEStream(
       // Keep incomplete message in buffer
       buffer = lines.pop() || "";
 
-      let currentEvent: Partial<SSEEvent> = {};
-
       for (const line of lines) {
         // Empty line marks end of event
         if (line.trim() === "") {
           if (currentEvent.event && currentEvent.data !== undefined) {
+            receivedAnyEvent = true;
+
             // Parse data if it's JSON
             let parsedData = currentEvent.data;
             try {
@@ -68,6 +73,7 @@ export async function handleSSEStream(
                 handlers.onProgress?.(parsedData.message);
                 break;
               case "result":
+                receivedResultEvent = true;
                 result = parsedData;
                 handlers.onResult?.(parsedData);
                 break;
@@ -117,6 +123,23 @@ export async function handleSSEStream(
             currentEvent.id = value;
             break;
         }
+      }
+    }
+
+    // Stream completed - check if we received a result
+    if (!receivedResultEvent) {
+      if (!receivedAnyEvent) {
+        throw new Error(
+          "Connection closed without receiving any events. " +
+            "This may indicate a network issue or server error. " +
+            "Please check your connection and try again."
+        );
+      } else {
+        throw new Error(
+          "Stream ended without receiving a result. " +
+            "The operation may have completed on the server, but the response was interrupted. " +
+            "Please verify the operation status and retry if needed."
+        );
       }
     }
 

@@ -358,9 +358,7 @@ export async function deployCommand(options: DeployOptions) {
     } catch (error) {
       // Network errors, continue with publisher setup
       const errorInfo = handleNetworkError(error);
-      out.warning("Could not check existing twist status", [
-        errorInfo.message,
-      ]);
+      out.warning("Could not check existing twist status", [errorInfo.message]);
     }
 
     // Only prompt for publisher if needed
@@ -370,78 +368,78 @@ export async function deployCommand(options: DeployOptions) {
 
       try {
         // Fetch accessible publishers
-      const publishersResponse = await fetch(
-        `${options.apiUrl}/v1/twist/publishers`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${deployToken}`,
+        const publishersResponse = await fetch(
+          `${options.apiUrl}/v1/twist/publishers`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${deployToken}`,
+            },
+          }
+        );
+
+        if (!publishersResponse.ok) {
+          if (publishersResponse.status === 401) {
+            // Authentication failure - exit with helpful message
+            out.error(
+              "Authentication failed",
+              "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+            );
+            process.exit(1);
+          }
+          const errorText = await publishersResponse.text();
+          out.warning("Failed to fetch publishers", [errorText]);
+        } else {
+          publishers = (await publishersResponse.json()) as Publisher[];
+          fetchSucceeded = true;
+        }
+      } catch (error) {
+        const errorInfo = handleNetworkError(error);
+        out.warning("Failed to fetch publishers", [errorInfo.message]);
+      }
+
+      // Always prompt for publisher, even if fetch failed
+      if (fetchSucceeded && publishers.length > 0) {
+        // Show selection UI with existing publishers + "New publisher" option
+        const choices = [
+          ...publishers.map((p) => ({
+            title: p.name,
+            description: p.url || undefined,
+            value: p.id,
+          })),
+          {
+            title: "New publisher",
+            description: "Create a new publisher",
+            value: -1,
           },
-        }
-      );
+        ];
 
-      if (!publishersResponse.ok) {
-        if (publishersResponse.status === 401) {
-          // Authentication failure - exit with helpful message
-          out.error(
-            "Authentication failed",
-            "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
-          );
-          process.exit(1);
+        const response = await prompts({
+          type: "select",
+          name: "publisherId",
+          message: "Select a publisher for this twist:",
+          choices,
+        });
+
+        if (response.publisherId === undefined) {
+          out.plain("\nDeployment cancelled.");
+          process.exit(0);
         }
-        const errorText = await publishersResponse.text();
-        out.warning("Failed to fetch publishers", [errorText]);
+
+        if (response.publisherId === -1) {
+          // Create new publisher
+          publisherId = await createNewPublisher(options.apiUrl, deployToken!);
+        } else {
+          publisherId = response.publisherId;
+        }
       } else {
-        publishers = (await publishersResponse.json()) as Publisher[];
-        fetchSucceeded = true;
-      }
-    } catch (error) {
-      const errorInfo = handleNetworkError(error);
-      out.warning("Failed to fetch publishers", [errorInfo.message]);
-    }
-
-    // Always prompt for publisher, even if fetch failed
-    if (fetchSucceeded && publishers.length > 0) {
-      // Show selection UI with existing publishers + "New publisher" option
-      const choices = [
-        ...publishers.map((p) => ({
-          title: p.name,
-          description: p.url || undefined,
-          value: p.id,
-        })),
-        {
-          title: "New publisher",
-          description: "Create a new publisher",
-          value: -1,
-        },
-      ];
-
-      const response = await prompts({
-        type: "select",
-        name: "publisherId",
-        message: "Select a publisher for this twist:",
-        choices,
-      });
-
-      if (response.publisherId === undefined) {
-        out.plain("\nDeployment cancelled.");
-        process.exit(0);
-      }
-
-      if (response.publisherId === -1) {
-        // Create new publisher
+        // No existing publishers or fetch failed - create new one
+        if (!fetchSucceeded) {
+          out.info("Could not fetch existing publishers", [
+            "You can create a new publisher to continue",
+          ]);
+        }
         publisherId = await createNewPublisher(options.apiUrl, deployToken!);
-      } else {
-        publisherId = response.publisherId;
-      }
-    } else {
-      // No existing publishers or fetch failed - create new one
-      if (!fetchSucceeded) {
-        out.info("Could not fetch existing publishers", [
-          "You can create a new publisher to continue",
-        ]);
-      }
-      publisherId = await createNewPublisher(options.apiUrl, deployToken!);
       }
     }
   }
@@ -560,11 +558,6 @@ export async function deployCommand(options: DeployOptions) {
         },
       })) as any;
 
-      if (!result) {
-        out.error("Upload failed");
-        process.exit(1);
-      }
-
       // Handle dryRun response
       if (options.dryRun) {
         if (result.errors && result.errors.length > 0) {
@@ -610,6 +603,40 @@ export async function deployCommand(options: DeployOptions) {
       // Show success with relevant info
       out.success(`Deployed to ${environment} environment`);
     } catch (error) {
+      // Handle SSE-specific errors with better messaging
+      if (error instanceof Error) {
+        if (
+          error.message.includes("Stream ended without receiving a result")
+        ) {
+          out.error(
+            "Connection interrupted",
+            "The upload may have completed on the server, but the connection was interrupted."
+          );
+          console.error(
+            out.colors.dim(
+              "Please verify the deployment status and retry if needed."
+            )
+          );
+          process.exit(1);
+        } else if (
+          error.message.includes(
+            "Connection closed without receiving any events"
+          )
+        ) {
+          out.error(
+            "Connection failed",
+            "Unable to establish a stable connection to Plot API."
+          );
+          console.error(
+            out.colors.dim(
+              "Please check your network connection and try again."
+            )
+          );
+          process.exit(1);
+        }
+      }
+
+      // Fall back to generic network error handling
       const errorInfo = handleNetworkError(error);
       out.error("Upload failed", errorInfo.message);
       if (errorInfo.details) {
