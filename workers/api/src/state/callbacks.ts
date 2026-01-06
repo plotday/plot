@@ -2,9 +2,12 @@ import { DurableObject } from "cloudflare:workers";
 
 import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 
+import { type Bindings } from "../env";
 import { twistFactory } from "../twist";
-import { validateSerializable } from "../twist/tools/validation";
-import { type TwistEnvironment, type Bindings } from "../env";
+import {
+  stripTrailingUndefined,
+  validateSerializable,
+} from "../twist/tools/validation";
 import { createLogger } from "../utils/logger";
 
 export type CallbackData = {
@@ -102,10 +105,15 @@ export class CallbacksState extends DurableObject<Bindings> {
     key?: string;
     meta?: Record<string, any>;
   }): Promise<string> {
-    if (extraArgs !== undefined) {
+    // Strip trailing undefined values from extraArgs before validation
+    // This allows natural optional parameter usage: f(1, 2, undefined) becomes f(1, 2)
+    const normalizedArgs =
+      extraArgs !== undefined ? stripTrailingUndefined(extraArgs) : undefined;
+
+    if (normalizedArgs !== undefined && normalizedArgs.length > 0) {
       validateSerializable(
         `create callback args for function "${functionName}"`,
-        extraArgs
+        normalizedArgs
       );
     }
 
@@ -157,7 +165,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       JSON.stringify(path),
       version,
       functionName,
-      extraArgs ? JSON.stringify(extraArgs) : null,
+      normalizedArgs ? JSON.stringify(normalizedArgs) : null,
       callAt ? callAt.getTime() : null,
       callOnce ? 1 : 0,
       expires ? expires.getTime() : null,

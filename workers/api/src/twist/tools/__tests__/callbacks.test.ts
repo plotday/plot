@@ -76,6 +76,81 @@ describe("Callbacks", () => {
         "Cannot create callback"
       );
     });
+
+    it("should strip trailing undefined from callback arguments", async () => {
+      const testFunction = async function testCallback() {
+        return "result";
+      };
+
+      // Create callback with trailing undefined values
+      const token = await callbacks.create(
+        testFunction,
+        "arg1",
+        "arg2",
+        undefined,
+        undefined
+      );
+
+      expect(token).toBe("cb_test_token_123");
+      // extraArgs should have trailing undefined values stripped
+      expect(mockCallbacksStub.create).toHaveBeenCalledWith({
+        priorityTwistId: "pa-1",
+        twistId: "test-twist",
+        environment: "production",
+        path: ["Tool1"],
+        functionName: "testCallback",
+        extraArgs: ["arg1", "arg2"],
+      });
+    });
+
+    it("should preserve undefined in the middle of callback arguments", async () => {
+      const testFunction = async function testCallback() {
+        return "result";
+      };
+
+      // Create callback with undefined in the middle
+      const token = await callbacks.create(
+        testFunction,
+        "arg1",
+        undefined,
+        "arg3"
+      );
+
+      expect(token).toBe("cb_test_token_123");
+      // Middle undefined should be preserved
+      expect(mockCallbacksStub.create).toHaveBeenCalledWith({
+        priorityTwistId: "pa-1",
+        twistId: "test-twist",
+        environment: "production",
+        path: ["Tool1"],
+        functionName: "testCallback",
+        extraArgs: ["arg1", undefined, "arg3"],
+      });
+    });
+
+    it("should handle all undefined arguments", async () => {
+      const testFunction = async function testCallback() {
+        return "result";
+      };
+
+      // Create callback with all undefined values
+      const token = await callbacks.create(
+        testFunction,
+        undefined,
+        undefined
+      );
+
+      expect(token).toBe("cb_test_token_123");
+      // All undefined should result in empty extraArgs
+      expect(mockCallbacksStub.create).toHaveBeenCalledWith({
+        priorityTwistId: "pa-1",
+        twistId: "test-twist",
+        environment: "production",
+        path: ["Tool1"],
+        functionName: "testCallback",
+        extraArgs: [],
+      });
+    });
   });
 
   describe("createFromParent", () => {

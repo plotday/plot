@@ -117,9 +117,13 @@ export function createSerializationError(
   if (info.type === "function") {
     message += `Found function at path "${info.path}".\n\n`;
     message += `❌ DO NOT store functions directly:\n`;
-    message += `   await this.tools.store.set("key", ${info.value || "myFunction"});\n\n`;
+    message += `   await this.tools.store.set("key", ${
+      info.value || "myFunction"
+    });\n\n`;
     message += `✅ Instead, create a callback token first:\n`;
-    message += `   const token = await this.callback(this.${info.value || "myFunction"});\n`;
+    message += `   const token = await this.callback(this.${
+      info.value || "myFunction"
+    });\n`;
     message += `   await this.tools.store.set("key", token);\n\n`;
     message += `Then later, execute the callback:\n`;
     message += `   const token = await this.tools.store.get("key");\n`;
@@ -154,4 +158,31 @@ export function validateSerializable(operation: string, value: any): void {
   if (nonSerializable) {
     throw createSerializationError(operation, nonSerializable);
   }
+}
+
+/**
+ * Removes trailing undefined values from an array.
+ * Preserves undefined values in the middle of the array.
+ *
+ * This is useful for callback arguments where trailing optional parameters
+ * can be omitted. In JavaScript, f(1, 2, undefined) is equivalent to f(1, 2)
+ * for optional parameters.
+ *
+ * Examples:
+ *   [1, 2, undefined, undefined] -> [1, 2]
+ *   [1, undefined, 3] -> [1, undefined, 3]
+ *   [undefined, undefined] -> []
+ *   [] -> []
+ */
+export function stripTrailingUndefined(args: any[]): any[] {
+  let lastDefinedIndex = -1;
+
+  for (let i = args.length - 1; i >= 0; i--) {
+    if (args[i] !== undefined) {
+      lastDefinedIndex = i;
+      break;
+    }
+  }
+
+  return args.slice(0, lastDefinedIndex + 1);
 }

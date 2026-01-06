@@ -347,6 +347,30 @@ export class Plot extends Tool implements IPlot {
           callbacks.push(result);
         }
       }
+
+      // Dispatch note.created callback for new notes on activities created by this twist
+      const isCreate = !isUpdate;
+      if (isCreate) {
+        // Check if parent activity was created by this twist
+        const activityMetadata = ACTIVITY_METADATA_CACHE.get(cacheKey);
+        const activityCreatedByThisTwist =
+          activityMetadata?.created_by === this.priorityTwistId;
+
+        // Check if note was created by this twist
+        const noteCreatedByThisTwist = item.created_by === this.priorityTwistId;
+
+        // Only dispatch if activity owned by twist AND note NOT created by twist
+        // This prevents infinite loops when twist creates notes on its own activities
+        if (activityCreatedByThisTwist && !noteCreatedByThisTwist) {
+          const callback = this.plotOptions?.note?.created;
+          if (typeof callback === "function") {
+            callbacks.push({
+              optionPath: ["note", "created"],
+              args: [currentNote],
+            });
+          }
+        }
+      }
     }
 
     // Handle activity items
@@ -377,9 +401,44 @@ export class Plot extends Tool implements IPlot {
       const createdByThisTwist =
         (item.created_by ?? item.author_id) === this.priorityTwistId;
       if (createdByThisTwist && isUpdate) {
-        // Build the previous activity and changes object
+        // Build the previous activity
         const previousActivity = buildActivityFromDbRecord(previous);
+
+        // Calculate ActivityUpdate with only changed fields
+        const update: ActivityUpdate = {
+          id: currentActivity.id,
+          source: currentActivity.source,
+        };
+
+        // Check each field for changes
+        if (currentActivity.type !== previousActivity.type) {
+          update.type = currentActivity.type;
+        }
+        if (currentActivity.title !== previousActivity.title) {
+          update.title = currentActivity.title;
+        }
+        if (currentActivity.assignee?.id !== previousActivity.assignee?.id) {
+          update.assignee = currentActivity.assignee;
+        }
+        if (currentActivity.start !== previousActivity.start) {
+          update.start = currentActivity.start;
+        }
+        if (currentActivity.end !== previousActivity.end) {
+          update.end = currentActivity.end;
+        }
+        if (currentActivity.doneAt !== previousActivity.doneAt) {
+          update.doneAt = currentActivity.doneAt;
+        }
+        if (currentActivity.draft !== previousActivity.draft) {
+          update.draft = currentActivity.draft;
+        }
+        if (currentActivity.private !== previousActivity.private) {
+          update.private = currentActivity.private;
+        }
+
+        // Build changes object with both current and previous
         const changes = {
+          update,
           previous: previousActivity,
           tagsAdded: calculateTagsAdded(item.tags, previous.tags),
           tagsRemoved: calculateTagsRemoved(item.tags, previous.tags),

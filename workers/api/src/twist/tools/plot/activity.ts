@@ -9,8 +9,6 @@ import {
   type ActivityUpdate,
   type ActorId,
   ActorType,
-  type CreateActivityOptions,
-  type CreateNoteOptions,
   type NewActivity,
   type NewActivityWithNotes,
   type NewNote,
@@ -197,12 +195,11 @@ function createPreviewFromMarkdown(
 
 export async function createActivity(
   plot: Plot,
-  activity: NewActivity | NewActivityWithNotes,
-  options?: CreateActivityOptions
+  activity: NewActivity | NewActivityWithNotes
 ): Promise<Activity> {
   // Handle activity exceptions differently
   if (activity.recurrence && activity.occurrence) {
-    return createActivityException(plot, activity, options);
+    return createActivityException(plot, activity);
   }
 
   // Determine target priority, handling pickPriority for similarity-based selection
@@ -521,7 +518,7 @@ export async function createActivity(
 
   // Mark as read for all priority users if unread is false
   // This happens AFTER notes are created to ensure read_at timestamp is later than note timestamps
-  if (options?.unread === false) {
+  if (activity?.unread === false) {
     // Get all users with access to this priority (including inherited access from parent priorities)
     const usersResult = await plot.supabase.rpc(
       "get_users_with_priority_access",
@@ -669,7 +666,7 @@ export async function createNote(
   );
 
   // Mark activity as read for all priority users if unread is false
-  if (options?.unread === false) {
+  if (note?.unread === false) {
     // Get all users with access to this priority (including inherited access from parent priorities)
     const usersResult = await plot.supabase.rpc(
       "get_users_with_priority_access",
@@ -1409,8 +1406,7 @@ export async function getActivityByMeta(
 
 export async function createActivities(
   plot: Plot,
-  activities: (NewActivity | NewActivityWithNotes)[],
-  options?: CreateActivityOptions
+  activities: (NewActivity | NewActivityWithNotes)[]
 ): Promise<Activity[]> {
   if (activities.length === 0) {
     return [];
@@ -1640,11 +1636,17 @@ export async function createActivities(
     await plot.supabase.from("activity").insert(dbActivities).select()
   );
 
-  // Mark activities as read for all priority users if unread is false
-  if (options?.unread === false && dbResult.length > 0) {
+  // Filter activities that should be marked as read (unread === false)
+  const activitiesToMarkAsRead = dbResult.filter((dbActivity, index) => {
+    const originalActivity = activities[index];
+    return "unread" in originalActivity && originalActivity.unread === false;
+  });
+
+  // Mark activities as read for all priority users if any activities have unread === false
+  if (activitiesToMarkAsRead.length > 0) {
     // Group activities by priority_id to minimize database queries
-    const activitiesByPriority = new Map<string, typeof dbResult>();
-    for (const activity of dbResult) {
+    const activitiesByPriority = new Map<string, typeof activitiesToMarkAsRead>();
+    for (const activity of activitiesToMarkAsRead) {
       const priorityId = activity.priority_id;
       if (!activitiesByPriority.has(priorityId)) {
         activitiesByPriority.set(priorityId, []);
@@ -1807,8 +1809,7 @@ export async function createActivities(
 
 async function createActivityException(
   plot: Plot,
-  activity: NewActivity,
-  _options?: CreateActivityOptions
+  activity: NewActivity
 ): Promise<Activity> {
   if (!activity.recurrence || !activity.occurrence) {
     throw new Error(

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+
 import {
-  findNonSerializable,
-  validateSerializable,
   createSerializationError,
+  findNonSerializable,
+  stripTrailingUndefined,
+  validateSerializable,
 } from "./validation";
 
 describe("validation utilities", () => {
@@ -181,6 +183,64 @@ describe("validation utilities", () => {
 
       expect(error.message).toContain("data.circular");
       expect(error.message).toContain("circular reference");
+    });
+  });
+
+  describe("stripTrailingUndefined", () => {
+    it("should remove trailing undefined values", () => {
+      const result = stripTrailingUndefined([1, 2, undefined, undefined]);
+      expect(result).toEqual([1, 2]);
+    });
+
+    it("should preserve undefined values in the middle", () => {
+      const result = stripTrailingUndefined([1, undefined, 3]);
+      expect(result).toEqual([1, undefined, 3]);
+    });
+
+    it("should handle all undefined values", () => {
+      const result = stripTrailingUndefined([undefined, undefined]);
+      expect(result).toEqual([]);
+    });
+
+    it("should handle empty array", () => {
+      const result = stripTrailingUndefined([]);
+      expect(result).toEqual([]);
+    });
+
+    it("should handle array with no undefined values", () => {
+      const result = stripTrailingUndefined([1, 2, 3]);
+      expect(result).toEqual([1, 2, 3]);
+    });
+
+    it("should handle array with single undefined at end", () => {
+      const result = stripTrailingUndefined([1, 2, undefined]);
+      expect(result).toEqual([1, 2]);
+    });
+
+    it("should handle array with only one undefined", () => {
+      const result = stripTrailingUndefined([undefined]);
+      expect(result).toEqual([]);
+    });
+
+    it("should handle complex values", () => {
+      const result = stripTrailingUndefined([
+        { a: 1 },
+        "string",
+        null,
+        undefined,
+        undefined,
+      ]);
+      expect(result).toEqual([{ a: 1 }, "string", null]);
+    });
+
+    it("should preserve null values at the end", () => {
+      const result = stripTrailingUndefined([1, 2, null]);
+      expect(result).toEqual([1, 2, null]);
+    });
+
+    it("should handle mixed undefined and null", () => {
+      const result = stripTrailingUndefined([1, undefined, null, undefined]);
+      expect(result).toEqual([1, undefined, null]);
     });
   });
 });
