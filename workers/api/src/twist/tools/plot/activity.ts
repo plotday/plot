@@ -75,7 +75,10 @@ async function convertNoteToMarkdown(
         // Handle error case (format === "error")
         if ("error" in result) {
           const logger = createLogger();
-          logger.error("Failed to convert HTML to Markdown", new Error(result.error));
+          logger.error(
+            "Failed to convert HTML to Markdown",
+            new Error(result.error)
+          );
           return note;
         }
 
@@ -247,10 +250,16 @@ export async function createActivity(
         try {
           embedding = await plot.ai.embed(textToEmbed);
         } catch (error) {
-          const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-          logger.warn("Failed to generate embedding for pickPriority, falling back to default priority", {
-            error_message: error instanceof Error ? error.message : String(error),
+          const logger = createLogger({
+            priority_twist_id: plot.priorityTwistId,
           });
+          logger.warn(
+            "Failed to generate embedding for pickPriority, falling back to default priority",
+            {
+              error_message:
+                error instanceof Error ? error.message : String(error),
+            }
+          );
           // embedding remains null, will use default priority logic
         }
       }
@@ -495,7 +504,9 @@ export async function createActivity(
             });
 
           if (linkError) {
-            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+            const logger = createLogger({
+              priority_twist_id: plot.priorityTwistId,
+            });
             logger.warn("Failed to link contacts to priority", {
               error_message: linkError.message,
             });
@@ -539,11 +550,17 @@ export async function createActivity(
         .from("activity_read")
         .insert(activityReadEntries);
       if (insertResult.error) {
-        const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-        logger.error("Failed to insert activity_read entries", insertResult.error as Error, {
-          activity_id: dbResult.id,
-          count: activityReadEntries.length,
+        const logger = createLogger({
+          priority_twist_id: plot.priorityTwistId,
         });
+        logger.error(
+          "Failed to insert activity_read entries",
+          insertResult.error as Error,
+          {
+            activity_id: dbResult.id,
+            count: activityReadEntries.length,
+          }
+        );
       }
     }
   }
@@ -572,22 +589,19 @@ export async function createActivity(
   );
 }
 
-export async function createNote(
-  plot: Plot,
-  note: NewNote,
-  options?: CreateNoteOptions
-): Promise<Note> {
+export async function createNote(plot: Plot, note: NewNote): Promise<Note> {
   // Skip fully empty notes (no content, no links, no mentions)
   const isEmpty =
-    (!note.content || note.content.trim() === '') &&
+    (!note.content || note.content.trim() === "") &&
     (!note.links || note.links.length === 0) &&
     (!note.mentions || note.mentions.length === 0);
 
   if (isEmpty) {
-    console.warn('[Plot] Skipping creation of fully empty note for activity:', note.activity.id);
     // Return a minimal Note object without database insertion
     // This maintains the function signature while avoiding empty note creation
-    throw new Error('Cannot create fully empty note (no content, links, or mentions)');
+    throw new Error(
+      "Cannot create fully empty note (no content, links, or mentions)"
+    );
   }
 
   // Fetch activity with author for validation and later use
@@ -690,11 +704,17 @@ export async function createNote(
           onConflict: "user_id,activity_id",
         });
       if (upsertResult.error) {
-        const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-        logger.error("Failed to upsert activity_read entries for note", upsertResult.error as Error, {
-          activity_id: note.activity.id,
-          count: activityReadEntries.length,
+        const logger = createLogger({
+          priority_twist_id: plot.priorityTwistId,
         });
+        logger.error(
+          "Failed to upsert activity_read entries for note",
+          upsertResult.error as Error,
+          {
+            activity_id: note.activity.id,
+            count: activityReadEntries.length,
+          }
+        );
       }
     }
   }
@@ -759,17 +779,19 @@ export async function createNotes(
   notes: NewNote[]
 ): Promise<Note[]> {
   // Create all notes in parallel, filtering out empty notes
-  const results = await Promise.allSettled(notes.map((note) => createNote(plot, note)));
+  const results = await Promise.allSettled(
+    notes.map((note) => createNote(plot, note))
+  );
 
   // Return only successfully created notes, log failures (except empty note errors)
   return results
     .map((result, index) => {
-      if (result.status === 'fulfilled') {
+      if (result.status === "fulfilled") {
         return result.value;
       } else {
         // Only log non-empty-note errors
-        if (!result.reason?.message?.includes('fully empty note')) {
-          console.error('[Plot] Failed to create note:', result.reason);
+        if (!result.reason?.message?.includes("fully empty note")) {
+          console.error("[Plot] Failed to create note:", result.reason);
         }
         return null;
       }
@@ -1075,7 +1097,9 @@ export async function updateActivity(
             });
 
           if (linkError) {
-            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+            const logger = createLogger({
+              priority_twist_id: plot.priorityTwistId,
+            });
             logger.warn("Failed to link contacts to priority", {
               error_message: linkError.message,
             });
@@ -1241,7 +1265,9 @@ export async function getNotes(
 
     if (error) {
       const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-      logger.error("Failed to get notes", error as Error, { activity_id: activity.id });
+      logger.error("Failed to get notes", error as Error, {
+        activity_id: activity.id,
+      });
       throw error;
     }
 
@@ -1472,10 +1498,16 @@ export async function createActivities(
           try {
             embedding = await plot.ai.embed(textToEmbed);
           } catch (error) {
-            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-            logger.warn("Failed to generate embedding for pickPriority in batch operation, falling back to default priority", {
-              error_message: error instanceof Error ? error.message : String(error),
+            const logger = createLogger({
+              priority_twist_id: plot.priorityTwistId,
             });
+            logger.warn(
+              "Failed to generate embedding for pickPriority in batch operation, falling back to default priority",
+              {
+                error_message:
+                  error instanceof Error ? error.message : String(error),
+              }
+            );
             // embedding remains null, will use default priority logic
           }
         }
@@ -1645,7 +1677,10 @@ export async function createActivities(
   // Mark activities as read for all priority users if any activities have unread === false
   if (activitiesToMarkAsRead.length > 0) {
     // Group activities by priority_id to minimize database queries
-    const activitiesByPriority = new Map<string, typeof activitiesToMarkAsRead>();
+    const activitiesByPriority = new Map<
+      string,
+      typeof activitiesToMarkAsRead
+    >();
     for (const activity of activitiesToMarkAsRead) {
       const priorityId = activity.priority_id;
       if (!activitiesByPriority.has(priorityId)) {
@@ -1679,10 +1714,16 @@ export async function createActivities(
             .from("activity_read")
             .insert(activityReadEntries);
           if (insertResult.error) {
-            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-            logger.error("Failed to insert activity_read entries for batch activities", insertResult.error as Error, {
-              count: activityReadEntries.length,
+            const logger = createLogger({
+              priority_twist_id: plot.priorityTwistId,
             });
+            logger.error(
+              "Failed to insert activity_read entries for batch activities",
+              insertResult.error as Error,
+              {
+                count: activityReadEntries.length,
+              }
+            );
           }
         }
       }
@@ -1771,7 +1812,9 @@ export async function createActivities(
             });
 
           if (linkError) {
-            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+            const logger = createLogger({
+              priority_twist_id: plot.priorityTwistId,
+            });
             logger.warn("Failed to link contacts to priorities", {
               error_message: linkError.message,
             });
