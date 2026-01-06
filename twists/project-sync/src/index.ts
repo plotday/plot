@@ -236,6 +236,17 @@ export default class ProjectSync extends Twist<ProjectSync> {
   }
 
   /**
+   * Check if a note is fully empty (no content, no links, no mentions)
+   */
+  private isNoteEmpty(note: { content?: string | null; links?: any[] | null; mentions?: any[] | null }): boolean {
+    return (
+      (!note.content || note.content.trim() === "") &&
+      (!note.links || note.links.length === 0) &&
+      (!note.mentions || note.mentions.length === 0)
+    );
+  }
+
+  /**
    * Called for each issue synced from any provider
    * Creates or updates Plot activities based on issue state
    */
@@ -265,6 +276,11 @@ export default class ProjectSync extends Twist<ProjectSync> {
     // The issue.start will only be set if the tool explicitly scheduled it
     if (issue.type === ActivityType.Action && !("start" in issue)) {
       issue.start = null; // "Do Someday" - backlog item by default
+    }
+
+    // Filter out empty notes to avoid warnings in Plot tool
+    if (issue.notes) {
+      issue.notes = issue.notes.filter((note) => !this.isNoteEmpty(note));
     }
 
     // Create new activity for new issue (new thread with initial note)

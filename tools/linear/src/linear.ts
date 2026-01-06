@@ -334,11 +334,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       notes.push({ content: comment.body });
     }
 
-    // Ensure at least one note exists
-    if (notes.length === 0) {
-      notes.push({ content: "" });
-    }
-
     return {
       type: ActivityType.Action,
       title: issue.title,
