@@ -145,14 +145,14 @@ export function fromDbActivity(
     type: activityType,
     createdAt: dbActivity.source_created_at
       ? new Date(dbActivity.source_created_at)
-      : null,
+      : new Date(dbActivity.created_at),
     author,
     start,
     end: sdkEnd,
     recurrenceUntil,
     recurrenceCount: null, // Not stored separately in database
     doneAt: dbActivity.done_at ? new Date(dbActivity.done_at) : null,
-    title: dbActivity.title || null,
+    title: dbActivity.title || "",
     assignee,
     draft: dbActivity.draft ?? false,
     private: dbActivity.private ?? false,
@@ -168,10 +168,9 @@ export function fromDbActivity(
       dbActivity.recurrence_dates?.map((d) => new Date(d)) || null,
     recurrence: null,
     occurrence: null,
-    source: dbActivity.source ?? null,
     meta: dbActivity.meta as ActivityMeta | null,
-    tags: (dbActivity.tags as Tags) || null,
-    mentions: (dbActivity.mentions as ActorId[]) || null,
+    tags: (dbActivity.tags as Tags) || {},
+    mentions: (dbActivity.mentions as ActorId[]) || [],
   };
 }
 

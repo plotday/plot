@@ -861,13 +861,13 @@ export class Plot extends Tool implements IPlot {
   }
 
   async createNote(
-    note: Omit<Note, "id" | "author">,
+    note: NewNote,
     options?: CreateNoteOptions
   ): Promise<Note> {
     return activityOps.createNote(this, note, options);
   }
 
-  async createNotes(notes: Omit<Note, "id" | "author">[]): Promise<Note[]> {
+  async createNotes(notes: NewNote[]): Promise<Note[]> {
     return activityOps.createNotes(this, notes);
   }
 

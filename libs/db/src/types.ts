@@ -36,6 +36,7 @@ export type Database = {
     Tables: {
       activity: {
         Row: {
+          active_source: string | null
           archived_at: string | null
           assignee_id: string | null
           at: unknown
@@ -60,6 +61,7 @@ export type Database = {
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           source: string | null
+          source_created_at: string
           title: string | null
           type: Database["public"]["Enums"]["activity_type"]
           updated_at: string
@@ -86,6 +88,7 @@ export type Database = {
           } | null
         }
         Insert: {
+          active_source?: string | null
           archived_at?: string | null
           assignee_id?: string | null
           at?: unknown
@@ -110,12 +113,14 @@ export type Database = {
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
           source?: string | null
+          source_created_at?: string
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
           updated_at?: string
           updated_by?: number
         }
         Update: {
+          active_source?: string | null
           archived_at?: string | null
           assignee_id?: string | null
           at?: unknown
@@ -140,6 +145,7 @@ export type Database = {
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
           source?: string | null
+          source_created_at?: string
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
           updated_at?: string
@@ -556,6 +562,7 @@ export type Database = {
           links: Json | null
           mentions: string[] | null
           private: boolean
+          source_created_at: string
           updated_at: string
           updated_by: number
           actor: {
@@ -581,6 +588,7 @@ export type Database = {
           links?: Json | null
           mentions?: string[] | null
           private?: boolean
+          source_created_at?: string
           updated_at?: string
           updated_by?: number
         }
@@ -596,6 +604,7 @@ export type Database = {
           links?: Json | null
           mentions?: string[] | null
           private?: boolean
+          source_created_at?: string
           updated_at?: string
           updated_by?: number
         }
@@ -1637,6 +1646,7 @@ export type Database = {
       }
       activity_x: {
         Row: {
+          active_source: string | null
           archived_at: string | null
           assignee_id: string | null
           at: unknown
@@ -1663,6 +1673,7 @@ export type Database = {
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           source: string | null
+          source_created_at: string | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
@@ -1947,6 +1958,7 @@ export type Database = {
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           source: string | null
+          source_created_at: string | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           unread: boolean | null
@@ -2069,6 +2081,7 @@ export type Database = {
           links: Json | null
           mentions: string[] | null
           private: boolean | null
+          source_created_at: string | null
           updated_at: string | null
           updated_by: number | null
           user_id: string | null
@@ -2593,21 +2606,48 @@ export type Database = {
       buckets_analytics: {
         Row: {
           created_at: string
+          deleted_at: string | null
           format: string
+          id: string
+          name: string
+          type: Database["storage"]["Enums"]["buckettype"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          format?: string
+          id?: string
+          name: string
+          type?: Database["storage"]["Enums"]["buckettype"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          format?: string
+          id?: string
+          name?: string
+          type?: Database["storage"]["Enums"]["buckettype"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      buckets_vectors: {
+        Row: {
+          created_at: string
           id: string
           type: Database["storage"]["Enums"]["buckettype"]
           updated_at: string
         }
         Insert: {
           created_at?: string
-          format?: string
           id: string
           type?: Database["storage"]["Enums"]["buckettype"]
           updated_at?: string
         }
         Update: {
           created_at?: string
-          format?: string
           id?: string
           type?: Database["storage"]["Enums"]["buckettype"]
           updated_at?: string
@@ -2616,30 +2656,36 @@ export type Database = {
       }
       iceberg_namespaces: {
         Row: {
-          bucket_id: string
+          bucket_name: string
+          catalog_id: string
           created_at: string
           id: string
+          metadata: Json
           name: string
           updated_at: string
         }
         Insert: {
-          bucket_id: string
+          bucket_name: string
+          catalog_id: string
           created_at?: string
           id?: string
+          metadata?: Json
           name: string
           updated_at?: string
         }
         Update: {
-          bucket_id?: string
+          bucket_name?: string
+          catalog_id?: string
           created_at?: string
           id?: string
+          metadata?: Json
           name?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "iceberg_namespaces_bucket_id_fkey"
-            columns: ["bucket_id"]
+            foreignKeyName: "iceberg_namespaces_catalog_id_fkey"
+            columns: ["catalog_id"]
             isOneToOne: false
             referencedRelation: "buckets_analytics"
             referencedColumns: ["id"]
@@ -2648,36 +2694,48 @@ export type Database = {
       }
       iceberg_tables: {
         Row: {
-          bucket_id: string
+          bucket_name: string
+          catalog_id: string
           created_at: string
           id: string
           location: string
           name: string
           namespace_id: string
+          remote_table_id: string | null
+          shard_id: string | null
+          shard_key: string | null
           updated_at: string
         }
         Insert: {
-          bucket_id: string
+          bucket_name: string
+          catalog_id: string
           created_at?: string
           id?: string
           location: string
           name: string
           namespace_id: string
+          remote_table_id?: string | null
+          shard_id?: string | null
+          shard_key?: string | null
           updated_at?: string
         }
         Update: {
-          bucket_id?: string
+          bucket_name?: string
+          catalog_id?: string
           created_at?: string
           id?: string
           location?: string
           name?: string
           namespace_id?: string
+          remote_table_id?: string | null
+          shard_id?: string | null
+          shard_key?: string | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "iceberg_tables_bucket_id_fkey"
-            columns: ["bucket_id"]
+            foreignKeyName: "iceberg_tables_catalog_id_fkey"
+            columns: ["catalog_id"]
             isOneToOne: false
             referencedRelation: "buckets_analytics"
             referencedColumns: ["id"]
@@ -2898,6 +2956,50 @@ export type Database = {
           },
         ]
       }
+      vector_indexes: {
+        Row: {
+          bucket_id: string
+          created_at: string
+          data_type: string
+          dimension: number
+          distance_metric: string
+          id: string
+          metadata_configuration: Json | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          bucket_id: string
+          created_at?: string
+          data_type: string
+          dimension: number
+          distance_metric: string
+          id?: string
+          metadata_configuration?: Json | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          bucket_id?: string
+          created_at?: string
+          data_type?: string
+          dimension?: number
+          distance_metric?: string
+          id?: string
+          metadata_configuration?: Json | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vector_indexes_bucket_id_fkey"
+            columns: ["bucket_id"]
+            isOneToOne: false
+            referencedRelation: "buckets_vectors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -3051,7 +3153,7 @@ export type Database = {
       }
     }
     Enums: {
-      buckettype: "STANDARD" | "ANALYTICS"
+      buckettype: "STANDARD" | "ANALYTICS" | "VECTOR"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3200,7 +3302,7 @@ export const Constants = {
   },
   storage: {
     Enums: {
-      buckettype: ["STANDARD", "ANALYTICS"],
+      buckettype: ["STANDARD", "ANALYTICS", "VECTOR"],
     },
   },
 } as const

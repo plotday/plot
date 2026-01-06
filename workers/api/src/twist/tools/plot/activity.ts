@@ -9,6 +9,7 @@ import {
   type ActivityUpdate,
   type ActorId,
   ActorType,
+  type NewActor,
   type NewActivity,
   type NewActivityWithNotes,
   type NewNote,
@@ -20,6 +21,7 @@ import {
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
 import { createLogger } from "../../../utils/logger";
+import { addContacts } from "./contacts";
 import { fromDbActivity } from "./converters";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";
@@ -196,6 +198,75 @@ function createPreviewFromMarkdown(
   return preview || null;
 }
 
+/**
+ * Processes a NewActor (either an existing actor ID or a new contact) and returns the actor ID.
+ * If the NewActor is a NewContact, it will be upserted and linked to the priority.
+ *
+ * @param plot - The Plot instance
+ * @param newActor - The NewActor to process (can be { id } or NewContact)
+ * @param priorityId - The priority ID to link new contacts to
+ * @returns The actor ID, or null if newActor is undefined/null
+ */
+async function processNewActor(
+  plot: Plot,
+  newActor: NewActor | undefined | null,
+  priorityId: string
+): Promise<string | null> {
+  if (!newActor) return null;
+
+  // Check if it's an existing actor reference
+  if ("id" in newActor) {
+    return newActor.id;
+  }
+
+  // It's a NewContact - upsert it
+  const [actor] = await addContacts(plot, [newActor]);
+
+  // Link to priority if it's a contact
+  if (actor.type === ActorType.Contact) {
+    await plot.supabase
+      .from("priority_contact")
+      .upsert(
+        {
+          priority_id: priorityId,
+          contact_id: actor.id,
+          archived_at: null,
+        },
+        {
+          onConflict: "priority_id,contact_id",
+        }
+      );
+  }
+
+  return actor.id;
+}
+
+/**
+ * Processes an array of NewActors and returns an array of actor IDs.
+ * Filters out any null/undefined results.
+ *
+ * @param plot - The Plot instance
+ * @param newActors - Array of NewActors to process
+ * @param priorityId - The priority ID to link new contacts to
+ * @returns Array of actor IDs (nulls filtered out)
+ */
+async function processNewActorArray(
+  plot: Plot,
+  newActors: NewActor[],
+  priorityId: string
+): Promise<ActorId[]> {
+  const actorIds: ActorId[] = [];
+
+  for (const newActor of newActors) {
+    const actorId = await processNewActor(plot, newActor, priorityId);
+    if (actorId) {
+      actorIds.push(actorId as ActorId);
+    }
+  }
+
+  return actorIds;
+}
+
 export async function createActivity(
   plot: Plot,
   activity: NewActivity | NewActivityWithNotes
@@ -349,11 +420,16 @@ export async function createActivity(
     }
   }
 
-  // Determine assignee_id for the activity
+  // Process author - use provided author or default to twist
+  const authorId = activity.author
+    ? await processNewActor(plot, activity.author, targetPriorityId)
+    : plot.priorityTwistId;
+
+  // Process assignee
   let assigneeId: string | null = null;
-  if (activity.assignee) {
-    // Use explicitly provided assignee
-    assigneeId = activity.assignee.id;
+  if (activity.assignee !== undefined) {
+    // assignee is explicitly provided (can be NewActor or null)
+    assigneeId = await processNewActor(plot, activity.assignee, targetPriorityId);
   } else if (dbActivityType === "action") {
     // For actions without explicit assignee, default to twist owner
     const twistOwnerResult = await plot.supabase
@@ -371,16 +447,16 @@ export async function createActivity(
   const twistId = await plot.getTwistId(plot.priorityTwistId);
 
   // Convert NewActivity to database format
-  // Note: created_by_twist_id and source are added by migration, not yet in generated types
+  // Note: created_by_twist_id is added by migration, not yet in generated types
   const dbActivity: any = {
-    author_id: plot.priorityTwistId,
+    author_id: authorId,
     created_by: plot.priorityTwistId,
     created_by_twist_id: twistId,
     assignee_id: assigneeId,
     priority_id: targetPriorityId,
     source_created_at: activity.createdAt?.toISOString() ?? null,
     type: dbActivityType,
-    title: activity.title ?? null,
+    title: activity.title && activity.title.trim() !== "" ? activity.title : null,
     preview: previewText,
     draft: activity.draft ?? false,
     private: activity.private ?? false,
@@ -392,11 +468,15 @@ export async function createActivity(
     recurrence_dates:
       activity.recurrenceDates?.map((d) => d.toISOString()) ?? null,
     meta: activity.meta ?? null,
-    source: activity.source ?? null,
     updated_by: plot.getUpdatedBy(),
     embedding: embedding ? JSON.stringify(embedding) : null,
     pick_priority: pickPriorityConfig ?? null,
   };
+
+  // If tool provided an ID, use it instead of letting database generate one
+  if (activity.id) {
+    dbActivity.id = activity.id;
+  }
 
   // Handle scheduling fields using calculated dbEnd
   if (
@@ -442,25 +522,29 @@ export async function createActivity(
     }
   }
 
-  // Use upsert when source is provided for idempotent sync operations
-  // Unique constraint ensures (source, created_by_twist_id, archived_at) is unique per twist
+  // Insert activity - tools manage their own update detection using IDs
   const dbResult = safeQuery(
-    await (activity.source && twistId
-      ? plot.supabase
-          .from("activity")
-          .upsert(dbActivity, {
-            onConflict: "active_source,created_by_twist_id",
-            ignoreDuplicates: false, // Update on conflict
-          })
-          .select()
-          .single()
-      : plot.supabase.from("activity").insert(dbActivity).select().single())
+    await plot.supabase.from("activity").insert(dbActivity).select().single()
   );
 
-  // Add tags if provided
+  // Process tags if provided - convert NewActor[] to ActorId[] for each tag
+  let processedTags: Partial<Record<number, ActorId[]>> | null = null;
   if (activity.tags) {
-    // Build tag records with proper actor IDs from the tags object
-    const newTags = Object.entries(activity.tags)
+    processedTags = {};
+    for (const [tagId, newActors] of Object.entries(activity.tags)) {
+      if (newActors && newActors.length > 0) {
+        const actorIds = await processNewActorArray(plot, newActors, targetPriorityId);
+        if (actorIds.length > 0) {
+          processedTags[parseInt(tagId)] = actorIds;
+        }
+      }
+    }
+  }
+
+  // Add tags if provided
+  if (processedTags) {
+    // Build tag records with proper actor IDs from the processed tags object
+    const newTags = Object.entries(processedTags)
       .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
       .flatMap(([tagId, actorIds]) =>
         actorIds!.map((actorId) => ({
@@ -588,7 +672,7 @@ export async function createActivity(
   return fromDbActivity(
     {
       ...dbResult,
-      tags: activity.tags || null,
+      tags: processedTags || null,
       author: {
         id: author.id,
         name: author.name ?? "",
@@ -678,9 +762,20 @@ export async function createNote(
     );
   }
 
+  // Process author - use provided author or default to twist
+  const authorId = note.author
+    ? await processNewActor(plot, note.author, activityData.priority_id)
+    : plot.priorityTwistId;
+
+  // Process mentions if provided - convert NewActor[] to ActorId[]
+  let mentionIds: ActorId[] | null = null;
+  if (note.mentions) {
+    mentionIds = await processNewActorArray(plot, note.mentions, activityData.priority_id);
+  }
+
   // Convert Note to database format
   const dbNote: any = {
-    author_id: plot.priorityTwistId,
+    author_id: authorId,
     created_by: plot.priorityTwistId,
     activity_id: note.activity.id,
     source_created_at: note.createdAt?.toISOString() ?? null,
@@ -688,9 +783,14 @@ export async function createNote(
     private: note.private ?? false,
     content: contentToStore,
     links: note.links ?? null,
-    mentions: note.mentions ?? null,
+    mentions: mentionIds,
     updated_by: plot.getUpdatedBy(),
   };
+
+  // If tool provided an ID, use it instead of letting database generate one
+  if (note.id) {
+    dbNote.id = note.id;
+  }
 
   const dbResult = safeQuery(
     await plot.supabase.from("note").insert(dbNote).select().single()
@@ -737,15 +837,24 @@ export async function createNote(
     }
   }
 
-  // Add tags if provided
+  // Process tags if provided - convert NewActor[] to ActorId[] for each tag
+  let processedTags: Partial<Record<number, ActorId[]>> | null = null;
   if (note.tags) {
-    const tagUpdates: Record<string, boolean> = {};
-    for (const tagId of Object.keys(note.tags)) {
-      tagUpdates[tagId] = true;
+    processedTags = {};
+    for (const [tagId, newActors] of Object.entries(note.tags)) {
+      if (newActors && newActors.length > 0) {
+        const actorIds = await processNewActorArray(plot, newActors, activityData.priority_id);
+        if (actorIds.length > 0) {
+          processedTags[parseInt(tagId)] = actorIds;
+        }
+      }
     }
+  }
 
+  // Add tags if provided
+  if (processedTags) {
     // Insert tags using note_tag table
-    const tagInserts = Object.entries(note.tags)
+    const tagInserts = Object.entries(processedTags)
       .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
       .flatMap(([tagId, actorIds]) =>
         actorIds!.map((actorId) => ({
@@ -774,7 +883,7 @@ export async function createNote(
     id: dbResult.id,
     createdAt: (dbResult as any).source_created_at
       ? new Date((dbResult as any).source_created_at)
-      : null,
+      : new Date(dbResult.created_at),
     activity: fromDbActivity(
       { ...activityWithAuthor, tags: null },
       includeAuthorEmail
@@ -790,8 +899,8 @@ export async function createNote(
     archived: false, // Newly created notes are not archived
     content: dbResult.content,
     links: dbResult.links as ActivityLink[] | null,
-    mentions: (dbResult.mentions as string[])?.map((m) => m as ActorId) ?? null,
-    tags: note.tags || null,
+    mentions: (dbResult.mentions as string[])?.map((m) => m as ActorId) ?? [],
+    tags: processedTags || {},
   };
 }
 
@@ -884,7 +993,7 @@ export async function updateActivity(
 
   // Handle basic fields
   if (activity.title !== undefined) {
-    dbUpdate.title = activity.title;
+    dbUpdate.title = activity.title && activity.title.trim() !== "" ? activity.title : null;
   }
   if (activity.draft !== undefined) {
     dbUpdate.draft = activity.draft;
@@ -897,11 +1006,6 @@ export async function updateActivity(
   }
   if (activity.meta !== undefined) {
     dbUpdate.meta = activity.meta;
-  }
-  if (activity.createdAt !== undefined) {
-    (dbUpdate as any).source_created_at = activity.createdAt
-      ? activity.createdAt.toISOString()
-      : null;
   }
 
   // Handle recurrence fields
@@ -1058,8 +1162,39 @@ export async function updateActivity(
       throw new Error(`Failed to delete existing tags: ${deleteError.message}`);
     }
 
+    // Get priority_id for processing new actors
+    const priorityId =
+      cached?.priority_id ??
+      (await (async () => {
+        const { data, error } = await plot.supabase
+          .from("activity")
+          .select("priority_id")
+          .eq("id", activity.id)
+          .single();
+
+        if (error || !data) {
+          throw new Error(
+            `Failed to get activity priority: ${
+              error?.message ?? "Not found"
+            }`
+          );
+        }
+        return data.priority_id;
+      })());
+
+    // Process tags - convert NewActor[] to ActorId[] for each tag
+    const processedTags: Partial<Record<number, ActorId[]>> = {};
+    for (const [tagId, newActors] of Object.entries(activity.tags)) {
+      if (newActors && newActors.length > 0) {
+        const actorIds = await processNewActorArray(plot, newActors, priorityId);
+        if (actorIds.length > 0) {
+          processedTags[parseInt(tagId)] = actorIds;
+        }
+      }
+    }
+
     // Insert new tags
-    const newTags = Object.entries(activity.tags)
+    const newTags = Object.entries(processedTags)
       .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
       .flatMap(([tagId, actorIds]) =>
         actorIds!.map((actorId) => ({
@@ -1083,26 +1218,6 @@ export async function updateActivity(
       const uniqueActorIds = [...new Set(newTags.map((tag) => tag.actor_id))];
 
       if (uniqueActorIds.length > 0) {
-        // Get priority_id from cache or query
-        const priorityId =
-          cached?.priority_id ??
-          (await (async () => {
-            const { data, error } = await plot.supabase
-              .from("activity")
-              .select("priority_id")
-              .eq("id", activity.id)
-              .single();
-
-            if (error || !data) {
-              throw new Error(
-                `Failed to get activity priority: ${
-                  error?.message ?? "Not found"
-                }`
-              );
-            }
-            return data.priority_id;
-          })());
-
         // Filter to only contact actors
         const { data: contacts } = await plot.supabase
           .from("contact")
@@ -1200,12 +1315,13 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     dbUpdate.private = note.private;
   }
   if (note.mentions !== undefined) {
-    dbUpdate.mentions = note.mentions;
-  }
-  if (note.createdAt !== undefined) {
-    (dbUpdate as any).source_created_at = note.createdAt
-      ? note.createdAt.toISOString()
-      : null;
+    // Process mentions - convert NewActor[] to ActorId[]
+    if (note.mentions === null) {
+      dbUpdate.mentions = null;
+    } else {
+      const mentionIds = await processNewActorArray(plot, note.mentions, activityData.priority_id);
+      dbUpdate.mentions = mentionIds.length > 0 ? mentionIds : null;
+    }
   }
 
   // Execute the update
@@ -1230,8 +1346,19 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       throw new Error(`Failed to delete existing tags: ${deleteError.message}`);
     }
 
+    // Process tags - convert NewActor[] to ActorId[] for each tag
+    const processedTags: Partial<Record<number, ActorId[]>> = {};
+    for (const [tagId, newActors] of Object.entries(note.tags)) {
+      if (newActors && newActors.length > 0) {
+        const actorIds = await processNewActorArray(plot, newActors, activityData.priority_id);
+        if (actorIds.length > 0) {
+          processedTags[parseInt(tagId)] = actorIds;
+        }
+      }
+    }
+
     // Insert new tags
-    const newTags = Object.entries(note.tags)
+    const newTags = Object.entries(processedTags)
       .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
       .flatMap(([tagId, actorIds]) =>
         actorIds!.map((actorId) => ({
@@ -1269,6 +1396,7 @@ export async function getNotes(
         `
           id,
           created_at,
+          source_created_at,
           updated_at,
           author_id,
           created_by,
@@ -1331,6 +1459,9 @@ export async function getNotes(
       }
       return {
         id: row.id,
+        createdAt: row.source_created_at
+          ? new Date(row.source_created_at)
+          : new Date(row.created_at),
         activity: activity, // Use the activity parameter passed to the function
         author: {
           id: row.author.id as ActorId,
@@ -1343,10 +1474,10 @@ export async function getNotes(
         archived: row.archived_at !== null,
         content: row.content,
         links: row.links as ActivityLink[] | null,
-        mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? null,
+        mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? [],
         tags:
           (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) ||
-          null,
+          {},
       };
     });
   } catch (err) {
@@ -1629,13 +1760,37 @@ export async function createActivities(
       }
     }
 
+    // Process author - use provided author or default to twist
+    const authorId = activity.author
+      ? await processNewActor(plot, activity.author, targetPriorityId)
+      : plot.priorityTwistId;
+
+    // Process assignee
+    let assigneeId: string | null = null;
+    if (activity.assignee !== undefined) {
+      // assignee is explicitly provided (can be NewActor or null)
+      assigneeId = await processNewActor(plot, activity.assignee, targetPriorityId);
+    } else if (dbActivityType === "action") {
+      // For actions without explicit assignee, default to twist owner
+      const twistOwnerResult = await plot.supabase
+        .from("priority_twist")
+        .select("owner_id")
+        .eq("id", plot.priorityTwistId)
+        .single();
+
+      if (twistOwnerResult.data) {
+        assigneeId = twistOwnerResult.data.owner_id;
+      }
+    }
+
     // Convert NewActivity to database format
     const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] = {
-      author_id: plot.priorityTwistId,
+      author_id: authorId,
       created_by: plot.priorityTwistId,
+      assignee_id: assigneeId,
       priority_id: targetPriorityId,
       type: dbActivityType,
-      title: activity.title ?? null,
+      title: activity.title && activity.title.trim() !== "" ? activity.title : null,
       preview: previewText,
       duration: duration ? formatInterval(duration) : null,
       done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
@@ -1762,14 +1917,37 @@ export async function createActivities(
     }
   }
 
+  // Process tags for activities that have them - convert NewActor[] to ActorId[]
+  const processedTagsArray: Array<Partial<Record<number, ActorId[]>> | null> = [];
+  for (let i = 0; i < activities.length; i++) {
+    const activity = activities[i];
+    const dbActivity = dbResult[i];
+
+    if (!activity.tags) {
+      processedTagsArray.push(null);
+      continue;
+    }
+
+    const processedTags: Partial<Record<number, ActorId[]>> = {};
+    for (const [tagId, newActors] of Object.entries(activity.tags)) {
+      if (newActors && newActors.length > 0) {
+        const actorIds = await processNewActorArray(plot, newActors, dbActivity.priority_id);
+        if (actorIds.length > 0) {
+          processedTags[parseInt(tagId)] = actorIds;
+        }
+      }
+    }
+    processedTagsArray.push(Object.keys(processedTags).length > 0 ? processedTags : null);
+  }
+
   // Add tags for activities that have them
-  const allTags = activities.flatMap((activity, i) => {
-    if (!activity.tags) return [];
+  const allTags = processedTagsArray.flatMap((processedTags, i) => {
+    if (!processedTags) return [];
 
     const dbActivity = dbResult[i];
 
-    // Build tag records with proper actor IDs from the tags object
-    return Object.entries(activity.tags)
+    // Build tag records with proper actor IDs from the processed tags object
+    return Object.entries(processedTags)
       .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
       .flatMap(([tagId, actorIds]) =>
         actorIds!.map((actorId) => ({
@@ -1868,7 +2046,7 @@ export async function createActivities(
     fromDbActivity(
       {
         ...dbActivity,
-        tags: activities[index].tags || null,
+        tags: processedTagsArray[index] || null,
         author: {
           id: author.id,
           name: author.name ?? "",
@@ -1931,7 +2109,7 @@ async function createActivityException(
     {
       activity_id: activity.recurrence.id,
       occurrence: occurrenceStr,
-      title: activity.title ?? null,
+      title: activity.title && activity.title.trim() !== "" ? activity.title : null,
       duration: exceptionDuration ? formatInterval(exceptionDuration) : null,
       done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
       meta: activity.meta ?? null,
@@ -1995,6 +2173,7 @@ async function createActivityException(
   // Return as Activity with exception fields
   return {
     id: result.data.id,
+    createdAt: new Date(result.data.created_at),
     type: activity.type || ActivityType.Note,
     author: activity.recurrence!.author,
     start: activity.start ?? null,
@@ -2002,7 +2181,7 @@ async function createActivityException(
     recurrenceUntil: activity.recurrenceUntil ?? null,
     recurrenceCount: activity.recurrenceCount ?? null,
     doneAt: activity.doneAt ?? null,
-    title: activity.title ?? null,
+    title: activity.title ?? "",
     assignee: null,
     draft: false,
     private: false,
@@ -2016,9 +2195,8 @@ async function createActivityException(
     recurrenceDates: null,
     recurrence: activity.recurrence ?? null,
     occurrence: activity.occurrence ?? null,
-    source: activity.source ?? null,
     meta: activity.meta ?? null,
-    tags: activity.tags ?? null,
-    mentions: null, // Read-only aggregation from notes
+    tags: {}, // Tags not available for exceptions
+    mentions: [], // Read-only aggregation from notes
   };
 }

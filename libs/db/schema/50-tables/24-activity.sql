@@ -96,6 +96,9 @@ ALTER TABLE "public"."activity"
 ALTER TABLE "public"."activity"
     ADD CONSTRAINT activity_action_assignee CHECK (TYPE != 'action' OR assignee_id IS NOT NULL);
 
+ALTER TABLE "public"."activity"
+    ADD CONSTRAINT activity_title_required_when_not_draft CHECK (draft = TRUE OR (title IS NOT NULL AND title != ''));
+
 CREATE INDEX idx_activity_priority_id ON "public"."activity" ("priority_id");
 
 CREATE INDEX idx_activity_at ON "public"."activity" USING gist ("at");

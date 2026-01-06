@@ -142,6 +142,7 @@ export function buildActivityFromDbRecord(
   return {
     id: activityRecord.id,
     type: activityType,
+    createdAt: new Date(activityRecord.created_at),
     author: {
       id: (activityRecord.author_id ?? activityRecord.created_by) as ActorId,
       name: activityRecord.author_name,
@@ -161,7 +162,7 @@ export function buildActivityFromDbRecord(
     recurrenceUntil: null,
     recurrenceCount: null,
     doneAt: activityRecord.done_at ? new Date(activityRecord.done_at) : null,
-    title: activityRecord.title,
+    title: activityRecord.title || "",
     assignee: activityRecord.assignee_id
       ? {
           id: activityRecord.assignee_id as ActorId,
@@ -181,10 +182,9 @@ export function buildActivityFromDbRecord(
       : null,
     recurrence: null,
     occurrence: null,
-    source: activityRecord.source ?? null,
     meta: activityRecord.meta as ActivityMeta | null,
-    tags: activityRecord.tags as Partial<Record<number, ActorId[]>> | null,
-    mentions: (activityRecord.mentions as ActorId[]) || null,
+    tags: (activityRecord.tags as Partial<Record<number, ActorId[]>>) || {},
+    mentions: (activityRecord.mentions as ActorId[]) || [],
   };
 }
 
@@ -196,6 +196,7 @@ export function buildActivityFromDbRecord(
 export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
   return {
     id: noteRecord.id,
+    createdAt: new Date(noteRecord.created_at),
     // @ts-ignore - Only activity.id and priority.id are used by intent handlers, full Activity data is not available in NoteItem
     activity: {
       id: noteRecord.activity_id,
@@ -214,8 +215,8 @@ export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
           : ActorType.Contact,
     },
     content: noteRecord.content,
-    mentions: (noteRecord.mentions as ActorId[]) || null,
-    tags: noteRecord.tags as Partial<Record<number, ActorId[]>> | null,
+    mentions: (noteRecord.mentions as ActorId[]) || [],
+    tags: (noteRecord.tags as Partial<Record<number, ActorId[]>>) || {},
     draft: noteRecord.draft,
     private: noteRecord.private,
     archived: noteRecord.archived_at !== null,
