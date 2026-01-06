@@ -5,6 +5,7 @@ import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 import { twistFactory } from "../twist";
 import { validateSerializable } from "../twist/tools/validation";
 import { type TwistEnvironment, type Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 
 export type CallbackData = {
   token: string;
@@ -174,6 +175,11 @@ export class CallbacksState extends DurableObject<Bindings> {
   }
 
   async callCallback(token: string, ...args: any[]): Promise<any> {
+    const logger = createLogger({
+      durable_object: "CallbacksState",
+      operation: "callCallback",
+    });
+
     if (!token) {
       throw new Error("Invalid callback token");
     }
@@ -192,7 +198,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       )
       .next();
     if (result.done) {
-      console.warn(`Callback not found for token: ${token}`);
+      logger.warn("Callback not found for token", { token });
       return Promise.reject("Callback not found");
     }
     const rawCallback = result.value as any;
@@ -327,6 +333,11 @@ export class CallbacksState extends DurableObject<Bindings> {
   }
 
   async alarm(): Promise<void> {
+    const logger = createLogger({
+      durable_object: "CallbacksState",
+      operation: "alarm",
+    });
+
     // Find all callbacks that should be executed now
     const now = Date.now();
     const callbackResults = this.sql.exec(
@@ -348,7 +359,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       try {
         await this.callCallback(token, ...(extraArgs ?? []));
       } catch (error) {
-        console.error(`Callback failed:`, error);
+        logger.error("Callback failed", error as Error, { token });
       } finally {
         this.sql.exec(
           "UPDATE callbacks SET call_at = NULL WHERE token = ?",

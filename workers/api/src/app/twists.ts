@@ -12,6 +12,8 @@ import {
   getByPriority as getTwistsByPriority,
   update as updateTwist,
 } from "../twist/management";
+import { extractRequestContext } from "../utils/log-context";
+import { createLogger } from "../utils/logger";
 import { handleValidationError } from "../utils/validation";
 
 const twists = new Hono<{ Bindings: Bindings }>();
@@ -57,9 +59,11 @@ twists.get("/twist", async (c) => {
   if (!priorityId) {
     return c.json({ message: "Bad request (missing priorityId)" }, 400);
   }
-  console.log(`DEBUG: Fetching installed twists for priority ${priorityId}`);
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+  logger.debug("Fetching installed twists for priority", { priority_id: priorityId });
   const twists = await getTwistsByPriority(c.var.supabase, priorityId);
-  console.log(`DEBUG: Found ${twists.length} installed twists:`, twists);
+  logger.debug("Found installed twists", { priority_id: priorityId, count: twists.length });
   return c.json(twists);
 });
 
@@ -90,9 +94,14 @@ twists.post("/twist", async (c) => {
     );
     return c.json({ id: dbPriorityTwist.id });
   } catch (error) {
-    console.error("Error adding twist:", error);
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Error adding twist", error as Error, {
+      priority_id: body.priorityId,
+      twist_id: body.twistId,
+      twist_environment: body.twistEnvironment,
+    });
     if (error instanceof Error) {
-      console.warn(error.stack);
       return c.json({ message: `Error adding twist: ${error.message}` }, 400);
     }
     throw error;
@@ -158,15 +167,19 @@ twists.delete("/twist/:id/archive-activities", async (c) => {
               table: "actor",
             });
           } catch (broadcastError) {
-            console.error(
-              `Error broadcasting to user ${user.user_id}:`,
-              broadcastError
-            );
+            const logger = createLogger();
+            logger.error("Error broadcasting to user", broadcastError as Error, {
+              user_id: user.user_id,
+              priority_id: result.priority_id,
+            });
           }
         }
       }
     } catch (error) {
-      console.error("Error broadcasting twist archive:", error);
+      const logger = createLogger();
+      logger.error("Error broadcasting twist archive", error as Error, {
+        priority_id: result.priority_id,
+      });
       // Don't fail the request if broadcast fails
     }
   }

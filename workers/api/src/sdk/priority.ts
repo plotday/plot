@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createClient } from "@plotday/db";
 
 import type { Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 import { handleValidationError } from "../utils/validation";
 
 const priority = new Hono<{ Bindings: Bindings }>();
@@ -33,7 +34,10 @@ priority.get("/priorities", async (c) => {
     .order("path", { ascending: true });
 
   if (error) {
-    console.error("Error fetching priorities:", error);
+    const logger = createLogger();
+    logger.error("Error fetching priorities", new Error(error.message), {
+      user_id: user.id,
+    });
     return new Response(`Error fetching priorities: ${error.message}`, {
       status: 500,
     });
@@ -109,7 +113,11 @@ priority.post("/priority", async (c) => {
       .single();
 
     if (parentError || !parentPriority) {
-      console.error("Error fetching parent priority:", parentError);
+      const logger = createLogger();
+      logger.error("Error fetching parent priority", parentError ? new Error(parentError.message) : new Error("Unknown error"), {
+        parent_id: parentId,
+        user_id: user.id,
+      });
       return new Response(
         `Error: Parent priority not found: ${parentError?.message}`,
         { status: 404 }
@@ -128,7 +136,10 @@ priority.post("/priority", async (c) => {
       .single();
 
     if (rootError || !rootPriority) {
-      console.error("Error fetching root priority:", rootError);
+      const logger = createLogger();
+      logger.error("Error fetching root priority", rootError ? new Error(rootError.message) : new Error("Unknown error"), {
+        user_id: user.id,
+      });
       return new Response(
         `Error: User root priority not found: ${rootError?.message}`,
         { status: 500 }
@@ -148,7 +159,11 @@ priority.post("/priority", async (c) => {
   );
 
   if (pathError || !childPath) {
-    console.error("Error generating path:", pathError);
+    const logger = createLogger();
+    logger.error("Error generating path", pathError ? new Error(pathError.message) : new Error("Unknown error"), {
+      parent_path: parentPath,
+      user_id: user.id,
+    });
     return new Response(`Error: Path generation failed: ${pathError?.message}`, {
       status: 500,
     });
@@ -167,7 +182,13 @@ priority.post("/priority", async (c) => {
     .single();
 
   if (createError || !newPriority) {
-    console.error("Error creating priority:", createError);
+    const logger = createLogger();
+    logger.error("Error creating priority", createError ? new Error(createError.message) : new Error("Unknown error"), {
+      title,
+      parent_path: parentPath,
+      created_by: createdBy,
+      user_id: user.id,
+    });
     return new Response(
       `Error creating priority: ${createError?.message}`,
       { status: 500 }

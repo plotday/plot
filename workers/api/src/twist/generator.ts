@@ -6,6 +6,7 @@ import { getBuilderDocumentation } from "@plotday/twister/creator-docs";
 import { TWIST_GUIDE } from "@plotday/twister/twist-guide";
 
 import type { Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 import { buildTwist } from "./builder";
 import type { TwistSource } from "./types";
 
@@ -164,10 +165,11 @@ ${TWIST_GUIDE}`;
     previousSource = source;
     previousErrors = buildResult.errors;
 
-    console.warn(
-      `Twist build errors on attempt ${attempt}:`,
-      previousErrors?.join("\n\n")
-    );
+    const logger = createLogger();
+    logger.warn("Twist build errors on attempt", {
+      attempt,
+      errors: previousErrors?.join("\n\n"),
+    });
 
     if (attempt === MAX_ATTEMPTS) {
       // Max attempts reached

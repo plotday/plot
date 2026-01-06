@@ -1,5 +1,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
+import { createLogger } from "../utils/logger";
+
 /**
  * HttpProxy acts as an outbound filter for twist workers, controlling which
  * URLs they can access via fetch() and other HTTP operations.
@@ -89,9 +91,8 @@ export class HttpProxy extends WorkerEntrypoint<
 
     if (allowedPatterns.length === 0) {
       // No patterns configured means deny all
-      console.warn(
-        "HTTP Proxy: No allowed patterns configured, denying all requests."
-      );
+      const logger = createLogger();
+      logger.warn("HTTP Proxy: No allowed patterns configured, denying all requests");
       return false;
     }
 

@@ -16,6 +16,7 @@ import { type Bindings, type TwistEnvironment } from "../../env";
 import { PROVIDER_CONFIGS, type StoredTokenData } from "../../provider";
 import { CallbacksState } from "../../state/callbacks";
 import type { Storage } from "../../state/storage";
+import { createLogger } from "../../utils/logger";
 import { getRpcFunctionName } from "../../utils/rpc";
 import { Tool } from "./tool";
 
@@ -169,7 +170,11 @@ export class Integrations extends Tool implements IAuth {
     try {
       await this.callbacks.callCallback(callbackToken, authorization);
     } catch (error) {
-      console.error("Error executing original auth callback:", error);
+      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      logger.error("Error executing original auth callback", error as Error, {
+        authorization_id: authorizationId,
+        provider: tokenInfo.provider,
+      });
     }
   }
 
@@ -217,7 +222,11 @@ export class Integrations extends Tool implements IAuth {
               : undefined,
           };
         } catch (error) {
-          console.error("Failed to refresh token:", error);
+          const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+          logger.error("Failed to refresh token", error as Error, {
+            authorization_id: authorization.id,
+            provider: authorization.provider,
+          });
           // Clear expired token
           await this.store.clear(tokenKey);
           return null;
@@ -248,7 +257,8 @@ export class Integrations extends Tool implements IAuth {
       const { state, error, provider, level, scopes, callback } = params;
 
       if (error) {
-        console.error("OAuth error:", error);
+        const logger = createLogger();
+        logger.error("OAuth error", new Error(error));
         return new Response(
           JSON.stringify({ error: `OAuth error: ${error}` }),
           {
@@ -299,7 +309,11 @@ export class Integrations extends Tool implements IAuth {
         // Check state timestamp (expire after 1 hour) - only for standard OAuth
         if (authState.timestamp && Date.now() - authState.timestamp > 3600000) {
           await storageObj.clear(state);
-          console.error("State expired");
+          const logger = createLogger();
+          logger.error("State expired", {
+            timestamp: authState.timestamp,
+            age_ms: Date.now() - authState.timestamp,
+          });
           return new Response(JSON.stringify({ error: "State expired" }), {
             status: 400,
             headers: { "Content-Type": "application/json" },
@@ -310,7 +324,8 @@ export class Integrations extends Tool implements IAuth {
         await storageObj.clear(state);
       } else {
         // Neither state nor provider provided
-        console.error("Missing both state and provider parameters");
+        const logger = createLogger();
+        logger.error("Missing both state and provider parameters");
         return new Response(
           JSON.stringify({
             error: "Missing required authentication parameters",
@@ -351,7 +366,11 @@ export class Integrations extends Tool implements IAuth {
             client_id: clientId,
           });
         } catch (error) {
-          console.error("Error executing auth callback:", error);
+          const logger = createLogger();
+          logger.error("Error executing auth callback", error as Error, {
+            provider: authState.provider,
+            level: authState.level,
+          });
           // Don't fail the auth flow even if callback fails
         }
       }
@@ -366,7 +385,8 @@ export class Integrations extends Tool implements IAuth {
         }
       );
     } catch (error) {
-      console.error("Error handling OAuth callback:", error);
+      const logger = createLogger();
+      logger.error("Error handling OAuth callback", error as Error);
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       return new Response(
@@ -538,7 +558,8 @@ export class Integrations extends Tool implements IAuth {
   }): Promise<{ url: string; clientId: string; state: string } | null> {
     const config = PROVIDER_CONFIGS[provider];
     if (!config) {
-      console.error(`Provider not supported:`, { provider });
+      const logger = createLogger();
+      logger.error("Provider not supported", { provider });
       throw new Error(`Provider ${provider} not supported`);
     }
 
@@ -577,11 +598,13 @@ export class Integrations extends Tool implements IAuth {
     const clientId = (env[platformEnvKey] ?? env[baseEnvKey]) as string;
 
     if (!clientId) {
-      console.error(`No client ID found for ${provider}:`, {
+      const logger = createLogger();
+      logger.error("No client ID found for provider", {
+        provider,
         platform,
-        platformEnvKey,
-        baseEnvKey,
-        availableAuthKeys: Object.keys(env).filter((k) =>
+        platform_env_key: platformEnvKey,
+        base_env_key: baseEnvKey,
+        available_auth_keys: Object.keys(env).filter((k) =>
           k.startsWith("AUTH_")
         ),
       });

@@ -11,6 +11,8 @@ import {
 } from "../stripe/utils";
 import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
+import { extractRequestContext } from "../utils/log-context";
+import { createLogger } from "../utils/logger";
 import { handleValidationError } from "../utils/validation";
 
 const account = new Hono<{ Bindings: Bindings }>();
@@ -46,7 +48,12 @@ account.post("/activate", async (c) => {
   );
 
   if (redeemError) {
-    console.error("Failed to redeem invitation:", redeemError);
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Failed to redeem invitation", new Error(redeemError.message), {
+      invitation_code: code,
+      user_id: user.id,
+    });
     return c.json({ message: "Failed to redeem invitation" }, 500);
   }
 
@@ -67,10 +74,11 @@ account.post("/activate", async (c) => {
       .maybeSingle();
 
   if (existingPriorityError) {
-    console.error(
-      "Failed to check for existing priority:",
-      existingPriorityError
-    );
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Failed to check for existing priority", new Error(existingPriorityError.message), {
+      user_id: user.id,
+    });
     return c.json(
       {
         message: `Failed to check for existing priority: ${existingPriorityError.message}`,
@@ -85,9 +93,12 @@ account.post("/activate", async (c) => {
   if (existingPriority) {
     // Root priority already exists (e.g., from generate-seed script)
     // Skip creating it and skip Plot twist installation
-    console.log(
-      "Root priority already exists, skipping creation and Plot twist installation"
-    );
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.info("Root priority already exists, skipping creation and Plot twist installation", {
+      user_id: user.id,
+      priority_id: existingPriority.id,
+    });
     priority = existingPriority;
     shouldInstallPlotTwist = false;
   } else {
@@ -98,7 +109,9 @@ account.post("/activate", async (c) => {
     );
 
     if (pathError || !pathData) {
-      console.error("Failed to generate path:", pathError);
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Failed to generate path", pathError ? new Error(pathError.message) : new Error("Unknown error"));
       return c.json(
         {
           message: `Failed to generate path: ${
@@ -124,7 +137,11 @@ account.post("/activate", async (c) => {
         .single();
 
     if (priorityError || !newPriority) {
-      console.error("Failed to create root priority:", priorityError);
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Failed to create root priority", priorityError ? new Error(priorityError.message) : new Error("Unknown error"), {
+        user_id: user.id,
+      });
       return c.json(
         {
           message: `Failed to create root priority: ${
@@ -148,10 +165,12 @@ account.post("/activate", async (c) => {
       .maybeSingle();
 
   if (existingSettingsError) {
-    console.error(
-      "Failed to check for existing priority settings:",
-      existingSettingsError
-    );
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Failed to check for existing priority settings", new Error(existingSettingsError.message), {
+      user_id: user.id,
+      priority_id: priority.id,
+    });
     return c.json(
       {
         message: `Failed to check for existing priority settings: ${existingSettingsError.message}`,
@@ -169,7 +188,12 @@ account.post("/activate", async (c) => {
       });
 
     if (settingsError) {
-      console.error("Failed to create priority settings:", settingsError);
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Failed to create priority settings", new Error(settingsError.message), {
+        user_id: user.id,
+        priority_id: priority.id,
+      });
       return c.json(
         {
           message: `Failed to create priority settings: ${settingsError.message}`,
@@ -178,7 +202,12 @@ account.post("/activate", async (c) => {
       );
     }
   } else {
-    console.log("Priority settings already exist, skipping creation");
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.info("Priority settings already exist, skipping creation", {
+      user_id: user.id,
+      priority_id: priority.id,
+    });
   }
 
   // Step 5: Granular Stripe integration with fail-open behavior
@@ -197,7 +226,12 @@ account.post("/activate", async (c) => {
       name: user.user_metadata?.name,
     });
     stripeCustomerId = customer.id;
-    console.log(`Created Stripe customer: ${customer.id}`);
+    const context1 = extractRequestContext(c);
+    const logger1 = createLogger(context1);
+    logger1.info("Created Stripe customer", {
+      customer_id: customer.id,
+      user_id: user.id,
+    });
 
     // Try to create free subscription (only if customer created)
     try {
@@ -209,14 +243,20 @@ account.post("/activate", async (c) => {
       const dates = getBillingCycleDates(subscription);
       billingStart = dates.start;
       billingEnd = dates.end;
-      console.log(
-        `Created Stripe subscription: ${subscription.id} for customer: ${customer.id}`
-      );
+      const context2 = extractRequestContext(c);
+      const logger2 = createLogger(context2);
+      logger2.info("Created Stripe subscription", {
+        subscription_id: subscription.id,
+        customer_id: customer.id,
+        user_id: user.id,
+      });
     } catch (subscriptionError) {
-      console.error(
-        "Failed to create Stripe subscription, using local billing cycle:",
-        subscriptionError
-      );
+      const context3 = extractRequestContext(c);
+      const logger3 = createLogger(context3);
+      logger3.error("Failed to create Stripe subscription, using local billing cycle", subscriptionError as Error, {
+        customer_id: customer.id,
+        user_id: user.id,
+      });
       // Partial success: customer created but subscription failed
       // Use local billing cycle
       const localDates = createFreeTierBillingCycle();
@@ -224,10 +264,11 @@ account.post("/activate", async (c) => {
       billingEnd = localDates.end;
     }
   } catch (customerError) {
-    console.error(
-      "Failed to create Stripe customer, proceeding without Stripe:",
-      customerError
-    );
+    const context4 = extractRequestContext(c);
+    const logger4 = createLogger(context4);
+    logger4.error("Failed to create Stripe customer, proceeding without Stripe", customerError as Error, {
+      user_id: user.id,
+    });
 
     // Complete failure: no Stripe integration
     // Use local billing cycle
@@ -250,7 +291,11 @@ account.post("/activate", async (c) => {
     });
 
   if (subscriptionError) {
-    console.error("Failed to create user_subscription:", subscriptionError);
+    const context5 = extractRequestContext(c);
+    const logger5 = createLogger(context5);
+    logger5.error("Failed to create user_subscription", new Error(subscriptionError.message), {
+      user_id: user.id,
+    });
     return c.json(
       {
         message: `Failed to create subscription record: ${subscriptionError.message}`,
@@ -297,15 +342,25 @@ account.post("/activate", async (c) => {
           }
         );
       } else {
-        console.warn("Plot twist not found, skipping installation.");
+        const context6 = extractRequestContext(c);
+        const logger6 = createLogger(context6);
+        logger6.warn("Plot twist not found, skipping installation");
       }
     } catch (error) {
-      console.error("Failed to add Plot twist:", error);
+      const context7 = extractRequestContext(c);
+      const logger7 = createLogger(context7);
+      logger7.error("Failed to add Plot twist", error as Error, {
+        priority_id: priority.id,
+        user_id: user.id,
+      });
     }
   } else {
-    console.log(
-      "Skipping Plot twist installation (root priority already existed)"
-    );
+    const context8 = extractRequestContext(c);
+    const logger8 = createLogger(context8);
+    logger8.info("Skipping Plot twist installation (root priority already existed)", {
+      user_id: user.id,
+      priority_id: priority.id,
+    });
   }
 
   // Step 8: Set user status to active
@@ -315,7 +370,12 @@ account.post("/activate", async (c) => {
   });
 
   if (statusError) {
-    console.error("Failed to set user status:", statusError);
+    const context9 = extractRequestContext(c);
+    const logger9 = createLogger(context9);
+    logger9.error("Failed to set user status", new Error(statusError.message), {
+      user_id: user.id,
+      status: "active",
+    });
     return c.json(
       { message: `Failed to set user status: ${statusError.message}` },
       500
@@ -342,7 +402,11 @@ account.delete("/", async (c) => {
       .maybeSingle();
 
     if (subError) {
-      console.error("Failed to fetch user subscription:", subError);
+      const context10 = extractRequestContext(c);
+      const logger10 = createLogger(context10);
+      logger10.error("Failed to fetch user subscription", new Error(subError.message), {
+        user_id: user.id,
+      });
     }
 
     // Step 2: Cancel Stripe subscription if it exists
@@ -350,11 +414,19 @@ account.delete("/", async (c) => {
       try {
         const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
         await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
-        console.log(
-          `Canceled Stripe subscription: ${subscription.stripe_subscription_id}`
-        );
+        const context11 = extractRequestContext(c);
+        const logger11 = createLogger(context11);
+        logger11.info("Canceled Stripe subscription", {
+          subscription_id: subscription.stripe_subscription_id,
+          user_id: user.id,
+        });
       } catch (stripeError) {
-        console.error("Failed to cancel Stripe subscription:", stripeError);
+        const context12 = extractRequestContext(c);
+        const logger12 = createLogger(context12);
+        logger12.error("Failed to cancel Stripe subscription", stripeError as Error, {
+          subscription_id: subscription.stripe_subscription_id,
+          user_id: user.id,
+        });
         // Continue with deletion even if Stripe fails
       }
     }
@@ -370,7 +442,11 @@ account.delete("/", async (c) => {
       });
 
     if (banError) {
-      console.error("Failed to ban user:", banError);
+      const context13 = extractRequestContext(c);
+      const logger13 = createLogger(context13);
+      logger13.error("Failed to ban user", new Error(banError.message), {
+        user_id: user.id,
+      });
       // Continue with other deletion steps
     }
 
@@ -381,7 +457,12 @@ account.delete("/", async (c) => {
     });
 
     if (statusError) {
-      console.error("Failed to set user status:", statusError);
+      const context14 = extractRequestContext(c);
+      const logger14 = createLogger(context14);
+      logger14.error("Failed to set user status", new Error(statusError.message), {
+        user_id: user.id,
+        status: "deleted",
+      });
     }
 
     // Step 5: Send notification email to team@plot.day
@@ -421,13 +502,21 @@ The account has been deactivated. Please complete manual data deletion within 14
         }),
       });
     } catch (emailError) {
-      console.error("Failed to send notification email:", emailError);
+      const context15 = extractRequestContext(c);
+      const logger15 = createLogger(context15);
+      logger15.error("Failed to send notification email", emailError as Error, {
+        user_id: user.id,
+      });
       // Don't fail the request if email fails
     }
 
     return c.json({ success: true });
   } catch (error) {
-    console.error("Account deletion error:", error);
+    const context16 = extractRequestContext(c);
+    const logger16 = createLogger(context16);
+    logger16.error("Account deletion error", error as Error, {
+      user_id: user.id,
+    });
     return c.json({ message: "Failed to delete account" }, 500);
   }
 });

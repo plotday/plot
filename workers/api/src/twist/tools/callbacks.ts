@@ -6,6 +6,7 @@ import type {
 
 import { type TwistEnvironment } from "../../env";
 import { CallbacksState } from "../../state/callbacks";
+import { createLogger } from "../../utils/logger";
 import { getRpcFunctionName } from "../../utils/rpc";
 import { Tool } from "./tool";
 
@@ -137,7 +138,8 @@ export class Callbacks extends Tool implements ICallbackTool {
 
       return result;
     } catch (error) {
-      console.error("Error handling link callback:", error);
+      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      logger.error("Error handling link callback", error as Error, { callback_token: callbackToken });
       throw error;
     }
   }

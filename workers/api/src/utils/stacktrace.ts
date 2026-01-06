@@ -6,6 +6,7 @@
  */
 
 import { TraceMap, originalPositionFor } from "@jridgewell/trace-mapping";
+import { createLogger } from "./logger";
 
 /**
  * Represents a single frame in a stack trace
@@ -104,6 +105,10 @@ export async function translateStackTrace(
   frames: StackFrame[],
   sourcemapContent: string
 ): Promise<StackFrame[]> {
+  const logger = createLogger({
+    operation: "translateStackTrace",
+  });
+
   try {
     const sourcemap = JSON.parse(sourcemapContent);
     const tracer = new TraceMap(sourcemap);
@@ -135,7 +140,7 @@ export async function translateStackTrace(
       return frame;
     });
   } catch (error) {
-    console.error("Error translating stack trace:", error);
+    logger.error("Error translating stack trace", error as Error);
     return frames; // Return original frames if translation fails
   }
 }

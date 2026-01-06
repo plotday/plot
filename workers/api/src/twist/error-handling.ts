@@ -1,4 +1,5 @@
 import { type TwistEnvironment, type Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 import { processStackTrace } from "../utils/stacktrace";
 
 /**
@@ -25,7 +26,8 @@ async function getTwistSourcemap(
 
     return await sourcemapObj.text();
   } catch (error) {
-    console.error("Error fetching sourcemap:", error);
+    const logger = createLogger();
+    logger.error("Error fetching sourcemap", error as Error, { twist_id: id, version });
     return undefined;
   }
 }
@@ -77,7 +79,8 @@ export async function handleTwistOperation<T>(
         errorMessage = errorData.message;
       } catch (parseError) {
         // Failed to parse encoded error, fall back to treating as regular error
-        console.error("Failed to parse encoded TwistError:", parseError);
+        const logger = createLogger({ twist_id: context.id, environment: context.environment });
+        logger.error("Failed to parse encoded TwistError", parseError as Error);
         stackToProcess = error.stack;
         errorName = error.name;
         errorMessage = error.message;
@@ -126,7 +129,8 @@ export async function handleTwistOperation<T>(
       });
     } catch (logError) {
       // Only log queue failures to API console (infrastructure issue)
-      console.error(`Failed to log ${operation} error:`, logError);
+      const logger = createLogger({ twist_id: context.id, environment: context.environment, operation });
+      logger.error("Failed to log twist operation error", logError as Error);
     }
 
     // Rethrow the original error

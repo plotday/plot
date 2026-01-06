@@ -2,6 +2,8 @@ import { Hono } from "hono";
 
 import { Callbacks } from "../twist/tools/callbacks";
 import type { Bindings } from "../env";
+import { extractRequestContext } from "../utils/log-context";
+import { createLogger } from "../utils/logger";
 
 const callbacks = new Hono<{ Bindings: Bindings }>();
 
@@ -30,7 +32,9 @@ callbacks.post("/callback/:token", async (c) => {
       return c.json({ success: true });
     }
   } catch (error) {
-    console.error("Error processing link callback:", error);
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Error processing link callback", error as Error, { token });
     return c.json({ message: "Internal server error" }, 500);
   }
 });

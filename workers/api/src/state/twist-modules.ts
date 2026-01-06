@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import type { Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 
 export class TwistModules extends DurableObject<Bindings> {
   private sql: SqlStorage;
@@ -16,6 +17,11 @@ export class TwistModules extends DurableObject<Bindings> {
   }
 
   private initializeTable() {
+    const logger = createLogger({
+      durable_object: "TwistModules",
+      operation: "initializeTable",
+    });
+
     try {
       this.sql.exec(`
         CREATE TABLE IF NOT EXISTS twist_module_versions (
@@ -29,7 +35,7 @@ export class TwistModules extends DurableObject<Bindings> {
         ON twist_module_versions(version DESC)
       `);
     } catch (error) {
-      console.error("Twist module versions table initialization error:", error);
+      logger.error("Twist module versions table initialization error", error as Error);
       throw error;
     }
   }
@@ -38,6 +44,11 @@ export class TwistModules extends DurableObject<Bindings> {
    * Get the latest version number for a twist
    */
   getVersion(): number | null {
+    const logger = createLogger({
+      durable_object: "TwistModules",
+      operation: "getVersion",
+    });
+
     try {
       const result = this.sql
         .exec(
@@ -56,7 +67,7 @@ export class TwistModules extends DurableObject<Bindings> {
 
       return result.value.version as number;
     } catch (error) {
-      console.error("Error getting twist module version:", error);
+      logger.error("Error getting twist module version", error as Error);
       throw error;
     }
   }
@@ -65,6 +76,11 @@ export class TwistModules extends DurableObject<Bindings> {
    * Get the latest module code for a twist from R2
    */
   async getModule(): Promise<string | null> {
+    const logger = createLogger({
+      durable_object: "TwistModules",
+      operation: "getModule",
+    });
+
     try {
       const version = this.getVersion();
       if (version === null) {
@@ -80,7 +96,7 @@ export class TwistModules extends DurableObject<Bindings> {
 
       return await object.text();
     } catch (error) {
-      console.error("Error getting twist module:", error);
+      logger.error("Error getting twist module", error as Error, { version });
       throw error;
     }
   }
@@ -90,6 +106,11 @@ export class TwistModules extends DurableObject<Bindings> {
    * Returns the new version number (timestamp)
    */
   async storeModule(twistId: string, code: string): Promise<number> {
+    const logger = createLogger({
+      durable_object: "TwistModules",
+      operation: "storeModule",
+    });
+
     try {
       // Use timestamp as version number
       const version = Date.now();
@@ -110,7 +131,9 @@ export class TwistModules extends DurableObject<Bindings> {
 
       return version;
     } catch (error) {
-      console.error("Error storing twist module:", error);
+      logger.error("Error storing twist module", error as Error, {
+        twist_id: twistId,
+      });
       throw error;
     }
   }
@@ -122,6 +145,11 @@ export class TwistModules extends DurableObject<Bindings> {
     twistId: string,
     version: number
   ): Promise<string | null> {
+    const logger = createLogger({
+      durable_object: "TwistModules",
+      operation: "getModuleVersion",
+    });
+
     try {
       const key = this.getR2Key(twistId, version);
       const object = await this.env.TWIST_MODULES_BUCKET.get(key);
@@ -132,7 +160,10 @@ export class TwistModules extends DurableObject<Bindings> {
 
       return await object.text();
     } catch (error) {
-      console.error("Error getting twist module version:", error);
+      logger.error("Error getting twist module version", error as Error, {
+        twist_id: twistId,
+        version,
+      });
       throw error;
     }
   }
@@ -143,6 +174,11 @@ export class TwistModules extends DurableObject<Bindings> {
   listVersions(
     twistId: string
   ): Array<{ version: number; created_at: number }> {
+    const logger = createLogger({
+      durable_object: "TwistModules",
+      operation: "listVersions",
+    });
+
     try {
       const results = this.sql.exec(
         `
@@ -163,7 +199,9 @@ export class TwistModules extends DurableObject<Bindings> {
 
       return versions;
     } catch (error) {
-      console.error("Error listing twist module versions:", error);
+      logger.error("Error listing twist module versions", error as Error, {
+        twist_id: twistId,
+      });
       throw error;
     }
   }
@@ -172,6 +210,11 @@ export class TwistModules extends DurableObject<Bindings> {
    * Delete all versions of a twist module (cleanup)
    */
   async deleteAllVersions(twistId: string): Promise<void> {
+    const logger = createLogger({
+      durable_object: "TwistModules",
+      operation: "deleteAllVersions",
+    });
+
     try {
       const versions = this.listVersions(twistId);
 
@@ -184,7 +227,9 @@ export class TwistModules extends DurableObject<Bindings> {
       // Delete from SQLite
       this.sql.exec("DELETE FROM twist_module_versions", twistId);
     } catch (error) {
-      console.error("Error deleting twist module versions:", error);
+      logger.error("Error deleting twist module versions", error as Error, {
+        twist_id: twistId,
+      });
       throw error;
     }
   }

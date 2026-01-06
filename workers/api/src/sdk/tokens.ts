@@ -7,6 +7,7 @@ import { createClient } from "@plotday/db";
 import type { Bindings } from "../env";
 import { getUser } from "../utils/auth";
 import { handleValidationError } from "../utils/validation";
+import { createLogger } from "../utils/logger";
 
 const tokens = new Hono<{ Bindings: Bindings }>();
 
@@ -49,7 +50,8 @@ tokens.post("/token", async (c) => {
     .single();
 
   if (error) {
-    console.error("Error creating token:", error);
+    const logger = createLogger();
+    logger.error("Error creating token", error as Error, { user_id: userId });
     return new Response(`Error creating token: ${error.message}`, {
       status: 500,
     });
@@ -74,7 +76,8 @@ tokens.get("/tokens", async (c) => {
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("Error fetching tokens:", error);
+    const logger = createLogger();
+    logger.error("Error fetching tokens", error as Error, { user_id: userId });
     return new Response(`Error fetching tokens: ${error.message}`, {
       status: 500,
     });
@@ -101,7 +104,11 @@ tokens.delete("/token/:id", async (c) => {
     .eq("user_id", userId);
 
   if (error) {
-    console.error("Error deleting token:", error);
+    const logger = createLogger();
+    logger.error("Error deleting token", error as Error, {
+      user_id: userId,
+      token_id: tokenId
+    });
     return new Response(`Error deleting token: ${error.message}`, {
       status: 500,
     });
@@ -157,7 +164,8 @@ tokens.post("/session/authorize", async (c) => {
   );
   const { user, error: authError } = await getUser(supabaseAdmin, accessToken);
   if (authError || !user) {
-    console.error("Authentication error:", authError);
+    const logger = createLogger();
+    logger.error("Authentication error", authError as Error, {});
     return new Response("Unauthorized: Invalid or expired session", {
       status: 401,
     });
@@ -189,7 +197,11 @@ tokens.post("/session/authorize", async (c) => {
     .single();
 
   if (error) {
-    console.error("Error creating token:", error);
+    const logger = createLogger();
+    logger.error("Error creating token", error as Error, {
+      user_id: userId,
+      session_id: sessionId
+    });
     return new Response(`Error creating token: ${error.message}`, {
       status: 500,
     });

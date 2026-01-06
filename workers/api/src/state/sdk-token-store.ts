@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import type { Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 
 export type SessionData = {
   token: string;
@@ -22,6 +23,11 @@ export class SdkTokenStore extends DurableObject {
   }
 
   private initializeTable() {
+    const logger = createLogger({
+      durable_object: "SdkTokenStore",
+      operation: "initializeTable",
+    });
+
     try {
       this.sql.exec(`
         CREATE TABLE IF NOT EXISTS sessions (
@@ -37,7 +43,7 @@ export class SdkTokenStore extends DurableObject {
         ON sessions(expires_at)
       `);
     } catch (error) {
-      console.error("SdkTokenStore table initialization error:", error);
+      logger.error("SdkTokenStore table initialization error", error as Error);
       throw error;
     }
   }
@@ -67,6 +73,11 @@ export class SdkTokenStore extends DurableObject {
   }
 
   get(sessionId: string): SessionData | null {
+    const logger = createLogger({
+      durable_object: "SdkTokenStore",
+      operation: "get",
+    });
+
     try {
       const result = this.sql
         .exec(
@@ -98,7 +109,9 @@ export class SdkTokenStore extends DurableObject {
         email: row.email,
       };
     } catch (error) {
-      console.error("SdkTokenStore get error:", error);
+      logger.error("SdkTokenStore get error", error as Error, {
+        session_id: sessionId,
+      });
       throw error;
     }
   }

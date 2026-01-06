@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import type { Bindings, LogMessage } from "../env";
+import { createLogger } from "../utils/logger";
 
 /**
  * Durable Object for streaming twist logs via SSE.
@@ -18,6 +19,11 @@ export class LogStream extends DurableObject<Bindings> {
    * Alarm handler - sends keep-alive pings to maintain SSE connections
    */
   async alarm(): Promise<void> {
+    const logger = createLogger({
+      durable_object: "LogStream",
+      operation: "alarm",
+    });
+
     // Send ping to all active streams
     const encoder = new TextEncoder();
     const ping = encoder.encode(":ping\n\n");
@@ -26,7 +32,7 @@ export class LogStream extends DurableObject<Bindings> {
       try {
         controller.enqueue(ping);
       } catch (error) {
-        console.error("Error sending keep-alive ping:", error);
+        logger.error("Error sending keep-alive ping", error as Error);
       }
     }
 
@@ -79,6 +85,11 @@ export class LogStream extends DurableObject<Bindings> {
    * Called by the queue processor to send logs to all active streams
    */
   async sendLogs(logs: LogMessage[]): Promise<void> {
+    const logger = createLogger({
+      durable_object: "LogStream",
+      operation: "sendLogs",
+    });
+
     const encoder = new TextEncoder();
 
     for (const log of logs) {
@@ -99,7 +110,7 @@ export class LogStream extends DurableObject<Bindings> {
         try {
           controller.enqueue(encoded);
         } catch (error) {
-          console.error("Error sending log to stream:", error);
+          logger.error("Error sending log to stream", error as Error);
         }
       }
     }

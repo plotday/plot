@@ -4,6 +4,8 @@ import { z } from "zod";
 import type { Bindings } from "../env";
 import { ItemSchema } from "../types";
 import { handleValidationError } from "../utils/validation";
+import { createLogger } from "../utils/logger";
+import { extractRequestContext } from "../utils/log-context";
 
 const database = new Hono<{ Bindings: Bindings }>();
 
@@ -46,6 +48,9 @@ export type DatabaseUpdateRequest = z.infer<typeof DatabaseUpdateRequestSchema>;
 
 // POST /update - Database update webhook
 database.post("/update", async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
   try {
     const rawBody = await c.req.json();
     const parseResult = DatabaseUpdateRequestSchema.safeParse(rawBody);
@@ -87,7 +92,7 @@ database.post("/update", async (c) => {
     return c.json({ success: true });
   } catch (error) {
     // Log any unexpected errors to PostHog
-    console.error("Error in /sync/update endpoint:", error);
+    logger.error("Error in /sync/update endpoint", error as Error);
     c.var.postHog.captureException(error as Error, undefined, {
       path: c.req.path,
       method: c.req.method,

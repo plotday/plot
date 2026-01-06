@@ -1,6 +1,7 @@
 import { type Actor, type ActorId, ActorType } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
+import { createLogger } from "../../../utils/logger";
 import type { Plot } from "./index";
 
 function normalizeName(name: string | undefined | null): string | undefined {
@@ -40,7 +41,8 @@ export async function addContacts(
     throw new Error(`Failed to upsert contacts: ${result.error.message}`);
   }
 
-  console.log(`Successfully upserted ${contacts.length} contacts`);
+  const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+  logger.info("Successfully upserted contacts", { count: contacts.length });
 
   // Map the upserted contacts to Actor type
   const actors: Actor[] = (result.data || []).map((contact) => {

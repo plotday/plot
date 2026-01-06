@@ -7,6 +7,7 @@ import type { Store as IStore } from "@plotday/twister/tools/store";
 
 import { type TwistEnvironment, type Bindings } from "../../env";
 import { CallbacksState } from "../../state/callbacks";
+import { createLogger } from "../../utils/logger";
 import {
   createPushSubscription,
   createTopic,
@@ -148,14 +149,16 @@ export class Network extends Tool implements INetwork {
     // Extract team_id from Slack webhook payload
     const teamId = request.body?.team_id;
     if (!teamId) {
-      console.warn("Slack webhook missing team_id");
+      const logger = createLogger();
+      logger.warn("Slack webhook missing team_id");
       return { ok: false, error: "Missing team_id" };
     }
 
     // Extract event type
     const eventType = request.body?.event?.type;
     if (!eventType) {
-      console.warn("Slack webhook missing event type");
+      const logger = createLogger();
+      logger.warn("Slack webhook missing event type");
       return { ok: false, error: "Missing event type" };
     }
 
@@ -164,7 +167,8 @@ export class Network extends Tool implements INetwork {
     const teamCallbacks = await callbacksStub.get(teamId);
 
     if (!teamCallbacks || teamCallbacks.length === 0) {
-      console.warn(`No callbacks registered for Slack team ${teamId}`);
+      const logger = createLogger();
+      logger.warn("No callbacks registered for Slack team", { team_id: teamId });
       return { ok: true, message: "No callbacks registered" };
     }
 
@@ -177,9 +181,11 @@ export class Network extends Tool implements INetwork {
     );
 
     if (matchingCallbacks.length === 0) {
-      console.warn(
-        `No callbacks with required scopes for event ${eventType} in team ${teamId}`
-      );
+      const logger = createLogger();
+      logger.warn("No callbacks with required scopes for event", {
+        event_type: eventType,
+        team_id: teamId,
+      });
       return { ok: true, message: "No matching callbacks" };
     }
 
@@ -196,10 +202,12 @@ export class Network extends Tool implements INetwork {
       (r: PromiseSettledResult<any>) => r.status === "rejected"
     );
     if (failures.length > 0) {
-      console.error(
-        `${failures.length}/${results.length} Slack webhook callbacks failed:`,
-        failures
-      );
+      const logger = createLogger();
+      logger.error("Slack webhook callbacks failed", {
+        failed_count: failures.length,
+        total_count: results.length,
+        failures,
+      });
     }
 
     return { ok: true, processed: results.length };
@@ -215,7 +223,8 @@ export class Network extends Tool implements INetwork {
     request: WebhookRequest
   ): Promise<any> {
     if (!token) {
-      console.warn("Gmail webhook missing token");
+      const logger = createLogger();
+      logger.warn("Gmail webhook missing token");
       return { ok: false, error: "Missing token" };
     }
 
@@ -511,7 +520,8 @@ export class Network extends Tool implements INetwork {
       const encoded = url.substring(8); // Remove "slack://" prefix
       const colonIndex = encoded.indexOf(":");
       if (colonIndex === -1) {
-        console.warn("Invalid Slack webhook format:", url);
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.warn("Invalid Slack webhook format", { url });
         return;
       }
 
@@ -532,7 +542,8 @@ export class Network extends Tool implements INetwork {
       // Extract topic ID (gmail-{token})
       const topicParts = url.split("/topics/");
       if (topicParts.length !== 2) {
-        console.warn("Invalid Gmail webhook format:", url);
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.warn("Invalid Gmail webhook format", { url });
         return;
       }
 
@@ -544,7 +555,8 @@ export class Network extends Tool implements INetwork {
       // Extract project ID from topic name
       const projectIdMatch = url.match(/projects\/([^/]+)/);
       if (!projectIdMatch) {
-        console.warn("Could not extract project ID from Gmail webhook:", url);
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.warn("Could not extract project ID from Gmail webhook", { url });
         return;
       }
       const projectId = projectIdMatch[1];
@@ -555,9 +567,8 @@ export class Network extends Tool implements INetwork {
         !this.env?.GCP_SERVICE_ACCOUNT_EMAIL ||
         !this.env?.GCP_SERVICE_ACCOUNT_KEY
       ) {
-        console.warn(
-          "GCP configuration missing, cannot delete Pub/Sub resources"
-        );
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.warn("GCP configuration missing, cannot delete Pub/Sub resources");
         // Continue to delete callback even if Pub/Sub cleanup fails
       } else {
         const pubsubConfig = {
@@ -571,10 +582,11 @@ export class Network extends Tool implements INetwork {
           const subscriptionName = `projects/${projectId}/subscriptions/${topicId}`;
           await deleteSubscription(pubsubConfig, subscriptionName);
         } catch (error) {
-          console.warn(
-            "Failed to delete Pub/Sub subscription:",
-            error instanceof Error ? error.message : String(error)
-          );
+          const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+          logger.warn("Failed to delete Pub/Sub subscription", {
+            error_message: error instanceof Error ? error.message : String(error),
+            subscription_name: subscriptionName,
+          });
           // Continue to topic deletion
         }
 
@@ -582,10 +594,11 @@ export class Network extends Tool implements INetwork {
           // Delete topic
           await deleteTopic(pubsubConfig, url);
         } catch (error) {
-          console.warn(
-            "Failed to delete Pub/Sub topic:",
-            error instanceof Error ? error.message : String(error)
-          );
+          const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+          logger.warn("Failed to delete Pub/Sub topic", {
+            error_message: error instanceof Error ? error.message : String(error),
+            topic_url: url,
+          });
           // Continue to callback deletion
         }
       }
@@ -598,7 +611,8 @@ export class Network extends Tool implements INetwork {
     // Handle standard webhooks (format: {baseUrl}/hook/{token})
     const token = this.urlToToken(url);
     if (!token) {
-      console.warn("Could not extract token from webhook URL:", url);
+      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      logger.warn("Could not extract token from webhook URL", { url });
       return;
     }
     await this.callbacks.delete(token);

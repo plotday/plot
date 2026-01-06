@@ -3,6 +3,7 @@ import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
 import type { twistFactory as TwistFactory } from ".";
 import { type TwistEnvironment } from "../env";
 import { getUser } from "../utils/auth";
+import { createLogger } from "../utils/logger";
 
 /**
  * Cleans up a failed twist installation by:
@@ -24,10 +25,11 @@ async function cleanupFailedInstallation(
   }
 ): Promise<string[]> {
   const warnings: string[] = [];
+  const logger = createLogger({ priority_twist_id: priorityTwistId });
 
   try {
     // Step 1: Archive all activities created by this twist
-    console.log(`Cleaning up activities for failed installation ${priorityTwistId}`);
+    logger.info("Cleaning up activities for failed installation");
     const { error: archiveError } = await supabase
       .from("activity")
       .update({ archived_at: new Date().toISOString() })
@@ -36,19 +38,19 @@ async function cleanupFailedInstallation(
 
     if (archiveError) {
       const msg = `Failed to archive activities during cleanup: ${archiveError.message}`;
-      console.error(msg);
+      logger.error(msg);
       warnings.push(msg);
     }
   } catch (error) {
     const msg = `Error archiving activities during cleanup: ${error instanceof Error ? error.message : String(error)}`;
-    console.error(msg);
+    logger.error(msg);
     warnings.push(msg);
   }
 
   // Step 2: Try to call deactivate (best effort, may fail if activation was partial)
   if (deactivate) {
     try {
-      console.log(`Attempting to deactivate failed installation ${priorityTwistId}`);
+      logger.info("Attempting to deactivate failed installation");
 
       const twistWrapper = await deactivate.twistFactory({
         priorityId: deactivate.priorityId,
@@ -57,17 +59,15 @@ async function cleanupFailedInstallation(
       await twistWrapper.deactivate();
     } catch (error) {
       // Deactivation errors are expected if activation failed partway through
-      console.warn(
-        `Deactivation failed during cleanup (expected if activation was incomplete): ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      logger.warn("Deactivation failed during cleanup (expected if activation was incomplete)", {
+        error_message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
   // Step 3: Archive the priority_twist record
   try {
-    console.log(`Archiving priority_twist record ${priorityTwistId}`);
+    logger.info("Archiving priority_twist record");
     await supabase
       .from("priority_twist")
       .update({ archived_at: new Date().toISOString() })
@@ -76,7 +76,7 @@ async function cleanupFailedInstallation(
     const msg = `Failed to archive priority_twist during cleanup: ${
       error instanceof Error ? error.message : String(error)
     }`;
-    console.error(msg);
+    logger.error(msg);
     warnings.push(msg);
   }
 
@@ -190,7 +190,8 @@ export async function add(
         await twistWrapper.activate({ id: priority_id });
       } catch (activationError) {
         // Activation failed - rollback the installation
-        console.error("Twist activation failed, rolling back installation:", activationError);
+        const logger = createLogger({ priority_twist_id: priorityTwist.id, twist_id, environment: twist_environment });
+        logger.error("Twist activation failed, rolling back installation", activationError as Error);
 
         const cleanupWarnings = await cleanupFailedInstallation(
           supabase,
@@ -220,10 +221,8 @@ export async function add(
 
     return priorityTwist;
   } catch (error) {
-    console.error("Error adding twist:", error);
-    if (error instanceof Error) {
-      console.log(error.stack);
-    }
+    const logger = createLogger({ twist_id, environment: twist_environment, priority_id });
+    logger.error("Error adding twist", error as Error);
     throw error;
   }
 }
@@ -286,7 +285,8 @@ export async function getAll(
 
     return enrichedData;
   } catch (error) {
-    console.error("Error fetching twists:", error);
+    const logger = createLogger();
+    logger.error("Error fetching twists", error as Error);
     throw error;
   }
 }
@@ -313,7 +313,8 @@ export async function getById(
 
     return data;
   } catch (error) {
-    console.error("Error fetching twist:", error);
+    const logger = createLogger({ priority_twist_id });
+    logger.error("Error fetching twist", error as Error);
     throw error;
   }
 }
@@ -327,7 +328,8 @@ export async function getByPriority(
       throw new Error("priority_id is required and must be a string");
     }
 
-    console.log(`DEBUG getByPriority: Querying priority_child_twist for priority ${priority_id}`);
+    const logger = createLogger({ priority_id });
+    logger.debug("Querying priority_child_twist for priority");
 
     const { data, error } = await supabase
       .from("priority_child_twist")
@@ -336,18 +338,19 @@ export async function getByPriority(
       .is("archived_at", null);
 
     if (error) {
-      console.error(`DEBUG getByPriority: Query error:`, error);
+      logger.error("Query error in getByPriority", error as Error);
       throw error;
     }
 
-    console.log(`DEBUG getByPriority: Query returned ${data?.length || 0} rows`);
+    logger.debug("Query returned rows", { row_count: data?.length || 0 });
     if (data && data.length > 0) {
-      console.log(`DEBUG getByPriority: First row:`, data[0]);
+      logger.debug("First row", { first_row: data[0] });
     }
 
     return data;
   } catch (error) {
-    console.error("Error fetching twists:", error);
+    const logger = createLogger({ priority_id });
+    logger.error("Error fetching twists", error as Error);
     throw error;
   }
 }
@@ -417,7 +420,8 @@ export async function update(
         .single()
     );
   } catch (error) {
-    console.error("Error updating twist:", error);
+    const logger = createLogger({ priority_twist_id });
+    logger.error("Error updating twist", error as Error);
     throw error;
   }
 }
@@ -446,11 +450,12 @@ export async function deleteTwist(
           .is("archived_at", null)
           .single();
 
+        const logger = createLogger({ priority_twist_id });
+
         if (fetchError || !priorityTwist) {
-          console.warn(
-            `Could not fetch priority_twist ${priority_twist_id} for deactivation:`,
-            fetchError?.message
-          );
+          logger.warn("Could not fetch priority_twist for deactivation", {
+            error_message: fetchError?.message,
+          });
         } else {
           // Get twist_package_id from twist_admin
           const { data: adminData } = await supabase
@@ -460,9 +465,7 @@ export async function deleteTwist(
             .single();
 
           if (!adminData) {
-            console.warn(
-              `Could not fetch twist_package_id for deactivation`
-            );
+            logger.warn("Could not fetch twist_package_id for deactivation");
           } else {
             const twistWrapper = await deactivate.twistFactory({
               id: adminData.twist_package_id,
@@ -475,10 +478,8 @@ export async function deleteTwist(
         }
       } catch (deactivateError) {
         // Log deactivation errors but continue with deletion
-        console.error(
-          "Error calling deactivate callback (continuing with deletion):",
-          deactivateError
-        );
+        const logger = createLogger({ priority_twist_id });
+        logger.error("Error calling deactivate callback (continuing with deletion)", deactivateError as Error);
       }
     }
 
@@ -491,7 +492,8 @@ export async function deleteTwist(
         .single()
     );
   } catch (error) {
-    console.error("Error deleting twist:", error);
+    const logger = createLogger({ priority_twist_id });
+    logger.error("Error deleting twist", error as Error);
     throw error;
   }
 }
@@ -522,7 +524,8 @@ export async function archiveAndDeleteTwist(
     // Then delete the twist (which also calls deactivate if provided)
     return await deleteTwist(supabase, priority_twist_id, deactivate);
   } catch (error) {
-    console.error("Error archiving and deleting twist:", error);
+    const logger = createLogger({ priority_twist_id });
+    logger.error("Error archiving and deleting twist", error as Error);
     throw error;
   }
 }

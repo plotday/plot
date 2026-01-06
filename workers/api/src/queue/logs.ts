@@ -4,6 +4,8 @@ import type { Callback } from "@plotday/twister/tools/callbacks";
 
 import { Callbacks } from "../twist/tools/callbacks";
 import { type Bindings, type LogMessage } from "../env";
+import { extractLogQueueContext } from "../utils/log-context";
+import { createLogger } from "../utils/logger";
 
 export async function processLogs(
   batch: MessageBatch<LogMessage>,
@@ -49,10 +51,11 @@ export async function processLogs(
               formattedLogs
             );
           } catch (error) {
-            console.error(
-              `Failed to call log callback ${callbackToken}:`,
-              error
-            );
+            const context = extractLogQueueContext(logs[0], batch.queue);
+            const logger = createLogger(context);
+            logger.error("Failed to call log callback", error as Error, {
+              callback_token: callbackToken,
+            });
             postHog.captureException(error as Error, undefined, {
               twist_root_id: twistRootId,
               queue: batch.queue,
@@ -67,17 +70,17 @@ export async function processLogs(
         const logStream = env.LOG_STREAM.get(logStreamId);
         await logStream.sendLogs(logs);
       } catch (error) {
-        console.error(
-          `Failed to send logs to stream for twist ${twistRootId}:`,
-          error
-        );
+        const context = extractLogQueueContext(logs[0], batch.queue);
+        const logger = createLogger(context);
+        logger.error("Failed to send logs to stream", error as Error);
         postHog.captureException(error as Error, undefined, {
           twist_root_id: twistRootId,
           queue: batch.queue,
         });
       }
     } catch (error) {
-      console.error(`Error processing logs for twist ${twistRootId}:`, error);
+      const logger = createLogger({ twist_root_id: twistRootId, queue: batch.queue });
+      logger.error("Error processing logs for twist", error as Error);
       postHog.captureException(error as Error, undefined, {
         twist_root_id: twistRootId,
         queue: batch.queue,

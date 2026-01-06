@@ -21,6 +21,7 @@ import {
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
+import { createLogger } from "../../../utils/logger";
 import { fromDbActivity } from "./converters";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";
@@ -75,16 +76,19 @@ async function convertNoteToMarkdown(
 
         // Handle error case (format === "error")
         if ("error" in result) {
-          console.error("Failed to convert HTML to Markdown:", result.error);
+          const logger = createLogger();
+          logger.error("Failed to convert HTML to Markdown", new Error(result.error));
           return note;
         }
 
         // Fallback for unexpected format
-        console.error("Unexpected toMarkdown response format:", result);
+        const logger = createLogger();
+        logger.error("Unexpected toMarkdown response format", { result });
         return note;
       } catch (error) {
         // If conversion fails, return original note
-        console.error("Failed to convert HTML to Markdown:", error);
+        const logger = createLogger();
+        logger.error("Failed to convert HTML to Markdown", error as Error);
         return note;
       }
     }
@@ -246,11 +250,10 @@ export async function createActivity(
         try {
           embedding = await plot.ai.embed(textToEmbed);
         } catch (error) {
-          console.warn(
-            `Failed to generate embedding for pickPriority, falling back to default priority: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
+          const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+          logger.warn("Failed to generate embedding for pickPriority, falling back to default priority", {
+            error_message: error instanceof Error ? error.message : String(error),
+          });
           // embedding remains null, will use default priority logic
         }
       }
@@ -495,9 +498,10 @@ export async function createActivity(
             });
 
           if (linkError) {
-            console.warn(
-              `Failed to link contacts to priority: ${linkError.message}`
-            );
+            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+            logger.warn("Failed to link contacts to priority", {
+              error_message: linkError.message,
+            });
           }
         }
       }
@@ -538,10 +542,10 @@ export async function createActivity(
         .from("activity_read")
         .insert(activityReadEntries);
       if (insertResult.error) {
-        console.error("[Plot] Failed to insert activity_read entries", {
-          activityId: dbResult.id,
+        const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+        logger.error("Failed to insert activity_read entries", insertResult.error as Error, {
+          activity_id: dbResult.id,
           count: activityReadEntries.length,
-          error: insertResult.error,
         });
       }
     }
@@ -676,14 +680,11 @@ export async function createNote(
           onConflict: "user_id,activity_id",
         });
       if (upsertResult.error) {
-        console.error(
-          "[Plot] Failed to upsert activity_read entries for note",
-          {
-            activityId: note.activity.id,
-            count: activityReadEntries.length,
-            error: upsertResult.error,
-          }
-        );
+        const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+        logger.error("Failed to upsert activity_read entries for note", upsertResult.error as Error, {
+          activity_id: note.activity.id,
+          count: activityReadEntries.length,
+        });
       }
     }
   }
@@ -1049,9 +1050,10 @@ export async function updateActivity(
             });
 
           if (linkError) {
-            console.warn(
-              `Failed to link contacts to priority: ${linkError.message}`
-            );
+            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+            logger.warn("Failed to link contacts to priority", {
+              error_message: linkError.message,
+            });
           }
         }
       }
@@ -1213,7 +1215,8 @@ export async function getNotes(
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.error(error);
+      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      logger.error("Failed to get notes", error as Error, { activity_id: activity.id });
       throw error;
     }
 
@@ -1264,7 +1267,8 @@ export async function getNotes(
       };
     });
   } catch (err) {
-    console.error("Failed to get notes:", err);
+    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    logger.error("Failed to get notes", err as Error);
     throw err;
   }
 }
@@ -1369,7 +1373,8 @@ export async function getActivityByMeta(
       includeAuthorEmail
     );
   } catch (err) {
-    console.error("Failed to get activity by meta:", err);
+    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    logger.error("Failed to get activity by meta", err as Error);
     throw err;
   }
 }
@@ -1443,11 +1448,10 @@ export async function createActivities(
           try {
             embedding = await plot.ai.embed(textToEmbed);
           } catch (error) {
-            console.warn(
-              `Failed to generate embedding for pickPriority in batch operation, falling back to default priority: ${
-                error instanceof Error ? error.message : String(error)
-              }`
-            );
+            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+            logger.warn("Failed to generate embedding for pickPriority in batch operation, falling back to default priority", {
+              error_message: error instanceof Error ? error.message : String(error),
+            });
             // embedding remains null, will use default priority logic
           }
         }
@@ -1645,13 +1649,10 @@ export async function createActivities(
             .from("activity_read")
             .insert(activityReadEntries);
           if (insertResult.error) {
-            console.error(
-              "[Plot] Failed to insert activity_read entries for batch activities",
-              {
-                count: activityReadEntries.length,
-                error: insertResult.error,
-              }
-            );
+            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+            logger.error("Failed to insert activity_read entries for batch activities", insertResult.error as Error, {
+              count: activityReadEntries.length,
+            });
           }
         }
       }
@@ -1740,9 +1741,10 @@ export async function createActivities(
             });
 
           if (linkError) {
-            console.warn(
-              `Failed to link contacts to priorities: ${linkError.message}`
-            );
+            const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+            logger.warn("Failed to link contacts to priorities", {
+              error_message: linkError.message,
+            });
           }
         }
       }

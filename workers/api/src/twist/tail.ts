@@ -2,6 +2,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { type TwistEnvironment, type LogMessage } from "../env";
 import { Usage } from "../state/usage";
+import { createLogger } from "../utils/logger";
 
 /**
  * Tail handler for capturing console logs and usage metrics from dynamically loaded twist workers.
@@ -127,10 +128,8 @@ export class TwistTail extends WorkerEntrypoint<
               }
             } catch (error) {
               // Log parsing errors but don't fail the tail handler
-              console.error(
-                "Failed to parse AI usage from diagnostics:",
-                error
-              );
+              const logger = createLogger({ twist_root_id: twistRootId, environment, priority_twist_id: priorityTwistId });
+              logger.error("Failed to parse AI usage from diagnostics", error as Error);
             }
           }
         }

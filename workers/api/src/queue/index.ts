@@ -7,6 +7,7 @@ import {
   type QueueMessage,
   type UpdateMessage,
 } from "../env";
+import { createLogger } from "../utils/logger";
 import { processLogs } from "./logs";
 import { processUpdates } from "./updates";
 
@@ -18,11 +19,22 @@ export async function queue(
   env: Bindings,
   ctx: ExecutionContext
 ): Promise<void> {
+  // Generate request ID for this queue batch (for trace correlation)
+  const request_id = crypto.randomUUID();
+
   const postHog = new PostHog(env.POSTHOG_API_KEY, {
     host: env.POSTHOG_HOST,
     flushAt: 10,
     flushInterval: 10,
   });
+
+  // Create logger with queue context
+  const logger = createLogger({
+    request_id,
+    queue: batch.queue,
+    batch_size: batch.messages.length,
+  });
+
   try {
     // Use batch.queue to distinguish between queues
     switch (batch.queue) {
@@ -51,15 +63,19 @@ export async function queue(
         break;
 
       default:
-        console.error(`Unknown queue: ${batch.queue}`, {
+        logger.error("Unknown queue", {
           queue: batch.queue,
-          messageCount: batch.messages.length,
+          message_count: batch.messages.length,
         });
     }
   } catch (error) {
-    console.error(error);
-    postHog.captureException(error, undefined, {
+    logger.error("Error processing queue batch", error as Error, {
       queue: batch.queue,
+    });
+    postHog.captureException(error as Error, undefined, {
+      request_id,
+      queue: batch.queue,
+      batch_size: batch.messages.length,
     });
   } finally {
     ctx.waitUntil(postHog.shutdown());

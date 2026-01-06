@@ -5,6 +5,8 @@
  * for Gmail webhook support. Each webhook gets its own dedicated topic and subscription.
  */
 
+import { createLogger } from "./logger";
+
 interface PubSubConfig {
   projectId: string;
   serviceAccountEmail: string;
@@ -330,6 +332,10 @@ export async function verifyPubSubToken(
   authHeader: string | undefined,
   projectId: string
 ): Promise<boolean> {
+  const logger = createLogger({
+    operation: "verifyPubSubToken",
+  });
+
   if (!authHeader) {
     return false;
   }
@@ -367,27 +373,27 @@ export async function verifyPubSubToken(
 
     // Verify algorithm
     if (header.alg !== "RS256") {
-      console.warn(`Invalid JWT algorithm: ${header.alg}`);
+      logger.warn("Invalid JWT algorithm", { algorithm: header.alg });
       return false;
     }
 
     // Verify issuer
     const validIssuers = ["accounts.google.com", "https://accounts.google.com"];
     if (!validIssuers.includes(payload.iss)) {
-      console.warn(`Invalid JWT issuer: ${payload.iss}`);
+      logger.warn("Invalid JWT issuer", { issuer: payload.iss });
       return false;
     }
 
     // Verify expiration
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
-      console.warn(`JWT expired: ${payload.exp} < ${now}`);
+      logger.warn("JWT expired", { exp: payload.exp, now });
       return false;
     }
 
     // Verify issued-at time is not in the future (with 60s tolerance for clock skew)
     if (payload.iat > now + 60) {
-      console.warn(`JWT issued in the future: ${payload.iat} > ${now}`);
+      logger.warn("JWT issued in the future", { iat: payload.iat, now });
       return false;
     }
 
@@ -395,7 +401,10 @@ export async function verifyPubSubToken(
     // Audience can be the full push endpoint URL or just the project number/ID
     // For simplicity, we just check if it contains the project ID
     if (!payload.aud.includes(projectId)) {
-      console.warn(`JWT audience mismatch: ${payload.aud} does not include ${projectId}`);
+      logger.warn("JWT audience mismatch", {
+        audience: payload.aud,
+        project_id: projectId,
+      });
       return false;
     }
 
@@ -404,7 +413,7 @@ export async function verifyPubSubToken(
     const publicKeyPem = publicKeys[header.kid];
 
     if (!publicKeyPem) {
-      console.warn(`Public key not found for kid: ${header.kid}`);
+      logger.warn("Public key not found for kid", { kid: header.kid });
       return false;
     }
 
@@ -446,12 +455,12 @@ export async function verifyPubSubToken(
     );
 
     if (!isValid) {
-      console.warn("JWT signature verification failed");
+      logger.warn("JWT signature verification failed");
     }
 
     return isValid;
   } catch (error) {
-    console.error("Error verifying Pub/Sub token:", error);
+    logger.error("Error verifying Pub/Sub token", error as Error);
     return false;
   }
 }

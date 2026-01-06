@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import type { Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 
 export class Storage extends DurableObject {
   private sql: SqlStorage;
@@ -16,6 +17,11 @@ export class Storage extends DurableObject {
   }
 
   private initializeTable() {
+    const logger = createLogger({
+      durable_object: "Storage",
+      operation: "initializeTable",
+    });
+
     try {
       this.sql.exec(`
         CREATE TABLE IF NOT EXISTS store (
@@ -25,12 +31,17 @@ export class Storage extends DurableObject {
         )
       `);
     } catch (error) {
-      console.error("Store table initialization error:", error);
+      logger.error("Store table initialization error", error as Error);
       throw error;
     }
   }
 
   get(key: string): string | null {
+    const logger = createLogger({
+      durable_object: "Storage",
+      operation: "get",
+    });
+
     try {
       const result = this.sql
         .exec("SELECT value FROM store WHERE key = ?", [key])
@@ -40,7 +51,7 @@ export class Storage extends DurableObject {
       }
       return result.value.value as string;
     } catch (error) {
-      console.error("Store get error:", error);
+      logger.error("Store get error", error as Error, { key });
       throw error;
     }
   }

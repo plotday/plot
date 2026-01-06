@@ -1,3 +1,5 @@
+import { createLogger } from "../../../utils/logger";
+
 export function parseRangeStart(
   rangeOn: unknown,
   rangeAt: unknown
@@ -192,7 +194,8 @@ export function calculateRecurrenceUntilFromCount(
       ? finalOccurrenceDate.toISOString().split("T")[0]
       : finalOccurrenceDate;
   } catch (error) {
-    console.warn("Failed to calculate recurrence until from count:", error);
+    const logger = createLogger();
+    logger.warn("Failed to calculate recurrence until from count", { error_message: error instanceof Error ? error.message : String(error) });
     return null;
   }
 }

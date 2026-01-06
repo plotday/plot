@@ -1,5 +1,6 @@
 import type { Note } from "@plotday/twister/plot";
 
+import { createLogger } from "../../../utils/logger";
 import { createNote } from "./activity";
 import type { Plot } from "./index";
 
@@ -80,14 +81,16 @@ Respond only with the intent number (e.g., "1", "2", etc.) or "none".`,
       intentNumber < 1 ||
       intentNumber > allIntents.length
     ) {
-      console.warn("Invalid intent number:", responseText);
+      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      logger.warn("Invalid intent number", { response_text: responseText });
       return null;
     }
 
     const matchedIntent = allIntents[intentNumber - 1];
     return matchedIntent.description;
   } catch (error) {
-    console.error("Intent matching error:", error);
+    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    logger.error("Intent matching error", error as Error);
     return null;
   }
 }
@@ -103,9 +106,11 @@ export async function handleIntent(
 ): Promise<{ optionPath: string[]; args: any[] } | null> {
   const matchedIntent = await matchIntent(plot, note);
 
-  console.log(
-    `Intent matching for note ${note.id}: matched=${matchedIntent ?? "none"}`
-  );
+  const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+  logger.info("Intent matching for note", {
+    note_id: note.id,
+    matched: matchedIntent ?? "none",
+  });
 
   if (!matchedIntent) {
     // No intent matched - create a reply note
@@ -183,7 +188,8 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this twist can
 
       description = response.text.trim();
     } catch (error) {
-      console.error("Error generating capability description:", error);
+      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      logger.error("Error generating capability description", error as Error);
       description = `I can help with: ${customIntents
         .map((i) => i.description)
         .join(", ")}`;
@@ -220,7 +226,8 @@ async function handleRemoveTwist(plot: Plot, note: Note): Promise<void> {
         "I've been removed from this priority. You can add me back anytime if you need me!",
     });
   } catch (error) {
-    console.error("Error removing twist:", error);
+    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    logger.error("Error removing twist", error as Error);
 
     // Create error note
     await createNote(plot, {

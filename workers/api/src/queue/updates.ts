@@ -5,6 +5,8 @@ import { type SupabaseClient, createClient } from "@plotday/db";
 import { twistFactory } from "../twist";
 import { type Bindings, type UpdateMessage } from "../env";
 import { type ActivityItem, type NoteItem } from "../types";
+import { createLogger } from "../utils/logger";
+import { extractUpdateQueueContext, addTwistContext, mergeContext } from "../utils/log-context";
 import { truncateUuidForUpdatedBy } from "../utils/uuid";
 
 export async function processUpdates(
@@ -30,15 +32,20 @@ async function processUpdate(
 ): Promise<void> {
   const { type, item, previous, twists, users } = updateData;
 
+  // Create logger with queue context
+  const baseContext = extractUpdateQueueContext(updateData, queue);
+  const logger = createLogger(baseContext);
+
   // Process activities
   if (type === "activity") {
     for (const twist of twists) {
       try {
         // Type guard to ensure we have an activity item
         if (!("priority_id" in item) || !("author_id" in item)) {
-          console.warn(
-            `Item type ${type} does not have required activity fields`
-          );
+          logger.warn("Item type does not have required activity fields", {
+            item_type: type,
+            twist_id: String(twist.id),
+          });
           continue;
         }
 
@@ -48,17 +55,19 @@ async function processUpdate(
 
         // Skip processing if activity is draft
         if (activityItem.draft) {
-          console.log(
-            `Skipping twist processing for ${twist.id} - activity ${activityItem.id} is draft`
-          );
+          logger.debug("Skipping twist processing for draft activity", {
+            twist_id: String(twist.id),
+            activity_id: activityItem.id,
+          });
           continue;
         }
 
         // If transitioning from draft to non-draft, treat as creation
         if (previousActivityItem?.draft === true && activityItem.draft === false) {
-          console.log(
-            `Activity ${activityItem.id} transitioned from draft to non-draft - treating as creation`
-          );
+          logger.info("Activity transitioned from draft to non-draft", {
+            activity_id: activityItem.id,
+            operation: "draft_to_published",
+          });
           previousActivityItem = undefined;
         }
 
@@ -70,17 +79,17 @@ async function processUpdate(
               twist.priority_twist_id
             );
             if (itemUpdatedBy === twistUpdatedBy) {
-              console.log(
-                `Skipping twist processing for ${twist.id} (${twist.priority_twist_id}) - self-triggered update (updated_by: ${itemUpdatedBy})`
-              );
+              logger.debug("Skipping self-triggered update", {
+                twist_id: String(twist.id),
+                priority_twist_id: twist.priority_twist_id,
+                updated_by: itemUpdatedBy,
+              });
               continue;
             }
           } catch (error) {
-            console.warn(
-              `Failed to process UUID truncation for twist ${twist.id}: ${
-                error instanceof Error ? error.message : error
-              }. Continuing with processing.`
-            );
+            logger.warn("Failed to process UUID truncation, continuing with processing", error as Error, {
+              twist_id: String(twist.id),
+            });
             // Continue processing if UUID truncation fails - better to process than skip incorrectly
           }
         }
@@ -104,16 +113,19 @@ async function processUpdate(
           previous: previousActivityItem,
         });
       } catch (error) {
-        console.error(
-          `Error processing activity for twist ${twist.id}: ${
-            error instanceof Error ? `${error.message}\n${error.stack}` : error
-          }`
+        const context = addTwistContext(
+          twist.id,
+          twist.priority_twist_id,
+          "priority_id" in item ? String(item.priority_id) : undefined,
+          twist.environment
         );
+        logger.error("Error processing activity for twist", error as Error, {
+          ...context,
+          version: twist.version,
+          event: updateData.event,
+        });
         postHog.captureException(error as Error, undefined, {
-          twist_id: twist.id,
-          priority_twist_id: twist.priority_twist_id,
-          priority_id: "priority_id" in item ? String(item.priority_id) : undefined,
-          environment: twist.environment,
+          ...context,
           version: twist.version,
           type: type,
           event: updateData.event,
@@ -129,7 +141,10 @@ async function processUpdate(
       try {
         // Type guard to ensure we have a note item
         if (!("activity_id" in item) || !("author_id" in item)) {
-          console.warn(`Item type ${type} does not have required note fields`);
+          logger.warn("Item type does not have required note fields", {
+            item_type: type,
+            twist_id: String(twist.id),
+          });
           continue;
         }
 
@@ -139,23 +154,28 @@ async function processUpdate(
 
         // Skip processing if note is draft
         if (noteItem.draft) {
-          console.log(
-            `Skipping twist processing for ${twist.id} - note ${noteItem.id} is draft`
-          );
+          logger.debug("Skipping twist processing for draft note", {
+            twist_id: String(twist.id),
+            note_id: noteItem.id,
+          });
           continue;
         }
 
         // If transitioning from draft to non-draft, treat as creation
         if (previousNoteItem?.draft === true && noteItem.draft === false) {
-          console.log(
-            `Note ${noteItem.id} transitioned from draft to non-draft - treating as creation`
-          );
+          logger.info("Note transitioned from draft to non-draft", {
+            note_id: noteItem.id,
+            operation: "draft_to_published",
+          });
           previousNoteItem = undefined;
         }
 
-        console.log(
-          `Processing note update for twist ${twist.id} (${twist.priority_twist_id}), note ${noteItem.id}, activity ${noteItem.activity_id}`
-        );
+        logger.info("Processing note update for twist", {
+          twist_id: String(twist.id),
+          priority_twist_id: twist.priority_twist_id,
+          note_id: noteItem.id,
+          activity_id: noteItem.activity_id,
+        });
 
         // Skip processing if this twist triggered the update
         const itemUpdatedBy = noteItem.updated_by;
@@ -165,17 +185,17 @@ async function processUpdate(
               twist.priority_twist_id
             );
             if (itemUpdatedBy === twistUpdatedBy) {
-              console.log(
-                `Skipping twist processing for ${twist.id} (${twist.priority_twist_id}) - self-triggered update (updated_by: ${itemUpdatedBy})`
-              );
+              logger.debug("Skipping self-triggered update", {
+                twist_id: String(twist.id),
+                priority_twist_id: twist.priority_twist_id,
+                updated_by: itemUpdatedBy,
+              });
               continue;
             }
           } catch (error) {
-            console.warn(
-              `Failed to process UUID truncation for twist ${twist.id}: ${
-                error instanceof Error ? error.message : error
-              }. Continuing with processing.`
-            );
+            logger.warn("Failed to process UUID truncation, continuing with processing", error as Error, {
+              twist_id: String(twist.id),
+            });
             // Continue processing if UUID truncation fails - better to process than skip incorrectly
           }
         }
@@ -199,16 +219,21 @@ async function processUpdate(
           previous: previousNoteItem,
         });
       } catch (error) {
-        console.error(
-          `Error processing note for twist ${twist.id}: ${
-            error instanceof Error ? `${error.message}\n${error.stack}` : error
-          }`
+        const context = addTwistContext(
+          twist.id,
+          twist.priority_twist_id,
+          undefined,
+          twist.environment
         );
-        postHog.captureException(error as Error, undefined, {
-          twist_id: twist.id,
-          priority_twist_id: twist.priority_twist_id,
+        logger.error("Error processing note for twist", error as Error, {
+          ...context,
           activity_id: "activity_id" in item ? String(item.activity_id) : undefined,
-          environment: twist.environment,
+          version: twist.version,
+          event: updateData.event,
+        });
+        postHog.captureException(error as Error, undefined, {
+          ...context,
+          activity_id: "activity_id" in item ? String(item.activity_id) : undefined,
           version: twist.version,
           type: type,
           event: updateData.event,
@@ -250,13 +275,16 @@ async function processUpdate(
           );
         }
 
-        console.log(`Sent broadcast to user ${user.user_id} for table ${type}`);
+        logger.info("Sent broadcast to user", {
+          user_id: user.user_id,
+          table: type,
+        });
       } catch (error) {
-        console.error(
-          `Error broadcasting to user ${user.user_id}: ${
-            error instanceof Error ? `${error.message}\n${error.stack}` : error
-          }`
-        );
+        logger.error("Error broadcasting to user", error as Error, {
+          user_id: user.user_id,
+          table: type,
+          updated_by: updatedBy,
+        });
         postHog.captureException(error as Error, undefined, {
           user_id: user.user_id,
           type: type,

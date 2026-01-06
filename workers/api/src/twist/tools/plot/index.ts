@@ -23,6 +23,7 @@ import {
 
 import type { Bindings } from "../../../env";
 import { type ActivityItem, type NoteItem } from "../../../types";
+import { createLogger } from "../../../utils/logger";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
 import { AI } from "../ai";
@@ -406,11 +407,10 @@ export class Plot extends Tool implements IPlot {
     try {
       return truncateUuidForUpdatedBy(this.priorityTwistId);
     } catch (error) {
-      console.warn(
-        `Failed to generate updated_by for twist ${this.priorityTwistId}: ${
-          error instanceof Error ? error.message : error
-        }`
-      );
+      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      logger.warn("Failed to generate updated_by for twist", {
+        error_message: error instanceof Error ? error.message : String(error),
+      });
       return 0;
     }
   }

@@ -7,6 +7,8 @@ import type { AuthProvider } from "@plotday/twister/tools/integrations";
 
 import type { Bindings } from "../env";
 import { Integrations } from "../twist/tools/integrations";
+import { extractRequestContext } from "../utils/log-context";
+import { createLogger } from "../utils/logger";
 import { handleValidationError } from "../utils/validation";
 
 const authRoutes = new Hono<{ Bindings: Bindings }>();
@@ -35,7 +37,9 @@ authRoutes.post("/auth", async (c) => {
       c.env
     );
   } catch (error) {
-    console.error("Error processing auth callback:", error);
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Error processing auth callback", error as Error);
     return c.json({ message: "Internal server error" }, 500);
   }
 });
@@ -51,9 +55,10 @@ authRoutes.get("/auth", async (c) => {
     });
 
     if (!parseResult.success) {
-      console.error("Auth URL request validation failed:", {
-        error: parseResult.error,
-        query: c.req.query(),
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Auth URL request validation failed", {
+        validation_error: parseResult.error,
       });
       return handleValidationError(parseResult.error);
     }
@@ -82,10 +87,12 @@ authRoutes.get("/auth", async (c) => {
     });
 
     if (!result) {
-      console.error("No client ID configured:", {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("No client ID configured", {
         provider,
         platform,
-        envKeys: Object.keys(c.env).filter((k) => k.includes("AUTH")),
+        env_keys: Object.keys(c.env).filter((k) => k.includes("AUTH")),
       });
       return c.json(
         { message: "No client ID configured for this platform" },
@@ -95,12 +102,9 @@ authRoutes.get("/auth", async (c) => {
 
     return c.json(result);
   } catch (error) {
-    console.error("Error generating auth URL:", {
-      error,
-      message: error instanceof Error ? error.message : "Unknown error",
-      stack: error instanceof Error ? error.stack : undefined,
-      query: c.req.query(),
-    });
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Error generating auth URL", error as Error);
     if (error instanceof Error) {
       return c.json(
         { message: `Error generating auth URL: ${error.message}` },
@@ -135,7 +139,8 @@ authRoutes.post("/auth/send-code", async (c) => {
       await supabaseAdmin.auth.admin.listUsers();
 
     if (listError) {
-      console.error("Error checking user existence:", listError);
+      const logger = createLogger();
+      logger.error("Error checking user existence", new Error(listError.message));
       // Return success anyway to prevent account enumeration
       return c.json({ success: true });
     }
@@ -148,7 +153,10 @@ authRoutes.post("/auth/send-code", async (c) => {
         await supabaseAdmin.auth.resetPasswordForEmail(email);
 
       if (resetError) {
-        console.error("Error sending password reset email:", resetError);
+        const logger = createLogger();
+        logger.error("Error sending password reset email", new Error(resetError.message), {
+          email,
+        });
       }
     } else {
       // New user - send signup OTP email (confirmation template)
@@ -157,14 +165,18 @@ authRoutes.post("/auth/send-code", async (c) => {
       });
 
       if (signupError) {
-        console.error("Error sending signup email:", signupError);
+        const logger = createLogger();
+        logger.error("Error sending signup email", new Error(signupError.message), {
+          email,
+        });
       }
     }
 
     // Always return success to prevent account enumeration
     return c.json({ success: true });
   } catch (error) {
-    console.error("Error in send-code endpoint:", error);
+    const logger = createLogger();
+    logger.error("Error in send-code endpoint", error as Error);
     // Return success even on error to prevent account enumeration
     return c.json({ success: true });
   }

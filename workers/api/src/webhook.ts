@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import { Network } from "./twist/tools/network";
 import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
+import { createLogger } from "./utils/logger";
+import { extractRequestContext } from "./utils/log-context";
 
 const webhook = new Hono<{ Bindings: Bindings }>();
 
@@ -52,12 +54,15 @@ async function verifySlackSignature(
 
 // Slack webhook endpoint - handles Events API webhooks with team-based routing
 webhook.post("/hook/slack", async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
   try {
     const signature = c.req.header("x-slack-signature");
     const timestamp = c.req.header("x-slack-request-timestamp");
 
     if (!signature || !timestamp) {
-      console.warn("Slack webhook missing signature or timestamp");
+      logger.warn("Slack webhook missing signature or timestamp");
       return new Response("Unauthorized", { status: 401 });
     }
 
@@ -73,7 +78,7 @@ webhook.post("/hook/slack", async (c) => {
     );
 
     if (!isValid) {
-      console.warn("Slack webhook signature verification failed");
+      logger.warn("Slack webhook signature verification failed");
       return new Response("Unauthorized", { status: 401 });
     }
 
@@ -82,7 +87,7 @@ webhook.post("/hook/slack", async (c) => {
     try {
       body = JSON.parse(rawBody);
     } catch (error) {
-      console.warn("Failed to parse Slack webhook body:", error);
+      logger.warn("Failed to parse Slack webhook body", error as Error);
       return new Response("Bad request", { status: 400 });
     }
 
@@ -115,7 +120,7 @@ webhook.post("/hook/slack", async (c) => {
     // Always return 200 OK to Slack (as per plan)
     return c.json({ ok: true });
   } catch (error) {
-    console.error("Error processing Slack webhook:", error);
+    logger.error("Error processing Slack webhook", error as Error);
     // Still return 200 OK to prevent Slack from disabling the webhook
     return c.json({ ok: true });
   }
@@ -123,13 +128,16 @@ webhook.post("/hook/slack", async (c) => {
 
 // Gmail webhook endpoint - handles Google Pub/Sub push notifications
 webhook.post("/hook/gmail/:topicId", async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
   try {
     const authHeader = c.req.header("authorization");
 
     // Verify Pub/Sub JWT token
     const isValid = await verifyPubSubToken(authHeader, c.env.GCP_PROJECT_ID);
     if (!isValid) {
-      console.warn("Gmail webhook missing or invalid authorization");
+      logger.warn("Gmail webhook missing or invalid authorization");
       return new Response("Unauthorized", { status: 401 });
     }
 
@@ -156,7 +164,7 @@ webhook.post("/hook/gmail/:topicId", async (c) => {
     try {
       body = await c.req.json();
     } catch (error) {
-      console.warn("Failed to parse Gmail webhook body:", error);
+      logger.warn("Failed to parse Gmail webhook body", error as Error);
       return new Response("Bad request", { status: 400 });
     }
 
@@ -164,7 +172,7 @@ webhook.post("/hook/gmail/:topicId", async (c) => {
     // https://cloud.google.com/pubsub/docs/push#receiving_messages
     const message = body.message;
     if (!message) {
-      console.warn("Gmail webhook missing message field");
+      logger.warn("Gmail webhook missing message field");
       return new Response("Bad request (missing message)", { status: 400 });
     }
 
@@ -175,7 +183,7 @@ webhook.post("/hook/gmail/:topicId", async (c) => {
         const decoded = atob(message.data);
         decodedData = JSON.parse(decoded);
       } catch (error) {
-        console.warn("Failed to decode Gmail webhook message data:", error);
+        logger.warn("Failed to decode Gmail webhook message data", error as Error);
         // Continue with empty data - the callback might not need it
       }
     }
@@ -215,7 +223,7 @@ webhook.post("/hook/gmail/:topicId", async (c) => {
     // Always return 200 OK to acknowledge message
     return c.json({ ok: true });
   } catch (error) {
-    console.error("Error processing Gmail webhook:", error);
+    logger.error("Error processing Gmail webhook", error as Error);
     // Return 500 to indicate failure, so Pub/Sub will retry
     return new Response("Internal server error", { status: 500 });
   }
@@ -223,6 +231,9 @@ webhook.post("/hook/gmail/:topicId", async (c) => {
 
 // Webhook endpoint - handles all HTTP methods for webhook URLs
 webhook.all(Network.PATH, async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
   try {
     const token = c.req.param("token");
     if (!token) {
@@ -264,7 +275,7 @@ webhook.all(Network.PATH, async (c) => {
           body = rawBody;
         }
       } catch (error) {
-        console.warn("Failed to parse callback request body:", error);
+        logger.warn("Failed to parse callback request body", error as Error);
         body = rawBody;
       }
     }
@@ -285,7 +296,7 @@ webhook.all(Network.PATH, async (c) => {
       return new Response("OK", { status: 200 });
     }
   } catch (error) {
-    console.error("Error processing callback:", error);
+    logger.error("Error processing callback", error as Error);
     return new Response("Internal server error", { status: 500 });
   }
 });

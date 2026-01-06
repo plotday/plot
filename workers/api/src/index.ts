@@ -12,6 +12,7 @@ import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import summary from "./app/summary";
 import updates from "./app/updates";
 import type { Bindings } from "./env";
+import { requestIdMiddleware } from "./middleware/request-id";
 import { queue } from "./queue";
 import twist from "./sdk/twist";
 // Import SDK routes and middleware
@@ -24,6 +25,8 @@ import stripe from "./stripe/stripe";
 // Import sync routes and middleware
 import { authMiddleware as syncAuthMiddleware } from "./sync/auth";
 import database from "./sync/database";
+import { createLogger } from "./utils/logger";
+import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
 // Import webhook routes
 import webhook from "./webhook";
 
@@ -55,6 +58,10 @@ export type { DatabaseUpdateRequest } from "./sync/database";
 // Create main app
 const app = new Hono<{ Bindings: Bindings }>();
 
+// Apply request ID middleware first (for trace correlation)
+app.use("*", requestIdMiddleware);
+
+// Apply PostHog middleware
 app.use("*", async (c, next) => {
   const postHog = new PostHog(c.env.POSTHOG_API_KEY, {
     host: c.env.POSTHOG_HOST,
@@ -70,17 +77,29 @@ app.use("*", async (c, next) => {
   }
 });
 
-// Add error handler for PostHog error tracking
+// Add error handler for PostHog error tracking and structured logging
 app.onError(async (err, c) => {
   try {
-    console.error(err);
+    // Extract context from request and error
+    const requestContext = extractRequestContext(c);
+    const errorContext = extractErrorContext(err);
+    const context = mergeContext(requestContext, errorContext);
+
+    // Log error with structured context
+    const logger = createLogger();
+    logger.error("Unhandled error in request", err, context);
+
+    // Capture in PostHog with same context
     c.var.postHog.captureException(err, undefined, {
+      ...context,
       path: c.req.path,
       method: c.req.method,
       url: c.req.url,
     });
   } catch (e) {
-    console.error("Failed to capture exception in PostHog:", e);
+    // Fallback to console if structured logging fails
+    console.error("Error in error handler:", e);
+    console.error("Original error:", err);
   }
 
   // Set CORS headers for error responses to prevent CORS errors in browser

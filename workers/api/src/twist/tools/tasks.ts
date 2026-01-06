@@ -5,6 +5,8 @@ import type { Tasks as IRun } from "@plotday/twister/tools/tasks";
 
 import { type Bindings, type TwistEnvironment } from "../../env";
 import { type CallbacksState } from "../../state/callbacks";
+import { extractRunQueueContext } from "../../utils/log-context";
+import { createLogger } from "../../utils/logger";
 import { Tool } from "./tool";
 
 export type RunMessage = {
@@ -104,10 +106,9 @@ export class Tasks extends Tool implements IRun {
         await callbacks.callCallback(message.body.token);
         message.ack();
       } catch (error) {
-        console.error(
-          `Failed to execute callback ${message.body.token}:`,
-          error
-        );
+        const context = extractRunQueueContext(message.body, batch.queue);
+        const logger = createLogger(context);
+        logger.error("Failed to execute callback", error as Error);
         postHog.captureException(error as Error, undefined, {
           priority_twist_id: message.body.priorityTwistId,
           path: message.body.path.join("/"),

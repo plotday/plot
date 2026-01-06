@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@plotday/db";
 
 import { type TwistEnvironment, type Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 import { buildTwist } from "./builder";
 import { type TwistPermissions, storeTwistModule } from "./index";
 import type { TwistSource } from "./types";
@@ -53,6 +54,8 @@ export async function deployTwist({
   dryRun = false,
   onProgress,
 }: DeployTwistOptions): Promise<DeployTwistResult> {
+  const logger = createLogger({ twist_admin_id: twistAdminId, environment });
+
   // Validate input: exactly one of module or source must be provided
   if (input.module === undefined && input.source === undefined) {
     throw new Error("Either module or source must be provided");
@@ -64,7 +67,7 @@ export async function deployTwist({
 
   if (input.source !== undefined) {
     // Build module from source using container sandbox
-    console.log("Building twist from source...");
+    logger.info("Building twist from source");
     try {
       const buildResult = await buildTwist(input.source, env, onProgress);
 
@@ -84,9 +87,9 @@ export async function deployTwist({
 
       moduleCode = buildResult.module;
       sourcemapCode = buildResult.sourcemap;
-      console.log("Twist built successfully from source");
+      logger.info("Twist built successfully from source");
     } catch (error) {
-      console.error("Error during twist build:", error);
+      logger.error("Error during twist build", error as Error);
       // Re-throw with user-friendly message if not already a build error
       if (error instanceof Error && error.message.startsWith("Build failed:")) {
         throw error;
@@ -140,7 +143,7 @@ export async function deployTwist({
     version = storeResult.version;
     permissions = storeResult.permissions;
   } catch (error) {
-    console.error("Error storing twist module:", error);
+    logger.error("Error storing twist module", error as Error);
     // Provide user-friendly error message
     const action = dryRun ? "analyze" : "deploy";
     throw new Error(
@@ -168,15 +171,19 @@ export async function deployTwist({
     .maybeSingle();
 
   if (existingError) {
-    console.error("Error checking for existing twist:", existingError);
+    logger.error("Error checking for existing twist", existingError as Error);
     throw new Error(
       `Failed to check existing twist: ${existingError.message}`
     );
   }
 
-  console.log(
-    `Deploying twist: admin_id=${twistAdminId}, environment=${environment}, name="${name}", version=${version}${existingTwist ? `, existing_id=${existingTwist.id}, existing_name="${existingTwist.name}", existing_version=${existingTwist.version}` : ", NEW"}`
-  );
+  logger.info("Deploying twist", {
+    name,
+    version,
+    existing_id: existingTwist?.id,
+    existing_name: existingTwist?.name,
+    existing_version: existingTwist?.version,
+  });
 
   let twist;
 
@@ -195,7 +202,7 @@ export async function deployTwist({
       .single();
 
     if (updateError || !updatedTwist) {
-      console.error("Failed to update twist in database:", updateError);
+      logger.error("Failed to update twist in database", updateError as Error);
       throw new Error(
         `Failed to save twist update: ${
           updateError?.message || "Database error"
@@ -204,7 +211,7 @@ export async function deployTwist({
     }
 
     twist = updatedTwist;
-    console.log(`Updated twist ${twist.id}`);
+    logger.info("Updated twist", { twist_id: twist.id });
   } else {
     // Create new twist - use INSERT
     const { data: newTwist, error: insertError } = await supabase
@@ -221,14 +228,14 @@ export async function deployTwist({
       .single();
 
     if (insertError || !newTwist) {
-      console.error("Failed to create twist in database:", insertError);
+      logger.error("Failed to create twist in database", insertError as Error);
       throw new Error(
         `Failed to save new twist: ${insertError?.message || "Database error"}`
       );
     }
 
     twist = newTwist;
-    console.log(`Created new twist ${twist.id}`);
+    logger.info("Created new twist", { twist_id: twist.id });
   }
 
   // Call upgrade callback for all active priorityTwists (if any exist)
@@ -242,11 +249,11 @@ export async function deployTwist({
       .is("archived_at", null);
 
     if (fetchError) {
-      console.error("Error fetching priority twists for upgrade:", fetchError);
+      logger.error("Error fetching priority twists for upgrade", fetchError as Error);
     } else if (priorityTwists && priorityTwists.length > 0) {
-      console.log(
-        `Calling upgrade on ${priorityTwists.length} active priority twists`
-      );
+      logger.info("Calling upgrade on active priority twists", {
+        count: priorityTwists.length,
+      });
 
       const { twistFactory } = await import("./index");
       const factory = twistFactory({ env, ctx, supabase });
@@ -266,19 +273,15 @@ export async function deployTwist({
       // Log any upgrade failures
       upgradeResults.forEach((result, index) => {
         if (result.status === "rejected") {
-          console.error(
-            `Failed to upgrade priority_twist ${priorityTwists[index].id}:`,
-            result.reason
-          );
+          logger.error("Failed to upgrade priority_twist", result.reason as Error, {
+            priority_twist_id: priorityTwists[index].id,
+          });
         }
       });
     }
   } catch (upgradeError) {
     // Log upgrade errors but continue with deployment
-    console.error(
-      "Error during upgrade callback processing (continuing with deployment):",
-      upgradeError
-    );
+    logger.error("Error during upgrade callback processing (continuing with deployment)", upgradeError as Error);
   }
 
   // If deploying to review and auto_approve is true, also deploy to public
@@ -290,7 +293,7 @@ export async function deployTwist({
       .single();
 
     if (!adminFetchError && twistAdmin?.auto_approve) {
-      console.log(`Auto-approving twist (admin_id=${twistAdminId}) to public environment`);
+      logger.info("Auto-approving twist to public environment");
 
       const { error: upsertPublicError } = await supabase.from("twist").upsert(
         {
@@ -307,11 +310,9 @@ export async function deployTwist({
       );
 
       if (upsertPublicError) {
-        console.error("Error auto-deploying to public:", upsertPublicError);
+        logger.error("Error auto-deploying to public", upsertPublicError as Error);
       } else {
-        console.log(
-          `Successfully auto-deployed twist (admin_id=${twistAdminId}) to public environment`
-        );
+        logger.info("Successfully auto-deployed twist to public environment");
       }
     }
   }

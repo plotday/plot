@@ -12,6 +12,7 @@ import {
 import type { Bindings } from "../env";
 import { SSEStream, acceptsSSE } from "../utils/sse";
 import { handleValidationError } from "../utils/validation";
+import { createLogger } from "../utils/logger";
 
 const twist = new Hono<{ Bindings: Bindings }>();
 
@@ -79,7 +80,8 @@ twist.get("/twist/publishers", async (c) => {
     const publishers = await getAccessiblePublishers(user.id, supabase);
     return c.json(publishers);
   } catch (error) {
-    console.error("Error fetching publishers:", error);
+    const logger = createLogger();
+    logger.error("Error fetching publishers", error as Error, { user_id: user.id });
     return new Response(
       `Error fetching publishers: ${
         error instanceof Error ? error.message : "Unknown error"
@@ -119,7 +121,11 @@ twist.post("/twist/publishers", async (c) => {
     const publisher = await createPublisher(name, url || null, supabase);
     return c.json(publisher);
   } catch (error) {
-    console.error("Error creating publisher:", error);
+    const logger = createLogger();
+    logger.error("Error creating publisher", error as Error, {
+      user_id: user.id,
+      publisher_name: name
+    });
     return new Response(
       `Error creating publisher: ${
         error instanceof Error ? error.message : "Unknown error"
@@ -178,7 +184,8 @@ twist.post("/twist/generate", async (c) => {
           });
           stream.sendResult(source);
         } catch (error) {
-          console.error("Error generating twist:", error);
+          const logger = createLogger();
+          logger.error("Error generating twist", error as Error, { spec_length: spec.length });
           stream.sendError(
             error instanceof Error ? error.message : "Unknown error"
           );
@@ -194,7 +201,8 @@ twist.post("/twist/generate", async (c) => {
       return c.json(source);
     }
   } catch (error) {
-    console.error("Error generating twist:", error);
+    const logger = createLogger();
+    logger.error("Error generating twist", error as Error, { spec_length: spec.length });
     return new Response(
       `Error generating twist: ${
         error instanceof Error ? error.message : "Unknown error"
@@ -240,7 +248,11 @@ twist.get("/twist/:id", async (c) => {
     .maybeSingle();
 
   if (adminError) {
-    console.error("Error fetching twist admin:", adminError);
+    const logger = createLogger();
+    logger.error("Error fetching twist admin", adminError as Error, {
+      user_id: user.id,
+      twist_package_id: twistPackageId
+    });
     return new Response(`Error fetching twist: ${adminError.message}`, {
       status: 500,
     });
@@ -335,7 +347,12 @@ twist.post("/twist/:id", async (c) => {
       );
       twistAdminId = result.twistAdminId;
     } catch (error) {
-      console.error("Error setting up twist priority:", error);
+      const logger = createLogger();
+      logger.error("Error setting up twist priority", error as Error, {
+        user_id: userId,
+        package_id: packageId,
+        twist_name: name
+      });
       return new Response(
         `Error setting up twist priority: ${
           error instanceof Error ? error.message : "Unknown error"
@@ -502,7 +519,12 @@ twist.post("/twist/:id", async (c) => {
         twistAdmin = newAdmin;
       }
     } catch (error) {
-      console.error("Error setting up twist for non-personal:", error);
+      const logger = createLogger();
+      logger.error("Error setting up twist for non-personal", error as Error, {
+        package_id: packageId,
+        twist_name: name,
+        environment
+      });
       return new Response(
         `Error setting up twist: ${
           error instanceof Error ? error.message : "Unknown error"
@@ -601,7 +623,11 @@ twist.post("/twist/:id", async (c) => {
           .single();
 
         if (finalError || !finalTwist) {
-          console.error("Error fetching deployed twist:", finalError);
+          const logger = createLogger();
+          logger.error("Error fetching deployed twist", finalError as Error, {
+            twist_admin_id: twistAdminId,
+            environment
+          });
           stream.sendError(
             "Deployment succeeded, but failed to retrieve twist details. Please try refreshing."
           );
@@ -615,7 +641,12 @@ twist.post("/twist/:id", async (c) => {
         });
         resultSent = true;
       } catch (error) {
-        console.error("Error deploying twist:", error);
+        const logger = createLogger();
+        logger.error("Error deploying twist", error as Error, {
+          twist_admin_id: twistAdminId,
+          environment,
+          twist_name: name
+        });
         // Send user-friendly error message
         const errorMessage =
           error instanceof Error
@@ -626,7 +657,11 @@ twist.post("/twist/:id", async (c) => {
       } finally {
         // Safeguard: ensure we always send a response
         if (!resultSent) {
-          console.error("Deployment completed without sending result or error");
+          const logger = createLogger();
+          logger.error("Deployment completed without sending result or error", new Error("No result sent"), {
+            twist_admin_id: twistAdminId,
+            environment
+          });
           stream.sendError(
             "Deployment failed: No response generated. Please check server logs."
           );
@@ -654,7 +689,12 @@ twist.post("/twist/:id", async (c) => {
         dryRun,
       });
     } catch (error) {
-      console.error("Error deploying twist:", error);
+      const logger = createLogger();
+      logger.error("Error deploying twist", error as Error, {
+        twist_admin_id: twistAdminId,
+        environment,
+        twist_name: name
+      });
       // Send user-friendly error message
       const errorMessage =
         error instanceof Error
@@ -683,7 +723,11 @@ twist.post("/twist/:id", async (c) => {
       .single();
 
     if (finalError || !finalTwist) {
-      console.error("Error fetching deployed twist:", finalError);
+      const logger = createLogger();
+      logger.error("Error fetching deployed twist", finalError as Error, {
+        twist_admin_id: twistAdminId,
+        environment
+      });
       return new Response(
         "Deployment succeeded, but failed to retrieve twist details. Please try refreshing.",
         {

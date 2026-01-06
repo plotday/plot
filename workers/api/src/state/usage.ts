@@ -3,6 +3,7 @@ import { DurableObject } from "cloudflare:workers";
 import { type SupabaseClient, createClient } from "@plotday/db";
 
 import { type Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 
 const FLUSH_INTERVAL_MS = 60_000; // 1 minute
 const HOUR_MS = 60 * 60 * 1000;
@@ -227,18 +228,25 @@ export class Usage extends DurableObject<Bindings> {
     records: UsageRow[]
   ): Promise<void> {
     const priorityTwistId = this.getPriorityTwistId();
-    console.log(
-      `[Usage DO] Flushing ${
-        records.length
-      } records for ${priorityTwistId} at ${new Date(hour).toISOString()}`
-    );
+    const logger = createLogger({
+      durable_object: "Usage",
+      operation: "flushHourToSupabase",
+      priority_twist_id: priorityTwistId,
+    });
+
+    logger.info("Flushing usage records", {
+      row_count: records.length,
+      priority_twist_id: priorityTwistId,
+      hour: new Date(hour).toISOString(),
+    });
+
     // Get ALL cost types from the database
     const { data: costs, error: costsError } = await this.supabase
       .from("cost")
       .select("id, name");
 
     if (costsError || !costs) {
-      console.error("Failed to fetch costs:", costsError);
+      logger.error("Failed to fetch costs", costsError as Error);
       throw new Error(`Failed to fetch costs: ${costsError?.message}`);
     }
 
@@ -258,10 +266,10 @@ export class Usage extends DurableObject<Bindings> {
         amount: 0,
       }));
 
-      console.log(
-        `[Usage DO] Inserting ${newCosts.length} missing cost types:`,
-        missingCostNames
-      );
+      logger.info("Inserting missing cost types", {
+        count: newCosts.length,
+        cost_names: missingCostNames,
+      });
 
       const { data: insertedCosts, error: insertError } = await this.supabase
         .from("cost")
@@ -269,10 +277,9 @@ export class Usage extends DurableObject<Bindings> {
         .select("id, name");
 
       if (insertError) {
-        console.error(
-          "[Usage DO] Failed to insert missing costs:",
-          insertError
-        );
+        logger.error("Failed to insert missing costs", insertError as Error, {
+          cost_names: missingCostNames,
+        });
         throw new Error(
           `Failed to insert missing costs: ${insertError.message}`
         );
@@ -315,18 +322,18 @@ export class Usage extends DurableObject<Bindings> {
       .select();
 
     if (upsertError) {
-      console.error("[Usage DO] Failed to upsert usage:", upsertError);
+      logger.error("Failed to upsert usage", upsertError as Error, {
+        row_count: usageRows.length,
+      });
       throw new Error(`Failed to upsert usage: ${upsertError.message}`);
     }
 
     // Check if rows were actually affected
     if (!data || data.length === 0) {
-      console.error(
-        `[Usage DO] WARNING: Upsert succeeded but no rows were returned. Expected ${usageRows.length} rows.`
-      );
-      console.error(
-        `[Usage DO] This may indicate a database constraint issue or silent failure.`
-      );
+      logger.error("Upsert succeeded but no rows were returned", {
+        expected_row_count: usageRows.length,
+        warning: "This may indicate a database constraint issue or silent failure",
+      });
     }
   }
 

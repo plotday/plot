@@ -2,6 +2,7 @@ import { type Priority } from "@plotday/twister/plot";
 import { type SupabaseClient } from "@plotday/db";
 
 import { type TwistEnvironment, type Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 import { handleTwistOperation } from "./error-handling";
 import { getTwist } from "./loader";
 import {
@@ -219,9 +220,11 @@ export function twistFactory({
           return; // No instances of this tool
         }
 
-        console.log(
-          `Dispatching twist ${id} to tool ${toolName} (${toolPaths.length} instances)`
-        );
+        const logger = createLogger({ twist_id: id, environment });
+        logger.info("Dispatching twist to tool", {
+          tool_name: toolName,
+          instance_count: toolPaths.length,
+        });
 
         const twistInit = {
           priorityTwistId,

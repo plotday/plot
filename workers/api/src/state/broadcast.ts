@@ -3,6 +3,7 @@ import { DurableObject } from "cloudflare:workers";
 import { type SupabaseClient, createClient } from "@plotday/db";
 
 import type { Bindings } from "../env";
+import { createLogger } from "../utils/logger";
 
 interface QueuedMessage {
   message: any;
@@ -74,6 +75,11 @@ export class Broadcast extends DurableObject<Bindings> {
     }
 
     // Validate the user with Supabase
+    const logger = createLogger({
+      durable_object: "Broadcast",
+      operation: "handleWebSocket",
+    });
+
     try {
       const session = await this.supabase.auth.setSession({
         access_token,
@@ -101,7 +107,10 @@ export class Broadcast extends DurableObject<Bindings> {
         });
       }
     } catch (error) {
-      console.error("Authentication error:", error);
+      logger.error("Authentication error", error as Error, {
+        user_id: userIdFromPath,
+        client_id: clientId,
+      });
       return new Response("Authentication failed", { status: 401 });
     }
 
@@ -117,7 +126,7 @@ export class Broadcast extends DurableObject<Bindings> {
     // the old connection wasn't properly cleaned up.
     const existingConnection = this.connections.get(clientId);
     if (existingConnection) {
-      console.log(`Closing existing connection for clientId ${clientId}`);
+      logger.info("Closing existing connection", { client_id: clientId });
       existingConnection.close(1000, "Replaced by new connection");
     }
 
@@ -135,7 +144,7 @@ export class Broadcast extends DurableObject<Bindings> {
 
     server.addEventListener("message", (event) => {
       // Handle incoming messages if needed
-      console.log("Received message from client:", event.data);
+      logger.info("Received message from client", { client_id: clientId });
     });
 
     return new Response(null, {
@@ -193,6 +202,11 @@ export class Broadcast extends DurableObject<Bindings> {
   }
 
   private flushMessages(): void {
+    const logger = createLogger({
+      durable_object: "Broadcast",
+      operation: "flushMessages",
+    });
+
     if (this.messageQueue.length === 0) {
       return;
     }
@@ -217,7 +231,9 @@ export class Broadcast extends DurableObject<Bindings> {
             socket.send(messageJson);
           }
         } catch (error) {
-          console.error(`Failed to send message to client ${clientId}:`, error);
+          logger.error("Failed to send message to client", error as Error, {
+            client_id: clientId,
+          });
           // Remove the failed connection
           this.connections.delete(clientId);
         }
@@ -236,14 +252,18 @@ export class Broadcast extends DurableObject<Bindings> {
    * Close all connections
    */
   closeAllConnections(): void {
+    const logger = createLogger({
+      durable_object: "Broadcast",
+      operation: "closeAllConnections",
+    });
+
     for (const [clientId, socket] of this.connections) {
       try {
         socket.close();
       } catch (error) {
-        console.error(
-          `Error closing connection for client ${clientId}:`,
-          error
-        );
+        logger.error("Error closing connection for client", error as Error, {
+          client_id: clientId,
+        });
       }
     }
     this.connections.clear();

@@ -9,11 +9,16 @@ import {
   mapStripeStatus,
   verifyWebhookSignature,
 } from "./utils";
+import { createLogger } from "../utils/logger";
+import { extractRequestContext } from "../utils/log-context";
 
 const stripe = new Hono<{ Bindings: Bindings }>();
 
 // POST /webhook - Handle Stripe webhook events
 stripe.post("/webhook", async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
   try {
     const signature = c.req.header("stripe-signature");
     if (!signature) {
@@ -35,7 +40,7 @@ stripe.post("/webhook", async (c) => {
         c.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("Webhook signature verification failed:", err);
+      logger.error("Webhook signature verification failed", err as Error);
       return new Response("Invalid signature", { status: 400 });
     }
 
@@ -68,29 +73,31 @@ stripe.post("/webhook", async (c) => {
 
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
-        console.warn(
-          `Payment failed for customer ${invoice.customer}, subscription ${invoice.subscription}`
-        );
+        logger.warn("Payment failed", {
+          customer_id: invoice.customer as string,
+          subscription_id: invoice.subscription as string,
+        });
         // Subscription status will be updated via subscription.updated event
         break;
       }
 
       case "customer.subscription.trial_will_end": {
         const subscription = event.data.object as Stripe.Subscription;
-        console.log(
-          `Trial ending soon for subscription ${subscription.id}, customer ${subscription.customer}`
-        );
+        logger.info("Trial ending soon", {
+          subscription_id: subscription.id,
+          customer_id: subscription.customer as string,
+        });
         // Opportunity to send notification to user
         break;
       }
 
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        logger.info("Unhandled event type", { event_type: event.type });
     }
 
     return c.json({ received: true });
   } catch (error) {
-    console.error("Error processing Stripe webhook:", error);
+    logger.error("Error processing Stripe webhook", error as Error);
     if (error instanceof Error) {
       return new Response(`Webhook error: ${error.message}`, { status: 500 });
     }
@@ -105,6 +112,9 @@ async function handleSubscriptionUpdate(
   c: any,
   subscription: Stripe.Subscription
 ) {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
   const customerId = subscription.customer as string;
   const { start, end } = getBillingCycleDates(subscription);
   const status = mapStripeStatus(subscription.status);
@@ -125,13 +135,17 @@ async function handleSubscriptionUpdate(
     .eq("stripe_customer_id", customerId);
 
   if (error) {
-    console.error("Failed to update user_subscription:", error);
+    logger.error("Failed to update user_subscription", error as Error, {
+      customer_id: customerId,
+    });
     throw new Error(`Database update failed: ${error.message}`);
   }
 
-  console.log(
-    `Updated subscription for customer ${customerId}: plan=${plan}, status=${status}`
-  );
+  logger.info("Updated subscription for customer", {
+    customer_id: customerId,
+    plan,
+    status,
+  });
 }
 
 /**
@@ -141,6 +155,9 @@ async function handleSubscriptionDeleted(
   c: any,
   subscription: Stripe.Subscription
 ) {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
   const customerId = subscription.customer as string;
   const { start, end } = createFreeTierBillingCycle();
 
@@ -157,11 +174,15 @@ async function handleSubscriptionDeleted(
     .eq("stripe_customer_id", customerId);
 
   if (error) {
-    console.error("Failed to update user_subscription:", error);
+    logger.error("Failed to update user_subscription", error as Error, {
+      customer_id: customerId,
+    });
     throw new Error(`Database update failed: ${error.message}`);
   }
 
-  console.log(`Reverted customer ${customerId} to free tier`);
+  logger.info("Reverted customer to free tier", {
+    customer_id: customerId,
+  });
 }
 
 export default stripe;
