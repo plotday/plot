@@ -238,7 +238,11 @@ export default class ProjectSync extends Twist<ProjectSync> {
   /**
    * Check if a note is fully empty (no content, no links, no mentions)
    */
-  private isNoteEmpty(note: { content?: string | null; links?: any[] | null; mentions?: any[] | null }): boolean {
+  private isNoteEmpty(note: {
+    content?: string | null;
+    links?: any[] | null;
+    mentions?: any[] | null;
+  }): boolean {
     return (
       (!note.content || note.content.trim() === "") &&
       (!note.links || note.links.length === 0) &&
@@ -271,17 +275,8 @@ export default class ProjectSync extends Twist<ProjectSync> {
       }
     }
 
-    // Default synced issues to "Do Someday" (start: null) unless already scheduled
-    // This prevents flooding the "Do Now" list with all synced backlog items
-    // The issue.start will only be set if the tool explicitly scheduled it
-    if (issue.type === ActivityType.Action && !("start" in issue)) {
-      issue.start = null; // "Do Someday" - backlog item by default
-    }
-
     // Filter out empty notes to avoid warnings in Plot tool
-    if (issue.notes) {
-      issue.notes = issue.notes.filter((note) => !this.isNoteEmpty(note));
-    }
+    issue.notes = issue.notes?.filter((note) => !this.isNoteEmpty(note));
 
     // Create new activity for new issue (new thread with initial note)
     // Note: The unread field is already set by the tool based on sync type

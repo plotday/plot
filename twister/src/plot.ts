@@ -236,46 +236,21 @@ export type ActivityMeta = {
 export type Tags = { [K in Tag]?: ActorId[] };
 
 /**
- * Represents a complete activity within the Plot system.
- *
- * Activities are the core entities in Plot, representing anything from simple notes
- * to complex recurring events. They support rich metadata including scheduling,
- * recurrence patterns, links, and external source tracking.
- *
- * @example
- * ```typescript
- * // Simple note
- * const task: Activity = {
- *   type: ActivityType.Note,
- *   title: "New campaign brainstorming ideas",
- *   content: "We could rent a bouncy castle...",
- *   author: { id: "user-1", name: "John Doe", type: ActorType.User },
- *   priority: { id: "work", title: "Work" },
- *   // ... other fields
- * };
- *
- * // Simple action
- * const action: Activity = {
- *   type: ActivityType.Action,
- *   title: "Review budget proposal",
- *   author: { id: "user-1", name: "John Doe", type: ActorType.User },
- *   priority: { id: "work", title: "Work" },
- *   // ... other fields
- * };
- *
- * // Recurring event
- * const meeting: Activity = {
- *   type: ActivityType.Event,
- *   title: "Weekly standup",
- *   recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
- *   recurrenceCount: 12,
- *   // ... other fields
- * };
- * ```
+ * Common fields shared by both Activity and Note entities.
  */
 export type ActivityCommon = {
   /** Unique identifier for the activity */
   id: string;
+  /**
+   * When this activity was originally created in its source system.
+   *
+   * For activities created in Plot, this is when the user created it.
+   * For activities synced from external systems (GitHub issues, emails, calendar events),
+   * this is the original creation time in that system.
+   *
+   * Defaults to the current time when creating new activities.
+   */
+  createdAt: Date | null;
   /** Information about who created the activity */
   author: Actor;
   /** Whether this activity is in draft state (not shown in do now view) */
@@ -592,7 +567,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
  * Notes contain the detailed content (note text, links) associated with an activity.
  * They are always ordered by creation time within their parent activity.
  */
-export type Note = Omit<ActivityCommon, "type"> & {
+export type Note = ActivityCommon & {
   /** The parent activity this note belongs to */
   activity: Activity;
   /** Primary content for the note (markdown) */

@@ -5,6 +5,7 @@ import {
   ActivityType,
   type NewActivityWithNotes,
 } from "@plotday/twister";
+import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
 import type {
   Project,
   ProjectAuth,
@@ -252,6 +253,14 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         "completed_at",
         "created_at",
         "modified_at",
+        "assignee",
+        "assignee.email",
+        "assignee.name",
+        "assignee.photo",
+        "created_by",
+        "created_by.email",
+        "created_by.name",
+        "created_by.photo",
       ].join(","),
     };
 
@@ -317,6 +326,39 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     task: any,
     projectId: string
   ): Promise<NewActivityWithNotes> {
+    const createdBy = task.created_by;
+    const assignee = task.assignee;
+
+    // Create contacts for created_by and assignee
+    const contacts: NewContact[] = [];
+    if (createdBy?.email) {
+      contacts.push({
+        email: createdBy.email,
+        name: createdBy.name,
+        avatar: createdBy.photo?.image_128x128,
+      });
+    }
+    if (assignee?.email && assignee.email !== createdBy?.email) {
+      contacts.push({
+        email: assignee.email,
+        name: assignee.name,
+        avatar: assignee.photo?.image_128x128,
+      });
+    }
+
+    let authorActor: Actor | undefined;
+    let assigneeActor: Actor | undefined;
+
+    if (contacts.length > 0) {
+      const actors = await this.tools.plot.addContacts(contacts);
+      if (createdBy?.email) {
+        authorActor = actors.find((a) => a.email === createdBy.email);
+      }
+      if (assignee?.email) {
+        assigneeActor = actors.find((a) => a.email === assignee.email);
+      }
+    }
+
     // Build notes array: description
     const notes: Array<{ content: string }> = [];
 
@@ -333,6 +375,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       type: ActivityType.Action,
       title: task.name,
       source: `asana:task:${projectId}:${task.gid}`,
+      author: authorActor,
+      assignee: assigneeActor,
       doneAt: task.completed ? new Date(task.completed_at || Date.now()) : null,
       notes,
     };
@@ -489,6 +533,14 @@ export class Asana extends Tool<Asana> implements ProjectTool {
                 "completed_at",
                 "created_at",
                 "modified_at",
+                "assignee",
+                "assignee.email",
+                "assignee.name",
+                "assignee.photo",
+                "created_by",
+                "created_by.email",
+                "created_by.name",
+                "created_by.photo",
               ].join(","),
             });
 
