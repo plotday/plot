@@ -3,13 +3,13 @@ import { z } from "zod";
 
 import { createClient } from "@plotday/db";
 
+import type { Bindings } from "../env";
 import { deployTwist } from "../twist/deployment";
 import {
-  getAccessiblePublishers,
   createPublisher,
+  getAccessiblePublishers,
   getOrCreateTwistPriority,
 } from "../twist/priority-management";
-import type { Bindings } from "../env";
 import { SSEStream, acceptsSSE } from "../utils/sse";
 import { handleValidationError } from "../utils/validation";
 import { createLogger } from "../utils/logger";
@@ -583,7 +583,7 @@ twist.post("/twist/:id", async (c) => {
     const stream = new SSEStream();
 
     // Start deployment in the background
-    (async () => {
+    const deploymentPromise = (async () => {
       let resultSent = false;
       try {
         const result = await deployTwist({
@@ -592,9 +592,7 @@ twist.post("/twist/:id", async (c) => {
           supabase,
           twistAdminId: twistAdminId!,
           input:
-            module !== undefined
-              ? { module, sourcemap }
-              : { source: source! },
+            module !== undefined ? { module, sourcemap } : { source: source! },
           environment,
           name: name!,
           description,
@@ -669,6 +667,9 @@ twist.post("/twist/:id", async (c) => {
         stream.close();
       }
     })();
+
+    // Keep the worker alive until deployment completes
+    (c.executionCtx as ExecutionContext).waitUntil(deploymentPromise);
 
     return stream.toResponse();
   } else {

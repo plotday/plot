@@ -580,6 +580,19 @@ export async function createNote(
   note: NewNote,
   options?: CreateNoteOptions
 ): Promise<Note> {
+  // Skip fully empty notes (no content, no links, no mentions)
+  const isEmpty =
+    (!note.content || note.content.trim() === '') &&
+    (!note.links || note.links.length === 0) &&
+    (!note.mentions || note.mentions.length === 0);
+
+  if (isEmpty) {
+    console.warn('[Plot] Skipping creation of fully empty note for activity:', note.activity.id);
+    // Return a minimal Note object without database insertion
+    // This maintains the function signature while avoiding empty note creation
+    throw new Error('Cannot create fully empty note (no content, links, or mentions)');
+  }
+
   // Fetch activity with author for validation and later use
   const { data: activityData, error: activityError } = await plot.supabase
     .from("activity")
@@ -748,8 +761,23 @@ export async function createNotes(
   plot: Plot,
   notes: NewNote[]
 ): Promise<Note[]> {
-  // Create all notes in parallel
-  return Promise.all(notes.map((note) => createNote(plot, note)));
+  // Create all notes in parallel, filtering out empty notes
+  const results = await Promise.allSettled(notes.map((note) => createNote(plot, note)));
+
+  // Return only successfully created notes, log failures (except empty note errors)
+  return results
+    .map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      } else {
+        // Only log non-empty-note errors
+        if (!result.reason?.message?.includes('fully empty note')) {
+          console.error('[Plot] Failed to create note:', result.reason);
+        }
+        return null;
+      }
+    })
+    .filter((note): note is Note => note !== null);
 }
 
 export async function updateActivity(

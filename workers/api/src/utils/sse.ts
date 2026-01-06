@@ -22,14 +22,15 @@ function formatSSEMessage(message: SSEMessage): string {
     lines.push(`event: ${message.event}`);
   }
 
-  const data = typeof message.data === 'string'
-    ? message.data
-    : JSON.stringify(message.data);
+  const data =
+    typeof message.data === "string"
+      ? message.data
+      : JSON.stringify(message.data);
 
   lines.push(`data: ${data}`);
-  lines.push(''); // Empty line to mark end of message
+  lines.push(""); // Empty line to mark end of message
 
-  return lines.join('\n') + '\n';
+  return lines.join("\n") + "\n";
 }
 
 /**
@@ -57,21 +58,21 @@ export class SSEStream {
    * Send a progress update
    */
   sendProgress(message: string): void {
-    this.send({ event: 'progress', data: { message } });
+    this.send({ event: "progress", data: { message } });
   }
 
   /**
    * Send the final result
    */
   sendResult(data: any): void {
-    this.send({ event: 'result', data });
+    this.send({ event: "result", data });
   }
 
   /**
    * Send an error
    */
   sendError(error: string): void {
-    this.send({ event: 'error', data: { error } });
+    this.send({ event: "error", data: { error } });
   }
 
   /**
@@ -104,9 +105,9 @@ export class SSEStream {
   toResponse(): Response {
     return new Response(this.stream, {
       headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
   }
@@ -116,6 +117,6 @@ export class SSEStream {
  * Check if the request accepts SSE streaming
  */
 export function acceptsSSE(request: Request): boolean {
-  const accept = request.headers.get('Accept') || '';
-  return accept.includes('text/event-stream');
+  const accept = request.headers.get("Accept") || "";
+  return accept.includes("text/event-stream");
 }
