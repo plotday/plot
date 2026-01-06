@@ -5,6 +5,7 @@ import {
   ActivityType,
   type NewActivityWithNotes,
 } from "@plotday/twister";
+import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
 import type {
   Project,
   ProjectAuth,
@@ -320,8 +321,39 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     projectId: string
   ): Promise<NewActivityWithNotes> {
     const state = await issue.state;
+    const creator = await issue.creator;
     const assignee = await issue.assignee;
     const comments = await issue.comments();
+
+    // Create contacts for creator and assignee
+    const contacts: NewContact[] = [];
+    if (creator?.email) {
+      contacts.push({
+        email: creator.email,
+        name: creator.name,
+        avatar: creator.avatarUrl,
+      });
+    }
+    if (assignee?.email && assignee.email !== creator?.email) {
+      contacts.push({
+        email: assignee.email,
+        name: assignee.name,
+        avatar: assignee.avatarUrl,
+      });
+    }
+
+    let authorActor: Actor | undefined;
+    let assigneeActor: Actor | undefined;
+
+    if (contacts.length > 0) {
+      const actors = await this.tools.plot.addContacts(contacts);
+      if (creator?.email) {
+        authorActor = actors.find((a) => a.email === creator.email);
+      }
+      if (assignee?.email) {
+        assigneeActor = actors.find((a) => a.email === assignee.email);
+      }
+    }
 
     // Build notes array: description + comments
     const notes: Array<{ content: string }> = [];
@@ -338,6 +370,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       type: ActivityType.Action,
       title: issue.title,
       source: `linear:issue:${projectId}:${issue.id}`,
+      author: authorActor,
+      assignee: assigneeActor,
       doneAt:
         state?.name === "Done" || state?.name === "Completed"
           ? new Date()

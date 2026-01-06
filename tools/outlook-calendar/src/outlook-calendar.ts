@@ -379,9 +379,22 @@ export class OutlookCalendar
               continue;
             }
 
-            // Extract and create contacts from attendees
+            // Extract and create contacts from organizer and attendees
             let actorIds: ActorId[] = [];
             let validAttendees: typeof outlookEvent.attendees = [];
+            let authorActor = undefined;
+
+            // Create contact for organizer (author)
+            if (outlookEvent.organizer?.emailAddress?.address) {
+              const organizerContact: NewContact = {
+                email: outlookEvent.organizer.emailAddress.address,
+                name: outlookEvent.organizer.emailAddress.name,
+              };
+              const [author] = await this.tools.plot.addContacts([organizerContact]);
+              authorActor = author;
+            }
+
+            // Create contacts for attendees
             if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
               // Filter to get only valid attendees (with email, not resources)
               validAttendees = outlookEvent.attendees.filter(
@@ -491,6 +504,7 @@ export class OutlookCalendar
             // Build NewActivityWithNotes from the transformed activity
             const activityWithNotes: NewActivityWithNotes = {
               ...activity,
+              author: authorActor,
               meta: activity.meta,
               tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
               notes,

@@ -393,19 +393,40 @@ export class Slack extends Tool<Slack> implements MessagingTool {
         }
 
         // Fetch user info and create contacts
+        const userIdToActor = new Map<string, any>();
         for (const userId of userIdSet) {
           const user = await api.getUser(userId);
           if (user && user.profile?.email) {
-            await this.tools.plot.addContacts([
+            const [actor] = await this.tools.plot.addContacts([
               {
                 email: user.profile.email,
                 name:
                   user.profile?.display_name ||
                   user.profile?.real_name ||
                   user.name,
+                avatar: user.profile?.image_72,
               },
             ]);
+            if (actor) {
+              userIdToActor.set(userId, actor);
+            }
           }
+        }
+
+        // Update note authors with real Actor objects
+        for (const note of activityThread.notes) {
+          if (note.author.id.startsWith("slack:")) {
+            const userId = note.author.id.replace("slack:", "");
+            const actor = userIdToActor.get(userId);
+            if (actor) {
+              note.author = actor;
+            }
+          }
+        }
+
+        // Set activity author to the first message's author
+        if (activityThread.notes.length > 0) {
+          activityThread.author = activityThread.notes[0].author;
         }
 
         // Call parent callback with single thread

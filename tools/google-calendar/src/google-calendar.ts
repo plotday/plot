@@ -428,9 +428,22 @@ export class GoogleCalendar
           continue;
         }
 
-        // Extract and create contacts from attendees
+        // Extract and create contacts from organizer and attendees
         let actorIds: ActorId[] = [];
         let validAttendees: typeof event.attendees = [];
+        let authorActor = undefined;
+
+        // Create contact for organizer (author)
+        if (event.organizer?.email) {
+          const organizerContact: NewContact = {
+            email: event.organizer.email,
+            name: event.organizer.displayName,
+          };
+          const [author] = await this.tools.plot.addContacts([organizerContact]);
+          authorActor = author;
+        }
+
+        // Create contacts for attendees
         if (event.attendees && event.attendees.length > 0) {
           // Filter to get only valid attendees (with email, not resources)
           validAttendees = event.attendees.filter(
@@ -557,6 +570,7 @@ export class GoogleCalendar
               recurrenceCount: activityData.recurrenceCount || null,
               doneAt: null,
               title: activityData.title || null,
+              author: authorActor,
               recurrenceRule: activityData.recurrenceRule || null,
               recurrenceExdates: activityData.recurrenceExdates || null,
               recurrenceDates: activityData.recurrenceDates || null,

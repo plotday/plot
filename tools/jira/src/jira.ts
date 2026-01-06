@@ -3,8 +3,10 @@ import { Version3Client } from "jira.js";
 import {
   type ActivityLink,
   ActivityType,
+  ActivityUpdate,
   type NewActivityWithNotes,
 } from "@plotday/twister";
+import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
 import type {
   Project,
   ProjectAuth,
@@ -90,11 +92,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       ? R
       : []
   ): Promise<ActivityLink> {
-    const jiraScopes = [
-      "read:jira-work",
-      "write:jira-work",
-      "read:jira-user",
-    ];
+    const jiraScopes = ["read:jira-work", "write:jira-work", "read:jira-user"];
 
     // Generate opaque token for authorization
     const authToken = crypto.randomUUID();
@@ -155,19 +153,13 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Start syncing issues from a Jira project
    */
   async startSync<
-    TCallback extends (
-      issue: NewActivityWithNotes,
-      ...args: any[]
-    ) => any
+    TCallback extends (issue: NewActivityWithNotes, ...args: any[]) => any
   >(
     authToken: string,
     projectId: string,
     callback: TCallback,
     options?: ProjectSyncOptions,
-    ...extraArgs: TCallback extends (
-      issue: any,
-      ...rest: infer R
-    ) => any
+    ...extraArgs: TCallback extends (issue: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void> {
@@ -265,6 +257,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         "description",
         "status",
         "assignee",
+        "reporter",
+        "creator",
         "comment",
         "created",
         "updated",
@@ -280,10 +274,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       // Set unread based on sync type (false for initial sync to avoid notification overload)
       activityWithNotes.unread = !state.initialSync;
       // Execute the callback using the callback token
-      await this.tools.callbacks.run(
-        callbackToken,
-        activityWithNotes
-      );
+      await this.tools.callbacks.run(callbackToken, activityWithNotes);
     }
 
     // Check if more pages
@@ -294,7 +285,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       await this.set(`sync_state_${projectId}`, {
         startAt: nextStartAt,
         batchNumber: state.batchNumber + 1,
-        issuesProcessed: state.issuesProcessed + (searchResult.issues?.length || 0),
+        issuesProcessed:
+          state.issuesProcessed + (searchResult.issues?.length || 0),
         initialSync: state.initialSync,
       });
 
@@ -322,6 +314,38 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     const fields = issue.fields || {};
     const status = fields.status?.name;
     const comments = fields.comment?.comments || [];
+    const reporter = fields.reporter || fields.creator;
+    const assignee = fields.assignee;
+
+    // Create contacts for reporter and assignee
+    const contacts: NewContact[] = [];
+    if (reporter?.emailAddress) {
+      contacts.push({
+        email: reporter.emailAddress,
+        name: reporter.displayName,
+        avatar: reporter.avatarUrls?.["48x48"],
+      });
+    }
+    if (assignee?.emailAddress && assignee.emailAddress !== reporter?.emailAddress) {
+      contacts.push({
+        email: assignee.emailAddress,
+        name: assignee.displayName,
+        avatar: assignee.avatarUrls?.["48x48"],
+      });
+    }
+
+    let authorActor: Actor | undefined;
+    let assigneeActor: Actor | undefined;
+
+    if (contacts.length > 0) {
+      const actors = await this.tools.plot.addContacts(contacts);
+      if (reporter?.emailAddress) {
+        authorActor = actors.find((a) => a.email === reporter.emailAddress);
+      }
+      if (assignee?.emailAddress) {
+        assigneeActor = actors.find((a) => a.email === assignee.emailAddress);
+      }
+    }
 
     // Build notes array: description + comments
     const notes: Array<{ content: string }> = [];
@@ -352,6 +376,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       type: ActivityType.Action,
       title: fields.summary || issue.key,
       source: `jira:issue:${projectId}:${issue.key}`,
+      author: authorActor,
+      assignee: assigneeActor,
       doneAt:
         status === "Done" || status === "Closed" || status === "Resolved"
           ? new Date()
@@ -396,10 +422,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * @param authToken - Authorization token
    * @param update - ActivityUpdate with changed fields
    */
-  async updateIssue(
-    authToken: string,
-    update: import("@plotday/twister").ActivityUpdate
-  ): Promise<void> {
+  async updateIssue(authToken: string, update: ActivityUpdate): Promise<void> {
     // Extract Jira issue key from source
     const issueKey = update.source?.split(":").pop();
     if (!issueKey) {
