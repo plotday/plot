@@ -96,6 +96,7 @@ SELECT
     a.created_at,
     -- updated_at includes last_note_created_at for sync
     COALESCE(GREATEST (a.updated_at, a.last_note_created_at), a.updated_at) AS updated_at,
+    a.source_created_at,
     a.author_id,
     a.assignee_id,
     a.updated_by,
@@ -127,7 +128,7 @@ SELECT
     WHEN a."on" IS NOT NULL THEN
         NULL::tstzrange
     ELSE
-        tstzrange(GREATEST (a.created_at, COALESCE(a.last_note_created_at, a.created_at)), GREATEST (a.created_at, COALESCE(a.last_note_created_at, a.created_at)), '[]')
+        tstzrange(GREATEST (a.source_created_at, COALESCE(a.last_note_created_at, a.source_created_at)), GREATEST (a.source_created_at, COALESCE(a.last_note_created_at, a.source_created_at)), '[]')
     END AS range_at,
     CASE WHEN a.done_at IS NOT NULL THEN
         NULL::daterange

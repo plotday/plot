@@ -146,16 +146,7 @@ class ActivityEditorState extends State<ActivityEditor> {
       note = existingNote.copyWith(content: content);
     } else {
       // Create new draft note
-      note = Note(
-        id: Uuid.generate(),
-        activityId: widget.draft.id,
-        authorId: Base.actorId,
-        draft: true,
-        private: false,
-        content: content,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
+      note = Note.draft(activityId: widget.draft.id);
     }
 
     await widget.onDraftChanged(widget.draft, note: note);
@@ -224,91 +215,92 @@ class ActivityEditorState extends State<ActivityEditor> {
             }
           },
         );
-            return Padding(
-              padding: const EdgeInsets.only(
-                left: 12,
-                right: 12,
-                top: 4,
-                bottom: 12,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 4,
+        return Padding(
+          padding: const EdgeInsets.only(
+            left: 12,
+            right: 12,
+            top: 4,
+            bottom: 12,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 4,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(
-                            top: 8,
-                            bottom: 4,
-                            left: 6,
-                            right: 6,
-                          ),
-                          child: editor,
-                        ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        top: 8,
+                        bottom: 4,
+                        left: 6,
+                        right: 6,
                       ),
-                      if (_isEmpty)
-                        SpeechDictationButton(
-                          onResult: (text) {
-                            _editorKey.currentState?.insertTextAtCursor(text);
-                          },
-                          onError: (error) {
-                            Alert.show(context, error);
-                          },
-                        ),
-                    ],
+                      child: editor,
+                    ),
                   ),
-                  // Bottom bar - stays at bottom, above keyboard
-                  Row(
-                    children: [
-                      // Left side: Do Now toggle
-                      Button.icon(
-                        ToggleAction(
-                          widget.draft,
-                          onUpdate: (activity) => widget.onDraftChanged(activity),
-                        ),
-                        selected: widget.draft.doNow,
-                      ),
-                      Button.icon(
-                        widget.draft.type == .event
-                            ? UnscheduleEvent(
-                                widget.draft,
-                                onUpdate: (activity) => widget.onDraftChanged(activity),
-                              )
-                            : ScheduleEvent(
-                                widget.draft,
-                                at: DateTimeRange(
-                                  DateTime.now(),
-                                  DateTime.now().add(const Duration(hours: 1)),
-                                ),
-                                onUpdate: (activity) => widget.onDraftChanged(activity),
-                              ),
-                        selected: widget.draft.type == .event,
-                      ),
-                      const Spacer(),
-                      // Right side: Save button (always visible)
-                      Button.icon(
-                        CommandWrapper(
-                          AddActivity(Future.value(widget.draft)),
-                          run: (action, context) async {
-                            _editorKey.currentState?.submit(false);
-                            return const CommandDone();
-                          },
-                        ),
-                        style: ButtonStyle.primary,
-                        enabled:
-                            !_isEmpty ||
-                            widget.draft.type == ActivityType.event,
-                      ),
-                    ],
+                  if (_isEmpty)
+                    SpeechDictationButton(
+                      onResult: (text) {
+                        _editorKey.currentState?.insertTextAtCursor(text);
+                      },
+                      onError: (error) {
+                        Alert.show(context, error);
+                      },
+                    ),
+                ],
+              ),
+              // Bottom bar - stays at bottom, above keyboard
+              Row(
+                children: [
+                  // Left side: Do Now toggle
+                  Button.icon(
+                    ToggleAction(
+                      widget.draft,
+                      onUpdate: (activity) => widget.onDraftChanged(activity),
+                    ),
+                    selected: widget.draft.doNow,
+                  ),
+                  Button.icon(
+                    widget.draft.type == .event
+                        ? UnscheduleEvent(
+                            widget.draft,
+                            onUpdate: (activity) =>
+                                widget.onDraftChanged(activity),
+                          )
+                        : ScheduleEvent(
+                            widget.draft,
+                            at: DateTimeRange(
+                              DateTime.now(),
+                              DateTime.now().add(const Duration(hours: 1)),
+                            ),
+                            onUpdate: (activity) =>
+                                widget.onDraftChanged(activity),
+                          ),
+                    selected: widget.draft.type == .event,
+                  ),
+                  const Spacer(),
+                  // Right side: Save button (always visible)
+                  Button.icon(
+                    CommandWrapper(
+                      AddActivity(Future.value(widget.draft)),
+                      run: (action, context) async {
+                        _editorKey.currentState?.submit(false);
+                        return const CommandDone();
+                      },
+                    ),
+                    style: ButtonStyle.primary,
+                    enabled:
+                        !_isEmpty || widget.draft.type == ActivityType.event,
                   ),
                 ],
               ),
-            );
-          },
+            ],
+          ),
         );
+      },
+    );
   }
 
   Future<ActivityWithNote> finalizeDraft(

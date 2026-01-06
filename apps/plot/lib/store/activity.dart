@@ -32,6 +32,8 @@ class Activities extends Table
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get lastNoteCreatedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get sourceCreatedAt =>
+      dateTime().map(const LocalDateTimeConverter())();
 
   TextColumn get recurrenceRule =>
       text().nullable().map(const RecurrenceRuleConverter())();
@@ -1062,8 +1064,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         CaseWhen(a.startAt.isNotNull(), then: a.startAt),
         CaseWhen(a.startOn.isNotNull(), then: a.startOn),
       ],
-      // For non-scheduled activities, use GREATEST(createdAt, lastNoteCreatedAt)
-      orElse: coalesce([a.lastNoteCreatedAt, a.createdAt]),
+      // For non-scheduled activities, use GREATEST(sourceCreatedAt, lastNoteCreatedAt)
+      orElse: coalesce([a.lastNoteCreatedAt, a.sourceCreatedAt]),
     );
     switch (order) {
       case ActivityOrder.sorted:
@@ -1328,6 +1330,7 @@ class Activity extends Equatable implements Comparable<Activity> {
              assigneeId ?? (type == ActivityType.action ? Base.actorId : null),
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
+         sourceCreatedAt: DateTime.now(),
          priorityId: priority.id,
          draft: draft,
          private: private,
@@ -1380,6 +1383,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   bool get recurring => _activity.recurrenceRule != null && _exception == null;
   Order get order => _activity.order;
   DateTime get createdAt => _activity.createdAt;
+  DateTime get sourceCreatedAt => _activity.sourceCreatedAt;
   DateTime get updatedAt => _activity.updatedAt;
   DateTime? get archivedAt => _activity.archivedAt;
   bool get draft => _activity.draft;
@@ -1461,9 +1465,9 @@ class Activity extends Equatable implements Comparable<Activity> {
       return at!.start!;
     }
 
-    // For unscheduled activities, use GREATEST(createdAt, doneAt, lastNoteCreatedAt)
+    // For unscheduled activities, use GREATEST(sourceCreatedAt, doneAt, lastNoteCreatedAt)
     if ((on == null && at == null) || doneAt != null) {
-      final times = [createdAt, ?doneAt, ?_activity.lastNoteCreatedAt];
+      final times = [sourceCreatedAt, ?doneAt, ?_activity.lastNoteCreatedAt];
       times.sort((a, b) => b.compareTo(a)); // Sort descending
       return times.first; // Return the greatest (most recent)
     }
@@ -1471,7 +1475,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     return (doNow ? DateTime.now() : null) ??
         at?.start ??
         on?.start?.toDateTime() ??
-        createdAt;
+        sourceCreatedAt;
   }
 
   bool get doNow => todo && at?.includes(DateTime.now()) == true;

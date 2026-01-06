@@ -378,6 +378,7 @@ export async function createActivity(
     created_by_twist_id: twistId,
     assignee_id: assigneeId,
     priority_id: targetPriorityId,
+    source_created_at: activity.createdAt?.toISOString() ?? null,
     type: dbActivityType,
     title: activity.title ?? null,
     preview: previewText,
@@ -539,11 +540,22 @@ export async function createActivity(
     );
 
     if (usersResult.data && usersResult.data.length > 0) {
-      // Create activity_read entries for all users
-      // Omit read_at to let PostgreSQL DEFAULT now() generate timestamp after notes are created
+      // Find the latest note timestamp for this activity, or use activity's created_at
+      const latestNoteResult = await plot.supabase
+        .from("note")
+        .select("created_at")
+        .eq("activity_id", dbResult.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const latestTimestamp = latestNoteResult.data?.created_at ?? dbResult.created_at;
+
+      // Create activity_read entries for all users with the latest timestamp
       const activityReadEntries = usersResult.data.map((pu) => ({
         activity_id: dbResult.id,
         user_id: pu.user_id,
+        read_at: latestTimestamp,
       }));
 
       const insertResult = await plot.supabase
@@ -589,7 +601,11 @@ export async function createActivity(
   );
 }
 
-export async function createNote(plot: Plot, note: NewNote): Promise<Note> {
+export async function createNote(
+  plot: Plot,
+  note: NewNote,
+  skipActivityRead = false
+): Promise<Note> {
   // Skip fully empty notes (no content, no links, no mentions)
   const isEmpty =
     (!note.content || note.content.trim() === "") &&
@@ -663,10 +679,11 @@ export async function createNote(plot: Plot, note: NewNote): Promise<Note> {
   }
 
   // Convert Note to database format
-  const dbNote: Database["public"]["Tables"]["note"]["Insert"] = {
+  const dbNote: any = {
     author_id: plot.priorityTwistId,
     created_by: plot.priorityTwistId,
     activity_id: note.activity.id,
+    source_created_at: note.createdAt?.toISOString() ?? null,
     draft: note.draft ?? false,
     private: note.private ?? false,
     content: contentToStore,
@@ -680,7 +697,8 @@ export async function createNote(plot: Plot, note: NewNote): Promise<Note> {
   );
 
   // Mark activity as read for all priority users if unread is false
-  if (note?.unread === false) {
+  // Skip if called from batch operations to avoid deadlock from parallel upserts
+  if (!skipActivityRead && note?.unread === false) {
     // Get all users with access to this priority (including inherited access from parent priorities)
     const usersResult = await plot.supabase.rpc(
       "get_users_with_priority_access",
@@ -754,6 +772,9 @@ export async function createNote(plot: Plot, note: NewNote): Promise<Note> {
   // Convert to Note type using cached activity data
   return {
     id: dbResult.id,
+    createdAt: (dbResult as any).source_created_at
+      ? new Date((dbResult as any).source_created_at)
+      : null,
     activity: fromDbActivity(
       { ...activityWithAuthor, tags: null },
       includeAuthorEmail
@@ -779,8 +800,9 @@ export async function createNotes(
   notes: NewNote[]
 ): Promise<Note[]> {
   // Create all notes in parallel, filtering out empty notes
+  // Pass skipActivityRead: true to avoid deadlock from parallel activity_read upserts
   const results = await Promise.allSettled(
-    notes.map((note) => createNote(plot, note))
+    notes.map((note) => createNote(plot, note, true))
   );
 
   // Return only successfully created notes, log failures (except empty note errors)
@@ -875,6 +897,11 @@ export async function updateActivity(
   }
   if (activity.meta !== undefined) {
     dbUpdate.meta = activity.meta;
+  }
+  if (activity.createdAt !== undefined) {
+    (dbUpdate as any).source_created_at = activity.createdAt
+      ? activity.createdAt.toISOString()
+      : null;
   }
 
   // Handle recurrence fields
@@ -1174,6 +1201,11 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
   }
   if (note.mentions !== undefined) {
     dbUpdate.mentions = note.mentions;
+  }
+  if (note.createdAt !== undefined) {
+    (dbUpdate as any).source_created_at = note.createdAt
+      ? note.createdAt.toISOString()
+      : null;
   }
 
   // Execute the update

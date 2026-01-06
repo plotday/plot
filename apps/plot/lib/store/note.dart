@@ -10,6 +10,8 @@ class Notes extends Table
   BoolColumn get private => boolean().withDefault(const Constant(false))();
 
   TextColumn get content => text().nullable()();
+  DateTimeColumn get sourceCreatedAt =>
+      dateTime().map(const LocalDateTimeConverter())();
   TextColumn get links => text().nullable().map(const LinksConverter())();
   TextColumn get mentions =>
       text().nullable().map(const ActorIdListConverter())();
@@ -72,6 +74,7 @@ class Note extends Equatable implements Comparable<Note> {
     List<Link>? links,
     List<ActorId>? mentions,
     required DateTime createdAt,
+    required DateTime sourceCreatedAt,
     required DateTime updatedAt,
     DateTime? archivedAt,
   }) {
@@ -87,6 +90,7 @@ class Note extends Equatable implements Comparable<Note> {
       draft: draft,
       private: private,
       content: content,
+      sourceCreatedAt: sourceCreatedAt,
       links: links,
       mentions: effectiveMentions,
       createdAt: createdAt,
@@ -105,6 +109,7 @@ class Note extends Equatable implements Comparable<Note> {
       links = null,
       mentions = null,
       createdAt = DateTime.now(),
+      sourceCreatedAt = DateTime.now(),
       updatedAt = DateTime.now(),
       archivedAt = null,
       _tags = null;
@@ -119,6 +124,7 @@ class Note extends Equatable implements Comparable<Note> {
     this.links,
     this.mentions,
     required this.createdAt,
+    required this.sourceCreatedAt,
     required this.updatedAt,
     this.archivedAt,
     NoteTagsRow? tags,
@@ -139,6 +145,7 @@ class Note extends Equatable implements Comparable<Note> {
       draft: noteRow.draft,
       private: noteRow.private,
       content: noteRow.content,
+      sourceCreatedAt: noteRow.sourceCreatedAt,
       links: noteRow.links,
       mentions: effectiveMentions,
       createdAt: noteRow.createdAt,
@@ -157,6 +164,7 @@ class Note extends Equatable implements Comparable<Note> {
   final List<Link>? links;
   final List<ActorId>? mentions;
   final DateTime createdAt;
+  final DateTime sourceCreatedAt;
   final DateTime updatedAt;
   final DateTime? archivedAt;
   final NoteTagsRow? _tags;
@@ -441,6 +449,7 @@ class Note extends Equatable implements Comparable<Note> {
       draft: draft,
       private: private,
       content: content,
+      sourceCreatedAt: sourceCreatedAt,
       links: links,
       mentions: mentions,
       createdAt: createdAt,
@@ -706,6 +715,7 @@ class Note extends Equatable implements Comparable<Note> {
         draft: draft ?? this.draft,
         private: private ?? this.private,
         content: content ?? this.content,
+        sourceCreatedAt: draft == false && this.draft ? now : sourceCreatedAt,
         links: links ?? this.links,
         mentions: effectiveMentions,
         createdAt: draft == false && this.draft ? now : createdAt,

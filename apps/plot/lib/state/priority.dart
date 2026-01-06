@@ -210,6 +210,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             links: draftNotes.first.links,
             mentions: draftNotes.first.mentions,
             createdAt: draftNotes.first.createdAt,
+            sourceCreatedAt: draftNotes.first.sourceCreatedAt,
             updatedAt: draftNotes.first.updatedAt,
             archivedAt: draftNotes.first.archivedAt,
           );
@@ -220,16 +221,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     } else {
       // Create draft note in memory (will be saved when content is added)
-      draftNote = Note(
-        id: Uuid.generate(),
-        activityId: newDraft.id,
-        authorId: Base.actorId,
-        draft: true,
-        private: false,
-        content: '',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
+      draftNote = Note.draft(activityId: newDraft.id);
       log.info(
         '[setPriority] Created draft note in state: id=${draftNote.id}, activityId=${newDraft.id}',
       );

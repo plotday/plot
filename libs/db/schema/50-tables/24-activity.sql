@@ -8,6 +8,7 @@ CREATE TABLE "public"."activity" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "source_created_at" timestamp with time zone NOT NULL DEFAULT now(),
     -- Actor ID (contact ID or priority_twist_id) to credit with creating this activity
     "author_id" uuid NOT NULL,
     -- User ID (not contact ID) or priority_twist_id that created this activity
@@ -63,6 +64,8 @@ CREATE TABLE "public"."activity_exception" (
     "note" text,
     "meta" jsonb
 );
+
+COMMENT ON COLUMN "public"."activity"."source_created_at" IS 'When this activity was originally created in its source system (e.g., GitHub issue creation date, email sent date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the activity entered Plot''s database.';
 
 COMMENT ON COLUMN "public"."activity"."author_id" IS 'The actor to credit with creating this activity. For activities created by twists on behalf of contacts or users, this is the contact/user. For activities created directly by users or twists, this is the user/twist ID.';
 

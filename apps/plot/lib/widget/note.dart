@@ -119,7 +119,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                             const SizedBox(width: 4),
                           ],
                           Text(
-                            widget.note.createdAt.toTimeAgo(),
+                            widget.note.sourceCreatedAt.toTimeAgo(),
                             style: context.theme.typography.xs.copyWith(
                               color: context.colour.muted,
                             ),
@@ -130,7 +130,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                   )
                 else
                   Text(
-                    widget.note.createdAt.toTimeAgo(),
+                    widget.note.sourceCreatedAt.toTimeAgo(),
                     style: context.theme.typography.xs.copyWith(
                       color: context.colour.muted,
                     ),

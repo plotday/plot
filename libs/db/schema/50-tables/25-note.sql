@@ -2,6 +2,7 @@ CREATE TABLE "public"."note" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "source_created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "author_id" uuid NOT NULL,
     "created_by" uuid NOT NULL DEFAULT auth.uid (),
     "updated_by" integer NOT NULL DEFAULT 0,
@@ -13,6 +14,8 @@ CREATE TABLE "public"."note" (
     "links" jsonb,
     "mentions" uuid[]
 );
+
+COMMENT ON COLUMN "public"."note"."source_created_at" IS 'When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot''s database.';
 
 COMMENT ON COLUMN "public"."note"."author_id" IS 'The actor to credit with creating this note. For notes created by twists on behalf of contacts or users, this is the contact/user. For notes created directly by users or twists, this is the user/twist ID.';
 

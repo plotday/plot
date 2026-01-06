@@ -34,6 +34,7 @@ export function fromDbActivity(
     tags?: Json | null;
     mentions?: string[] | null;
     source?: string | null;
+    source_created_at?: string | null;
   },
   includeAuthorEmail: boolean = false
 ): Activity {
@@ -142,6 +143,9 @@ export function fromDbActivity(
   return {
     id: dbActivity.id,
     type: activityType,
+    createdAt: dbActivity.source_created_at
+      ? new Date(dbActivity.source_created_at)
+      : null,
     author,
     start,
     end: sdkEnd,
