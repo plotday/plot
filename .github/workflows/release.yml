@@ -11,6 +11,8 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 permissions:
   id-token: write
   contents: write
+  pull-requests: write
+  issues: write
 
 jobs:
   release:
