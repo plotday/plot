@@ -211,7 +211,7 @@ export async function deployTwist({
     }
 
     twist = updatedTwist;
-    logger.info("Updated twist", { twist_id: twist.id });
+    logger.info("Updated twist", { twist_id: String(twist.id) });
   } else {
     // Create new twist - use INSERT
     const { data: newTwist, error: insertError } = await supabase
@@ -235,7 +235,7 @@ export async function deployTwist({
     }
 
     twist = newTwist;
-    logger.info("Created new twist", { twist_id: twist.id });
+    logger.info("Created new twist", { twist_id: String(twist.id) });
   }
 
   // Call upgrade callback for all active priorityTwists (if any exist)

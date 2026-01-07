@@ -98,7 +98,7 @@ twists.post("/twist", async (c) => {
     const logger = createLogger(context);
     logger.error("Error adding twist", error as Error, {
       priority_id: body.priorityId,
-      twist_id: body.twistId,
+      twist_id: String(body.twistId),
       twist_environment: body.twistEnvironment,
     });
     if (error instanceof Error) {

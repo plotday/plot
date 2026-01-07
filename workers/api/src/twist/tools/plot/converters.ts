@@ -141,7 +141,8 @@ export function fromDbActivity(
   }
 
   return {
-    id: dbActivity.id,
+    // @ts-ignore - dbActivity.id is a string from DB, but Uuid is a branded type
+    id: dbActivity.id as any,
     type: activityType,
     createdAt: dbActivity.source_created_at
       ? new Date(dbActivity.source_created_at)

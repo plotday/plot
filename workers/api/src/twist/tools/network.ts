@@ -577,9 +577,9 @@ export class Network extends Tool implements INetwork {
           serviceAccountKey: this.env.GCP_SERVICE_ACCOUNT_KEY,
         };
 
+        const subscriptionName = `projects/${projectId}/subscriptions/${topicId}`;
         try {
           // Delete subscription first (order matters)
-          const subscriptionName = `projects/${projectId}/subscriptions/${topicId}`;
           await deleteSubscription(pubsubConfig, subscriptionName);
         } catch (error) {
           const logger = createLogger({ priority_twist_id: this.priorityTwistId });

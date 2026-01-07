@@ -138,8 +138,8 @@ export class Callbacks extends Tool implements ICallbackTool {
 
       return result;
     } catch (error) {
-      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
-      logger.error("Error handling link callback", error as Error, { callback_token: callbackToken });
+      const logger = createLogger();
+      logger.error("Error handling link callback", error as Error, { callback_token: token });
       throw error;
     }
   }

@@ -5,10 +5,9 @@ import {
   type ActivityUpdate,
   type Actor,
   type ActorId,
-  type CreateActivityOptions,
-  type CreateNoteOptions,
   type NewActivity,
   type NewActivityWithNotes,
+  type NewNote,
   type NewPriority,
   type Note,
   type NoteUpdate,
@@ -407,7 +406,6 @@ export class Plot extends Tool implements IPlot {
         // Calculate ActivityUpdate with only changed fields
         const update: ActivityUpdate = {
           id: currentActivity.id,
-          source: currentActivity.source,
         };
 
         // Check each field for changes
@@ -718,10 +716,9 @@ export class Plot extends Tool implements IPlot {
 
   // Activity operations
   async createActivity(
-    activity: NewActivity | NewActivityWithNotes,
-    options?: CreateActivityOptions
+    activity: NewActivity | NewActivityWithNotes
   ): Promise<Activity> {
-    return activityOps.createActivity(this, activity, options);
+    return activityOps.createActivity(this, activity);
   }
 
   async updateActivity(activity: ActivityUpdate): Promise<void> {
@@ -807,6 +804,7 @@ export class Plot extends Tool implements IPlot {
       assignee_id: null,
       embedding: null,
       pick_priority: null,
+      active_source: null,
     };
 
     // Fetch tags for the activity
@@ -823,20 +821,20 @@ export class Plot extends Tool implements IPlot {
       this.plotOptions?.contact?.access !== undefined &&
       this.plotOptions.contact.access >= ContactAccess.Read;
 
+    // @ts-ignore - Type assertion needed due to complex type inference with view columns
     return fromDbActivity(
       {
         ...dataWithAuthor,
         tags: tagsData?.tags || null,
-      },
+      } as any,
       includeAuthorEmail
     );
   }
 
   async createActivities(
-    activities: NewActivity[],
-    options?: CreateActivityOptions
+    activities: NewActivity[]
   ): Promise<Activity[]> {
-    return activityOps.createActivities(this, activities, options);
+    return activityOps.createActivities(this, activities);
   }
 
   // Priority operations
@@ -862,9 +860,9 @@ export class Plot extends Tool implements IPlot {
 
   async createNote(
     note: NewNote,
-    options?: CreateNoteOptions
+    skipActivityRead = false
   ): Promise<Note> {
-    return activityOps.createNote(this, note, options);
+    return activityOps.createNote(this, note, skipActivityRead);
   }
 
   async createNotes(notes: NewNote[]): Promise<Note[]> {

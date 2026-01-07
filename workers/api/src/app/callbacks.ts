@@ -34,7 +34,7 @@ callbacks.post("/callback/:token", async (c) => {
   } catch (error) {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
-    logger.error("Error processing link callback", error as Error, { token });
+    logger.error("Error processing link callback", error as Error, { token: c.req.param("token") });
     return c.json({ message: "Internal server error" }, 500);
   }
 });

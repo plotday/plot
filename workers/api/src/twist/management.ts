@@ -190,7 +190,7 @@ export async function add(
         await twistWrapper.activate({ id: priority_id });
       } catch (activationError) {
         // Activation failed - rollback the installation
-        const logger = createLogger({ priority_twist_id: priorityTwist.id, twist_id, environment: twist_environment });
+        const logger = createLogger({ priority_twist_id: String(priorityTwist.id), twist_id: String(twist_id), environment: twist_environment });
         logger.error("Twist activation failed, rolling back installation", activationError as Error);
 
         const cleanupWarnings = await cleanupFailedInstallation(
@@ -221,7 +221,7 @@ export async function add(
 
     return priorityTwist;
   } catch (error) {
-    const logger = createLogger({ twist_id, environment: twist_environment, priority_id });
+    const logger = createLogger({ twist_id: String(twist_id), environment: twist_environment, priority_id });
     logger.error("Error adding twist", error as Error);
     throw error;
   }

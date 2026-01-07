@@ -140,7 +140,8 @@ export function buildActivityFromDbRecord(
   }
 
   return {
-    id: activityRecord.id,
+    // @ts-ignore - activityRecord.id is a string from DB, but Uuid is a branded type
+    id: activityRecord.id as any,
     type: activityType,
     createdAt: new Date(activityRecord.created_at),
     author: {
@@ -195,7 +196,8 @@ export function buildActivityFromDbRecord(
  */
 export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
   return {
-    id: noteRecord.id,
+    // @ts-ignore - noteRecord.id is a string from DB, but Uuid is a branded type
+    id: noteRecord.id as any,
     createdAt: new Date(noteRecord.created_at),
     // @ts-ignore - Only activity.id and priority.id are used by intent handlers, full Activity data is not available in NoteItem
     activity: {

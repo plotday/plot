@@ -250,7 +250,6 @@ twist.get("/twist/:id", async (c) => {
   if (adminError) {
     const logger = createLogger();
     logger.error("Error fetching twist admin", adminError as Error, {
-      user_id: user.id,
       twist_package_id: twistPackageId
     });
     return new Response(`Error fetching twist: ${adminError.message}`, {
