@@ -463,6 +463,7 @@ class ToggleAction extends _UpdateActivityCommand {
           type: ActivityType.action,
           on: Value(CustomDateRange(Date.today(), null)),
           order: Order.first(),
+          doneAt: const Value(null),
         ),
       );
     } else {
@@ -499,6 +500,7 @@ class StartAction extends _UpdateActivityCommand {
         at: Value(null),
         on: Value(CustomDateRange(Date.today(), null)),
         order: Order.first(),
+        doneAt: const Value(null),
       ),
     );
 
