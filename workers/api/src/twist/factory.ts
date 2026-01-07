@@ -86,6 +86,38 @@ export function twistFactory({
       toolId: string,
       options?: any
     ): Tool => {
+      // SPECIAL CASE: ContactAccess.Write inheritance at runtime
+      // Apply the same inheritance logic as during deployment: if ANY tool in the
+      // dependency tree has ContactAccess.Write (checked via stored permissions),
+      // automatically grant it to this Plot instance. This ensures Plot's internal
+      // addContacts() calls (from processNewActor) will succeed.
+      if (toolId === "Plot" && checkPermissions && storedToolPermissions) {
+        const hasContactWrite = Object.values(storedToolPermissions).some(
+          (perms) =>
+            perms.some(
+              (p) =>
+                p.domain === "plot" &&
+                p.entity === "contact" &&
+                p.flags.includes("write")
+            )
+        );
+
+        if (hasContactWrite) {
+          const currentAccess = (options as any)?.contact?.access;
+          const ContactAccessWrite = 1; // ContactAccess.Write enum value
+
+          if (currentAccess === undefined || currentAccess < ContactAccessWrite) {
+            options = {
+              ...options,
+              contact: {
+                ...(options as any)?.contact,
+                access: ContactAccessWrite,
+              },
+            };
+          }
+        }
+      }
+
       // Validate permissions before creating tool
       const pathString = path.join(":");
       if (checkPermissions && storedToolPermissions) {
@@ -141,6 +173,51 @@ export function twistFactory({
         const perms = collectToolPermissions(toolId, options);
         allPermissions.push(...perms);
       }
+
+      // SPECIAL CASE: ContactAccess.Write inheritance
+      // When a child tool (e.g., GoogleCalendar) has ContactAccess.Write and creates
+      // activities/notes with NewContact objects, the Plot tool's internal logic
+      // (processNewActor) calls addContacts() to create those contacts. This means
+      // parent twists/tools also need ContactAccess.Write permission, even if they
+      // don't directly call addContacts().
+      // Solution: If ANY tool in the dependency tree has ContactAccess.Write,
+      // automatically grant it to ALL Plot tool instances.
+      const hasContactWrite = allPermissions.some(
+        (p) =>
+          p.domain === "plot" &&
+          p.entity === "contact" &&
+          p.flags.includes("write")
+      );
+
+      if (hasContactWrite) {
+        // Update all Plot tool instances to have ContactAccess.Write
+        for (const instance of toolInstances) {
+          if (instance.id === "Plot") {
+            // Check if this Plot instance already has ContactAccess.Write
+            const currentAccess = (instance.options as any)?.contact?.access;
+            const ContactAccessWrite = 1; // ContactAccess.Write enum value
+
+            if (currentAccess === undefined || currentAccess < ContactAccessWrite) {
+              // Update options to include ContactAccess.Write
+              instance.options = {
+                ...instance.options,
+                contact: {
+                  ...(instance.options as any)?.contact,
+                  access: ContactAccessWrite,
+                },
+              };
+
+              // Re-collect permissions for this updated Plot instance
+              const updatedPerms = collectToolPermissions(
+                instance.id,
+                instance.options
+              );
+              allPermissions.push(...updatedPerms);
+            }
+          }
+        }
+      }
+
       permissions = mergeToolPermissions(allPermissions);
 
       // Build per-path toolPermissions map for storage
