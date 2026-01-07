@@ -186,3 +186,38 @@ export function stripTrailingUndefined(args: any[]): any[] {
 
   return args.slice(0, lastDefinedIndex + 1);
 }
+
+/**
+ * Recursively removes object keys with undefined values.
+ * Arrays are preserved as-is (undefined in arrays will throw validation errors).
+ *
+ * This allows object properties to be optionally undefined without failing validation,
+ * while maintaining strict validation for arrays where undefined is ambiguous.
+ *
+ * Examples:
+ *   { a: 1, b: undefined } -> { a: 1 }
+ *   { a: { b: undefined, c: 2 } } -> { a: { c: 2 } }
+ *   [1, undefined, 3] -> [1, undefined, 3] (unchanged, will fail validation)
+ *   { arr: [{ a: undefined }] } -> { arr: [{}] } (nested objects cleaned)
+ */
+export function removeUndefinedFromObject<T>(value: T): T {
+  // Primitives, null, and undefined pass through
+  if (value === null || value === undefined || typeof value !== "object") {
+    return value;
+  }
+
+  // Arrays: recursively process elements but don't remove undefined
+  if (Array.isArray(value)) {
+    return value.map((item) => removeUndefinedFromObject(item)) as T;
+  }
+
+  // Objects: remove keys with undefined values and recursively process
+  const result: any = {};
+  for (const key of Object.keys(value)) {
+    const val = (value as any)[key];
+    if (val !== undefined) {
+      result[key] = removeUndefinedFromObject(val);
+    }
+  }
+  return result as T;
+}

@@ -2,7 +2,10 @@ import type { Store as IStore } from "@plotday/twister/tools/store";
 
 import { type Storage } from "../../state/storage";
 import { Tool } from "./tool";
-import { validateSerializable } from "./validation";
+import {
+  removeUndefinedFromObject,
+  validateSerializable,
+} from "./validation";
 
 export class Store extends Tool implements IStore {
   private storage: DurableObjectStub<Storage>;
@@ -33,10 +36,13 @@ export class Store extends Tool implements IStore {
   }
 
   async set<T>(key: string, value: T) {
-    // Validate that the value doesn't contain functions or other non-serializable types
-    validateSerializable(`store value for key "${key}"`, value);
+    // Remove undefined values from object keys (arrays with undefined will still throw)
+    const cleanedValue = removeUndefinedFromObject(value);
 
-    const serializedValue = JSON.stringify(value);
+    // Validate that the value doesn't contain functions or other non-serializable types
+    validateSerializable(`store value for key "${key}"`, cleanedValue);
+
+    const serializedValue = JSON.stringify(cleanedValue);
     return await this.storage.set(key, serializedValue);
   }
 
