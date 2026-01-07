@@ -1,5 +1,14 @@
 # @plotday/tool-gmail
 
+## 0.5.0
+
+### Changed
+
+- BREAKING: Replace Activity.source for linking with source items with generated and stored UUIDs ([`606b396`](https://github.com/plotday/plot/commit/606b396bb063a70c99200798287d29f5fd026bde))
+- BREAKING: Support either IDs or email for contact fields ([`606b396`](https://github.com/plotday/plot/commit/606b396bb063a70c99200798287d29f5fd026bde))
+- Updated dependencies:
+- @plotday/twister@0.27.0
+
 ## 0.4.2
 
 ### Changed
