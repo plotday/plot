@@ -695,22 +695,21 @@ class Store extends _$Store {
 
     // Fetch items with updated_at > pulledAt (for updates only)
     final pulledAtMicros = !initial ? syncState?.pulledAt : null;
-    final updatedSince = pulledAtMicros != null
+    var lastUpdated = pulledAtMicros != null
         ? DateTime.fromMicrosecondsSinceEpoch(pulledAtMicros, isUtc: true)
         : null;
 
     // For updates, loop until all updates are fetched
     var totalRows = 0;
     var more = false;
-    DateTime? lastUpdated;
     var upsertedInLoop = false;
 
     do {
       var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
-          .get(updatedSince: updatedSince, initial: initial));
+          .get(updatedSince: lastUpdated, initial: initial));
       final from = newRange?.start?.toString();
       final to = newRange?.end?.toString();
-      more = batchMore;
+      more = batchMore && batchLastUpdated != null;
       if (batchLastUpdated != null) {
         lastUpdated = batchLastUpdated;
       }
