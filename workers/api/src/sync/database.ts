@@ -6,8 +6,12 @@ import { ItemSchema } from "../types";
 import { handleValidationError } from "../utils/validation";
 import { createLogger } from "../utils/logger";
 import { extractRequestContext } from "../utils/log-context";
+import { syncRateLimiter } from "../middleware/rate-limit";
 
 const database = new Hono<{ Bindings: Bindings }>();
+
+// Apply rate limiting to prevent queue flooding (200 req/min)
+database.use("*", syncRateLimiter);
 
 // Schemas
 const ToolSchema: z.ZodType<{

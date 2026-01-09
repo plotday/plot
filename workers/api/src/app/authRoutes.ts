@@ -10,8 +10,12 @@ import { Integrations } from "../twist/tools/integrations";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "../utils/logger";
 import { handleValidationError } from "../utils/validation";
+import { authRateLimiter } from "../middleware/rate-limit";
 
 const authRoutes = new Hono<{ Bindings: Bindings }>();
+
+// Apply strict rate limiting to all auth routes (20 req/min)
+authRoutes.use("*", authRateLimiter);
 
 // Schemas
 const AuthUrlRequestSchema = z.object({
