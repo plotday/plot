@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.28.0
+
+### Added
+
+- Activity.source and Note.key for upserts ([`8053f7a`](https://github.com/plotday/plot/commit/8053f7a49ca0dc871bd4e1ef8edb4dd54f1abaef))
+
 ## 0.27.0
 
 ### Added

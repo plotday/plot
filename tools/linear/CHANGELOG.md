@@ -1,5 +1,13 @@
 # @plotday/tool-linear
 
+## 0.4.0
+
+### Changed
+
+- Use Activity.source with canonical URLs for upserting ([`8053f7a`](https://github.com/plotday/plot/commit/8053f7a49ca0dc871bd4e1ef8edb4dd54f1abaef))
+- Updated dependencies:
+- @plotday/twister@0.28.0
+
 ## 0.3.0
 
 ### Added

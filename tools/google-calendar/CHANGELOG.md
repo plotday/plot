@@ -1,5 +1,14 @@
 # @plotday/tool-google-calendar
 
+## 0.9.0
+
+### Changed
+
+- Use Activity.source with canonical URLs for upserting ([`8053f7a`](https://github.com/plotday/plot/commit/8053f7a49ca0dc871bd4e1ef8edb4dd54f1abaef))
+- Updated dependencies:
+- @plotday/twister@0.28.0
+- @plotday/tool-google-contacts@0.4.4
+
 ## 0.8.0
 
 ### Added
