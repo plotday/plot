@@ -45,7 +45,7 @@ export enum PriorityAccess {
 }
 
 export enum ContactAccess {
-  /** Read existing contacts. */
+  /** Read existing contact details. Without this, only the ID will be provided. */
   Read,
   /** Create and update contacts. */
   Write,
@@ -215,7 +215,7 @@ export abstract class Plot extends ITool {
    * // Mark a task as complete
    * await this.plot.updateActivity({
    *   id: "task-123",
-   *   doneAt: new Date()
+   *   done: new Date()
    * });
    *
    * // Reschedule an event

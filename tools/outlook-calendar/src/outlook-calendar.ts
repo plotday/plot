@@ -5,6 +5,7 @@ import {
   type ActivityUpdate,
   type ActorId,
   ConferencingProvider,
+  type ContentType,
   type NewActivityWithNotes,
   type NewActor,
   type NewContact,
@@ -476,7 +477,7 @@ export class OutlookCalendar
             }
 
             // Create note with description and/or links
-            const notes: Omit<NewNote, "activity">[] = [];
+            const notes: NewNote[] = [];
             const hasDescription =
               outlookEvent.body?.content &&
               outlookEvent.body.content.trim().length > 0;
@@ -484,11 +485,13 @@ export class OutlookCalendar
 
             if (hasDescription || hasLinks) {
               notes.push({
-                id: Uuid.Generate(),
+                activity: { source: outlookEvent.webLink || `outlook-calendar:${outlookEvent.id}` },
+                key: "description",
                 content: hasDescription ? outlookEvent.body!.content! : null,
                 links: hasLinks ? links : null,
-                contentType:
-                  outlookEvent.body?.contentType === "html" ? "html" : "text",
+                contentType: (outlookEvent.body?.contentType === "html"
+                  ? "html"
+                  : "text") as ContentType,
               });
             }
 

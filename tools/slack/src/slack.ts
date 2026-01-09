@@ -290,7 +290,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     await this.set(`channel_webhook_${channelId}`, {
       url: webhookUrl,
       channelId,
-      createdAt: new Date().toISOString(),
+      created: new Date().toISOString(),
     });
 
     console.log("Channel webhook setup complete", { channelId, webhookUrl });

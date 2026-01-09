@@ -266,27 +266,10 @@ export default class ProjectSync extends Twist<ProjectSync> {
 
     const issue = syncUpdate;
 
-    // Check if issue already exists (using meta.source for deduplication)
-    const sourceId = issue.meta?.source as string | undefined;
-    if (sourceId) {
-      const existing = await this.tools.plot.getActivityByMeta({ source: sourceId });
-
-      if (existing) {
-        // Issue exists - add update as Note to the thread
-        if (issue.notes?.[0]?.content) {
-          await this.tools.plot.createNote({
-            activity: { id: existing.id },
-            content: `Issue updated:\n\n${issue.notes[0].content}`,
-          });
-        }
-        return;
-      }
-    }
-
     // Filter out empty notes to avoid warnings in Plot tool
     issue.notes = issue.notes?.filter((note) => !this.isNoteEmpty(note));
 
-    // Create new activity for new issue (new thread with initial note)
+    // Just create/upsert - database handles everything automatically
     // Note: The unread field is already set by the tool based on sync type
     await this.tools.plot.createActivity(issue);
   }

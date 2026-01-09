@@ -228,7 +228,7 @@ await this.tools.plot.createActivity({
 await this.tools.plot.createActivity({
   type: ActivityType.Action,
   title: "Review pull request",
-  doneAt: null, // null = not done
+  done: null, // null = not done
   notes: [
     {
       content: "PR adds new authentication flow. Please review for security concerns.",
@@ -314,28 +314,39 @@ await this.tools.plot.createActivity({
 ```typescript
 type Activity = {
   id: string; // Unique identifier
-  type: ActivityType; // Note, Task, or Event
+  type: ActivityType; // Note, Action, or Event
   title: string | null; // Display title
   preview: string | null; // Brief preview text
+  source: string | null; // Canonical URL for external item (enables automatic upserts)
   start: Date | null; // Event start time
   end: Date | null; // Event end time
-  doneAt: Date | null; // Task completion time
+  done: Date | null; // Action completion time
   tags: Record<Tag, ActorId[]>; // Tag assignments
   // ... and more
 };
 ```
 
+**Key Properties:**
+
+- **`source`**: Canonical URL or stable identifier for items from external systems. When set, it uniquely identifies the activity within a priority tree and enables automatic deduplication. See [Sync Strategies](SYNC_STRATEGIES.md).
+- **`type`**: Determines how the activity is displayed and interacted with (Note, Action with `done`, Event with `start`/`end`)
+- **`title`**: Short summary that may be truncated in the UI - detailed content should go in Notes
+
 ### Activity Notes
 
-Activities can have multiple Notes attached to them, like messages in a thread. Notes contain detailed content and links:
+Activities can have multiple Notes attached to them, like messages in a thread. Notes contain detailed content and links.
+
+**Data Sync:** When syncing from external systems, use `Activity.source` and `Note.key` for automatic upserts. See [Sync Strategies](SYNC_STRATEGIES.md).
 
 ```typescript
 await this.tools.plot.createActivity({
+  source: "https://github.com/org/repo/issues/123", // Enables automatic deduplication
   type: ActivityType.Action,
   title: "Fix bug #123",
-  // Tracked via UUID mapping
   notes: [
     {
+      activity: { source: "https://github.com/org/repo/issues/123" },
+      key: "description", // Using key enables upserts
       content: "Users are unable to log in with SSO. Error occurs in auth middleware.",
       links: [
         {
@@ -372,11 +383,13 @@ Think of it like starting a new thread with a first message - the thread title g
 ```typescript
 // ✅ GOOD - Activity with detailed Note (thread with first message)
 await this.tools.plot.createActivity({
+  source: "https://github.com/org/repo/pull/456", // Enables automatic deduplication
   type: ActivityType.Action,
   title: "Review PR #456",
-  // Tracked via UUID mapping
   notes: [
     {
+      activity: { source: "https://github.com/org/repo/pull/456" },
+      key: "description", // Using key enables upserts
       content: "Please review the OAuth 2.0 implementation. Key changes include:\n- Token refresh logic\n- Session management\n- Error handling for expired tokens",
       links: [
         {
@@ -414,29 +427,45 @@ Think of it like replying to a message thread instead of starting a new thread f
 - **Issue tracking** - All comments and status updates as Notes
 
 ```typescript
-// ✅ GOOD - Add reply to existing thread
+// ✅ GOOD - Add reply using source/key pattern (no lookup needed)
 async onNewMessage(message: Message, threadId: string) {
-  // Find existing activity for this thread (check if thread exists)
-  const source = `chat:thread:${threadId}`;
-  const activity = await this.tools.plot.getActivityBySource(source);
+  // Simply create - Plot handles deduplication automatically
+  const threadSource = `chat:thread:${threadId}`;
+
+  await this.tools.plot.createNote({
+    activity: { source: threadSource }, // References activity by source
+    key: `message-${message.id}`, // Unique key per message for upserts
+    content: message.text,
+  });
+
+  // If thread doesn't exist yet, create it first
+  await this.tools.plot.createActivity({
+    source: threadSource, // Same source for deduplication
+    type: ActivityType.Note,
+    title: message.subject || "New conversation",
+    notes: [{
+      activity: { source: threadSource },
+      key: `message-${message.id}`,
+      content: message.text,
+    }],
+  });
+}
+
+// Alternative: Check existence first (for advanced cases)
+async onNewMessageAdvanced(message: Message, threadId: string) {
+  const activity = await this.tools.plot.getActivityBySource({ threadId });
 
   if (activity) {
-    // Add new message as a Note to the existing thread
     await this.tools.plot.createNote({
       activity: { id: activity.id },
       content: message.text,
     });
   } else {
-    // Create new thread with initial message
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: message.subject || "New conversation",
-      // Tracked via UUID mapping
-      notes: [
-        {
-          content: message.text,
-        },
-      ],
+      meta: { threadId },
+      notes: [{ content: message.text }],
     });
   }
 }
@@ -451,6 +480,8 @@ async onNewMessage(message: Message, threadId: string) {
   });
 }
 ```
+
+See [Sync Strategies](SYNC_STRATEGIES.md) for more details on choosing the right pattern.
 
 **Why?** Grouping related content keeps the user's workspace organized and provides better context. A chat conversation with 20 messages should be one Activity with 20 Notes, not 20 separate Activities.
 

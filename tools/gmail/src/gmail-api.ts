@@ -3,7 +3,6 @@ import type {
   NewActivityWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
-import { Uuid } from "@plotday/twister/utils/uuid";
 
 export type GmailLabel = {
   id: string;
@@ -360,15 +359,18 @@ export function transformGmailThread(thread: GmailThread): NewActivityWithNotes 
   const parentMessage = thread.messages[0];
   const subject = getHeader(parentMessage, "Subject");
 
+  // Canonical URL for the thread
+  const canonicalUrl = `https://mail.google.com/mail/u/0/#inbox/${thread.id}`;
+
   // Create Activity
   const activity: NewActivityWithNotes = {
+    source: canonicalUrl,
     type: ActivityType.Note,
     title: subject || "Email",
     start: new Date(parseInt(parentMessage.internalDate)),
     meta: {
       threadId: thread.id,
       historyId: thread.historyId,
-      source: `gmail:${thread.id}`,
     },
     notes: [],
   };
@@ -390,9 +392,10 @@ export function transformGmailThread(thread: GmailThread): NewActivityWithNotes 
       ...parseEmailAddressesToNewActors(cc),
     ];
 
-    // Create NewNote (Omit<NewNote, "activity">)
+    // Create NewNote with idempotent key
     const note = {
-      id: Uuid.Generate(),
+      activity: { source: canonicalUrl },
+      key: message.id,
       author: {
         email: sender.email,
         name: sender.name || undefined,

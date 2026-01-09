@@ -22,6 +22,14 @@ Plot Twists are smart automations that connect, organize, and prioritize your wo
   - Priorities and Activities
   - Best practices and patterns
 
+- **[Sync Strategies](SYNC_STRATEGIES.md)** - Data synchronization patterns
+
+  - Upsert via Source and Key (recommended)
+  - Create once (fire and forget)
+  - Generate and store IDs (advanced)
+  - Tag management
+  - Choosing the right strategy
+
 - **[Built-in Tools Guide](TOOLS_GUIDE.md)** - Complete reference for all built-in twist tools
 
   - Plot - Managing activities and priorities

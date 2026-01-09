@@ -414,7 +414,9 @@ export class GitHubTool extends Tool<GitHubTool> {
     const issues = await this.getIssues();
 
     for (const issue of issues) {
+      // Use source for automatic deduplication - no manual ID tracking needed
       await this.tools.plot.createActivity({
+        source: issue.html_url, // Enables automatic upserts
         type: ActivityType.Action,
         title: issue.title,
         meta: {
@@ -423,7 +425,9 @@ export class GitHubTool extends Tool<GitHubTool> {
         },
         notes: [
           {
-            note: issue.body,
+            activity: { source: issue.html_url },
+            key: "description", // Using key enables upserts
+            content: issue.body,
             links: [
               {
                 type: ActivityLinkType.external,
@@ -436,6 +440,9 @@ export class GitHubTool extends Tool<GitHubTool> {
       });
     }
   }
+
+  // Note: For advanced sync patterns (batching, pagination, etc.),
+  // see the Sync Strategies guide: https://twist.plot.day/documents/Sync_Strategies.html
 
   async onIssueUpdate(
     request: WebhookRequest,
@@ -485,7 +492,7 @@ export class GitHubTool extends Tool<GitHubTool> {
 
       if (activity) {
         await this.tools.plot.updateActivity(activity.id, {
-          doneAt: new Date(),
+          done: new Date(),
         });
       }
     }
@@ -846,6 +853,44 @@ async getIssues(): Promise<GitHubIssue[]> {
   // Implementation
 }
 ````
+
+### 8. Data Synchronization
+
+When building tools that sync from external systems, use the recommended patterns for deduplication and updates:
+
+**Recommended:** Use `Activity.source` and `Note.key` for automatic upserts:
+
+```typescript
+// ✅ GOOD - Automatic deduplication via source
+async syncItems(items: ExternalItem[]): Promise<void> {
+  for (const item of items) {
+    await this.tools.plot.createActivity({
+      source: item.url, // Canonical URL for deduplication
+      type: ActivityType.Action,
+      title: item.title,
+      notes: [{
+        activity: { source: item.url },
+        key: "description", // Enables note upserts
+        content: item.description,
+      }],
+    });
+  }
+}
+
+// ❌ BAD - Manual ID tracking (only use for advanced cases)
+async syncItemsManual(items: ExternalItem[]): Promise<void> {
+  for (const item of items) {
+    const activityId = await this.get(`item:${item.id}`) || Uuid.Generate();
+    await this.set(`item:${item.id}`, activityId);
+    await this.tools.plot.createActivity({
+      id: activityId,
+      // ... missing automatic deduplication
+    });
+  }
+}
+```
+
+For comprehensive guidance on choosing the right sync strategy (upserts, batching, pagination, tag management, etc.), see the **[Sync Strategies Guide](SYNC_STRATEGIES.md)**.
 
 ---
 

@@ -305,7 +305,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
         channelId,
         historyId: watchResult.historyId,
         expiration: new Date(parseInt(watchResult.expiration)),
-        createdAt: new Date().toISOString(),
+        created: new Date().toISOString(),
       });
 
       console.log("Gmail webhook setup complete", {

@@ -2,8 +2,11 @@ import * as asana from "asana";
 
 import {
   type ActivityLink,
+  ActivityLinkType,
   ActivityType,
   type NewActivityWithNotes,
+  type NewNote,
+  Uuid,
 } from "@plotday/twister";
 import type {
   Project,
@@ -269,8 +272,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     for (const task of tasksResult.data) {
       // Optionally filter by time
       if (options?.timeMin) {
-        const createdAt = new Date(task.created_at);
-        if (createdAt < options.timeMin) {
+        const created = new Date(task.created_at);
+        if (created < options.timeMin) {
           continue;
         }
       }
@@ -339,28 +342,46 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       };
     }
 
-    // Build notes array: description
-    const notes: Array<{ content: string }> = [];
+    // Build notes array: always create initial note with description and link
+    const notes: NewNote[] = [];
 
+    // Extract description (if any)
+    let description: string | null = null;
     if (task.notes) {
-      notes.push({ content: task.notes });
+      description = task.notes;
     }
 
-    // Ensure at least one note exists
-    if (notes.length === 0) {
-      notes.push({ content: "" });
-    }
+    // Construct Asana task URL
+    const taskUrl = `https://app.asana.com/0/${projectId}/${task.gid}`;
+
+    // Create initial note with description and link to Asana task
+    const links: ActivityLink[] = [];
+    links.push({
+      type: ActivityLinkType.external,
+      title: `Open in Asana`,
+      url: taskUrl,
+    });
+
+    notes.push({
+      activity: { source: taskUrl },
+      key: "description",
+      content: description,
+      created: task.created_at ? new Date(task.created_at) : undefined,
+      links: links.length > 0 ? links : null,
+    });
 
     return {
+      source: taskUrl,
       type: ActivityType.Action,
       title: task.name,
+      created: task.created_at ? new Date(task.created_at) : undefined,
       meta: {
-        source: `asana:task:${projectId}:${task.gid}`,
         taskGid: task.gid,
+        projectId,
       },
       author: authorContact,
-      assignee: assigneeContact,
-      doneAt: task.completed ? new Date(task.completed_at || Date.now()) : null,
+      assignee: assigneeContact ?? null, // Explicitly set to null for unassigned tasks
+      done: task.completed && task.completed_at ? new Date(task.completed_at) : null,
       notes,
     };
   }
@@ -395,10 +416,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       updateFields.assignee = update.assignee?.id || null;
     }
 
-    // Handle completion status based on doneAt
+    // Handle completion status based on done
     // Asana only has completed boolean (no In Progress state)
-    if (update.doneAt !== undefined) {
-      updateFields.completed = update.doneAt !== null;
+    if (update.done !== undefined) {
+      updateFields.completed = update.done !== null;
     }
 
     // Apply updates if any fields changed

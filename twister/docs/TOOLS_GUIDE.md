@@ -57,15 +57,15 @@ await this.tools.plot.createActivity({
   ],
 });
 
-// Create a task with a note containing links
-const activityId = Uuid.Generate();
+// Create a task from external source with automatic deduplication
 await this.tools.plot.createActivity({
-  id: activityId,
+  source: "https://github.com/org/repo/pull/123", // Enables automatic upserts
   type: ActivityType.Action,
   title: "Review pull request #123",
   notes: [
     {
-      id: Uuid.Generate(),
+      activity: { source: "https://github.com/org/repo/pull/123" },
+      key: "description", // Using key enables upserts
       content: "Please review the changes and provide feedback.",
       links: [
         {
@@ -80,14 +80,12 @@ await this.tools.plot.createActivity({
 
 // Create an event with description in a note
 await this.tools.plot.createActivity({
-  id: Uuid.Generate(),
   type: ActivityType.Event,
   title: "Team standup",
   start: new Date("2025-02-01T10:00:00Z"),
   end: new Date("2025-02-01T10:30:00Z"),
   notes: [
     {
-      id: Uuid.Generate(),
       content: "Daily standup meeting to sync on progress.",
     },
   ],
@@ -135,7 +133,7 @@ await this.tools.plot.createActivity({
 ```typescript
 // Mark task as done
 await this.tools.plot.updateActivity(activity.id, {
-  doneAt: new Date(),
+  done: new Date(),
 });
 
 // Update title and preview
@@ -172,9 +170,38 @@ const project = await this.tools.plot.createPriority({
 });
 ```
 
-### Activity Meta and UUID Tracking
+### Activity Data Synchronization
 
-Use the `meta` field to store additional custom data and track external items using UUID mappings:
+**Recommended:** Use `Activity.source` and `Note.key` for automatic upserts when syncing from external systems:
+
+```typescript
+// Simply create - Plot handles deduplication automatically via source
+await this.tools.plot.createActivity({
+  source: "https://github.com/org/repo/pull/123", // Canonical URL for deduplication
+  type: ActivityType.Action,
+  title: "Review PR #123",
+  meta: {
+    github_repo: "org/repo",
+    review_status: "pending",
+  },
+  notes: [
+    {
+      activity: { source: "https://github.com/org/repo/pull/123" },
+      key: "description", // Using key enables upserts
+      content: "Please review this pull request.",
+    },
+  ],
+});
+
+// Later, update by referencing the same source (no lookup needed)
+await this.tools.plot.createNote({
+  activity: { source: "https://github.com/org/repo/pull/123" },
+  key: "update", // Different key for different note types
+  content: "PR has been updated",
+});
+```
+
+**Advanced:** For cases where you need multiple Plot activities per external item, use UUID generation and storage:
 
 ```typescript
 // Generate UUID for the activity
@@ -187,29 +214,23 @@ await this.tools.plot.createActivity({
   id: activityId,
   type: ActivityType.Action,
   title: "Review PR",
-  meta: {
-    github_pr_id: "123",
-    github_repo: "org/repo",
-    review_status: "pending",
-  },
-  notes: [
-    {
-      id: Uuid.Generate(),
-      content: "Please review this pull request.",
-    },
-  ],
+  notes: [{
+    id: Uuid.Generate(),
+    content: "Please review this pull request.",
+  }],
 });
 
 // Later, find by looking up the mapping
 const storedActivityId = await this.get<Uuid>("pr_mapping:123");
 if (storedActivityId) {
-  // Use the stored UUID to update or add notes
   await this.tools.plot.createNote({
     activity: { id: storedActivityId },
     content: "PR has been updated",
   });
 }
 ```
+
+See [Sync Strategies](SYNC_STRATEGIES.md) for comprehensive guidance on choosing the right pattern.
 
 ### Creating and Managing Notes
 
@@ -218,16 +239,15 @@ if (storedActivityId) {
 **Best Practice:** Always create Activities with at least one initial Note containing detailed information. The `title` is a short summary that may be truncated—detailed content should go in Notes.
 
 ```typescript
-// ✅ Recommended - Activity with initial Note (thread with first message)
-const activityId = Uuid.Generate();
-await this.set("ticket_mapping:12345", activityId); // Track for deduplication
-
+// ✅ Recommended - Activity with source for automatic deduplication
 await this.tools.plot.createActivity({
-  id: activityId,
+  source: "https://support.example.com/tickets/12345", // Enables automatic upserts
   type: ActivityType.Action,
   title: "Customer feedback: Login issues",
   notes: [
     {
+      activity: { source: "https://support.example.com/tickets/12345" },
+      key: "description", // Using key enables upserts
       content: "Customer reported:\n\n\"I'm unable to log in using Google SSO. The page redirects but then shows an error 'Invalid state parameter'.\"\n\nPriority: High\nAffected users: ~15 reports",
       links: [
         {
@@ -262,35 +282,59 @@ await this.tools.plot.createNote({
 
 #### Pattern: Email Threads and Conversations
 
-Keep all messages in a thread or conversation within a single Activity. Think of it like a messaging app - one thread, many messages:
+Keep all messages in a thread or conversation within a single Activity. Think of it like a messaging app - one thread, many messages.
+
+**Recommended Pattern** - Use source/key for automatic deduplication:
 
 ```typescript
 async handleEmailThread(thread: EmailThread) {
-  const mappingKey = `email_thread_mapping:${thread.id}`;
+  const threadSource = `email:thread:${thread.id}`;
 
-  // Check if Activity exists for this thread
+  // Simply create notes - Plot handles deduplication via source and key
+  for (const message of thread.messages) {
+    await this.tools.plot.createNote({
+      activity: { source: threadSource },
+      key: `message-${message.id}`, // Unique key per message
+      content: message.body,
+    });
+  }
+
+  // Create activity if it doesn't exist yet (Plot handles deduplication)
+  await this.tools.plot.createActivity({
+    source: threadSource,
+    type: ActivityType.Note,
+    title: thread.subject,
+    notes: thread.messages.map((msg) => ({
+      activity: { source: threadSource },
+      key: `message-${msg.id}`,
+      content: msg.body,
+    })),
+  });
+}
+```
+
+**Alternative Pattern** - Check existence first (for advanced cases):
+
+```typescript
+async handleEmailThreadAdvanced(thread: EmailThread) {
+  const mappingKey = `email_thread_mapping:${thread.id}`;
   const existingActivityId = await this.get<Uuid>(mappingKey);
 
   if (existingActivityId) {
-    // Add new messages as Notes to the existing thread
     for (const message of thread.newMessages) {
       await this.tools.plot.createNote({
         activity: { id: existingActivityId },
-        id: Uuid.Generate(),
         content: message.body,
       });
     }
   } else {
-    // Create new thread with initial messages
     const activityId = Uuid.Generate();
     await this.set(mappingKey, activityId);
-
     await this.tools.plot.createActivity({
       id: activityId,
       type: ActivityType.Note,
       title: thread.subject,
       notes: thread.messages.map((msg) => ({
-        id: Uuid.Generate(),
         content: msg.body,
       })),
     });
@@ -299,6 +343,8 @@ async handleEmailThread(thread: EmailThread) {
 ```
 
 **Why this matters:** A conversation with 20 messages should be one Activity with 20 Notes, not 20 separate Activities. This keeps the workspace organized and provides better context.
+
+See [Sync Strategies](SYNC_STRATEGIES.md) for more patterns.
 
 ---
 

@@ -234,7 +234,7 @@ export type ActivityCommon = {
    *
    * Defaults to the current time when creating new activities.
    */
-  createdAt: Date;
+  created: Date;
   /** Information about who created the activity */
   author: Actor;
   /** Whether this activity is in draft state (not shown in do now view) */
@@ -250,6 +250,12 @@ export type ActivityCommon = {
 };
 
 export type Activity = ActivityCommon & {
+  /**
+   * Canonical URL for the item in an external system.
+   * For example, https://acme.atlassian.net/browse/PROJ-42 could represent a Jira issue.
+   * When set, it uniquely identifies the activity within a priority tree.
+   */
+  source: string | null;
   /** The display title/summary of the activity */
   title: string;
   /** The type of activity (Note, Task, or Event) */
@@ -257,59 +263,66 @@ export type Activity = ActivityCommon & {
   /**
    * The actor assigned to this activity.
    *
-   * **For actions (tasks):** An assignee is required. If not explicitly provided when creating
-   * an action, the assignee will default to the user who installed the twist (the twist owner).
+   * **For actions (tasks):**
+   * - If not provided (undefined), defaults to the user who installed the twist (twist owner)
+   * - To create an **unassigned action**, explicitly set `assignee: null`
+   * - For synced tasks from external systems, typically set `assignee: null` for unassigned items
    *
    * **For notes and events:** Assignee is optional and typically null.
    *
    * @example
    * ```typescript
-   * // Create action with explicit assignee
+   * // Create action assigned to twist owner (default behavior)
    * const task: NewActivity = {
    *   type: ActivityType.Action,
+   *   title: "Follow up on email"
+   *   // assignee omitted → defaults to twist owner
+   * };
+   *
+   * // Create UNASSIGNED action (for backlog items)
+   * const backlogTask: NewActivity = {
+   *   type: ActivityType.Action,
    *   title: "Review PR #123",
+   *   assignee: null  // Explicitly set to null
+   * };
+   *
+   * // Create action with explicit assignee
+   * const assignedTask: NewActivity = {
+   *   type: ActivityType.Action,
+   *   title: "Deploy to production",
    *   assignee: {
    *     id: userId as ActorId,
    *     type: ActorType.User,
    *     name: "Alice"
    *   }
    * };
-   *
-   * // Create action with auto-assignment (defaults to twist owner)
-   * const task: NewActivity = {
-   *   type: ActivityType.Action,
-   *   title: "Follow up on email"
-   *   // assignee will be set automatically to twist owner
-   * };
-   *
-   * // Update assignee
-   * await plot.updateActivity({
-   *   id: activityId,
-   *   assignee: {
-   *     id: newUserId as ActorId,
-   *     type: ActorType.User,
-   *     name: "Bob"
-   *   }
-   * });
    * ```
    */
   assignee: Actor | null;
   /** Timestamp when the activity was marked as complete. Null if not completed. */
-  doneAt: Date | null;
+  done: Date | null;
   /**
    * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
    * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
    *
    * **Activity Scheduling States** (for Actions):
-   * - **Do Now** (current/actionable): When creating a NewActivity of type Action, omitting `start` defaults to current time
+   * - **Do Now** (current/actionable): When creating an Action, omitting `start` defaults to current time
    * - **Do Later** (future scheduled): Set `start` to a future Date or date string
    * - **Do Someday** (unscheduled backlog): Explicitly set `start: null`
    *
+   * **Important for synced tasks**: When syncing unassigned backlog items from external systems,
+   * set BOTH `start: null` AND `assignee: null` to create unscheduled, unassigned actions.
+   *
    * @example
    * ```typescript
-   * // "Do Now" - defaults to current time when start is omitted
-   * await this.tools.plot.createActivity({ type: ActivityType.Action, title: "Urgent task" });
+   * // "Do Now" - assigned to twist owner, actionable immediately
+   * await this.tools.plot.createActivity({
+   *   type: ActivityType.Action,
+   *   title: "Urgent task"
+   *   // start omitted → defaults to now
+   *   // assignee omitted → defaults to twist owner
+   * });
    *
    * // "Do Later" - scheduled for a specific time
    * await this.tools.plot.createActivity({
@@ -318,11 +331,12 @@ export type Activity = ActivityCommon & {
    *   start: new Date("2025-02-01")
    * });
    *
-   * // "Do Someday" - unscheduled backlog item
+   * // "Do Someday" - unassigned backlog item (common for synced tasks)
    * await this.tools.plot.createActivity({
    *   type: ActivityType.Action,
    *   title: "Backlog task",
-   *   start: null
+   *   start: null,      // Explicitly unscheduled
+   *   assignee: null    // Explicitly unassigned
    * });
    * ```
    */
@@ -419,15 +433,20 @@ export type PickPriorityConfig = {
  * the current execution context. The ID can be optionally provided by
  * tools for tracking and update detection purposes.
  *
- * **Important: Scheduling Defaults for Actions**
+ * **Important: Defaults for Actions**
  *
- * When creating an Activity of type `Action`, the `start` field determines its scheduling state:
- * - **Omit `start`** → Defaults to current time → "Do Now" (appears in today's actionable list)
- * - **Set `start: null`** → Unscheduled → "Do Someday" (backlog item, no specific time)
- * - **Set `start` to future Date** → Scheduled → "Do Later" (appears on that date)
+ * When creating an Activity of type `Action`:
+ * - **`start` omitted** → Defaults to current time (now) → "Do Now"
+ * - **`assignee` omitted** → Defaults to twist owner → Assigned action
  *
- * For most external task integrations (project management, issue trackers), use `start: null`
- * to create backlog items unless the task is explicitly marked as current/active.
+ * To create unassigned backlog items (common for synced tasks), you MUST explicitly set BOTH:
+ * - `start: null` → "Do Someday" (unscheduled)
+ * - `assignee: null` → Unassigned
+ *
+ * **Scheduling States**:
+ * - **"Do Now"** (actionable today): Omit `start` or set to current time
+ * - **"Do Later"** (scheduled): Set `start` to a future Date
+ * - **"Do Someday"** (backlog): Set `start: null`
  *
  * Priority can be specified in three ways:
  * 1. Explicit priority: `priority: { id: "..." }` - Use specific priority (disables pickPriority)
@@ -436,18 +455,20 @@ export type PickPriorityConfig = {
  *
  * @example
  * ```typescript
- * // "Do Now" - Action defaults to current time (actionable today)
+ * // "Do Now" - Assigned to twist owner, actionable immediately
  * const urgentTask: NewActivity = {
  *   type: ActivityType.Action,
  *   title: "Review pull request"
- *   // Omitting start defaults to new Date()
+ *   // start omitted → defaults to now
+ *   // assignee omitted → defaults to twist owner
  * };
  *
- * // "Do Someday" - Backlog item (recommended for most synced tasks)
+ * // "Do Someday" - UNASSIGNED backlog item (for synced tasks)
  * const backlogTask: NewActivity = {
  *   type: ActivityType.Action,
  *   title: "Refactor user service",
- *   start: null  // Explicitly set to null for backlog
+ *   start: null,      // Must explicitly set to null
+ *   assignee: null    // Must explicitly set to null
  * };
  *
  * // "Do Later" - Scheduled for specific date
@@ -478,9 +499,37 @@ export type NewActivity = Pick<Activity, "type"> &
   Partial<
     Omit<
       Activity,
-      "author" | "assignee" | "type" | "priority" | "tags" | "mentions"
+      | "author"
+      | "assignee"
+      | "type"
+      | "priority"
+      | "tags"
+      | "mentions"
+      | "id"
+      | "source"
     >
   > &
+  (
+    | {
+        /**
+         * Unique identifier for the activity, generated by Uuid.Generate().
+         * Specifying an ID allows tools to track and upsert activities.
+         */
+        id: Uuid;
+      }
+    | {
+        /**
+         * Canonical URL for the item in an external system.
+         * For example, https://acme.atlassian.net/browse/PROJ-42 could represent a Jira issue.
+         * When set, it uniquely identifies the activity within a priority tree. This performs
+         * an upsert.
+         */
+        source: string;
+      }
+    | {
+        /* Neither id nor source is required. An id will be generated and returned. */
+      }
+  ) &
   (
     | {
         /** Explicit priority (required when specified) - disables automatic priority matching */
@@ -490,7 +539,6 @@ export type NewActivity = Pick<Activity, "type"> &
         /** Configuration for automatic priority selection based on similarity */
         pickPriority?: PickPriorityConfig;
       }
-    | {}
   ) & {
     /**
      * The person that created the item. By default, it will be the twist itself.
@@ -517,14 +565,27 @@ export type NewActivity = Pick<Activity, "type"> &
     unread?: boolean;
   };
 
-export type ActivityUpdate = Pick<Activity, "id"> &
+export type ActivityUpdate = (
+  | {
+      /**
+       * Unique identifier for the activity.
+       */
+      id: Uuid;
+    }
+  | {
+      /**
+       * Canonical URL for the item in an external system.
+       */
+      source: string;
+    }
+) &
   Partial<
     Pick<
       Activity,
       | "type"
       | "start"
       | "end"
-      | "doneAt"
+      | "done"
       | "title"
       | "assignee"
       | "draft"
@@ -598,6 +659,12 @@ export type SyncUpdate =
  * They are always ordered by creation time within their parent activity.
  */
 export type Note = ActivityCommon & {
+  /**
+   * Unique identifier for the note within its activity.
+   * Can be used to upsert without knowing the id.
+   * For example, "description" could identify the description note for a Jira issue.
+   */
+  key: string | null;
   /** The parent activity this note belongs to */
   activity: Activity;
   /** Primary content for the note (markdown) */
@@ -610,52 +677,61 @@ export type Note = ActivityCommon & {
  * Type for creating new notes.
  *
  * Requires the activity reference, with all other fields optional.
- * The id field can be optionally provided by tools for tracking purposes.
+ * Can provide id, key, or neither for note identification:
+ * - id: Provide a specific UUID for the note
+ * - key: Provide an external identifier for upsert within the activity
+ * - neither: A new note with auto-generated UUID will be created
  */
 export type NewNote = Partial<
-  Omit<Note, "author" | "activity" | "tags" | "mentions">
-> & {
-  /** Reference to the parent activity (required) */
-  activity: Pick<Activity, "id">;
+  Omit<Note, "author" | "activity" | "tags" | "mentions" | "id" | "key">
+> &
+  ({ id: Uuid } | { key: string } | {}) & {
+    /** Reference to the parent activity (required) */
+    activity:
+      | Pick<Activity, "id">
+      | {
+          source: string;
+        };
 
-  /**
-   * The person that created the item, or leave undefined to use the twist as author.
-   */
-  author?: NewActor;
+    /**
+     * The person that created the item, or leave undefined to use the twist as author.
+     */
+    author?: NewActor;
 
-  /**
-   * Format of the note content. Determines how the note is processed:
-   * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
-   * - 'markdown': Already in markdown format (default, no conversion)
-   * - 'html': HTML content that will be converted to markdown
-   */
-  contentType?: ContentType;
+    /**
+     * Format of the note content. Determines how the note is processed:
+     * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
+     * - 'markdown': Already in markdown format (default, no conversion)
+     * - 'html': HTML content that will be converted to markdown
+     */
+    contentType?: ContentType;
 
-  /**
-   * Tags to change on the activity. Use an empty array of NewActor to remove a tag.
-   * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
-   */
-  tags?: NewTags;
+    /**
+     * Tags to change on the activity. Use an empty array of NewActor to remove a tag.
+     * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
+     */
+    tags?: NewTags;
 
-  /**
-   * Change the mentions on the note.
-   */
-  mentions?: NewActor[];
+    /**
+     * Change the mentions on the note.
+     */
+    mentions?: NewActor[];
 
-  /**
-   * Whether the note should mark the parent activity as unread for users.
-   * - true (default): Activity becomes unread for users who haven't authored the note
-   * - false: Activity is marked as read for all users in the priority at note creation time
-   *
-   * Use false for historical imports to avoid marking old items as unread.
-   */
-  unread?: boolean;
-};
+    /**
+     * Whether the note should mark the parent activity as unread for users.
+     * - true (default): Activity becomes unread for users who haven't authored the note
+     * - false: Activity is marked as read for all users in the priority at note creation time
+     *
+     * Use false for historical imports to avoid marking old items as unread.
+     */
+    unread?: boolean;
+  };
 
 /**
  * Type for updating existing notes.
+ * Must provide either id or key to identify the note to update.
  */
-export type NoteUpdate = Pick<Note, "id"> &
+export type NoteUpdate = ({ id: Uuid } | { key: string }) &
   Partial<Pick<Note, "draft" | "private" | "content" | "links">> & {
     /**
      * Format of the note content. Determines how the note is processed:

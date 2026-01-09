@@ -3,7 +3,6 @@ import type {
   NewActivityWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
-import { Uuid } from "@plotday/twister/utils/uuid";
 
 export type SlackChannel = {
   id: string;
@@ -256,13 +255,16 @@ export function transformSlackThread(
   const firstText = formatSlackText(parentMessage.text);
   const title = firstText.substring(0, 50) || "Slack message";
 
+  // Canonical URL using Slack's app_redirect (works across all workspaces)
+  const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${threadTs}`;
+
   // Create Activity
   const activity: NewActivityWithNotes = {
+    source: canonicalUrl,
     type: ActivityType.Note,
     title,
     start: new Date(parseFloat(parentMessage.ts) * 1000),
     meta: {
-      source: `slack:${channelId}:${threadTs}`,
       channelId: channelId,
       threadTs: threadTs,
     },
@@ -277,9 +279,10 @@ export function transformSlackThread(
     const text = formatSlackText(message.text);
     const mentions = parseUserMentionNewActors(message.text);
 
-    // Create NewNote (Omit<NewNote, "activity">)
+    // Create NewNote with idempotent key
     const note = {
-      id: Uuid.Generate(),
+      activity: { source: canonicalUrl },
+      key: message.ts,
       author: slackUserToNewActor(userId),
       content: text,
       mentions: mentions.length > 0 ? mentions : undefined,

@@ -2,6 +2,7 @@ import { type Issue, LinearClient } from "@linear/sdk";
 
 import {
   type ActivityLink,
+  ActivityLinkType,
   ActivityType,
   type NewActivityWithNotes,
   type NewNote,
@@ -14,7 +15,7 @@ import type {
   ProjectSyncOptions,
   ProjectTool,
 } from "@plotday/twister/common/projects";
-import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
+import type { NewContact } from "@plotday/twister/plot";
 import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
@@ -26,7 +27,6 @@ import {
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
-import { quickHash } from "@plotday/twister/utils/hash";
 import { Uuid } from "@plotday/twister/utils/uuid";
 
 type SyncState = {
@@ -36,22 +36,6 @@ type SyncState = {
   initialSync: boolean;
 };
 
-/**
- * Stores the mapping between Linear issues and Plot activities.
- * Used for tracking which issues have been synced and detecting changes.
- */
-type SyncMapping = {
-  /** External Linear issue ID */
-  externalId: string;
-  /** Tool-generated UUID for the Plot activity */
-  activityId: Uuid;
-  /** Tool-generated UUID for the description note */
-  descriptionNoteId?: Uuid;
-  /** Hash of the description content for change detection */
-  descriptionHash?: string;
-  /** Timestamp of last sync */
-  lastSyncedAt: string;
-};
 
 /**
  * Linear project management tool
@@ -281,7 +265,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     // Build filter
     const filter: any = {};
     if (options?.timeMin) {
-      filter.createdAt = { gte: options.timeMin };
+      filter.created = { gte: options.timeMin };
     }
 
     // Fetch batch of issues (50 at a time)
@@ -363,127 +347,56 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     // Prepare description content
     const description = issue.description || "";
     const hasDescription = description.trim().length > 0;
-    const descriptionHash = hasDescription ? quickHash(description) : undefined;
 
-    // Check for existing mapping
-    const mappingKey = `sync:${projectId}:${issue.id}`;
-    const existingMapping = await this.get<SyncMapping>(mappingKey);
+    // Build notes array: description note with link + comment notes
+    const notes: NewNote[] = [];
 
-    if (!existingMapping) {
-      // NEW ISSUE: Generate UUIDs and create mapping
-      const activityId = Uuid.Generate();
-      const descriptionNoteId = hasDescription ? Uuid.Generate() : undefined;
-
-      // Build notes array: description + comments
-      const notes: NewNote[] = [];
-
-      if (hasDescription) {
-        notes.push({
-          id: descriptionNoteId!,
-          activity: { id: activityId },
-          content: description,
-        });
-      }
-
-      // Add comments as notes
-      for (const comment of comments.nodes) {
-        notes.push({
-          id: Uuid.Generate(),
-          activity: { id: activityId },
-          content: comment.body,
-        });
-      }
-
-      const activity: NewActivityWithNotes = {
-        id: activityId,
-        type: ActivityType.Action,
-        title: issue.title,
-        author: authorContact,
-        assignee: assigneeContact,
-        doneAt:
-          state?.name === "Done" || state?.name === "Completed"
-            ? new Date()
-            : null,
-        meta: {
-          linearId: issue.id,
-          projectId,
-          url: issue.url,
-        },
-        notes,
-        unread: !initialSync, // false for initial sync, true for incremental updates
-      };
-
-      // Store mapping
-      const mapping: SyncMapping = {
-        externalId: issue.id,
-        activityId,
-        descriptionNoteId,
-        descriptionHash,
-        lastSyncedAt: new Date().toISOString(),
-      };
-      await this.set(mappingKey, mapping);
-
-      return activity;
-    } else {
-      // EXISTING ISSUE: Detect changes and send update
-      const update: TwisterActivityUpdate = { id: existingMapping.activityId };
-      let hasChanges = false;
-      const newNotes: NewNote[] = [];
-
-      // Check for title changes
-      if (issue.title) {
-        update.title = issue.title;
-        hasChanges = true;
-      }
-
-      // Check for state changes
-      const doneAt =
-        state?.name === "Done" || state?.name === "Completed"
-          ? new Date()
-          : null;
-      update.doneAt = doneAt;
-      hasChanges = true;
-
-      // Check for description changes
-      if (descriptionHash !== existingMapping.descriptionHash) {
-        const newDescriptionNoteId = Uuid.Generate();
-        newNotes.push({
-          id: newDescriptionNoteId,
-          activity: { id: existingMapping.activityId },
-          content: description,
-        });
-
-        // Update mapping with new description note
-        existingMapping.descriptionNoteId = newDescriptionNoteId;
-        existingMapping.descriptionHash = descriptionHash;
-      }
-
-      // Add new comments as notes
-      for (const comment of comments.nodes) {
-        newNotes.push({
-          id: Uuid.Generate(),
-          activity: { id: existingMapping.activityId },
-          content: comment.body,
-        });
-      }
-
-      // Send update if there are changes
-      if (hasChanges || newNotes.length > 0) {
-        const syncUpdate: SyncUpdate = {
-          activityId: existingMapping.activityId,
-          update: hasChanges ? update : undefined,
-          notes: newNotes.length > 0 ? newNotes : undefined,
-        };
-
-        // Update mapping timestamp
-        existingMapping.lastSyncedAt = new Date().toISOString();
-        await this.set(mappingKey, existingMapping);
-
-        return syncUpdate;
-      }
-
-      return null; // No changes
+    // Create description note with link to Linear issue
+    const links: ActivityLink[] = [];
+    if (issue.url) {
+      links.push({
+        type: ActivityLinkType.external,
+        title: `Open in Linear`,
+        url: issue.url,
+      });
     }
+
+    notes.push({
+      activity: { source: issue.url },
+      key: "description",
+      content: hasDescription ? description : null,
+      created: issue.createdAt,
+      links: links.length > 0 ? links : null,
+    });
+
+    // Add comments as notes (with unique IDs, not upserted)
+    for (const comment of comments.nodes) {
+      notes.push({
+        id: Uuid.Generate(),
+        activity: { source: issue.url },
+        content: comment.body,
+        created: comment.createdAt,
+      });
+    }
+
+    const activity: NewActivityWithNotes = {
+      source: issue.url,
+      type: ActivityType.Action,
+      title: issue.title,
+      created: issue.createdAt,
+      author: authorContact,
+      assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
+      done: issue.completedAt ?? null,
+      start: state?.type !== "started" ? null : undefined,
+      meta: {
+        linearId: issue.id,
+        projectId,
+      },
+      notes,
+      unread: !initialSync, // false for initial sync, true for incremental updates
+    };
+
+    return activity;
   }
 
   /**
@@ -516,15 +429,15 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       updateFields.assigneeId = update.assignee?.id || null;
     }
 
-    // Handle state based on start + doneAt combination
-    if (update.start !== undefined || update.doneAt !== undefined) {
+    // Handle state based on start + done combination
+    if (update.start !== undefined || update.done !== undefined) {
       const team = await issue.team;
       if (team) {
         const states = await team.states();
         let targetState;
 
         // Determine target state based on combination
-        if (update.doneAt !== undefined && update.doneAt !== null) {
+        if (update.done !== undefined && update.done !== null) {
           // Completed
           targetState = states.nodes.find(
             (s) =>
@@ -539,7 +452,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
           );
         } else if (
           (update.start !== undefined && update.start === null) ||
-          (update.doneAt !== undefined && update.doneAt === null)
+          (update.done !== undefined && update.done === null)
         ) {
           // Backlog/Todo (no start date, not done)
           targetState = states.nodes.find(

@@ -50,6 +50,10 @@ export interface ProjectSyncOptions {
  *
  * All synced issues/tasks are converted to ActivityWithNotes objects.
  * Each issue becomes an Activity with Notes for the description and comments.
+ *
+ * **Recommended Data Sync Strategy:**
+ * Use Activity.source (issue URL) and Note.key for automatic upserts.
+ * See SYNC_STRATEGIES.md for detailed patterns.
  */
 export interface ProjectTool {
   /**
@@ -80,13 +84,19 @@ export interface ProjectTool {
    * Issues and tasks are converted to SyncUpdate objects, which can be either
    * new items or updates to existing items.
    *
-   * Tools implementing this should:
-   * - Generate UUIDs for new activities and notes using Uuid.Generate()
-   * - Track activity IDs locally to detect updates vs new items
-   * - Send NewActivityWithNotes for new issues
-   * - Send update object with activityId for changed issues or new comments
-   * - Track description note ID and hash to detect description changes
+   * **Recommended Implementation** (Strategy 2 - Upsert via Source/Key):
+   * - Set Activity.source to the issue's canonical URL (e.g., Linear issue URL, Jira issue URL)
+   * - Use Note.key for issue details:
+   *   - key: "description" for issue description (upserts on changes)
+   *   - key: "metadata" for status, priority, assignee, etc.
+   *   - key: "comment-{commentId}" for individual comments (unique per comment)
+   * - No manual ID tracking needed - Plot handles deduplication automatically
+   * - Send NewActivityWithNotes for all issues (creates new or updates existing)
    * - Set activity.unread = false for initial sync, true for incremental updates
+   *
+   * **Alternative** (Strategy 3 - Advanced cases):
+   * - Use Uuid.Generate() and store ID mappings when creating multiple activities per issue
+   * - See SYNC_STRATEGIES.md for when this is appropriate
    *
    * @param authToken - Authorization token for access
    * @param projectId - ID of the project to sync
@@ -129,10 +139,10 @@ export interface ProjectTool {
    * sync activity updates back to the external service.
    *
    * The update object contains only the fields that changed, plus id and source.
-   * Uses the combination of start and doneAt to determine workflow state:
-   * - doneAt set → Completed/Done state
-   * - doneAt null + start set → In Progress/Active state
-   * - doneAt null + start null → Backlog/Todo state
+   * Uses the combination of start and done to determine workflow state:
+   * - done set → Completed/Done state
+   * - done null + start set → In Progress/Active state
+   * - done null + start null → Backlog/Todo state
    *
    * @param authToken - Authorization token for access
    * @param update - ActivityUpdate with changed fields (includes id and source)

@@ -45,6 +45,10 @@ export interface MessageSyncOptions {
  *
  * All synced messages/emails are converted to ActivityWithNotes objects.
  * Each email thread or chat conversation becomes an Activity with Notes for each message.
+ *
+ * **Recommended Data Sync Strategy:**
+ * Use Activity.source (thread URL or ID) and Note.key (message ID) for automatic upserts.
+ * See SYNC_STRATEGIES.md for detailed patterns.
  */
 export interface MessagingTool {
   /**
@@ -75,12 +79,17 @@ export interface MessagingTool {
    * Email threads and chat conversations are converted to SyncUpdate objects,
    * which can be either new items or updates to existing items.
    *
-   * Tools implementing this should:
-   * - Generate UUIDs for new activities and notes using Uuid.Generate()
-   * - Track activity IDs locally to detect updates vs new threads
-   * - Send NewActivityWithNotes for new threads
-   * - Send update object with activityId and new notes for new messages in existing threads
+   * **Recommended Implementation** (Strategy 2 - Upsert via Source/Key):
+   * - Set Activity.source to the thread/conversation URL or stable ID (e.g., "slack:{channelId}:{threadTs}")
+   * - Use Note.key for individual messages (e.g., "message-{messageId}")
+   * - Each message becomes a separate note with unique key for upserts
+   * - No manual ID tracking needed - Plot handles deduplication automatically
+   * - Send NewActivityWithNotes for all threads (creates new or updates existing)
    * - Set activity.unread = false for initial sync, true for incremental updates
+   *
+   * **Alternative** (Strategy 3 - Advanced cases):
+   * - Use Uuid.Generate() and store ID mappings when creating multiple activities per thread
+   * - See SYNC_STRATEGIES.md for when this is appropriate
    *
    * @param authToken - Authorization token for access
    * @param channelId - ID of the channel (e.g., channel, inbox) to sync

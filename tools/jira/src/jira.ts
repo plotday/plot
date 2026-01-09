@@ -2,9 +2,12 @@ import { Version3Client } from "jira.js";
 
 import {
   type ActivityLink,
+  ActivityLinkType,
   ActivityType,
   ActivityUpdate,
   type NewActivityWithNotes,
+  type NewNote,
+  Uuid,
 } from "@plotday/twister";
 import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
 import type {
@@ -269,7 +272,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     for (const issue of searchResult.issues || []) {
       const activityWithNotes = await this.convertIssueToActivity(
         issue,
-        projectId
+        projectId,
+        authToken
       );
       // Set unread based on sync type (false for initial sync to avoid notification overload)
       activityWithNotes.unread = !state.initialSync;
@@ -305,11 +309,36 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   }
 
   /**
+   * Get the cloud ID from stored authorization
+   */
+  private async getCloudId(authToken: string): Promise<string> {
+    const authorization = await this.get<Authorization>(
+      `authorization:${authToken}`
+    );
+    if (!authorization) {
+      throw new Error("Authorization no longer available");
+    }
+
+    const token = await this.tools.integrations.get(authorization);
+    if (!token) {
+      throw new Error("Authorization no longer available");
+    }
+
+    const cloudId = token.provider?.cloud_id;
+    if (!cloudId) {
+      throw new Error("Jira cloud ID not found in authorization");
+    }
+
+    return cloudId;
+  }
+
+  /**
    * Convert a Jira issue to a Plot Activity
    */
   private async convertIssueToActivity(
     issue: any,
-    projectId: string
+    projectId: string,
+    authToken?: string
   ): Promise<NewActivityWithNotes> {
     const fields = issue.fields || {};
     const status = fields.status?.name;
@@ -336,44 +365,77 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       };
     }
 
-    // Build notes array: description + comments
-    const notes: Array<{ content: string }> = [];
+    // Get cloud ID for constructing the issue URL
+    let issueUrl: string | undefined;
+    if (authToken) {
+      try {
+        const cloudId = await this.getCloudId(authToken);
+        issueUrl = `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issue.key}`;
+      } catch (error) {
+        console.error("Failed to get cloud ID for issue URL:", error);
+      }
+    }
 
+    // Build notes array: always create initial note with description and link
+    const notes: NewNote[] = [];
+
+    // Extract description (if any)
+    let description: string | null = null;
     if (fields.description) {
       // Jira uses Atlassian Document Format (ADF), need to convert to plain text
-      const description =
+      description =
         typeof fields.description === "string"
           ? fields.description
           : this.extractTextFromADF(fields.description);
-      notes.push({ content: description });
     }
 
+    // Canonical URL for this issue (required for upsert)
+    const canonicalUrl = issueUrl || `jira:issue:${projectId}:${issue.key}`;
+
+    // Create initial note with description and link to Jira issue
+    const links: ActivityLink[] = [];
+    if (issueUrl) {
+      links.push({
+        type: ActivityLinkType.external,
+        title: `Open in Jira`,
+        url: issueUrl,
+      });
+    }
+
+    notes.push({
+      activity: { source: canonicalUrl },
+      key: "description",
+      content: description,
+      created: fields.created ? new Date(fields.created) : undefined,
+      links: links.length > 0 ? links : null,
+    });
+
+    // Add comments as additional notes (with unique IDs, not upserted)
     for (const comment of comments) {
       const commentText =
         typeof comment.body === "string"
           ? comment.body
           : this.extractTextFromADF(comment.body);
-      notes.push({ content: commentText });
-    }
-
-    // Ensure at least one note exists
-    if (notes.length === 0) {
-      notes.push({ content: "" });
+      notes.push({
+        id: Uuid.Generate(),
+        activity: { source: canonicalUrl },
+        content: commentText,
+        created: comment.created ? new Date(comment.created) : undefined,
+      });
     }
 
     return {
+      source: canonicalUrl,
       type: ActivityType.Action,
       title: fields.summary || issue.key,
+      created: fields.created ? new Date(fields.created) : undefined,
       meta: {
-        source: `jira:issue:${projectId}:${issue.key}`,
         issueKey: issue.key,
+        projectId,
       },
       author: authorContact,
-      assignee: assigneeContact,
-      doneAt:
-        status === "Done" || status === "Closed" || status === "Resolved"
-          ? new Date()
-          : null,
+      assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
+      done: fields.resolutiondate ? new Date(fields.resolutiondate) : null,
       notes,
     };
   }
@@ -445,8 +507,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       });
     }
 
-    // Handle workflow state transitions based on start + doneAt combination
-    if (update.start !== undefined || update.doneAt !== undefined) {
+    // Handle workflow state transitions based on start + done combination
+    if (update.start !== undefined || update.done !== undefined) {
       // Get available transitions for this issue
       const transitions = await client.issues.getTransitions({
         issueIdOrKey: issueKey,
@@ -455,7 +517,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       let targetTransition;
 
       // Determine target state based on combination
-      if (update.doneAt !== undefined && update.doneAt !== null) {
+      if (update.done !== undefined && update.done !== null) {
         // Completed - look for "Done", "Close", or "Resolve" transition
         targetTransition = transitions.transitions?.find(
           (t) =>
@@ -476,7 +538,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         );
       } else if (
         (update.start !== undefined && update.start === null) ||
-        (update.doneAt !== undefined && update.doneAt === null)
+        (update.done !== undefined && update.done === null)
       ) {
         // Backlog/Todo - look for "To Do", "Open", or "Reopen" transition
         targetTransition = transitions.transitions?.find(
@@ -569,7 +631,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
 
       const activityWithNotes = await this.convertIssueToActivity(
         issue,
-        projectId
+        projectId,
+        authToken
       );
 
       // Webhooks are incremental updates - mark as unread

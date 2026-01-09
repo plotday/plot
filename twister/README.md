@@ -136,17 +136,21 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 
 Think of an **Activity as a thread** and **Notes as messages in that thread**. Always create activities with an initial note, and add notes for updates rather than creating new activities.
 
+**Data sync:** When syncing from external systems, use `Activity.source` (canonical URL) and `Note.key` for automatic upserts without manual ID tracking. See the [Sync Strategies guide](https://twist.plot.day/documents/Sync_Strategies.html) for detailed patterns.
+
 **Action scheduling:** When creating Actions (tasks), omitting the `start` field defaults to "Do Now" (current time). For most integrations, explicitly set `start: null` to create backlog items ("Do Someday"), only using "Do Now" for urgent or in-progress tasks.
 
 ```typescript
-// Create an activity with an initial note (thread with first message)
+// Create an activity with source for automatic deduplication
 await this.tools.plot.createActivity({
+  source: "https://github.com/org/repo/pull/123", // Enables automatic upserts
   type: ActivityType.Action,
   title: "Review pull request",
   start: null, // "Do Someday" - backlog item (recommended default)
-  // Tracked via UUID mapping
   notes: [
     {
+      activity: { source: "https://github.com/org/repo/pull/123" },
+      key: "description", // Use key for upsertable notes
       content: "New PR ready for review",
       links: [
         {
@@ -159,9 +163,10 @@ await this.tools.plot.createActivity({
   ],
 });
 
-// Add a note to existing activity (add message to thread)
+// Add or update a note using key (upserts if key exists)
 await this.tools.plot.createNote({
-  activity: { id: activityId },
+  activity: { source: "https://github.com/org/repo/pull/123" },
+  key: "approval", // Using key enables upserts
   content: "LGTM! Approved ✅",
 });
 ```
@@ -199,6 +204,7 @@ plot priority create           # Create new priority
 
 - [Getting Started](https://twist.plot.day/documents/Getting_Started.html) - Complete walkthrough
 - [Core Concepts](https://twist.plot.day/documents/Core_Concepts.html) - Twists, tools, and architecture
+- [Sync Strategies](https://twist.plot.day/documents/Sync_Strategies.html) - Data synchronization patterns (upserts, deduplication, ID management)
 - [Built-in Tools](https://twist.plot.day/documents/Built-in_Tools.html) - Plot, Store, AI, and more
 - [Building Custom Tools](https://twist.plot.day/documents/Building_Custom_Tools.html) - Create reusable twist tools
 - [Runtime Environment](https://twist.plot.day/documents/Runtime_Environment.html) - Execution constraints and optimization

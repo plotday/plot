@@ -64,10 +64,26 @@ export abstract class Store extends ITool {
    * The value will be JSON-serialized and stored persistently.
    * Any existing value at the same key will be overwritten.
    *
+   * **Handling undefined values:**
+   * - Object keys with undefined values are automatically removed
+   * - Arrays with undefined elements will throw a validation error
+   * - Use null instead of undefined for array elements
+   *
    * @template T - The type of value being stored
    * @param key - The storage key to use
    * @param value - The value to store (must be JSON-serializable)
    * @returns Promise that resolves when the value is stored
+   *
+   * @example
+   * ```typescript
+   * // Object keys with undefined are removed
+   * await this.set('data', { name: 'test', optional: undefined });
+   * // Stores: { name: 'test' }
+   *
+   * // Arrays with undefined throw errors - use null instead
+   * await this.set('items', [1, null, 3]); // ✅ Works
+   * await this.set('items', [1, undefined, 3]); // ❌ Throws error
+   * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract set<T>(key: string, value: T): Promise<void>;

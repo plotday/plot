@@ -39,7 +39,7 @@ type ChannelConfig = {
 type ThreadTask = {
   threadId: string;
   taskId: Uuid;
-  createdAt: string;
+  created: string;
   lastChecked: string;
 };
 
@@ -140,7 +140,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     tasks.push({
       threadId,
       taskId,
-      createdAt: new Date().toISOString(),
+      created: new Date().toISOString(),
       lastChecked: new Date().toISOString(),
     });
     await this.set("thread_tasks", tasks);
@@ -502,19 +502,10 @@ If a task is needed, create a clear, actionable title that describes what the us
     );
     const channelName = channelConfig?.channelName || channelId;
 
-    // Check if task already exists for this thread
+    // Create task source
     const taskSource = `message-tasks:${threadId}`;
-    const existingActivity = await this.tools.plot.getActivityBySource(
-      taskSource
-    );
-    if (existingActivity) {
-      console.log(`Task with source ${taskSource} already exists`);
-      // Store the mapping and return
-      await this.storeThreadTask(threadId, existingActivity.id);
-      return;
-    }
 
-    // Create task activity
+    // Create task activity - database handles upsert automatically
     const task = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title:
@@ -605,7 +596,7 @@ Return true only if there's clear evidence the task is done.`,
         );
         await this.tools.plot.updateActivity({
           id: taskInfo.taskId,
-          doneAt: new Date(),
+          done: new Date(),
         });
       }
     } catch (error) {

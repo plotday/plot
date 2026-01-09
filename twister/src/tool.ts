@@ -145,13 +145,27 @@ export abstract class Tool<TSelf> implements ITool {
   /**
    * Stores a value in persistent storage.
    *
-   * **Important**: Values must be JSON-serializable. Functions, Symbols, and undefined values
-   * cannot be stored directly.
+   * **Important**: Values must be JSON-serializable. Functions and Symbols cannot be stored.
+   *
+   * **Handling undefined values:**
+   * - Object keys with undefined values are automatically removed
+   * - Arrays with undefined elements will throw a validation error
+   * - Use null instead of undefined for array elements
    *
    * **For function references**: Use callbacks instead of storing functions directly.
    *
    * @example
    * ```typescript
+   * // ✅ Object keys with undefined are automatically removed
+   * await this.set("data", { name: "test", optional: undefined });
+   * // Stores: { name: "test" }
+   *
+   * // ✅ Arrays: use null for optional values
+   * await this.set("items", [1, null, 3]);
+   *
+   * // ❌ Arrays with undefined throw errors
+   * await this.set("items", [1, undefined, 3]); // Error!
+   *
    * // ❌ WRONG: Cannot store functions directly
    * await this.set("handler", this.myHandler);
    *

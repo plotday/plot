@@ -16,7 +16,6 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import { Uuid } from "@plotday/twister/utils/uuid";
-import { quickHash } from "@plotday/twister/utils/hash";
 import {
   type Calendar,
   type CalendarAuth,
@@ -46,22 +45,6 @@ import {
   transformGoogleEvent,
 } from "./google-api";
 
-/**
- * Stores the mapping between Google Calendar events and Plot activities.
- * Used for tracking which events have been synced and detecting changes.
- */
-type SyncMapping = {
-  /** External Google Calendar event ID */
-  externalId: string;
-  /** Tool-generated UUID for the Plot activity */
-  activityId: Uuid;
-  /** Tool-generated UUID for the description note */
-  descriptionNoteId?: Uuid;
-  /** Hash of the description content for change detection */
-  descriptionHash?: string;
-  /** Timestamp of last sync */
-  lastSyncedAt: string;
-};
 
 /**
  * Google Calendar integration tool.
@@ -556,123 +539,52 @@ export class GoogleCalendar
             activityData.meta?.description || event.description;
           const hasDescription = description && description.trim().length > 0;
           const hasLinks = links.length > 0;
-          const descriptionHash = hasDescription ? quickHash(description) : undefined;
-
-          // Check for existing mapping
-          const mappingKey = `sync:${calendarId}:${event.id}`;
-          const existingMapping = await this.get<SyncMapping>(mappingKey);
 
           const callbackToken = await this.get<Callback>("event_callback_token");
           if (!callbackToken || !activityData.type) {
             continue;
           }
 
-          if (!existingMapping) {
-            // NEW EVENT: Generate UUIDs and create mapping
-            const activityId = Uuid.Generate();
-            const descriptionNoteId = (hasDescription || hasLinks) ? Uuid.Generate() : undefined;
+          // Canonical URL for this event (required for upsert)
+          const canonicalUrl = event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
 
-            // Create note with description and/or links
-            const notes: NewNote[] = [];
-            if (hasDescription || hasLinks) {
-              notes.push({
-                id: descriptionNoteId!,
-                activity: { id: activityId },
-                content: hasDescription ? description : null,
-                links: hasLinks ? links : null,
-                contentType: containsHtml(description) ? "html" : "text",
-              });
-            }
-
-            const activity: NewActivityWithNotes = {
-              id: activityId,
-              type: activityData.type,
-              start: activityData.start || null,
-              end: activityData.end || null,
-              recurrenceUntil: activityData.recurrenceUntil || null,
-              recurrenceCount: activityData.recurrenceCount || null,
-              doneAt: null,
-              title: activityData.title || "",
-              author: authorContact,
-              recurrenceRule: activityData.recurrenceRule || null,
-              recurrenceExdates: activityData.recurrenceExdates || null,
-              recurrenceDates: activityData.recurrenceDates || null,
-              recurrence: null,
-              occurrence: null,
-              meta: activityData.meta ?? null,
-              tags: tags || undefined,
-              notes,
-              unread: !initialSync, // false for initial sync, true for incremental updates
-            };
-
-            // Store mapping
-            const mapping: SyncMapping = {
-              externalId: event.id,
-              activityId,
-              descriptionNoteId,
-              descriptionHash,
-              lastSyncedAt: new Date().toISOString(),
-            };
-            await this.set(mappingKey, mapping);
-
-            // Send new activity
-            await this.tools.callbacks.run(callbackToken, activity);
-          } else {
-            // EXISTING EVENT: Detect changes and send update
-            const update: ActivityUpdate = { id: existingMapping.activityId };
-            let hasChanges = false;
-            const newNotes: NewNote[] = [];
-
-            // Check for activity field changes
-            if (activityData.title !== undefined) {
-              update.title = activityData.title || "";
-              hasChanges = true;
-            }
-            if (activityData.start !== undefined) {
-              update.start = activityData.start || null;
-              hasChanges = true;
-            }
-            if (activityData.end !== undefined) {
-              update.end = activityData.end || null;
-              hasChanges = true;
-            }
-            if (activityData.meta !== undefined) {
-              update.meta = activityData.meta ?? null;
-              hasChanges = true;
-            }
-
-            // Check for description changes
-            if (descriptionHash !== existingMapping.descriptionHash) {
-              const newDescriptionNoteId = Uuid.Generate();
-              newNotes.push({
-                id: newDescriptionNoteId,
-                activity: { id: existingMapping.activityId },
-                content: hasDescription ? description : null,
-                links: hasLinks ? links : null,
-                contentType: containsHtml(description) ? "html" : "text",
-              });
-
-              // Update mapping with new description note
-              existingMapping.descriptionNoteId = newDescriptionNoteId;
-              existingMapping.descriptionHash = descriptionHash;
-            }
-
-            // Send update if there are changes
-            if (hasChanges || newNotes.length > 0) {
-              const syncUpdate: SyncUpdate = {
-                activityId: existingMapping.activityId,
-                update: hasChanges ? update : undefined,
-                notes: newNotes.length > 0 ? newNotes : undefined,
-              };
-
-              // Update mapping timestamp
-              existingMapping.lastSyncedAt = new Date().toISOString();
-              await this.set(mappingKey, existingMapping);
-
-              // Send update
-              await this.tools.callbacks.run(callbackToken, syncUpdate);
-            }
+          // Create note with description and/or links
+          const notes: NewNote[] = [];
+          if (hasDescription || hasLinks) {
+            notes.push({
+              activity: { source: canonicalUrl },
+              key: "description",
+              content: hasDescription ? description : null,
+              links: hasLinks ? links : null,
+              contentType: containsHtml(description) ? "html" : "text",
+            });
           }
+
+          const activity: NewActivityWithNotes = {
+            source: canonicalUrl,
+            type: activityData.type,
+            created: event.created ? new Date(event.created) : undefined,
+            start: activityData.start || null,
+            end: activityData.end || null,
+            recurrenceUntil: activityData.recurrenceUntil || null,
+            recurrenceCount: activityData.recurrenceCount || null,
+            done: null,
+            title: activityData.title || "",
+            author: authorContact,
+            recurrenceRule: activityData.recurrenceRule || null,
+            recurrenceExdates: activityData.recurrenceExdates || null,
+            recurrenceDates: activityData.recurrenceDates || null,
+            recurrence: null,
+            occurrence: null,
+            meta: activityData.meta ?? null,
+            tags: tags || undefined,
+            notes,
+            unread: !initialSync, // false for initial sync, true for incremental updates
+          };
+
+          // Send activity - database handles upsert automatically
+          await this.tools.callbacks.run(callbackToken, activity);
+
         }
       } catch (error) {
         console.error(`Failed to process event ${event.id}:`, error);
@@ -742,116 +654,44 @@ export class GoogleCalendar
     const description = activityData.meta?.description || event.description;
     const hasDescription = description && description.trim().length > 0;
     const hasLinks = links.length > 0;
-    const descriptionHash = hasDescription ? quickHash(description) : undefined;
 
-    // Check for existing mapping
-    const mappingKey = `sync:${calendarId}:${event.id}`;
-    const existingMapping = await this.get<SyncMapping>(mappingKey);
+    // Canonical URL for this event (required for upsert)
+    const canonicalUrl = event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
 
-    if (!existingMapping) {
-      // NEW EXCEPTION: Generate UUIDs and create mapping
-      const activityId = Uuid.Generate();
-      const descriptionNoteId = (hasDescription || hasLinks) ? Uuid.Generate() : undefined;
-
-      // Create note with description and/or links
-      const notes: NewNote[] = [];
-      if (hasDescription || hasLinks) {
-        notes.push({
-          id: descriptionNoteId!,
-          activity: { id: activityId },
-          content: hasDescription ? description : null,
-          links: hasLinks ? links : null,
-          contentType: containsHtml(description) ? "html" : "text",
-        });
-      }
-
-      const activity: NewActivityWithNotes = {
-        id: activityId,
-        type: activityData.type,
-        start: activityData.start || null,
-        end: activityData.end || null,
-        recurrenceUntil: activityData.recurrenceUntil || null,
-        recurrenceCount: activityData.recurrenceCount || null,
-        doneAt: null,
-        title: activityData.title || "",
-        recurrenceRule: null,
-        recurrenceExdates: null,
-        recurrenceDates: null,
-        recurrence: null, // Would need to find master activity
-        occurrence: new Date(originalStartTime),
-        meta: activityData.meta ?? null,
-        notes,
-        unread: !initialSync, // false for initial sync, true for incremental updates
-      };
-
-      // Store mapping
-      const mapping: SyncMapping = {
-        externalId: event.id,
-        activityId,
-        descriptionNoteId,
-        descriptionHash,
-        lastSyncedAt: new Date().toISOString(),
-      };
-      await this.set(mappingKey, mapping);
-
-      // Send new activity
-      await this.tools.callbacks.run(callbackToken, activity);
-    } else {
-      // EXISTING EXCEPTION: Detect changes and send update
-      const update: ActivityUpdate = { id: existingMapping.activityId };
-      let hasChanges = false;
-      const newNotes: NewNote[] = [];
-
-      // Check for activity field changes
-      if (activityData.title !== undefined) {
-        update.title = activityData.title || "";
-        hasChanges = true;
-      }
-      if (activityData.start !== undefined) {
-        update.start = activityData.start || null;
-        hasChanges = true;
-      }
-      if (activityData.end !== undefined) {
-        update.end = activityData.end || null;
-        hasChanges = true;
-      }
-      if (activityData.meta !== undefined) {
-        update.meta = activityData.meta ?? null;
-        hasChanges = true;
-      }
-
-      // Check for description changes
-      if (descriptionHash !== existingMapping.descriptionHash) {
-        const newDescriptionNoteId = Uuid.Generate();
-        newNotes.push({
-          id: newDescriptionNoteId,
-          activity: { id: existingMapping.activityId },
-          content: hasDescription ? description : null,
-          links: hasLinks ? links : null,
-          contentType: containsHtml(description) ? "html" : "text",
-        });
-
-        // Update mapping with new description note
-        existingMapping.descriptionNoteId = newDescriptionNoteId;
-        existingMapping.descriptionHash = descriptionHash;
-      }
-
-      // Send update if there are changes
-      if (hasChanges || newNotes.length > 0) {
-        const syncUpdate: SyncUpdate = {
-          activityId: existingMapping.activityId,
-          update: hasChanges ? update : undefined,
-          notes: newNotes.length > 0 ? newNotes : undefined,
-        };
-
-        // Update mapping timestamp
-        existingMapping.lastSyncedAt = new Date().toISOString();
-        await this.set(mappingKey, existingMapping);
-
-        // Send update
-        await this.tools.callbacks.run(callbackToken, syncUpdate);
-      }
+    // Create note with description and/or links
+    const notes: NewNote[] = [];
+    if (hasDescription || hasLinks) {
+      notes.push({
+        activity: { source: canonicalUrl },
+        key: "description",
+        content: hasDescription ? description : null,
+        links: hasLinks ? links : null,
+        contentType: containsHtml(description) ? "html" : "text",
+      });
     }
+
+    const activity: NewActivityWithNotes = {
+      source: canonicalUrl,
+      type: activityData.type,
+      created: event.created ? new Date(event.created) : undefined,
+      start: activityData.start || null,
+      end: activityData.end || null,
+      recurrenceUntil: activityData.recurrenceUntil || null,
+      recurrenceCount: activityData.recurrenceCount || null,
+      done: null,
+      title: activityData.title || "",
+      recurrenceRule: null,
+      recurrenceExdates: null,
+      recurrenceDates: null,
+      recurrence: null, // Would need to find master activity
+      occurrence: new Date(originalStartTime),
+      meta: activityData.meta ?? null,
+      notes,
+      unread: !initialSync, // false for initial sync, true for incremental updates
+    };
+
+    // Send activity - database handles upsert automatically
+    await this.tools.callbacks.run(callbackToken, activity);
   }
 
   async onCalendarWebhook(

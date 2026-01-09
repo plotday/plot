@@ -58,9 +58,13 @@ export interface SyncOptions {
  * 5. Start sync for selected calendars
  * 6. Process incoming events via callbacks
  *
+ * **Recommended Data Sync Strategy:**
+ * Use Activity.source and Note.key for automatic upserts without manual ID tracking.
+ * See SYNC_STRATEGIES.md for detailed patterns and when to use alternative approaches.
+ *
  * @example
  * ```typescript
- * // Typical calendar integration flow
+ * // Typical calendar integration flow using source/key upserts
  * class MyCalendarTwist extends Twist {
  *   private googleCalendar: GoogleCalendar;
  *
@@ -93,21 +97,10 @@ export interface SyncOptions {
  *     syncUpdate: SyncUpdate,
  *     syncMeta: { initialSync: boolean }
  *   ) {
- *     // Step 4: Process synced events
- *     if ('activityId' in syncUpdate) {
- *       // Update existing activity
- *       if (syncUpdate.update) {
- *         await this.plot.updateActivity(syncUpdate.update);
- *       }
- *       if (syncUpdate.notes) {
- *         for (const note of syncUpdate.notes) {
- *           await this.plot.createNote(note);
- *         }
- *       }
- *     } else {
- *       // Create new activity
- *       await this.plot.createActivity(syncUpdate);
- *     }
+ *     // Step 4: Process synced events using source/key pattern
+ *     // The sync update will automatically use the event's URL as the source
+ *     // for deduplication - no manual ID tracking needed
+ *     await this.plot.createActivity(syncUpdate);
  *   }
  * }
  * ```
@@ -147,12 +140,16 @@ export interface CalendarTool {
    * event import and ongoing change notifications. The callback function
    * will be invoked for each synced event.
    *
-   * Tools implementing this should:
-   * - Generate UUIDs for new activities and notes using Uuid.Generate()
-   * - Track activity IDs locally to detect updates vs new items
-   * - Send NewActivityWithNotes for new events
-   * - Send update object with activityId for changed events
+   * **Recommended Implementation** (Strategy 2 - Upsert via Source/Key):
+   * - Set Activity.source to the event's canonical URL (e.g., event.htmlLink)
+   * - Use Note.key for event details (description, attendees, etc.) to enable upserts
+   * - No manual ID tracking needed - Plot handles deduplication automatically
+   * - Send NewActivityWithNotes for all events (creates new or updates existing)
    * - Set activity.unread = false for initial sync, true for incremental updates
+   *
+   * **Alternative** (Strategy 3 - Advanced cases):
+   * - Use Uuid.Generate() and store ID mappings when creating multiple activities per event
+   * - See SYNC_STRATEGIES.md for when this is appropriate
    *
    * @param authToken - Authorization token for calendar access
    * @param calendarId - ID of the calendar to sync

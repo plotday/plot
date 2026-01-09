@@ -226,15 +226,19 @@ Think of an **Activity as a thread** on a messaging platform, and **Notes as the
 
 ### Creating Activities
 
-Always create activities with an initial note. The `notes` array can contain multiple notes (messages in the thread):
+Always create activities with an initial note. The `notes` array can contain multiple notes (messages in the thread).
+
+**Data Sync Tip:** When syncing from external systems, use `Activity.source` for automatic deduplication and `Note.key` for upsertable notes. See the [Sync Strategies](SYNC_STRATEGIES.md) guide for detailed patterns.
 
 ```typescript
 await this.tools.plot.createActivity({
+  source: "https://github.com/org/repo/pull/123", // Enables automatic upserts
   type: ActivityType.Action,
   title: "Review pull request",
-  // Tracked via UUID mapping
   notes: [
     {
+      activity: { source: "https://github.com/org/repo/pull/123" },
+      key: "description", // Using key enables upserts
       content: "Please review the authentication changes and ensure they follow security best practices.",
       links: [
         {
@@ -339,30 +343,56 @@ await this.tools.plot.createActivity({
 
 #### Add Notes to Existing Activities for Related Content
 
-For conversations, email threads, or workflows, add Notes to the existing Activity instead of creating new Activities:
+For conversations, email threads, or workflows, add Notes to the existing Activity instead of creating new Activities.
+
+**Recommended Pattern:** Use `Activity.source` and `Note.key` for automatic upserts - no need to check if the activity exists first:
 
 ```typescript
-// Check if Activity exists
+// Simply create - Plot handles deduplication automatically via source
+const conversationUrl = `https://app.example.com/conversations/${conversationId}`;
+
+await this.tools.plot.createNote({
+  activity: { source: conversationUrl }, // References activity by source
+  key: `message-${messageId}`, // Use unique key per message for upserts
+  content: newMessage.text,
+});
+
+// If the activity doesn't exist yet, create it with source
+await this.tools.plot.createActivity({
+  source: conversationUrl, // Same source for deduplication
+  type: ActivityType.Note,
+  title: "New conversation",
+  notes: [{
+    activity: { source: conversationUrl },
+    key: `message-${messageId}`,
+    content: newMessage.text,
+  }],
+});
+```
+
+**Alternative Pattern** (for advanced cases): Use `getActivityBySource` to check existence:
+
+```typescript
 const existing = await this.tools.plot.getActivityBySource({
   conversation_id: conversationId,
 });
 
 if (existing) {
-  // Add to existing Activity
   await this.tools.plot.createNote({
     activity: { id: existing.id },
-    note: newMessage.text,
+    content: newMessage.text,
   });
 } else {
-  // Create new Activity with initial Note
   await this.tools.plot.createActivity({
     type: ActivityType.Note,
     title: "New conversation",
     meta: { conversation_id: conversationId },
-    notes: [{ note: newMessage.text }],
+    notes: [{ content: newMessage.text }],
   });
 }
 ```
+
+See [Sync Strategies](SYNC_STRATEGIES.md) for more patterns and guidance on choosing the right approach.
 
 See [Core Concepts - Best Practices](CORE_CONCEPTS.md#best-practices-for-activities-and-notes) for more details.
 

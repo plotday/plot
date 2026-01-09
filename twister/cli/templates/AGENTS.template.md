@@ -27,10 +27,30 @@ Plot Twists are TypeScript classes that extend the `Twist` base class. Twists in
 
 1. **Always create Activities with an initial Note** - The title is just a summary; detailed content goes in Notes
 2. **Add Notes to existing Activities for updates** - Don't create a new Activity for each related message
-3. **Track external items using generated UUIDs** - Store mappings between external IDs and Plot UUIDs for deduplication
-4. **Most Activities should be `ActivityType.Note`** - Use `Action` only for tasks with `doneAt`, use `Event` only for items with `start`/`end`
+3. **Use Activity.source and Note.key for automatic upserts (Recommended)** - Set Activity.source to the external item's URL for deduplication, and use Note.key for upsertable note content. No manual ID tracking needed.
+4. **For advanced cases, use generated UUIDs** - Only when you need multiple Plot activities per external item (see SYNC_STRATEGIES.md)
+5. **Most Activities should be `ActivityType.Note`** - Use `Action` only for tasks with `done`, use `Event` only for items with `start`/`end`
 
-### Decision Tree
+### Recommended Decision Tree (Strategy 2: Upsert via Source/Key)
+
+```
+New event/task/conversation from external system?
+  ├─ Has stable URL or ID?
+  │   └─ Yes → Set Activity.source to the canonical URL/ID
+  │             Create Activity (Plot handles deduplication automatically)
+  │             Use Note.key for different note types:
+  │               - "description" for main content
+  │               - "metadata" for status/priority/assignee
+  │               - "comment-{id}" for individual comments
+  │
+  └─ No stable identifier OR need multiple Plot activities per external item?
+      └─ Use Advanced Pattern (Strategy 3: Generate and Store IDs)
+          See SYNC_STRATEGIES.md for details
+```
+
+### Advanced Decision Tree (Strategy 3: Generate and Store IDs)
+
+Only use when source/key upserts aren't sufficient (e.g., creating multiple activities from one external item):
 
 ```
 New event/task/conversation?
@@ -269,7 +289,9 @@ async onAuthComplete(authResult: { authToken: string }, provider: string) {
 
 ## Sync Pattern
 
-Pattern for syncing external data - demonstrates adding Notes to existing Activities:
+### Recommended: Upsert via Source/Key (Strategy 2)
+
+Pattern for syncing external data using automatic upserts - **no manual ID tracking needed**:
 
 ```typescript
 async startSync(calendarId: string): Promise<void> {
@@ -284,6 +306,57 @@ async startSync(calendarId: string): Promise<void> {
 }
 
 async handleEvent(
+  event: ExternalEvent,
+  calendarId: string
+): Promise<void> {
+  // Use the event's canonical URL as the source for automatic deduplication
+  const activity: NewActivityWithNotes = {
+    source: event.htmlLink, // or event.url, depending on your external system
+    type: ActivityType.Event,
+    title: event.summary || "(No title)",
+    start: event.start?.dateTime || event.start?.date || null,
+    end: event.end?.dateTime || event.end?.date || null,
+    notes: [],
+  };
+
+  // Add description as an upsertable note
+  if (event.description) {
+    activity.notes.push({
+      activity: { source: event.htmlLink },
+      key: "description", // This key enables upserts - same key updates the note
+      content: event.description,
+    });
+  }
+
+  // Add attendees as an upsertable note
+  if (event.attendees?.length) {
+    const attendeeList = event.attendees
+      .map(a => `- ${a.email}${a.displayName ? ` (${a.displayName})` : ''}`)
+      .join('\n');
+
+    activity.notes.push({
+      activity: { source: event.htmlLink },
+      key: "attendees", // Different key for different note types
+      content: `## Attendees\n${attendeeList}`,
+    });
+  }
+
+  // Create or update - Plot automatically handles deduplication based on source
+  await this.tools.plot.createActivity(activity);
+}
+
+async stopSync(calendarId: string): Promise<void> {
+  const authToken = await this.get<string>("auth_token");
+  await this.tools.calendarTool.stopSync(authToken, calendarId);
+}
+```
+
+### Advanced: Generate and Store IDs (Strategy 3)
+
+Only use this pattern when you need to create multiple Plot activities from a single external item, or when the external system doesn't provide stable identifiers. See SYNC_STRATEGIES.md for details.
+
+```typescript
+async handleEventAdvanced(
   incomingActivity: NewActivityWithNotes,
   calendarId: string
 ): Promise<void> {
@@ -319,11 +392,6 @@ async handleEvent(
     ...incomingActivity,
     id: activityId,
   });
-}
-
-async stopSync(calendarId: string): Promise<void> {
-  const authToken = await this.get<string>("auth_token");
-  await this.tools.calendarTool.stopSync(authToken, calendarId);
 }
 ```
 
@@ -419,24 +487,18 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
   // Process one batch (keep under time limit)
   const result = await this.fetchBatch(state.nextPageToken);
 
-  // Process results (create activities with Notes)
+  // Process results using source/key pattern (automatic upserts, no manual tracking)
   for (const item of result.items) {
-    // Check if already synced
-    const mappingKey = `item_mapping:${resourceId}:${item.id}`;
-    const existingId = await this.get<Uuid>(mappingKey);
-
-    if (!existingId) {
-      // New item - generate UUID and store mapping
-      const activityId = Uuid.Generate();
-      await this.set(mappingKey, activityId);
-
-      await this.tools.plot.createActivity({
-        id: activityId,
-        type: ActivityType.Note,
-        title: item.title,
-        notes: [{ id: Uuid.Generate(), content: item.description }],
-      });
-    }
+    await this.tools.plot.createActivity({
+      source: item.url, // Use item's canonical URL for automatic deduplication
+      type: ActivityType.Note,
+      title: item.title,
+      notes: [{
+        activity: { source: item.url },
+        key: "description", // Use key for upsertable notes
+        content: item.description,
+      }],
+    });
   }
 
   if (result.nextPageToken) {
@@ -495,9 +557,9 @@ try {
 - **Don't use instance variables for state** - Anything stored in memory is lost after function execution. Always use the Store tool for data that needs to persist.
 - **Processing self-created activities** - Other users may change an Activity created by the twist, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
 - **Always create Activities with Notes** - See "Understanding Activities and Notes" section above for the thread/message pattern and decision tree.
-- **Use correct Activity types** - Most should be `ActivityType.Note`. Only use `Action` for tasks with `doneAt`, and `Event` for items with `start`/`end`.
-- **Track external items with UUID mappings** - Generate UUIDs with `Uuid.Generate()` and store mappings (`external_id → uuid`) for deduplication. Never rely on the `source` field.
-- **Add Notes to existing Activities** - Look up stored UUID mappings before creating new Activities. Think thread replies, not new threads.
+- **Use correct Activity types** - Most should be `ActivityType.Note`. Only use `Action` for tasks with `done`, and `Event` for items with `start`/`end`.
+- **Use Activity.source and Note.key for automatic upserts (Recommended)** - Set Activity.source to the external item's URL for automatic deduplication. Only use UUID generation and storage for advanced cases (see SYNC_STRATEGIES.md).
+- **Add Notes to existing Activities** - For source/key pattern, reference activities by source. For UUID pattern, look up stored mappings before creating new Activities. Think thread replies, not new threads.
 - Tools are declared in the `build` method and accessed via `this.tools.toolName` in twist methods.
 - **Don't forget runtime limits** - Each execution has ~10 seconds. Break long operations into batches with the Tasks tool. Process enough items per batch to be efficient, but few enough to stay under time limits.
 - **Always use Callbacks tool for persistent references** - Direct function references don't survive worker restarts.
