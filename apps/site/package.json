@@ -17,8 +17,8 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
-    "@mantine/core": "8.3.0",
-    "@mantine/hooks": "8.3.0",
+    "@mantine/core": "8.3.11",
+    "@mantine/hooks": "8.3.11",
     "@react-router/node": "^7.9.2",
     "@react-router/serve": "^7.9.2",
     "@supabase/ssr": "^0.8.0",

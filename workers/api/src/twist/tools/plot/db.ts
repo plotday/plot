@@ -143,7 +143,7 @@ export function buildActivityFromDbRecord(
     // @ts-ignore - activityRecord.id is a string from DB, but Uuid is a branded type
     id: activityRecord.id as any,
     type: activityType,
-    createdAt: new Date(activityRecord.created_at),
+    created: new Date(activityRecord.created_at),
     author: {
       id: (activityRecord.author_id ?? activityRecord.created_by) as ActorId,
       name: activityRecord.author_name,
@@ -162,7 +162,7 @@ export function buildActivityFromDbRecord(
     end: parseRangeEnd(activityRecord.on, activityRecord.at),
     recurrenceUntil: null,
     recurrenceCount: null,
-    doneAt: activityRecord.done_at ? new Date(activityRecord.done_at) : null,
+    done: activityRecord.done_at ? new Date(activityRecord.done_at) : null,
     title: activityRecord.title || "",
     assignee: activityRecord.assignee_id
       ? {
@@ -184,6 +184,7 @@ export function buildActivityFromDbRecord(
     recurrence: null,
     occurrence: null,
     meta: activityRecord.meta as ActivityMeta | null,
+    source: activityRecord.source || null,
     tags: (activityRecord.tags as Partial<Record<number, ActorId[]>>) || {},
     mentions: (activityRecord.mentions as ActorId[]) || [],
   };
@@ -198,7 +199,7 @@ export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
   return {
     // @ts-ignore - noteRecord.id is a string from DB, but Uuid is a branded type
     id: noteRecord.id as any,
-    createdAt: new Date(noteRecord.created_at),
+    created: new Date(noteRecord.created_at),
     // @ts-ignore - Only activity.id and priority.id are used by intent handlers, full Activity data is not available in NoteItem
     activity: {
       id: noteRecord.activity_id,
@@ -217,6 +218,7 @@ export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
           : ActorType.Contact,
     },
     content: noteRecord.content,
+    key: noteRecord.key || null,
     mentions: (noteRecord.mentions as ActorId[]) || [],
     tags: (noteRecord.tags as Partial<Record<number, ActorId[]>>) || {},
     draft: noteRecord.draft,

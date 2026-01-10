@@ -36,7 +36,6 @@ export type Database = {
     Tables: {
       activity: {
         Row: {
-          active_source: string | null
           archived_at: string | null
           assignee_id: string | null
           at: unknown
@@ -50,6 +49,7 @@ export type Database = {
           embedding: unknown
           id: string
           last_note_created_at: string | null
+          last_note_source_created_at: string | null
           meta: Json | null
           on: unknown
           order: number
@@ -62,6 +62,8 @@ export type Database = {
           recurrence_rule: string | null
           source: string | null
           source_created_at: string
+          source_priority_root: unknown
+          sync_depth: number | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"]
           updated_at: string
@@ -88,7 +90,6 @@ export type Database = {
           } | null
         }
         Insert: {
-          active_source?: string | null
           archived_at?: string | null
           assignee_id?: string | null
           at?: unknown
@@ -102,6 +103,7 @@ export type Database = {
           embedding?: unknown
           id?: string
           last_note_created_at?: string | null
+          last_note_source_created_at?: string | null
           meta?: Json | null
           on?: unknown
           order?: number
@@ -114,13 +116,14 @@ export type Database = {
           recurrence_rule?: string | null
           source?: string | null
           source_created_at?: string
+          source_priority_root?: unknown
+          sync_depth?: number | null
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
           updated_at?: string
           updated_by?: number
         }
         Update: {
-          active_source?: string | null
           archived_at?: string | null
           assignee_id?: string | null
           at?: unknown
@@ -134,6 +137,7 @@ export type Database = {
           embedding?: unknown
           id?: string
           last_note_created_at?: string | null
+          last_note_source_created_at?: string | null
           meta?: Json | null
           on?: unknown
           order?: number
@@ -146,6 +150,8 @@ export type Database = {
           recurrence_rule?: string | null
           source?: string | null
           source_created_at?: string
+          source_priority_root?: unknown
+          sync_depth?: number | null
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
           updated_at?: string
@@ -367,6 +373,7 @@ export type Database = {
           actor_id: string
           archived_at: string | null
           occurrence: string | null
+          sync_depth: number | null
           tag_id: number
           updated_at: string
           updated_by: number
@@ -376,6 +383,7 @@ export type Database = {
           actor_id: string
           archived_at?: string | null
           occurrence?: string | null
+          sync_depth?: number | null
           tag_id: number
           updated_at?: string
           updated_by?: number
@@ -385,6 +393,7 @@ export type Database = {
           actor_id?: string
           archived_at?: string | null
           occurrence?: string | null
+          sync_depth?: number | null
           tag_id?: number
           updated_at?: string
           updated_by?: number
@@ -559,10 +568,12 @@ export type Database = {
           created_by: string
           draft: boolean
           id: string
+          key: string | null
           links: Json | null
           mentions: string[] | null
           private: boolean
           source_created_at: string
+          sync_depth: number | null
           updated_at: string
           updated_by: number
           actor: {
@@ -585,10 +596,12 @@ export type Database = {
           created_by?: string
           draft?: boolean
           id?: string
+          key?: string | null
           links?: Json | null
           mentions?: string[] | null
           private?: boolean
           source_created_at?: string
+          sync_depth?: number | null
           updated_at?: string
           updated_by?: number
         }
@@ -601,10 +614,12 @@ export type Database = {
           created_by?: string
           draft?: boolean
           id?: string
+          key?: string | null
           links?: Json | null
           mentions?: string[] | null
           private?: boolean
           source_created_at?: string
+          sync_depth?: number | null
           updated_at?: string
           updated_by?: number
         }
@@ -658,6 +673,7 @@ export type Database = {
           actor_id: string
           archived_at: string | null
           note_id: string
+          sync_depth: number | null
           tag_id: number
           updated_at: string
           updated_by: number
@@ -666,6 +682,7 @@ export type Database = {
           actor_id: string
           archived_at?: string | null
           note_id: string
+          sync_depth?: number | null
           tag_id: number
           updated_at?: string
           updated_by?: number
@@ -674,6 +691,7 @@ export type Database = {
           actor_id?: string
           archived_at?: string | null
           note_id?: string
+          sync_depth?: number | null
           tag_id?: number
           updated_at?: string
           updated_by?: number
@@ -729,6 +747,7 @@ export type Database = {
           id: string
           path: unknown
           root: boolean
+          sync_depth: number | null
           title: string
           twist_development: boolean
           updated_at: string
@@ -742,6 +761,7 @@ export type Database = {
           id?: string
           path: unknown
           root?: boolean
+          sync_depth?: number | null
           title: string
           twist_development?: boolean
           updated_at?: string
@@ -755,6 +775,7 @@ export type Database = {
           id?: string
           path?: unknown
           root?: boolean
+          sync_depth?: number | null
           title?: string
           twist_development?: boolean
           updated_at?: string
@@ -1646,7 +1667,6 @@ export type Database = {
       }
       activity_x: {
         Row: {
-          active_source: string | null
           archived_at: string | null
           assignee_id: string | null
           at: unknown
@@ -1660,6 +1680,7 @@ export type Database = {
           embedding: unknown
           id: string | null
           last_note_created_at: string | null
+          last_note_source_created_at: string | null
           mentions: string[] | null
           meta: Json | null
           on: unknown
@@ -1674,6 +1695,8 @@ export type Database = {
           recurrence_rule: string | null
           source: string | null
           source_created_at: string | null
+          source_priority_root: unknown
+          sync_depth: number | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
@@ -1944,6 +1967,7 @@ export type Database = {
           duration: unknown
           id: string | null
           last_note_created_at: string | null
+          last_note_source_created_at: string | null
           mentions: string[] | null
           meta: Json | null
           on: unknown
@@ -2068,6 +2092,20 @@ export type Database = {
         }
         Relationships: []
       }
+      user_actor: {
+        Row: {
+          archived_at: string | null
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          name: string | null
+          type: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       user_note: {
         Row: {
           activity_id: string | null
@@ -2159,6 +2197,17 @@ export type Database = {
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      user_priority_actor: {
+        Row: {
+          actor_id: string | null
+          archived_at: string | null
+          created_at: string | null
+          priority_path: unknown
+          updated_at: string | null
           user_id: string | null
         }
         Relationships: []
@@ -2395,6 +2444,10 @@ export type Database = {
       }
       get_api_root: { Args: never; Returns: string }
       get_domain: { Args: { email: string }; Returns: string }
+      get_priority_twist_owner_contact: {
+        Args: { p_priority_twist_id: string }
+        Returns: string
+      }
       get_tag_type: {
         Args: { tag_id: number }
         Returns: Database["public"]["Enums"]["tag_type"]

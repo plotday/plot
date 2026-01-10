@@ -59,6 +59,7 @@ class ActivityTagsBase extends BaseTable {
   @override
   Insertable<ActivityTagsRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
+    json.remove('sync_depth');
     json.remove('user_id'); // Remove user_id from function result
 
     // Convert NULL occurrence from PostgreSQL to empty string for SQLite

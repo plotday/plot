@@ -70,6 +70,14 @@ abstract class Command {
 
   Future<CommandReturn> run(BuildContext context);
 
+  /// Override to provide a custom icon widget (e.g., Avatar) instead of IconData.
+  /// This is specifically for icon-only display and takes precedence over [icon].
+  ///
+  /// The [hoverIcon] parameter indicates whether the button is being hovered.
+  /// Defaults to false (not hovering).
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) => null;
+
+  /// Override to provide custom body content for the command in modals/lists.
   Widget? buildBody(BuildContext context) => null;
 }
 
@@ -103,6 +111,10 @@ class CommandWrapper extends Command {
     }
     return command.run(context);
   }
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      command.buildIcon(context, hoverIcon: hoverIcon);
 
   @override
   Widget? buildBody(BuildContext context) => command.buildBody(context);

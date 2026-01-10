@@ -114,8 +114,8 @@ function cleanupExpiredTwistIdCache(): void {
 }
 
 export type DispatchItem =
-  | { itemType: "activity"; item: ActivityItem; previous?: ActivityItem }
-  | { itemType: "note"; item: NoteItem; previous?: NoteItem };
+  | { itemType: "activity"; item: ActivityItem; previous?: ActivityItem; syncDepth?: number }
+  | { itemType: "note"; item: NoteItem; previous?: NoteItem; syncDepth?: number };
 
 export class Plot extends Tool implements IPlot {
   public supabase: SupabaseClient;
@@ -124,6 +124,7 @@ export class Plot extends Tool implements IPlot {
   public plotOptions?: typeof IPlot.Options;
   public env: Bindings;
   public ai: AI;
+  public syncDepth: number = 1;
   private _actor?: Actor;
   private _twistId?: number;
 
@@ -311,6 +312,9 @@ export class Plot extends Tool implements IPlot {
   ): Promise<Array<{ optionPath: string[]; args: any[] }>> {
     if (!this.plotOptions) return [];
 
+    // Set sync depth from dispatch context (defaults to 1 if not provided)
+    this.syncDepth = dispatchItem.syncDepth ?? 1;
+
     const callbacks: Array<{ optionPath: string[]; args: any[] }> = [];
 
     // Handle note items
@@ -424,8 +428,8 @@ export class Plot extends Tool implements IPlot {
         if (currentActivity.end !== previousActivity.end) {
           update.end = currentActivity.end;
         }
-        if (currentActivity.doneAt !== previousActivity.doneAt) {
-          update.doneAt = currentActivity.doneAt;
+        if (currentActivity.done !== previousActivity.done) {
+          update.done = currentActivity.done;
         }
         if (currentActivity.draft !== previousActivity.draft) {
           update.draft = currentActivity.draft;

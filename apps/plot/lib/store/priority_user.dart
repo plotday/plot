@@ -18,11 +18,14 @@ class PriorityUsersBase extends BaseTable {
           name: "priority_users",
           order: 'created_at',
           ascending: false,
+          cursorColumn: 'user_id',
+          secondarySortColumns: const ['user_id', 'priority_id'],
         );
 
   @override
   Insertable<PriorityUserRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
+    json.remove('sync_depth');
     return PriorityUserRow.fromJson(json);
   }
 }

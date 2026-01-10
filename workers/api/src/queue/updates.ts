@@ -94,6 +94,36 @@ async function processUpdate(
           }
         }
 
+        // Check cascade depth limit
+        const syncDepth = activityItem.sync_depth ?? 1;
+        if (syncDepth > 4) {
+          logger.warn("Sync cascade depth limit reached", {
+            sync_depth: syncDepth,
+            twist_id: String(twist.id),
+            priority_twist_id: twist.priority_twist_id,
+            item_type: "activity",
+            item_id: activityItem.id,
+            priority_id: activityItem.priority_id,
+          });
+
+          postHog.captureException(
+            new Error("Sync cascade depth limit reached"),
+            undefined,
+            {
+              sync_depth: syncDepth,
+              twist_id: String(twist.id),
+              priority_twist_id: twist.priority_twist_id,
+              item_type: "activity",
+              item_id: activityItem.id,
+              priority_id: activityItem.priority_id,
+            }
+          );
+
+          // TODO: Add twist logger warning (visible to twist logs)
+
+          continue;
+        }
+
         // Get twist and tools dynamically
         const factory = twistFactory({
           env,
@@ -111,6 +141,7 @@ async function processUpdate(
           itemType: "activity",
           item: activityItem,
           previous: previousActivityItem,
+          syncDepth,
         });
       } catch (error) {
         const context = addTwistContext(
@@ -200,6 +231,36 @@ async function processUpdate(
           }
         }
 
+        // Check cascade depth limit
+        const syncDepth = noteItem.sync_depth ?? 1;
+        if (syncDepth > 4) {
+          logger.warn("Sync cascade depth limit reached", {
+            sync_depth: syncDepth,
+            twist_id: String(twist.id),
+            priority_twist_id: twist.priority_twist_id,
+            item_type: "note",
+            item_id: noteItem.id,
+            activity_id: noteItem.activity_id,
+          });
+
+          postHog.captureException(
+            new Error("Sync cascade depth limit reached"),
+            undefined,
+            {
+              sync_depth: syncDepth,
+              twist_id: String(twist.id),
+              priority_twist_id: twist.priority_twist_id,
+              item_type: "note",
+              item_id: noteItem.id,
+              activity_id: noteItem.activity_id,
+            }
+          );
+
+          // TODO: Add twist logger warning (visible to twist logs)
+
+          continue;
+        }
+
         // Get twist and tools dynamically
         const factory = twistFactory({
           env,
@@ -217,6 +278,7 @@ async function processUpdate(
           itemType: "note",
           item: noteItem,
           previous: previousNoteItem,
+          syncDepth,
         });
       } catch (error) {
         const context = addTwistContext(

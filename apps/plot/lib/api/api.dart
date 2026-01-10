@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import 'package:plot/api/api_exception.dart';
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/base.dart';
 import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
@@ -88,94 +90,134 @@ Map<String, String> getHeaders() {
 }
 
 Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
-  final response = await http.post(
-    Uri.parse(Env.apiRoot + url),
-    headers: getHeaders(),
-    body: jsonEncode(body),
-  );
-  if (response.statusCode != 200) {
-    await _checkAuthError(response, url);
-    final errorMessage = _parseErrorMessage(response);
-    throw ApiException(
-      statusCode: response.statusCode,
-      endpoint: url,
-      title: _getErrorTitle(response.statusCode),
-      description: errorMessage,
+  try {
+    final response = await http.post(
+      Uri.parse(Env.apiRoot + url),
+      headers: getHeaders(),
+      body: jsonEncode(body),
     );
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, url);
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: url,
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+      );
+    }
+    return _parseResponse(response);
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
   }
-  return _parseResponse(response);
 }
 
 Future<T> put<T>(String url, {Map<String, dynamic> body = const {}}) async {
-  final response = await http.put(
-    Uri.parse(Env.apiRoot + url),
-    headers: getHeaders(),
-    body: jsonEncode(body),
-  );
-  if (response.statusCode != 200) {
-    await _checkAuthError(response, url);
-    final errorMessage = _parseErrorMessage(response);
-    throw ApiException(
-      statusCode: response.statusCode,
-      endpoint: url,
-      title: _getErrorTitle(response.statusCode),
-      description: errorMessage,
+  try {
+    final response = await http.put(
+      Uri.parse(Env.apiRoot + url),
+      headers: getHeaders(),
+      body: jsonEncode(body),
     );
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, url);
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: url,
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+      );
+    }
+    return _parseResponse(response);
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
   }
-  return _parseResponse(response);
 }
 
 Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
-  final response = await http.patch(
-    Uri.parse(Env.apiRoot + url),
-    headers: getHeaders(),
-    body: jsonEncode(body),
-  );
-  if (response.statusCode != 200) {
-    await _checkAuthError(response, url);
-    final errorMessage = _parseErrorMessage(response);
-    throw ApiException(
-      statusCode: response.statusCode,
-      endpoint: url,
-      title: _getErrorTitle(response.statusCode),
-      description: errorMessage,
+  try {
+    final response = await http.patch(
+      Uri.parse(Env.apiRoot + url),
+      headers: getHeaders(),
+      body: jsonEncode(body),
     );
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, url);
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: url,
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+      );
+    }
+    return _parseResponse(response);
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
   }
-  return _parseResponse(response);
 }
 
 Future<T> get<T>(String url) async {
-  final response = await http.get(
-    Uri.parse(Env.apiRoot + url),
-    headers: getHeaders(),
-  );
-  if (response.statusCode != 200) {
-    await _checkAuthError(response, url);
-    final errorMessage = _parseErrorMessage(response);
-    throw ApiException(
-      statusCode: response.statusCode,
-      endpoint: url,
-      title: _getErrorTitle(response.statusCode),
-      description: errorMessage,
+  try {
+    final response = await http.get(
+      Uri.parse(Env.apiRoot + url),
+      headers: getHeaders(),
     );
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, url);
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: url,
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+      );
+    }
+    return _parseResponse(response);
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
   }
-  return _parseResponse(response);
 }
 
 Future<T> delete<T>(String url) async {
-  final response = await http.delete(
-    Uri.parse(Env.apiRoot + url),
-    headers: getHeaders(),
-  );
-  if (response.statusCode != 200) {
-    await _checkAuthError(response, url);
-    final errorMessage = _parseErrorMessage(response);
-    throw ApiException(
-      statusCode: response.statusCode,
-      endpoint: url,
-      title: _getErrorTitle(response.statusCode),
-      description: errorMessage,
+  try {
+    final response = await http.delete(
+      Uri.parse(Env.apiRoot + url),
+      headers: getHeaders(),
     );
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, url);
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: url,
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+      );
+    }
+    return _parseResponse(response);
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
   }
-  return _parseResponse(response);
 }

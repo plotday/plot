@@ -144,7 +144,7 @@ export function fromDbActivity(
     // @ts-ignore - dbActivity.id is a string from DB, but Uuid is a branded type
     id: dbActivity.id as any,
     type: activityType,
-    createdAt: dbActivity.source_created_at
+    created: dbActivity.source_created_at
       ? new Date(dbActivity.source_created_at)
       : new Date(dbActivity.created_at),
     author,
@@ -152,7 +152,7 @@ export function fromDbActivity(
     end: sdkEnd,
     recurrenceUntil,
     recurrenceCount: null, // Not stored separately in database
-    doneAt: dbActivity.done_at ? new Date(dbActivity.done_at) : null,
+    done: dbActivity.done_at ? new Date(dbActivity.done_at) : null,
     title: dbActivity.title || "",
     assignee,
     draft: dbActivity.draft ?? false,
@@ -172,6 +172,7 @@ export function fromDbActivity(
     meta: dbActivity.meta as ActivityMeta | null,
     tags: (dbActivity.tags as Tags) || {},
     mentions: (dbActivity.mentions as ActorId[]) || [],
+    source: dbActivity.source || null,
   };
 }
 

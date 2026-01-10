@@ -10,7 +10,8 @@ CREATE TABLE "public"."priority" (
     "title" text NOT NULL,
     "color" integer,
     "path" ltree NOT NULL UNIQUE,
-    "updated_by" integer NOT NULL DEFAULT 0
+    "updated_by" integer NOT NULL DEFAULT 0,
+    "sync_depth" integer
 );
 
 CREATE UNIQUE INDEX idx_priority_created_by_root_true ON "public"."priority" ("created_by")

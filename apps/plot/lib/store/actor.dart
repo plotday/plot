@@ -13,11 +13,11 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
 }
 
 class ActorsBase extends BaseTable {
-  ActorsBase() : super(table: 'actor');
+  ActorsBase() : super(table: 'user_actor');
 
   @override
   Map<String, dynamic> toBase(DataClass row) {
-    // Actor is read-only, so we don't need to convert to base format
+    // Actor is read-only (synced from user_actor view), so we don't need to convert to base format
     throw UnsupportedError('Actor is read-only');
   }
 
@@ -25,30 +25,37 @@ class ActorsBase extends BaseTable {
   Insertable<ActorRow> fromBase(Map<String, dynamic> json) {
     return ActorRow.fromJson(json);
   }
-
-  @override
-  PostgrestFilterBuilder<T2> filter<T2>(
-    PostgrestFilterBuilder<T2> query, {
-    bool initial = false,
-    bool archived = false,
-  }) {
-    // Don't filter by user_id since actor view handles access control
-    // Don't call super.filter() to avoid user_id filtering
-    return query;
-  }
 }
 
 class Actor extends ActorRow {
   static TableInfo<Actors, ActorRow> get table => Store.get.actors;
+
+  // In-memory cache for Actor lookups
+  static final Map<ActorId, Actor> _cache = {};
+
+  /// Clear the entire Actor cache
+  static void clearCache() {
+    _cache.clear();
+  }
 
   static Future<void> pull() async {
     // First pull: fetch all actors if not already initialized
     await Store.get.pull(table, ActorsBase(), initial: true);
     // Subsequent pulls: fetch changes since last pull
     await Store.get.pull(table, ActorsBase());
+    // Clear cache to ensure fresh data is served
+    clearCache();
   }
 
-  static Future<List<Actor>> get({bool? archived = false}) async {
+  static Future<List<Actor>> get({
+    ActorId? id,
+    Uuid? priorityId,
+    String? priorityPath,
+    List<ActorType>? types,
+    String? search,
+    int? limit,
+    bool? archived = false,
+  }) async {
     // Trigger archived sync if needed
     if (archived == true) {
       await Store.get.pullArchived(table, ActorsBase());
@@ -57,10 +64,34 @@ class Actor extends ActorRow {
       await Store.get.pullArchived(table, ActorsBase());
     }
 
-    return _get(archived: archived).get();
+    // Convert priorityId to priorityPath for backward compatibility
+    String? effectivePriorityPath = priorityPath;
+    if (priorityId != null && priorityPath == null) {
+      final priority = await Priority.getOne(priorityId);
+      effectivePriorityPath = priority.path.value;
+    }
+
+    final actors = await _get(
+      id: id,
+      priorityPath: effectivePriorityPath,
+      types: types,
+      search: search,
+      limit: limit,
+      archived: archived,
+    ).get();
+
+    return actors;
   }
 
-  static Stream<List<Actor>> watch({bool? archived = false}) {
+  static Stream<List<Actor>> watch({
+    ActorId? id,
+    Uuid? priorityId,
+    String? priorityPath,
+    List<ActorType>? types,
+    String? search,
+    int? limit,
+    bool? archived = false,
+  }) {
     // Trigger archived sync if needed
     if (archived == true) {
       Store.get.pullArchived(table, ActorsBase());
@@ -69,18 +100,116 @@ class Actor extends ActorRow {
       Store.get.pullArchived(table, ActorsBase());
     }
 
-    return _get(archived: archived).watch();
+    // Convert priorityId to priorityPath for backward compatibility
+    // This needs to be done asynchronously, so we use a stream transformation
+    if (priorityId != null && priorityPath == null) {
+      return Stream.fromFuture(Priority.getOne(priorityId)).asyncExpand(
+        (priority) => _get(
+          id: id,
+          priorityPath: priority.path.value,
+          types: types,
+          search: search,
+          limit: limit,
+          archived: archived,
+        ).watch(),
+      );
+    }
+
+    return _get(
+      id: id,
+      priorityPath: priorityPath,
+      types: types,
+      search: search,
+      limit: limit,
+      archived: archived,
+    ).watch();
   }
 
-  static MultiSelectable<Actor> _get({bool? archived = false}) {
-    return (Store.get.select(table)..where(
-          (t) => archived == null
-              ? const Constant(true)
-              : archived
-              ? t.archivedAt.isNotNull()
-              : t.archivedAt.isNull(),
-        ))
-        .map((row) => Actor.fromStore(row));
+  static Future<Actor> getOne(ActorId id) async {
+    // Check cache first
+    if (_cache.containsKey(id)) {
+      return _cache[id]!;
+    }
+
+    // Cache miss - query database
+    final actors = await _get(id: id, archived: null).get();
+    if (actors.isEmpty) {
+      throw Exception('Actor not found');
+    }
+
+    // Store in cache and return
+    final actor = actors.first;
+    _cache[id] = actor;
+    return actor;
+  }
+
+  static Stream<Actor> watchOne(ActorId id) {
+    return _get(id: id, archived: null).watch().map((actors) {
+      if (actors.isEmpty) {
+        throw Exception('Actor not found');
+      }
+      return actors.first;
+    });
+  }
+
+  static MultiSelectable<Actor> _get({
+    ActorId? id,
+    String? priorityPath,
+    List<ActorType>? types,
+    String? search,
+    int? limit,
+    bool? archived = false,
+  }) {
+    final a = Store.get.actors;
+    final pa = Store.get.priorityActors;
+
+    // Build query with optional JOIN for priority filtering
+    final query = priorityPath != null
+        ? Store.get.select(a).join([
+            innerJoin(
+              pa,
+              pa.actorId.equalsExp(a.id) &
+                  (pa.priorityPath.equalsValue(Path(priorityPath)) | // Exact match
+                      pa.priorityPath.likeExp(Constant('$priorityPath.%')) | // Children of requested path
+                      Constant(priorityPath).likeExp(pa.priorityPath.dartCast<String>() + Constant('.%'))), // Ancestors (requested path is child of pa.priorityPath)
+            ),
+          ])
+        : Store.get.select(a).join([]);
+
+    // Apply archived filter
+    if (archived == true) {
+      query.where(a.archivedAt.isNotNull());
+    } else if (archived == false) {
+      query.where(a.archivedAt.isNull());
+    }
+    // archived == null means no filter (include all)
+
+    // Filter by ID
+    if (id != null) {
+      query.where(a.id.equalsValue(id));
+    }
+
+    // Filter by actor types
+    if (types != null && types.isNotEmpty) {
+      final typeStrings = types.map((t) => (t as Enum).name.toSnakeCase()).toList();
+      query.where(a.type.isIn(typeStrings));
+    }
+
+    // Search by name or email (case-insensitive with LIKE)
+    if (search != null && search.isNotEmpty) {
+      final searchPattern = '%${search.toLowerCase()}%';
+      query.where(
+        a.name.like(searchPattern) | a.email.like(searchPattern),
+      );
+    }
+
+    // Apply limit
+    if (limit != null) {
+      query.limit(limit);
+    }
+
+    // Map results, reading from the joined query
+    return query.map((row) => Actor.fromStore(row.readTable(a)));
   }
 
   Actor.fromStore(ActorRow row)

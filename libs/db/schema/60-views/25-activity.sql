@@ -94,8 +94,8 @@ SELECT
     upe.user_id,
     a.id,
     a.created_at,
-    -- updated_at includes last_note_created_at for sync
-    COALESCE(GREATEST (a.updated_at, a.last_note_created_at), a.updated_at) AS updated_at,
+    -- updated_at includes last_note_source_created_at for sync
+    COALESCE(GREATEST (a.updated_at, a.last_note_source_created_at), a.updated_at) AS updated_at,
     a.source_created_at,
     a.author_id,
     a.assignee_id,
@@ -120,17 +120,24 @@ SELECT
     a.source,
     a.created_by_twist_id,
     a.last_note_created_at,
+    a.last_note_source_created_at,
     a.mentions,
     CASE WHEN a.done_at IS NOT NULL THEN
         tstzrange(a.done_at, a.done_at, '[]')
+    -- Skip scheduled time cases if assigned to someone other than current user
+    WHEN a.assignee_id IS NOT NULL AND a.assignee_id != c.id THEN
+        tstzrange(GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), '[]')
     WHEN a.at IS NOT NULL THEN
         a.at
     WHEN a."on" IS NOT NULL THEN
         NULL::tstzrange
     ELSE
-        tstzrange(GREATEST (a.source_created_at, COALESCE(a.last_note_created_at, a.source_created_at)), GREATEST (a.source_created_at, COALESCE(a.last_note_created_at, a.source_created_at)), '[]')
+        tstzrange(GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), '[]')
     END AS range_at,
     CASE WHEN a.done_at IS NOT NULL THEN
+        NULL::daterange
+    -- Set to NULL if assigned to someone other than current user
+    WHEN a.assignee_id IS NOT NULL AND a.assignee_id != c.id THEN
         NULL::daterange
     WHEN a.at IS NOT NULL THEN
         NULL::daterange
@@ -143,6 +150,7 @@ SELECT
 FROM
     activity_x a
     JOIN user_priority_expanded upe ON a.priority_id = upe.priority_id
+    LEFT JOIN contact c ON c.user_id = upe.user_id
     LEFT JOIN user_activity_unread uau ON uau.user_id = upe.user_id
         AND uau.activity_id = a.id;
 

@@ -442,10 +442,141 @@ export class GoogleGmail extends Tool<GoogleGmail> {
 - **Error Handling**: Always wrap consumer sync calls in try-catch to prevent coordinator failure
 - **Package Names**: Use full package names like `@plotday/tool-google-contacts` in imports and dependencies
 
+## Database Schema Changes
+
+**CRITICAL: Follow this exact process for ALL schema changes. Never skip steps or use shortcuts.**
+
+### The Correct Schema Change Workflow
+
+1. **Make schema changes in `libs/db/schema/` files ONLY**
+   - The schema files are the source of truth
+   - Organize changes in the appropriate subdirectories (50-tables, 60-views, 70-rls, 80-triggers, etc.)
+   - Never modify migration files directly or create migrations manually
+
+2. **Generate a migration**
+   ```bash
+   pnpm gen-migration <descriptive_migration_name>
+   ```
+   - This compares the schema files with existing migrations and generates a new timestamped migration file
+   - The migration will be created in `libs/db/supabase/migrations/`
+
+3. **Add data migrations if needed (optional)**
+   - If you need to migrate existing data (not schema), add SQL to the generated migration file
+   - Example: UPDATE statements to populate new columns, data transformations, etc.
+   - Keep data migrations separate from schema changes when possible
+
+4. **Apply the migration to the LOCAL database**
+   ```bash
+   # Apply the migration file using psql
+   psql postgresql://postgres:postgres@localhost:54322/postgres < libs/db/supabase/migrations/YOUR_MIGRATION.sql
+   ```
+   - This targets the LOCAL database only (localhost:54322)
+   - Migrations are automatically wrapped in transactions by PostgreSQL
+   - If a migration fails, the transaction rolls back - no partial changes
+   - You can modify the migration file and try again until it succeeds
+
+5. **If migration fails or you need more schema changes**
+   - Fix the migration file or make additional schema changes
+   - Generate another migration: `pnpm gen-migration <another_descriptive_name>`
+   - Apply it with psql: `psql postgresql://postgres:postgres@localhost:54322/postgres < libs/db/supabase/migrations/NEW_MIGRATION.sql`
+   - Repeat as needed
+
+6. **Verify the changes**
+   ```bash
+   # Check that schema and database are in sync
+   pnpm diff-schema-db
+
+   # Should return no differences if everything is applied correctly
+   ```
+
+### Available Database Commands
+
+```bash
+# View differences between schema and local database
+pnpm diff-schema-db
+
+# Generate a new migration from schema changes
+pnpm gen-migration <name>
+
+# Apply a migration to LOCAL database
+psql postgresql://postgres:postgres@localhost:54322/postgres < libs/db/supabase/migrations/MIGRATION_FILE.sql
+
+# Check for pending migrations (used in CI)
+pnpm --filter @plotday/db lint:pending-migrations
+
+# Regenerate TypeScript types from local database
+pnpm types
+```
+
+### Understanding Diff Commands
+
+**`pnpm diff-schema-db` (Schema vs Database)**
+- Compares schema files with the running local database
+- **Often shows false-positive function changes** that have already been applied
+- If a function/extension already exists in migrations, ignore it in the diff output
+- Use this to get a general sense of what changed, but don't trust it completely
+- The migration generator (`pnpm gen-migration`) is smarter about what needs to be migrated
+
+**`pnpm diff-schema-migrations` (Schema vs Migrations)**
+- Compares schema files with existing migration files
+- **Should return no changes** once all migrations have been generated
+- If it shows differences, you have unapplied schema changes
+- **Formatting matters**: Function definitions must match the diff output formatting exactly
+  - If the diff shows formatting differences, update the schema file to match the diff
+  - This ensures the diff returns empty once everything is in sync
+- This is the source of truth for whether migrations are complete
+
+### Critical Rules
+
+#### NEVER Touch the Remote Database
+
+- **NEVER push to remote database** - No `supabase db push`, no remote migrations, nothing
+- **NEVER reset remote database** - No `supabase db reset --linked`, ever
+- **NEVER modify remote database** - All work is LOCAL ONLY (localhost:54322)
+- **NEVER use `--linked` flag** - This targets remote database, which is forbidden
+- **ONLY work with local database** - Always use localhost:54322 connection
+
+#### Local Database Rules
+
+- **NEVER use `pnpm apply-schema`** - This is a dangerous emergency-only command that bypasses migrations
+- **NEVER do a database reset** (`pnpm reset`) without explicit user permission - it destroys all local data
+- **NEVER modify migration files** after they've been applied - create a new migration instead
+- **NEVER create migrations manually** - always generate them from schema changes
+- **ALWAYS use transactions** - migrations are automatically transactional via psql
+- **ALWAYS generate types** after schema changes: `pnpm types`
+- **ALWAYS verify** you're targeting local database (localhost:54322) before running SQL
+
+### Why This Process Matters
+
+- **Migrations are version-controlled** and provide a complete history of schema evolution
+- **Transactions ensure consistency** - either the entire migration succeeds or nothing changes
+- **Reproducibility** - the same migrations apply cleanly across all environments
+- **Collaboration** - other developers see exactly what changed and when
+- **Rollback safety** - failed migrations don't leave the database in a broken state
+
+### Common Mistakes to Avoid
+
+❌ **Wrong**: Running `supabase db push --linked` or any command with `--linked` flag
+✅ **Correct**: Only work with local database at localhost:54322
+
+❌ **Wrong**: Pushing or resetting remote database
+✅ **Correct**: NEVER touch remote database under any circumstances
+
+❌ **Wrong**: Modifying the database directly with `apply-schema`
+✅ **Correct**: Make schema changes, generate migration, apply migration
+
+❌ **Wrong**: Creating migration files manually
+✅ **Correct**: Modify schema files, then run `pnpm gen-migration`
+
+❌ **Wrong**: Editing an already-applied migration
+✅ **Correct**: Generate a new migration to make additional changes
+
+❌ **Wrong**: Using `pnpm reset` to fix migration issues
+✅ **Correct**: Fix the migration file and re-apply with psql
+
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
-- To generate a migration, use "pnpm gen-migration MIGRATION_NAME".
 - **After modifying Twister types** in `public/twist/src/`, always rebuild Twister with `cd public/twist && pnpm build && cd ../..` before running or testing code in this repo.
 - If you see import errors for `@plotday/twister/*` after making Twister changes, ensure Twister has been rebuilt and the package exports are configured correctly in `public/twist/package.json`.
 - Only work locally. Never deploy. This includes workers, which only run locally.

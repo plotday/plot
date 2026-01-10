@@ -45,6 +45,7 @@ export async function createPriority(
     title: priority.title,
     path: pathResult.data,
     updated_by: plot.getUpdatedBy(),
+    sync_depth: plot.syncDepth + 1,
   };
 
   const result = await plot.supabase

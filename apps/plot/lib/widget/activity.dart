@@ -86,7 +86,7 @@ class ActivityWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const .symmetric(vertical: 8),
+            padding: const .only(top: 8, bottom: 8, right: 4),
             child: Text.rich(
               overflow: TextOverflow.ellipsis,
               style: buildContext.theme.typography.base.copyWith(

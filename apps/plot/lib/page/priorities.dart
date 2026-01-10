@@ -56,7 +56,7 @@ class PrioritiesPage extends StatelessWidget {
                 ListTile(
                   title: 'Twists',
                   trailingBuilder: (isHovered, hasFocus) => Padding(
-                    padding: const .only(right: 16),
+                    padding: const .only(left: 4, right: 16),
                     child: Icon(
                       PlotIcon.twist,
                       size: context.theme.iconSizes.base,
@@ -76,7 +76,7 @@ class PrioritiesPage extends StatelessWidget {
                         title: userName,
                         subtitle: userState.user.primaryEmail,
                         trailingBuilder: (isHovered, hasFocus) => Padding(
-                          padding: const .only(right: 16),
+                          padding: const .only(left: 4, right: 16),
                           child: Icon(
                             PlotIcon.settings,
                             size: context.theme.iconSizes.base,

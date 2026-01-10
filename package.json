@@ -21,7 +21,7 @@
     "gen-migration": "pnpm --filter @plotday/db run gen-migration",
     "gen-seed": "pnpm --filter @plotday/db run gen-seed",
     "new-migration": "pnpm --filter @plotday/db run new-migration",
-    "migrate": "pnpm --filter @plotday/db run migrate",
+    "apply-schema": "pnpm --filter @plotday/db run apply-schema",
     "pre-commit": "nx run-many -t pre-commit --exclude plot",
     "lint": "pnpm lint:pnpm-installed && nx run-many -t lint --exclude plot",
     "lint:pnpm-installed": "pnpm install --silent --frozen-lockfile",

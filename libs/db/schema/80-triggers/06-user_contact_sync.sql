@@ -34,8 +34,8 @@ DECLARE
     _user_name text;
     _contact_id uuid;
 BEGIN
-    -- Extract name from user metadata
-    _user_name := COALESCE(NEW.raw_app_meta_data ->> 'full_name', NEW.raw_app_meta_data ->> 'name', NEW.email);
+    -- Extract name from user metadata (check both raw_user_meta_data and raw_app_meta_data)
+    _user_name := COALESCE(NEW.raw_user_meta_data ->> 'full_name', NEW.raw_app_meta_data ->> 'full_name', NEW.raw_app_meta_data ->> 'name', NEW.email);
     -- Upsert contact and get the contact ID
     _contact_id := public.upsert_user_contact (NEW.id, NEW.email, _user_name, NEW.raw_app_meta_data ->> 'avatar_url');
     -- Update NEW.raw_app_meta_data directly (no UPDATE needed, prevents recursion)
@@ -54,7 +54,7 @@ CREATE TRIGGER on_user_created_sync_contact
 CREATE TRIGGER on_user_updated_sync_contact
     BEFORE UPDATE ON auth.users
     FOR EACH ROW
-    WHEN (OLD.email IS DISTINCT FROM NEW.email OR OLD.raw_app_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'full_name' OR OLD.raw_app_meta_data ->> 'name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'name' OR OLD.raw_app_meta_data ->> 'avatar_url' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'avatar_url')
+    WHEN (OLD.email IS DISTINCT FROM NEW.email OR OLD.raw_user_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_user_meta_data ->> 'full_name' OR OLD.raw_app_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'full_name' OR OLD.raw_app_meta_data ->> 'name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'name' OR OLD.raw_app_meta_data ->> 'avatar_url' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'avatar_url')
     EXECUTE FUNCTION public.sync_user_contact_trigger ();
 
 -- Migration function to populate user_id for existing users
@@ -77,13 +77,14 @@ BEGIN
     SELECT
         id,
         email,
-        raw_app_meta_data
+        raw_app_meta_data,
+        raw_user_meta_data
     FROM
         auth.users
     WHERE
         email IS NOT NULL LOOP
-            -- Extract name from user metadata
-            _user_name := COALESCE(_user_record.raw_app_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'name', _user_record.email);
+            -- Extract name from user metadata (check both raw_user_meta_data and raw_app_meta_data)
+            _user_name := COALESCE(_user_record.raw_user_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'name', _user_record.email);
             -- Upsert contact for this user and get contact ID
             _contact_id := public.upsert_user_contact (_user_record.id, _user_record.email, _user_name, _user_record.raw_app_meta_data ->> 'avatar_url');
             -- Update the user's app_metadata with contact_id

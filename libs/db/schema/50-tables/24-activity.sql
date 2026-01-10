@@ -15,6 +15,7 @@ CREATE TABLE "public"."activity" (
     "created_by" uuid NOT NULL DEFAULT auth.uid (),
     "assignee_id" uuid, -- author
     "updated_by" integer NOT NULL DEFAULT 0,
+    "sync_depth" integer,
     "archived_at" timestamp with time zone,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "type" activity_type NOT NULL DEFAULT 'note' ::activity_type,
@@ -38,11 +39,9 @@ CREATE TABLE "public"."activity" (
     "embedding" halfvec (384),
     "pick_priority" jsonb,
     "last_note_created_at" timestamp with time zone,
-    "active_source" text GENERATED ALWAYS AS ( CASE WHEN archived_at IS NULL THEN
-        source
-    ELSE
-        NULL
-    END) STORED
+    "last_note_source_created_at" timestamp with time zone,
+    -- Root of the priority path, set by trigger when source is non-null
+    "source_priority_root" ltree
 );
 
 CREATE INDEX ON activity USING hnsw (embedding halfvec_cosine_ops);
@@ -71,13 +70,17 @@ COMMENT ON COLUMN "public"."activity"."author_id" IS 'The actor to credit with c
 
 COMMENT ON COLUMN "public"."activity"."created_by" IS 'The user_id or priority_twist_id that actually created this activity. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
 
-COMMENT ON COLUMN "public"."activity"."source" IS 'External source identifier for deduplication and sync. Provided as a top-level field in the Activity type (not stored in meta). Indexed for efficient lookups. Used with created_by_twist_id for upsert behavior.';
+COMMENT ON COLUMN "public"."activity"."source" IS 'External source identifier for deduplication and sync. Provided as a top-level field in the Activity type (not stored in meta). Indexed for efficient lookups. Used with source_priority_root for upsert behavior.';
 
-COMMENT ON COLUMN "public"."activity"."created_by_twist_id" IS 'The twist definition ID (twist_admin.id) that created this activity. Null for user-created activities. Used with source for per-twist deduplication.';
+COMMENT ON COLUMN "public"."activity"."created_by_twist_id" IS 'The twist definition ID (twist_admin.id) that created this activity. Null for user-created activities. No longer used in unique constraint (replaced by source_priority_root).';
+
+COMMENT ON COLUMN "public"."activity"."source_priority_root" IS 'Root element of the priority path (e.g., first segment of the ltree). Set by trigger when source is non-null. Used with source to ensure uniqueness per top-level priority.';
 
 COMMENT ON COLUMN "public"."activity"."pick_priority" IS 'The PickPriorityConfig used to automatically select this activity''s priority. Null if priority was explicitly specified. Used when moving activities to find similar activities to move. Not exposed to app or API.';
 
-COMMENT ON COLUMN "public"."activity"."last_note_created_at" IS 'Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for range_at computation and unread status in user_activity view.';
+COMMENT ON COLUMN "public"."activity"."last_note_created_at" IS 'Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for unread status in user_activity_unread and user_priority_unread views.';
+
+COMMENT ON COLUMN "public"."activity"."last_note_source_created_at" IS 'Cached MAX(note.source_created_at) for non-draft, non-archived notes. Maintained by trigger. Used for display, sorting, and range_at computation in user_activity view.';
 
 COMMENT ON COLUMN "public"."activity_exception"."occurrence" IS 'Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM';
 
@@ -93,8 +96,10 @@ ALTER TABLE "public"."activity"
 ALTER TABLE "public"."activity"
     ADD CONSTRAINT activity_no_complete_recurrence CHECK (recurrence_rule IS NULL OR "done_at" IS NULL);
 
+-- Actions must either have an assignee, or have no schedule (at and on both null)
+-- This allows unassigned actions to exist as unscheduled items
 ALTER TABLE "public"."activity"
-    ADD CONSTRAINT activity_action_assignee CHECK (TYPE != 'action' OR assignee_id IS NOT NULL);
+    ADD CONSTRAINT activity_action_assignee CHECK (TYPE != 'action' OR assignee_id IS NOT NULL OR (at IS NULL AND "on" IS NULL));
 
 ALTER TABLE "public"."activity"
     ADD CONSTRAINT activity_title_required_when_not_draft CHECK (draft = TRUE OR (title IS NOT NULL AND title != ''));
@@ -122,8 +127,9 @@ CREATE INDEX idx_activity_source ON "public"."activity" ("source")
 WHERE
     source IS NOT NULL;
 
--- Ensure one activity per source per twist
-CREATE UNIQUE INDEX activity_source_twist_unique ON "public"."activity" ("active_source", "created_by_twist_id");
+-- Ensure one activity per source per priority root
+-- No WHERE clause needed: NULL != NULL allows multiple rows when source is null
+CREATE UNIQUE INDEX activity_source_priority_unique ON "public"."activity" ("source", "source_priority_root");
 
 -- Index for created_at sorting (critical for pagination queries)
 -- Includes priority_id to support common WHERE clauses

@@ -18,6 +18,8 @@ class UserSettingsBase extends BaseTable {
           order: 'updated_at',
           upsertAsUpdate: true,
           supportsArchiving: false,
+          cursorColumn: 'user_id',
+          secondarySortColumns: const ['user_id'],
         );
 
   @override

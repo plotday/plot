@@ -148,10 +148,22 @@ class _ButtonState extends State<Button> {
       onExit: (_) => setState(() => _isHovered = false),
       child: PlatformBuilder(
         builder: (_) {
-          // Determine which icon to show
-          var icon = widget.command.icon;
+          // Priority order for icon display:
+          // 1. buildIcon() - custom icon widget
+          // 2. icon/hoverIcon - IconData
+          // 3. buildBody() - custom body widget
+          // 4. Text(title) - fallback
 
-          if (widget.command.hoverIcon != null && (widget.forceHover || _isHovered)) {
+          // Determine if button is being hovered
+          final isHovering = widget.forceHover || _isHovered;
+
+          // Check for custom icon widget first
+          final customIcon = widget.command.buildIcon(context, hoverIcon: isHovering);
+
+          // Determine which icon to show (if no custom icon)
+          var icon = widget.command.icon;
+          if (widget.command.hoverIcon != null &&
+              (widget.forceHover || _isHovered)) {
             // Use hover icon when hovering and hoverIcon is specified
             icon = widget.command.hoverIcon;
           }
@@ -160,20 +172,24 @@ class _ButtonState extends State<Button> {
               ? FButton.icon(
                   style: fStyle,
                   onPress: onPress,
-                  child: icon != null
-                      ? Icon(icon, size: context.theme.iconSizes.base)
-                      : Text(
-                          widget.command.title,
-                          style: context.theme.typography.base.copyWith(
-                            height: 1,
-                            textBaseline: TextBaseline.ideographic,
-                          ),
-                        ),
+                  child: customIcon ??
+                      (icon != null
+                          ? Icon(icon, size: context.theme.iconSizes.base)
+                          : (widget.command.buildBody(context) ??
+                                Text(
+                                  widget.command.title,
+                                  style: context.theme.typography.base.copyWith(
+                                    height: 1,
+                                    textBaseline: TextBaseline.ideographic,
+                                  ),
+                                ))),
                 )
               : FButton(
                   style: fStyle,
                   onPress: onPress,
-                  prefix: icon != null ? Icon(icon, size: context.theme.iconSizes.base) : null,
+                  prefix: icon != null
+                      ? Icon(icon, size: context.theme.iconSizes.base)
+                      : null,
                   child: Text(widget.command.title),
                 );
         },

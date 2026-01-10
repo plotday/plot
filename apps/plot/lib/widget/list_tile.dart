@@ -248,19 +248,36 @@ class _ListTileState extends State<ListTile> {
                         : null,
                     child: Container(
                       color: Color(0x00000000), // Transparent to capture taps
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        spacing: 8,
-                        children: [
-                          if (widget.icon != null ||
-                              widget.command?.icon != null)
-                            Icon(
-                              widget.icon ?? widget.command?.icon,
-                              size: widget.style == ListTileStyle.header
-                                  ? context.theme.iconSizes.sm
-                                  : context.theme.iconSizes.base,
-                              color: context.theme.plotColors.muted,
-                            ),
+                      child: Builder(
+                        builder: (context) {
+                          // Build the icon widget
+                          final iconWidget = () {
+                            // Check for custom icon widget first (like Button does)
+                            final customIcon = widget.command?.buildIcon(context);
+                            if (customIcon != null) return customIcon;
+
+                            // Fall back to IconData icon
+                            if (widget.icon != null || widget.command?.icon != null) {
+                              return Icon(
+                                widget.icon ?? widget.command?.icon,
+                                size: widget.style == ListTileStyle.header
+                                    ? context.theme.iconSizes.sm
+                                    : context.theme.iconSizes.base,
+                                color: context.theme.plotColors.muted,
+                              );
+                            }
+
+                            return const SizedBox.shrink();
+                          }();
+
+                          // Only apply spacing when icon is present
+                          final hasIcon = iconWidget is! SizedBox;
+
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            spacing: hasIcon ? 8 : 0,
+                            children: [
+                              iconWidget,
                           Expanded(
                             child: Padding(
                               padding:
@@ -391,7 +408,9 @@ class _ListTileState extends State<ListTile> {
                                 color: context.theme.plotColors.muted,
                               ),
                             ),
-                        ],
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),

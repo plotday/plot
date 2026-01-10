@@ -9,6 +9,7 @@ export const ActivityItemSchema = z.object({
   created_by: z.string(),
   assignee_id: z.string().nullable(),
   updated_by: z.number(),
+  sync_depth: z.number().nullable(),
   archived_at: z.string().nullable(),
   priority_id: z.string(),
   type: z.enum(["action", "event", "note"]),
@@ -42,12 +43,14 @@ export const NoteItemSchema = z.object({
   author_id: z.string(),
   created_by: z.string(),
   updated_by: z.number(),
+  sync_depth: z.number().nullable(),
   archived_at: z.string().nullable(),
   activity_id: z.string(),
   priority_id: z.string(),
   draft: z.boolean(),
   private: z.boolean(),
   content: z.string().nullable(),
+  key: z.string().nullable(),
   links: z.array(z.record(z.string(), z.any())).nullable(),
   mentions: z.array(z.string()).nullable(),
   // Enriched fields from database JOINs
@@ -68,6 +71,7 @@ export const PriorityItemSchema = z.object({
   title: z.string(),
   path: z.string(),
   updated_by: z.number(),
+  sync_depth: z.number().nullable(),
 });
 
 // Session item schema

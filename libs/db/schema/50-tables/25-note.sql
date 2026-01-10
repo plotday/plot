@@ -6,12 +6,14 @@ CREATE TABLE "public"."note" (
     "author_id" uuid NOT NULL,
     "created_by" uuid NOT NULL DEFAULT auth.uid (),
     "updated_by" integer NOT NULL DEFAULT 0,
+    "sync_depth" integer,
     "archived_at" timestamp with time zone,
     "activity_id" uuid NOT NULL REFERENCES public.activity ON DELETE CASCADE,
     "draft" boolean NOT NULL DEFAULT FALSE,
     "private" boolean NOT NULL DEFAULT FALSE,
     "content" text, -- markdown
     "links" jsonb,
+    "key" text,
     "mentions" uuid[]
 );
 
@@ -22,6 +24,17 @@ COMMENT ON COLUMN "public"."note"."author_id" IS 'The actor to credit with creat
 COMMENT ON COLUMN "public"."note"."created_by" IS 'The user_id or priority_twist_id that actually created this note. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
 
 COMMENT ON COLUMN "public"."note"."mentions" IS 'Array of actor IDs (user_id, contact_id, or priority_twist_id) that are mentioned in this note via @-mentions.';
+
+COMMENT ON COLUMN "public"."note"."key" IS 'External identifier for deduplication and sync within an activity. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with activity_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).';
+
+-- Ensure one note per key per activity
+-- No WHERE clause needed: NULL != NULL allows multiple notes when key is null
+CREATE UNIQUE INDEX note_activity_key_unique ON "public"."note" ("activity_id", "key");
+
+-- Index for efficient key lookups
+CREATE INDEX idx_note_key ON "public"."note" ("key")
+WHERE
+    key IS NOT NULL;
 
 -- Index for FK lookups
 CREATE INDEX idx_note_activity_id ON "public"."note" ("activity_id");
@@ -126,7 +139,7 @@ BEGIN
                         AND n.draft = FALSE
                         AND n.archived_at IS NULL
                         AND n.created_at > activity_read.read_at);
-        -- Update activity's last_note_created_at when notes are inserted/deleted
+        -- Update activity's last_note_created_at and last_note_source_created_at when notes are inserted/deleted
         -- Note: note.updated_at changes do NOT trigger this
         UPDATE
             activity
@@ -134,6 +147,15 @@ BEGIN
             last_note_created_at = (
                 SELECT
                     MAX(created_at)
+                FROM
+                    note
+                WHERE
+                    activity_id = COALESCE(NEW.activity_id, OLD.activity_id)
+                    AND draft = FALSE
+                    AND archived_at IS NULL),
+            last_note_source_created_at = (
+                SELECT
+                    MAX(source_created_at)
                 FROM
                     note
                 WHERE

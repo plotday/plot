@@ -48,6 +48,7 @@ class NotesBase extends BaseTable {
   @override
   Insertable<NoteRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
+    json.remove('sync_depth');
     json.remove('user_id');
     return NoteRow.fromJson(json);
   }

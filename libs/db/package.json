@@ -38,9 +38,9 @@
     "test:lint": "supabase db lint",
     "test:run": "supabase db test",
     "supabase": "export $(pnpm --silent fake-env) && supabase",
-    "migrate": "export $(pnpm --silent fake-env) && supabase db push",
     "gen-seed": "tsx seeds/generate-seed.ts",
-    "apply-seed": "tsx seeds/generate-seed.ts --apply"
+    "apply-seed": "tsx seeds/generate-seed.ts --apply",
+    "apply-schema": "pnpm diff-schema-db | psql postgresql://postgres:postgres@localhost:54322/postgres"
   },
   "devDependencies": {
     "@plotday/tsconfig": "workspace:^",

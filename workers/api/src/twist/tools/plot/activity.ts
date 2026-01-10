@@ -9,14 +9,15 @@ import {
   type ActivityUpdate,
   type ActorId,
   ActorType,
-  type NewActor,
   type NewActivity,
   type NewActivityWithNotes,
+  type NewActor,
   type NewNote,
   type Note,
   type NoteUpdate,
   type PickPriorityConfig,
   type Tag,
+  type Uuid,
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
@@ -214,31 +215,35 @@ async function processNewActor(
 ): Promise<string | null> {
   if (!newActor) return null;
 
-  // Check if it's an existing actor reference
+  let actorId: string;
+
   if ("id" in newActor) {
-    return newActor.id;
+    // Existing actor reference - use the ID directly
+    actorId = newActor.id;
+  } else {
+    // New contact by email - upsert it
+    const [actor] = await addContacts(plot, [newActor]);
+    actorId = actor.id;
   }
 
-  // It's a NewContact - upsert it
-  const [actor] = await addContacts(plot, [newActor]);
+  // Always link to priority (idempotent upsert)
+  // This works for both existing and new actors
+  const { error } = await plot.supabase.from("priority_contact").upsert(
+    {
+      priority_id: priorityId,
+      contact_id: actorId,
+      archived_at: null,
+    },
+    {
+      onConflict: "priority_id,contact_id",
+    }
+  );
 
-  // Link to priority if it's a contact
-  if (actor.type === ActorType.Contact) {
-    await plot.supabase
-      .from("priority_contact")
-      .upsert(
-        {
-          priority_id: priorityId,
-          contact_id: actor.id,
-          archived_at: null,
-        },
-        {
-          onConflict: "priority_id,contact_id",
-        }
-      );
+  if (error) {
+    throw new Error(`Failed to link contact to priority: ${error.message}`);
   }
 
-  return actor.id;
+  return actorId;
 }
 
 /**
@@ -271,6 +276,11 @@ export async function createActivity(
   plot: Plot,
   activity: NewActivity | NewActivityWithNotes
 ): Promise<Activity> {
+  console.log('[createActivity] DEBUG activity.created:', activity.created, 'type:', typeof activity.created);
+  if ('notes' in activity && activity.notes) {
+    console.log('[createActivity] DEBUG first note created:', activity.notes[0]?.created, 'type:', typeof activity.notes[0]?.created);
+  }
+
   // Handle activity exceptions differently
   if (activity.recurrence && activity.occurrence) {
     return createActivityException(plot, activity);
@@ -429,17 +439,27 @@ export async function createActivity(
   let assigneeId: string | null = null;
   if (activity.assignee !== undefined) {
     // assignee is explicitly provided (can be NewActor or null)
-    assigneeId = await processNewActor(plot, activity.assignee, targetPriorityId);
+    assigneeId = await processNewActor(
+      plot,
+      activity.assignee,
+      targetPriorityId
+    );
   } else if (dbActivityType === "action") {
-    // For actions without explicit assignee, default to twist owner
-    const twistOwnerResult = await plot.supabase
-      .from("priority_twist")
-      .select("owner_id")
-      .eq("id", plot.priorityTwistId)
-      .single();
+    // For actions without explicit assignee, default to twist owner's contact
+    // Use single query with join via database function
+    const result = await plot.supabase.rpc(
+      "get_priority_twist_owner_contact",
+      {
+        p_priority_twist_id: plot.priorityTwistId,
+      }
+    );
 
-    if (twistOwnerResult.data) {
-      assigneeId = twistOwnerResult.data.owner_id;
+    if (result.error) {
+      throw new Error(`Failed to get twist owner contact: ${result.error.message}`);
+    }
+
+    if (result.data) {
+      assigneeId = result.data;
     }
   }
 
@@ -454,14 +474,16 @@ export async function createActivity(
     created_by_twist_id: twistId,
     assignee_id: assigneeId,
     priority_id: targetPriorityId,
-    source_created_at: activity.createdAt?.toISOString() ?? new Date().toISOString(),
+    source_created_at:
+      activity.created?.toISOString() ?? new Date().toISOString(),
     type: dbActivityType,
-    title: activity.title && activity.title.trim() !== "" ? activity.title : null,
+    title:
+      activity.title && activity.title.trim() !== "" ? activity.title : null,
     preview: previewText,
     draft: activity.draft ?? false,
     private: activity.private ?? false,
     duration: duration ? formatInterval(duration) : null,
-    done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
+    done_at: activity.done ? activity.done.toISOString() : null,
     recurrence_rule: activity.recurrenceRule ?? null,
     recurrence_exdates:
       activity.recurrenceExdates?.map((d) => d.toISOString()) ?? null,
@@ -469,13 +491,19 @@ export async function createActivity(
       activity.recurrenceDates?.map((d) => d.toISOString()) ?? null,
     meta: activity.meta ?? null,
     updated_by: plot.getUpdatedBy(),
+    sync_depth: plot.syncDepth + 1,
     embedding: embedding ? JSON.stringify(embedding) : null,
     pick_priority: pickPriorityConfig ?? null,
   };
 
   // If tool provided an ID, use it instead of letting database generate one
-  if (activity.id) {
+  if ("id" in activity && activity.id) {
     dbActivity.id = activity.id;
+  }
+
+  // If tool provided a source, add it for upsert behavior
+  if ("source" in activity && activity.source) {
+    dbActivity.source = activity.source;
   }
 
   // Handle scheduling fields using calculated dbEnd
@@ -522,9 +550,32 @@ export async function createActivity(
     }
   }
 
-  // Insert activity - tools manage their own update detection using IDs
+  // For actions with null assignee, force at and on to null (constraint requirement)
+  if (dbActivityType === "action" && assigneeId === null) {
+    const hadScheduling = dbActivity.at !== undefined || dbActivity.on !== undefined;
+    dbActivity.at = null;
+    dbActivity.on = null;
+    if (hadScheduling) {
+      console.warn(
+        "[createActivity] Action with null assignee had scheduling fields - nullifying at/on to satisfy constraint"
+      );
+    }
+  }
+
+  // Insert or upsert activity based on whether source is provided
+  // When source is provided, use upsert to handle duplicate sources within same priority root
   const dbResult = safeQuery(
-    await plot.supabase.from("activity").insert(dbActivity).select().single()
+    dbActivity.source
+      ? await plot.supabase
+          .from("activity")
+          .upsert(dbActivity, { onConflict: "source,source_priority_root" })
+          .select()
+          .single()
+      : await plot.supabase
+          .from("activity")
+          .insert(dbActivity)
+          .select()
+          .single()
   );
 
   // Process tags if provided - convert NewActor[] to ActorId[] for each tag
@@ -533,7 +584,11 @@ export async function createActivity(
     processedTags = {};
     for (const [tagId, newActors] of Object.entries(activity.tags)) {
       if (newActors && newActors.length > 0) {
-        const actorIds = await processNewActorArray(plot, newActors, targetPriorityId);
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          targetPriorityId
+        );
         if (actorIds.length > 0) {
           processedTags[parseInt(tagId)] = actorIds;
         }
@@ -552,6 +607,7 @@ export async function createActivity(
           tag_id: parseInt(tagId),
           actor_id: actorId,
           updated_by: plot.getUpdatedBy(),
+          sync_depth: plot.syncDepth + 1,
         }))
       );
 
@@ -562,41 +618,6 @@ export async function createActivity(
 
       if (insertError) {
         throw new Error(`Failed to insert tags: ${insertError.message}`);
-      }
-
-      // Ensure priority_contact entries exist for all contact actors
-      const uniqueActorIds = [...new Set(newTags.map((tag) => tag.actor_id))];
-
-      if (uniqueActorIds.length > 0) {
-        // Filter to only contact actors
-        const { data: contacts } = await plot.supabase
-          .from("contact")
-          .select("id")
-          .in("id", uniqueActorIds);
-
-        if (contacts && contacts.length > 0) {
-          // Batch upsert priority_contact entries
-          const priorityContacts = contacts.map((c) => ({
-            priority_id: targetPriorityId,
-            contact_id: c.id,
-            archived_at: null,
-          }));
-
-          const { error: linkError } = await plot.supabase
-            .from("priority_contact")
-            .upsert(priorityContacts, {
-              onConflict: "priority_id,contact_id",
-            });
-
-          if (linkError) {
-            const logger = createLogger({
-              priority_twist_id: plot.priorityTwistId,
-            });
-            logger.warn("Failed to link contacts to priority", {
-              error_message: linkError.message,
-            });
-          }
-        }
       }
     }
   }
@@ -634,7 +655,8 @@ export async function createActivity(
         .limit(1)
         .maybeSingle();
 
-      const latestTimestamp = latestNoteResult.data?.created_at ?? dbResult.created_at;
+      const latestTimestamp =
+        latestNoteResult.data?.created_at ?? dbResult.created_at;
 
       // Create activity_read entries for all users with the latest timestamp
       const activityReadEntries = usersResult.data.map((pu) => ({
@@ -645,13 +667,13 @@ export async function createActivity(
 
       const insertResult = await plot.supabase
         .from("activity_read")
-        .insert(activityReadEntries);
+        .upsert(activityReadEntries, { onConflict: "user_id,activity_id" });
       if (insertResult.error) {
         const logger = createLogger({
           priority_twist_id: plot.priorityTwistId,
         });
         logger.error(
-          "Failed to insert activity_read entries",
+          "Failed to upsert activity_read entries",
           insertResult.error as Error,
           {
             activity_id: dbResult.id,
@@ -705,6 +727,33 @@ export async function createNote(
     );
   }
 
+  // Resolve activity ID - either provided directly or looked up by source
+  let activityId: string;
+
+  if ("id" in note.activity) {
+    // ID provided directly
+    activityId = note.activity.id;
+  } else if ("source" in note.activity) {
+    // Look up activity by source
+    const { data: existingActivity, error: fetchError } = await plot.supabase
+      .from("activity")
+      .select("id")
+      .eq("source", note.activity.source)
+      .single();
+
+    if (fetchError || !existingActivity) {
+      throw new Error(
+        `Activity not found with source "${note.activity.source}": ${
+          fetchError?.message ?? "Not found"
+        }`
+      );
+    }
+
+    activityId = existingActivity.id;
+  } else {
+    throw new Error("Note activity must provide either id or source");
+  }
+
   // Fetch activity with author for validation and later use
   const { data: activityData, error: activityError } = await plot.supabase
     .from("activity")
@@ -733,7 +782,7 @@ export async function createNote(
         )
       `
     )
-    .eq("id", note.activity.id)
+    .eq("id", activityId)
     .single();
 
   if (activityError) {
@@ -771,30 +820,48 @@ export async function createNote(
   // Process mentions if provided - convert NewActor[] to ActorId[]
   let mentionIds: ActorId[] | null = null;
   if (note.mentions) {
-    mentionIds = await processNewActorArray(plot, note.mentions, activityData.priority_id);
+    mentionIds = await processNewActorArray(
+      plot,
+      note.mentions,
+      activityData.priority_id
+    );
   }
 
   // Convert Note to database format
   const dbNote: any = {
     author_id: authorId,
     created_by: plot.priorityTwistId,
-    activity_id: note.activity.id,
-    source_created_at: note.createdAt?.toISOString() ?? new Date().toISOString(),
+    activity_id: activityId,
+    source_created_at: note.created?.toISOString() ?? new Date().toISOString(),
     draft: note.draft ?? false,
     private: note.private ?? false,
     content: contentToStore,
     links: note.links ?? null,
     mentions: mentionIds,
     updated_by: plot.getUpdatedBy(),
+    sync_depth: plot.syncDepth + 1,
   };
 
   // If tool provided an ID, use it instead of letting database generate one
-  if (note.id) {
+  if ("id" in note && note.id) {
     dbNote.id = note.id;
   }
 
+  // If tool provided a key, add it for upsert behavior
+  if ("key" in note && note.key) {
+    dbNote.key = note.key;
+  }
+
+  // Insert or upsert note based on whether key is provided
+  // When key is provided, use upsert to handle duplicate keys within same activity
   const dbResult = safeQuery(
-    await plot.supabase.from("note").insert(dbNote).select().single()
+    dbNote.key
+      ? await plot.supabase
+          .from("note")
+          .upsert(dbNote, { onConflict: "activity_id,key" })
+          .select()
+          .single()
+      : await plot.supabase.from("note").insert(dbNote).select().single()
   );
 
   // Mark activity as read for all priority users if unread is false
@@ -811,7 +878,7 @@ export async function createNote(
     if (usersResult.data && usersResult.data.length > 0) {
       // Create or update activity_read entries for all users
       const activityReadEntries = usersResult.data.map((pu) => ({
-        activity_id: note.activity.id,
+        activity_id: activityId,
         user_id: pu.user_id,
         read_at: dbResult.created_at, // Use note's created_at timestamp
       }));
@@ -830,7 +897,7 @@ export async function createNote(
           "Failed to upsert activity_read entries for note",
           upsertResult.error as Error,
           {
-            activity_id: note.activity.id,
+            activity_id: activityId,
             count: activityReadEntries.length,
           }
         );
@@ -844,7 +911,11 @@ export async function createNote(
     processedTags = {};
     for (const [tagId, newActors] of Object.entries(note.tags)) {
       if (newActors && newActors.length > 0) {
-        const actorIds = await processNewActorArray(plot, newActors, activityData.priority_id);
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          activityData.priority_id
+        );
         if (actorIds.length > 0) {
           processedTags[parseInt(tagId)] = actorIds;
         }
@@ -863,6 +934,7 @@ export async function createNote(
           tag_id: parseInt(tagId),
           actor_id: actorId,
           updated_by: plot.getUpdatedBy(),
+          sync_depth: plot.syncDepth + 1,
         }))
       );
 
@@ -883,7 +955,7 @@ export async function createNote(
   return {
     // @ts-ignore - dbResult.id is a string from DB, but Uuid is a branded type
     id: dbResult.id as any,
-    createdAt: (dbResult as any).source_created_at
+    created: (dbResult as any).source_created_at
       ? new Date((dbResult as any).source_created_at)
       : new Date(dbResult.created_at),
     activity: fromDbActivity(
@@ -900,6 +972,7 @@ export async function createNote(
     private: dbResult.private,
     archived: false, // Newly created notes are not archived
     content: dbResult.content,
+    key: dbResult.key || null,
     links: dbResult.links as ActivityLink[] | null,
     mentions: (dbResult.mentions as string[])?.map((m) => m as ActorId) ?? [],
     tags: processedTags || {},
@@ -936,14 +1009,41 @@ export async function updateActivity(
   plot: Plot,
   activity: ActivityUpdate
 ): Promise<void> {
+  // Determine activity ID - either provided directly or looked up by source
+  let activityId: string;
+
+  if ("id" in activity && activity.id) {
+    // ID provided directly
+    activityId = activity.id;
+  } else if ("source" in activity && activity.source) {
+    // Look up activity by source
+    const { data: existingActivity, error: fetchError } = await plot.supabase
+      .from("activity")
+      .select("id")
+      .eq("source", activity.source)
+      .single();
+
+    if (fetchError || !existingActivity) {
+      throw new Error(
+        `Activity not found with source "${activity.source}": ${
+          fetchError?.message ?? "Not found"
+        }`
+      );
+    }
+
+    activityId = existingActivity.id;
+  } else {
+    throw new Error("Activity update must provide either id or source");
+  }
+
   // Check worker-level cache for activity data first
   const { getActivityCache } = await import("./index");
-  const cacheKey = `${activity.id}:${plot.priorityTwistId}`;
+  const cacheKey = `${activityId}:${plot.priorityTwistId}`;
   const cached = getActivityCache()?.get(cacheKey);
 
   if (cached) {
     // Use cached data - no database query needed
-    await plot.validateActivityUpdateAccess(activity.id, {
+    await plot.validateActivityUpdateAccess(activityId, {
       created_by: cached.created_by,
       mentions: cached.mentions,
     });
@@ -952,13 +1052,13 @@ export async function updateActivity(
     await plot.validatePriorityAccess(cached.priority_id);
   } else {
     // Cache miss - validate access first (will query for created_by/mentions)
-    await plot.validateActivityUpdateAccess(activity.id);
+    await plot.validateActivityUpdateAccess(activityId);
 
     // Query for priority_id to validate access
     const { data: existingActivity, error: fetchError } = await plot.supabase
       .from("activity")
       .select("priority_id")
-      .eq("id", activity.id)
+      .eq("id", activityId)
       .single();
 
     if (fetchError || !existingActivity) {
@@ -976,6 +1076,7 @@ export async function updateActivity(
   // Build update object
   const dbUpdate: Database["public"]["Tables"]["activity"]["Update"] = {
     updated_by: plot.getUpdatedBy(),
+    sync_depth: plot.syncDepth + 1,
   };
 
   // Handle type mapping if provided
@@ -995,7 +1096,8 @@ export async function updateActivity(
 
   // Handle basic fields
   if (activity.title !== undefined) {
-    dbUpdate.title = activity.title && activity.title.trim() !== "" ? activity.title : null;
+    dbUpdate.title =
+      activity.title && activity.title.trim() !== "" ? activity.title : null;
   }
   if (activity.draft !== undefined) {
     dbUpdate.draft = activity.draft;
@@ -1003,8 +1105,8 @@ export async function updateActivity(
   if (activity.private !== undefined) {
     dbUpdate.private = activity.private;
   }
-  if (activity.doneAt !== undefined) {
-    dbUpdate.done_at = activity.doneAt ? activity.doneAt.toISOString() : null;
+  if (activity.done !== undefined) {
+    dbUpdate.done_at = activity.done ? activity.done.toISOString() : null;
   }
   if (activity.meta !== undefined) {
     dbUpdate.meta = activity.meta;
@@ -1103,11 +1205,24 @@ export async function updateActivity(
     }
   }
 
+  // For actions with null assignee, force at and on to null (constraint requirement)
+  // This handles updates that explicitly set assignee_id to null
+  if ("assignee_id" in dbUpdate && dbUpdate.assignee_id === null) {
+    const hadScheduling = ("at" in dbUpdate && dbUpdate.at !== null) || ("on" in dbUpdate && dbUpdate.on !== null);
+    dbUpdate.at = null;
+    dbUpdate.on = null;
+    if (hadScheduling) {
+      console.warn(
+        "[updateActivity] Update with null assignee_id had scheduling fields - nullifying at/on to satisfy constraint"
+      );
+    }
+  }
+
   // Execute the update
   const { error: updateError } = await plot.supabase
     .from("activity")
     .update(dbUpdate)
-    .eq("id", activity.id);
+    .eq("id", activityId);
 
   if (updateError) {
     throw new Error(`Activity update failed: ${updateError.message}`);
@@ -1122,7 +1237,7 @@ export async function updateActivity(
         const { data: activityData, error: queryError } = await plot.supabase
           .from("activity")
           .select("created_by")
-          .eq("id", activity.id)
+          .eq("id", activityId)
           .single();
 
         if (queryError || !activityData) {
@@ -1158,7 +1273,7 @@ export async function updateActivity(
     const { error: deleteError } = await plot.supabase
       .from("activity_tag")
       .delete()
-      .eq("activity_id", activity.id);
+      .eq("activity_id", activityId);
 
     if (deleteError) {
       throw new Error(`Failed to delete existing tags: ${deleteError.message}`);
@@ -1171,14 +1286,12 @@ export async function updateActivity(
         const { data, error } = await plot.supabase
           .from("activity")
           .select("priority_id")
-          .eq("id", activity.id)
+          .eq("id", activityId)
           .single();
 
         if (error || !data) {
           throw new Error(
-            `Failed to get activity priority: ${
-              error?.message ?? "Not found"
-            }`
+            `Failed to get activity priority: ${error?.message ?? "Not found"}`
           );
         }
         return data.priority_id;
@@ -1188,7 +1301,11 @@ export async function updateActivity(
     const processedTags: Partial<Record<number, ActorId[]>> = {};
     for (const [tagId, newActors] of Object.entries(activity.tags)) {
       if (newActors && newActors.length > 0) {
-        const actorIds = await processNewActorArray(plot, newActors, priorityId);
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          priorityId
+        );
         if (actorIds.length > 0) {
           processedTags[parseInt(tagId)] = actorIds;
         }
@@ -1200,10 +1317,11 @@ export async function updateActivity(
       .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
       .flatMap(([tagId, actorIds]) =>
         actorIds!.map((actorId) => ({
-          activity_id: activity.id,
+          activity_id: activityId,
           tag_id: parseInt(tagId),
           actor_id: actorId,
           updated_by: plot.getUpdatedBy(),
+          sync_depth: plot.syncDepth + 1,
         }))
       );
 
@@ -1215,48 +1333,13 @@ export async function updateActivity(
       if (insertError) {
         throw new Error(`Failed to insert new tags: ${insertError.message}`);
       }
-
-      // Ensure priority_contact entries exist for all contact actors
-      const uniqueActorIds = [...new Set(newTags.map((tag) => tag.actor_id))];
-
-      if (uniqueActorIds.length > 0) {
-        // Filter to only contact actors
-        const { data: contacts } = await plot.supabase
-          .from("contact")
-          .select("id")
-          .in("id", uniqueActorIds);
-
-        if (contacts && contacts.length > 0) {
-          // Batch upsert priority_contact entries
-          const priorityContacts = contacts.map((c) => ({
-            priority_id: priorityId,
-            contact_id: c.id,
-            archived_at: null,
-          }));
-
-          const { error: linkError } = await plot.supabase
-            .from("priority_contact")
-            .upsert(priorityContacts, {
-              onConflict: "priority_id,contact_id",
-            });
-
-          if (linkError) {
-            const logger = createLogger({
-              priority_twist_id: plot.priorityTwistId,
-            });
-            logger.warn("Failed to link contacts to priority", {
-              error_message: linkError.message,
-            });
-          }
-        }
-      }
     }
   }
 
   // Handle twist tags separately using RPC (for adding/removing caller's own tags)
   if (activity.twistTags) {
     await plot.supabase.rpc("update_activity_tags", {
-      p_activity_id: activity.id,
+      p_activity_id: activityId,
       p_actor_id: plot.priorityTwistId,
       p_client_id: plot.getUpdatedBy(),
       p_tag_updates: activity.twistTags,
@@ -1265,11 +1348,41 @@ export async function updateActivity(
 }
 
 export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
+  // Determine note ID - either provided directly or looked up by key
+  let noteId: string;
+
+  if ("id" in note && note.id) {
+    // ID provided directly
+    noteId = note.id;
+  } else if ("key" in note && note.key) {
+    // Look up note by key
+    // Note: We need the activity_id to look up by key, but NoteUpdate doesn't require it
+    // We'll need to query by key alone since the unique constraint is (activity_id, key)
+    // This means if the same key exists in multiple activities, this will fail
+    const { data: existingNote, error: fetchError } = await plot.supabase
+      .from("note")
+      .select("id")
+      .eq("key", note.key)
+      .single();
+
+    if (fetchError || !existingNote) {
+      throw new Error(
+        `Note not found with key "${note.key}": ${
+          fetchError?.message ?? "Not found"
+        }`
+      );
+    }
+
+    noteId = existingNote.id;
+  } else {
+    throw new Error("Note update must provide either id or key");
+  }
+
   // Validate access to the note's activity
   const { data: noteData, error: noteError } = await plot.supabase
     .from("note")
     .select("activity_id")
-    .eq("id", note.id)
+    .eq("id", noteId)
     .single();
 
   if (noteError) {
@@ -1292,6 +1405,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
   // Build update object
   const dbUpdate: Database["public"]["Tables"]["note"]["Update"] = {
     updated_by: plot.getUpdatedBy(),
+    sync_depth: plot.syncDepth + 1,
   };
 
   // Handle basic fields
@@ -1321,7 +1435,11 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     if (note.mentions === null) {
       dbUpdate.mentions = null;
     } else {
-      const mentionIds = await processNewActorArray(plot, note.mentions, activityData.priority_id);
+      const mentionIds = await processNewActorArray(
+        plot,
+        note.mentions,
+        activityData.priority_id
+      );
       dbUpdate.mentions = mentionIds.length > 0 ? mentionIds : null;
     }
   }
@@ -1330,7 +1448,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
   const { error: updateError } = await plot.supabase
     .from("note")
     .update(dbUpdate)
-    .eq("id", note.id);
+    .eq("id", noteId);
 
   if (updateError) {
     throw new Error(`Note update failed: ${updateError.message}`);
@@ -1342,7 +1460,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     const { error: deleteError } = await plot.supabase
       .from("note_tag")
       .delete()
-      .eq("note_id", note.id);
+      .eq("note_id", noteId);
 
     if (deleteError) {
       throw new Error(`Failed to delete existing tags: ${deleteError.message}`);
@@ -1352,7 +1470,11 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     const processedTags: Partial<Record<number, ActorId[]>> = {};
     for (const [tagId, newActors] of Object.entries(note.tags)) {
       if (newActors && newActors.length > 0) {
-        const actorIds = await processNewActorArray(plot, newActors, activityData.priority_id);
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          activityData.priority_id
+        );
         if (actorIds.length > 0) {
           processedTags[parseInt(tagId)] = actorIds;
         }
@@ -1364,10 +1486,11 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
       .flatMap(([tagId, actorIds]) =>
         actorIds!.map((actorId) => ({
-          note_id: note.id,
+          note_id: noteId,
           tag_id: parseInt(tagId),
           actor_id: actorId,
           updated_by: plot.getUpdatedBy(),
+          sync_depth: plot.syncDepth + 1,
         }))
       );
 
@@ -1408,6 +1531,7 @@ export async function getNotes(
           draft,
           private,
           content,
+          key,
           links,
           mentions,
           author:actor!author_id(
@@ -1462,7 +1586,7 @@ export async function getNotes(
       return {
         // @ts-ignore - row.id is a string from DB, but Uuid is a branded type
         id: row.id as any,
-        createdAt: row.source_created_at
+        created: row.source_created_at
           ? new Date(row.source_created_at)
           : new Date(row.created_at),
         activity: activity, // Use the activity parameter passed to the function
@@ -1476,11 +1600,11 @@ export async function getNotes(
         private: row.private,
         archived: row.archived_at !== null,
         content: row.content,
+        key: row.key || null,
         links: row.links as ActivityLink[] | null,
         mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? [],
         tags:
-          (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) ||
-          {},
+          (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) || {},
       };
     });
   } catch (err) {
@@ -1774,17 +1898,27 @@ export async function createActivities(
     let assigneeId: string | null = null;
     if (activity.assignee !== undefined) {
       // assignee is explicitly provided (can be NewActor or null)
-      assigneeId = await processNewActor(plot, activity.assignee, targetPriorityId);
+      assigneeId = await processNewActor(
+        plot,
+        activity.assignee,
+        targetPriorityId
+      );
     } else if (dbActivityType === "action") {
-      // For actions without explicit assignee, default to twist owner
-      const twistOwnerResult = await plot.supabase
-        .from("priority_twist")
-        .select("owner_id")
-        .eq("id", plot.priorityTwistId)
-        .single();
+      // For actions without explicit assignee, default to twist owner's contact
+      // Use single query with join via database function
+      const result = await plot.supabase.rpc(
+        "get_priority_twist_owner_contact",
+        {
+          p_priority_twist_id: plot.priorityTwistId,
+        }
+      );
 
-      if (twistOwnerResult.data) {
-        assigneeId = twistOwnerResult.data.owner_id;
+      if (result.error) {
+        throw new Error(`Failed to get twist owner contact: ${result.error.message}`);
+      }
+
+      if (result.data) {
+        assigneeId = result.data;
       }
     }
 
@@ -1796,10 +1930,11 @@ export async function createActivities(
       assignee_id: assigneeId,
       priority_id: targetPriorityId,
       type: dbActivityType,
-      title: activity.title && activity.title.trim() !== "" ? activity.title : null,
+      title:
+        activity.title && activity.title.trim() !== "" ? activity.title : null,
       preview: previewText,
       duration: duration ? formatInterval(duration) : null,
-      done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
+      done_at: activity.done ? activity.done.toISOString() : null,
       recurrence_rule: activity.recurrenceRule ?? null,
       recurrence_exdates:
         activity.recurrenceExdates?.map((d) => d.toISOString()) ?? null,
@@ -1807,9 +1942,15 @@ export async function createActivities(
         activity.recurrenceDates?.map((d) => d.toISOString()) ?? null,
       meta: activity.meta ?? null,
       updated_by: plot.getUpdatedBy(),
+      sync_depth: plot.syncDepth + 1,
       embedding: embedding ? JSON.stringify(embedding) : null,
       pick_priority: pickPriorityConfig ?? null,
     };
+
+    // If tool provided a source, add it for upsert behavior
+    if ("source" in activity && activity.source) {
+      dbActivity.source = activity.source;
+    }
 
     // Handle scheduling fields using calculated dbEnd
     if (
@@ -1856,9 +1997,16 @@ export async function createActivities(
     dbActivities.push(dbActivity);
   }
 
-  // Batch insert all activities
+  // Batch insert or upsert activities
+  // Use upsert if any activities have source field to handle duplicates
+  const hasAnySource = dbActivities.some((a) => a.source);
   const dbResult = safeQuery(
-    await plot.supabase.from("activity").insert(dbActivities).select()
+    hasAnySource
+      ? await plot.supabase
+          .from("activity")
+          .upsert(dbActivities, { onConflict: "source,source_priority_root" })
+          .select()
+      : await plot.supabase.from("activity").insert(dbActivities).select()
   );
 
   // Filter activities that should be marked as read (unread === false)
@@ -1905,13 +2053,13 @@ export async function createActivities(
         if (activityReadEntries.length > 0) {
           const insertResult = await plot.supabase
             .from("activity_read")
-            .insert(activityReadEntries);
+            .upsert(activityReadEntries, { onConflict: "user_id,activity_id" });
           if (insertResult.error) {
             const logger = createLogger({
               priority_twist_id: plot.priorityTwistId,
             });
             logger.error(
-              "Failed to insert activity_read entries for batch activities",
+              "Failed to upsert activity_read entries for batch activities",
               insertResult.error as Error,
               {
                 count: activityReadEntries.length,
@@ -1924,7 +2072,8 @@ export async function createActivities(
   }
 
   // Process tags for activities that have them - convert NewActor[] to ActorId[]
-  const processedTagsArray: Array<Partial<Record<number, ActorId[]>> | null> = [];
+  const processedTagsArray: Array<Partial<Record<number, ActorId[]>> | null> =
+    [];
   for (let i = 0; i < activities.length; i++) {
     const activity = activities[i];
     const dbActivity = dbResult[i];
@@ -1937,13 +2086,19 @@ export async function createActivities(
     const processedTags: Partial<Record<number, ActorId[]>> = {};
     for (const [tagId, newActors] of Object.entries(activity.tags)) {
       if (newActors && newActors.length > 0) {
-        const actorIds = await processNewActorArray(plot, newActors, dbActivity.priority_id);
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          dbActivity.priority_id
+        );
         if (actorIds.length > 0) {
           processedTags[parseInt(tagId)] = actorIds;
         }
       }
     }
-    processedTagsArray.push(Object.keys(processedTags).length > 0 ? processedTags : null);
+    processedTagsArray.push(
+      Object.keys(processedTags).length > 0 ? processedTags : null
+    );
   }
 
   // Add tags for activities that have them
@@ -1961,6 +2116,7 @@ export async function createActivities(
           tag_id: parseInt(tagId),
           actor_id: actorId,
           updated_by: plot.getUpdatedBy(),
+          sync_depth: plot.syncDepth + 1,
         }))
       );
   });
@@ -1972,71 +2128,6 @@ export async function createActivities(
 
     if (insertError) {
       throw new Error(`Failed to insert tags: ${insertError.message}`);
-    }
-
-    // Ensure priority_contact entries exist for all contact actors
-    const uniqueActorIds = [...new Set(allTags.map((tag) => tag.actor_id))];
-
-    if (uniqueActorIds.length > 0) {
-      // Filter to only contact actors
-      const { data: contacts } = await plot.supabase
-        .from("contact")
-        .select("id")
-        .in("id", uniqueActorIds);
-
-      if (contacts && contacts.length > 0) {
-        const contactIds = new Set(contacts.map((c) => c.id));
-
-        // Build priority_contact entries for each activity's priority
-        // Group tags by activity and priority to avoid duplicates
-        const priorityContactMap = new Map<string, Set<string>>();
-
-        allTags.forEach((tag) => {
-          if (!contactIds.has(tag.actor_id)) return;
-
-          // Find the priority for this activity
-          const activityIndex = dbResult.findIndex(
-            (db) => db.id === tag.activity_id
-          );
-          if (activityIndex === -1) return;
-
-          const priorityId = dbResult[activityIndex].priority_id;
-          const key = `${priorityId}:${tag.actor_id}`;
-
-          if (!priorityContactMap.has(key)) {
-            priorityContactMap.set(key, new Set([priorityId, tag.actor_id]));
-          }
-        });
-
-        // Convert map to array of priority_contact entries
-        const priorityContacts = Array.from(priorityContactMap.values()).map(
-          (set) => {
-            const [priorityId, contactId] = Array.from(set);
-            return {
-              priority_id: priorityId,
-              contact_id: contactId,
-              archived_at: null,
-            };
-          }
-        );
-
-        if (priorityContacts.length > 0) {
-          const { error: linkError } = await plot.supabase
-            .from("priority_contact")
-            .upsert(priorityContacts, {
-              onConflict: "priority_id,contact_id",
-            });
-
-          if (linkError) {
-            const logger = createLogger({
-              priority_twist_id: plot.priorityTwistId,
-            });
-            logger.warn("Failed to link contacts to priorities", {
-              error_message: linkError.message,
-            });
-          }
-        }
-      }
     }
   }
 
@@ -2083,7 +2174,7 @@ async function createActivityException(
   const { data: recurrenceActivity, error: recurrenceError } =
     await plot.supabase
       .from("activity")
-      .select("priority_id, priority:priority!priority_id(id, title)")
+      .select("source, priority_id, priority:priority!priority_id(id, title)")
       .eq("id", activity.recurrence.id)
       .single();
 
@@ -2115,9 +2206,10 @@ async function createActivityException(
     {
       activity_id: activity.recurrence.id,
       occurrence: occurrenceStr,
-      title: activity.title && activity.title.trim() !== "" ? activity.title : null,
+      title:
+        activity.title && activity.title.trim() !== "" ? activity.title : null,
       duration: exceptionDuration ? formatInterval(exceptionDuration) : null,
-      done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
+      done_at: activity.done ? activity.done.toISOString() : null,
       meta: activity.meta ?? null,
       updated_by: plot.getUpdatedBy(),
     };
@@ -2178,16 +2270,16 @@ async function createActivityException(
 
   // Return as Activity with exception fields
   return {
-    // @ts-ignore - result.data.id is a string from DB, but Uuid is a branded type
-    id: result.data.id as any,
-    createdAt: new Date(result.data.created_at),
+    id: result.data.id as Uuid,
+    source: recurrenceActivity.source,
+    created: new Date(result.data.created_at),
     type: activity.type || ActivityType.Note,
     author: activity.recurrence!.author,
     start: activity.start ?? null,
     end: activity.end ?? null,
     recurrenceUntil: activity.recurrenceUntil ?? null,
     recurrenceCount: activity.recurrenceCount ?? null,
-    doneAt: activity.doneAt ?? null,
+    done: activity.done ?? null,
     title: activity.title ?? "",
     assignee: null,
     draft: false,

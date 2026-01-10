@@ -6,7 +6,9 @@ import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
+import 'package:plot/widget/avatar.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
@@ -435,6 +437,7 @@ abstract class _UpdateActivityCommand extends Command {
     required super.title,
     required super.eventObject,
     required super.eventAction,
+    super.subtitle,
     super.icon,
     super.hoverIcon,
   }) : onUpdate = onUpdate ?? ((activity) => activity.save());
@@ -497,8 +500,8 @@ class StartAction extends _UpdateActivityCommand {
       activity.copyWith(
         type: ActivityType.action,
         // If already has datetime scheduling, use current time; otherwise use date-based
+        on: Value(activity.on ?? CustomDateRange(Date.today(), null)),
         at: Value(null),
-        on: Value(CustomDateRange(Date.today(), null)),
         order: Order.first(),
         doneAt: const Value(null),
       ),
@@ -526,6 +529,140 @@ class FinishAction extends _UpdateActivityCommand {
   Future<CommandReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doneAt: Value(DateTime.now())));
     return const CommandDone();
+  }
+}
+
+class ActorGroup extends CommandGroup {
+  ActorGroup({
+    required this.priorityId,
+    required this.builder,
+  });
+
+  final Uuid priorityId;
+  final Command Function(Actor? actor) builder;
+
+  @override
+  Future<List<Command>> list({String? search}) async {
+    final actors = await Actor.get(
+      priorityId: priorityId,
+      types: [ActorType.user, ActorType.contact],
+      search: search, // Backend search by name/email
+      limit: 50,
+    );
+
+    return [
+      builder(null), // Unassign option
+      ...actors.map((actor) => builder(actor)),
+    ];
+  }
+}
+
+class AssignAction extends _UpdateActivityCommand {
+  final Actor? assignee;
+  final bool stateIcon;
+
+  AssignAction(
+    super.activity, {
+    required this.assignee,
+    super.onUpdate,
+    this.stateIcon = false,
+  }) : super(
+          title: assignee?.name ?? 'Unassign',
+          subtitle: assignee?.email,
+          eventObject: EventObject.activity,
+          eventAction: EventAction.updated,
+        );
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    // State icon mode: show Avatar when assigned (for activity list display)
+    if (stateIcon && activity.assigneeId != null) {
+      return Avatar(actorId: activity.assigneeId);
+    }
+    // Modal picker mode: show Avatar for assignee options
+    if (assignee != null) {
+      return Avatar(actor: assignee);
+    }
+    // Unassign option: show gray user icon
+    return Icon(
+      FontAwesomeIcons.user,
+      size: context.theme.iconSizes.base,
+      color: context.theme.colors.mutedForeground,
+    );
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final actor = assignee; // Create local variable for null safety
+
+    if (actor == null) {
+      // Unassign: clear assigneeId, on, and at
+      await onUpdate(
+        activity.copyWith(
+          assigneeId: null,
+          on: const Value(null),
+          at: const Value(null),
+        ),
+      );
+    } else {
+      // Assign to selected actor
+      await onUpdate(
+        activity.copyWith(
+          assigneeId: actor.id,
+          type: ActivityType.action,
+          on: Value(activity.on ?? CustomDateRange(Date.today(), null)),
+          at: Value(null),
+          order: Order.first(),
+          doneAt: const Value(null),
+        ),
+      );
+    }
+
+    return const CommandDone();
+  }
+}
+
+class PickActionAssignee extends ShowCommands {
+  PickActionAssignee(this.activity, {this.onUpdate, this.stateIcon = false})
+      : super(
+          title: 'Assign',
+          icon: FontAwesomeIcons.userPlus,
+          commands: (context) => _getAssigneeCommands(activity, onUpdate),
+          eventObject: EventObject.activity,
+          eventAction: EventAction.updated,
+        );
+
+  final Activity activity;
+  final Future<void> Function(Activity)? onUpdate;
+  final bool stateIcon;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    if (stateIcon && activity.assigneeId != null) {
+      // State icon mode: show Avatar when assigned
+      return Avatar(actorId: activity.assigneeId);
+    }
+    // Default: show user-plus icon
+    return super.buildIcon(context, hoverIcon: hoverIcon);
+  }
+
+  static Future<Commands> _getAssigneeCommands(
+    Activity activity,
+    Future<void> Function(Activity)? onUpdate,
+  ) async {
+    return Commands(
+      prompt: 'Assign to',
+      groups: [
+        ActorGroup(
+          priorityId: activity.priority.id,
+          builder: (actor) => AssignAction(
+            activity,
+            assignee: actor,
+            onUpdate: onUpdate,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -1033,19 +1170,27 @@ List<Command> activityCommands(
   final primary = skipPrimary
       ? null
       : primaryActivityCommand(activity, stateIcon: false);
+  // For checks, use the actual primary command (not the nullable primary variable)
+  final actualPrimary = primaryActivityCommand(activity, stateIcon: false);
   return [
     if (open) ChangeCurrentActivity(activity),
     ?primary,
-    if (activity.type != .event && !activity.doNow && primary is! StartAction)
+    if (activity.type != .event &&
+        !activity.doNow &&
+        actualPrimary is! StartAction)
       StartAction(activity),
-    if (activity.type != .event && primary is! PickScheduleActivity)
+    if (activity.type != .event && actualPrimary is! PickScheduleActivity)
       PickScheduleActivity(activity),
     if (activity.type != .event &&
         !activity.doSomeday &&
-        primary is! UnscheduleAction)
+        actualPrimary is! UnscheduleAction)
       UnscheduleAction(activity),
-    if (activity.type != .event && !activity.done && primary is! FinishAction)
+    if (activity.type != .event &&
+        !activity.done &&
+        actualPrimary is! FinishAction)
       FinishAction(activity),
+    if (activity.type != .event && actualPrimary is! PickActionAssignee)
+      PickActionAssignee(activity),
     MoveActivityToPriority(activity),
     if (activity.type != .note && !skipInfrequent) ActivityToNote(activity),
     if (!skipInfrequent) ArchiveActivity(activity),
@@ -1077,6 +1222,11 @@ List<Command> topActivityTags(Activity activity, List<Tag> tagSuggestions) {
 /// This is shown as the leading command in ActivityWidget and as the primary action in ActivityPage header.
 /// Use `selected: true` on the button when activity.doNow.
 Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
+  // Show PickActionAssignee when assigned to someone other than the current user
+  if (activity.assigneeId != null && activity.assigneeId != Base.actorId) {
+    return PickActionAssignee(activity, stateIcon: stateIcon);
+  }
+
   if (activity.type == ActivityType.note ||
       activity.doSomeday ||
       activity.done) {

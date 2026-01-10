@@ -32,6 +32,8 @@ class Activities extends Table
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get lastNoteCreatedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get lastNoteSourceCreatedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get sourceCreatedAt =>
       dateTime().map(const LocalDateTimeConverter())();
 
@@ -171,6 +173,7 @@ class ActivitiesBase extends BaseTable {
   @override
   Insertable<ActivityRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
+    json.remove('sync_depth');
     json.remove(
       'user_id',
     ); // Remove user_id from activity_in_range function result
@@ -238,8 +241,9 @@ class ActivitiesBase extends BaseTable {
     // Remove mentions - it's a calculated field from notes
     json.remove('mentions');
 
-    // Remove last_note_created_at - it's a calculated field from notes
+    // Remove last_note_created_at and last_note_source_created_at - they are calculated fields from notes
     json.remove('last_note_created_at');
+    json.remove('last_note_source_created_at');
 
     return json;
   }
@@ -901,9 +905,12 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     if (doNow) {
+      final actorId = Base.actorId;
       query.where(
         a.type.equalsValue(ActivityType.action) &
             a.doneAt.isNull() &
+            // Only include if unassigned or assigned to current user
+            (a.assigneeId.isNull() | a.assigneeId.equalsValue(actorId)) &
             (
             // Date-based scheduling: startOn <= today
             (a.startOn.isSmallerOrEqualValue(Date.today().toString()) &
@@ -916,9 +923,12 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
     if (doLater) {
       final now = DateTime.now();
+      final actorId = Base.actorId;
       query.where(
         a.type.equalsValue(ActivityType.action) &
             a.doneAt.isNull() &
+            // Only include if unassigned or assigned to current user
+            (a.assigneeId.isNull() | a.assigneeId.equalsValue(actorId)) &
             (
             // Date-based scheduling: startOn > today
             (a.startOn.isBiggerThanValue(Date.today().toString()) &
@@ -982,16 +992,16 @@ class Activity extends Equatable implements Comparable<Activity> {
       if (rangeStart != null) {
         createdInRange =
             createdInRange &
-            (a.createdAt.isBiggerOrEqualValue(rangeStart) |
-                (a.lastNoteCreatedAt.isNotNull() &
-                    a.lastNoteCreatedAt.isBiggerOrEqualValue(rangeStart)));
+            (a.sourceCreatedAt.isBiggerOrEqualValue(rangeStart) |
+                (a.lastNoteSourceCreatedAt.isNotNull() &
+                    a.lastNoteSourceCreatedAt.isBiggerOrEqualValue(rangeStart)));
       }
       if (rangeEnd != null) {
         createdInRange =
             createdInRange &
-            (a.createdAt.isSmallerThanValue(rangeEnd) |
-                (a.lastNoteCreatedAt.isNotNull() &
-                    a.lastNoteCreatedAt.isSmallerThanValue(rangeEnd)));
+            (a.sourceCreatedAt.isSmallerThanValue(rangeEnd) |
+                (a.lastNoteSourceCreatedAt.isNotNull() &
+                    a.lastNoteSourceCreatedAt.isSmallerThanValue(rangeEnd)));
       }
       condition = condition | createdInRange;
 
@@ -1058,14 +1068,20 @@ class Activity extends Equatable implements Comparable<Activity> {
       query.limit(limit, offset: offset);
     }
 
+    final actorId = Base.actorId;
     final sortExpression = CaseWhenExpression(
       cases: [
         CaseWhen(a.doneAt.isNotNull(), then: a.doneAt),
+        // Activities assigned to others sort like notes (use creation time)
+        CaseWhen(
+          a.assigneeId.isNotNull() & a.assigneeId.isNotValue(actorId.toUuid().toBytes()),
+          then: coalesce([a.lastNoteSourceCreatedAt, a.sourceCreatedAt]),
+        ),
         CaseWhen(a.startAt.isNotNull(), then: a.startAt),
         CaseWhen(a.startOn.isNotNull(), then: a.startOn),
       ],
-      // For non-scheduled activities, use GREATEST(sourceCreatedAt, lastNoteCreatedAt)
-      orElse: coalesce([a.lastNoteCreatedAt, a.sourceCreatedAt]),
+      // For non-scheduled activities, use GREATEST(sourceCreatedAt, lastNoteSourceCreatedAt)
+      orElse: coalesce([a.lastNoteSourceCreatedAt, a.sourceCreatedAt]),
     );
     switch (order) {
       case ActivityOrder.sorted:
@@ -1393,6 +1409,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   ActivityType get type => _activity.type;
   DateTime? get doneAt => _exception?.doneAt ?? _activity.doneAt;
   DateTime? get lastNoteCreatedAt => _activity.lastNoteCreatedAt;
+  DateTime? get lastNoteSourceCreatedAt => _activity.lastNoteSourceCreatedAt;
   RecurrenceRule? get recurrenceRule => _activity.recurrenceRule;
   List<DateTime>? get recurrenceExdates => _activity.recurrenceExdates;
   List<DateTime>? get recurrenceDates => _activity.recurrenceDates;
@@ -1465,9 +1482,16 @@ class Activity extends Equatable implements Comparable<Activity> {
       return at!.start!;
     }
 
-    // For unscheduled activities, use GREATEST(sourceCreatedAt, doneAt, lastNoteCreatedAt)
+    // For activities assigned to others, use creation time (treat like notes)
+    if (assigneeId != null && assigneeId != Base.actorId) {
+      final times = [sourceCreatedAt, ?doneAt, ?_activity.lastNoteSourceCreatedAt];
+      times.sort((a, b) => b.compareTo(a)); // Sort descending
+      return times.first; // Return the greatest (most recent)
+    }
+
+    // For unscheduled activities, use GREATEST(sourceCreatedAt, doneAt, lastNoteSourceCreatedAt)
     if ((on == null && at == null) || doneAt != null) {
-      final times = [sourceCreatedAt, ?doneAt, ?_activity.lastNoteCreatedAt];
+      final times = [sourceCreatedAt, ?doneAt, ?_activity.lastNoteSourceCreatedAt];
       times.sort((a, b) => b.compareTo(a)); // Sort descending
       return times.first; // Return the greatest (most recent)
     }
@@ -1478,10 +1502,23 @@ class Activity extends Equatable implements Comparable<Activity> {
         sourceCreatedAt;
   }
 
-  bool get doNow => todo && at?.includes(DateTime.now()) == true;
-  bool get doLater => todo && at?.start?.isAfter(DateTime.now()) == true;
-  bool get doSomeday => type == .action && on == null && at == null;
-  bool get todo => type == ActivityType.action && (on ?? at) != null && !done;
+  bool get doNow =>
+      (assigneeId == null || assigneeId == Base.actorId) &&
+      todo &&
+      at?.includes(DateTime.now()) == true;
+  bool get doLater =>
+      (assigneeId == null || assigneeId == Base.actorId) &&
+      todo &&
+      at?.start?.isAfter(DateTime.now()) == true;
+  bool get doSomeday =>
+      type == .action &&
+      (on == null && at == null ||
+          (assigneeId != null && assigneeId != Base.actorId));
+  bool get todo =>
+      (assigneeId == null || assigneeId == Base.actorId) &&
+      type == ActivityType.action &&
+      (on ?? at) != null &&
+      !done;
   bool get done => doneAt != null;
   bool get isPast =>
       at?.end?.isBefore(Time.now()) == true ||
@@ -2084,11 +2121,19 @@ class Activity extends Equatable implements Comparable<Activity> {
     final targetInstance = reverse
         ? sortedInstances.last
         : sortedInstances.first;
-    return targetInstance.toDate();
+
+    // Convert to Date and verify it's within the intended range
+    // This ensures occurrences at range boundaries are properly excluded
+    final targetDate = targetInstance.toDate();
+    if (!range.includes(targetDate)) {
+      return null;
+    }
+
+    return targetDate;
   }
 
   /// Activity are sorted in this order:
-  /// - For ActivityType.note, GREATEST(createdAt, doneAt, lastNoteCreatedAt)
+  /// - For ActivityType.note, GREATEST(sourceCreatedAt, doneAt, lastNoteSourceCreatedAt)
   /// - For ActivityType.action, doneAt ?? startAt.toDate()/startOn
   /// - For ActivityType.event, startAt/startOn
   /// Ties are broken using the order property.
@@ -2109,13 +2154,20 @@ class Activity extends Equatable implements Comparable<Activity> {
   }
 
   DateTime _getSortTime() {
+    // Activities assigned to others sort like notes (use creation time)
+    if (assigneeId != null && assigneeId != Base.actorId) {
+      return [sourceCreatedAt, ?doneAt, ?_activity.lastNoteSourceCreatedAt]
+          .whereType<DateTime>()
+          .reduce((a, b) => a.isAfter(b) ? a : b);
+    }
+
     final time = switch (type) {
       ActivityType.action => doneAt ?? at?.start ?? on?.start?.toDateTime(),
       ActivityType.event => at?.start ?? on?.start?.toDateTime(),
       _ => null,
     };
     return time ??
-        [createdAt, ?doneAt, ?_activity.lastNoteCreatedAt]
+        [sourceCreatedAt, ?doneAt, ?_activity.lastNoteSourceCreatedAt]
             .whereType<DateTime>()
             .reduce((a, b) => a.isAfter(b) ? a : b); // Descending
   }

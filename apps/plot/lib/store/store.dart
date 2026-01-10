@@ -14,6 +14,7 @@ import 'package:equatable/equatable.dart';
 import 'package:rrule/rrule.dart';
 import 'package:synchronized/synchronized.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:change_case/change_case.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -46,6 +47,7 @@ part 'sync_orchestrator.dart';
 part 'actor.dart';
 part 'priority.dart';
 part 'priority_user.dart';
+part 'priority_actor.dart';
 part 'priority_twist.dart';
 part 'link.dart';
 part 'activity.dart';
@@ -112,6 +114,8 @@ abstract class BaseTable {
     String? name,
     this.filterName,
     this.limit,
+    this.cursorColumn = 'id',
+    this.secondarySortColumns = const ['id'],
   }) : name = name ?? "${table}s";
 
   final String table;
@@ -127,6 +131,12 @@ abstract class BaseTable {
   final bool upsertAsUpdate;
   final bool supportsArchiving;
 
+  /// Column to use for composite cursor pagination (default: 'id')
+  final String cursorColumn;
+
+  /// Columns to use for secondary sorting to ensure stable sort order (default: ['id'])
+  final List<String> secondarySortColumns;
+
   Map<String, dynamic> toBase(DataClass row) {
     final json = row.toJson();
     json['updated_by'] = Store.clientId;
@@ -140,6 +150,7 @@ abstract class BaseTable {
     (
       Iterable<Map<String, dynamic>> rows,
       DateTime? lastUpdated,
+      String? lastId,
       DateTimeRange? range,
       bool more,
     )
@@ -147,13 +158,23 @@ abstract class BaseTable {
   get({
     DateTimeRange? range,
     DateTime? updatedSince,
+    String? lastId,
     bool initial = false,
     bool archived = false,
   }) async {
     var query = select();
     query = filterRange(query, range);
     if (updatedSince != null) {
-      query = query.gt("updated_at", updatedSince);
+      if (lastId == null) {
+        // No lastId provided: keep exclusive comparison (> updated_at)
+        query = query.gt("updated_at", updatedSince);
+      } else {
+        // lastId provided: use composite cursor to handle same timestamps
+        // (updated_at > lastUpdated) OR (updated_at = lastUpdated AND cursorColumn > lastId)
+        query = query.or(
+          "updated_at.gt.${updatedSince.toIso8601String()},and(updated_at.eq.${updatedSince.toIso8601String()},$cursorColumn.gt.$lastId)",
+        );
+      }
     }
 
     // Apply base filter (user_id, etc.)
@@ -201,15 +222,18 @@ abstract class BaseTable {
       returnRange = DateTimeRange(start, end);
     }
     DateTime? lastUpdated;
+    String? returnLastId;
     if (rows.isNotEmpty) {
       lastUpdated = rows
           .map((row) {
             return DateTime.parse(row['updated_at'] as String);
           })
           .reduce((value, last) => value.isAfter(last) ? value : last);
+      // Extract last cursor value for composite cursor pagination
+      returnLastId = rows.last[cursorColumn] as String?;
     }
     final more = limit != null && rows.length >= limit!;
-    return (rows, lastUpdated, returnRange, more);
+    return (rows, lastUpdated, returnLastId, returnRange, more);
   }
 
   PostgrestFilterBuilder<PostgrestList> select() {
@@ -254,7 +278,15 @@ abstract class BaseTable {
   }
 
   PostgrestTransformBuilder<T2> sort<T2>(PostgrestTransformBuilder<T2> query) {
-    return query.order(order, ascending: ascending);
+    // Add primary sort
+    query = query.order(order, ascending: ascending);
+
+    // Add secondary sort columns for stable ordering
+    for (final column in secondarySortColumns) {
+      query = query.order(column, ascending: ascending);
+    }
+
+    return query;
   }
 
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
@@ -288,6 +320,7 @@ abstract class BaseTable {
     Actors,
     Priorities,
     PriorityUsers,
+    PriorityActors,
     PriorityTwists,
     Activities,
     Notes,
@@ -319,6 +352,7 @@ class Store extends _$Store {
   static final Lock _startLock = Lock();
   // Track the current user to avoid unnecessary Store recreation
   static String? _currentUserId;
+  static String? get currentUserId => _currentUserId;
 
   static Future<void> stop() async {
     if (Injector.appInstance.exists<Store>()) {
@@ -698,20 +732,30 @@ class Store extends _$Store {
     var lastUpdated = pulledAtMicros != null
         ? DateTime.fromMicrosecondsSinceEpoch(pulledAtMicros, isUtc: true)
         : null;
+    String? lastId;
 
     // For updates, loop until all updates are fetched
     var totalRows = 0;
     var more = false;
-    var upsertedInLoop = false;
 
     do {
-      var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
-          .get(updatedSince: lastUpdated, initial: initial));
+      var (
+        baseRows,
+        batchLastUpdated,
+        batchLastId,
+        newRange,
+        batchMore,
+      ) = (await baseTable.get(
+        updatedSince: lastUpdated,
+        lastId: lastId,
+        initial: initial,
+      ));
       final from = newRange?.start?.toString();
       final to = newRange?.end?.toString();
       more = batchMore && batchLastUpdated != null;
       if (batchLastUpdated != null) {
         lastUpdated = batchLastUpdated;
+        lastId = batchLastId;
       }
 
       if (baseRows.isNotEmpty) {
@@ -739,59 +783,54 @@ class Store extends _$Store {
       });
 
       totalRows += baseRows.length;
-
-      if (lastUpdated != null) {
-        final lastUpdatedMicros = lastUpdated.toUtc().microsecondsSinceEpoch;
-
-        // Update pulledAt (and firstPulledAt on initial pull)
-        await into(syncStates).insert(
-          SyncStatesCompanion.insert(
-            entity: entity,
-            pulledAt: Value(lastUpdatedMicros),
-            firstPulledAt: initial
-                ? Value(lastUpdatedMicros)
-                : const Value.absent(),
-          ),
-          onConflict: DoUpdate(
-            (old) => SyncStatesCompanion(
-              entity: Value(entity),
-              pulledAt: Value(lastUpdatedMicros),
-              firstPulledAt: initial
-                  ? Value(lastUpdatedMicros)
-                  : const Value.absent(),
-              // Preserve existing 'last' and 'noMore' values
-            ),
-          ),
-        );
-        upsertedInLoop = true;
-      }
     } while (!initial && more);
 
     if (totalRows > 0) {
       log.info("Synced ${baseTable.name}: $totalRows rows");
     }
 
-    // Skip final upsert if we already upserted in the loop
-    if (!upsertedInLoop) {
+    // Update pulledAt after loop completes to ensure all items at same timestamp are pulled
+    if (lastUpdated != null) {
+      final lastUpdatedMicros = lastUpdated.toUtc().microsecondsSinceEpoch;
+
+      // Update pulledAt (and firstPulledAt on initial pull)
+      await into(syncStates).insert(
+        SyncStatesCompanion.insert(
+          entity: entity,
+          pulledAt: Value(lastUpdatedMicros),
+          firstPulledAt: initial
+              ? Value(lastUpdatedMicros)
+              : const Value.absent(),
+        ),
+        onConflict: DoUpdate(
+          (old) => SyncStatesCompanion(
+            entity: Value(entity),
+            pulledAt: Value(lastUpdatedMicros),
+            firstPulledAt: initial
+                ? Value(lastUpdatedMicros)
+                : const Value.absent(),
+            // Preserve existing 'last' and 'noMore' values
+          ),
+        ),
+      );
+    } else if (initial) {
       // Set pulledAt and firstPulledAt for initial pull even if no rows (marks entity as initialized)
-      if (initial) {
-        final nowMicros = DateTime.now().toUtc().microsecondsSinceEpoch;
-        await into(syncStates).insert(
-          SyncStatesCompanion.insert(
-            entity: entity,
+      final nowMicros = DateTime.now().toUtc().microsecondsSinceEpoch;
+      await into(syncStates).insert(
+        SyncStatesCompanion.insert(
+          entity: entity,
+          pulledAt: Value(nowMicros),
+          firstPulledAt: Value(nowMicros),
+        ),
+        onConflict: DoUpdate(
+          (old) => SyncStatesCompanion(
+            entity: Value(entity),
             pulledAt: Value(nowMicros),
             firstPulledAt: Value(nowMicros),
+            // Preserve existing 'last' and 'noMore' values
           ),
-          onConflict: DoUpdate(
-            (old) => SyncStatesCompanion(
-              entity: Value(entity),
-              pulledAt: Value(nowMicros),
-              firstPulledAt: Value(nowMicros),
-              // Preserve existing 'last' and 'noMore' values
-            ),
-          ),
-        );
-      }
+        ),
+      );
     }
 
     // Return the range that was pulled
@@ -837,7 +876,7 @@ class Store extends _$Store {
     }
 
     // Fetch all archived items (no range, no updatedSince, archived=true)
-    var (baseRows, lastUpdated, _, _) = await baseTable.get(archived: true);
+    var (baseRows, lastUpdated, _, _, _) = await baseTable.get(archived: true);
 
     if (baseRows.isNotEmpty) {
       log.info(
@@ -1081,7 +1120,7 @@ class Store extends _$Store {
 
       log.fine("Requesting range $requestRange");
 
-      var (baseRows, batchLastUpdated, newRange, batchMore) = await baseTable
+      var (baseRows, batchLastUpdated, _, newRange, batchMore) = await baseTable
           .get(range: requestRange, updatedSince: null, archived: archived);
       more = batchMore;
       if (batchLastUpdated != null) {
@@ -1359,7 +1398,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 210;
+  int get schemaVersion => 215;
 
   @override
   MigrationStrategy get migration {

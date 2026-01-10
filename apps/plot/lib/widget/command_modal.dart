@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'package:plot/api/api_exception.dart';
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
 import 'list_tile.dart';
@@ -113,9 +114,11 @@ class CommandModal {
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
 
-      final (title, message) = e is ApiException
-          ? (e.title, e.description)
-          : ('Error', 'Something went wrong');
+      final (title, message) = switch (e) {
+        ApiException() => (e.title, e.description),
+        NetworkException() => ('Network Error', e.message),
+        _ => ('Error', 'Something went wrong'),
+      };
 
       modalContext.showToast(
         title: title,

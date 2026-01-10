@@ -5,6 +5,7 @@ CREATE TABLE "public"."note_tag" (
     "note_id" uuid NOT NULL REFERENCES note ON DELETE CASCADE,
     "tag_id" integer NOT NULL,
     "updated_by" integer NOT NULL DEFAULT 0,
+    "sync_depth" integer,
     UNIQUE NULLS NOT DISTINCT ("actor_id", "note_id", "tag_id")
 );
 

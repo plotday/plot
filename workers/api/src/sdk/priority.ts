@@ -198,7 +198,7 @@ priority.post("/priority", async (c) => {
   return c.json({
     id: newPriority.id,
     title: newPriority.title,
-    createdAt: newPriority.created_at,
+    created: newPriority.created_at,
   });
 });
 
