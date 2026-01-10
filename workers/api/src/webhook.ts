@@ -5,8 +5,12 @@ import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
 import { createLogger } from "./utils/logger";
 import { extractRequestContext } from "./utils/log-context";
+import { webhookRateLimiter } from "./middleware/rate-limit";
 
 const webhook = new Hono<{ Bindings: Bindings }>();
+
+// Apply moderate rate limiting to all webhook routes (300 req/min)
+webhook.use("*", webhookRateLimiter);
 
 /**
  * Verifies Slack webhook signature

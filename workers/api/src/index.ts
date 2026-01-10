@@ -29,6 +29,8 @@ import { createLogger } from "./utils/logger";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
 // Import webhook routes
 import webhook from "./webhook";
+// Import rate limiting middleware
+import { generalRateLimiter } from "./middleware/rate-limit";
 
 // Export Durable Objects
 export { Storage } from "./state/storage";
@@ -76,6 +78,9 @@ app.use("*", async (c, next) => {
     c.executionCtx.waitUntil(postHog.shutdown());
   }
 });
+
+// Add general rate limiting to all endpoints
+app.use("*", generalRateLimiter);
 
 // Add error handler for PostHog error tracking and structured logging
 app.onError(async (err, c) => {

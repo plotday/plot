@@ -13,8 +13,11 @@ import {
 import { SSEStream, acceptsSSE } from "../utils/sse";
 import { handleValidationError } from "../utils/validation";
 import { createLogger } from "../utils/logger";
+import { deploymentRateLimiter } from "../middleware/rate-limit";
 
 const twist = new Hono<{ Bindings: Bindings }>();
+
+const MAX_MODULE_SIZE = 10 * 1024 * 1024; // 10 MB in bytes
 
 // GET /twist/user - Get current user information
 twist.get("/twist/user", async (c) => {
@@ -39,14 +42,33 @@ twist.get("/twist/user", async (c) => {
 
 const TwistDeploymentSchema = z
   .object({
-    module: z.string().optional(),
-    sourcemap: z.string().optional(),
+    module: z
+      .string()
+      .max(MAX_MODULE_SIZE, "Module size exceeds 10 MB limit")
+      .optional(),
+    sourcemap: z
+      .string()
+      .max(MAX_MODULE_SIZE, "Sourcemap size exceeds 10 MB limit")
+      .optional(),
     source: z
       .object({
         displayName: z.string(),
         dependencies: z.record(z.string(), z.string()),
         files: z.record(z.string(), z.string()),
       })
+      .refine(
+        (data) => {
+          // Calculate total size of all files
+          const totalSize = Object.values(data.files).reduce(
+            (sum, content) => sum + content.length,
+            0
+          );
+          return totalSize <= MAX_MODULE_SIZE;
+        },
+        {
+          message: "Total source files size exceeds 10 MB limit",
+        }
+      )
       .optional(),
     dryRun: z.boolean().optional(),
     env: z.record(z.string(), z.any()).optional(),
@@ -274,7 +296,8 @@ twist.get("/twist/:id", async (c) => {
 // POST /twist/:id - Deploy twist
 // For personal environment: id is twist_package_id, authenticated by user token
 // For other environments: id is twist_package_id (UUID), auth by user token (priority access) or publisher token
-twist.post("/twist/:id", async (c) => {
+// Apply rate limiting to prevent deployment abuse (30 deployments per hour)
+twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
   const urlPackageId = c.req.param("id"); // This is twist_package_id
   const userToken = c.var.userToken;
   const publisherToken = c.var.publisherToken;

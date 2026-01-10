@@ -487,6 +487,9 @@ importers:
       '@cloudflare/containers':
         specifier: ^0.0.28
         version: 0.0.28
+      '@hono-rate-limiter/cloudflare':
+        specifier: ^0.2.2
+        version: 0.2.2(@cloudflare/workers-types@4.20250415.0)(hono@4.6.15)
       '@jridgewell/trace-mapping':
         specifier: ^0.3.31
         version: 0.3.31
@@ -505,6 +508,9 @@ importers:
       hono:
         specifier: ^4.6.15
         version: 4.6.15
+      hono-rate-limiter:
+        specifier: ^0.5.3
+        version: 0.5.3(hono@4.6.15)
       linkify-it:
         specifier: ^5.0.0
         version: 5.0.0
@@ -2680,6 +2686,12 @@ packages:
     resolution: {integrity: sha512-mB9oAsNCm9aM3/SOv4YtBMqZbYj10R7dkq8byBqxGY/ncFwhf2oQzMV+LCRlWoDSEBJ3COiR1yeDvMtsoOsuFQ==}
     peerDependencies:
       graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
+
+  '@hono-rate-limiter/cloudflare@0.2.2':
+    resolution: {integrity: sha512-wMnqeV+cb5Wov2npLIMFtCVm3tiNMtqw9LhPWSzSMwHOzh2qbhI3mCS6s962fxcJ6UUNJhRqDbVMEsB/NinCIQ==}
+    peerDependencies:
+      '@cloudflare/workers-types': ^4.20240529.0
+      hono: ^4.4.8
 
   '@humanwhocodes/config-array@0.11.10':
     resolution: {integrity: sha512-KVVjQmNUepDVGXNuoRRdmmEjruj0KfiGSbS8LVc12LMsWDQzRXJ0qdhN8L8uUigKpfEHRhlaQFY0ib1tnUbNeQ==}
@@ -5444,6 +5456,15 @@ packages:
   hasown@2.0.2:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
+
+  hono-rate-limiter@0.5.3:
+    resolution: {integrity: sha512-M0DxbVMpPELEzLi0AJg1XyBHLGJXz7GySjsPoK+gc5YeeBsdGDGe+2RvVuCAv8ydINiwlbxqYMNxUEyYfRji/A==}
+    peerDependencies:
+      hono: ^4.10.8
+      unstorage: ^1.17.3
+    peerDependenciesMeta:
+      unstorage:
+        optional: true
 
   hono@4.6.15:
     resolution: {integrity: sha512-OiQwvAOAaI2JrABBH69z5rsctHDzFzIKJge0nYXgtzGJ0KftwLWcBXm1upJC23/omNRtnqM0gjRMbtXshPdqhQ==}
@@ -9955,6 +9976,11 @@ snapshots:
     dependencies:
       graphql: 15.10.1
 
+  '@hono-rate-limiter/cloudflare@0.2.2(@cloudflare/workers-types@4.20250415.0)(hono@4.6.15)':
+    dependencies:
+      '@cloudflare/workers-types': 4.20250415.0
+      hono: 4.6.15
+
   '@humanwhocodes/config-array@0.11.10':
     dependencies:
       '@humanwhocodes/object-schema': 1.2.1
@@ -13238,6 +13264,10 @@ snapshots:
   hasown@2.0.2:
     dependencies:
       function-bind: 1.1.2
+
+  hono-rate-limiter@0.5.3(hono@4.6.15):
+    dependencies:
+      hono: 4.6.15
 
   hono@4.6.15: {}
 

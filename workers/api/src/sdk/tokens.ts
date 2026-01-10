@@ -8,6 +8,7 @@ import type { Bindings } from "../env";
 import { getUser } from "../utils/auth";
 import { handleValidationError } from "../utils/validation";
 import { createLogger } from "../utils/logger";
+import { tokenCreationRateLimiter } from "../middleware/rate-limit";
 
 const tokens = new Hono<{ Bindings: Bindings }>();
 
@@ -20,7 +21,8 @@ const AuthorizeSessionSchema = z.object({
 });
 
 // POST /token - Create new token (requires authentication)
-tokens.post("/token", async (c) => {
+// Apply strict rate limiting (10 req/hour)
+tokens.post("/token", tokenCreationRateLimiter, async (c) => {
   const userId = c.var.user?.id;
   if (!userId) {
     return new Response("Unauthorized", { status: 401 });
@@ -145,7 +147,8 @@ tokens.get("/session/:sessionId", async (c) => {
 // POST /session/authorize - Authorize a session
 // This is called from the site when user clicks "Authorize"
 // Validates Supabase session token to authenticate the user
-tokens.post("/session/authorize", async (c) => {
+// Apply strict rate limiting (10 req/hour)
+tokens.post("/session/authorize", tokenCreationRateLimiter, async (c) => {
   // Extract Supabase access token from Authorization header
   const authHeader = c.req.header("Authorization");
 
