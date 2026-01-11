@@ -74,7 +74,10 @@ class ActivityWidget extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: EdgeInsets.only(left: buildContext.theme.spacing.md),
+              padding: EdgeInsets.only(
+                left: buildContext.theme.spacing.md,
+                right: buildContext.theme.spacing.sm,
+              ),
               child: Button.icon(
                 primaryActivityCommand(activity),
                 selected: activity.doNow,
@@ -107,7 +110,9 @@ class ActivityWidget extends StatelessWidget {
                       alignment: PlaceholderAlignment.baseline,
                       baseline: TextBaseline.alphabetic,
                       child: Padding(
-                        padding: EdgeInsets.only(right: buildContext.theme.spacing.sm),
+                        padding: EdgeInsets.only(
+                          right: buildContext.theme.spacing.md,
+                        ),
                         child: Initials(
                           actorId: activity.assigneeId,
                           size: buildContext.theme.iconSizes.sm,
@@ -131,7 +136,7 @@ class ActivityWidget extends StatelessWidget {
                       activity.preview!.isNotEmpty &&
                       activity.preview != activity.displayTitle)
                     TextSpan(
-                      text: ' ${activity.preview}',
+                      text: '  ${activity.preview}',
                       style: TextStyle(color: buildContext.colour.muted),
                     ),
                 ],
@@ -254,25 +259,19 @@ class ActivityCommands extends HookWidget {
     );
 
     // Get commands (only if showCommands is true)
-    final commandButtons = showCommands
-        ? [
-            ...activityCommands(
-              activity,
-              skipInfrequent: true,
-              skipPrimary: true, // Exclude primary command from trailing
-            ).map((cmd) => Button.icon(cmd)),
-            // Add top tag buttons
-            ...topActivityTags(
-              activity,
-              tagSuggestions,
-            ).map((cmd) => Button.icon(cmd)),
-            Button.icon(
-              CommandWrapper(
-                ShowActivityCommands(activity),
-                icon: Value(PlotIcon.more),
-              ),
-            ),
-          ]
+    final activityCommandButtons = showCommands
+        ? activityCommands(
+            activity,
+            skipInfrequent: true,
+            skipPrimary: true, // Exclude primary command from trailing
+          ).map((cmd) => Button.icon(cmd)).toList()
+        : <Widget>[];
+
+    final tagSuggestionButtons = showCommands
+        ? topActivityTags(
+            activity,
+            tagSuggestions,
+          ).map((cmd) => Button.icon(cmd)).toList()
         : <Widget>[];
 
     // Build the final row with tags and commands
@@ -296,10 +295,34 @@ class ActivityCommands extends HookWidget {
                 );
               }).toList();
 
-        // Combine tags and commands
-        final allButtons = reverse
-            ? [...commandButtons, ...loadedTagButtons]
-            : [...loadedTagButtons, ...commandButtons];
+        // Combine tags and commands with 6 button limit
+        final List<Widget> allButtons;
+        if (showCommands) {
+          const maxOtherButtons =
+              5; // Reserve 1 slot for ShowActivityCommands (6 total)
+
+          // Combine in priority order: Tags → Commands → Suggestions
+          final priorityButtons = [
+            ...loadedTagButtons,
+            ...activityCommandButtons,
+            ...tagSuggestionButtons,
+          ].take(maxOtherButtons).toList();
+
+          // Always add ShowActivityCommands as the 6th button
+          final showAllButton = Button.icon(
+            CommandWrapper(
+              ShowActivityCommands(activity),
+              icon: Value(PlotIcon.more),
+            ),
+          );
+
+          allButtons = [...priorityButtons, showAllButton];
+        } else {
+          allButtons = reverse
+              ? loadedTagButtons.reversed.toList()
+              : loadedTagButtons;
+        }
+
         return Row(mainAxisSize: MainAxisSize.min, children: allButtons);
       },
     );
