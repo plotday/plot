@@ -15,6 +15,7 @@ import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/platform.dart';
 import 'sliver.dart';
@@ -872,7 +873,7 @@ class MentionLeaderLayerBuilder implements SuperEditorLayerBuilder {
       return ContentLayerProxyWidget(
         key: const ValueKey('mention_leader'),
         child: Transform.translate(
-          offset: Offset(triggerRect.left, triggerRect.bottom + 4),
+          offset: Offset(triggerRect.left, triggerRect.bottom + context.theme.spacing.sm),
           child: Leader(link: leaderLink, child: const SizedBox()),
         ),
       );
@@ -886,7 +887,7 @@ class MentionLeaderLayerBuilder implements SuperEditorLayerBuilder {
 
     // Calculate available space below and above the trigger
     const popoverMaxHeight = 200.0; // From EditorMentionPopover constraints
-    const spacing = 4.0;
+    final spacing = context.theme.spacing.sm;
     final spaceBelow =
         viewportHeight - triggerGlobalOffset.dy - triggerRect.height;
     final spaceAbove = triggerGlobalOffset.dy;
@@ -1045,13 +1046,14 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
     context,
   ).copyWith(color: isDark ? context.theme.colors.foreground : null);
 
+  final spacing = context.theme.spacing;
   return Stylesheet(
     rules: [
       // Default spacing for all blocks
       StyleRule(BlockSelector.all, (doc, docNode) {
         return {
           Styles.textStyle: baseStyle,
-          Styles.padding: const CascadingPadding.only(top: 8),
+          Styles.padding: CascadingPadding.only(top: spacing.md),
         };
       }),
       // Remove bottom spacing from last element to prevent container edge gaps
@@ -1061,26 +1063,26 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
       // Headers: larger top margin for visual separation, smaller bottom for grouping
       StyleRule(const BlockSelector("header1"), (doc, docNode) {
         return {
-          Styles.padding: const CascadingPadding.only(top: 24, bottom: 8),
+          Styles.padding: CascadingPadding.only(top: spacing.xxl, bottom: spacing.md),
         };
       }),
       StyleRule(const BlockSelector("header2"), (doc, docNode) {
         return {
-          Styles.padding: const CascadingPadding.only(top: 24, bottom: 8),
+          Styles.padding: CascadingPadding.only(top: spacing.xxl, bottom: spacing.md),
         };
       }),
       StyleRule(const BlockSelector("header3"), (doc, docNode) {
         return {
-          Styles.padding: const CascadingPadding.only(top: 20, bottom: 8),
+          Styles.padding: CascadingPadding.only(top: spacing.xxl, bottom: spacing.md),
         };
       }),
       StyleRule(const BlockSelector("header4"), (doc, docNode) {
         return {
-          Styles.padding: const CascadingPadding.only(top: 20, bottom: 8),
+          Styles.padding: CascadingPadding.only(top: spacing.xxl, bottom: spacing.md),
         };
       }),
       StyleRule(const BlockSelector("listItem"), (doc, docNode) {
-        return {Styles.padding: const CascadingPadding.only(top: 4)};
+        return {Styles.padding: CascadingPadding.only(top: spacing.sm)};
       }),
       // Add spacing after the last item in a list (creates spacing after entire list)
       // StyleRule(const BlockSelector("paragraph"), (doc, docNode) {

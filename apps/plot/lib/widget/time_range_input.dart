@@ -3,6 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 
 /// A compound input widget for selecting a time range with chevron navigation.
@@ -151,7 +152,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
 
     return Row(
       children: [
-        const SizedBox(width: 8),
+        SizedBox(width: theme.spacing.md),
         // Double left chevron (shift range -1 hour or snap to 30-min)
         _buildButton(
           icon: FontAwesomeIcons.chevronsLeft,
@@ -185,9 +186,9 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           textAlign: TextAlign.right,
                           style: (style) {
                             final textField = style.textFieldStyle.copyWith(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 8,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: theme.spacing.sm,
+                                vertical: theme.spacing.md,
                               ),
                               border: style.textFieldStyle.border.map(
                                 (borderStyle) => borderStyle.copyWith(
@@ -212,9 +213,9 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           textAlign: TextAlign.right,
                           style: (style) {
                             final textField = style.textFieldStyle.copyWith(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 8,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: theme.spacing.sm,
+                                vertical: theme.spacing.md,
                               ),
                               border: style.textFieldStyle.border.map(
                                 (borderStyle) => borderStyle.copyWith(
@@ -251,9 +252,9 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           textAlign: TextAlign.left,
                           style: (style) {
                             final textField = style.textFieldStyle.copyWith(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 8,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: theme.spacing.sm,
+                                vertical: theme.spacing.md,
                               ),
                               border: style.textFieldStyle.border.map(
                                 (borderStyle) => borderStyle.copyWith(
@@ -278,9 +279,9 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           textAlign: TextAlign.left,
                           style: (style) {
                             final textField = style.textFieldStyle.copyWith(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 8,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: theme.spacing.sm,
+                                vertical: theme.spacing.md,
                               ),
                               border: style.textFieldStyle.border.map(
                                 (borderStyle) => borderStyle.copyWith(
@@ -313,7 +314,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
           onPressed: _shiftRight1Hour,
           theme: theme,
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: theme.spacing.md),
       ],
     );
   }

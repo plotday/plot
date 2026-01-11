@@ -1,7 +1,9 @@
 import 'package:flutter/widgets.dart';
 
+// Legacy padding constants for backwards compatibility.
+// New code should use context.theme.spacing instead.
 const widgetPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
-const widgetPaddingSm = EdgeInsets.symmetric(horizontal: 12, vertical: 6);
+const widgetPaddingSm = EdgeInsets.symmetric(horizontal: 12, vertical: 4);
 
 // Border radius
 const borderRadiusSm = 4.0;

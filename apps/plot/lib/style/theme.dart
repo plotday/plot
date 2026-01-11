@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/style/typography.dart';
 import 'package:plot/style/header.dart';
 import 'package:plot/style/text_field.dart';
@@ -19,6 +20,7 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
   final typography = buildTypography(context, colorScheme);
   final iconSizes = buildIconSizes(context);
+  final spacing = buildSpacing(context);
 
   final plotColors = PlotColors(
     barrier: colourScheme.barrier,
@@ -30,7 +32,7 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
   var theme = FThemeData(
     colors: colorScheme,
     typography: typography,
-    extensions: [plotColors, iconSizes],
+    extensions: [plotColors, iconSizes, spacing],
   );
 
   final customTextFieldStyle = buildTextFieldStyle(

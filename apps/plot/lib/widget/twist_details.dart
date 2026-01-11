@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/util/string.dart';
 import 'package:plot/widget/twist_permission_helper.dart';
 
@@ -41,7 +42,10 @@ class TwistDetails extends StatelessWidget {
         permissionsList.add(
           Padding(
             key: ValueKey('category_$categoryName'),
-            padding: const EdgeInsets.only(top: 12, bottom: 4),
+            padding: EdgeInsets.only(
+              top: theme.spacing.lg,
+              bottom: theme.spacing.sm,
+            ),
             child: Text(
               categoryName,
               style: TextStyle(
@@ -58,7 +62,10 @@ class TwistDetails extends StatelessWidget {
           permissionsList.add(
             Padding(
               key: ValueKey('${categoryName}_$description'),
-              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              padding: EdgeInsets.only(
+                left: theme.spacing.sm,
+                bottom: theme.spacing.sm,
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -109,7 +116,7 @@ class TwistDetails extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 4),
+                SizedBox(height: theme.spacing.sm),
                 Text(
                   twist.description!,
                   style: TextStyle(
@@ -133,11 +140,11 @@ class TwistDetails extends StatelessWidget {
             children: [
               if (priority != null) ...[
                 _buildPriorityRow(context, priority!),
-                const SizedBox(height: 4),
+                SizedBox(height: theme.spacing.sm),
               ],
               _buildMetadataRow(context, 'Author', authorText),
               if (twist.environment != 'public') ...[
-                const SizedBox(height: 4),
+                SizedBox(height: theme.spacing.sm),
                 _buildMetadataRow(
                   context,
                   'Publishing Status',
@@ -145,7 +152,7 @@ class TwistDetails extends StatelessWidget {
                 ),
               ],
               if (twist.createdAt != null) ...[
-                const SizedBox(height: 4),
+                SizedBox(height: theme.spacing.sm),
                 _buildMetadataRow(
                   context,
                   'First Published',
@@ -153,7 +160,7 @@ class TwistDetails extends StatelessWidget {
                 ),
               ],
               if (twist.updatedAt != null) ...[
-                const SizedBox(height: 4),
+                SizedBox(height: theme.spacing.sm),
                 _buildMetadataRow(
                   context,
                   'Last Updated',

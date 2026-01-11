@@ -4,6 +4,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/widget.dart';
 
 class AgendaHeader extends StatefulWidget {
@@ -103,13 +104,13 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                 fontSize: context.theme.typography.sm.fontSize,
               ),
             ),
-            SizedBox(width: 2),
+            SizedBox(width: context.theme.spacing.xs),
             FaIcon(
               PlotIcon.up,
               size: context.theme.typography.sm.fontSize,
               color: color,
             ),
-            SizedBox(width: 6),
+            SizedBox(width: context.theme.spacing.sm),
           ],
           if (remainingDuration != null) ...[
             Text(
@@ -119,7 +120,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                 fontSize: context.theme.typography.sm.fontSize,
               ),
             ),
-            SizedBox(width: 2),
+            SizedBox(width: context.theme.spacing.xs),
             FaIcon(
               PlotIcon.down,
               size: context.theme.typography.sm.fontSize,
@@ -267,11 +268,16 @@ class _AgendaHeaderState extends State<AgendaHeader> {
     }
 
     return Padding(
-      padding: EdgeInsets.only(top: widget.date != null ? 32.0 : 8.0),
+      padding: EdgeInsets.only(
+        top: widget.date != null ? context.theme.spacing.xxxl : context.theme.spacing.md,
+      ),
       child: ListTile(
         command: command,
         focusNode: widget.focusNode,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        padding: EdgeInsets.symmetric(
+          horizontal: context.theme.spacing.xl,
+          vertical: context.theme.spacing.xs,
+        ),
         bodyBuilder: (context, isHighlighted) {
           // Calculate background color based on date and highlighted state
           // When highlighted, composite the semi-transparent highlight color over
@@ -333,7 +339,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       );
                       alignment = Alignment.centerLeft;
                       padding = widget.date != null || widget.now
-                          ? const EdgeInsets.only(right: 8)
+                          ? EdgeInsets.only(right: context.theme.spacing.md)
                           : null;
                     } else if (hasCenter) {
                       // Full width date/time, centered
@@ -348,7 +354,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       );
                       alignment = Alignment.center;
                       padding = widget.date != null || widget.now
-                          ? const EdgeInsets.symmetric(horizontal: 8)
+                          ? EdgeInsets.symmetric(horizontal: context.theme.spacing.md)
                           : null;
                     } else {
                       // Full width duration, right-aligned
@@ -360,7 +366,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       );
                       alignment = Alignment.centerRight;
                       padding = widget.date != null || widget.now
-                          ? const EdgeInsets.only(left: 8)
+                          ? EdgeInsets.only(left: context.theme.spacing.md)
                           : null;
                     }
 
@@ -441,7 +447,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                             )
                                           : null,
                                       padding: widget.date != null || widget.now
-                                          ? const EdgeInsets.only(right: 8)
+                                          ? EdgeInsets.only(right: context.theme.spacing.md)
                                           : null,
                                       child: PriorityLabel(
                                         priority: widget.priority,
@@ -502,7 +508,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                             )
                                           : null,
                                       padding: widget.date != null || widget.now
-                                          ? const EdgeInsets.only(left: 8)
+                                          ? EdgeInsets.only(left: context.theme.spacing.md)
                                           : null,
                                       child: _buildDurationContent(
                                         context,

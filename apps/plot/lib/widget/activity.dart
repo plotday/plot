@@ -3,6 +3,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/initials.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
@@ -55,7 +56,7 @@ class ActivityWidget extends StatelessWidget {
       longPressCommand: isTouchDevice ? ShowActivityCommands(activity) : null,
       title: activity.displayTitle,
       subtitle: activity.preview,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: buildContext.theme.spacing.xl),
       leadingBuilder: (isHovered, hasFocus) {
         final activityColor = buildContext.colour.colours.fromTheme(
           activity.priority.displayColor,
@@ -73,7 +74,7 @@ class ActivityWidget extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const .only(left: 8.5),
+              padding: EdgeInsets.only(left: buildContext.theme.spacing.md),
               child: Button.icon(
                 primaryActivityCommand(activity),
                 selected: activity.doNow,
@@ -88,7 +89,11 @@ class ActivityWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const .only(top: 8, bottom: 8, right: 4),
+            padding: EdgeInsets.only(
+              top: buildContext.theme.spacing.md,
+              bottom: buildContext.theme.spacing.md,
+              right: buildContext.theme.spacing.sm,
+            ),
             child: Text.rich(
               overflow: TextOverflow.ellipsis,
               style: buildContext.theme.typography.base.copyWith(
@@ -102,7 +107,7 @@ class ActivityWidget extends StatelessWidget {
                       alignment: PlaceholderAlignment.baseline,
                       baseline: TextBaseline.alphabetic,
                       child: Padding(
-                        padding: const EdgeInsets.only(right: 4),
+                        padding: EdgeInsets.only(right: buildContext.theme.spacing.sm),
                         child: Initials(
                           actorId: activity.assigneeId,
                           size: buildContext.theme.iconSizes.sm,
@@ -136,7 +141,7 @@ class ActivityWidget extends StatelessWidget {
         ],
       ),
       trailingBuilder: (isHovered, hasFocus) => Padding(
-        padding: const .only(right: 8.5),
+        padding: EdgeInsets.only(right: buildContext.theme.spacing.md),
         child: ActivityCommands(
           activity: activity,
           tagSuggestions: tagSuggestions,

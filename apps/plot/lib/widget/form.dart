@@ -3,6 +3,7 @@ import 'package:plot/widget/select_tile.dart';
 import 'package:plot/command/base.dart';
 import 'package:plot/command/logging.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/style/spacing.dart';
 
 /// A action for showing a form
 class ShowForm extends Command {
@@ -239,10 +240,13 @@ class FormSelect<T> extends FormItem {
         if (labelBuilder != null) {
           final labelWidget = labelBuilder!(item);
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: EdgeInsets.symmetric(
+              horizontal: context.theme.spacing.lg,
+              vertical: context.theme.spacing.md,
+            ),
             child: Row(
               children: [
-                if (leading != null) ...[leading, const SizedBox(width: 8)],
+                if (leading != null) ...[leading, SizedBox(width: context.theme.spacing.md)],
                 Expanded(child: labelWidget),
               ],
             ),
@@ -254,10 +258,13 @@ class FormSelect<T> extends FormItem {
         final subtitle = subtitleBuilder?.call(item);
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: context.theme.spacing.lg,
+            vertical: context.theme.spacing.md,
+          ),
           child: Row(
             children: [
-              if (leading != null) ...[leading, const SizedBox(width: 8)],
+              if (leading != null) ...[leading, SizedBox(width: context.theme.spacing.md)],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,7 +399,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
               onExit: (_) => setState(() => _isHovered = false),
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: EdgeInsets.symmetric(horizontal: context.theme.spacing.sm),
                   child: Text(
                     widget.label,
                     style: context.theme.typography.sm.copyWith(
@@ -441,9 +448,11 @@ class FormInfo extends FormItem {
     FocusNode? focusNode,
   }) {
     return Padding(
-      padding: .only(bottom: divider ? 8 : 0),
+      padding: EdgeInsets.only(bottom: divider ? context.theme.spacing.md : 0),
       child: Container(
-        padding: .symmetric(horizontal: text != null ? 12 : 0),
+        padding: EdgeInsets.symmetric(
+          horizontal: text != null ? context.theme.spacing.lg : 0,
+        ),
         decoration: divider
             ? BoxDecoration(
                 border: Border(
@@ -488,7 +497,7 @@ class FormDivider extends FormItem {
     FocusNode? focusNode,
   }) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      margin: EdgeInsets.symmetric(vertical: context.theme.spacing.md),
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(color: context.theme.colors.border, width: 1),

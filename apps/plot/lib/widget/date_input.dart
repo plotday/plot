@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:intl/intl.dart';
 
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
 
 /// A compound input widget for selecting dates with chevron navigation.
 ///
@@ -82,7 +83,7 @@ class _DateInputState extends State<DateInput> {
 
     return Row(
       children: [
-        const SizedBox(width: 8),
+        SizedBox(width: theme.spacing.md),
         // Double left chevron (back one week)
         _buildButton(
           icon: FontAwesomeIcons.chevronsLeft,
@@ -95,7 +96,7 @@ class _DateInputState extends State<DateInput> {
           onPressed: () => _navigateDate(-1),
           theme: theme,
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: theme.spacing.md),
         // Date field
         Expanded(
           child: FDateField.calendar(
@@ -110,9 +111,9 @@ class _DateInputState extends State<DateInput> {
             start: DateTime.now(),
             style: (style) {
               final textField = style.textFieldStyle.copyWith(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 8,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: theme.spacing.sm,
+                  vertical: theme.spacing.md,
                 ),
                 border: style.textFieldStyle.border.map(
                   (borderStyle) => borderStyle.copyWith(
@@ -128,7 +129,7 @@ class _DateInputState extends State<DateInput> {
             builder: (context, style, states, child) => child,
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: theme.spacing.md),
         // Single right chevron (forward one day)
         _buildButton(
           icon: FontAwesomeIcons.chevronRight,
@@ -141,7 +142,7 @@ class _DateInputState extends State<DateInput> {
           onPressed: () => _navigateDate(7),
           theme: theme,
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: theme.spacing.md),
       ],
     );
   }
