@@ -243,6 +243,14 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
         if (layoutState.middlePanelVisible) {
+          // Trigger navigation after build completes if we're not already on the new route
+          if (!context.router.currentPath.endsWith('/new')) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && layoutState.middlePanelVisible) {
+                context.router.navigate(NewActivityRoute());
+              }
+            });
+          }
           return const LoadingPage();
         }
         return PriorityPage(priorityId: widget.priorityId);

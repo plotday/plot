@@ -130,7 +130,9 @@ class NewActivityPageState extends State<NewActivityPage> {
     }
 
     // Apply to draft if any query parameters were provided
-    if (queryStartTime != null || queryPriority != null || queryActivityType != null) {
+    if (queryStartTime != null ||
+        queryPriority != null ||
+        queryActivityType != null) {
       Activity updatedDraft;
       if (queryStartTime != null && queryEndTime != null) {
         // StartTime takes precedence - create an event
@@ -271,7 +273,8 @@ class NewActivityPageState extends State<NewActivityPage> {
                                 // PriorityLabel (centered, clickable, directly above editor)
                                 Center(
                                   child: Tapable(
-                                    onTap: () => _selectPriority(context, state),
+                                    onTap: () =>
+                                        _selectPriority(context, state),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
@@ -299,16 +302,17 @@ class NewActivityPageState extends State<NewActivityPage> {
                                     state.draft.at != null) ...[
                                   Center(
                                     child: ConstrainedBox(
-                                      constraints: BoxConstraints(maxWidth: 340),
+                                      constraints: BoxConstraints(
+                                        maxWidth: 340,
+                                      ),
                                       child: Scheduler(
                                         value: state.draft.at!,
                                         onChanged: (newAt) async {
-                                          final updatedDraft = state.draft.copyWith(
-                                            at: Value(newAt),
-                                          );
-                                          await context.read<PriorityBloc>().updateDraft(
-                                            updatedDraft,
-                                          );
+                                          final updatedDraft = state.draft
+                                              .copyWith(at: Value(newAt));
+                                          await context
+                                              .read<PriorityBloc>()
+                                              .updateDraft(updatedDraft);
                                         },
                                       ),
                                     ),
@@ -326,7 +330,10 @@ class NewActivityPageState extends State<NewActivityPage> {
                             draftNote: state.draftNote,
                             twists: state.twists,
                             onDraftChanged: (activity, {note}) async {
-                              await context.read<PriorityBloc>().updateDraft(activity, note: note);
+                              await context.read<PriorityBloc>().updateDraft(
+                                activity,
+                                note: note,
+                              );
                             },
                             flushToBottom: true,
                           ),
@@ -378,7 +385,10 @@ class NewActivityPageState extends State<NewActivityPage> {
                             draftNote: state.draftNote,
                             twists: state.twists,
                             onDraftChanged: (activity, {note}) async {
-                              await context.read<PriorityBloc>().updateDraft(activity, note: note);
+                              await context.read<PriorityBloc>().updateDraft(
+                                activity,
+                                note: note,
+                              );
                             },
                             flushToBottom: false,
                           ),
