@@ -143,14 +143,17 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   async startSync<
     TCallback extends (issue: NewActivityWithNotes, ...args: any[]) => any
   >(
-    authToken: string,
-    projectId: string,
+    options: {
+      authToken: string;
+      projectId: string;
+    } & ProjectSyncOptions,
     callback: TCallback,
-    options?: ProjectSyncOptions,
     ...extraArgs: TCallback extends (issue: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void> {
+    const { authToken, projectId, timeMin } = options;
+
     // Setup webhook for real-time updates
     await this.setupLinearWebhook(authToken, projectId);
 
@@ -162,7 +165,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     await this.set(`callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
-    await this.startBatchSync(authToken, projectId, options);
+    await this.startBatchSync(authToken, projectId, { timeMin });
   }
 
   /**
@@ -176,10 +179,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       const client = await this.getClient(authToken);
 
       // Create webhook URL first (Linear requires valid URL at creation time)
-      const webhookUrl = await this.tools.network.createWebhook({
-        callback: this.onWebhook,
-        extraArgs: [projectId, authToken],
-      });
+      const webhookUrl = await this.tools.network.createWebhook(
+        {},
+        this.onWebhook,
+        projectId,
+        authToken
+      );
 
       // Skip webhook setup for localhost (development mode)
       if (

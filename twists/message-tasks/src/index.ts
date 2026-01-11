@@ -296,15 +296,14 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
       // Start syncing the channel
       const tool = this.getProviderTool(provider);
-      const syncOptions: MessageSyncOptions = {
-        timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
-      };
 
       await tool.startSync(
-        authToken,
-        channelId,
+        {
+          authToken,
+          channelId,
+          timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
+        },
         this.onMessageThread,
-        syncOptions,
         provider,
         channelId
       );

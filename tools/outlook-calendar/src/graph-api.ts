@@ -506,11 +506,11 @@ export function transformOutlookEvent(
     meta: {
       eventId: event.id,
       calendarId: calendarId,
-      onlineMeetingUrl: event.onlineMeeting?.joinUrl,
-      iCalUId: event.iCalUId,
-      isCancelled: event.isCancelled,
-      originalStart: start,
-      originalEnd: end,
+      onlineMeetingUrl: event.onlineMeeting?.joinUrl || null,
+      iCalUId: event.iCalUId || null,
+      isCancelled: event.isCancelled || false,
+      originalStart: start instanceof Date ? start.toISOString() : start,
+      originalEnd: end instanceof Date ? end.toISOString() : end,
     },
   };
 

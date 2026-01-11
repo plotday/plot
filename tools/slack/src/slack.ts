@@ -201,14 +201,16 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   async startSync<
     TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any
   >(
-    authToken: string,
-    channelId: string,
+    options: {
+      authToken: string;
+      channelId: string;
+    } & MessageSyncOptions,
     callback: TCallback,
-    options?: MessageSyncOptions,
     ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void> {
+    const { authToken, channelId } = options;
     console.log("Starting Slack sync for channel", channelId);
 
     // Create callback token for parent
@@ -273,10 +275,12 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     authToken: string,
     channelId: string
   ): Promise<void> {
-    const webhookUrl = await this.tools.network.createWebhook({
-      callback: this.onSlackWebhook,
-      extraArgs: [channelId, authToken],
-    });
+    const webhookUrl = await this.tools.network.createWebhook(
+      {},
+      this.onSlackWebhook,
+      channelId,
+      authToken
+    );
 
     // Check if webhook URL is localhost
     if (URL.parse(webhookUrl)?.hostname === "localhost") {
@@ -392,17 +396,25 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       channelId,
     });
 
+    const body = request.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      console.warn("Invalid webhook body format");
+      return;
+    }
+
     // Slack sends a challenge parameter for URL verification
-    if (request.body?.challenge) {
-      console.log("Responding to Slack challenge");
-      return request.body.challenge;
+    const bodyObj = body as { challenge?: string; event?: any };
+    if (bodyObj.challenge) {
+      console.log("Responding to Slack challenge:", bodyObj.challenge);
+      // Note: The webhook infrastructure should handle responding with the challenge
+      return;
     }
 
     // Validate webhook authenticity
     // In production, you should verify the request signature
     // using the signing secret from your Slack app
 
-    const event = request.body?.event;
+    const event = bodyObj.event;
     if (!event) {
       console.warn("No event in webhook body");
       return;

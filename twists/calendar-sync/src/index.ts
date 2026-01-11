@@ -142,8 +142,10 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
     // Start sync with event handling callback
     await tool.startSync(
-      authToken,
-      calendarId,
+      {
+        authToken,
+        calendarId,
+      },
       this.handleEvent,
       provider,
       calendarId
@@ -303,8 +305,10 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
       // Start sync with event handling callback
       await tool.startSync(
-        authToken,
-        calendarId,
+        {
+          authToken,
+          calendarId,
+        },
         this.handleEvent,
         provider,
         calendarId

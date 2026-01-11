@@ -228,10 +228,12 @@ export default class ProjectSync extends Twist<ProjectSync> {
 
     // Start sync (full history as requested)
     await tool.startSync(
-      authToken,
-      projectId,
+      {
+        authToken,
+        projectId,
+        // No time filter - sync all issues
+      },
       this.onIssue,
-      undefined, // No time filter - sync all issues
       provider,
       projectId
     );

@@ -326,11 +326,15 @@ export function transformGoogleEvent(
       source: `google-calendar:${event.id}`,
       id: event.id,
       calendarId: calendarId,
-      htmlLink: event.htmlLink,
-      hangoutLink: event.hangoutLink,
+      htmlLink: event.htmlLink || null,
+      hangoutLink: event.hangoutLink || null,
       status: event.status,
-      originalStart: isCancelled ? start : undefined,
-      originalEnd: isCancelled ? end : undefined,
+      originalStart: isCancelled
+        ? (start instanceof Date ? start.toISOString() : start)
+        : null,
+      originalEnd: isCancelled
+        ? (end instanceof Date ? end.toISOString() : end)
+        : null,
       description: isCancelled
         ? `This event was cancelled.\n\n${event.description || ""}`
         : event.description || null,

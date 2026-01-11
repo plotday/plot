@@ -158,14 +158,17 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   async startSync<
     TCallback extends (issue: NewActivityWithNotes, ...args: any[]) => any
   >(
-    authToken: string,
-    projectId: string,
+    options: {
+      authToken: string;
+      projectId: string;
+    } & ProjectSyncOptions,
     callback: TCallback,
-    options?: ProjectSyncOptions,
     ...extraArgs: TCallback extends (issue: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void> {
+    const { authToken, projectId, timeMin } = options;
+
     // Setup webhook for real-time updates
     await this.setupJiraWebhook(authToken, projectId);
 
@@ -177,7 +180,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     await this.set(`callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
-    await this.startBatchSync(authToken, projectId, options);
+    await this.startBatchSync(authToken, projectId, { timeMin });
   }
 
   /**

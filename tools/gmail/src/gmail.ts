@@ -201,14 +201,16 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   async startSync<
     TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any
   >(
-    authToken: string,
-    channelId: string,
+    options: {
+      authToken: string;
+      channelId: string;
+    } & MessageSyncOptions,
     callback: TCallback,
-    options?: MessageSyncOptions,
     ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void> {
+    const { authToken, channelId, timeMin } = options;
     console.log("Starting Gmail sync for channel", channelId);
 
     // Create callback token for parent
@@ -226,10 +228,10 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
     const initialState: SyncState = {
       channelId,
-      lastSyncTime: options?.timeMin
-        ? typeof options.timeMin === "string"
-          ? new Date(options.timeMin)
-          : options.timeMin
+      lastSyncTime: timeMin
+        ? typeof timeMin === "string"
+          ? new Date(timeMin)
+          : timeMin
         : undefined,
     };
 
@@ -285,12 +287,15 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
     // Create Gmail webhook (returns Pub/Sub topic name, not a URL)
     // When provider is Google with Gmail scopes, createWebhook returns a Pub/Sub topic name
-    const topicName = await this.tools.network.createWebhook({
-      callback: this.onGmailWebhook,
-      extraArgs: [channelId, authToken],
-      provider: AuthProvider.Google,
-      authorization,
-    });
+    const topicName = await this.tools.network.createWebhook(
+      {
+        provider: AuthProvider.Google,
+        authorization,
+      },
+      this.onGmailWebhook,
+      channelId,
+      authToken
+    );
 
     const api = await this.getApi(authToken);
 
@@ -420,7 +425,8 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
     // Gmail sends push notifications via Cloud Pub/Sub
     // The message body is base64-encoded
-    const message = request.body?.message;
+    const body = request.body as { message?: { data: string } };
+    const message = body?.message;
     if (!message) {
       console.warn("No message in webhook body");
       return;

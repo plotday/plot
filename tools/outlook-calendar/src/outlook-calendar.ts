@@ -19,6 +19,7 @@ import type {
   Calendar,
   CalendarAuth,
   CalendarTool,
+  SyncOptions,
 } from "@plotday/twister/common/calendar";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
@@ -237,11 +238,14 @@ export class OutlookCalendar
   async startSync<
     TCallback extends (activity: NewActivityWithNotes, ...args: any[]) => any
   >(
-    authToken: string,
-    calendarId: string,
+    options: {
+      authToken: string;
+      calendarId: string;
+    } & SyncOptions,
     callback: TCallback,
     ...extraArgs: any[]
   ): Promise<void> {
+    const { authToken, calendarId } = options;
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
@@ -291,10 +295,12 @@ export class OutlookCalendar
   ): Promise<void> {
     const api = await this.getApi(authToken);
 
-    const webhookUrl = await this.tools.network.createWebhook({
-      callback: this.onOutlookWebhook,
-      extraArgs: [calendarId, opaqueAuthToken],
-    });
+    const webhookUrl = await this.tools.network.createWebhook(
+      {},
+      this.onOutlookWebhook,
+      calendarId,
+      opaqueAuthToken
+    );
 
     // Skip webhook setup for localhost (development mode)
     if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) {
@@ -559,7 +565,13 @@ export class OutlookCalendar
       return;
     }
 
-    const notifications = request.body?.value;
+    const body = request.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      console.warn("Invalid webhook body format");
+      return;
+    }
+
+    const notifications = (body as { value?: any[] }).value;
     if (!notifications?.length) {
       console.warn("No notifications in webhook body");
       return;
@@ -627,9 +639,11 @@ export class OutlookCalendar
     }
   ): Promise<void> {
     // Only process calendar events
+    const source = activity.meta?.source;
     if (
-      !activity.meta?.source ||
-      !activity.meta.source.startsWith("outlook-calendar:")
+      !source ||
+      typeof source !== "string" ||
+      !source.startsWith("outlook-calendar:")
     ) {
       return;
     }
@@ -691,11 +705,21 @@ export class OutlookCalendar
     }
 
     // Extract calendar info from metadata
+    if (!activity.meta) {
+      console.warn("Missing activity metadata");
+      return;
+    }
+
     const eventId = activity.meta.id;
     const calendarId = activity.meta.calendarId;
 
-    if (!eventId || !calendarId) {
-      console.warn("Missing event or calendar ID in activity metadata");
+    if (
+      !eventId ||
+      !calendarId ||
+      typeof eventId !== "string" ||
+      typeof calendarId !== "string"
+    ) {
+      console.warn("Missing or invalid event or calendar ID in activity metadata");
       return;
     }
 

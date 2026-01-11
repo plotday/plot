@@ -20,6 +20,7 @@ import {
   type Calendar,
   type CalendarAuth,
   type CalendarTool,
+  type SyncOptions,
 } from "@plotday/twister/common/calendar";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
@@ -242,11 +243,14 @@ export class GoogleCalendar
   async startSync<
     TCallback extends (activity: NewActivityWithNotes, ...args: any[]) => any
   >(
-    authToken: string,
-    calendarId: string,
+    options: {
+      authToken: string;
+      calendarId: string;
+    } & SyncOptions,
     callback: TCallback,
     ...extraArgs: any[]
   ): Promise<void> {
+    const { authToken, calendarId } = options;
     console.log("Saving callback");
 
     // Create callback token for parent
@@ -308,10 +312,12 @@ export class GoogleCalendar
     calendarId: string,
     opaqueAuthToken: string
   ): Promise<void> {
-    const webhookUrl = await this.tools.network.createWebhook({
-      callback: this.onCalendarWebhook,
-      extraArgs: [calendarId, opaqueAuthToken],
-    });
+    const webhookUrl = await this.tools.network.createWebhook(
+      {},
+      this.onCalendarWebhook,
+      calendarId,
+      opaqueAuthToken
+    );
 
     // Check if webhook URL is localhost
     if (URL.parse(webhookUrl)?.hostname === "localhost") {
@@ -535,8 +541,9 @@ export class GoogleCalendar
           }
 
           // Prepare description content
-          const description =
+          const descriptionValue =
             activityData.meta?.description || event.description;
+          const description = typeof descriptionValue === "string" ? descriptionValue : null;
           const hasDescription = description && description.trim().length > 0;
           const hasLinks = links.length > 0;
 
@@ -556,7 +563,7 @@ export class GoogleCalendar
               key: "description",
               content: hasDescription ? description : null,
               links: hasLinks ? links : null,
-              contentType: containsHtml(description) ? "html" : "text",
+              contentType: description && containsHtml(description) ? "html" : "text",
             });
           }
 
@@ -651,7 +658,8 @@ export class GoogleCalendar
     }
 
     // Prepare description content
-    const description = activityData.meta?.description || event.description;
+    const descriptionValue = activityData.meta?.description || event.description;
+    const description = typeof descriptionValue === "string" ? descriptionValue : null;
     const hasDescription = description && description.trim().length > 0;
     const hasLinks = links.length > 0;
 
@@ -666,7 +674,7 @@ export class GoogleCalendar
         key: "description",
         content: hasDescription ? description : null,
         links: hasLinks ? links : null,
-        contentType: containsHtml(description) ? "html" : "text",
+        contentType: description && containsHtml(description) ? "html" : "text",
       });
     }
 
@@ -799,9 +807,11 @@ export class GoogleCalendar
     }
   ): Promise<void> {
     // Only process calendar events
+    const source = activity.meta?.source;
     if (
-      !activity.meta?.source ||
-      !activity.meta.source.startsWith("google-calendar:")
+      !source ||
+      typeof source !== "string" ||
+      !source.startsWith("google-calendar:")
     ) {
       return;
     }
@@ -863,11 +873,21 @@ export class GoogleCalendar
     }
 
     // Extract calendar info from metadata
+    if (!activity.meta) {
+      console.warn("Missing activity metadata");
+      return;
+    }
+
     const eventId = activity.meta.id;
     const calendarId = activity.meta.calendarId;
 
-    if (!eventId || !calendarId) {
-      console.warn("Missing event or calendar ID in activity metadata");
+    if (
+      !eventId ||
+      !calendarId ||
+      typeof eventId !== "string" ||
+      typeof calendarId !== "string"
+    ) {
+      console.warn("Missing or invalid event or calendar ID in activity metadata");
       return;
     }
 

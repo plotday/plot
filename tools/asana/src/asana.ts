@@ -155,14 +155,17 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   async startSync<
     TCallback extends (task: NewActivityWithNotes, ...args: any[]) => any
   >(
-    authToken: string,
-    projectId: string,
+    options: {
+      authToken: string;
+      projectId: string;
+    } & ProjectSyncOptions,
     callback: TCallback,
-    options?: ProjectSyncOptions,
     ...extraArgs: TCallback extends (task: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<void> {
+    const { authToken, projectId, timeMin } = options;
+
     // Setup webhook for real-time updates
     await this.setupAsanaWebhook(authToken, projectId);
 
@@ -174,7 +177,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     await this.set(`callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
-    await this.startBatchSync(authToken, projectId, options);
+    await this.startBatchSync(authToken, projectId, { timeMin });
   }
 
   /**
