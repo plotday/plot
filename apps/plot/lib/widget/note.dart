@@ -85,56 +85,64 @@ class _NoteWidgetState extends State<NoteWidget> {
             ),
           SizedBox(
             height: 30,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                Flexible(
+                // NoteCommands can expand to full width
+                Align(
+                  alignment: Alignment.centerLeft,
                   child: NoteCommands(
                     note: widget.note,
                     showCommands: highlighted,
                   ),
                 ),
-                if (widget.showAuthor)
-                  FutureBuilder<String>(
-                    future: widget.note.getAuthorName(),
-                    builder: (context, snapshot) {
-                      final authorName = snapshot.data;
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (authorName != null && authorName.isNotEmpty) ...[
-                            Text(
-                              authorName,
-                              style: context.theme.typography.xs.copyWith(
-                                color: context.colour.muted,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '•',
-                              style: context.theme.typography.xs.copyWith(
-                                color: context.colour.muted,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-                          Text(
-                            widget.note.sourceCreatedAt.toTimeAgo(),
-                            style: context.theme.typography.xs.copyWith(
-                              color: context.colour.muted,
-                            ),
+                // Author/timestamp positioned on the right, overlapping if needed
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: widget.showAuthor
+                      ? FutureBuilder<String>(
+                          future: widget.note.getAuthorName(),
+                          builder: (context, snapshot) {
+                            final authorName = snapshot.data;
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (authorName != null &&
+                                    authorName.isNotEmpty) ...[
+                                  Text(
+                                    authorName,
+                                    style: context.theme.typography.xs.copyWith(
+                                      color: context.colour.muted,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '•',
+                                    style: context.theme.typography.xs.copyWith(
+                                      color: context.colour.muted,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                                Text(
+                                  widget.note.sourceCreatedAt.toTimeAgo(),
+                                  style: context.theme.typography.xs.copyWith(
+                                    color: context.colour.muted,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        )
+                      : Text(
+                          widget.note.sourceCreatedAt.toTimeAgo(),
+                          style: context.theme.typography.xs.copyWith(
+                            color: context.colour.muted,
                           ),
-                        ],
-                      );
-                    },
-                  )
-                else
-                  Text(
-                    widget.note.sourceCreatedAt.toTimeAgo(),
-                    style: context.theme.typography.xs.copyWith(
-                      color: context.colour.muted,
-                    ),
-                  ),
+                        ),
+                ),
               ],
             ),
           ),
@@ -244,7 +252,41 @@ class NoteCommands extends StatelessWidget {
         // Combine tags and commands
         final allButtons = [...loadedTagButtons, ...commandButtons];
 
-        return Row(mainAxisSize: MainAxisSize.min, children: allButtons);
+        // Use LayoutBuilder to dynamically truncate buttons based on available width
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            // If width is unbounded (infinite), show all buttons
+            if (!constraints.maxWidth.isFinite) {
+              return Row(mainAxisSize: MainAxisSize.min, children: allButtons);
+            }
+
+            // Estimate button width (icon buttons are approximately 40px with spacing)
+            const estimatedButtonWidth = 40.0;
+            final maxButtons = (constraints.maxWidth / estimatedButtonWidth)
+                .floor();
+
+            // Determine which buttons to show
+            List<Widget> visibleButtons;
+            if (allButtons.length <= maxButtons) {
+              // All buttons fit
+              visibleButtons = allButtons;
+            } else if (maxButtons <= 1) {
+              // Only show the last button (ShowNoteCommands) if space is very limited
+              visibleButtons = allButtons.isNotEmpty ? [allButtons.last] : [];
+            } else {
+              // Truncate from the end, but always keep the last button
+              visibleButtons = [
+                ...allButtons.sublist(0, maxButtons - 1),
+                allButtons.last,
+              ];
+            }
+
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: visibleButtons,
+            );
+          },
+        );
       },
     );
   }
