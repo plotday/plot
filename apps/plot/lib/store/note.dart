@@ -563,10 +563,9 @@ class Note extends Equatable implements Comparable<Note> {
 
     // Build the display names list
     final displayNames = <String>[];
-    final currentActorId = Base.actorId;
 
     for (final actorId in actorIds) {
-      if (actorId == currentActorId) {
+      if (actorId.isCurrentUserSync()) {
         displayNames.insert(0, 'You'); // Put "You" first
       } else {
         final name = actorMap[actorId] ?? 'Unknown';

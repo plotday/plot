@@ -15,7 +15,13 @@ CREATE POLICY "Users can create new priorities in their priorities" ON public.pr
 CREATE POLICY "Users can update their priorities" ON public.priority
     FOR UPDATE TO authenticated
         USING (can_access_priority (id)
-            AND (priority.archived_at IS NULL OR priority.root = FALSE))
+            AND (priority.archived_at IS NULL
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM priority_user
+                    WHERE priority_user.priority_id = priority.id
+                        AND priority_user.key = 'root'
+                )))
             WITH CHECK (nlevel (priority.path) = 1
             OR can_access_priority (parent_path (priority.path)));
 

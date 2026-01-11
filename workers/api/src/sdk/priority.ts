@@ -128,14 +128,14 @@ priority.post("/priority", async (c) => {
     createdBy = parentPriority.created_by;
   } else {
     // No parent specified - get user's root priority
-    const { data: rootPriority, error: rootError } = await supabase
-      .from("priority")
-      .select("path")
-      .eq("created_by", user.id)
-      .eq("root", true)
+    const { data: rootPriorityUser, error: rootError } = await supabase
+      .from("priority_user")
+      .select("priority:priority_id(path)")
+      .eq("user_id", user.id)
+      .eq("key", "root")
       .single();
 
-    if (rootError || !rootPriority) {
+    if (rootError || !rootPriorityUser) {
       const logger = createLogger();
       logger.error("Error fetching root priority", rootError ? new Error(rootError.message) : new Error("Unknown error"), {
         user_id: user.id,
@@ -146,7 +146,7 @@ priority.post("/priority", async (c) => {
       );
     }
 
-    parentPath = rootPriority.path as string;
+    parentPath = (rootPriorityUser.priority as any).path as string;
     createdBy = user.id;
   }
 

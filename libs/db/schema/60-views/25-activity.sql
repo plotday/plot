@@ -124,8 +124,9 @@ SELECT
     a.mentions,
     CASE WHEN a.done_at IS NOT NULL THEN
         tstzrange(a.done_at, a.done_at, '[]')
-    -- Skip scheduled time cases if assigned to someone other than current user
-    WHEN a.assignee_id IS NOT NULL AND a.assignee_id != c.id THEN
+        -- Skip scheduled time cases if assigned to someone other than current user
+    WHEN a.assignee_id IS NOT NULL
+        AND ac.user_id != upe.user_id THEN
         tstzrange(GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), '[]')
     WHEN a.at IS NOT NULL THEN
         a.at
@@ -136,8 +137,9 @@ SELECT
     END AS range_at,
     CASE WHEN a.done_at IS NOT NULL THEN
         NULL::daterange
-    -- Set to NULL if assigned to someone other than current user
-    WHEN a.assignee_id IS NOT NULL AND a.assignee_id != c.id THEN
+        -- Set to NULL if assigned to someone other than current user
+    WHEN a.assignee_id IS NOT NULL
+        AND ac.user_id != upe.user_id THEN
         NULL::daterange
     WHEN a.at IS NOT NULL THEN
         NULL::daterange
@@ -150,7 +152,7 @@ SELECT
 FROM
     activity_x a
     JOIN user_priority_expanded upe ON a.priority_id = upe.priority_id
-    LEFT JOIN contact c ON c.user_id = upe.user_id
+    LEFT JOIN contact ac ON ac.id = a.assignee_id
     LEFT JOIN user_activity_unread uau ON uau.user_id = upe.user_id
         AND uau.activity_id = a.id;
 

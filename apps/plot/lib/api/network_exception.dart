@@ -4,7 +4,8 @@ class NetworkException implements Exception {
   final Exception? originalException;
 
   const NetworkException({
-    this.message = 'Could not connect to the Plot server',
+    this.message =
+        'Could not connect. Check your network connection and try again.',
     this.originalException,
   });
 

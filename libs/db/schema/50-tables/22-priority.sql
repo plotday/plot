@@ -3,8 +3,6 @@ CREATE TABLE "public"."priority" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-    "root" boolean NOT NULL DEFAULT FALSE,
-    "twist_development" boolean NOT NULL DEFAULT FALSE,
     -- All fields added below must be handled in handle_user_priority_upsert
     "archived_at" timestamp with time zone,
     "title" text NOT NULL,
@@ -13,10 +11,6 @@ CREATE TABLE "public"."priority" (
     "updated_by" integer NOT NULL DEFAULT 0,
     "sync_depth" integer
 );
-
-CREATE UNIQUE INDEX idx_priority_created_by_root_true ON "public"."priority" ("created_by")
-WHERE
-    "root" = TRUE;
 
 -- Index for priority path ltree queries (supports <@ operator)
 -- Used heavily in user_activity view filtering
@@ -46,8 +40,14 @@ CREATE TABLE "public"."priority_user" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "archived_at" timestamp with time zone,
+    "key" text,
     CONSTRAINT priority_user_unique UNIQUE (user_id, priority_id)
 );
+
+-- Ensure each user can only have one priority with a given key
+CREATE UNIQUE INDEX idx_priority_user_key ON "public"."priority_user" ("user_id", "key")
+WHERE
+    "key" IS NOT NULL;
 
 -- Index for user-based priority lookups in user_priority_base view
 CREATE INDEX idx_priority_user_user_id ON "public"."priority_user" ("user_id")

@@ -8,13 +8,8 @@ CREATE OR REPLACE FUNCTION public.sync_priority_contact_on_insert ()
 DECLARE
     v_contact_id uuid;
 BEGIN
-    -- Get the contact_id for this user
-    SELECT
-        id INTO v_contact_id
-    FROM
-        public.contact
-    WHERE
-        user_id = NEW.user_id;
+    -- Get the primary contact_id for this user
+    v_contact_id := public.get_primary_contact_id(NEW.user_id);
     -- Only create priority_contact if the user has a contact record
     IF v_contact_id IS NOT NULL THEN
         INSERT INTO public.priority_contact (priority_id, contact_id, created_at, archived_at)
@@ -38,13 +33,8 @@ DECLARE
 BEGIN
     -- Only proceed if archived_at changed
     IF OLD.archived_at IS DISTINCT FROM NEW.archived_at THEN
-        -- Get the contact_id for this user
-        SELECT
-            id INTO v_contact_id
-        FROM
-            public.contact
-        WHERE
-            user_id = NEW.user_id;
+        -- Get the primary contact_id for this user
+        v_contact_id := public.get_primary_contact_id(NEW.user_id);
         -- Update the corresponding priority_contact if it exists
         IF v_contact_id IS NOT NULL THEN
             UPDATE
@@ -70,13 +60,8 @@ CREATE OR REPLACE FUNCTION public.sync_priority_contact_on_delete ()
 DECLARE
     v_contact_id uuid;
 BEGIN
-    -- Get the contact_id for this user
-    SELECT
-        id INTO v_contact_id
-    FROM
-        public.contact
-    WHERE
-        user_id = OLD.user_id;
+    -- Get the primary contact_id for this user
+    v_contact_id := public.get_primary_contact_id(OLD.user_id);
     -- Delete the corresponding priority_contact if it exists
     IF v_contact_id IS NOT NULL THEN
         DELETE FROM public.priority_contact

@@ -3,15 +3,11 @@ import { z } from "zod";
 
 import type { Bindings } from "../env";
 import { ItemSchema } from "../types";
-import { handleValidationError } from "../utils/validation";
-import { createLogger } from "../utils/logger";
 import { extractRequestContext } from "../utils/log-context";
-import { syncRateLimiter } from "../middleware/rate-limit";
+import { createLogger } from "../utils/logger";
+import { handleValidationError } from "../utils/validation";
 
 const database = new Hono<{ Bindings: Bindings }>();
-
-// Apply rate limiting to prevent queue flooding (200 req/min)
-database.use("*", syncRateLimiter);
 
 // Schemas
 const ToolSchema: z.ZodType<{
@@ -25,7 +21,15 @@ const ToolSchema: z.ZodType<{
 );
 
 const DatabaseUpdateRequestSchema = z.object({
-  type: z.enum(["activity", "priority", "session", "note", "priority_twist", "activity_read"]),
+  type: z.enum([
+    "activity",
+    "priority",
+    "session",
+    "note",
+    "priority_twist",
+    "activity_read",
+    "priority_contact",
+  ]),
   event: z.enum(["created", "updated", "deleted"]),
   item: ItemSchema,
   previous: ItemSchema.optional(),
@@ -67,7 +71,7 @@ database.post("/update", async (c) => {
           path: c.req.path,
           method: c.req.method,
           error_type: "validation",
-          validation_issues: parseResult.error.issues.map(issue => ({
+          validation_issues: parseResult.error.issues.map((issue) => ({
             path: issue.path.join("."),
             message: issue.message,
             code: issue.code,
@@ -104,7 +108,9 @@ database.post("/update", async (c) => {
     });
 
     return new Response(
-      `Internal server error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Internal server error: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
       { status: 500 }
     );
   }

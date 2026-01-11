@@ -533,10 +533,7 @@ class FinishAction extends _UpdateActivityCommand {
 }
 
 class ActorGroup extends CommandGroup {
-  ActorGroup({
-    required this.priorityId,
-    required this.builder,
-  });
+  ActorGroup({required this.priorityId, required this.builder});
 
   final Uuid priorityId;
   final Command Function(Actor? actor) builder;
@@ -567,11 +564,11 @@ class AssignAction extends _UpdateActivityCommand {
     super.onUpdate,
     this.stateIcon = false,
   }) : super(
-          title: assignee?.name ?? 'Unassign',
-          subtitle: assignee?.email,
-          eventObject: EventObject.activity,
-          eventAction: EventAction.updated,
-        );
+         title: assignee?.name ?? 'Unassign',
+         subtitle: assignee?.email,
+         eventObject: EventObject.activity,
+         eventAction: EventAction.updated,
+       );
 
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
@@ -585,7 +582,7 @@ class AssignAction extends _UpdateActivityCommand {
     }
     // Unassign option: show gray user icon
     return Icon(
-      FontAwesomeIcons.user,
+      FontAwesomeIcons.userSlash,
       size: context.theme.iconSizes.base,
       color: context.theme.colors.mutedForeground,
     );
@@ -624,13 +621,13 @@ class AssignAction extends _UpdateActivityCommand {
 
 class PickActionAssignee extends ShowCommands {
   PickActionAssignee(this.activity, {this.onUpdate, this.stateIcon = false})
-      : super(
-          title: 'Assign',
-          icon: FontAwesomeIcons.userPlus,
-          commands: (context) => _getAssigneeCommands(activity, onUpdate),
-          eventObject: EventObject.activity,
-          eventAction: EventAction.updated,
-        );
+    : super(
+        title: 'Assign',
+        icon: FontAwesomeIcons.userPlus,
+        commands: (context) => _getAssigneeCommands(activity, onUpdate),
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
 
   final Activity activity;
   final Future<void> Function(Activity)? onUpdate;
@@ -655,11 +652,8 @@ class PickActionAssignee extends ShowCommands {
       groups: [
         ActorGroup(
           priorityId: activity.priority.id,
-          builder: (actor) => AssignAction(
-            activity,
-            assignee: actor,
-            onUpdate: onUpdate,
-          ),
+          builder: (actor) =>
+              AssignAction(activity, assignee: actor, onUpdate: onUpdate),
         ),
       ],
     );
@@ -1223,7 +1217,7 @@ List<Command> topActivityTags(Activity activity, List<Tag> tagSuggestions) {
 /// Use `selected: true` on the button when activity.doNow.
 Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
   // Show PickActionAssignee when assigned to someone other than the current user
-  if (activity.assigneeId != null && activity.assigneeId != Base.actorId) {
+  if (activity.assigneeId != null && !activity.assigneeId!.isCurrentUserSync()) {
     return PickActionAssignee(activity, stateIcon: stateIcon);
   }
 

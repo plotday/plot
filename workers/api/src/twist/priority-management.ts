@@ -1,9 +1,95 @@
 import type { Database, SupabaseClient } from "@plotday/db";
 
 /**
- * Gets or creates the "Twist Development" priority for a user.
+ * Gets or creates the "Plot" priority for a user.
  * This priority is created as a direct child of the user's root priority
- * and marked with twist_development = true for easy identification.
+ * and marked with key = '@plot' for easy identification.
+ */
+export async function getOrCreatePlotPriority(
+  userId: string,
+  supabase: SupabaseClient
+): Promise<string> {
+  // First, try to find existing Plot priority
+  const existingResult = await supabase
+    .from("priority_user")
+    .select("priority_id")
+    .eq("user_id", userId)
+    .eq("key", "@plot")
+    .maybeSingle();
+
+  if (existingResult.error) {
+    throw new Error(
+      `Failed to query Plot priority: ${existingResult.error.message}`
+    );
+  }
+
+  if (existingResult.data) {
+    return existingResult.data.priority_id;
+  }
+
+  // Not found, need to create it
+  // First get the user's root priority
+  const rootResult = await supabase
+    .from("priority_user")
+    .select("priority_id, priority:priority_id(path)")
+    .eq("user_id", userId)
+    .eq("key", "root")
+    .single();
+
+  if (rootResult.error) {
+    throw new Error(
+      `Failed to find user root priority: ${rootResult.error.message}`
+    );
+  }
+
+  const rootPath = (rootResult.data.priority as any).path;
+
+  // Generate child path
+  const pathResult = await supabase.rpc("generate_path", {
+    parent: rootPath,
+  });
+
+  if (pathResult.error) {
+    throw new Error(`Path generation failed: ${pathResult.error.message}`);
+  }
+
+  // Create the Plot priority
+  const createResult = await supabase
+    .from("priority")
+    .insert({
+      created_by: userId,
+      title: "Plot",
+      path: pathResult.data,
+      updated_by: 0,
+    })
+    .select("id")
+    .single();
+
+  if (createResult.error) {
+    throw new Error(
+      `Failed to create Plot priority: ${createResult.error.message}`
+    );
+  }
+
+  // Mark the priority_user entry with key = '@plot'
+  // The insert_priority_user trigger already created a priority_user entry
+  const { error: keyError } = await supabase
+    .from("priority_user")
+    .update({ key: "@plot" })
+    .eq("user_id", userId)
+    .eq("priority_id", createResult.data.id);
+
+  if (keyError) {
+    throw new Error(`Failed to set @plot key: ${keyError.message}`);
+  }
+
+  return createResult.data.id;
+}
+
+/**
+ * Gets or creates the "Twist Development" priority for a user.
+ * This priority is created as a direct child of the Plot priority
+ * and marked with key = '@plot.twist-dev' for easy identification.
  */
 export async function getOrCreateTwistDevelopmentPriority(
   userId: string,
@@ -11,10 +97,10 @@ export async function getOrCreateTwistDevelopmentPriority(
 ): Promise<string> {
   // First, try to find existing Twist Development priority
   const existingResult = await supabase
-    .from("priority")
-    .select("id")
-    .eq("created_by", userId)
-    .eq("twist_development", true)
+    .from("priority_user")
+    .select("priority_id")
+    .eq("user_id", userId)
+    .eq("key", "@plot.twist-dev")
     .maybeSingle();
 
   if (existingResult.error) {
@@ -24,27 +110,29 @@ export async function getOrCreateTwistDevelopmentPriority(
   }
 
   if (existingResult.data) {
-    return existingResult.data.id;
+    return existingResult.data.priority_id;
   }
 
   // Not found, need to create it
-  // First get the user's root priority
-  const rootResult = await supabase
+  // First ensure the Plot priority exists
+  const plotPriorityId = await getOrCreatePlotPriority(userId, supabase);
+
+  // Get the Plot priority path
+  const plotResult = await supabase
     .from("priority")
-    .select("id, path")
-    .eq("created_by", userId)
-    .eq("root", true)
+    .select("path")
+    .eq("id", plotPriorityId)
     .single();
 
-  if (rootResult.error) {
+  if (plotResult.error) {
     throw new Error(
-      `Failed to find user root priority: ${rootResult.error.message}`
+      `Failed to get Plot priority: ${plotResult.error.message}`
     );
   }
 
   // Generate child path
   const pathResult = await supabase.rpc("generate_path", {
-    parent: rootResult.data.path,
+    parent: plotResult.data.path,
   });
 
   if (pathResult.error) {
@@ -58,7 +146,6 @@ export async function getOrCreateTwistDevelopmentPriority(
       created_by: userId,
       title: "Twist Development",
       path: pathResult.data,
-      twist_development: true,
       updated_by: 0,
     })
     .select("id")
@@ -67,6 +154,20 @@ export async function getOrCreateTwistDevelopmentPriority(
   if (createResult.error) {
     throw new Error(
       `Failed to create twist development priority: ${createResult.error.message}`
+    );
+  }
+
+  // Mark the priority_user entry with key = '@plot.twist-dev'
+  // The insert_priority_user trigger already created a priority_user entry
+  const { error: keyError } = await supabase
+    .from("priority_user")
+    .update({ key: "@plot.twist-dev" })
+    .eq("user_id", userId)
+    .eq("priority_id", createResult.data.id);
+
+  if (keyError) {
+    throw new Error(
+      `Failed to set @plot.twist-dev key: ${keyError.message}`
     );
   }
 

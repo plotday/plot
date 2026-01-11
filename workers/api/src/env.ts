@@ -124,6 +124,14 @@ export type Bindings = {
 
   readonly TWIST_CONFIG: KVNamespace;
 
+  // Rate Limiting Bindings
+  readonly GENERAL_RATE_LIMITER: RateLimit;
+  readonly AUTH_RATE_LIMITER: RateLimit;
+  readonly TOKEN_RATE_LIMITER: RateLimit;
+  readonly WEBHOOK_RATE_LIMITER: RateLimit;
+  readonly SYNC_RATE_LIMITER: RateLimit;
+  readonly DEPLOYMENT_RATE_LIMITER: RateLimit;
+
   readonly TWIST_BUILDER: DurableObjectNamespace<TwistBuilder>;
   readonly LOADER: WorkerLoader;
   readonly RUN_QUEUE: Queue<RunMessage>;

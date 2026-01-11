@@ -143,8 +143,9 @@ export class Integrations extends Tool implements IAuth {
 
     const config = PROVIDER_CONFIGS[tokenInfo.provider];
 
-    // Parse provider-specific data if handler exists
-    const providerData = config?.parseTokenResponse?.(tokenInfo) ?? null;
+    // Parse provider-specific data if handler exists (may be async)
+    const providerData =
+      (await config?.parseTokenResponse?.(tokenInfo)) ?? null;
 
     const tokenKey = `auth_token:${authorizationId}`;
     const token: StoredTokenData = {
@@ -158,6 +159,12 @@ export class Integrations extends Tool implements IAuth {
       providerData,
     };
     await this.store.set(tokenKey, token);
+
+    // Extract email from providerData and link to contact
+    const email = this.extractEmail(providerData);
+    if (email) {
+      await this.linkContactByEmail(email);
+    }
 
     // Create Authorization object to pass to callback
     const authorization: Authorization = {
@@ -175,6 +182,113 @@ export class Integrations extends Tool implements IAuth {
         authorization_id: authorizationId,
         provider: tokenInfo.provider,
       });
+    }
+  }
+
+  private extractEmail(
+    providerData: import("../../provider").ProviderData | null
+  ): string | null {
+    if (!providerData) {
+      return null;
+    }
+
+    // Check for email field in provider data
+    if ("email" in providerData && typeof providerData.email === "string") {
+      return providerData.email.toLowerCase();
+    }
+
+    return null;
+  }
+
+  private async linkContactByEmail(email: string): Promise<void> {
+    try {
+      // Get the user_id from the priority_twist owner
+      const priorityTwist = await this.env.DB.selectFrom("priority_twist")
+        .select("owner_id")
+        .where("id", "=", this.priorityTwistId)
+        .executeTakeFirst();
+
+      if (!priorityTwist?.owner_id) {
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.warn("Cannot link contact: priority_twist has no owner", {
+          email,
+        });
+        return;
+      }
+
+      const userId = priorityTwist.owner_id;
+
+      // Check if contact exists with this email
+      const existingContact = await this.env.DB.selectFrom("contact")
+        .select(["id", "user_id"])
+        .where("email", "=", email)
+        .executeTakeFirst();
+
+      if (!existingContact) {
+        // Create new contact linked to current user
+        await this.env.DB.insertInto("contact")
+          .values({
+            email,
+            user_id: userId,
+            name: null,
+            avatar_url: null,
+          })
+          .execute();
+
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.info("Created new contact from OAuth", { email, user_id: userId });
+      } else if (existingContact.user_id === null) {
+        // Unclaimed contact - link to current user
+        await this.env.DB.updateTable("contact")
+          .set({ user_id: userId })
+          .where("id", "=", existingContact.id)
+          .execute();
+
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.info("Linked existing contact from OAuth", {
+          email,
+          user_id: userId,
+        });
+      } else if (existingContact.user_id !== userId) {
+        // Contact belongs to another user - check if that user is active
+        const existingUser = await this.env.DB.selectFrom("auth.users")
+          .select("id")
+          .where("id", "=", existingContact.user_id)
+          .where("deleted_at", "is", null)
+          .executeTakeFirst();
+
+        if (!existingUser) {
+          // Previous owner deleted - claim contact
+          await this.env.DB.updateTable("contact")
+            .set({ user_id: userId })
+            .where("id", "=", existingContact.id)
+            .execute();
+
+          const logger = createLogger({
+            priority_twist_id: this.priorityTwistId,
+          });
+          logger.info("Re-linked contact from inactive user", {
+            email,
+            user_id: userId,
+            previous_user_id: existingContact.user_id,
+          });
+        } else {
+          // Skip silently - email already claimed by active user
+          const logger = createLogger({
+            priority_twist_id: this.priorityTwistId,
+          });
+          logger.debug("Contact email already claimed by active user", {
+            email,
+            current_user_id: userId,
+            contact_user_id: existingContact.user_id,
+          });
+        }
+      }
+      // else: Contact already linked to current user, nothing to do
+    } catch (error) {
+      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      logger.error("Error linking contact by email", error as Error, { email });
+      // Don't throw - we don't want to fail the OAuth flow if contact linking fails
     }
   }
 
@@ -563,6 +677,10 @@ export class Integrations extends Tool implements IAuth {
       throw new Error(`Provider ${provider} not supported`);
     }
 
+    // Merge email scopes with requested scopes
+    const emailScopes = config.emailScopes ?? [];
+    const allScopes = Array.from(new Set([...scopes, ...emailScopes]));
+
     // Generate fresh PKCE parameters for this specific OAuth flow
     const codeVerifier = Integrations.GenerateCodeVerifier();
     const codeChallenge = await Integrations.GenerateCodeChallenge(
@@ -580,7 +698,7 @@ export class Integrations extends Tool implements IAuth {
       JSON.stringify({
         provider,
         level,
-        scopes,
+        scopes: allScopes,
         codeVerifier,
         timestamp: Date.now(),
         callback,
@@ -615,7 +733,7 @@ export class Integrations extends Tool implements IAuth {
       response_type: "code",
       client_id: clientId,
       redirect_uri: redirectUri,
-      scope: scopes.join(" "),
+      scope: allScopes.join(" "),
       state,
       code_challenge: codeChallenge,
       code_challenge_method: "S256",

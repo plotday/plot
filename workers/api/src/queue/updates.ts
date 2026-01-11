@@ -337,6 +337,17 @@ async function processUpdate(
           );
         }
 
+        // For priority_contact updates, also sync actor view since contacts are part of actor
+        if (type === "priority_contact") {
+          await broadcast.send(
+            {
+              type: "sync",
+              table: "actor",
+            },
+            updatedBy
+          );
+        }
+
         logger.info("Sent broadcast to user", {
           user_id: user.user_id,
           table: type,

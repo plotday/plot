@@ -111,6 +111,11 @@ export const ActivityReadItemSchema = z.object({
   updated_at: z.string(),
 });
 
+// Priority contact item schema (minimal - just used for actor view sync notifications)
+export const PriorityContactItemSchema = z.object({
+  priority_id: z.string(),
+});
+
 // Union schema for all item types - the type discrimination happens at the request level
 export const ItemSchema = z.union([
   ActivityItemSchema,
@@ -119,6 +124,7 @@ export const ItemSchema = z.union([
   SessionItemSchema,
   PriorityTwistItemSchema,
   ActivityReadItemSchema,
+  PriorityContactItemSchema,
 ]);
 
 // TypeScript types generated from zod schemas
@@ -128,4 +134,5 @@ export type PriorityItem = z.infer<typeof PriorityItemSchema>;
 export type SessionItem = z.infer<typeof SessionItemSchema>;
 export type PriorityTwistItem = z.infer<typeof PriorityTwistItemSchema>;
 export type ActivityReadItem = z.infer<typeof ActivityReadItemSchema>;
+export type PriorityContactItem = z.infer<typeof PriorityContactItemSchema>;
 export type UpdateItem = z.infer<typeof ItemSchema>;

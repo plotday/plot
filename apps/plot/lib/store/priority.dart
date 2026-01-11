@@ -316,7 +316,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     final now = DateTime.now();
     final today = Date.today().toString();
-    final actorId = Base.actorId;
+
+    // Get all user contact IDs from Actor cache
+    final userActorIds = Actor._cache.values
+        .where((actor) => actor.self)
+        .map((actor) => actor.id.toBytes())
+        .toList();
+
+    // Fallback to primary contact if cache is empty
+    if (userActorIds.isEmpty) {
+      userActorIds.add(Base.actorId.toBytes());
+    }
 
     final a = Store.get.activities;
     final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
@@ -327,7 +337,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     query.where(
       a.priorityId.isIn(idBytes) &
           a.type.equalsValue(ActivityType.action) &
-          a.assigneeId.equalsValue(actorId) &
+          a.assigneeId.isIn(userActorIds) &
           a.doneAt.isNull() &
           a.archivedAt.isNull() &
           (
@@ -398,7 +408,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Returns a stream of priority IDs that have active tasks.
   /// Time-based filtering is done in-memory to allow reactive updates.
   static Stream<Set<PriorityId>> _watchActivePriorityIds() {
-    final actorId = Base.actorId;
+    // Get all user contact IDs from Actor cache
+    final userActorIds = Actor._cache.values
+        .where((actor) => actor.self)
+        .map((actor) => actor.id.toBytes())
+        .toList();
+
+    // Fallback to primary contact if cache is empty
+    if (userActorIds.isEmpty) {
+      userActorIds.add(Base.actorId.toBytes());
+    }
+
     final a = Store.get.activities;
 
     // Query for activities that could be active (without time filtering)
@@ -408,7 +428,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     query.where(
       a.type.equalsValue(ActivityType.action) &
-          a.assigneeId.equalsValue(actorId) &
+          a.assigneeId.isIn(userActorIds) &
           a.doneAt.isNull() &
           a.archivedAt.isNull(),
     );

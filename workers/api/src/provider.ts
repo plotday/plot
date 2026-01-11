@@ -16,14 +16,127 @@ export type SlackProviderData = {
   team: { id: string; name: string };
   enterprise?: { id: string; name: string };
   authed_user: { id: string; access_token: string; scope: string };
+  email?: string;
+};
+
+export type GoogleProviderData = {
+  email: string;
+  email_verified?: boolean;
+};
+
+export type MicrosoftProviderData = {
+  email: string;
+};
+
+export type GitHubProviderData = {
+  email: string;
 };
 
 // Union of all provider-specific data types
-export type ProviderData = SlackProviderData;
+export type ProviderData =
+  | SlackProviderData
+  | GoogleProviderData
+  | MicrosoftProviderData
+  | GitHubProviderData;
 
 // Combined storage type
 export type StoredTokenData = BaseTokenData & {
   providerData: ProviderData | null;
+};
+
+// Helper function to decode JWT and extract email
+function parseJwtEmail(idToken: string): string | null {
+  try {
+    // JWT is base64url encoded: header.payload.signature
+    const parts = idToken.split(".");
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    // Decode the payload (second part)
+    const payload = parts[1];
+    // Convert base64url to base64
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    // Decode base64
+    const jsonPayload = atob(base64);
+    const data = JSON.parse(jsonPayload);
+
+    return data.email || null;
+  } catch (error) {
+    console.error("Error parsing JWT:", error);
+    return null;
+  }
+}
+
+// Helper function to fetch email from GitHub API
+async function fetchGitHubEmail(accessToken: string): Promise<string | null> {
+  try {
+    const response = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/vnd.github.v3+json",
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return data.email || null;
+  } catch (error) {
+    console.error("Error fetching GitHub email:", error);
+    return null;
+  }
+}
+
+// Parse token response functions for providers
+const parseGoogleTokenResponse = (
+  response: any
+): GoogleProviderData | undefined => {
+  if (!response.id_token) {
+    return undefined;
+  }
+
+  const email = parseJwtEmail(response.id_token);
+  if (!email) {
+    return undefined;
+  }
+
+  return {
+    email,
+    email_verified: true, // Google id_token implies verification
+  };
+};
+
+const parseMicrosoftTokenResponse = (
+  response: any
+): MicrosoftProviderData | undefined => {
+  if (!response.id_token) {
+    return undefined;
+  }
+
+  const email = parseJwtEmail(response.id_token);
+  if (!email) {
+    return undefined;
+  }
+
+  return { email };
+};
+
+const parseGitHubTokenResponse = async (
+  response: any
+): Promise<GitHubProviderData | undefined> => {
+  if (!response.access_token) {
+    return undefined;
+  }
+
+  const email = await fetchGitHubEmail(response.access_token);
+  if (!email) {
+    return undefined;
+  }
+
+  return { email };
 };
 
 type ProviderConfig = {
@@ -31,8 +144,12 @@ type ProviderConfig = {
   authUrl: string;
   tokenUrl: string;
   additionalParams?: Record<string, string>;
-  // Parse provider-specific fields from OAuth token response
-  parseTokenResponse?: (response: any) => ProviderData | undefined;
+  // Email scopes that should always be included
+  emailScopes?: string[];
+  // Parse provider-specific fields from OAuth token response (can be async for API calls)
+  parseTokenResponse?: (
+    response: any
+  ) => ProviderData | undefined | Promise<ProviderData | undefined>;
   // Extract metadata for AuthToken.provider field
   extractMetadata?: (providerData: ProviderData) => Record<string, string> | undefined;
 };
@@ -42,6 +159,8 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "Google",
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
+    emailScopes: ["openid", "email"],
+    parseTokenResponse: parseGoogleTokenResponse,
     additionalParams: {
       access_type: "offline",
       prompt: "select_account",
@@ -51,6 +170,8 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "Microsoft",
     authUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
     tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    emailScopes: ["openid", "email"],
+    parseTokenResponse: parseMicrosoftTokenResponse,
   },
   notion: {
     name: "Notion",
@@ -119,6 +240,8 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "GitHub",
     authUrl: "https://github.com/login/oauth/authorize",
     tokenUrl: "https://github.com/login/oauth/access_token",
+    emailScopes: ["user:email"],
+    parseTokenResponse: parseGitHubTokenResponse,
   },
   asana: {
     name: "Asana",

@@ -705,7 +705,7 @@ class PriorityState extends Equatable {
           final item = items[i];
           if (item is AgendaActivityItem &&
               item.activity.type == ActivityType.action &&
-              !item.activity.done) {
+              item.activity.todo) {
             firstIncompleteActionIndex = i;
             break;
           }

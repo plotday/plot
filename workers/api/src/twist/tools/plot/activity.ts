@@ -276,11 +276,6 @@ export async function createActivity(
   plot: Plot,
   activity: NewActivity | NewActivityWithNotes
 ): Promise<Activity> {
-  console.log('[createActivity] DEBUG activity.created:', activity.created, 'type:', typeof activity.created);
-  if ('notes' in activity && activity.notes) {
-    console.log('[createActivity] DEBUG first note created:', activity.notes[0]?.created, 'type:', typeof activity.notes[0]?.created);
-  }
-
   // Handle activity exceptions differently
   if (activity.recurrence && activity.occurrence) {
     return createActivityException(plot, activity);
@@ -447,15 +442,14 @@ export async function createActivity(
   } else if (dbActivityType === "action") {
     // For actions without explicit assignee, default to twist owner's contact
     // Use single query with join via database function
-    const result = await plot.supabase.rpc(
-      "get_priority_twist_owner_contact",
-      {
-        p_priority_twist_id: plot.priorityTwistId,
-      }
-    );
+    const result = await plot.supabase.rpc("get_priority_twist_owner_contact", {
+      p_priority_twist_id: plot.priorityTwistId,
+    });
 
     if (result.error) {
-      throw new Error(`Failed to get twist owner contact: ${result.error.message}`);
+      throw new Error(
+        `Failed to get twist owner contact: ${result.error.message}`
+      );
     }
 
     if (result.data) {
@@ -552,7 +546,8 @@ export async function createActivity(
 
   // For actions with null assignee, force at and on to null (constraint requirement)
   if (dbActivityType === "action" && assigneeId === null) {
-    const hadScheduling = dbActivity.at !== undefined || dbActivity.on !== undefined;
+    const hadScheduling =
+      dbActivity.at !== undefined || dbActivity.on !== undefined;
     dbActivity.at = null;
     dbActivity.on = null;
     if (hadScheduling) {
@@ -1208,7 +1203,9 @@ export async function updateActivity(
   // For actions with null assignee, force at and on to null (constraint requirement)
   // This handles updates that explicitly set assignee_id to null
   if ("assignee_id" in dbUpdate && dbUpdate.assignee_id === null) {
-    const hadScheduling = ("at" in dbUpdate && dbUpdate.at !== null) || ("on" in dbUpdate && dbUpdate.on !== null);
+    const hadScheduling =
+      ("at" in dbUpdate && dbUpdate.at !== null) ||
+      ("on" in dbUpdate && dbUpdate.on !== null);
     dbUpdate.at = null;
     dbUpdate.on = null;
     if (hadScheduling) {
@@ -1914,7 +1911,9 @@ export async function createActivities(
       );
 
       if (result.error) {
-        throw new Error(`Failed to get twist owner contact: ${result.error.message}`);
+        throw new Error(
+          `Failed to get twist owner contact: ${result.error.message}`
+        );
       }
 
       if (result.data) {

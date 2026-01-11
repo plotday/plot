@@ -7,8 +7,7 @@ CREATE TABLE "public"."contact" (
     "name" text,
     "avatar_url" text,
     "user_id" uuid REFERENCES "auth"."users" ("id") ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
-    CONSTRAINT contact_user_email_unique UNIQUE (email),
-    CONSTRAINT contact_user_id_unique UNIQUE (user_id)
+    CONSTRAINT contact_email_unique UNIQUE (email)
 );
 
 ALTER TABLE "public"."contact" ENABLE ROW LEVEL SECURITY;

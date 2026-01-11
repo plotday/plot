@@ -746,10 +746,8 @@ export type Database = {
           created_by: string
           id: string
           path: unknown
-          root: boolean
           sync_depth: number | null
           title: string
-          twist_development: boolean
           updated_at: string
           updated_by: number
         }
@@ -760,10 +758,8 @@ export type Database = {
           created_by: string
           id?: string
           path: unknown
-          root?: boolean
           sync_depth?: number | null
           title: string
-          twist_development?: boolean
           updated_at?: string
           updated_by?: number
         }
@@ -774,10 +770,8 @@ export type Database = {
           created_by?: string
           id?: string
           path?: unknown
-          root?: boolean
           sync_depth?: number | null
           title?: string
-          twist_development?: boolean
           updated_at?: string
           updated_by?: number
         }
@@ -1041,6 +1035,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           created_at: string
+          key: string | null
           priority_id: string
           updated_at: string
           user_id: string
@@ -1048,6 +1043,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           created_at?: string
+          key?: string | null
           priority_id: string
           updated_at?: string
           user_id: string
@@ -1055,6 +1051,7 @@ export type Database = {
         Update: {
           archived_at?: string | null
           created_at?: string
+          key?: string | null
           priority_id?: string
           updated_at?: string
           user_id?: string
@@ -2100,6 +2097,7 @@ export type Database = {
           email: string | null
           id: string | null
           name: string | null
+          self: boolean | null
           type: string | null
           updated_at: string | null
           user_id: string | null
@@ -2444,6 +2442,7 @@ export type Database = {
       }
       get_api_root: { Args: never; Returns: string }
       get_domain: { Args: { email: string }; Returns: string }
+      get_primary_contact_id: { Args: { p_user_id: string }; Returns: string }
       get_priority_twist_owner_contact: {
         Args: { p_priority_twist_id: string }
         Returns: string

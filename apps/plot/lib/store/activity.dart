@@ -905,12 +905,22 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     if (doNow) {
-      final actorId = Base.actorId;
+      // Get all user contact IDs from Actor cache
+      final userActorIds = Actor._cache.values
+          .where((actor) => actor.self)
+          .map((actor) => actor.id.toBytes())
+          .toList();
+
+      // Fallback to primary contact if cache is empty
+      if (userActorIds.isEmpty) {
+        userActorIds.add(Base.actorId.toBytes());
+      }
+
       query.where(
         a.type.equalsValue(ActivityType.action) &
             a.doneAt.isNull() &
             // Only include if unassigned or assigned to current user
-            (a.assigneeId.isNull() | a.assigneeId.equalsValue(actorId)) &
+            (a.assigneeId.isNull() | a.assigneeId.isIn(userActorIds)) &
             (
             // Date-based scheduling: startOn <= today
             (a.startOn.isSmallerOrEqualValue(Date.today().toString()) &
@@ -923,12 +933,22 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
     if (doLater) {
       final now = DateTime.now();
-      final actorId = Base.actorId;
+      // Get all user contact IDs from Actor cache
+      final userActorIds = Actor._cache.values
+          .where((actor) => actor.self)
+          .map((actor) => actor.id.toBytes())
+          .toList();
+
+      // Fallback to primary contact if cache is empty
+      if (userActorIds.isEmpty) {
+        userActorIds.add(Base.actorId.toBytes());
+      }
+
       query.where(
         a.type.equalsValue(ActivityType.action) &
             a.doneAt.isNull() &
             // Only include if unassigned or assigned to current user
-            (a.assigneeId.isNull() | a.assigneeId.equalsValue(actorId)) &
+            (a.assigneeId.isNull() | a.assigneeId.isIn(userActorIds)) &
             (
             // Date-based scheduling: startOn > today
             (a.startOn.isBiggerThanValue(Date.today().toString()) &
@@ -1140,7 +1160,17 @@ class Activity extends Equatable implements Comparable<Activity> {
 
     final now = DateTime.now();
     final today = Date.today().toString();
-    final actorId = Base.actorId;
+
+    // Get all user contact IDs from Actor cache
+    final userActorIds = Actor._cache.values
+        .where((actor) => actor.self)
+        .map((actor) => actor.id.toBytes())
+        .toList();
+
+    // Fallback to primary contact if cache is empty
+    if (userActorIds.isEmpty) {
+      userActorIds.add(Base.actorId.toBytes());
+    }
 
     final a = Store.get.activities;
     final query = Store.get.selectOnly(a)..addColumns([a.id]);
@@ -1151,7 +1181,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     query.where(
       a.id.isIn(idBytes) &
           a.type.equalsValue(ActivityType.action) &
-          a.assigneeId.equalsValue(actorId) &
+          a.assigneeId.isIn(userActorIds) &
           a.doneAt.isNull() &
           a.archivedAt.isNull() &
           (
@@ -1483,7 +1513,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     // For activities assigned to others, use creation time (treat like notes)
-    if (assigneeId != null && assigneeId != Base.actorId) {
+    if (assigneeId != null && !assigneeId!.isCurrentUserSync()) {
       final times = [sourceCreatedAt, ?doneAt, ?_activity.lastNoteSourceCreatedAt];
       times.sort((a, b) => b.compareTo(a)); // Sort descending
       return times.first; // Return the greatest (most recent)
@@ -1503,19 +1533,19 @@ class Activity extends Equatable implements Comparable<Activity> {
   }
 
   bool get doNow =>
-      (assigneeId == null || assigneeId == Base.actorId) &&
+      (assigneeId == null || assigneeId?.isCurrentUserSync() == true) &&
       todo &&
       at?.includes(DateTime.now()) == true;
   bool get doLater =>
-      (assigneeId == null || assigneeId == Base.actorId) &&
+      (assigneeId == null || assigneeId?.isCurrentUserSync() == true) &&
       todo &&
       at?.start?.isAfter(DateTime.now()) == true;
   bool get doSomeday =>
       type == .action &&
       (on == null && at == null ||
-          (assigneeId != null && assigneeId != Base.actorId));
+          (assigneeId != null && assigneeId?.isCurrentUserSync() != true));
   bool get todo =>
-      (assigneeId == null || assigneeId == Base.actorId) &&
+      (assigneeId == null || assigneeId?.isCurrentUserSync() == true) &&
       type == ActivityType.action &&
       (on ?? at) != null &&
       !done;
@@ -2155,7 +2185,7 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   DateTime _getSortTime() {
     // Activities assigned to others sort like notes (use creation time)
-    if (assigneeId != null && assigneeId != Base.actorId) {
+    if (assigneeId != null && !assigneeId!.isCurrentUserSync()) {
       return [sourceCreatedAt, ?doneAt, ?_activity.lastNoteSourceCreatedAt]
           .whereType<DateTime>()
           .reduce((a, b) => a.isAfter(b) ? a : b);

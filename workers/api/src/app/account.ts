@@ -65,12 +65,12 @@ account.post("/activate", async (c) => {
   }
 
   // Step 2: Check if root priority already exists
-  const { data: existingPriority, error: existingPriorityError } =
+  const { data: existingPriorityUser, error: existingPriorityError } =
     await c.var.supabaseAdmin
-      .from("priority")
-      .select("id")
-      .eq("created_by", user.id)
-      .eq("root", true)
+      .from("priority_user")
+      .select("priority_id")
+      .eq("user_id", user.id)
+      .eq("key", "root")
       .maybeSingle();
 
   if (existingPriorityError) {
@@ -90,16 +90,16 @@ account.post("/activate", async (c) => {
   let priority: { id: string } | null = null;
   let shouldInstallPlotTwist = true;
 
-  if (existingPriority) {
+  if (existingPriorityUser) {
     // Root priority already exists (e.g., from generate-seed script)
     // Skip creating it and skip Plot twist installation
     const context = extractRequestContext(c);
     const logger = createLogger(context);
     logger.info("Root priority already exists, skipping creation and Plot twist installation", {
       user_id: user.id,
-      priority_id: existingPriority.id,
+      priority_id: existingPriorityUser.priority_id,
     });
-    priority = existingPriority;
+    priority = { id: existingPriorityUser.priority_id };
     shouldInstallPlotTwist = false;
   } else {
     // Step 3: Generate path for root priority
@@ -130,7 +130,6 @@ account.post("/activate", async (c) => {
           created_by: user.id,
           title: "Everything",
           path: pathData,
-          root: true,
           color: 0,
         })
         .select()
@@ -147,6 +146,29 @@ account.post("/activate", async (c) => {
           message: `Failed to create root priority: ${
             priorityError?.message || "Unknown error"
           }`,
+        },
+        500
+      );
+    }
+
+    // Step 4.5: Mark the priority_user entry as root
+    // The insert_priority_user trigger already created a priority_user entry
+    const { error: keyError } = await c.var.supabaseAdmin
+      .from("priority_user")
+      .update({ key: "root" })
+      .eq("user_id", user.id)
+      .eq("priority_id", newPriority.id);
+
+    if (keyError) {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Failed to set root key on priority_user", new Error(keyError.message), {
+        user_id: user.id,
+        priority_id: newPriority.id,
+      });
+      return c.json(
+        {
+          message: `Failed to set root key: ${keyError.message}`,
         },
         500
       );
@@ -304,8 +326,85 @@ account.post("/activate", async (c) => {
     );
   }
 
-  // Step 7: Install and activate Plot twist (skip if root priority already existed)
+  // Step 7: Create Plot priority (skip if root priority already existed)
+  let plotPriority: { id: string } | null = null;
   if (shouldInstallPlotTwist) {
+    // Generate path for Plot priority as child of root
+    const { data: plotPathData, error: plotPathError } = await c.var.supabase.rpc(
+      "generate_path",
+      { parent: (priority as any).path || priority.id }
+    );
+
+    if (plotPathError || !plotPathData) {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Failed to generate path for Plot priority", plotPathError ? new Error(plotPathError.message) : new Error("Unknown error"));
+      return c.json(
+        {
+          message: `Failed to generate path for Plot priority: ${
+            plotPathError?.message || "Unknown error"
+          }`,
+        },
+        500
+      );
+    }
+
+    // Create Plot priority
+    const { data: newPlotPriority, error: plotPriorityError } =
+      await c.var.supabaseAdmin
+        .from("priority")
+        .insert({
+          created_by: user.id,
+          title: "Plot",
+          path: plotPathData,
+          color: 0,
+        })
+        .select()
+        .single();
+
+    if (plotPriorityError || !newPlotPriority) {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Failed to create Plot priority", plotPriorityError ? new Error(plotPriorityError.message) : new Error("Unknown error"), {
+        user_id: user.id,
+      });
+      return c.json(
+        {
+          message: `Failed to create Plot priority: ${
+            plotPriorityError?.message || "Unknown error"
+          }`,
+        },
+        500
+      );
+    }
+
+    // Mark the priority_user entry as @plot
+    const { error: plotKeyError } = await c.var.supabaseAdmin
+      .from("priority_user")
+      .update({ key: "@plot" })
+      .eq("user_id", user.id)
+      .eq("priority_id", newPlotPriority.id);
+
+    if (plotKeyError) {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Failed to set @plot key on priority_user", new Error(plotKeyError.message), {
+        user_id: user.id,
+        priority_id: newPlotPriority.id,
+      });
+      return c.json(
+        {
+          message: `Failed to set @plot key: ${plotKeyError.message}`,
+        },
+        500
+      );
+    }
+
+    plotPriority = newPlotPriority;
+  }
+
+  // Step 8: Install and activate Plot twist (skip if root priority already existed)
+  if (shouldInstallPlotTwist && plotPriority) {
     try {
       const { data: plotTwist, error: plotTwistError } = await c.var.supabase
         .from("twist")
@@ -327,7 +426,7 @@ account.post("/activate", async (c) => {
         await twistManagement.add(
           c.var.supabase,
           c.var.supabaseAdmin,
-          priority.id,
+          plotPriority.id,
           plotTwist.id,
           "public",
           "Plot",
@@ -363,7 +462,7 @@ account.post("/activate", async (c) => {
     });
   }
 
-  // Step 8: Set user status to active
+  // Step 9: Set user status to active
   const { error: statusError } = await c.var.supabase.rpc("set_user_status", {
     user_id: user.id,
     status: "active",

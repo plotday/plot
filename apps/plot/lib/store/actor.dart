@@ -7,6 +7,7 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   TextColumn get name => text()();
   TextColumn get email => text().nullable()();
   TextColumn get avatarUrl => text().nullable()();
+  BoolColumn get self => boolean()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -222,6 +223,7 @@ class Actor extends ActorRow {
         name: row.name,
         email: row.email,
         avatarUrl: row.avatarUrl,
+        self: row.self,
       );
 
   @override
@@ -234,6 +236,7 @@ class Actor extends ActorRow {
     String? name,
     Value<String?> email = const Value.absent(),
     Value<String?> avatarUrl = const Value.absent(),
+    bool? self,
     Value<int?> pending = const Value.absent(),
   }) => Actor.fromStore(
     super.copyWith(
@@ -245,6 +248,7 @@ class Actor extends ActorRow {
       name: name,
       email: email,
       avatarUrl: avatarUrl,
+      self: self,
       pending: pending,
     ),
   );
@@ -303,5 +307,34 @@ class ActorIdListConverter extends TypeConverter<List<ActorId>, String>
   @override
   List<dynamic> toJson(List<ActorId> value) {
     return value.map((id) => id.toString()).toList();
+  }
+}
+
+/// Extension methods for ActorId to check if it belongs to the current user
+extension ActorIdHelpers on ActorId {
+  /// Returns true if this ActorId is one of the current user's contacts.
+  /// Uses the cached Actor.self flag for offline support.
+  ///
+  /// This method is async and should be used when Actor data might not be cached.
+  Future<bool> isCurrentUser() async {
+    try {
+      final actor = await Actor.getOne(this);
+      return actor.self;
+    } catch (e) {
+      // Fallback to checking against primary contact if Actor not found
+      return this == Base.actorId;
+    }
+  }
+
+  /// Synchronous version - checks if this ActorId belongs to the current user.
+  /// Only use when Actor data is guaranteed to be cached (after startup sync).
+  /// Falls back to checking against the primary contact if Actor not cached.
+  bool isCurrentUserSync() {
+    final actor = Actor._cache[this];
+    if (actor == null) {
+      // Fallback to primary contact check if not in cache
+      return this == Base.actorId;
+    }
+    return actor.self;
   }
 }

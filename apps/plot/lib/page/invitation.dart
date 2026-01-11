@@ -2,6 +2,7 @@ import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/store/store.dart' hide Link;
 import 'package:plot/command/settings.dart';
 import 'logging.dart';
@@ -44,6 +45,13 @@ class _InvitationPageState extends State<InvitationPage> {
 
       // Refresh session to get updated JWT with active status
       await Base.refreshSession();
+    } on NetworkException catch (e) {
+      log.warning('Network error activating account', e);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.message;
+        _isSubmitting = false;
+      });
     } catch (e) {
       log.warning('Error activating account', e);
       if (!mounted) return;

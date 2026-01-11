@@ -29,7 +29,13 @@ SELECT
     a.type,
     a.name,
     a.email,
-    a.avatar_url
+    a.avatar_url,
+    EXISTS (
+        SELECT 1
+        FROM contact c
+        WHERE c.id = a.id
+            AND c.user_id = ua.user_id
+    ) AS self
 FROM
     upa_agg ua
     JOIN actor a ON a.id = ua.actor_id;
