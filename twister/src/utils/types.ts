@@ -118,3 +118,27 @@ export type NoFunctions<T> = T extends (...args: any[]) => any
 export type CallbackMethods<T> = {
   [K in keyof T]: T[K] extends (...args: any[]) => any ? K : never;
 }[keyof T];
+
+/**
+ * Represents a valid JSON value.
+ *
+ * This type ensures type safety for data that needs to be serialized to JSON,
+ * such as metadata fields, webhook payloads, and stored data.
+ *
+ * @example
+ * ```typescript
+ * const meta: JSONValue = {
+ *   name: "Example",
+ *   count: 42,
+ *   tags: ["foo", "bar"],
+ *   nested: { value: true }
+ * };
+ * ```
+ */
+export type JSONValue =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: JSONValue }
+  | JSONValue[];

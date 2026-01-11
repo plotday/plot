@@ -13,7 +13,9 @@ import {
   type Note,
   type NoteUpdate,
   type Priority,
+  type PriorityUpdate,
   type Tag,
+  Uuid,
 } from "..";
 
 export enum ActivityAccess {
@@ -97,10 +99,56 @@ export type NoteIntentHandler = {
  * ```
  */
 export abstract class Plot extends ITool {
+  /**
+   * Configuration options for the Plot tool.
+   *
+   * **Important**: All permissions must be explicitly requested. There are no default permissions.
+   *
+   * @example
+   * ```typescript
+   * // Minimal configuration with required permissions
+   * build(build: ToolBuilder) {
+   *   return {
+   *     plot: build(Plot, {
+   *       activity: {
+   *         access: ActivityAccess.Create
+   *       }
+   *     })
+   *   };
+   * }
+   *
+   * // Full configuration with callbacks
+   * build(build: ToolBuilder) {
+   *   return {
+   *     plot: build(Plot, {
+   *       activity: {
+   *         access: ActivityAccess.Create,
+   *         updated: this.onActivityUpdated
+   *       },
+   *       note: {
+   *         intents: [{
+   *           description: "Schedule meetings",
+   *           examples: ["Schedule a meeting tomorrow"],
+   *           handler: this.onSchedulingIntent
+   *         }],
+   *         created: this.onNoteCreated
+   *       },
+   *       priority: {
+   *         access: PriorityAccess.Full
+   *       },
+   *       contact: {
+   *         access: ContactAccess.Write
+   *       }
+   *     })
+   *   };
+   * }
+   * ```
+   */
   static readonly Options: {
     activity?: {
       /**
        * Capability to create Notes and modify tags.
+       * Must be explicitly set to grant permissions.
        */
       access?: ActivityAccess;
       /**
@@ -351,44 +399,32 @@ export abstract class Plot extends ITool {
   abstract updateNote(note: NoteUpdate): Promise<void>;
 
   /**
-   * Finds an activity by its meta.source.
+   * Retrieves an activity by ID or source.
    *
-   * This method enables lookup of activities that were created from external
-   * systems, using the metadata to locate the corresponding Plot activity.
+   * This method enables lookup of activities either by their unique ID or by their
+   * source identifier (canonical URL from an external system). Archived activities
+   * are included in the results.
    *
-   * By default, archived activities are excluded from the search. Set includeArchived
-   * to true to include them in the results.
-   *
-   * @param source - The meta.source value to search for
-   * @param includeArchived - Whether to include archived activities in search (default: false)
+   * @param activity - Activity lookup by ID or source
    * @returns Promise resolving to the matching activity or null if not found
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getActivityBySource(
-    source: string,
-    includeArchived?: boolean
+  abstract getActivity(
+    activity: { id: Uuid } | { source: string }
   ): Promise<Activity | null>;
 
   /**
-   * Finds an activity by its metadata.
+   * Retrieves a note by ID or key.
    *
-   * This method enables lookup of activities that were created from external
-   * systems, using the metadata to locate the corresponding Plot activity.
-   * Uses JSON containment matching - the provided meta must be contained
-   * within the activity's meta field.
+   * This method enables lookup of notes either by their unique ID or by their
+   * key (unique identifier within the activity). Archived notes are included
+   * in the results.
    *
-   * By default, archived activities are excluded from the search. Set includeArchived
-   * to true to include them in the results.
-   *
-   * @param meta - The metadata to search for (uses JSON containment matching)
-   * @param includeArchived - Whether to include archived activities in search (default: false)
-   * @returns Promise resolving to the matching activity or null if not found
+   * @param note - Note lookup by ID or key
+   * @returns Promise resolving to the matching note or null if not found
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getActivityByMeta(
-    meta: ActivityMeta,
-    includeArchived?: boolean
-  ): Promise<Activity | null>;
+  abstract getNote(note: { id: Uuid } | { key: string }): Promise<Note | null>;
 
   /**
    * Creates a new priority in the Plot system.
@@ -401,6 +437,31 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createPriority(priority: NewPriority): Promise<Priority>;
+
+  /**
+   * Retrieves a priority by ID or key.
+   *
+   * Archived priorities are included in the results.
+   *
+   * @param priority - Priority lookup by ID or key
+   * @returns Promise resolving to the matching priority or null if not found
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getPriority(
+    priority: { id: Uuid } | { key: string }
+  ): Promise<Priority | null>;
+
+  /**
+   * Updates an existing priority in the Plot system.
+   *
+   * The priority is identified by either its ID or key.
+   * Only the fields specified in the update will be changed.
+   *
+   * @param update - Priority update containing ID/key and fields to change
+   * @returns Promise that resolves when the update is complete
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract updatePriority(update: PriorityUpdate): Promise<void>;
 
   /**
    * Adds contacts to the Plot system.

@@ -4,6 +4,7 @@ import type {
   NewActivityWithNotes,
   SyncUpdate,
 } from "../index";
+import type { NoFunctions } from "../utils/types";
 
 /**
  * Represents a successful project management service authorization.
@@ -98,28 +99,22 @@ export interface ProjectTool {
    * - Use Uuid.Generate() and store ID mappings when creating multiple activities per issue
    * - See SYNC_STRATEGIES.md for when this is appropriate
    *
-   * @param authToken - Authorization token for access
-   * @param projectId - ID of the project to sync
+   * @param options - Sync configuration options
+   * @param options.authToken - Authorization token for access
+   * @param options.projectId - ID of the project to sync
+   * @param options.timeMin - Earliest date to sync issues from (inclusive)
    * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced issue
-   * @param options - Optional configuration for limiting the sync scope (e.g., time range)
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
-  startSync<
-    TCallback extends (
-      syncUpdate: SyncUpdate,
-      ...args: any[]
-    ) => any
-  >(
-    authToken: string,
-    projectId: string,
+  startSync<TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any>(
+    options: {
+      authToken: string;
+      projectId: string;
+    } & ProjectSyncOptions,
     callback: TCallback,
-    options?: ProjectSyncOptions,
-    ...extraArgs: TCallback extends (
-      syncUpdate: any,
-      ...rest: infer R
-    ) => any
-      ? R
+    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
+      ? NoFunctions<R>
       : []
   ): Promise<void>;
 

@@ -1,5 +1,6 @@
 import { ITool } from "..";
 import { type AuthProvider, type Authorization } from "./integrations";
+import { type NoFunctions, type JSONValue } from "../utils/types";
 
 /**
  * Represents an incoming webhook request.
@@ -26,7 +27,7 @@ export type WebhookRequest = {
   /** Query string parameters from the request URL */
   params: Record<string, string>;
   /** Request body (parsed as JSON if applicable) */
-  body: any;
+  body: JSONValue;
   /** Raw request body (for signature verification) */
   rawBody?: string;
 };
@@ -84,10 +85,12 @@ export type WebhookRequest = {
  *
  *   async setupCalendarWebhook(calendarId: string) {
  *     // Create webhook URL that will call onCalendarEvent
- *     const webhookUrl = await this.tools.network.createWebhook({
- *       callback: this.onCalendarEvent,
- *       extraArgs: [calendarId, "google"]
- *     });
+ *     const webhookUrl = await this.tools.network.createWebhook(
+ *       {},
+ *       this.onCalendarEvent,
+ *       calendarId,
+ *       "google"
+ *     );
  *
  *     // Register webhook with Google Calendar API
  *     await this.registerWithGoogleCalendar(calendarId, webhookUrl);
@@ -136,21 +139,23 @@ export abstract class Network extends ITool {
    * - **Default**: Returns a standard webhook URL for all other cases.
    *
    * @param options - Webhook creation options
-   * @param options.callback - Function receiving (request, ...extraArgs)
-   * @param options.extraArgs - Additional arguments to pass to the callback (type-checked)
    * @param options.provider - Optional provider for provider-specific webhook routing
    * @param options.authorization - Optional authorization for provider-specific webhooks (required for Slack and Gmail)
+   * @param callback - Function receiving (request, ...extraArgs)
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise resolving to the webhook URL, or for Gmail, a Pub/Sub topic name
    *
    * @example
    * ```typescript
    * // Gmail webhook - returns Pub/Sub topic name
-   * const topicName = await this.tools.network.createWebhook({
-   *   callback: this.onGmailNotification,
-   *   provider: AuthProvider.Google,
-   *   authorization: gmailAuth,
-   *   extraArgs: ["inbox"]
-   * });
+   * const topicName = await this.tools.network.createWebhook(
+   *   {
+   *     provider: AuthProvider.Google,
+   *     authorization: gmailAuth
+   *   },
+   *   this.onGmailNotification,
+   *   "inbox"
+   * );
    * // topicName: "projects/plot-prod/topics/gmail-webhook-abc123"
    *
    * // Pass topic name to Gmail API
@@ -165,12 +170,16 @@ export abstract class Network extends ITool {
    */
   abstract createWebhook<
     TCallback extends (request: WebhookRequest, ...args: any[]) => any
-  >(options: {
-    callback: TCallback;
-    extraArgs?: TCallback extends (req: any, ...rest: infer R) => any ? R : [];
-    provider?: AuthProvider;
-    authorization?: Authorization;
-  }): Promise<string>;
+  >(
+    options: {
+      provider?: AuthProvider;
+      authorization?: Authorization;
+    },
+    callback: TCallback,
+    ...extraArgs: TCallback extends (req: any, ...rest: infer R) => any
+      ? NoFunctions<R>
+      : []
+  ): Promise<string>;
 
   /**
    * Deletes an existing webhook endpoint.

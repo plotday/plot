@@ -4,12 +4,12 @@ import type { Callback } from "./callbacks";
 /**
  * Run background tasks and scheduled jobs.
  *
- * The Run tool enables twists and tools to queue callbacks. This is especially
- * iportant for long-running operations and batch processing, since twists
- * operate within runtime limits. Run callbacks also benefit from automatic
+ * The Tasks tool enables twists and tools to queue callbacks. This is especially
+ * important for long-running operations and batch processing, since twists
+ * operate within runtime limits. Task callbacks also benefit from automatic
  * retries on failure.
  *
- * **Note:** Run methods are also available directly on Twist and Tool classes
+ * **Note:** Tasks tool methods are also available directly on Twist and Tool classes
  * via `this.runTask()`, `this.cancelTask()`, and `this.cancelAllTasks()`.
  * This is the recommended approach for most use cases.
  *

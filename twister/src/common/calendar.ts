@@ -1,4 +1,5 @@
 import type { ActivityLink, NewActivityWithNotes, SyncUpdate } from "../index";
+import type { NoFunctions } from "../utils/types";
 
 /**
  * Represents successful calendar authorization.
@@ -86,9 +87,12 @@ export interface SyncOptions {
  *     const primaryCalendar = calendars.find(c => c.primary);
  *     if (primaryCalendar) {
  *       await this.googleCalendar.startSync(
- *         auth.authToken,
- *         primaryCalendar.id,
- *         "onCalendarEvent"
+ *         {
+ *           authToken: auth.authToken,
+ *           calendarId: primaryCalendar.id
+ *         },
+ *         this.onCalendarEvent,
+ *         { initialSync: true }
  *       );
  *     }
  *   }
@@ -151,27 +155,24 @@ export interface CalendarTool {
    * - Use Uuid.Generate() and store ID mappings when creating multiple activities per event
    * - See SYNC_STRATEGIES.md for when this is appropriate
    *
-   * @param authToken - Authorization token for calendar access
-   * @param calendarId - ID of the calendar to sync
+   * @param options - Sync configuration options
+   * @param options.authToken - Authorization token for calendar access
+   * @param options.calendarId - ID of the calendar to sync
+   * @param options.timeMin - Earliest date to sync events from (inclusive)
+   * @param options.timeMax - Latest date to sync events to (exclusive)
    * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced event
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    * @throws When auth token is invalid or calendar doesn't exist
    */
-  startSync<
-    TCallback extends (
-      syncUpdate: SyncUpdate,
-      ...args: any[]
-    ) => any
-  >(
-    authToken: string,
-    calendarId: string,
+  startSync<TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any>(
+    options: {
+      authToken: string;
+      calendarId: string;
+    } & SyncOptions,
     callback: TCallback,
-    ...extraArgs: TCallback extends (
-      syncUpdate: any,
-      ...rest: infer R
-    ) => any
-      ? R
+    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
+      ? NoFunctions<R>
       : []
   ): Promise<void>;
 

@@ -1,4 +1,4 @@
-import { type Priority } from "./plot";
+import { type Priority, Uuid } from "./plot";
 import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
 import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
@@ -31,7 +31,7 @@ import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
  * ```
  */
 export abstract class Twist<TSelf> {
-  constructor(protected id: string, private toolShed: ToolShed) {}
+  constructor(protected id: Uuid, private toolShed: ToolShed) {}
 
   /**
    * Gets the initialized tools for this twist.

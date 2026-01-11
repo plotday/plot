@@ -1,4 +1,5 @@
 import type { ActivityLink, NewActivityWithNotes, SyncUpdate } from "../index";
+import type { NoFunctions } from "../utils/types";
 
 /**
  * Represents a successful messaging service authorization.
@@ -91,22 +92,22 @@ export interface MessagingTool {
    * - Use Uuid.Generate() and store ID mappings when creating multiple activities per thread
    * - See SYNC_STRATEGIES.md for when this is appropriate
    *
-   * @param authToken - Authorization token for access
-   * @param channelId - ID of the channel (e.g., channel, inbox) to sync
+   * @param options - Sync configuration options
+   * @param options.authToken - Authorization token for access
+   * @param options.channelId - ID of the channel (e.g., channel, inbox) to sync
+   * @param options.timeMin - Earliest date to sync events from (inclusive)
    * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced conversation
-   * @param options - Optional configuration for limiting the sync scope (e.g., time range)
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
-  startSync<
-    TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any
-  >(
-    authToken: string,
-    channelId: string,
+  startSync<TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any>(
+    options: {
+      authToken: string;
+      channelId: string;
+    } & MessageSyncOptions,
     callback: TCallback,
-    options?: MessageSyncOptions,
     ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
-      ? R
+      ? NoFunctions<R>
       : []
   ): Promise<void>;
 
