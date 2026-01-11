@@ -35,7 +35,8 @@ DECLARE
     _contact_id uuid;
 BEGIN
     -- Extract name from user metadata (check both raw_user_meta_data and raw_app_meta_data)
-    _user_name := COALESCE(NEW.raw_user_meta_data ->> 'full_name', NEW.raw_app_meta_data ->> 'full_name', NEW.raw_app_meta_data ->> 'name', NEW.email);
+    -- If no name in metadata, will be NULL (displayName generated from email in app)
+    _user_name := COALESCE(NEW.raw_user_meta_data ->> 'full_name', NEW.raw_app_meta_data ->> 'full_name', NEW.raw_app_meta_data ->> 'name');
     -- Upsert contact and get the contact ID
     _contact_id := public.upsert_user_contact (NEW.id, NEW.email, _user_name, NEW.raw_app_meta_data ->> 'avatar_url');
     -- Update NEW.raw_app_meta_data directly (no UPDATE needed, prevents recursion)
@@ -84,7 +85,8 @@ BEGIN
     WHERE
         email IS NOT NULL LOOP
             -- Extract name from user metadata (check both raw_user_meta_data and raw_app_meta_data)
-            _user_name := COALESCE(_user_record.raw_user_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'name', _user_record.email);
+            -- If no name in metadata, will be NULL (displayName generated from email in app)
+            _user_name := COALESCE(_user_record.raw_user_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'name');
             -- Upsert contact for this user and get contact ID
             _contact_id := public.upsert_user_contact (_user_record.id, _user_record.email, _user_name, _user_record.raw_app_meta_data ->> 'avatar_url');
             -- Update the user's app_metadata with contact_id

@@ -5,9 +5,24 @@ import type { Plot } from "./index";
 
 function normalizeName(name: string | undefined | null): string | undefined {
   if (!name) return undefined;
-  name = name.replace(/<?[^ ]+@[^ ]+>?/, "").trim();
+
+  // Trim whitespace first
+  name = name.trim();
+
+  // If name looks like an email (no spaces and contains @), return undefined
+  if (!name.includes(' ') && name.includes('@')) {
+    return undefined;
+  }
+
+  // Strip trailing email addresses (with or without angle brackets)
+  // Handles: "Kris Braun <kris@example.com>" or "Kris Braun kris@example.com"
+  name = name.replace(/\s*<?[^ ]+@[^ ]+>?\s*$/, "").trim();
+
+  // Convert "Last, First" to "First Last"
   name = name.replace(/^([^, ]+),\s*(.+)/, "$2 $1");
-  return name;
+
+  // If nothing left after cleaning, return undefined
+  return name || undefined;
 }
 
 export async function addContacts(
@@ -31,17 +46,17 @@ export async function addContacts(
     avatar_url: contact.avatar || null,
   }));
 
-  const result = await plot.supabase
-    .from("contact")
-    .upsert(contactsToUpsert, { onConflict: "email" })
-    .select("id, email, name, user_id");
+  // Use RPC function to support COALESCE - preserve existing name if new name is null
+  const result = await plot.supabase.rpc("upsert_contacts", {
+    contacts: JSON.stringify(contactsToUpsert),
+  });
 
   if (result.error) {
     throw new Error(`Failed to upsert contacts: ${result.error.message}`);
   }
 
   // Map the upserted contacts to Actor type
-  const actors: Actor[] = (result.data || []).map((contact) => {
+  const actors: Actor[] = (result.data || []).map((contact: any) => {
     const actor: Actor = {
       id: contact.id as ActorId,
       type: contact.user_id ? ActorType.User : ActorType.Contact,

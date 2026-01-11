@@ -34,6 +34,9 @@ DROP VIEW IF EXISTS "public"."user_twist";
 
 DROP VIEW IF EXISTS "public"."priority_settings_inherited";
 
+-- Drop functions that depend on user_activity type before dropping the view
+DROP FUNCTION IF EXISTS "public"."actor"(user_activity);
+
 DROP VIEW IF EXISTS "public"."user_activity";
 
 DROP VIEW IF EXISTS "public"."user_activity_unread";

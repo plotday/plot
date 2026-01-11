@@ -1,6 +1,8 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/initials.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
@@ -94,6 +96,20 @@ class ActivityWidget extends StatelessWidget {
               ),
               TextSpan(
                 children: [
+                  if (activity.assigneeId != null &&
+                      !activity.assigneeId!.isCurrentUser())
+                    WidgetSpan(
+                      alignment: PlaceholderAlignment.baseline,
+                      baseline: TextBaseline.alphabetic,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Initials(
+                          actorId: activity.assigneeId,
+                          size: buildContext.theme.iconSizes.sm,
+                          fallback: null,
+                        ),
+                      ),
+                    ),
                   TextSpan(
                     text: activity.displayTitle,
                     style: now

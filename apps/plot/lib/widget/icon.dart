@@ -42,9 +42,11 @@ class PlotIcon {
   static const now = FontAwesomeIcons.circlePlay;
   static const inbox = FontAwesomeIcons.inbox;
   static const todo = FontAwesomeIcons.inbox;
-  static const rainbow = FontAwesomeIcons.rainbow;
+  static const someday = FontAwesomeIcons.circleMoon;
   static const later = FontAwesomeIcons.clock;
   static const done = FontAwesomeIcons.check;
+  static const other = FontAwesomeIcons.circleUser;
+  static const otherDone = FontAwesomeIcons.circleUserCircleCheck;
   static const pinned = FontAwesomeIcons.thumbtackAngle;
   static const archived = FontAwesomeIcons.boxArchive;
   static const urgent = FontAwesomeIcons.sirenOn;

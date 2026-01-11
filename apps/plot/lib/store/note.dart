@@ -552,20 +552,21 @@ class Note extends Equatable implements Comparable<Note> {
     if (actorIds.isEmpty) return '';
 
     // Fetch actor names from the database
-    final actors =
+    final actorRows =
         await (Store.get.select(Store.get.actors)..where(
               (a) => a.id.isIn(actorIds.map((id) => id.toBytes()).toList()),
             ))
             .get();
 
-    // Create a map of actorId to name
-    final actorMap = {for (var actor in actors) actor.id: actor.name};
+    // Convert to Actor objects and create a map of actorId to nameOrEmail
+    final actors = actorRows.map((row) => Actor.fromStore(row)).toList();
+    final actorMap = {for (var actor in actors) actor.id: actor.nameOrEmail};
 
     // Build the display names list
     final displayNames = <String>[];
 
     for (final actorId in actorIds) {
-      if (actorId.isCurrentUserSync()) {
+      if (actorId.isCurrentUser()) {
         displayNames.insert(0, 'You'); // Put "You" first
       } else {
         final name = actorMap[actorId] ?? 'Unknown';

@@ -4,7 +4,7 @@ part of 'store.dart';
 class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   BlobColumn get id => blob().map(const ActorIdConverter())();
   TextColumn get type => text().map(const EnumConverter<ActorType>())();
-  TextColumn get name => text()();
+  TextColumn get name => text().nullable()();
   TextColumn get email => text().nullable()();
   TextColumn get avatarUrl => text().nullable()();
   BoolColumn get self => boolean()();
@@ -170,9 +170,15 @@ class Actor extends ActorRow {
             innerJoin(
               pa,
               pa.actorId.equalsExp(a.id) &
-                  (pa.priorityPath.equalsValue(Path(priorityPath)) | // Exact match
-                      pa.priorityPath.likeExp(Constant('$priorityPath.%')) | // Children of requested path
-                      Constant(priorityPath).likeExp(pa.priorityPath.dartCast<String>() + Constant('.%'))), // Ancestors (requested path is child of pa.priorityPath)
+                  (pa.priorityPath.equalsValue(
+                        Path(priorityPath),
+                      ) | // Exact match
+                      pa.priorityPath.likeExp(
+                        Constant('$priorityPath.%'),
+                      ) | // Children of requested path
+                      Constant(priorityPath).likeExp(
+                        pa.priorityPath.dartCast<String>() + Constant('.%'),
+                      )), // Ancestors (requested path is child of pa.priorityPath)
             ),
           ])
         : Store.get.select(a).join([]);
@@ -192,16 +198,16 @@ class Actor extends ActorRow {
 
     // Filter by actor types
     if (types != null && types.isNotEmpty) {
-      final typeStrings = types.map((t) => (t as Enum).name.toSnakeCase()).toList();
+      final typeStrings = types
+          .map((t) => (t as Enum).name.toSnakeCase())
+          .toList();
       query.where(a.type.isIn(typeStrings));
     }
 
     // Search by name or email (case-insensitive with LIKE)
     if (search != null && search.isNotEmpty) {
       final searchPattern = '%${search.toLowerCase()}%';
-      query.where(
-        a.name.like(searchPattern) | a.email.like(searchPattern),
-      );
+      query.where(a.name.like(searchPattern) | a.email.like(searchPattern));
     }
 
     // Apply limit
@@ -233,7 +239,7 @@ class Actor extends ActorRow {
     DateTime? updatedAt,
     Value<DateTime?> archivedAt = const Value.absent(),
     ActorType? type,
-    String? name,
+    Value<String?> name = const Value.absent(),
     Value<String?> email = const Value.absent(),
     Value<String?> avatarUrl = const Value.absent(),
     bool? self,
@@ -252,6 +258,14 @@ class Actor extends ActorRow {
       pending: pending,
     ),
   );
+
+  /// Returns the actor's name if available, otherwise their email
+  String get nameOrEmail {
+    if (name != null && name!.isNotEmpty) {
+      return name!;
+    }
+    return email ?? 'Unknown';
+  }
 }
 
 /// Drift converter for ActorId
@@ -312,24 +326,10 @@ class ActorIdListConverter extends TypeConverter<List<ActorId>, String>
 
 /// Extension methods for ActorId to check if it belongs to the current user
 extension ActorIdHelpers on ActorId {
-  /// Returns true if this ActorId is one of the current user's contacts.
-  /// Uses the cached Actor.self flag for offline support.
-  ///
-  /// This method is async and should be used when Actor data might not be cached.
-  Future<bool> isCurrentUser() async {
-    try {
-      final actor = await Actor.getOne(this);
-      return actor.self;
-    } catch (e) {
-      // Fallback to checking against primary contact if Actor not found
-      return this == Base.actorId;
-    }
-  }
-
   /// Synchronous version - checks if this ActorId belongs to the current user.
   /// Only use when Actor data is guaranteed to be cached (after startup sync).
   /// Falls back to checking against the primary contact if Actor not cached.
-  bool isCurrentUserSync() {
+  bool isCurrentUser() {
     final actor = Actor._cache[this];
     if (actor == null) {
       // Fallback to primary contact check if not in cache

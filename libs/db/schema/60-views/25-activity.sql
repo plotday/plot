@@ -95,7 +95,7 @@ SELECT
     a.id,
     a.created_at,
     -- updated_at includes last_note_source_created_at for sync
-    COALESCE(GREATEST (a.updated_at, a.last_note_source_created_at), a.updated_at) AS updated_at,
+    GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz), COALESCE(uau.updated_at, 'epoch'::timestamptz)) AS updated_at,
     a.source_created_at,
     a.author_id,
     a.assignee_id,

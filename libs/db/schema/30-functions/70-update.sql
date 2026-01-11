@@ -160,11 +160,13 @@ BEGIN
     -- Compute root field from priority_user.key
     SELECT
         EXISTS (
-            SELECT 1
-            FROM priority_user
-            WHERE priority_user.priority_id = current_item.id
-                AND priority_user.key = 'root'
-        ) INTO is_root;
+            SELECT
+                1
+            FROM
+                priority_user
+            WHERE
+                priority_user.priority_id = current_item.id
+                AND priority_user.key = 'root') INTO is_root;
     -- Build enriched item
     enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', is_root, 'archived_at', current_item.archived_at, 'title', current_item.title, 'path', current_item.path, 'updated_by', current_item.updated_by, 'sync_depth', current_item.sync_depth);
     -- Build the payload (no twists for priority)

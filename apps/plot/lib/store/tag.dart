@@ -24,7 +24,7 @@ enum Tag {
   ),
   someday(
     7,
-    PlotIcon.rainbow,
+    PlotIcon.someday,
     'Do Someday',
     type: TagType.compute,
     shortcodes: ['someday'],

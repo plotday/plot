@@ -125,6 +125,7 @@ class ShowCommands extends Command {
   ShowCommands({
     required super.title,
     super.icon,
+    super.hoverIcon,
     super.shortcut,
     required this.commands,
     EventObject? eventObject,
@@ -210,10 +211,7 @@ extension BuildContextCommandExtension on BuildContext {
             isError: true,
           );
         } else {
-          showToast(
-            title: result.title,
-            message: result.message,
-          );
+          showToast(title: result.title, message: result.message);
         }
       } else if (result is CommandRoute) {
         await result.go(this);
@@ -280,7 +278,9 @@ abstract class CommandGroup {
     }
 
     // Split search into individual words
-    List<String> searchWords = search.toLowerCase().trim().split(RegExp(r'\s+'));
+    List<String> searchWords = search.toLowerCase().trim().split(
+      RegExp(r'\s+'),
+    );
 
     bool match(String? field) {
       if (field == null) return false;

@@ -6,9 +6,7 @@ import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
-import 'package:plot/widget/avatar.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
@@ -568,25 +566,10 @@ class AssignAction extends _UpdateActivityCommand {
          subtitle: assignee?.email,
          eventObject: EventObject.activity,
          eventAction: EventAction.updated,
+         icon: assignee != null
+             ? FontAwesomeIcons.circleUser
+             : FontAwesomeIcons.circleUserCircleXmark,
        );
-
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
-    // State icon mode: show Avatar when assigned (for activity list display)
-    if (stateIcon && activity.assigneeId != null) {
-      return Avatar(actorId: activity.assigneeId);
-    }
-    // Modal picker mode: show Avatar for assignee options
-    if (assignee != null) {
-      return Avatar(actor: assignee);
-    }
-    // Unassign option: show gray user icon
-    return Icon(
-      FontAwesomeIcons.userSlash,
-      size: context.theme.iconSizes.base,
-      color: context.theme.colors.mutedForeground,
-    );
-  }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -623,7 +606,8 @@ class PickActionAssignee extends ShowCommands {
   PickActionAssignee(this.activity, {this.onUpdate, this.stateIcon = false})
     : super(
         title: 'Assign',
-        icon: FontAwesomeIcons.userPlus,
+        icon: stateIcon ? activity.icon : FontAwesomeIcons.circleUserCirclePlus,
+        hoverIcon: stateIcon ? FontAwesomeIcons.circleUserCirclePlus : null,
         commands: (context) => _getAssigneeCommands(activity, onUpdate),
         eventObject: EventObject.activity,
         eventAction: EventAction.updated,
@@ -632,16 +616,6 @@ class PickActionAssignee extends ShowCommands {
   final Activity activity;
   final Future<void> Function(Activity)? onUpdate;
   final bool stateIcon;
-
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
-    if (stateIcon && activity.assigneeId != null) {
-      // State icon mode: show Avatar when assigned
-      return Avatar(actorId: activity.assigneeId);
-    }
-    // Default: show user-plus icon
-    return super.buildIcon(context, hoverIcon: hoverIcon);
-  }
 
   static Future<Commands> _getAssigneeCommands(
     Activity activity,
@@ -770,7 +744,7 @@ class UnscheduleAction extends _UpdateActivityCommand {
         title: 'Do Someday',
         eventObject: EventObject.activity,
         eventAction: EventAction.unscheduled,
-        icon: PlotIcon.rainbow,
+        icon: PlotIcon.someday,
       );
 
   @override
@@ -1216,17 +1190,15 @@ List<Command> topActivityTags(Activity activity, List<Tag> tagSuggestions) {
 /// This is shown as the leading command in ActivityWidget and as the primary action in ActivityPage header.
 /// Use `selected: true` on the button when activity.doNow.
 Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
-  // Show PickActionAssignee when assigned to someone other than the current user
-  if (activity.assigneeId != null && !activity.assigneeId!.isCurrentUserSync()) {
-    return PickActionAssignee(activity, stateIcon: stateIcon);
-  }
-
   if (activity.type == ActivityType.note ||
       activity.doSomeday ||
       activity.done) {
     return StartAction(activity, stateIcon: stateIcon);
   } else if (activity.type == ActivityType.event) {
     return RescheduleEvent(activity, stateIcon: stateIcon);
+  } else if (activity.assigneeId != null &&
+      !activity.assigneeId!.isCurrentUser()) {
+    return PickActionAssignee(activity, stateIcon: stateIcon);
   } else if (activity.doNow) {
     return FinishAction(activity, stateIcon: stateIcon);
   } else if (activity.doLater) {

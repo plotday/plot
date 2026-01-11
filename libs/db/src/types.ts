@@ -2555,12 +2555,22 @@ export type Database = {
         }
         Returns: string
       }
-      upsert_contacts: {
-        Args: {
-          _contacts: Database["public"]["CompositeTypes"]["contact_upsert"][]
-        }
-        Returns: undefined
-      }
+      upsert_contacts:
+        | {
+            Args: {
+              _contacts: Database["public"]["CompositeTypes"]["contact_upsert"][]
+            }
+            Returns: undefined
+          }
+        | {
+            Args: { contacts: Json }
+            Returns: {
+              email: string
+              id: string
+              name: string
+              user_id: string
+            }[]
+          }
       upsert_user_contact: {
         Args: {
           avatar_url: string
