@@ -403,8 +403,8 @@ account.post("/activate", async (c) => {
     plotPriority = newPlotPriority;
   }
 
-  // Step 8: Install and activate Plot twist (skip if root priority already existed)
-  if (shouldInstallPlotTwist && plotPriority) {
+  // Step 8: Install and activate Plot twist on root priority (skip if root priority already existed)
+  if (shouldInstallPlotTwist && priority) {
     try {
       const { data: plotTwist, error: plotTwistError } = await c.var.supabase
         .from("twist")
@@ -426,7 +426,7 @@ account.post("/activate", async (c) => {
         await twistManagement.add(
           c.var.supabase,
           c.var.supabaseAdmin,
-          plotPriority.id,
+          priority.id,
           plotTwist.id,
           "public",
           "Plot",

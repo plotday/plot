@@ -12,6 +12,8 @@ import {
   type Note,
   type NoteUpdate,
   type Priority,
+  type PriorityUpdate,
+  Uuid,
 } from "@plotday/twister/plot";
 import {
   ActivityAccess,
@@ -729,110 +731,10 @@ export class Plot extends Tool implements IPlot {
     return activityOps.updateActivity(this, activity);
   }
 
-  async getActivityByMeta(
-    meta: ActivityMeta,
-    includeArchived?: boolean
+  async getActivity(
+    activity: { id: Uuid } | { source: string }
   ): Promise<Activity | null> {
-    return activityOps.getActivityByMeta(this, meta, includeArchived);
-  }
-
-  async getActivityBySource(
-    source: string,
-    includeArchived?: boolean
-  ): Promise<Activity | null> {
-    // Query activities by source column directly (uses indexed column for performance)
-    let query = this.supabase
-      .from("user_activity")
-      .select(
-        `
-        *,
-        author:actor!author_id(
-          id,
-          name,
-          type,
-          email,
-          archived_at,
-          avatar_url,
-          created_at,
-          updated_at
-        ),
-        assignee:actor!assignee_id(
-          id,
-          name,
-          type,
-          email,
-          archived_at,
-          avatar_url,
-          created_at,
-          updated_at
-        )
-      `
-      )
-      .eq("source", source);
-
-    // By default, exclude archived activities
-    if (!includeArchived) {
-      query = query.is("archived_at", null);
-    }
-
-    const { data, error } = await query.limit(1).maybeSingle();
-
-    if (error) {
-      throw error;
-    }
-    if (!data) {
-      return null;
-    }
-
-    if (!data.author) {
-      throw new Error(`Activity author not found`);
-    }
-
-    // Store data with non-null author for type safety
-    const dataWithAuthor = {
-      ...data,
-      id: data.id ?? "",
-      author_id: data.author_id ?? data.author.id ?? "",
-      created_at: data.created_at ?? new Date().toISOString(),
-      created_by: data.author_id ?? "",
-      draft: data.draft ?? false,
-      order: data.order ?? 0,
-      priority_id: data.priority_id ?? "",
-      private: data.private ?? false,
-      type: (data.type ??
-        "note") as Database["public"]["Enums"]["activity_type"],
-      updated_at: data.updated_at ?? new Date().toISOString(),
-      updated_by: data.updated_by ?? 0,
-      author: data.author,
-      assignee: data.assignee ?? null,
-      assignee_id: null,
-      embedding: null,
-      pick_priority: null,
-      active_source: null,
-    };
-
-    // Fetch tags for the activity
-    const { data: tagsData } = data.id
-      ? await this.supabase
-          .from("activity_tags")
-          .select("tags")
-          .eq("activity_id", data.id)
-          .single()
-      : { data: null };
-
-    // Check if ContactAccess.Read permission is granted to include author email
-    const includeAuthorEmail =
-      this.plotOptions?.contact?.access !== undefined &&
-      this.plotOptions.contact.access >= ContactAccess.Read;
-
-    // @ts-ignore - Type assertion needed due to complex type inference with view columns
-    return fromDbActivity(
-      {
-        ...dataWithAuthor,
-        tags: tagsData?.tags || null,
-      } as any,
-      includeAuthorEmail
-    );
+    return activityOps.getActivity(this, activity);
   }
 
   async createActivities(
@@ -844,6 +746,16 @@ export class Plot extends Tool implements IPlot {
   // Priority operations
   async createPriority(priority: NewPriority): Promise<Priority> {
     return priorityOps.createPriority(this, priority);
+  }
+
+  async getPriority(
+    priority: { id: Uuid } | { key: string }
+  ): Promise<Priority | null> {
+    return priorityOps.getPriority(this, priority);
+  }
+
+  async updatePriority(update: PriorityUpdate): Promise<void> {
+    return priorityOps.updatePriority(this, update);
   }
 
   // Contact operations
@@ -860,6 +772,12 @@ export class Plot extends Tool implements IPlot {
   // Note operations
   async getNotes(activity: Activity): Promise<Note[]> {
     return activityOps.getNotes(this, activity);
+  }
+
+  async getNote(
+    note: { id: Uuid } | { key: string }
+  ): Promise<Note | null> {
+    return activityOps.getNote(this, note);
   }
 
   async createNote(

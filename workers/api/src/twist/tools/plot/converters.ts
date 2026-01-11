@@ -177,10 +177,14 @@ export function fromDbActivity(
 }
 
 export function fromDbPriority(
-  dbPriority: Database["public"]["Tables"]["priority"]["Row"]
+  dbPriority: Pick<
+    Database["public"]["Tables"]["priority"]["Row"],
+    "id" | "title" | "archived_at"
+  >
 ): Priority {
   return {
     id: dbPriority.id,
     title: dbPriority.title,
+    archived: dbPriority.archived_at !== null,
   };
 }

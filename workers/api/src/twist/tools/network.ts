@@ -431,17 +431,15 @@ export class Network extends Tool implements INetwork {
     }
   }
 
-  async createWebhook<TCallback extends (request: any, ...args: any[]) => any>({
-    callback,
-    provider,
-    authorization,
-    extraArgs,
-  }: {
-    callback: TCallback;
-    provider?: AuthProvider;
-    authorization?: Authorization;
-    extraArgs?: any[];
-  }): Promise<string> {
+  async createWebhook<TCallback extends (request: any, ...args: any[]) => any>(
+    options: {
+      provider?: AuthProvider;
+      authorization?: Authorization;
+    },
+    callback: TCallback,
+    ...extraArgs: any[]
+  ): Promise<string> {
+    const { provider, authorization } = options;
     if (
       !this.callbacks ||
       !this.priorityTwistId ||
@@ -505,7 +503,7 @@ export class Network extends Tool implements INetwork {
       priorityTwistId: this.priorityTwistId,
       path: this.path.slice(0, -1), // Remove this tool from path to target parent
       functionName: callbackFunctionName,
-      extraArgs: extraArgs || [],
+      extraArgs: extraArgs,
     });
     return this.tokenToUrl(token);
   }

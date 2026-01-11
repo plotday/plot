@@ -1100,6 +1100,11 @@ export async function updateActivity(
   if (activity.private !== undefined) {
     dbUpdate.private = activity.private;
   }
+  if (activity.archived !== undefined) {
+    dbUpdate.archived_at = activity.archived
+      ? new Date().toISOString()
+      : null;
+  }
   if (activity.done !== undefined) {
     dbUpdate.done_at = activity.done ? activity.done.toISOString() : null;
   }
@@ -1427,6 +1432,9 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
   if (note.private !== undefined) {
     dbUpdate.private = note.private;
   }
+  if (note.archived !== undefined) {
+    dbUpdate.archived_at = note.archived ? new Date().toISOString() : null;
+  }
   if (note.mentions !== undefined) {
     // Process mentions - convert NewActor[] to ActorId[]
     if (note.mentions === null) {
@@ -1611,13 +1619,12 @@ export async function getNotes(
   }
 }
 
-export async function getActivityByMeta(
+export async function getActivity(
   plot: Plot,
-  meta: ActivityMeta,
-  includeArchived = false
+  activity: { id: Uuid } | { source: string }
 ): Promise<Activity | null> {
   try {
-    // Query activities with matching meta fields using the user_activity view
+    // Query activities using the user_activity view
     // This view automatically filters to activities the user has access to
     let query = plot.supabase.from("user_activity").select(
       `
@@ -1645,13 +1652,14 @@ export async function getActivityByMeta(
         `
     );
 
-    // Use JSON containment for meta queries
-    query = query.contains("meta", meta);
-
-    // By default, exclude archived activities
-    if (!includeArchived) {
-      query = query.is("archived_at", null);
+    // Query by id or source
+    if ("id" in activity) {
+      query = query.eq("id", activity.id);
+    } else {
+      query = query.eq("source", activity.source);
     }
+
+    // Always include archived activities (no filter on archived_at)
 
     const { data, error } = await query.limit(1).maybeSingle();
 
@@ -1714,7 +1722,127 @@ export async function getActivityByMeta(
     );
   } catch (err) {
     const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-    logger.error("Failed to get activity by meta", err as Error);
+    logger.error("Failed to get activity", err as Error);
+    throw err;
+  }
+}
+
+export async function getNote(
+  plot: Plot,
+  note: { id: Uuid } | { key: string }
+): Promise<Note | null> {
+  try {
+    // Build the query to fetch the note
+    let query = plot.supabase.from("note").select(
+      `
+          id,
+          created_at,
+          source_created_at,
+          updated_at,
+          author_id,
+          created_by,
+          updated_by,
+          archived_at,
+          activity_id,
+          draft,
+          private,
+          content,
+          key,
+          links,
+          mentions,
+          author:actor!author_id(
+            id,
+            name,
+            type,
+            email,
+            archived_at,
+            avatar_url,
+            created_at,
+            updated_at
+          )
+        `
+    );
+
+    // Query by id or key
+    if ("id" in note) {
+      query = query.eq("id", note.id);
+    } else {
+      query = query.eq("key", note.key);
+    }
+
+    // Always include archived notes (no filter on archived_at)
+
+    const { data, error } = await query.limit(1).maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      return null;
+    }
+
+    if (!data.author) {
+      throw new Error("Note author not found");
+    }
+
+    // Validate access to the priority via the activity
+    // First fetch the activity to get the priority
+    const { data: activityData, error: activityError } = await plot.supabase
+      .from("activity")
+      .select("priority_id")
+      .eq("id", data.activity_id)
+      .single();
+
+    if (activityError || !activityData) {
+      throw new Error(`Activity not found for note`);
+    }
+
+    await plot.validatePriorityAccess(activityData.priority_id);
+
+    // Fetch the full activity for the note
+    const activity = await getActivity(plot, { id: data.activity_id as Uuid });
+    if (!activity) {
+      throw new Error(`Activity not found for note`);
+    }
+
+    // Fetch tags for the note
+    const { data: tagsData } = await plot.supabase
+      .from("note_tags")
+      .select("tags")
+      .eq("note_id", data.id)
+      .single();
+
+    // Check if ContactAccess.Read permission is granted to include author email
+    const includeAuthorEmail =
+      plot.plotOptions?.contact?.access !== undefined &&
+      plot.plotOptions.contact.access >= ContactAccess.Read;
+
+    return {
+      // @ts-ignore - row.id is a string from DB, but Uuid is a branded type
+      id: data.id as any,
+      created: data.source_created_at
+        ? new Date(data.source_created_at)
+        : new Date(data.created_at),
+      activity: activity,
+      author: {
+        id: data.author.id as ActorId,
+        type: data.author.type as unknown as ActorType,
+        name: data.author.name ?? null,
+        email: includeAuthorEmail ? data.author.email ?? undefined : undefined,
+      },
+      draft: data.draft,
+      private: data.private,
+      archived: data.archived_at !== null,
+      content: data.content,
+      key: data.key || null,
+      links: data.links as ActivityLink[] | null,
+      mentions: (data.mentions as string[])?.map((m) => m as ActorId) ?? [],
+      tags:
+        (tagsData?.tags as Partial<Record<Tag, ActorId[]>> | null) || {},
+    };
+  } catch (err) {
+    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    logger.error("Failed to get note", err as Error);
     throw err;
   }
 }

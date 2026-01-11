@@ -27,6 +27,7 @@ class PlotTwist extends Twist<PlotTwist> {
   async activate(_priority: Pick<Priority, "id">) {
     const onboardingPriority = await this.tools.plot.createPriority({
       title: "Getting Started",
+      parent: { key: "@plot" },
     });
 
     // Welcome note

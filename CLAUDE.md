@@ -160,7 +160,7 @@ All twist and tool functions are executed in a sandboxed, ephemeral environment 
   after the function completes. Use the store tool instead. Only use memory for
   temporary caching.
 - Each execution has limited CPU time
-- **Use the `run` tool** to queue separate chunks of work by passing a callback
+- **Use the Tasks tool** to queue separate chunks of work by passing a callback
 - **Break long operations** into smaller batches that can be processed independently
 - **Store intermediate state** using the `store` tool between batches
 - **Examples**: Syncing large datasets, processing many API calls, or performing batch operations
@@ -173,9 +173,9 @@ async startSync(calendarId: string): Promise<void> {
   // Setup initial state
   await this.store.set(`sync_state_${calendarId}`, initialState);
 
-  // Create callback and queue first batch using run tool
+  // Create callback and queue first batch using tasks tool
   const callback = await this.callback("syncBatch", { calendarId, batchNumber: 1 });
-  await this.run.run(callback);
+  await this.runTask(callback);
 }
 
 async syncBatch(args: any, context: { calendarId: string; batchNumber: number }): Promise<void> {
@@ -188,7 +188,7 @@ async syncBatch(args: any, context: { calendarId: string; batchNumber: number })
       calendarId: context.calendarId,
       batchNumber: context.batchNumber + 1
     });
-    await this.run.run(callback);
+    await this.runTask(callback);
   }
 }
 ```
@@ -252,7 +252,7 @@ await this.callback.deleteAll();
 - Callbacks are **hardcoded to target the tool's parent** for security
 - Only `functionName` and `context` parameters are supported for simplicity
 - Callbacks persist across worker restarts and timeouts
-- Use callbacks instead of direct function references in webhook, auth, and run tools
+- Use callbacks instead of direct function references in webhook, auth, and tasks tools
 
 ### Google Tool Integration Pattern
 
