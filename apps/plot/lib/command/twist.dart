@@ -201,8 +201,10 @@ class ShowTwistInfo extends ShowForm {
               initialValue: initialPriority,
               items: (search) =>
                   Priority.get(order: PriorityOrder.nested, search: search),
-              titleBuilder: (p) => p.title,
-              subtitleBuilder: (p) => p.ancestorsLabel(),
+              labelBuilder: (p) => PriorityLabel(priority: p),
+              titleBuilder: (p) => p.ancestorsLabel() != null
+                  ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
+                  : p.title,
             ),
             FormButton(
               key: 'add',
