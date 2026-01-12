@@ -366,37 +366,50 @@ export default class ProjectSync extends Twist<ProjectSync> {
     // Get parent activity from note
     const activity = note.activity;
 
-    // Only sync activities with a source (synced from external services)
-    const sourceId = activity.meta?.source as string | undefined;
-    if (!sourceId) return;
-
-    // Filter out notes created by twists
+    // Filter out notes created by twists to prevent loops
     if (note.author.type === ActorType.Twist) {
       return;
     }
 
-    const parsed = this.parseSource(sourceId);
-    if (!parsed) return;
+    // Only sync if note has content
+    if (!note.content) {
+      return;
+    }
 
-    const { provider, issueId } = parsed;
+    // Determine provider and issue ID from activity metadata
+    let provider: ProjectProvider | null = null;
+    let issueId: string | null = null;
+
+    if (activity.meta?.linearId) {
+      provider = "linear";
+      issueId = activity.meta.linearId as string;
+    } else if (activity.meta?.jiraId) {
+      provider = "jira";
+      issueId = activity.meta.jiraId as string;
+    } else if (activity.meta?.asanaId) {
+      provider = "asana";
+      issueId = activity.meta.asanaId as string;
+    }
+
+    if (!provider || !issueId) {
+      return;
+    }
 
     // Get auth token for this provider
     const authToken = await this.getAuthToken(provider);
     if (!authToken) {
-      console.warn(`No auth token found for ${provider}, skipping sync`);
+      console.warn(`No auth token found for ${provider}, skipping note sync`);
       return;
     }
 
     const tool = this.getProviderTool(provider);
 
-    // Only sync if note has content
-    if (!note.content) return;
-
     try {
       // Sync note as comment
       if (tool.addIssueComment) {
         await tool.addIssueComment(authToken, issueId, note.content);
-        console.log(`Synced note to ${provider} issue ${issueId}`);
+      } else {
+        console.warn(`Provider ${provider} does not support adding comments`);
       }
     } catch (error) {
       console.error(
