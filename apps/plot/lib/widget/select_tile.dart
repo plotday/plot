@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
 import 'icon.dart';
 import 'form_tile_layout.dart';
 
@@ -134,20 +135,17 @@ class _SelectTileState extends State<SelectTile> {
               children: [
                 if (widget.leading != null) ...[
                   widget.leading!,
-                  const SizedBox(width: 8),
+                  SizedBox(width: context.theme.spacing.md),
                 ],
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      displayText,
-                      style: context.theme.typography.sm.copyWith(
-                        color: widget.enabled
-                            ? (hasValue
-                                  ? context.theme.colors.foreground
-                                  : context.theme.plotColors.muted)
-                            : context.theme.plotColors.muted,
-                      ),
+                  child: Text(
+                    displayText,
+                    style: context.theme.typography.sm.copyWith(
+                      color: widget.enabled
+                          ? (hasValue
+                                ? context.theme.colors.foreground
+                                : context.theme.plotColors.muted)
+                          : context.theme.plotColors.muted,
                     ),
                   ),
                 ),
