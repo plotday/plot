@@ -399,7 +399,7 @@ export default class GoogleContacts
 
     // Start sync batch
     const syncCallback = await this.callback(this.syncBatch, 1, authTokenId);
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async stopSync(authToken: string): Promise<void> {
