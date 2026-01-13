@@ -3,12 +3,12 @@ import {
   type NewPriority,
   type Priority,
   type PriorityUpdate,
-  Uuid,
+  type Uuid,
 } from "@plotday/twister/plot";
 import { PriorityAccess } from "@plotday/twister/tools/plot";
 
-import type { Plot } from "./index";
 import { fromDbPriority } from "./converters";
+import type { Plot } from "./index";
 
 export async function createPriority(
   plot: Plot,
@@ -22,21 +22,22 @@ export async function createPriority(
 
   if (priority.parent) {
     if ("key" in priority.parent) {
-      // Look up parent by key
+      // Look up parent by key, scoped to the twist's priority root
+      const priorityRoot = await plot.getPriorityRoot();
       const result = await plot.supabase
-        .from("priority_user")
-        .select("priority_id")
-        .eq("user_id", plot.userId)
+        .from("priority")
+        .select("id")
         .eq("key", priority.parent.key)
+        .filter("path", "cd", priorityRoot)
         .single();
 
       if (result.error || !result.data) {
         throw new Error(
-          `Parent priority with key "${priority.parent.key}" not found`
+          `Parent priority with key "${priority.parent.key}" not found in priority tree`
         );
       }
 
-      parentId = result.data.priority_id;
+      parentId = result.data.id;
     } else {
       parentId = priority.parent.id;
     }
@@ -55,9 +56,7 @@ export async function createPriority(
     .single();
 
   if (parentResult.error) {
-    throw new Error(
-      `Parent priority not found: ${parentResult.error.message}`
-    );
+    throw new Error(`Parent priority not found: ${parentResult.error.message}`);
   }
 
   // Generate child path using database function
@@ -83,6 +82,11 @@ export async function createPriority(
     dbPriority.id = priority.id;
   }
 
+  // If a key was provided, set it on the priority
+  if ("key" in priority && priority.key) {
+    dbPriority.key = priority.key;
+  }
+
   const result = await plot.supabase
     .from("priority")
     .insert(dbPriority)
@@ -91,23 +95,6 @@ export async function createPriority(
 
   if (result.error) {
     throw new Error(`Priority creation failed: ${result.error.message}`);
-  }
-
-  // If a key was provided, create the priority_user entry
-  if ("key" in priority && priority.key) {
-    const priorityUserResult = await plot.supabase
-      .from("priority_user")
-      .insert({
-        user_id: plot.userId,
-        priority_id: result.data.id,
-        key: priority.key,
-      });
-
-    if (priorityUserResult.error) {
-      throw new Error(
-        `Failed to create priority_user key: ${priorityUserResult.error.message}`
-      );
-    }
   }
 
   return fromDbPriority(result.data);
@@ -123,24 +110,25 @@ export async function getPriority(
   let dbPriority;
 
   if ("key" in priority) {
-    // Look up priority by key in priority_user table
+    // Look up priority by key in priority table, scoped to twist's priority root
+    const priorityRoot = await plot.getPriorityRoot();
     const result = await plot.supabase
-      .from("priority_user")
-      .select("priority:priority_id(id, title, archived_at)")
-      .eq("user_id", plot.userId)
+      .from("priority")
+      .select("id, title, archived_at, key")
       .eq("key", priority.key)
+      .filter("path", "cd", priorityRoot)
       .single();
 
-    if (result.error || !result.data?.priority) {
+    if (result.error || !result.data) {
       return null;
     }
 
-    dbPriority = result.data.priority;
+    dbPriority = result.data;
   } else {
     // Look up priority by ID
     const result = await plot.supabase
       .from("priority")
-      .select("id, title, archived_at")
+      .select("id, title, archived_at, key")
       .eq("id", priority.id)
       .single();
 
@@ -172,18 +160,19 @@ export async function updatePriority(
   let priorityId: string;
 
   if ("key" in update) {
+    const priorityRoot = await plot.getPriorityRoot();
     const result = await plot.supabase
-      .from("priority_user")
-      .select("priority_id")
-      .eq("user_id", plot.userId)
+      .from("priority")
+      .select("id")
       .eq("key", update.key)
+      .filter("path", "cd", priorityRoot)
       .single();
 
     if (result.error || !result.data) {
-      throw new Error(`Priority with key "${update.key}" not found`);
+      throw new Error(`Priority with key "${update.key}" not found in priority tree`);
     }
 
-    priorityId = result.data.priority_id;
+    priorityId = result.data.id;
   } else {
     priorityId = update.id;
   }

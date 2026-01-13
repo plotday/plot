@@ -6,6 +6,7 @@ import {
   type ActorId,
   ActorType,
   type Note,
+  type Uuid,
 } from "@plotday/twister/plot";
 
 import { type ActivityItem, type NoteItem } from "../../../types";
@@ -155,8 +156,10 @@ export function buildActivityFromDbRecord(
           : ActorType.Contact,
     },
     priority: {
-      id: activityRecord.priority_id,
+      id: activityRecord.priority_id as Uuid,
       title: activityRecord.priority_title,
+      archived: false,
+      key: null,
     },
     start: parseRangeStart(activityRecord.on, activityRecord.at),
     end: parseRangeEnd(activityRecord.on, activityRecord.at),
@@ -200,12 +203,14 @@ export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
     // @ts-ignore - noteRecord.id is a string from DB, but Uuid is a branded type
     id: noteRecord.id as any,
     created: new Date(noteRecord.created_at),
-    // @ts-ignore - Only activity.id and priority.id are used by intent handlers, full Activity data is not available in NoteItem
+    // @ts-ignore - Partial Activity data from NoteItem payload
     activity: {
       id: noteRecord.activity_id,
       priority: {
         id: noteRecord.priority_id,
       },
+      // Include meta if available in payload (for note.created callbacks)
+      ...(noteRecord.activity_meta && { meta: noteRecord.activity_meta }),
     } as unknown as Activity,
     author: {
       id: (noteRecord.author_id ?? noteRecord.created_by) as ActorId,

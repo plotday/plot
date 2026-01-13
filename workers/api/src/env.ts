@@ -19,7 +19,7 @@ import {
 export type TwistEnvironment = "personal" | "private" | "review" | "public";
 
 export type UpdateMessage = {
-  type: "activity" | "priority" | "session" | "note" | "priority_twist" | "activity_read";
+  type: "activity" | "priority" | "session" | "note" | "priority_twist" | "activity_read" | "priority_contact";
   event?: "created" | "updated" | "deleted";
   item: UpdateItem;
   previous?: UpdateItem;

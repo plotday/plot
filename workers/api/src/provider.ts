@@ -82,7 +82,7 @@ async function fetchGitHubEmail(accessToken: string): Promise<string | null> {
       return null;
     }
 
-    const data = await response.json();
+    const data = await response.json() as { email?: string };
     return data.email || null;
   } catch (error) {
     console.error("Error fetching GitHub email:", error);

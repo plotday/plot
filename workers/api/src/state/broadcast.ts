@@ -142,7 +142,7 @@ export class Broadcast extends DurableObject<Bindings> {
       this.connections.delete(clientId);
     });
 
-    server.addEventListener("message", (event) => {
+    server.addEventListener("message", (_event) => {
       // Handle incoming messages if needed
       logger.info("Received message from client", { client_id: clientId });
     });

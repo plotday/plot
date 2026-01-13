@@ -185,8 +185,15 @@ CREATE TRIGGER set_activity_author_and_created_by
     FOR EACH ROW
     EXECUTE FUNCTION update_author_and_created_by ();
 
-CREATE TRIGGER activity_change_api_call
-    AFTER INSERT OR UPDATE ON public.activity
-    FOR EACH ROW
+CREATE TRIGGER activity_insert_api_call
+    AFTER INSERT ON public.activity
+    REFERENCING NEW TABLE AS new_rows
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION public.notify_internal_api_for_activity ();
+
+CREATE TRIGGER activity_update_api_call
+    AFTER UPDATE ON public.activity
+    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
+    FOR EACH STATEMENT
     EXECUTE FUNCTION public.notify_internal_api_for_activity ();
 

@@ -1,6 +1,18 @@
 /**
  * Utilities for validating values before serialization or storage
+ *
+ * Uses SuperJSON for serialization, which supports:
+ * - Primitives: string, number, boolean, null, undefined
+ * - Complex types: Date, RegExp, Map, Set, Error, URL, BigInt
+ * - Collections: Arrays and objects (recursively)
+ *
+ * NOT supported (will throw validation errors):
+ * - Functions
+ * - Symbols
+ * - Circular references
  */
+
+import superjson from "superjson";
 
 export type NonSerializableInfo = {
   path: string;
@@ -9,11 +21,11 @@ export type NonSerializableInfo = {
 };
 
 /**
- * Checks if a value can be safely JSON-serialized
+ * Checks if a value can be safely SuperJSON-serialized
  */
 export function isSerializable(value: any): boolean {
   try {
-    JSON.stringify(value);
+    superjson.stringify(value);
     return true;
   } catch {
     return false;
@@ -46,28 +58,13 @@ export function findNonSerializable(
     };
   }
 
-  // Check for undefined (not serializable in JSON)
-  if (value === undefined) {
-    return {
-      path,
-      type: "undefined",
-    };
-  }
-
-  // Check for BigInt (not serializable in JSON)
-  if (typeof value === "bigint") {
-    return {
-      path,
-      type: "bigint",
-      value: value.toString(),
-    };
-  }
+  // Note: undefined and BigInt are now supported by SuperJSON
 
   // Check for special objects that might have RPC properties
   if (value !== null && typeof value === "object") {
     // Check for circular references by attempting to stringify
     try {
-      JSON.stringify(value);
+      superjson.stringify(value);
     } catch (error) {
       if (error instanceof Error && error.message.includes("circular")) {
         return {
@@ -130,13 +127,7 @@ export function createSerializationError(
     message += `   await this.run(token, args);`;
   } else if (info.type === "symbol") {
     message += `Found symbol at path "${info.path}": ${info.value}\n`;
-    message += `Symbols cannot be serialized to JSON. Consider using a string instead.`;
-  } else if (info.type === "undefined") {
-    message += `Found undefined value at path "${info.path}".\n`;
-    message += `Use null instead of undefined for values that need to be stored.`;
-  } else if (info.type === "bigint") {
-    message += `Found BigInt at path "${info.path}": ${info.value}\n`;
-    message += `BigInt values cannot be serialized to JSON. Consider converting to a string.`;
+    message += `Symbols cannot be serialized. Consider using a string instead.`;
   } else if (info.type === "circular reference") {
     message += `Found circular reference at path "${info.path}".\n`;
     message += `Objects with circular references cannot be serialized.`;
@@ -158,66 +149,4 @@ export function validateSerializable(operation: string, value: any): void {
   if (nonSerializable) {
     throw createSerializationError(operation, nonSerializable);
   }
-}
-
-/**
- * Removes trailing undefined values from an array.
- * Preserves undefined values in the middle of the array.
- *
- * This is useful for callback arguments where trailing optional parameters
- * can be omitted. In JavaScript, f(1, 2, undefined) is equivalent to f(1, 2)
- * for optional parameters.
- *
- * Examples:
- *   [1, 2, undefined, undefined] -> [1, 2]
- *   [1, undefined, 3] -> [1, undefined, 3]
- *   [undefined, undefined] -> []
- *   [] -> []
- */
-export function stripTrailingUndefined(args: any[]): any[] {
-  let lastDefinedIndex = -1;
-
-  for (let i = args.length - 1; i >= 0; i--) {
-    if (args[i] !== undefined) {
-      lastDefinedIndex = i;
-      break;
-    }
-  }
-
-  return args.slice(0, lastDefinedIndex + 1);
-}
-
-/**
- * Recursively removes object keys with undefined values.
- * Arrays are preserved as-is (undefined in arrays will throw validation errors).
- *
- * This allows object properties to be optionally undefined without failing validation,
- * while maintaining strict validation for arrays where undefined is ambiguous.
- *
- * Examples:
- *   { a: 1, b: undefined } -> { a: 1 }
- *   { a: { b: undefined, c: 2 } } -> { a: { c: 2 } }
- *   [1, undefined, 3] -> [1, undefined, 3] (unchanged, will fail validation)
- *   { arr: [{ a: undefined }] } -> { arr: [{}] } (nested objects cleaned)
- */
-export function removeUndefinedFromObject<T>(value: T): T {
-  // Primitives, null, and undefined pass through
-  if (value === null || value === undefined || typeof value !== "object") {
-    return value;
-  }
-
-  // Arrays: recursively process elements but don't remove undefined
-  if (Array.isArray(value)) {
-    return value.map((item) => removeUndefinedFromObject(item)) as T;
-  }
-
-  // Objects: remove keys with undefined values and recursively process
-  const result: any = {};
-  for (const key of Object.keys(value)) {
-    const val = (value as any)[key];
-    if (val !== undefined) {
-      result[key] = removeUndefinedFromObject(val);
-    }
-  }
-  return result as T;
 }

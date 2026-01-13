@@ -9,12 +9,18 @@ CREATE TABLE "public"."priority" (
     "color" integer,
     "path" ltree NOT NULL UNIQUE,
     "updated_by" integer NOT NULL DEFAULT 0,
-    "sync_depth" integer
+    "sync_depth" integer,
+    "key" text
 );
 
 -- Index for priority path ltree queries (supports <@ operator)
 -- Used heavily in user_activity view filtering
 CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
+
+-- Ensure keys are unique within each priority root tree
+CREATE UNIQUE INDEX idx_priority_key_per_root ON "public"."priority" ((subltree ("path", 0, 1)), "key")
+WHERE
+    "key" IS NOT NULL;
 
 ALTER TABLE "public"."priority" ENABLE ROW LEVEL SECURITY;
 
@@ -40,14 +46,19 @@ CREATE TABLE "public"."priority_user" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "archived_at" timestamp with time zone,
-    "key" text,
+    "personal" boolean NOT NULL DEFAULT FALSE,
     CONSTRAINT priority_user_unique UNIQUE (user_id, priority_id)
 );
 
--- Ensure each user can only have one priority with a given key
-CREATE UNIQUE INDEX idx_priority_user_key ON "public"."priority_user" ("user_id", "key")
+-- Ensure each user has max one personal priority
+CREATE UNIQUE INDEX idx_priority_user_personal_user ON "public"."priority_user" ("user_id", "personal")
 WHERE
-    "key" IS NOT NULL;
+    "personal" = TRUE;
+
+-- Ensure each personal priority has max one user entry
+CREATE UNIQUE INDEX idx_priority_user_personal_priority ON "public"."priority_user" ("priority_id", "personal")
+WHERE
+    "personal" = TRUE;
 
 -- Index for user-based priority lookups in user_priority_base view
 CREATE INDEX idx_priority_user_user_id ON "public"."priority_user" ("user_id")
@@ -76,10 +87,10 @@ CREATE OR REPLACE FUNCTION insert_priority_user ()
     RETURNS TRIGGER
     AS $$
 BEGIN
-    -- Only create entry for new, top-level priorities.
+    -- Only create entry for new, top-level priorities, and mark them as personal
     IF nlevel (NEW.path) = 1 THEN
-        INSERT INTO public.priority_user (user_id, priority_id)
-            VALUES (NEW.created_by, NEW.id);
+        INSERT INTO public.priority_user (user_id, priority_id, personal)
+            VALUES (NEW.created_by, NEW.id, TRUE);
     END IF;
     RETURN NEW;
 END;
@@ -118,8 +129,15 @@ CREATE TRIGGER set_priority_settings_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER handle_priority_changes
-    AFTER INSERT OR UPDATE ON public.priority
-    FOR EACH ROW
+CREATE TRIGGER priority_insert_api_call
+    AFTER INSERT ON public.priority
+    REFERENCING NEW TABLE AS new_rows
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION notify_internal_api_for_priority ();
+
+CREATE TRIGGER priority_update_api_call
+    AFTER UPDATE ON public.priority
+    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
+    FOR EACH STATEMENT
     EXECUTE FUNCTION notify_internal_api_for_priority ();
 

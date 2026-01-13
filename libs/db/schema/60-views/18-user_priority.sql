@@ -12,7 +12,7 @@ SELECT
     GREATEST (pu.archived_at, p.archived_at) AS archived_at,
     p.created_by,
     p.updated_by,
-    pu.key = 'root'
+    pu.personal = TRUE
     AND p.id = root.id AS root,
     p.title,
     CASE WHEN inherited_settings.path IS NOT NULL THEN
@@ -30,7 +30,7 @@ FROM
     priority_user pu
     JOIN priority root ON pu.priority_id = root.id
     JOIN priority_user pu_root ON pu.user_id = pu_root.user_id
-        AND pu_root.key = 'root'
+        AND pu_root.personal = TRUE
     JOIN priority user_root ON pu_root.priority_id = user_root.id
     JOIN priority p ON root.path @> p.path
     LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id

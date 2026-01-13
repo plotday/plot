@@ -1,11 +1,10 @@
 import type { Store as IStore } from "@plotday/twister/tools/store";
+import type { Serializable } from "@plotday/twister";
+import superjson from "superjson";
 
 import { type Storage } from "../../state/storage";
 import { Tool } from "./tool";
-import {
-  removeUndefinedFromObject,
-  validateSerializable,
-} from "./validation";
+import { validateSerializable } from "./validation";
 
 export class Store extends Tool implements IStore {
   private storage: DurableObjectStub<Storage>;
@@ -24,25 +23,29 @@ export class Store extends Tool implements IStore {
     this.storage = options.storage.get(storageId);
   }
 
-  async get<T>(key: string) {
+  async get<T extends Serializable>(key: string): Promise<T | null> {
     const value = await this.storage.get(key);
+    if (value === null) return null;
+
     try {
-      if (value === null) return null;
-      return JSON.parse(value) as T;
+      // Try SuperJSON first (new format)
+      return superjson.parse<T>(value);
     } catch {
-      // If JSON parsing fails, return the raw string as T
-      return value as T;
+      try {
+        // Fallback to JSON.parse for backward compatibility with legacy data
+        return JSON.parse(value) as T;
+      } catch {
+        // Last resort: return raw string
+        return value as T;
+      }
     }
   }
 
-  async set<T>(key: string, value: T) {
-    // Remove undefined values from object keys (arrays with undefined will still throw)
-    const cleanedValue = removeUndefinedFromObject(value);
-
+  async set<T extends Serializable>(key: string, value: T): Promise<void> {
     // Validate that the value doesn't contain functions or other non-serializable types
-    validateSerializable(`store value for key "${key}"`, cleanedValue);
+    validateSerializable(`store value for key "${key}"`, value);
 
-    const serializedValue = JSON.stringify(cleanedValue);
+    const serializedValue = superjson.stringify(value);
     return await this.storage.set(key, serializedValue);
   }
 

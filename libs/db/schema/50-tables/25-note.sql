@@ -73,9 +73,16 @@ CREATE TRIGGER set_note_author_and_created_by
     FOR EACH ROW
     EXECUTE FUNCTION update_author_and_created_by ();
 
-CREATE TRIGGER note_change_api_call
-    AFTER INSERT OR UPDATE ON public.note
-    FOR EACH ROW
+CREATE TRIGGER note_insert_api_call
+    AFTER INSERT ON public.note
+    REFERENCING NEW TABLE AS new_rows
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION public.notify_internal_api_for_note ();
+
+CREATE TRIGGER note_update_api_call
+    AFTER UPDATE ON public.note
+    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
+    FOR EACH STATEMENT
     EXECUTE FUNCTION public.notify_internal_api_for_note ();
 
 -- Function to update activity's last_note_created_at and activity_read when notes change

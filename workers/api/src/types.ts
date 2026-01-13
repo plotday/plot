@@ -58,6 +58,10 @@ export const NoteItemSchema = z.object({
   author_type: z.enum(["user", "contact", "priority_twist"]),
   activity_title: z.string().nullable(),
   tags: z.record(z.string(), z.any()).nullable(),
+  // Parent activity metadata (only present in current item, not previous)
+  activity_created_by: z.string().optional(),
+  activity_meta: z.record(z.string(), z.any()).nullable().optional(),
+  activity_mentions: z.array(z.string()).nullable().optional(),
 });
 
 // Priority item schema
@@ -72,6 +76,7 @@ export const PriorityItemSchema = z.object({
   path: z.string(),
   updated_by: z.number(),
   sync_depth: z.number().nullable(),
+  key: z.string().nullable(),
 });
 
 // Session item schema

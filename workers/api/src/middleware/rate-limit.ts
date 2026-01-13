@@ -38,7 +38,9 @@ const getAuthKey = (c: any): string => {
   }
 
   // Fallback to IP address
-  return c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown";
+  return (
+    c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown"
+  );
 };
 
 /**
@@ -49,10 +51,13 @@ const createRateLimitHandler = (
   limit: number,
   period: number
 ): MiddlewareHandler<{ Bindings: Bindings }> => {
-  return (c) => {
+  return async (c) => {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
-    const ip = c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown";
+    const ip =
+      c.req.header("CF-Connecting-IP") ||
+      c.req.header("x-real-ip") ||
+      "unknown";
 
     logger.warn(`${limiterType} rate limit exceeded`, { ip, ...context });
     c.var.postHog?.captureException(
@@ -81,13 +86,20 @@ const createRateLimitHandler = (
  */
 const getErrorMessage = (type: string): string => {
   switch (type) {
-    case "general": return "Too many requests. Please try again later.";
-    case "auth": return "Too many authentication attempts. Please try again later.";
-    case "token_creation": return "Too many token creation requests. Please try again later.";
-    case "webhook": return "Too many webhook requests. Please slow down.";
-    case "sync": return "Too many database sync requests. System is under high load.";
-    case "deployment": return "Too many deployment requests. Please try again later.";
-    default: return "Rate limit exceeded.";
+    case "general":
+      return "Too many requests. Please try again later.";
+    case "auth":
+      return "Too many authentication attempts. Please try again later.";
+    case "token_creation":
+      return "Too many token creation requests. Please try again later.";
+    case "webhook":
+      return "Too many webhook requests. Please slow down.";
+    case "sync":
+      return "Too many database sync requests. System is under high load.";
+    case "deployment":
+      return "Too many deployment requests. Please try again later.";
+    default:
+      return "Rate limit exceeded.";
   }
 };
 
@@ -100,7 +112,10 @@ const getErrorMessage = (type: string): string => {
 export const generalRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
   cloudflareRateLimiter<{ Bindings: Bindings }>({
     rateLimitBinding: (c) => c.env.GENERAL_RATE_LIMITER,
-    keyGenerator: (c) => c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown",
+    keyGenerator: (c) =>
+      c.req.header("CF-Connecting-IP") ||
+      c.req.header("x-real-ip") ||
+      "unknown",
     handler: createRateLimitHandler("general", 100, 60),
   });
 
@@ -113,7 +128,10 @@ export const generalRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
 export const authRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
   cloudflareRateLimiter<{ Bindings: Bindings }>({
     rateLimitBinding: (c) => c.env.AUTH_RATE_LIMITER,
-    keyGenerator: (c) => c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown",
+    keyGenerator: (c) =>
+      c.req.header("CF-Connecting-IP") ||
+      c.req.header("x-real-ip") ||
+      "unknown",
     handler: createRateLimitHandler("auth", 20, 60),
   });
 
@@ -126,12 +144,13 @@ export const authRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
  *
  * Applied after SDK auth middleware, so uses user ID for rate limiting
  */
-export const tokenCreationRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
-  cloudflareRateLimiter<{ Bindings: Bindings }>({
-    rateLimitBinding: (c) => c.env.TOKEN_RATE_LIMITER,
-    keyGenerator: getAuthKey,
-    handler: createRateLimitHandler("token_creation", 2, 60),
-  });
+export const tokenCreationRateLimiter: MiddlewareHandler<{
+  Bindings: Bindings;
+}> = cloudflareRateLimiter<{ Bindings: Bindings }>({
+  rateLimitBinding: (c) => c.env.TOKEN_RATE_LIMITER,
+  keyGenerator: getAuthKey,
+  handler: createRateLimitHandler("token_creation", 2, 60),
+});
 
 /**
  * Moderate rate limiter for webhook endpoints
@@ -152,7 +171,11 @@ export const webhookRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
       }
 
       // Fallback to IP for webhooks without identifiers (e.g., Slack)
-      return c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown";
+      return (
+        c.req.header("CF-Connecting-IP") ||
+        c.req.header("x-real-ip") ||
+        "unknown"
+      );
     },
     handler: createRateLimitHandler("webhook", 300, 60),
   });
@@ -187,7 +210,8 @@ export const deploymentRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
       // Get user or publisher ID (authenticated endpoint)
       const userId = c.var.user?.id;
       const publisherId = c.var.publisher?.id;
-      const authId = userId || (publisherId ? `publisher:${publisherId}` : null);
+      const authId =
+        userId || (publisherId ? `publisher:${publisherId}` : null);
 
       // Get package ID from URL parameter
       const packageId = c.req.param("id");
@@ -203,7 +227,11 @@ export const deploymentRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
       }
 
       // Final fallback to IP (should not happen for authenticated endpoints)
-      return c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown";
+      return (
+        c.req.header("CF-Connecting-IP") ||
+        c.req.header("x-real-ip") ||
+        "unknown"
+      );
     },
     handler: createRateLimitHandler("deployment", 2, 60),
   });

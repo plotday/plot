@@ -111,6 +111,7 @@ export function createTool(
           priorityTwistId,
         }),
         env,
+        supabase,
         priorityTwistId,
         twistId,
         environment,

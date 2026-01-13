@@ -4,7 +4,6 @@ import { type Database, safeQuery } from "@plotday/db";
 import {
   type Activity,
   type ActivityLink,
-  type ActivityMeta,
   ActivityType,
   type ActivityUpdate,
   type ActorId,
@@ -654,7 +653,7 @@ export async function createActivity(
         latestNoteResult.data?.created_at ?? dbResult.created_at;
 
       // Create activity_read entries for all users with the latest timestamp
-      const activityReadEntries = usersResult.data.map((pu) => ({
+      const activityReadEntries = usersResult.data.map((pu: { user_id: string }) => ({
         activity_id: dbResult.id,
         user_id: pu.user_id,
         read_at: latestTimestamp,
@@ -872,7 +871,7 @@ export async function createNote(
 
     if (usersResult.data && usersResult.data.length > 0) {
       // Create or update activity_read entries for all users
-      const activityReadEntries = usersResult.data.map((pu) => ({
+      const activityReadEntries = usersResult.data.map((pu: { user_id: string }) => ({
         activity_id: activityId,
         user_id: pu.user_id,
         read_at: dbResult.created_at, // Use note's created_at timestamp
@@ -986,7 +985,7 @@ export async function createNotes(
 
   // Return only successfully created notes, log failures (except empty note errors)
   return results
-    .map((result, index) => {
+    .map((result, _index) => {
       if (result.status === "fulfilled") {
         return result.value;
       } else {
@@ -1031,42 +1030,26 @@ export async function updateActivity(
     throw new Error("Activity update must provide either id or source");
   }
 
-  // Check worker-level cache for activity data first
-  const { getActivityCache } = await import("./index");
-  const cacheKey = `${activityId}:${plot.priorityTwistId}`;
-  const cached = getActivityCache()?.get(cacheKey);
+  // Validate access first (will query for created_by/mentions)
+  await plot.validateActivityUpdateAccess(activityId);
 
-  if (cached) {
-    // Use cached data - no database query needed
-    await plot.validateActivityUpdateAccess(activityId, {
-      created_by: cached.created_by,
-      mentions: cached.mentions,
-    });
+  // Query for priority_id to validate access
+  const { data: existingActivity, error: fetchError } = await plot.supabase
+    .from("activity")
+    .select("priority_id")
+    .eq("id", activityId)
+    .single();
 
-    // Validate priority access
-    await plot.validatePriorityAccess(cached.priority_id);
-  } else {
-    // Cache miss - validate access first (will query for created_by/mentions)
-    await plot.validateActivityUpdateAccess(activityId);
-
-    // Query for priority_id to validate access
-    const { data: existingActivity, error: fetchError } = await plot.supabase
-      .from("activity")
-      .select("priority_id")
-      .eq("id", activityId)
-      .single();
-
-    if (fetchError || !existingActivity) {
-      throw new Error(
-        `Activity not found or access denied: ${
-          fetchError?.message ?? "Not found"
-        }`
-      );
-    }
-
-    // Validate priority access
-    await plot.validatePriorityAccess(existingActivity.priority_id);
+  if (fetchError || !existingActivity) {
+    throw new Error(
+      `Activity not found or access denied: ${
+        fetchError?.message ?? "Not found"
+      }`
+    );
   }
+
+  // Validate priority access
+  await plot.validatePriorityAccess(existingActivity.priority_id);
 
   // Build update object
   const dbUpdate: Database["public"]["Tables"]["activity"]["Update"] = {
@@ -1232,30 +1215,21 @@ export async function updateActivity(
 
   // Handle full tags object replacement (only for activities created by this twist or another instance of the same twist)
   if (activity.tags !== undefined) {
-    // Get created_by from cache or query if needed
-    const created_by =
-      cached?.created_by ??
-      (async () => {
-        const { data: activityData, error: queryError } = await plot.supabase
-          .from("activity")
-          .select("created_by")
-          .eq("id", activityId)
-          .single();
+    // Query for created_by to verify ownership
+    const { data: activityData, error: queryError } = await plot.supabase
+      .from("activity")
+      .select("created_by")
+      .eq("id", activityId)
+      .single();
 
-        if (queryError || !activityData) {
-          throw new Error(
-            `Failed to verify activity creator: ${
-              queryError?.message ?? "Not found"
-            }`
-          );
-        }
-        return activityData.created_by;
-      })();
-
-    const createdBy =
-      typeof created_by === "string" || created_by === null
-        ? created_by
-        : await created_by;
+    if (queryError || !activityData) {
+      throw new Error(
+        `Failed to verify activity creator: ${
+          queryError?.message ?? "Not found"
+        }`
+      );
+    }
+    const createdBy = activityData.created_by;
 
     // Check if activity was created by this exact instance (fast path)
     const isExactInstance = createdBy === plot.priorityTwistId;
@@ -1282,22 +1256,18 @@ export async function updateActivity(
     }
 
     // Get priority_id for processing new actors
-    const priorityId =
-      cached?.priority_id ??
-      (await (async () => {
-        const { data, error } = await plot.supabase
-          .from("activity")
-          .select("priority_id")
-          .eq("id", activityId)
-          .single();
+    const { data, error } = await plot.supabase
+      .from("activity")
+      .select("priority_id")
+      .eq("id", activityId)
+      .single();
 
-        if (error || !data) {
-          throw new Error(
-            `Failed to get activity priority: ${error?.message ?? "Not found"}`
-          );
-        }
-        return data.priority_id;
-      })());
+    if (error || !data) {
+      throw new Error(
+        `Failed to get activity priority: ${error?.message ?? "Not found"}`
+      );
+    }
+    const priorityId = data.priority_id;
 
     // Process tags - convert NewActor[] to ActorId[] for each tag
     const processedTags: Partial<Record<number, ActorId[]>> = {};
@@ -2170,7 +2140,7 @@ export async function createActivities(
       if (usersResult.data && usersResult.data.length > 0) {
         // Create activity_read entries for all users and all activities in this priority
         const activityReadEntries = priorityActivities.flatMap((activity) =>
-          usersResult.data!.map((pu) => ({
+          usersResult.data!.map((pu: { user_id: string }) => ({
             activity_id: activity.id,
             user_id: pu.user_id,
             read_at: activity.created_at, // Use activity's created_at timestamp
@@ -2413,8 +2383,10 @@ async function createActivityException(
     private: false,
     archived: result.data.archived_at !== null,
     priority: {
-      id: recurrenceActivity.priority_id,
+      id: recurrenceActivity.priority_id as Uuid,
       title: (recurrenceActivity.priority as any)?.title ?? "Untitled",
+      archived: false,
+      key: null,
     },
     recurrenceRule: null,
     recurrenceExdates: null,

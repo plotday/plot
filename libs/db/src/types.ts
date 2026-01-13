@@ -745,6 +745,7 @@ export type Database = {
           created_at: string
           created_by: string
           id: string
+          key: string | null
           path: unknown
           sync_depth: number | null
           title: string
@@ -757,6 +758,7 @@ export type Database = {
           created_at?: string
           created_by: string
           id?: string
+          key?: string | null
           path: unknown
           sync_depth?: number | null
           title: string
@@ -769,6 +771,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           id?: string
+          key?: string | null
           path?: unknown
           sync_depth?: number | null
           title?: string
@@ -1035,7 +1038,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           created_at: string
-          key: string | null
+          personal: boolean
           priority_id: string
           updated_at: string
           user_id: string
@@ -1043,7 +1046,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           created_at?: string
-          key?: string | null
+          personal?: boolean
           priority_id: string
           updated_at?: string
           user_id: string
@@ -1051,7 +1054,7 @@ export type Database = {
         Update: {
           archived_at?: string | null
           created_at?: string
-          key?: string | null
+          personal?: boolean
           priority_id?: string
           updated_at?: string
           user_id?: string
@@ -2668,48 +2671,21 @@ export type Database = {
       buckets_analytics: {
         Row: {
           created_at: string
-          deleted_at: string | null
           format: string
           id: string
-          name: string
           type: Database["storage"]["Enums"]["buckettype"]
           updated_at: string
         }
         Insert: {
           created_at?: string
-          deleted_at?: string | null
           format?: string
-          id?: string
-          name: string
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          deleted_at?: string | null
-          format?: string
-          id?: string
-          name?: string
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      buckets_vectors: {
-        Row: {
-          created_at: string
-          id: string
-          type: Database["storage"]["Enums"]["buckettype"]
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
           id: string
           type?: Database["storage"]["Enums"]["buckettype"]
           updated_at?: string
         }
         Update: {
           created_at?: string
+          format?: string
           id?: string
           type?: Database["storage"]["Enums"]["buckettype"]
           updated_at?: string
@@ -2718,36 +2694,30 @@ export type Database = {
       }
       iceberg_namespaces: {
         Row: {
-          bucket_name: string
-          catalog_id: string
+          bucket_id: string
           created_at: string
           id: string
-          metadata: Json
           name: string
           updated_at: string
         }
         Insert: {
-          bucket_name: string
-          catalog_id: string
+          bucket_id: string
           created_at?: string
           id?: string
-          metadata?: Json
           name: string
           updated_at?: string
         }
         Update: {
-          bucket_name?: string
-          catalog_id?: string
+          bucket_id?: string
           created_at?: string
           id?: string
-          metadata?: Json
           name?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "iceberg_namespaces_catalog_id_fkey"
-            columns: ["catalog_id"]
+            foreignKeyName: "iceberg_namespaces_bucket_id_fkey"
+            columns: ["bucket_id"]
             isOneToOne: false
             referencedRelation: "buckets_analytics"
             referencedColumns: ["id"]
@@ -2756,48 +2726,36 @@ export type Database = {
       }
       iceberg_tables: {
         Row: {
-          bucket_name: string
-          catalog_id: string
+          bucket_id: string
           created_at: string
           id: string
           location: string
           name: string
           namespace_id: string
-          remote_table_id: string | null
-          shard_id: string | null
-          shard_key: string | null
           updated_at: string
         }
         Insert: {
-          bucket_name: string
-          catalog_id: string
+          bucket_id: string
           created_at?: string
           id?: string
           location: string
           name: string
           namespace_id: string
-          remote_table_id?: string | null
-          shard_id?: string | null
-          shard_key?: string | null
           updated_at?: string
         }
         Update: {
-          bucket_name?: string
-          catalog_id?: string
+          bucket_id?: string
           created_at?: string
           id?: string
           location?: string
           name?: string
           namespace_id?: string
-          remote_table_id?: string | null
-          shard_id?: string | null
-          shard_key?: string | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "iceberg_tables_catalog_id_fkey"
-            columns: ["catalog_id"]
+            foreignKeyName: "iceberg_tables_bucket_id_fkey"
+            columns: ["bucket_id"]
             isOneToOne: false
             referencedRelation: "buckets_analytics"
             referencedColumns: ["id"]
@@ -3018,50 +2976,6 @@ export type Database = {
           },
         ]
       }
-      vector_indexes: {
-        Row: {
-          bucket_id: string
-          created_at: string
-          data_type: string
-          dimension: number
-          distance_metric: string
-          id: string
-          metadata_configuration: Json | null
-          name: string
-          updated_at: string
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string
-          data_type: string
-          dimension: number
-          distance_metric: string
-          id?: string
-          metadata_configuration?: Json | null
-          name: string
-          updated_at?: string
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string
-          data_type?: string
-          dimension?: number
-          distance_metric?: string
-          id?: string
-          metadata_configuration?: Json | null
-          name?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "vector_indexes_bucket_id_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets_vectors"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
       [_ in never]: never
@@ -3215,7 +3129,7 @@ export type Database = {
       }
     }
     Enums: {
-      buckettype: "STANDARD" | "ANALYTICS" | "VECTOR"
+      buckettype: "STANDARD" | "ANALYTICS"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3364,7 +3278,7 @@ export const Constants = {
   },
   storage: {
     Enums: {
-      buckettype: ["STANDARD", "ANALYTICS", "VECTOR"],
+      buckettype: ["STANDARD", "ANALYTICS"],
     },
   },
 } as const

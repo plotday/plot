@@ -1,6 +1,5 @@
 import GoogleContactsTool from "@plotday/tool-google-contacts";
 import type {
-  Contact,
   ContactAuth,
   GoogleContacts,
 } from "@plotday/tool-google-contacts";
@@ -8,6 +7,7 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
+  type NewContact,
   type Priority,
   type ToolBuilder,
   Twist,
@@ -90,7 +90,7 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
     });
   }
 
-  async getContacts(provider: ContactProvider): Promise<Contact[]> {
+  async getContacts(provider: ContactProvider): Promise<NewContact[]> {
     const authToken = await this.getAuthToken(provider);
     if (!authToken) {
       throw new Error(`${provider} Contacts not authenticated`);
@@ -121,7 +121,7 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
   }
 
   async getAllContacts(): Promise<
-    { provider: ContactProvider; contacts: Contact[] }[]
+    { provider: ContactProvider; contacts: NewContact[] }[]
   > {
     const results = [];
     const auths = await this.getStoredAuths();
@@ -138,7 +138,7 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
     return results;
   }
 
-  async handleContacts(contacts: Contact[], context?: any): Promise<void> {
+  async handleContacts(contacts: NewContact[], context?: any): Promise<void> {
     console.log("Received contacts:", {
       count: contacts.length,
       provider: context?.provider,

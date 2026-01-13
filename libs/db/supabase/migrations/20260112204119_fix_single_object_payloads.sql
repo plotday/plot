@@ -1,113 +1,51 @@
--- Wrapper function to notify API when activity tags change
-CREATE OR REPLACE FUNCTION public.notify_for_activity_tag_change ()
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.broadcast_priority_contact_sync ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
     AS $function$
 DECLARE
-    activity_record record;
-    result record;
+    users_for_priority jsonb;
+    api_url text;
+    hmac_secret text;
+    signature text;
+    payload jsonb;
+    payloads jsonb;
+    priority_record record;
 BEGIN
-    -- Get the activity_id from either NEW or OLD depending on operation
-    -- For INSERT and UPDATE, use NEW.activity_id
-    -- For DELETE, use OLD.activity_id
-    IF TG_OP = 'DELETE' THEN
-        -- Fetch the parent activity record
-        SELECT
-            * INTO activity_record
+    -- For each affected priority, get users and broadcast
+    FOR priority_record IN ( SELECT DISTINCT
+            pc.priority_id
         FROM
-            activity
-        WHERE
-            id = OLD.activity_id;
-    ELSE
-        -- Fetch the parent activity record
-        SELECT
-            * INTO activity_record
-        FROM
-            activity
-        WHERE
-            id = NEW.activity_id;
-    END IF;
-    -- Exit early if parent activity not found
-    IF activity_record IS NULL THEN
-        RETURN COALESCE(NEW, OLD);
-    END IF;
-    -- Create a synthetic trigger context for the parent activity
-    -- We treat tag changes as updates to the activity
-    -- Set both NEW and OLD to the same activity record since the activity itself didn't change
-    -- The notification function will detect tag changes by querying activity_tags view
-    BEGIN
-        -- Temporarily set TG_OP to UPDATE and call the notification function
-        -- We use a dynamic SQL approach to simulate the trigger
-        PERFORM
-            public.notify_internal_api_for_activity_from_record (activity_record, activity_record);
-    EXCEPTION
-        WHEN undefined_function THEN
-            -- If the helper function doesn't exist, we'll inline the logic
-            -- This is a fallback but we should create the helper function instead
-            RAISE NOTICE 'Helper function notify_internal_api_for_activity_from_record not found';
-    END;
-    RETURN COALESCE(NEW, OLD);
+            new_priority_contacts pc)
+        LOOP
+            -- Get users who have access to this priority
+            SELECT
+                jsonb_agg(jsonb_build_object('user_id', user_id)) INTO users_for_priority
+FROM
+    public.get_users_with_priority_access (priority_record.priority_id);
+            -- Skip if no users found
+            IF users_for_priority IS NULL OR jsonb_array_length(users_for_priority) = 0 THEN
+                CONTINUE;
+            END IF;
+            -- Build payload for actor sync broadcast
+            -- We don't need to include the full item data, just signal to sync the actor view
+            payload := jsonb_build_object('type', 'priority_contact', 'event', 'created', 'item', jsonb_build_object('priority_id', priority_record.priority_id), 'twists', '[]'::jsonb, 'users', users_for_priority, 'timestamp', extract(epoch FROM now()), 'table', 'actor');
+            -- Wrap payload in array to match API expectation
+            payloads := jsonb_build_array(payload);
+            -- Get API configuration
+            api_url := public.get_api_root () || '/update';
+            hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
+            signature := encode(extensions.hmac(convert_to(payloads::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
+            -- Send HTTP request to API
+            PERFORM
+                net.http_post (url := api_url, body := payloads, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net', 'X-Plot-Signature', 'sha256=' || signature));
+        END LOOP;
+    RETURN NULL;
 END;
-
 $function$;
 
--- Wrapper function to notify API when note tags change
-CREATE OR REPLACE FUNCTION public.notify_for_note_tag_change ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    AS $function$
-DECLARE
-    note_record record;
-    result record;
-BEGIN
-    -- Get the note_id from either NEW or OLD depending on operation
-    -- For INSERT and UPDATE, use NEW.note_id
-    -- For DELETE, use OLD.note_id
-    IF TG_OP = 'DELETE' THEN
-        -- Fetch the parent note record
-        SELECT
-            * INTO note_record
-        FROM
-            note
-        WHERE
-            id = OLD.note_id;
-    ELSE
-        -- Fetch the parent note record
-        SELECT
-            * INTO note_record
-        FROM
-            note
-        WHERE
-            id = NEW.note_id;
-    END IF;
-    -- Exit early if parent note not found
-    IF note_record IS NULL THEN
-        RETURN COALESCE(NEW, OLD);
-    END IF;
-    -- Create a synthetic trigger context for the parent note
-    -- We treat tag changes as updates to the note
-    -- Set both NEW and OLD to the same note record since the note itself didn't change
-    -- The notification function will detect tag changes by querying note_tags view
-    BEGIN
-        -- Temporarily set TG_OP to UPDATE and call the notification function
-        -- We use a dynamic SQL approach to simulate the trigger
-        PERFORM
-            public.notify_internal_api_for_note_from_record (note_record, note_record);
-    EXCEPTION
-        WHEN undefined_function THEN
-            -- If the helper function doesn't exist, we'll inline the logic
-            -- This is a fallback but we should create the helper function instead
-            RAISE NOTICE 'Helper function notify_internal_api_for_note_from_record not found';
-    END;
-    RETURN COALESCE(NEW, OLD);
-END;
-
-$function$;
-
--- Helper function to call activity notification with explicit records
--- This allows us to call the notification function from tag triggers
 CREATE OR REPLACE FUNCTION public.notify_internal_api_for_activity_from_record (current_record record, previous_record record)
     RETURNS void
     LANGUAGE plpgsql
@@ -221,8 +159,6 @@ BEGIN
 END;
 $function$;
 
--- Helper function to call note notification with explicit records
--- This allows us to call the notification function from tag triggers
 CREATE OR REPLACE FUNCTION public.notify_internal_api_for_note_from_record (current_record record, previous_record record)
     RETURNS void
     LANGUAGE plpgsql
@@ -332,3 +268,23 @@ BEGIN
 END;
 $function$;
 
+ALTER VIEW "public"."user_note" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_twist" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_expanded" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_settings_inherited" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child_twist" SET ( security_invoker = TRUE);

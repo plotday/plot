@@ -1,13 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
+import superjson from "superjson";
 
 import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 
 import { type Bindings } from "../env";
 import { twistFactory } from "../twist";
-import {
-  stripTrailingUndefined,
-  validateSerializable,
-} from "../twist/tools/validation";
+import { validateSerializable } from "../twist/tools/validation";
 import { createLogger } from "../utils/logger";
 
 export type CallbackData = {
@@ -36,6 +34,21 @@ export class CallbacksState extends DurableObject<Bindings> {
       this.env.SUPABASE_URL,
       this.env.SUPABASE_SERVICE_KEY
     );
+  }
+
+  /**
+   * Parse with superjson, falling back to JSON.parse for backward compatibility
+   */
+  private parseWithFallback<T>(value: string): T {
+    try {
+      return superjson.parse<T>(value);
+    } catch {
+      try {
+        return JSON.parse(value) as T;
+      } catch {
+        throw new Error(`Failed to parse value: ${value}`);
+      }
+    }
   }
 
   async fetch(_request: Request): Promise<Response> {
@@ -105,15 +118,12 @@ export class CallbacksState extends DurableObject<Bindings> {
     key?: string;
     meta?: Record<string, any>;
   }): Promise<string> {
-    // Strip trailing undefined values from extraArgs before validation
-    // This allows natural optional parameter usage: f(1, 2, undefined) becomes f(1, 2)
-    const normalizedArgs =
-      extraArgs !== undefined ? stripTrailingUndefined(extraArgs) : undefined;
-
-    if (normalizedArgs !== undefined && normalizedArgs.length > 0) {
+    // Validate extra args if provided
+    // Note: SuperJSON handles undefined values, so no need to clean them
+    if (extraArgs !== undefined && extraArgs.length > 0) {
       validateSerializable(
         `create callback args for function "${functionName}"`,
-        normalizedArgs
+        extraArgs
       );
     }
 
@@ -162,15 +172,15 @@ export class CallbacksState extends DurableObject<Bindings> {
         `,
       token,
       priorityTwistId,
-      JSON.stringify(path),
+      superjson.stringify(path),
       version,
       functionName,
-      normalizedArgs ? JSON.stringify(normalizedArgs) : null,
+      extraArgs ? superjson.stringify(extraArgs) : null,
       callAt ? callAt.getTime() : null,
       callOnce ? 1 : 0,
       expires ? expires.getTime() : null,
       key ?? null,
-      meta ? JSON.stringify(meta) : null
+      meta ? superjson.stringify(meta) : null
     );
 
     // Update alarm if this is a scheduled callback
@@ -213,17 +223,17 @@ export class CallbacksState extends DurableObject<Bindings> {
     const callback: CallbackData = {
       token: rawCallback.token,
       priorityTwistId: rawCallback.priority_twist_id,
-      path: JSON.parse(rawCallback.path),
+      path: this.parseWithFallback(rawCallback.path),
       version: rawCallback.version,
       functionName: rawCallback.function_name,
       extraArgs: rawCallback.extra_args
-        ? JSON.parse(rawCallback.extra_args)
+        ? this.parseWithFallback(rawCallback.extra_args)
         : undefined,
       callAt: rawCallback.call_at ? new Date(rawCallback.call_at) : undefined,
       callOnce: Boolean(rawCallback.call_once),
       expires: rawCallback.expires ? new Date(rawCallback.expires) : undefined,
       key: rawCallback.key ?? undefined,
-      meta: rawCallback.meta ? JSON.parse(rawCallback.meta) : undefined,
+      meta: rawCallback.meta ? this.parseWithFallback(rawCallback.meta) : undefined,
     };
 
     // Check if callback has expired
@@ -283,7 +293,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     for (const row of results) {
       callbacks.push({
         callback: `${this.ctx.id}:${row.token}`,
-        meta: row.meta ? JSON.parse(row.meta as string) : undefined,
+        meta: row.meta ? this.parseWithFallback(row.meta as string) : undefined,
       });
     }
     return callbacks;
@@ -311,7 +321,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     this.sql.exec(
       "DELETE FROM callbacks WHERE priority_twist_id = ?" +
         (path ? " AND path = ?" : ""),
-      ...(path ? [priorityTwistId, JSON.stringify(path)] : [priorityTwistId])
+      ...(path ? [priorityTwistId, superjson.stringify(path)] : [priorityTwistId])
     );
   }
 
@@ -362,7 +372,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     for (const row of callbackResults) {
       const token = row.token as string;
       const extraArgs = row.extra_args
-        ? JSON.parse(row.extra_args as string)
+        ? this.parseWithFallback<any[]>(row.extra_args as string)
         : undefined;
       try {
         await this.callCallback(token, ...(extraArgs ?? []));

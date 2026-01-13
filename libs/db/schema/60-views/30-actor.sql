@@ -12,7 +12,7 @@ SELECT
     ELSE
         'contact'::text
     END AS type,
-    COALESCE(c.name, c.email) AS name,
+    c.name,
     c.email,
     c.avatar_url,
     c.archived_at

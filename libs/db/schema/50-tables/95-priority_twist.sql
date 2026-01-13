@@ -68,8 +68,15 @@ CREATE TRIGGER prevent_priority_twist_immutable_changes
     FOR EACH ROW
     EXECUTE FUNCTION prevent_priority_twist_immutable_changes ();
 
-CREATE TRIGGER notify_priority_twist_update
-    AFTER INSERT OR UPDATE ON "public"."priority_twist"
-    FOR EACH ROW
+CREATE TRIGGER priority_twist_insert_api_call
+    AFTER INSERT ON "public"."priority_twist"
+    REFERENCING NEW TABLE AS new_rows
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION notify_internal_api_for_priority_twist ();
+
+CREATE TRIGGER priority_twist_update_api_call
+    AFTER UPDATE ON "public"."priority_twist"
+    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
+    FOR EACH STATEMENT
     EXECUTE FUNCTION notify_internal_api_for_priority_twist ();
 

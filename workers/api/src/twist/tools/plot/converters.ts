@@ -8,6 +8,7 @@ import {
   ActorType,
   type Priority,
   type Tags,
+  type Uuid,
 } from "@plotday/twister/plot";
 
 import {
@@ -159,14 +160,16 @@ export function fromDbActivity(
     private: dbActivity.private ?? false,
     archived: dbActivity.archived_at !== null,
     priority: {
-      id: dbActivity.priority_id,
+      id: dbActivity.priority_id as Uuid,
       title: dbActivity.title ?? "Untitled",
+      archived: false,
+      key: null,
     },
     recurrenceRule: dbActivity.recurrence_rule || null,
     recurrenceExdates:
-      dbActivity.recurrence_exdates?.map((d) => new Date(d)) || null,
+      dbActivity.recurrence_exdates?.map((d: string) => new Date(d)) || null,
     recurrenceDates:
-      dbActivity.recurrence_dates?.map((d) => new Date(d)) || null,
+      dbActivity.recurrence_dates?.map((d: string) => new Date(d)) || null,
     recurrence: null,
     occurrence: null,
     meta: dbActivity.meta as ActivityMeta | null,
@@ -179,12 +182,13 @@ export function fromDbActivity(
 export function fromDbPriority(
   dbPriority: Pick<
     Database["public"]["Tables"]["priority"]["Row"],
-    "id" | "title" | "archived_at"
+    "id" | "title" | "archived_at" | "key"
   >
 ): Priority {
   return {
-    id: dbPriority.id,
+    id: dbPriority.id as Uuid,
     title: dbPriority.title,
     archived: dbPriority.archived_at !== null,
+    key: dbPriority.key,
   };
 }

@@ -48,7 +48,7 @@ export async function addContacts(
 
   // Use RPC function to support COALESCE - preserve existing name if new name is null
   const result = await plot.supabase.rpc("upsert_contacts", {
-    contacts: JSON.stringify(contactsToUpsert),
+    contacts: contactsToUpsert,
   });
 
   if (result.error) {

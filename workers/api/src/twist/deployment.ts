@@ -50,7 +50,7 @@ export async function deployTwist({
   environment,
   name,
   description,
-  userId,
+  userId: _userId,
   dryRun = false,
   onProgress,
 }: DeployTwistOptions): Promise<DeployTwistResult> {

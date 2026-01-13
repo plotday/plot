@@ -20,7 +20,7 @@ CREATE POLICY "Users can update their priorities" ON public.priority
                     SELECT 1
                     FROM priority_user
                     WHERE priority_user.priority_id = priority.id
-                        AND priority_user.key = 'root'
+                        AND priority_user.personal = TRUE
                 )))
             WITH CHECK (nlevel (priority.path) = 1
             OR can_access_priority (parent_path (priority.path)));

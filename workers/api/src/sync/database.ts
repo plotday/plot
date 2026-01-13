@@ -20,7 +20,7 @@ const ToolSchema: z.ZodType<{
   })
 );
 
-const DatabaseUpdateRequestSchema = z.object({
+const DatabaseUpdateItemSchema = z.object({
   type: z.enum([
     "activity",
     "priority",
@@ -52,6 +52,9 @@ const DatabaseUpdateRequestSchema = z.object({
   timestamp: z.number().optional(),
 });
 
+const DatabaseUpdateRequestSchema = z.array(DatabaseUpdateItemSchema);
+
+export type DatabaseUpdateItem = z.infer<typeof DatabaseUpdateItemSchema>;
 export type DatabaseUpdateRequest = z.infer<typeof DatabaseUpdateRequestSchema>;
 
 // POST /update - Database update webhook
@@ -76,26 +79,26 @@ database.post("/update", async (c) => {
             message: issue.message,
             code: issue.code,
           })),
-          item_type: rawBody?.type,
-          event: rawBody?.event,
-          has_item: !!rawBody?.item,
-          has_previous: !!rawBody?.previous,
+          is_array: Array.isArray(rawBody),
+          item_count: Array.isArray(rawBody) ? rawBody.length : 0,
         }
       );
       return handleValidationError(parseResult.error, rawBody);
     }
-    const body = parseResult.data;
+    const items = parseResult.data;
 
-    // Add message to the updates queue for processing
-    await c.env.UPDATES_QUEUE.send({
-      type: body.type,
-      event: body.event,
-      item: body.item,
-      previous: body.previous,
-      twists: body.twists,
-      users: body.users,
-      timestamp: body.timestamp,
-    });
+    // Add each message to the updates queue for processing
+    for (const item of items) {
+      await c.env.UPDATES_QUEUE.send({
+        type: item.type,
+        event: item.event,
+        item: item.item,
+        previous: item.previous,
+        twists: item.twists,
+        users: item.users,
+        timestamp: item.timestamp,
+      });
+    }
 
     return c.json({ success: true });
   } catch (error) {

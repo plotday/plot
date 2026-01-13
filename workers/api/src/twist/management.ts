@@ -1,6 +1,7 @@
 import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
+import { Uuid } from "@plotday/twister/plot";
 
-import type { twistFactory as TwistFactory } from ".";
+import type { twistFactory } from ".";
 import { type TwistEnvironment } from "../env";
 import { getUser } from "../utils/auth";
 import { createLogger } from "../utils/logger";
@@ -18,7 +19,7 @@ async function cleanupFailedInstallation(
   supabase: SupabaseClient,
   priorityTwistId: string,
   deactivate?: {
-    twistFactory: ReturnType<typeof TwistFactory>;
+    twistFactory: ReturnType<typeof twistFactory>;
     priorityId: string;
     twistId: number;
     environment: TwistEnvironment;
@@ -92,7 +93,7 @@ export async function add(
   name?: string,
   config?: any,
   activate?: {
-    twistFactory: ReturnType<typeof TwistFactory>;
+    twistFactory: ReturnType<typeof twistFactory>;
     version?: string;
   }
 ) {
@@ -187,7 +188,7 @@ export async function add(
           priorityId: priority_id,
           priorityTwistId: priorityTwist.id,
         });
-        await twistWrapper.activate({ id: priority_id });
+        await twistWrapper.activate({ id: priority_id as Uuid });
       } catch (activationError) {
         // Activation failed - rollback the installation
         const logger = createLogger({ priority_twist_id: String(priorityTwist.id), twist_id: String(twist_id), environment: twist_environment });
@@ -430,7 +431,7 @@ export async function deleteTwist(
   supabase: SupabaseClient,
   priority_twist_id: string,
   deactivate?: {
-    twistFactory: ReturnType<typeof TwistFactory>;
+    twistFactory: ReturnType<typeof twistFactory>;
   }
 ) {
   try {
@@ -502,7 +503,7 @@ export async function archiveAndDeleteTwist(
   supabase: SupabaseClient,
   priority_twist_id: string,
   deactivate?: {
-    twistFactory: ReturnType<typeof TwistFactory>;
+    twistFactory: ReturnType<typeof twistFactory>;
   }
 ) {
   try {

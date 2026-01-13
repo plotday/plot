@@ -6,7 +6,7 @@ import { twistFactory } from "../twist";
 import { type Bindings, type UpdateMessage } from "../env";
 import { type ActivityItem, type NoteItem } from "../types";
 import { createLogger } from "../utils/logger";
-import { extractUpdateQueueContext, addTwistContext, mergeContext } from "../utils/log-context";
+import { extractUpdateQueueContext, addTwistContext } from "../utils/log-context";
 import { truncateUuidForUpdatedBy } from "../utils/uuid";
 
 export async function processUpdates(

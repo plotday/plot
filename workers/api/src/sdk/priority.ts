@@ -132,7 +132,7 @@ priority.post("/priority", async (c) => {
       .from("priority_user")
       .select("priority:priority_id(path)")
       .eq("user_id", user.id)
-      .eq("key", "root")
+      .eq("personal", true)
       .single();
 
     if (rootError || !rootPriorityUser) {

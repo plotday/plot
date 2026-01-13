@@ -1,7 +1,6 @@
-import { type Database, type SupabaseClient } from "@plotday/db";
+import { type SupabaseClient } from "@plotday/db";
 import {
   type Activity,
-  type ActivityMeta,
   type ActivityUpdate,
   type Actor,
   type ActorId,
@@ -13,7 +12,7 @@ import {
   type NoteUpdate,
   type Priority,
   type PriorityUpdate,
-  Uuid,
+  type Uuid,
 } from "@plotday/twister/plot";
 import {
   ActivityAccess,
@@ -31,7 +30,6 @@ import { AI } from "../ai";
 import { Tool } from "../tool";
 import * as activityOps from "./activity";
 import * as contactsOps from "./contacts";
-import { fromDbActivity } from "./converters";
 import {
   buildActivityFromDbRecord,
   buildNoteFromDbRecord,
@@ -42,48 +40,6 @@ import * as intentOps from "./intent";
 import * as priorityOps from "./priority";
 
 export type PlotOptions = typeof IPlot.Options;
-
-/**
- * Worker-level cache for activity metadata to avoid database queries.
- * This cache persists across HTTP requests within the same worker instance,
- * allowing dispatch() to cache data that updateActivity() can later use.
- *
- * Key format: `${activityId}:${priorityTwistId}`
- * Entries expire after 30 seconds to prevent unbounded growth.
- */
-const ACTIVITY_METADATA_CACHE = new Map<
-  string,
-  {
-    created_by: string | null;
-    mentions: string[] | null;
-    priority_id: string;
-    triggering_note_mentions?: string[] | null;
-    timestamp: number;
-  }
->();
-
-const CACHE_TTL_MS = 30_000; // 30 seconds
-
-/**
- * Cleans up expired entries from the worker-level cache.
- * Called periodically to prevent memory leaks.
- */
-function cleanupExpiredCacheEntries(): void {
-  const now = Date.now();
-  for (const [key, value] of ACTIVITY_METADATA_CACHE.entries()) {
-    if (now - value.timestamp > CACHE_TTL_MS) {
-      ACTIVITY_METADATA_CACHE.delete(key);
-    }
-  }
-}
-
-/**
- * Getter for the worker-level activity metadata cache.
- * Exported to allow other modules (e.g., activity.ts) to access the cache.
- */
-export function getActivityCache() {
-  return ACTIVITY_METADATA_CACHE;
-}
 
 /**
  * Worker-level cache for twist definition IDs to avoid database queries.
@@ -116,8 +72,18 @@ function cleanupExpiredTwistIdCache(): void {
 }
 
 export type DispatchItem =
-  | { itemType: "activity"; item: ActivityItem; previous?: ActivityItem; syncDepth?: number }
-  | { itemType: "note"; item: NoteItem; previous?: NoteItem; syncDepth?: number };
+  | {
+      itemType: "activity";
+      item: ActivityItem;
+      previous?: ActivityItem;
+      syncDepth?: number;
+    }
+  | {
+      itemType: "note";
+      item: NoteItem;
+      previous?: NoteItem;
+      syncDepth?: number;
+    };
 
 export class Plot extends Tool implements IPlot {
   public supabase: SupabaseClient;
@@ -129,6 +95,8 @@ export class Plot extends Tool implements IPlot {
   public syncDepth: number = 1;
   private _actor?: Actor;
   private _twistId?: number;
+  private _userId?: string;
+  private _priorityRoot?: string;
 
   /**
    * Returns permissions required by this Plot tool instance.
@@ -241,6 +209,66 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
+   * Gets the user ID who owns this twist (from priority_twist.owner_id).
+   * Fetches and caches it on first access.
+   * @returns The user ID
+   * @throws Error if the owner_id cannot be fetched
+   */
+  async getUserId(): Promise<string> {
+    if (!this._userId) {
+      const { data, error } = await this.supabase
+        .from("priority_twist")
+        .select("owner_id")
+        .eq("id", this.priorityTwistId)
+        .single();
+
+      if (error || !data?.owner_id) {
+        throw new Error(
+          `Failed to fetch user ID for twist: ${
+            error?.message ?? "No owner_id found"
+          }`
+        );
+      }
+
+      this._userId = data.owner_id;
+    }
+
+    return this._userId!;
+  }
+
+  /**
+   * Gets the root path component of the priority where this twist is installed.
+   * This is used for scoping key lookups to the correct priority tree.
+   * Fetches and caches it on first access.
+   * @returns The priority root as a string (first level of the ltree path)
+   * @throws Error if the priority path cannot be fetched
+   */
+  async getPriorityRoot(): Promise<string> {
+    if (!this._priorityRoot) {
+      const { data, error } = await this.supabase
+        .from("priority")
+        .select("path")
+        .eq("id", this.priorityId)
+        .single();
+
+      if (error || !data?.path) {
+        throw new Error(
+          `Failed to fetch priority path for twist: ${
+            error?.message ?? "No path found"
+          }`
+        );
+      }
+
+      // Extract the first level of the ltree path (the root)
+      // For a path like "work.projects.alpha", this returns "work"
+      const pathParts = (data.path as string).split(".");
+      this._priorityRoot = pathParts[0]!;
+    }
+
+    return this._priorityRoot;
+  }
+
+  /**
    * Gets the twist definition ID for a given priority_twist ID.
    * Uses worker-level cache to avoid repeated database queries.
    * @param priorityTwistId - The priority_twist.id to look up
@@ -324,21 +352,6 @@ export class Plot extends Tool implements IPlot {
       const { item, previous } = dispatchItem;
       const isUpdate = !!previous;
 
-      // Cache the triggering note's mentions with the parent activity
-      // This allows validation to check if the twist was mentioned in the note
-      // that triggered the callback, even if the activity's calculated mentions
-      // field hasn't been updated yet (race condition)
-      const cacheKey = `${item.activity_id}:${this.priorityTwistId}`;
-      const existing = ACTIVITY_METADATA_CACHE.get(cacheKey);
-
-      ACTIVITY_METADATA_CACHE.set(cacheKey, {
-        created_by: existing?.created_by ?? null,
-        mentions: existing?.mentions ?? null,
-        priority_id: existing?.priority_id ?? item.priority_id,
-        triggering_note_mentions: item.mentions,
-        timestamp: Date.now(),
-      });
-
       // Build the current note
       const currentNote = buildNoteFromDbRecord(item);
 
@@ -356,10 +369,9 @@ export class Plot extends Tool implements IPlot {
       // Dispatch note.created callback for new notes on activities created by this twist
       const isCreate = !isUpdate;
       if (isCreate) {
-        // Check if parent activity was created by this twist
-        const activityMetadata = ACTIVITY_METADATA_CACHE.get(cacheKey);
+        // Check if parent activity was created by this twist (from payload metadata)
         const activityCreatedByThisTwist =
-          activityMetadata?.created_by === this.priorityTwistId;
+          item.activity_created_by === this.priorityTwistId;
 
         // Check if note was created by this twist
         const noteCreatedByThisTwist = item.created_by === this.priorityTwistId;
@@ -382,22 +394,6 @@ export class Plot extends Tool implements IPlot {
     if (dispatchItem.itemType === "activity") {
       const { item, previous } = dispatchItem;
       const isUpdate = !!previous;
-
-      // Cache activity data in worker-level cache to avoid database queries
-      // in subsequent RPC calls (e.g., when twist callback calls updateActivity)
-      const cacheKey = `${item.id}:${this.priorityTwistId}`;
-      const cacheData = {
-        created_by: item.created_by ?? item.author_id,
-        mentions: item.mentions,
-        priority_id: item.priority_id,
-        timestamp: Date.now(),
-      };
-      ACTIVITY_METADATA_CACHE.set(cacheKey, cacheData);
-
-      // Periodically clean up expired entries
-      if (ACTIVITY_METADATA_CACHE.size > 100) {
-        cleanupExpiredCacheEntries();
-      }
 
       // Build the current activity
       const currentActivity = buildActivityFromDbRecord(item);
@@ -604,28 +600,42 @@ export class Plot extends Tool implements IPlot {
    * - Notes on activities where the twist was mentioned require Respond permission
    * - Notes on activities created by the twist require Create permission
    */
-  async validateNoteCreateAccess(activityId: string): Promise<void> {
-    // Fetch the parent activity to check permissions
-    const { data: activity, error } = await this.supabase
-      .from("activity_x")
-      .select("id, author_id, created_by, mentions")
-      .eq("id", activityId)
-      .single();
+  async validateNoteCreateAccess(
+    activityId: string,
+    activityMetadata?: {
+      created_by: string | null;
+      mentions: string[] | null;
+    }
+  ): Promise<void> {
+    let created_by: string | null;
+    let mentions: string[] | null;
 
-    if (error || !activity) {
-      throw new Error(`Activity not found: ${activityId}`);
+    if (activityMetadata) {
+      created_by = activityMetadata.created_by;
+      mentions = activityMetadata.mentions;
+    } else {
+      // Fetch the parent activity to check permissions (fallback for calls from twist code)
+      const { data: activity, error } = await this.supabase
+        .from("activity_x")
+        .select("id, author_id, created_by, mentions")
+        .eq("id", activityId)
+        .single();
+
+      if (error || !activity) {
+        throw new Error(`Activity not found: ${activityId}`);
+      }
+
+      created_by = activity.created_by;
+      mentions = activity.mentions;
     }
 
     // Check if the activity was created by this twist
-    if (activity.created_by === this.priorityTwistId) {
+    if (created_by === this.priorityTwistId) {
       return;
     }
 
     // Check if the activity mentions the twist
-    if (
-      Array.isArray(activity.mentions) &&
-      activity.mentions.includes(this.priorityTwistId)
-    ) {
+    if (Array.isArray(mentions) && mentions.includes(this.priorityTwistId)) {
       // Twist was mentioned in the activity - requires Respond
       this.requireActivityAccess(ActivityAccess.Respond);
       return;
@@ -644,25 +654,26 @@ export class Plot extends Tool implements IPlot {
    * - Activities created by another instance of the same twist require Create permission
    *
    * @param activityId - The activity ID to validate access for
-   * @param cachedData - Optional cached data to avoid database query
+   * @param activityMetadata - Optional activity metadata from note payload to avoid database query
    */
   async validateActivityUpdateAccess(
     activityId: string,
-    cachedData?: { created_by: string | null; mentions: string[] | null }
+    activityMetadata?: {
+      created_by: string | null;
+      mentions: string[] | null;
+      triggering_note_mentions?: string[] | null;
+    }
   ): Promise<void> {
     let created_by: string | null;
     let mentions: string[] | null;
+    let triggering_note_mentions: string[] | null | undefined;
 
-    // Check worker-level cache first, then optional parameter, then query database
-    const cacheKey = `${activityId}:${this.priorityTwistId}`;
-    const workerCached = ACTIVITY_METADATA_CACHE.get(cacheKey);
-    const cached = cachedData ?? workerCached;
-
-    if (cached) {
-      created_by = cached.created_by;
-      mentions = cached.mentions;
+    if (activityMetadata) {
+      created_by = activityMetadata.created_by;
+      mentions = activityMetadata.mentions;
+      triggering_note_mentions = activityMetadata.triggering_note_mentions;
     } else {
-      // Fetch the activity to check author and mentions
+      // Fetch the activity to check author and mentions (fallback for calls from twist code)
       const { data: activity, error } = await this.supabase
         .from("activity_x")
         .select("id, author_id, created_by, mentions")
@@ -697,9 +708,9 @@ export class Plot extends Tool implements IPlot {
     // This handles race conditions where a note with a mention triggers a callback
     // but the activity's calculated mentions field hasn't been updated yet
     if (
-      workerCached?.triggering_note_mentions &&
-      Array.isArray(workerCached.triggering_note_mentions) &&
-      workerCached.triggering_note_mentions.includes(this.priorityTwistId)
+      triggering_note_mentions &&
+      Array.isArray(triggering_note_mentions) &&
+      triggering_note_mentions.includes(this.priorityTwistId)
     ) {
       this.requireActivityAccess(ActivityAccess.Respond);
       return;
@@ -737,9 +748,7 @@ export class Plot extends Tool implements IPlot {
     return activityOps.getActivity(this, activity);
   }
 
-  async createActivities(
-    activities: NewActivity[]
-  ): Promise<Activity[]> {
+  async createActivities(activities: NewActivity[]): Promise<Activity[]> {
     return activityOps.createActivities(this, activities);
   }
 
@@ -774,16 +783,11 @@ export class Plot extends Tool implements IPlot {
     return activityOps.getNotes(this, activity);
   }
 
-  async getNote(
-    note: { id: Uuid } | { key: string }
-  ): Promise<Note | null> {
+  async getNote(note: { id: Uuid } | { key: string }): Promise<Note | null> {
     return activityOps.getNote(this, note);
   }
 
-  async createNote(
-    note: NewNote,
-    skipActivityRead = false
-  ): Promise<Note> {
+  async createNote(note: NewNote, skipActivityRead = false): Promise<Note> {
     return activityOps.createNote(this, note, skipActivityRead);
   }
 

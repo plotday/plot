@@ -70,7 +70,7 @@ account.post("/activate", async (c) => {
       .from("priority_user")
       .select("priority_id")
       .eq("user_id", user.id)
-      .eq("key", "root")
+      .eq("personal", true)
       .maybeSingle();
 
   if (existingPriorityError) {
@@ -155,20 +155,20 @@ account.post("/activate", async (c) => {
     // The insert_priority_user trigger already created a priority_user entry
     const { error: keyError } = await c.var.supabaseAdmin
       .from("priority_user")
-      .update({ key: "root" })
+      .update({ personal: true })
       .eq("user_id", user.id)
       .eq("priority_id", newPriority.id);
 
     if (keyError) {
       const context = extractRequestContext(c);
       const logger = createLogger(context);
-      logger.error("Failed to set root key on priority_user", new Error(keyError.message), {
+      logger.error("Failed to set personal flag on priority_user", new Error(keyError.message), {
         user_id: user.id,
         priority_id: newPriority.id,
       });
       return c.json(
         {
-          message: `Failed to set root key: ${keyError.message}`,
+          message: `Failed to set personal flag: ${keyError.message}`,
         },
         500
       );
@@ -327,7 +327,7 @@ account.post("/activate", async (c) => {
   }
 
   // Step 7: Create Plot priority (skip if root priority already existed)
-  let plotPriority: { id: string } | null = null;
+  let _plotPriority: { id: string } | null = null;
   if (shouldInstallPlotTwist) {
     // Generate path for Plot priority as child of root
     const { data: plotPathData, error: plotPathError } = await c.var.supabase.rpc(
@@ -358,6 +358,7 @@ account.post("/activate", async (c) => {
           title: "Plot",
           path: plotPathData,
           color: 0,
+          key: "@plot",
         })
         .select()
         .single();
@@ -378,29 +379,7 @@ account.post("/activate", async (c) => {
       );
     }
 
-    // Mark the priority_user entry as @plot
-    const { error: plotKeyError } = await c.var.supabaseAdmin
-      .from("priority_user")
-      .update({ key: "@plot" })
-      .eq("user_id", user.id)
-      .eq("priority_id", newPlotPriority.id);
-
-    if (plotKeyError) {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.error("Failed to set @plot key on priority_user", new Error(plotKeyError.message), {
-        user_id: user.id,
-        priority_id: newPlotPriority.id,
-      });
-      return c.json(
-        {
-          message: `Failed to set @plot key: ${plotKeyError.message}`,
-        },
-        500
-      );
-    }
-
-    plotPriority = newPlotPriority;
+    _plotPriority = newPlotPriority;
   }
 
   // Step 8: Install and activate Plot twist on root priority (skip if root priority already existed)
