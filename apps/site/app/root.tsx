@@ -12,7 +12,6 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
-  useLoaderData,
   useRouteLoaderData,
 } from "react-router";
 

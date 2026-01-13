@@ -8,6 +8,7 @@ export interface SupabaseEnv {
 
 /**
  * Parse cookies from Cookie header string
+ * Decodes both cookie names and values to match browser encoding
  */
 function parseCookies(cookieHeader: string): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -16,7 +17,15 @@ function parseCookies(cookieHeader: string): Record<string, string> {
   cookieHeader.split(";").forEach((cookie) => {
     const [name, ...rest] = cookie.trim().split("=");
     if (name && rest.length > 0) {
-      cookies[name] = rest.join("=");
+      try {
+        const decodedName = decodeURIComponent(name.trim());
+        const decodedValue = decodeURIComponent(rest.join("="));
+        cookies[decodedName] = decodedValue;
+      } catch (error) {
+        // If decoding fails, store the raw values
+        // This handles legacy cookies or malformed values gracefully
+        cookies[name.trim()] = rest.join("=");
+      }
     }
   });
   return cookies;
