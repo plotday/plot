@@ -1,4 +1,4 @@
-import { ITool } from "..";
+import { ITool, type Serializable } from "..";
 
 /**
  * Built-in tool for persistent key-value storage.
@@ -14,8 +14,19 @@ import { ITool } from "..";
  * **Storage Characteristics:**
  * - Persistent across worker restarts
  * - Isolated per twist/tool instance
- * - Supports any JSON-serializable data
+ * - Supports SuperJSON-serializable data (see below)
  * - Async operations for scalability
+ *
+ * **Supported Data Types (via SuperJSON):**
+ * - Primitives: string, number, boolean, null, undefined
+ * - Complex types: Date, RegExp, Map, Set, Error, URL, BigInt
+ * - Collections: Arrays and objects (recursively)
+ *
+ * **NOT Supported (will throw validation errors):**
+ * - Functions (use callback tokens instead - see Callbacks tool)
+ * - Symbols
+ * - Circular references
+ * - Custom class instances
  *
  * **Use Cases:**
  * - Storing authentication tokens
@@ -51,42 +62,56 @@ export abstract class Store extends ITool {
    * Returns the stored value deserialized to the specified type,
    * or null if the key doesn't exist or the value is null.
    *
-   * @template T - The expected type of the stored value
+   * Values are automatically deserialized using SuperJSON, which
+   * properly restores Date objects, Maps, Sets, and other complex types.
+   *
+   * @template T - The expected type of the stored value (must be Serializable)
    * @param key - The storage key to retrieve
    * @returns Promise resolving to the stored value or null
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract get<T>(key: string): Promise<T | null>;
+  abstract get<T extends Serializable>(key: string): Promise<T | null>;
 
   /**
    * Stores a value in persistent storage.
    *
-   * The value will be JSON-serialized and stored persistently.
+   * The value will be serialized using SuperJSON and stored persistently.
    * Any existing value at the same key will be overwritten.
    *
-   * **Handling undefined values:**
-   * - Object keys with undefined values are automatically removed
-   * - Arrays with undefined elements will throw a validation error
-   * - Use null instead of undefined for array elements
+   * SuperJSON automatically handles Date objects, Maps, Sets, undefined values,
+   * and other complex types that standard JSON doesn't support.
    *
-   * @template T - The type of value being stored
+   * @template T - The type of value being stored (must be Serializable)
    * @param key - The storage key to use
-   * @param value - The value to store (must be JSON-serializable)
+   * @param value - The value to store (must be SuperJSON-serializable)
    * @returns Promise that resolves when the value is stored
    *
    * @example
    * ```typescript
-   * // Object keys with undefined are removed
-   * await this.set('data', { name: 'test', optional: undefined });
-   * // Stores: { name: 'test' }
+   * // Date objects are preserved
+   * await this.set('sync_state', {
+   *   lastSync: new Date(),
+   *   minDate: new Date(2024, 0, 1)
+   * });
    *
-   * // Arrays with undefined throw errors - use null instead
-   * await this.set('items', [1, null, 3]); // ✅ Works
-   * await this.set('items', [1, undefined, 3]); // ❌ Throws error
+   * // undefined is now supported
+   * await this.set('data', { name: 'test', optional: undefined }); // ✅ Works
+   *
+   * // Arrays with undefined are supported
+   * await this.set('items', [1, undefined, 3]); // ✅ Works
+   * await this.set('items', [1, null, 3]); // ✅ Also works
+   *
+   * // Maps and Sets are supported
+   * await this.set('mapping', new Map([['key', 'value']])); // ✅ Works
+   * await this.set('tags', new Set(['tag1', 'tag2'])); // ✅ Works
+   *
+   * // Functions are NOT supported - use callback tokens instead
+   * const token = await this.callback(this.myFunction);
+   * await this.set('callback_ref', token); // ✅ Use callback token
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract set<T>(key: string, value: T): Promise<void>;
+  abstract set<T extends Serializable>(key: string, value: T): Promise<void>;
 
   /**
    * Removes a specific key from storage.

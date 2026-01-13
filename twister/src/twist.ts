@@ -114,24 +114,40 @@ export abstract class Twist<TSelf> {
   /**
    * Retrieves a value from persistent storage by key.
    *
-   * @template T - The expected type of the stored value
+   * Values are automatically deserialized using SuperJSON, which
+   * properly restores Date objects, Maps, Sets, and other complex types.
+   *
+   * @template T - The expected type of the stored value (must be Serializable)
    * @param key - The storage key to retrieve
    * @returns Promise resolving to the stored value or null
    */
-  protected async get<T>(key: string): Promise<T | null> {
+  protected async get<T extends import("./index").Serializable>(
+    key: string
+  ): Promise<T | null> {
     return this.tools.store.get(key);
   }
 
   /**
    * Stores a value in persistent storage.
    *
-   * **Important**: Values must be JSON-serializable. Functions, Symbols, and undefined values
-   * cannot be stored directly.
+   * The value will be serialized using SuperJSON and stored persistently.
+   * SuperJSON automatically handles Date objects, Maps, Sets, undefined values,
+   * and other complex types that standard JSON doesn't support.
    *
+   * **Important**: Functions and Symbols cannot be stored.
    * **For function references**: Use callbacks instead of storing functions directly.
    *
    * @example
    * ```typescript
+   * // ✅ Date objects are preserved
+   * await this.set("sync_state", {
+   *   lastSync: new Date(),
+   *   minDate: new Date(2024, 0, 1)
+   * });
+   *
+   * // ✅ undefined is now supported
+   * await this.set("data", { name: "test", optional: undefined });
+   *
    * // ❌ WRONG: Cannot store functions directly
    * await this.set("handler", this.myHandler);
    *
@@ -144,12 +160,15 @@ export abstract class Twist<TSelf> {
    * await this.run(token, args);
    * ```
    *
-   * @template T - The type of value being stored
+   * @template T - The type of value being stored (must be Serializable)
    * @param key - The storage key to use
-   * @param value - The value to store (must be JSON-serializable)
+   * @param value - The value to store (must be SuperJSON-serializable)
    * @returns Promise that resolves when the value is stored
    */
-  protected async set<T>(key: string, value: T): Promise<void> {
+  protected async set<T extends import("./index").Serializable>(
+    key: string,
+    value: T
+  ): Promise<void> {
     return this.tools.store.set(key, value);
   }
 

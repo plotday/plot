@@ -91,6 +91,11 @@ export type Priority = {
   title: string;
   /** Whether this priority has been archived */
   archived: boolean;
+  /**
+   * Optional key for referencing this priority.
+   * Keys are unique per priority tree (a user's personal priorities or the root of a shared priority).
+   */
+  key: string | null;
 };
 
 /**
