@@ -1,10 +1,4 @@
-import type { ActivityLink, ITool } from "@plotday/twister";
-
-export type Contact = {
-  email: string;
-  name?: string;
-  avatar?: string;
-};
+import type { ActivityLink, ITool, NewContact } from "@plotday/twister";
 
 export type ContactAuth = {
   authToken: string;
@@ -16,9 +10,9 @@ export interface GoogleContacts extends ITool {
     ...extraArgs: any[]
   ): Promise<ActivityLink>;
 
-  getContacts(authToken: string): Promise<Contact[]>;
+  getContacts(authToken: string): Promise<NewContact[]>;
 
-  startSync<TCallback extends (contacts: Contact[], ...args: any[]) => any>(
+  startSync<TCallback extends (contacts: NewContact[], ...args: any[]) => any>(
     authToken: string,
     callback: TCallback,
     ...extraArgs: any[]

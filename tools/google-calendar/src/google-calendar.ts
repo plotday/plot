@@ -10,12 +10,10 @@ import {
   type NewActor,
   type NewContact,
   type NewNote,
-  type SyncUpdate,
   Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
-import { Uuid } from "@plotday/twister/utils/uuid";
 import {
   type Calendar,
   type CalendarAuth,
@@ -45,7 +43,6 @@ import {
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
-
 
 /**
  * Google Calendar integration tool.
@@ -292,7 +289,7 @@ export class GoogleCalendar
       calendarId,
       true // initialSync = true for initial sync
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async stopSync(_authToken: string, calendarId: string): Promise<void> {
@@ -387,7 +384,11 @@ export class GoogleCalendar
       const result = await syncGoogleCalendar(api, calendarId, state);
 
       if (result.events.length > 0) {
-        await this.processCalendarEvents(result.events, calendarId, initialSync);
+        await this.processCalendarEvents(
+          result.events,
+          calendarId,
+          initialSync
+        );
         console.log(
           `Synced ${result.events.length} events in batch ${batchNumber} for calendar ${calendarId}`
         );
@@ -404,7 +405,7 @@ export class GoogleCalendar
           calendarId,
           initialSync // Pass through the initialSync boolean
         );
-        await this.run(syncCallback);
+        await this.runTask(syncCallback);
       } else {
         console.log(
           `Google Calendar ${mode} sync completed after ${batchNumber} batches for calendar ${calendarId}`
@@ -543,17 +544,21 @@ export class GoogleCalendar
           // Prepare description content
           const descriptionValue =
             activityData.meta?.description || event.description;
-          const description = typeof descriptionValue === "string" ? descriptionValue : null;
+          const description =
+            typeof descriptionValue === "string" ? descriptionValue : null;
           const hasDescription = description && description.trim().length > 0;
           const hasLinks = links.length > 0;
 
-          const callbackToken = await this.get<Callback>("event_callback_token");
+          const callbackToken = await this.get<Callback>(
+            "event_callback_token"
+          );
           if (!callbackToken || !activityData.type) {
             continue;
           }
 
           // Canonical URL for this event (required for upsert)
-          const canonicalUrl = event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
+          const canonicalUrl =
+            event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
 
           // Create note with description and/or links
           const notes: NewNote[] = [];
@@ -563,7 +568,8 @@ export class GoogleCalendar
               key: "description",
               content: hasDescription ? description : null,
               links: hasLinks ? links : null,
-              contentType: description && containsHtml(description) ? "html" : "text",
+              contentType:
+                description && containsHtml(description) ? "html" : "text",
             });
           }
 
@@ -591,7 +597,6 @@ export class GoogleCalendar
 
           // Send activity - database handles upsert automatically
           await this.tools.callbacks.run(callbackToken, activity);
-
         }
       } catch (error) {
         console.error(`Failed to process event ${event.id}:`, error);
@@ -658,13 +663,16 @@ export class GoogleCalendar
     }
 
     // Prepare description content
-    const descriptionValue = activityData.meta?.description || event.description;
-    const description = typeof descriptionValue === "string" ? descriptionValue : null;
+    const descriptionValue =
+      activityData.meta?.description || event.description;
+    const description =
+      typeof descriptionValue === "string" ? descriptionValue : null;
     const hasDescription = description && description.trim().length > 0;
     const hasLinks = links.length > 0;
 
     // Canonical URL for this event (required for upsert)
-    const canonicalUrl = event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
+    const canonicalUrl =
+      event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
 
     // Create note with description and/or links
     const notes: NewNote[] = [];
@@ -765,7 +773,7 @@ export class GoogleCalendar
       calendarId,
       false // initialSync = false for incremental updates
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async onAuthSuccess(
@@ -780,8 +788,18 @@ export class GoogleCalendar
     // This happens automatically when calendar auth succeeds
     try {
       console.log("Triggering Google Contacts sync");
-      await this.tools.googleContacts.syncWithAuth(authResult);
-      console.log("Google Contacts sync started successfully");
+      // Retrieve the actual auth token to pass to contacts
+      const token = await this.tools.integrations.get(authResult);
+      if (token) {
+        await this.tools.googleContacts.syncWithAuth(
+          authResult,
+          token,
+          this.onContactsSynced
+        );
+        console.log("Google Contacts sync started successfully");
+      } else {
+        console.error("Failed to retrieve auth token for contacts sync");
+      }
     } catch (error) {
       // Log error but don't fail calendar auth
       console.error("Failed to start contacts sync:", error);
@@ -795,6 +813,24 @@ export class GoogleCalendar
 
     // Clean up the callback token
     await this.clear(`auth_callback_token:${authToken}`);
+  }
+
+  /**
+   * Callback invoked when contacts are synced from Google Contacts.
+   * Adds the synced contacts to Plot for enriching calendar event attendees.
+   */
+  async onContactsSynced(contacts: NewContact[]): Promise<void> {
+    if (contacts.length === 0) {
+      return;
+    }
+
+    console.log(`Adding ${contacts.length} contacts to Plot`);
+    try {
+      await this.tools.plot.addContacts(contacts);
+      console.log(`Successfully added ${contacts.length} contacts`);
+    } catch (error) {
+      console.error("Failed to add contacts to Plot:", error);
+    }
   }
 
   async onActivityUpdated(
@@ -887,7 +923,9 @@ export class GoogleCalendar
       typeof eventId !== "string" ||
       typeof calendarId !== "string"
     ) {
-      console.warn("Missing or invalid event or calendar ID in activity metadata");
+      console.warn(
+        "Missing or invalid event or calendar ID in activity metadata"
+      );
       return;
     }
 

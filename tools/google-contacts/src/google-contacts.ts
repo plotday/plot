@@ -1,4 +1,4 @@
-import { Tool, type ToolBuilder } from "@plotday/twister";
+import { Tool, type ToolBuilder, type NewContact } from "@plotday/twister";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthLevel,
@@ -7,9 +7,9 @@ import {
   type Authorization,
   Integrations,
 } from "@plotday/twister/tools/integrations";
+import { Network } from "@plotday/twister/tools/network";
 
 import type {
-  Contact,
   ContactAuth,
   GoogleContacts as IGoogleContacts,
 } from "./types";
@@ -111,11 +111,11 @@ async function getGoogleContacts(
   scopes: string[],
   state: ContactSyncState
 ): Promise<{
-  contacts: Contact[];
+  contacts: NewContact[];
   state: ContactSyncState;
 }> {
   let tokens = JSON.parse(state.state ?? "{}") as ContactTokens;
-  const contacts = {} as Record<string, Contact>;
+  const contacts = {} as Record<string, NewContact>;
   let more = false;
 
   if (!state.more || tokens.connections?.nextPageToken) {
@@ -262,6 +262,9 @@ export default class GoogleContacts
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
+      network: build(Network, {
+        urls: ["https://people.googleapis.com/*"],
+      }),
     };
   }
 
@@ -289,7 +292,7 @@ export default class GoogleContacts
     );
   }
 
-  async getContacts(authToken: string): Promise<Contact[]> {
+  async getContacts(authToken: string): Promise<NewContact[]> {
     const storedAuthToken = await this.get<AuthToken>(
       `auth_token:${authToken}`
     );
@@ -308,7 +311,7 @@ export default class GoogleContacts
   }
 
   async startSync<
-    TCallback extends (contacts: Contact[], ...args: any[]) => any
+    TCallback extends (contacts: NewContact[], ...args: any[]) => any
   >(
     authToken: string,
     callback: TCallback,
@@ -343,14 +346,20 @@ export default class GoogleContacts
   }
 
   /**
-   * Start contact sync using an existing Authorization from another tool.
+   * Start contact sync using an existing Authorization and AuthToken from another tool.
    * This enables other Google tools (like calendar) to trigger contact syncing
    * after they've obtained auth with combined scopes.
+   *
+   * @param authorization - Authorization object containing provider and scopes
+   * @param authToken - Actual auth token data retrieved by the calling tool
+   * @param callback - Optional callback to invoke with synced contacts
+   * @param extraArgs - Additional arguments to pass to the callback
    */
   async syncWithAuth<
-    TCallback extends (contacts: Contact[], ...args: any[]) => any
+    TCallback extends (contacts: NewContact[], ...args: any[]) => any
   >(
     authorization: Authorization,
+    authToken: AuthToken,
     callback?: TCallback,
     ...extraArgs: any[]
   ): Promise<void> {
@@ -361,21 +370,17 @@ export default class GoogleContacts
 
     if (!hasRequiredScopes) {
       throw new Error(
-        `Authorization missing required contacts scopes. Required: ${GoogleContacts.SCOPES.join(", ")}. Got: ${authorization.scopes.join(", ")}`
+        `Authorization missing required contacts scopes. Required: ${GoogleContacts.SCOPES.join(
+          ", "
+        )}. Got: ${authorization.scopes.join(", ")}`
       );
     }
 
-    // Generate opaque token for storage
-    const authToken = crypto.randomUUID();
+    // Generate opaque token ID for storage
+    const authTokenId = crypto.randomUUID();
 
-    // Get actual auth token via integrations
-    const token = await this.tools.integrations.get(authorization);
-    if (!token) {
-      throw new Error("Failed to retrieve auth token from authorization");
-    }
-
-    // Store the auth token data
-    await this.set(`auth_token:${authToken}`, token);
+    // Store the auth token data (passed directly from caller)
+    await this.set(`auth_token:${authTokenId}`, authToken);
 
     // Setup callback if provided
     if (callback) {
@@ -383,17 +388,17 @@ export default class GoogleContacts
         callback,
         ...extraArgs
       );
-      await this.set(`contacts_callback_token:${authToken}`, callbackToken);
+      await this.set(`contacts_callback_token:${authTokenId}`, callbackToken);
     }
 
     // Initialize sync state
     const initialState: ContactSyncState = {
       more: false,
     };
-    await this.set(`sync_state:${authToken}`, initialState);
+    await this.set(`sync_state:${authTokenId}`, initialState);
 
     // Start sync batch
-    const syncCallback = await this.callback(this.syncBatch, 1, authToken);
+    const syncCallback = await this.callback(this.syncBatch, 1, authTokenId);
     await this.run(syncCallback);
   }
 
@@ -403,10 +408,7 @@ export default class GoogleContacts
     await this.clear(`contacts_callback_token:${authToken}`);
   }
 
-  async syncBatch(
-    batchNumber: number,
-    authToken: string
-  ): Promise<void> {
+  async syncBatch(batchNumber: number, authToken: string): Promise<void> {
     console.log(`Starting Google Contacts sync batch ${batchNumber}`);
 
     try {
@@ -461,7 +463,7 @@ export default class GoogleContacts
   }
 
   private async processContacts(
-    contacts: Contact[],
+    contacts: NewContact[],
     authToken: string
   ): Promise<void> {
     const callbackToken = await this.get<Callback>(
