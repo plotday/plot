@@ -1,5 +1,16 @@
 # @plotday/twister
 
+## 0.29.0
+
+### Added
+
+- Support for more serializable types, especially Date ([`1623e18`](https://github.com/plotday/plot/commit/1623e18a97afa97bb28f0c8497eabca1805d78a9))
+- archived field on Priority, Activity, and Note ([`6685c33`](https://github.com/plotday/plot/commit/6685c330c617046b213524b058330745d2fee7a9))
+
+### Changed
+
+- BREAKING: Minor type and signature changes in preparation for the stable 1.0 interface ([`6685c33`](https://github.com/plotday/plot/commit/6685c330c617046b213524b058330745d2fee7a9))
+
 ## 0.28.0
 
 ### Added

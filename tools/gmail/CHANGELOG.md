@@ -1,5 +1,12 @@
 # @plotday/tool-gmail
 
+## 0.6.1
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.29.0
+
 ## 0.6.0
 
 ### Changed

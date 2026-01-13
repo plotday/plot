@@ -1,5 +1,17 @@
 # @plotday/tool-google-calendar
 
+## 0.9.1
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.29.0
+- @plotday/tool-google-contacts@0.4.5
+
+### Fixed
+
+- Authorizing Google Contacts sync from the Google Calendar tool ([`a8ec500`](https://github.com/plotday/plot/commit/a8ec500e69b316e6c086626d1bd5208d71c83077))
+
 ## 0.9.0
 
 ### Changed
