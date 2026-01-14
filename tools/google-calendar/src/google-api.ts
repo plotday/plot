@@ -120,6 +120,41 @@ export function parseRRule(recurrence?: string[]): string | undefined {
   return rrule ? rrule.substring(6) : undefined; // Remove 'RRULE:' prefix
 }
 
+/**
+ * Parses an iCalendar date string into a JavaScript Date.
+ * Handles formats: YYYYMMDD, YYYYMMDDTHHMMSS, YYYYMMDDTHHMMSSZ
+ */
+function parseICalDate(dateStr: string): Date | null {
+  // Remove any whitespace
+  const d = dateStr.trim();
+
+  // All-day date: YYYYMMDD (8 chars)
+  if (/^\d{8}$/.test(d)) {
+    const year = d.slice(0, 4);
+    const month = d.slice(4, 6);
+    const day = d.slice(6, 8);
+    return new Date(`${year}-${month}-${day}`);
+  }
+
+  // DateTime with or without Z: YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ
+  if (/^\d{8}T\d{6}Z?$/.test(d)) {
+    const year = d.slice(0, 4);
+    const month = d.slice(4, 6);
+    const day = d.slice(6, 8);
+    const hour = d.slice(9, 11);
+    const minute = d.slice(11, 13);
+    const second = d.slice(13, 15);
+    const isUtc = d.endsWith("Z");
+    return new Date(
+      `${year}-${month}-${day}T${hour}:${minute}:${second}${isUtc ? "Z" : ""}`
+    );
+  }
+
+  // Fallback: try native parsing
+  const parsed = new Date(d);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function parseExDates(recurrence?: string[]): Date[] {
   if (!recurrence?.length) return [];
 
@@ -127,7 +162,11 @@ export function parseExDates(recurrence?: string[]): Date[] {
     .filter((rule) => rule.startsWith("EXDATE"))
     .flatMap((rule) => {
       const dates = rule.split(":")[1];
-      return dates ? dates.split(",").map((d) => new Date(d)) : [];
+      if (!dates) return [];
+      return dates
+        .split(",")
+        .map((d) => parseICalDate(d))
+        .filter((d): d is Date => d !== null);
     });
 }
 
@@ -138,7 +177,11 @@ export function parseRDates(recurrence?: string[]): Date[] {
     .filter((rule) => rule.startsWith("RDATE"))
     .flatMap((rule) => {
       const dates = rule.split(":")[1];
-      return dates ? dates.split(",").map((d) => new Date(d)) : [];
+      if (!dates) return [];
+      return dates
+        .split(",")
+        .map((d) => parseICalDate(d))
+        .filter((d): d is Date => d !== null);
     });
 }
 
