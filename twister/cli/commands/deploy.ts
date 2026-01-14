@@ -445,7 +445,7 @@ export async function deployCommand(options: DeployOptions) {
   }
 
   // Type-check before building
-  out.progress("Checking for type errors...");
+  out.progress("Validating the code...");
   try {
     execSync("tsc --noEmit", {
       cwd: twistPath,
@@ -605,9 +605,7 @@ export async function deployCommand(options: DeployOptions) {
     } catch (error) {
       // Handle SSE-specific errors with better messaging
       if (error instanceof Error) {
-        if (
-          error.message.includes("Stream ended without receiving a result")
-        ) {
+        if (error.message.includes("Stream ended without receiving a result")) {
           out.error(
             "Connection interrupted",
             "The upload may have completed on the server, but the connection was interrupted."
