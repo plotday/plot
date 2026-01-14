@@ -36,7 +36,6 @@ type SyncState = {
   initialSync: boolean;
 };
 
-
 /**
  * Linear project management tool
  *
@@ -390,9 +389,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       title: issue.title,
       created: issue.createdAt,
       author: authorContact,
-      assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
+      assignee: assigneeContact ?? null,
       done: issue.completedAt ?? null,
-      start: state?.type !== "started" ? null : undefined,
+      start: assigneeContact ? undefined : null,
       meta: {
         linearId: issue.id,
         projectId,
