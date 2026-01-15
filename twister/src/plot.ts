@@ -341,8 +341,6 @@ export type ActivityCommon = {
   created: Date;
   /** Information about who created the activity */
   author: Actor;
-  /** Whether this activity is in draft state (not shown in do now view) */
-  draft: boolean;
   /** Whether this activity is private (only visible to author) */
   private: boolean;
   /** Whether this activity has been archived */
@@ -692,7 +690,6 @@ export type ActivityUpdate = (
       | "done"
       | "title"
       | "assignee"
-      | "draft"
       | "private"
       | "archived"
       | "meta"
@@ -837,9 +834,7 @@ export type NewNote = Partial<
  * Must provide either id or key to identify the note to update.
  */
 export type NoteUpdate = ({ id: Uuid } | { key: string }) &
-  Partial<
-    Pick<Note, "draft" | "private" | "archived" | "content" | "links">
-  > & {
+  Partial<Pick<Note, "private" | "archived" | "content" | "links">> & {
     /**
      * Format of the note content. Determines how the note is processed:
      * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
