@@ -3,11 +3,12 @@ import { type Issue, LinearClient } from "@linear/sdk";
 import {
   type ActivityLink,
   ActivityLinkType,
+  ActivityMeta,
   ActivityType,
   type NewActivityWithNotes,
   type NewNote,
+  Serializable,
   type SyncUpdate,
-  ActivityUpdate as TwisterActivityUpdate,
 } from "@plotday/twister";
 import type {
   Project,
@@ -76,13 +77,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Request Linear OAuth authorization
    */
   async requestAuth<
-    TCallback extends (auth: ProjectAuth, ...args: any[]) => any
-  >(
-    callback: TCallback,
-    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
-      ? R
-      : []
-  ): Promise<ActivityLink> {
+    TArgs extends Serializable[],
+    TCallback extends (auth: ProjectAuth, ...args: TArgs) => any
+  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     const linearScopes = ["read", "write"];
 
     // Generate opaque token for authorization
@@ -140,16 +137,15 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Start syncing issues from a Linear team
    */
   async startSync<
-    TCallback extends (issue: NewActivityWithNotes, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (issue: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;
       projectId: string;
     } & ProjectSyncOptions,
     callback: TCallback,
-    ...extraArgs: TCallback extends (issue: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, projectId, timeMin } = options;
 
@@ -324,7 +320,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     projectId: string,
     initialSync: boolean
   ): Promise<SyncUpdate | null> {
-    const state = await issue.state;
     const creator = await issue.creator;
     const assignee = await issue.assignee;
     const comments = await issue.comments();
@@ -407,14 +402,14 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Update issue with new values
    *
    * @param authToken - Authorization token
-   * @param update - ActivityUpdate with changed fields
+   * @param activity - The updated activity
    */
   async updateIssue(
     authToken: string,
-    update: import("@plotday/twister").ActivityUpdate
+    activity: import("@plotday/twister").Activity
   ): Promise<void> {
     // Get the Linear issue ID from activity meta
-    const issueId = update.meta?.linearId as string | undefined;
+    const issueId = activity.meta?.linearId as string | undefined;
     if (!issueId) {
       throw new Error("Linear issue ID not found in activity meta");
     }
@@ -424,52 +419,45 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     const updateFields: any = {};
 
     // Handle title
-    if (update.title !== undefined) {
-      updateFields.title = update.title;
+    if (activity.title !== null) {
+      updateFields.title = activity.title;
     }
 
     // Handle assignee
-    if (update.assignee !== undefined) {
-      updateFields.assigneeId = update.assignee?.id || null;
-    }
+    updateFields.assigneeId = activity.assignee?.id || null;
 
     // Handle state based on start + done combination
-    if (update.start !== undefined || update.done !== undefined) {
-      const team = await issue.team;
-      if (team) {
-        const states = await team.states();
-        let targetState;
+    const team = await issue.team;
+    if (team) {
+      const states = await team.states();
+      let targetState;
 
-        // Determine target state based on combination
-        if (update.done !== undefined && update.done !== null) {
-          // Completed
-          targetState = states.nodes.find(
-            (s) =>
-              s.name === "Done" ||
-              s.name === "Completed" ||
-              s.type === "completed"
-          );
-        } else if (update.start !== undefined && update.start !== null) {
-          // In Progress (has start date, not done)
-          targetState = states.nodes.find(
-            (s) => s.name === "In Progress" || s.type === "started"
-          );
-        } else if (
-          (update.start !== undefined && update.start === null) ||
-          (update.done !== undefined && update.done === null)
-        ) {
-          // Backlog/Todo (no start date, not done)
-          targetState = states.nodes.find(
-            (s) =>
-              s.name === "Todo" ||
-              s.name === "Backlog" ||
-              s.type === "unstarted"
-          );
-        }
+      // Determine target state based on combination
+      if (activity.done !== null) {
+        // Completed
+        targetState = states.nodes.find(
+          (s) =>
+            s.name === "Done" ||
+            s.name === "Completed" ||
+            s.type === "completed"
+        );
+      } else if (activity.start !== null) {
+        // In Progress (has start date, not done)
+        targetState = states.nodes.find(
+          (s) => s.name === "In Progress" || s.type === "started"
+        );
+      } else {
+        // Backlog/Todo (no start date, not done)
+        targetState = states.nodes.find(
+          (s) =>
+            s.name === "Todo" ||
+            s.name === "Backlog" ||
+            s.type === "unstarted"
+        );
+      }
 
-        if (targetState) {
-          updateFields.stateId = targetState.id;
-        }
+      if (targetState) {
+        updateFields.stateId = targetState.id;
       }
     }
 
@@ -483,14 +471,18 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Add a comment to a Linear issue
    *
    * @param authToken - Authorization token
-   * @param issueId - Linear issue ID
+   * @param meta - Activity metadata containing linearId
    * @param body - Comment text (markdown supported)
    */
   async addIssueComment(
     authToken: string,
-    issueId: string,
+    meta: ActivityMeta,
     body: string
   ): Promise<void> {
+    const issueId = meta.linearId as string | undefined;
+    if (!issueId) {
+      throw new Error("Linear issue ID not found in activity meta");
+    }
     const client = await this.getClient(authToken);
 
     await client.createComment({

@@ -1,5 +1,4 @@
-import type { ActivityLink, NewActivityWithNotes, SyncUpdate } from "../index";
-import type { NoFunctions } from "../utils/types";
+import type { ActivityLink, Serializable, SyncUpdate } from "../index";
 
 /**
  * Represents a successful messaging service authorization.
@@ -19,7 +18,7 @@ export type MessagingAuth = {
  * Contains metadata about a specific channel that can be synced
  * with Plot.
  */
-export interface MessageChannel {
+export type MessageChannel = {
   /** Unique identifier for the channel within the provider */
   id: string;
   /** Human-readable name of the channel (e.g., "Inbox", "#general", "My Team Thread") */
@@ -28,7 +27,7 @@ export interface MessageChannel {
   description: string | null;
   /** Whether this is the user's primary/default channel (e.g. email inbox) */
   primary: boolean;
-}
+};
 
 /**
  * Configuration options for messaging synchronization.
@@ -36,10 +35,10 @@ export interface MessageChannel {
  * Controls the time range and other parameters for messaging sync operations.
  * Used to limit sync scope and optimize performance.
  */
-export interface MessageSyncOptions {
+export type MessageSyncOptions = {
   /** Earliest date to sync events from (inclusive) */
   timeMin?: Date;
-}
+};
 
 /**
  * Base interface for email and chat integration tools.
@@ -51,7 +50,7 @@ export interface MessageSyncOptions {
  * Use Activity.source (thread URL or ID) and Note.key (message ID) for automatic upserts.
  * See SYNC_STRATEGIES.md for detailed patterns.
  */
-export interface MessagingTool {
+export type MessagingTool = {
   /**
    * Initiates the authorization flow for the service.
    *
@@ -59,11 +58,12 @@ export interface MessagingTool {
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise resolving to an ActivityLink to initiate the auth flow
    */
-  requestAuth<TCallback extends (auth: MessagingAuth, ...args: any[]) => any>(
+  requestAuth<
+    TArgs extends Serializable[],
+    TCallback extends (auth: MessagingAuth, ...args: TArgs) => any
+  >(
     callback: TCallback,
-    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: TArgs
   ): Promise<ActivityLink>;
 
   /**
@@ -100,15 +100,16 @@ export interface MessagingTool {
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
-  startSync<TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any>(
+  startSync<
+    TArgs extends Serializable[],
+    TCallback extends (syncUpdate: SyncUpdate, ...args: TArgs) => any
+  >(
     options: {
       authToken: string;
       channelId: string;
     } & MessageSyncOptions,
     callback: TCallback,
-    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
-      ? NoFunctions<R>
-      : []
+    ...extraArgs: TArgs
   ): Promise<void>;
 
   /**
@@ -119,4 +120,4 @@ export interface MessagingTool {
    * @returns Promise that resolves when sync is stopped
    */
   stopSync(authToken: string, channelId: string): Promise<void>;
-}
+};

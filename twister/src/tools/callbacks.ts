@@ -1,8 +1,5 @@
 import { ITool } from "..";
-import type { CallbackMethods, NoFunctions, NonFunction } from "../utils/types";
-
-// Re-export types for consumers
-export type { CallbackMethods, NoFunctions, NonFunction };
+import { Serializable } from "../utils/types";
 
 /**
  * Represents a callback token for persistent function references.
@@ -10,7 +7,8 @@ export type { CallbackMethods, NoFunctions, NonFunction };
  * Callbacks enable tools and twists to create persistent references to functions
  * that can survive worker restarts and be invoked across different execution contexts.
  *
- * This is a branded string type to prevent mixing callback tokens with regular strings.
+ * This is a branded strin
+ * type to prevent mixing callback tokens with regular strings.
  *
  * @example
  * ```typescript
@@ -60,28 +58,53 @@ export abstract class Callbacks extends ITool {
    * Creates a persistent callback to a method on the current class.
    *
    * @param fn - The function to callback
-   * @param extraArgs - Additional arguments to pass to the function (must be serializable)
+   * @param extraArgs - Additional arguments to pass to the function after any passed by the caller
    * @returns Promise resolving to a persistent callback token
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract create<Fn extends (...args: any[]) => any>(
-    fn: Fn,
-    ...extraArgs: Parameters<Fn>
-  ): Promise<Callback>;
+  abstract create<
+    TArgs extends Serializable[],
+    F extends (...extraArgs: TArgs) => any
+  >(fn: F, ...extraArgs: TArgs): Promise<Callback>;
+  // Variation when called provides the first argument
+  abstract create<
+    TArgs extends Serializable[],
+    F extends (arg1: any, ...extraArgs: TArgs) => any
+  >(fn: F, ...extraArgs: TArgs): Promise<Callback>;
 
   /**
    * Creates a persistent callback to a function from the parent twist/tool.
    * Use this when the callback function is passed in from outside this class.
    *
    * @param fn - The function to callback
-   * @param extraArgs - Additional arguments to pass to the function (must be serializable, validated at runtime)
-   * @returns Promise resolving to a persistent callback token
+   * @param extraArgs - Additional arguments to pass to the function after any passed by the caller
+   * @returns Promise resolving to a callback token
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createFromParent(
-    fn: Function,
-    ...extraArgs: any[]
-  ): Promise<Callback>;
+  abstract createFromParent<
+    TArgs extends Serializable[],
+    F extends (...extraArgs: TArgs) => any
+  >(fn: F, ...extraArgs: TArgs): Promise<Callback>;
+  // Variation when called provides the first argument
+  abstract createFromParent<
+    TArgs extends Serializable[],
+    F extends (arg1: any, ...extraArgs: TArgs) => any
+  >(fn: F, ...extraArgs: TArgs): Promise<Callback>;
+
+  // <
+  //   DeferredArgs extends any[],
+  //   Fn extends (...args: any[]) => any,
+  //   CurriedArgs extends Serializable[],
+  //   AllArgs extends any[] = Parameters<Fn>,
+  //   R = ReturnType<Fn>,
+  //   DeferredArgs extends any[] = AllArgs extends [...infer D, ...CurriedArgs]
+  //     ? D extends any[]
+  //       ? D
+  //       : never
+  //     : never
+  // >(
+  //   fn: (...args: [...DeferredArgs, ...CurriedArgs]) => R,
+  //   ...curriedArgs: CurriedArgs
+  // ): Promise<Callback>;
 
   /**
    * Deletes a specific callback by its token.

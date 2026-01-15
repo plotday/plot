@@ -1,5 +1,4 @@
-import { type ActivityLink, ITool } from "..";
-import { type NoFunctions } from "./callbacks";
+import { type ActivityLink, ITool, Serializable } from "..";
 
 /**
  * Built-in tool for managing OAuth authentication flows.
@@ -53,7 +52,8 @@ export abstract class Integrations extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract request<
-    TCallback extends (auth: Authorization, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (auth: Authorization, ...args: TArgs) => any
   >(
     auth: {
       provider: AuthProvider;
@@ -61,9 +61,7 @@ export abstract class Integrations extends ITool {
       scopes: string[];
     },
     callback: TCallback,
-    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
-      ? NoFunctions<R>
-      : []
+    ...extraArgs: TArgs
   ): Promise<ActivityLink>;
 
   /**

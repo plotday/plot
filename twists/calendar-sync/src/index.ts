@@ -5,16 +5,11 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
-  type ActivityUpdate,
-  type ActorId,
-  type NewActivityWithNotes,
   type Priority,
   type SyncUpdate,
-  type Tag,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import { Uuid } from "@plotday/twister/utils/uuid";
 import type {
   Calendar,
   CalendarAuth,
@@ -22,6 +17,7 @@ import type {
   SyncOptions,
 } from "@plotday/twister/common/calendar";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { Uuid } from "@plotday/twister/utils/uuid";
 
 type CalendarProvider = "google" | "outlook";
 
@@ -185,13 +181,16 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
   async handleEvent(
     syncUpdate: SyncUpdate,
-    _provider: CalendarProvider,
+    provider: CalendarProvider,
     _calendarId: string
   ): Promise<void> {
     // Only handle new events, not updates
     if ("activityId" in syncUpdate) return;
 
     const activity = syncUpdate;
+
+    // Add provider to meta for routing updates back to the correct tool
+    activity.meta = { ...activity.meta, provider };
 
     // Just create/upsert - database handles everything automatically
     // Note: The unread field is already set by the tool based on sync type
@@ -254,7 +253,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
     // Create callback links for each calendar
     for (const calendar of calendars) {
-      const token = await this.callback(
+      const token = await this.linkCallback(
         this.onCalendarSelected,
         provider,
         calendar.id,

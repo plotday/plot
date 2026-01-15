@@ -1,6 +1,7 @@
-import { type Priority, Uuid } from "./plot";
+import { ActivityLink, type Priority, Uuid } from "./plot";
 import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
+import type { Serializable } from "./utils/serializable";
 import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
 
 /**
@@ -63,7 +64,7 @@ export abstract class Twist<TSelf> {
   /**
    * Creates a persistent callback to a method on this twist.
    *
-   * ExtraArgs are strongly typed to match the method's signature after the first argument.
+   * ExtraArgs are strongly typed to match the method's signature. They must be serializable.
    *
    * @param fn - The method to callback
    * @param extraArgs - Additional arguments to pass (type-checked, must be serializable)
@@ -74,11 +75,35 @@ export abstract class Twist<TSelf> {
    * const callback = await this.callback(this.onWebhook, "calendar", 123);
    * ```
    */
-  protected async callback(
-    fn: Function,
-    ...extraArgs: any[]
-  ): Promise<Callback> {
-    return this.tools.callbacks.create(fn as any, ...extraArgs);
+  protected async callback<
+    TArgs extends Serializable[],
+    Fn extends (...args: TArgs) => any
+  >(fn: Fn, ...extraArgs: TArgs): Promise<Callback> {
+    return this.tools.callbacks.create(fn, ...extraArgs);
+  }
+
+  /**
+   * Like callback(), but for an ActivityLink, which receives the link as the first argument.
+   *
+   * @param fn - The method to callback
+   * @param extraArgs - Additional arguments to pass after the link
+   * @returns Promise resolving to a persistent callback token
+   *
+   * @example
+   * ```typescript
+   * const callback = await this.linkCallback(this.doSomething, 123);
+   * const link: ActivityLink = {
+   *    type: ActivityLinkType.Callback,
+   *    title: "Do Something",
+   *    callback,
+   * };
+   * ```
+   */
+  protected async linkCallback<
+    TArgs extends Serializable[],
+    Fn extends (link: ActivityLink, ...extraArgs: TArgs) => any
+  >(fn: Fn, ...extraArgs: TArgs): Promise<Callback> {
+    return this.tools.callbacks.create(fn, ...extraArgs);
   }
 
   /**

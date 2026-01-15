@@ -1,6 +1,5 @@
 import {
   type Activity,
-  type ActivityMeta,
   type ActivityUpdate,
   type Actor,
   type ActorId,
@@ -161,8 +160,6 @@ export abstract class Plot extends ITool {
       updated?: (
         activity: Activity,
         changes: {
-          update: ActivityUpdate;
-          previous: Activity;
           tagsAdded: Record<Tag, ActorId[]>;
           tagsRemoved: Record<Tag, ActorId[]>;
         }

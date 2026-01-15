@@ -3,13 +3,13 @@ import {
   type Activity,
   type ActivityLink,
   ActivityLinkType,
-  ActivityUpdate,
   type ActorId,
   ConferencingProvider,
   type NewActivityWithNotes,
   type NewActor,
   type NewContact,
   type NewNote,
+  Serializable,
   Tag,
   Tool,
   type ToolBuilder,
@@ -140,8 +140,9 @@ export class GoogleCalendar
   }
 
   async requestAuth<
-    TCallback extends (auth: CalendarAuth, ...args: any[]) => any
-  >(callback: TCallback, ...extraArgs: any[]): Promise<ActivityLink> {
+    TArgs extends Serializable[],
+    TCallback extends (auth: CalendarAuth, ...args: TArgs) => any
+  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     console.log("Requesting Google Calendar auth");
 
     // Combine calendar and contacts scopes for single OAuth flow
@@ -238,14 +239,15 @@ export class GoogleCalendar
   }
 
   async startSync<
-    TCallback extends (activity: NewActivityWithNotes, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;
       calendarId: string;
     } & SyncOptions,
     callback: TCallback,
-    ...extraArgs: any[]
+    ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, calendarId } = options;
     console.log("Saving callback");
@@ -836,14 +838,12 @@ export class GoogleCalendar
   async onActivityUpdated(
     activity: Activity,
     changes: {
-      update: ActivityUpdate;
-      previous: Activity;
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
     }
   ): Promise<void> {
     // Only process calendar events
-    const source = activity.meta?.source;
+    const source = activity.source;
     if (
       !source ||
       typeof source !== "string" ||

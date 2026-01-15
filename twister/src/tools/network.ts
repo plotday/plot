@@ -1,6 +1,6 @@
 import { ITool } from "..";
+import { type JSONValue, Serializable } from "../utils/types";
 import { type AuthProvider, type Authorization } from "./integrations";
-import { type NoFunctions, type JSONValue } from "../utils/types";
 
 /**
  * Represents an incoming webhook request.
@@ -169,16 +169,15 @@ export abstract class Network extends ITool {
    * ```
    */
   abstract createWebhook<
-    TCallback extends (request: WebhookRequest, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (request: WebhookRequest, ...args: TArgs) => any
   >(
     options: {
       provider?: AuthProvider;
       authorization?: Authorization;
     },
     callback: TCallback,
-    ...extraArgs: TCallback extends (req: any, ...rest: infer R) => any
-      ? NoFunctions<R>
-      : []
+    ...extraArgs: TArgs
   ): Promise<string>;
 
   /**

@@ -1,5 +1,6 @@
 import {
   type ActivityLink,
+  Serializable,
   type SyncUpdate,
   Tool,
   type ToolBuilder,
@@ -125,8 +126,9 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   }
 
   async requestAuth<
-    TCallback extends (auth: MessagingAuth, ...args: any[]) => any
-  >(callback: TCallback, ...extraArgs: any[]): Promise<ActivityLink> {
+    TArgs extends Serializable[],
+    TCallback extends (auth: MessagingAuth, ...args: TArgs) => any
+  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     console.log("Requesting Slack auth");
     // Bot scopes for workspace-level "Add to Slack" installation
     // These are the scopes the bot token will have
@@ -199,16 +201,15 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   }
 
   async startSync<
-    TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (syncUpdate: SyncUpdate, ...args: TArgs) => any
   >(
     options: {
       authToken: string;
       channelId: string;
     } & MessageSyncOptions,
     callback: TCallback,
-    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, channelId } = options;
     console.log("Starting Slack sync for channel", channelId);

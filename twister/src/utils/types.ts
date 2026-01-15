@@ -12,6 +12,8 @@ import type { Callbacks } from "../tools/callbacks";
 import type { Store } from "../tools/store";
 import type { Tasks } from "../tools/tasks";
 
+export type { Serializable } from "./serializable";
+
 // ============================================================================
 // Type utilities for twist.ts
 // ============================================================================
@@ -95,29 +97,6 @@ export interface ToolShed {
 // ============================================================================
 // Type utilities for callbacks.ts
 // ============================================================================
-
-/**
- * Represents any non-function type.
- */
-export type NonFunction = Exclude<unknown, (...args: any[]) => any>;
-
-/**
- * Filters out function properties from a type, keeping only data properties.
- * For arrays, keeps the array structure while filtering functions from elements.
- */
-export type NoFunctions<T> = T extends (...args: any[]) => any
-  ? never
-  : T extends object
-  ? { [K in keyof T]: T[K] extends (...args: any[]) => any ? never : T[K] }
-  : T;
-
-/**
- * Extracts method names from a type that are functions.
- * Used to type-check callback method references.
- */
-export type CallbackMethods<T> = {
-  [K in keyof T]: T[K] extends (...args: any[]) => any ? K : never;
-}[keyof T];
 
 /**
  * Represents a valid JSON value.

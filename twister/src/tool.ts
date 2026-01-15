@@ -3,6 +3,7 @@ import type { Callback } from "./tools/callbacks";
 import type {
   InferOptions,
   InferTools,
+  Serializable,
   ToolBuilder,
   ToolShed,
 } from "./utils/types";
@@ -94,10 +95,10 @@ export abstract class Tool<TSelf> implements ITool {
    * const callback = await this.callback(this.onWebhook, "calendar", 123);
    * ```
    */
-  protected async callback<Fn extends (...args: any[]) => any>(
-    fn: Fn,
-    ...extraArgs: Parameters<Fn>
-  ): Promise<Callback> {
+  protected async callback<
+    TArgs extends Serializable[],
+    Fn extends (...args: TArgs) => any
+  >(fn: Fn, ...extraArgs: TArgs): Promise<Callback> {
     return this.tools.callbacks.create(fn, ...extraArgs);
   }
 
@@ -141,7 +142,7 @@ export abstract class Tool<TSelf> implements ITool {
    * @param key - The storage key to retrieve
    * @returns Promise resolving to the stored value or null
    */
-  protected async get<T extends import("./index").Serializable>(key: string): Promise<T | null> {
+  protected async get<T extends Serializable>(key: string): Promise<T | null> {
     return this.tools.store.get(key);
   }
 
@@ -191,7 +192,10 @@ export abstract class Tool<TSelf> implements ITool {
    * @param value - The value to store (must be SuperJSON-serializable)
    * @returns Promise that resolves when the value is stored
    */
-  protected async set<T extends import("./index").Serializable>(key: string, value: T): Promise<void> {
+  protected async set<T extends Serializable>(
+    key: string,
+    value: T
+  ): Promise<void> {
     return this.tools.store.set(key, value);
   }
 

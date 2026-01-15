@@ -1,12 +1,14 @@
 import * as asana from "asana";
 
 import {
+  type Activity,
   type ActivityLink,
   ActivityLinkType,
+  ActivityMeta,
   ActivityType,
   type NewActivityWithNotes,
   type NewNote,
-  Uuid,
+  type Serializable,
 } from "@plotday/twister";
 import type {
   Project,
@@ -74,13 +76,9 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Request Asana OAuth authorization
    */
   async requestAuth<
-    TCallback extends (auth: ProjectAuth, ...args: any[]) => any
-  >(
-    callback: TCallback,
-    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
-      ? R
-      : []
-  ): Promise<ActivityLink> {
+    TArgs extends Serializable[],
+    TCallback extends (auth: ProjectAuth, ...args: TArgs) => any
+  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     const asanaScopes = ["default"];
 
     // Generate opaque token for authorization
@@ -153,16 +151,15 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Start syncing tasks from an Asana project
    */
   async startSync<
-    TCallback extends (task: NewActivityWithNotes, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (task: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;
       projectId: string;
     } & ProjectSyncOptions,
     callback: TCallback,
-    ...extraArgs: TCallback extends (task: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, projectId, timeMin } = options;
 
@@ -384,7 +381,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       },
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned tasks
-      done: task.completed && task.completed_at ? new Date(task.completed_at) : null,
+      done:
+        task.completed && task.completed_at
+          ? new Date(task.completed_at)
+          : null,
       notes,
     };
   }
@@ -393,37 +393,29 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Update task with new values
    *
    * @param authToken - Authorization token
-   * @param update - ActivityUpdate with changed fields
+   * @param activity - The updated activity
    */
-  async updateIssue(
-    authToken: string,
-    update: import("@plotday/twister").ActivityUpdate
-  ): Promise<void> {
+  async updateIssue(authToken: string, activity: Activity): Promise<void> {
     // Extract Asana task GID from meta
-    const source = update.meta?.source as string | undefined;
-    const taskGid = source?.split(":").pop();
+    const taskGid = activity.meta?.taskGid as string | undefined;
     if (!taskGid) {
-      throw new Error("Invalid source format for Asana task");
+      throw new Error("Asana task GID not found in activity meta");
     }
 
     const client = await this.getClient(authToken);
     const updateFields: any = {};
 
     // Handle title
-    if (update.title !== undefined) {
-      updateFields.name = update.title;
+    if (activity.title !== null) {
+      updateFields.name = activity.title;
     }
 
     // Handle assignee
-    if (update.assignee !== undefined) {
-      updateFields.assignee = update.assignee?.id || null;
-    }
+    updateFields.assignee = activity.assignee?.id || null;
 
     // Handle completion status based on done
     // Asana only has completed boolean (no In Progress state)
-    if (update.done !== undefined) {
-      updateFields.completed = update.done !== null;
-    }
+    updateFields.completed = activity.done !== null;
 
     // Apply updates if any fields changed
     if (Object.keys(updateFields).length > 0) {
@@ -435,17 +427,21 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Add a comment (story) to an Asana task
    *
    * @param authToken - Authorization token
-   * @param issueId - Asana task GID
+   * @param meta - Activity metadata containing taskGid
    * @param body - Comment text (markdown not directly supported, plain text)
    */
   async addIssueComment(
     authToken: string,
-    issueId: string,
+    meta: ActivityMeta,
     body: string
   ): Promise<void> {
+    const taskGid = meta.taskGid as string | undefined;
+    if (!taskGid) {
+      throw new Error("Asana task GID not found in activity meta");
+    }
     const client = await this.getClient(authToken);
 
-    await client.tasks.addComment(issueId, {
+    await client.tasks.addComment(taskGid, {
       text: body,
     });
   }

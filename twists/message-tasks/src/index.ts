@@ -12,15 +12,14 @@ import {
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import { Uuid } from "@plotday/twister/utils/uuid";
 import type {
   MessageChannel,
-  MessageSyncOptions,
   MessagingAuth,
   MessagingTool,
 } from "@plotday/twister/common/messaging";
 import { AI, type AIMessage } from "@plotday/twister/tools/ai";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { Uuid } from "@plotday/twister/utils/uuid";
 
 type MessageProvider = "slack";
 
@@ -100,14 +99,6 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     await this.set("messaging_auths", auths);
   }
 
-  private async getAuthToken(
-    provider: MessageProvider
-  ): Promise<string | null> {
-    const auths = await this.getStoredAuths();
-    const auth = auths.find((a) => a.provider === provider);
-    return auth?.authToken || null;
-  }
-
   private async getChannelConfigs(): Promise<ChannelConfig[]> {
     return (await this.get<ChannelConfig[]>("channel_configs")) || [];
   }
@@ -132,10 +123,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     return tasks.find((t) => t.threadId === threadId) || null;
   }
 
-  private async storeThreadTask(
-    threadId: string,
-    taskId: Uuid
-  ): Promise<void> {
+  private async storeThreadTask(threadId: string, taskId: Uuid): Promise<void> {
     const tasks = (await this.get<ThreadTask[]>("thread_tasks")) || [];
     tasks.push({
       threadId,
@@ -173,7 +161,8 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       start: new Date(),
       notes: [
         {
-          content: "I'll analyze your message threads and create tasks when action is needed.",
+          content:
+            "I'll analyze your message threads and create tasks when action is needed.",
           links: [slackAuthLink],
         },
       ],
@@ -242,7 +231,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     // Create callback link for each channel
     for (const channel of channels) {
-      const token = await this.callback(
+      const token = await this.linkCallback(
         this.onChannelSelected,
         provider,
         channel.id,
@@ -347,9 +336,9 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     const thread = syncUpdate;
     if (!thread.notes || thread.notes.length === 0) return;
 
-    const threadId = thread.meta?.source as string;
+    const threadId = "source" in thread ? thread.source : undefined;
     if (!threadId) {
-      console.warn("Thread has no source meta, skipping");
+      console.warn("Thread has no source, skipping");
       return;
     }
 
@@ -417,7 +406,9 @@ If a task is needed, create a clear, actionable title that describes what the us
       },
       ...thread.notes.map((note, idx) => ({
         role: "user" as const,
-        content: `[Message ${idx + 1}] User: ${note.content || "(empty message)"}`,
+        content: `[Message ${idx + 1}] User: ${
+          note.content || "(empty message)"
+        }`,
       })),
     ];
 
@@ -492,7 +483,11 @@ If a task is needed, create a clear, actionable title that describes what the us
     provider: MessageProvider,
     channelId: string
   ): Promise<void> {
-    const threadId = thread.meta?.source as string;
+    const threadId = "source" in thread ? thread.source : undefined;
+    if (!threadId) {
+      console.warn("Thread has no source, skipping task creation");
+      return;
+    }
 
     // Get channel name for context
     const configs = await this.getChannelConfigs();
@@ -501,14 +496,11 @@ If a task is needed, create a clear, actionable title that describes what the us
     );
     const channelName = channelConfig?.channelName || channelId;
 
-    // Create task source
-    const taskSource = `message-tasks:${threadId}`;
-
     // Create task activity - database handles upsert automatically
     const task = await this.tools.plot.createActivity({
+      source: `message-tasks:${threadId}`,
       type: ActivityType.Action,
-      title:
-        analysis.taskTitle || thread.title || "Action needed from message",
+      title: analysis.taskTitle || thread.title || "Action needed from message",
       start: new Date(),
       notes: analysis.taskNote
         ? [
@@ -522,7 +514,6 @@ If a task is needed, create a clear, actionable title that describes what the us
             },
           ],
       meta: {
-        source: taskSource,
         originalThreadId: threadId,
         provider,
         channelId,

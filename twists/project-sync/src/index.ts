@@ -3,23 +3,22 @@ import { Jira } from "@plotday/tool-jira";
 import { Linear } from "@plotday/tool-linear";
 import {
   type Activity,
+  ActivityLink,
   ActivityLinkType,
   ActivityType,
-  ActivityUpdate,
   ActorType,
-  type NewActivityWithNotes,
   type Note,
   type Priority,
   type SyncUpdate,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import { Uuid } from "@plotday/twister/utils/uuid";
 import type {
   ProjectAuth,
   ProjectTool,
 } from "@plotday/twister/common/projects";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { Uuid } from "@plotday/twister/utils/uuid";
 
 type ProjectProvider = "linear" | "jira" | "asana";
 
@@ -109,7 +108,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
    * Called when twist is activated
    * Presents auth options for all supported providers
    */
-  async activate(priority: Pick<Priority, "id">) {
+  async activate(_priority: Pick<Priority, "id">) {
     // Get auth links from all providers
     const linearAuthLink = await this.tools.linear.requestAuth(
       this.onAuthComplete,
@@ -163,15 +162,11 @@ export default class ProjectSync extends Twist<ProjectSync> {
     }
 
     // Create project selection links
-    const links: Array<{
-      type: ActivityLinkType.callback;
-      title: string;
-      callback: any;
-    }> = await Promise.all(
+    const links: Array<ActivityLink> = await Promise.all(
       projects.map(async (project) => ({
         type: ActivityLinkType.callback as const,
         title: project.key ? `${project.key}: ${project.name}` : project.name,
-        callback: await this.callback(
+        callback: await this.linkCallback(
           this.onProjectSelected,
           provider,
           project.id,
@@ -196,7 +191,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
    * Initiates the sync process for that project
    */
   async onProjectSelected(
-    args: any,
+    _link: ActivityLink,
     provider: ProjectProvider,
     projectId: string,
     projectName: string
@@ -261,12 +256,15 @@ export default class ProjectSync extends Twist<ProjectSync> {
   async onIssue(
     syncUpdate: SyncUpdate,
     provider: ProjectProvider,
-    projectId: string
+    _projectId: string
   ) {
     // Only handle new issues, not updates
     if ("activityId" in syncUpdate) return;
 
     const issue = syncUpdate;
+
+    // Add provider to meta for routing updates back to the correct tool
+    issue.meta = { ...issue.meta, provider };
 
     // Filter out empty notes to avoid warnings in Plot tool
     issue.notes = issue.notes?.filter((note) => !this.isNoteEmpty(note));
@@ -277,61 +275,19 @@ export default class ProjectSync extends Twist<ProjectSync> {
   }
 
   /**
-   * Parse source field to extract provider and issue information
-   * Format: "{provider}:issue:{projectId}:{issueId}"
-   * Examples:
-   *   - "linear:issue:team-abc:issue-123"
-   *   - "asana:task:proj-456:task-789"
-   *   - "jira:issue:PROJ:PROJ-42"
-   */
-  private parseSource(source: string): {
-    provider: ProjectProvider;
-    projectId: string;
-    issueId: string;
-  } | null {
-    const parts = source.split(":");
-    if (parts.length !== 4) return null;
-
-    const [provider, type, projectId, issueId] = parts;
-
-    // Validate provider
-    if (!["linear", "jira", "asana"].includes(provider)) {
-      return null;
-    }
-
-    // Validate type
-    if (!["issue", "task"].includes(type)) {
-      return null;
-    }
-
-    return {
-      provider: provider as ProjectProvider,
-      projectId,
-      issueId,
-    };
-  }
-
-  /**
    * Called when an activity created by this twist is updated
    * Syncs changes back to the external service
    */
   private async onActivityUpdated(
-    _activity: Activity,
-    changes: {
-      update: ActivityUpdate;
-      previous: Activity;
+    activity: Activity,
+    _changes: {
       tagsAdded: Record<string, string[]>;
       tagsRemoved: Record<string, string[]>;
     }
   ): Promise<void> {
-    // Only sync activities with a source (synced from external services)
-    const sourceId = changes.previous.meta?.source as string | undefined;
-    if (!sourceId) return;
-
-    const parsed = this.parseSource(sourceId);
-    if (!parsed) return;
-
-    const { provider } = parsed;
+    // Get provider from meta (set by this twist when creating the activity)
+    const provider = activity.meta?.provider as ProjectProvider | undefined;
+    if (!provider) return;
 
     // Get auth token for this provider
     const authToken = await this.getAuthToken(provider);
@@ -344,17 +300,13 @@ export default class ProjectSync extends Twist<ProjectSync> {
 
     try {
       // Sync all changes using the generic updateIssue method
+      // Tool reads its own IDs from activity.meta (e.g., linearId, taskGid, issueKey)
       if (tool.updateIssue) {
-        await tool.updateIssue(authToken, changes.update);
-        console.log(
-          `Synced activity update to ${provider} issue from source ${sourceId}`
-        );
+        await tool.updateIssue(authToken, activity);
+        console.log(`Synced activity update to ${provider}`);
       }
     } catch (error) {
-      console.error(
-        `Failed to sync activity update to ${provider} issue ${sourceId}:`,
-        error
-      );
+      console.error(`Failed to sync activity update to ${provider}:`, error);
     }
   }
 
@@ -376,22 +328,9 @@ export default class ProjectSync extends Twist<ProjectSync> {
       return;
     }
 
-    // Determine provider and issue ID from activity metadata
-    let provider: ProjectProvider | null = null;
-    let issueId: string | null = null;
-
-    if (activity.meta?.linearId) {
-      provider = "linear";
-      issueId = activity.meta.linearId as string;
-    } else if (activity.meta?.jiraId) {
-      provider = "jira";
-      issueId = activity.meta.jiraId as string;
-    } else if (activity.meta?.asanaId) {
-      provider = "asana";
-      issueId = activity.meta.asanaId as string;
-    }
-
-    if (!provider || !issueId) {
+    // Get provider from meta (set by this twist when creating the activity)
+    const provider = activity.meta?.provider as ProjectProvider | undefined;
+    if (!provider || !activity.meta) {
       return;
     }
 
@@ -406,16 +345,14 @@ export default class ProjectSync extends Twist<ProjectSync> {
 
     try {
       // Sync note as comment
+      // Tool extracts its own ID from meta (e.g., linearId, taskGid, issueKey)
       if (tool.addIssueComment) {
-        await tool.addIssueComment(authToken, issueId, note.content);
+        await tool.addIssueComment(authToken, activity.meta, note.content);
       } else {
         console.warn(`Provider ${provider} does not support adding comments`);
       }
     } catch (error) {
-      console.error(
-        `Failed to sync note to ${provider} issue ${issueId}:`,
-        error
-      );
+      console.error(`Failed to sync note to ${provider}:`, error);
     }
   }
 
@@ -425,7 +362,6 @@ export default class ProjectSync extends Twist<ProjectSync> {
    */
   async deactivate() {
     // Stop all syncs
-    const auths = await this.getStoredAuths();
     const synced = (await this.get<string[]>("synced_projects")) || [];
 
     for (const syncKey of synced) {

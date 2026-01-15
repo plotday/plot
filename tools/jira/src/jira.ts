@@ -1,15 +1,16 @@
 import { Version3Client } from "jira.js";
 
 import {
+  type Activity,
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
-  ActivityUpdate,
   type NewActivityWithNotes,
+  NewContact,
   type NewNote,
+  Serializable,
   Uuid,
 } from "@plotday/twister";
-import type { Actor, ActorId, NewContact } from "@plotday/twister/plot";
 import type {
   Project,
   ProjectAuth,
@@ -88,13 +89,9 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Request Jira OAuth authorization
    */
   async requestAuth<
-    TCallback extends (auth: ProjectAuth, ...args: any[]) => any
-  >(
-    callback: TCallback,
-    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
-      ? R
-      : []
-  ): Promise<ActivityLink> {
+    TArgs extends Serializable[],
+    TCallback extends (auth: ProjectAuth, ...args: TArgs) => any
+  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     const jiraScopes = ["read:jira-work", "write:jira-work", "read:jira-user"];
 
     // Generate opaque token for authorization
@@ -156,16 +153,15 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Start syncing issues from a Jira project
    */
   async startSync<
-    TCallback extends (issue: NewActivityWithNotes, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (issue: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;
       projectId: string;
     } & ProjectSyncOptions,
     callback: TCallback,
-    ...extraArgs: TCallback extends (issue: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, projectId, timeMin } = options;
 
@@ -204,12 +200,13 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     projectId: string,
     options?: ProjectSyncOptions
   ): Promise<void> {
-    // Initialize sync state
+    // Initialize sync state with options stored in state
     await this.set(`sync_state_${projectId}`, {
       startAt: 0,
       batchNumber: 1,
       issuesProcessed: 0,
       initialSync: true,
+      timeMin: options?.timeMin?.toISOString() ?? null,
     });
 
     // Queue first batch
@@ -477,14 +474,13 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Update issue with new values
    *
    * @param authToken - Authorization token
-   * @param update - ActivityUpdate with changed fields
+   * @param activity - The updated activity
    */
-  async updateIssue(authToken: string, update: ActivityUpdate): Promise<void> {
+  async updateIssue(authToken: string, activity: Activity): Promise<void> {
     // Extract Jira issue key from meta
-    const source = update.meta?.source as string | undefined;
-    const issueKey = source?.split(":").pop();
+    const issueKey = activity.meta?.issueKey as string | undefined;
     if (!issueKey) {
-      throw new Error("Invalid source format for Jira issue");
+      throw new Error("Jira issue key not found in activity meta");
     }
 
     const client = await this.getClient(authToken);
@@ -492,15 +488,13 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     // Handle field updates (title, assignee)
     const updateFields: any = {};
 
-    if (update.title !== undefined) {
-      updateFields.summary = update.title;
+    if (activity.title !== null) {
+      updateFields.summary = activity.title;
     }
 
-    if (update.assignee !== undefined) {
-      updateFields.assignee = update.assignee
-        ? { id: update.assignee.id }
-        : null;
-    }
+    updateFields.assignee = activity.assignee
+      ? { id: activity.assignee.id }
+      : null;
 
     // Apply field updates if any
     if (Object.keys(updateFields).length > 0) {
@@ -511,58 +505,53 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     }
 
     // Handle workflow state transitions based on start + done combination
-    if (update.start !== undefined || update.done !== undefined) {
-      // Get available transitions for this issue
-      const transitions = await client.issues.getTransitions({
+    // Get available transitions for this issue
+    const transitions = await client.issues.getTransitions({
+      issueIdOrKey: issueKey,
+    });
+
+    let targetTransition;
+
+    // Determine target state based on combination
+    if (activity.done !== null) {
+      // Completed - look for "Done", "Close", or "Resolve" transition
+      targetTransition = transitions.transitions?.find(
+        (t) =>
+          t.name?.toLowerCase() === "done" ||
+          t.name?.toLowerCase() === "close" ||
+          t.name?.toLowerCase() === "resolve" ||
+          t.to?.name?.toLowerCase() === "done" ||
+          t.to?.name?.toLowerCase() === "closed" ||
+          t.to?.name?.toLowerCase() === "resolved"
+      );
+    } else if (activity.start !== null) {
+      // In Progress - look for "Start Progress" or "In Progress" transition
+      targetTransition = transitions.transitions?.find(
+        (t) =>
+          t.name?.toLowerCase() === "start progress" ||
+          t.name?.toLowerCase() === "in progress" ||
+          t.to?.name?.toLowerCase() === "in progress"
+      );
+    } else {
+      // Backlog/Todo - look for "To Do", "Open", or "Reopen" transition
+      targetTransition = transitions.transitions?.find(
+        (t) =>
+          t.name?.toLowerCase() === "reopen" ||
+          t.name?.toLowerCase() === "to do" ||
+          t.name?.toLowerCase() === "open" ||
+          t.to?.name?.toLowerCase() === "to do" ||
+          t.to?.name?.toLowerCase() === "open"
+      );
+    }
+
+    // Execute transition if found
+    if (targetTransition) {
+      await client.issues.doTransition({
         issueIdOrKey: issueKey,
+        transition: {
+          id: targetTransition.id!,
+        },
       });
-
-      let targetTransition;
-
-      // Determine target state based on combination
-      if (update.done !== undefined && update.done !== null) {
-        // Completed - look for "Done", "Close", or "Resolve" transition
-        targetTransition = transitions.transitions?.find(
-          (t) =>
-            t.name?.toLowerCase() === "done" ||
-            t.name?.toLowerCase() === "close" ||
-            t.name?.toLowerCase() === "resolve" ||
-            t.to?.name?.toLowerCase() === "done" ||
-            t.to?.name?.toLowerCase() === "closed" ||
-            t.to?.name?.toLowerCase() === "resolved"
-        );
-      } else if (update.start !== undefined && update.start !== null) {
-        // In Progress - look for "Start Progress" or "In Progress" transition
-        targetTransition = transitions.transitions?.find(
-          (t) =>
-            t.name?.toLowerCase() === "start progress" ||
-            t.name?.toLowerCase() === "in progress" ||
-            t.to?.name?.toLowerCase() === "in progress"
-        );
-      } else if (
-        (update.start !== undefined && update.start === null) ||
-        (update.done !== undefined && update.done === null)
-      ) {
-        // Backlog/Todo - look for "To Do", "Open", or "Reopen" transition
-        targetTransition = transitions.transitions?.find(
-          (t) =>
-            t.name?.toLowerCase() === "reopen" ||
-            t.name?.toLowerCase() === "to do" ||
-            t.name?.toLowerCase() === "open" ||
-            t.to?.name?.toLowerCase() === "to do" ||
-            t.to?.name?.toLowerCase() === "open"
-        );
-      }
-
-      // Execute transition if found
-      if (targetTransition) {
-        await client.issues.doTransition({
-          issueIdOrKey: issueKey,
-          transition: {
-            id: targetTransition.id!,
-          },
-        });
-      }
     }
   }
 
@@ -570,14 +559,18 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Add a comment to a Jira issue
    *
    * @param authToken - Authorization token
-   * @param issueKey - Jira issue key (e.g., "PROJ-123")
+   * @param meta - Activity metadata containing issueKey
    * @param body - Comment text (converted to ADF format)
    */
   async addIssueComment(
     authToken: string,
-    issueKey: string,
+    meta: import("@plotday/twister").ActivityMeta,
     body: string
   ): Promise<void> {
+    const issueKey = meta.issueKey as string | undefined;
+    if (!issueKey) {
+      throw new Error("Jira issue key not found in activity meta");
+    }
     const client = await this.getClient(authToken);
 
     // Convert plain text to Atlassian Document Format (ADF)

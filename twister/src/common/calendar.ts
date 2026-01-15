@@ -1,5 +1,4 @@
-import type { ActivityLink, NewActivityWithNotes, SyncUpdate } from "../index";
-import type { NoFunctions } from "../utils/types";
+import type { ActivityLink, Serializable, SyncUpdate } from "../index";
 
 /**
  * Represents successful calendar authorization.
@@ -20,7 +19,7 @@ export type CalendarAuth = {
  * with Plot. Different calendar providers may have additional
  * provider-specific properties.
  */
-export interface Calendar {
+export type Calendar = {
   /** Unique identifier for the calendar within the provider */
   id: string;
   /** Human-readable name of the calendar */
@@ -29,7 +28,7 @@ export interface Calendar {
   description: string | null;
   /** Whether this is the user's primary/default calendar */
   primary: boolean;
-}
+};
 
 /**
  * Configuration options for calendar synchronization.
@@ -37,12 +36,12 @@ export interface Calendar {
  * Controls the time range and other parameters for calendar sync operations.
  * Used to limit sync scope and optimize performance.
  */
-export interface SyncOptions {
+export type SyncOptions = {
   /** Earliest date to sync events from (inclusive) */
   timeMin?: Date;
   /** Latest date to sync events to (exclusive) */
   timeMax?: Date;
-}
+};
 
 /**
  * Base interface for calendar integration tools.
@@ -109,7 +108,7 @@ export interface SyncOptions {
  * }
  * ```
  */
-export interface CalendarTool {
+export type CalendarTool = {
   /**
    * Initiates the authorization flow for the calendar service.
    *
@@ -117,11 +116,12 @@ export interface CalendarTool {
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise resolving to an ActivityLink to initiate the auth flow
    */
-  requestAuth<TCallback extends (auth: CalendarAuth, ...args: any[]) => any>(
+  requestAuth<
+    TArgs extends Serializable[],
+    TCallback extends (auth: CalendarAuth, ...args: TArgs) => any
+  >(
     callback: TCallback,
-    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: TArgs
   ): Promise<ActivityLink>;
 
   /**
@@ -165,15 +165,16 @@ export interface CalendarTool {
    * @returns Promise that resolves when sync setup is complete
    * @throws When auth token is invalid or calendar doesn't exist
    */
-  startSync<TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any>(
+  startSync<
+    TArgs extends Serializable[],
+    TCallback extends (syncUpdate: SyncUpdate, ...args: TArgs) => any
+  >(
     options: {
       authToken: string;
       calendarId: string;
     } & SyncOptions,
     callback: TCallback,
-    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
-      ? NoFunctions<R>
-      : []
+    ...extraArgs: TArgs
   ): Promise<void>;
 
   /**
@@ -188,4 +189,4 @@ export interface CalendarTool {
    * @returns Promise that resolves when sync is stopped
    */
   stopSync(authToken: string, calendarId: string): Promise<void>;
-}
+};

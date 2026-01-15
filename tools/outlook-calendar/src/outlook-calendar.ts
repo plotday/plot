@@ -2,7 +2,6 @@ import {
   type Activity,
   type ActivityLink,
   ActivityLinkType,
-  type ActivityUpdate,
   type ActorId,
   ConferencingProvider,
   type ContentType,
@@ -10,11 +9,11 @@ import {
   type NewActor,
   type NewContact,
   type NewNote,
+  Serializable,
   Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
-import { Uuid } from "@plotday/twister/utils/uuid";
 import type {
   Calendar,
   CalendarAuth,
@@ -34,6 +33,7 @@ import {
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
+import { Uuid } from "@plotday/twister/utils/uuid";
 
 import {
   GraphApi,
@@ -163,8 +163,9 @@ export class OutlookCalendar
   }
 
   async requestAuth<
-    TCallback extends (auth: CalendarAuth, ...args: any[]) => any
-  >(callback: TCallback, ...extraArgs: any[]): Promise<ActivityLink> {
+    TArgs extends Serializable[],
+    TCallback extends (auth: CalendarAuth, ...args: TArgs) => any
+  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     // Generate opaque token for authorization
     const token = crypto.randomUUID();
 
@@ -236,14 +237,15 @@ export class OutlookCalendar
   }
 
   async startSync<
-    TCallback extends (activity: NewActivityWithNotes, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;
       calendarId: string;
     } & SyncOptions,
     callback: TCallback,
-    ...extraArgs: any[]
+    ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, calendarId } = options;
     // Create callback token for parent
@@ -491,7 +493,11 @@ export class OutlookCalendar
 
             if (hasDescription || hasLinks) {
               notes.push({
-                activity: { source: outlookEvent.webLink || `outlook-calendar:${outlookEvent.id}` },
+                activity: {
+                  source:
+                    outlookEvent.webLink ||
+                    `outlook-calendar:${outlookEvent.id}`,
+                },
                 key: "description",
                 content: hasDescription ? outlookEvent.body!.content! : null,
                 links: hasLinks ? links : null,
@@ -516,10 +522,7 @@ export class OutlookCalendar
               "event_callback_token"
             );
             if (callbackToken) {
-              await this.tools.callbacks.run(
-                callbackToken,
-                activityWithNotes
-              );
+              await this.tools.callbacks.run(callbackToken, activityWithNotes);
             }
           } catch (error) {
             console.error(`Error processing event ${outlookEvent.id}:`, error);
@@ -632,14 +635,12 @@ export class OutlookCalendar
   async onActivityUpdated(
     activity: Activity,
     changes: {
-      update: ActivityUpdate;
-      previous: Activity;
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
     }
   ): Promise<void> {
     // Only process calendar events
-    const source = activity.meta?.source;
+    const source = activity.source;
     if (
       !source ||
       typeof source !== "string" ||
@@ -719,7 +720,9 @@ export class OutlookCalendar
       typeof eventId !== "string" ||
       typeof calendarId !== "string"
     ) {
-      console.warn("Missing or invalid event or calendar ID in activity metadata");
+      console.warn(
+        "Missing or invalid event or calendar ID in activity metadata"
+      );
       return;
     }
 

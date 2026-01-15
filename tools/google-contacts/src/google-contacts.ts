@@ -1,4 +1,9 @@
-import { Tool, type ToolBuilder, type NewContact } from "@plotday/twister";
+import {
+  type NewContact,
+  Serializable,
+  Tool,
+  type ToolBuilder,
+} from "@plotday/twister";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthLevel,
@@ -9,10 +14,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 
-import type {
-  ContactAuth,
-  GoogleContacts as IGoogleContacts,
-} from "./types";
+import type { ContactAuth, GoogleContacts as IGoogleContacts } from "./types";
 
 type ContactTokens = {
   connections?: {
@@ -269,8 +271,9 @@ export default class GoogleContacts
   }
 
   async requestAuth<
-    TCallback extends (auth: ContactAuth, ...args: any[]) => any
-  >(callback: TCallback, ...extraArgs: any[]): Promise<any> {
+    TArgs extends Serializable[],
+    TCallback extends (auth: ContactAuth, ...args: TArgs) => any
+  >(callback: TCallback, ...extraArgs: TArgs): Promise<any> {
     const opaqueToken = crypto.randomUUID();
 
     // Create callback token for parent
@@ -311,12 +314,9 @@ export default class GoogleContacts
   }
 
   async startSync<
-    TCallback extends (contacts: NewContact[], ...args: any[]) => any
-  >(
-    authToken: string,
-    callback: TCallback,
-    ...extraArgs: any[]
-  ): Promise<void> {
+    TArgs extends Serializable[],
+    TCallback extends (contacts: NewContact[], ...args: TArgs) => any
+  >(authToken: string, callback: TCallback, ...extraArgs: TArgs): Promise<void> {
     const storedAuthToken = await this.get<AuthToken>(
       `auth_token:${authToken}`
     );
@@ -356,12 +356,13 @@ export default class GoogleContacts
    * @param extraArgs - Additional arguments to pass to the callback
    */
   async syncWithAuth<
-    TCallback extends (contacts: NewContact[], ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (contacts: NewContact[], ...args: TArgs) => any
   >(
     authorization: Authorization,
     authToken: AuthToken,
     callback?: TCallback,
-    ...extraArgs: any[]
+    ...extraArgs: TArgs
   ): Promise<void> {
     // Validate authorization has required contacts scopes
     const hasRequiredScopes = GoogleContacts.SCOPES.every((scope) =>

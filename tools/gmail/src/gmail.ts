@@ -1,5 +1,6 @@
 import {
   type ActivityLink,
+  Serializable,
   type SyncUpdate,
   Tool,
   type ToolBuilder,
@@ -111,10 +112,9 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   }
 
   async requestAuth<
-    TCallback extends (auth: MessagingAuth, ...args: any[]) => any
-  >(callback: TCallback, ...extraArgs: any[]): Promise<ActivityLink> {
-    console.log("Requesting Gmail auth");
-
+    TArgs extends Serializable[],
+    TCallback extends (auth: MessagingAuth, ...args: TArgs) => any
+  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     // Gmail OAuth scopes for read-only access
     const gmailScopes = [
       "https://www.googleapis.com/auth/gmail.readonly",
@@ -199,16 +199,15 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   }
 
   async startSync<
-    TCallback extends (syncUpdate: SyncUpdate, ...args: any[]) => any
+    TArgs extends Serializable[],
+    TCallback extends (syncUpdate: SyncUpdate, ...args: TArgs) => any
   >(
     options: {
       authToken: string;
       channelId: string;
     } & MessageSyncOptions,
     callback: TCallback,
-    ...extraArgs: TCallback extends (syncUpdate: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, channelId, timeMin } = options;
     console.log("Starting Gmail sync for channel", channelId);
@@ -237,7 +236,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
     await this.set(`sync_state_${channelId}`, initialState);
 
-    console.log("Starting initial Gmail sync");
     // Start sync batch using run tool for long-running operation
     const syncCallback = await this.callback(
       this.syncBatch,
