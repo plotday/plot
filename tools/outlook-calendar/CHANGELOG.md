@@ -1,5 +1,13 @@
 # @plotday/tool-outlook-calendar
 
+## 0.9.2
+
+### Changed
+
+- Improve callback type safety ([`c6b5e0b`](https://github.com/plotday/plot/commit/c6b5e0bb99a3672325e253d824586571237069ca))
+- Updated dependencies:
+- @plotday/twister@0.30.0
+
 ## 0.9.1
 
 ### Changed

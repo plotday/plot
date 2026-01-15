@@ -1,5 +1,18 @@
 # @plotday/tool-google-calendar
 
+## 0.9.2
+
+### Changed
+
+- Improve callback type safety ([`c6b5e0b`](https://github.com/plotday/plot/commit/c6b5e0bb99a3672325e253d824586571237069ca))
+- Updated dependencies:
+- @plotday/twister@0.30.0
+- @plotday/tool-google-contacts@0.4.6
+
+### Fixed
+
+- Recurring date parsing ([`0c6d416`](https://github.com/plotday/plot/commit/0c6d4161241e130c26caaa7ba899855ba585f505))
+
 ## 0.9.1
 
 ### Changed
