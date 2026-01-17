@@ -1,5 +1,16 @@
 # @plotday/tool-outlook-calendar
 
+## 0.10.0
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.31.0
+
+### Fixed
+
+- BREAKING: Fixed many issues with recurring activity, which required some changes to ActivityOccurrence ([`289cd83`](https://github.com/plotday/plot/commit/289cd83e292d1ebdd83b55990bffa33c9639000b))
+
 ## 0.9.2
 
 ### Changed
