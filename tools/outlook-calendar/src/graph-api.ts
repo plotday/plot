@@ -536,26 +536,30 @@ export function transformOutlookEvent(
       activity.recurrenceExdates = exdates;
     }
 
-    // Parse additional recurrence dates (not supported by Graph API)
+    // Parse RDATEs (additional occurrence dates not in the recurrence rule)
+    // Note: Microsoft Graph API doesn't support RDATE, so this will always be empty
     const rdates = parseOutlookRDates(event.recurrence);
     if (rdates.length > 0) {
-      activity.recurrenceDates = rdates;
+      activity.occurrences = rdates.map((rdate) => ({
+        occurrence: rdate,
+        start: rdate,
+      }));
     }
   }
 
   // Handle exception events (modifications to recurring event instances)
+  // TODO: This should be updated to use the occurrences[] array pattern instead
+  // For now, we store the exception info in metadata for future processing
   if (
     event.type === "exception" &&
     event.seriesMasterId &&
     event.originalStart
   ) {
     // This is a modified instance of a recurring event
-    const originalStartDate = new Date(event.originalStart);
-    activity.occurrence = originalStartDate;
-    // The seriesMasterId links this to the master recurring event
-    // This will need to be matched to the master activity in the Plot system
+    // Store the exception info in metadata
     if (activity.meta) {
       activity.meta.seriesMasterId = event.seriesMasterId;
+      activity.meta.originalStartDate = new Date(event.originalStart).toISOString();
     }
   }
 

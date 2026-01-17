@@ -468,18 +468,6 @@ export type Activity = ActivityCommon & {
   recurrenceRule: string | null;
   /** Array of dates to exclude from the recurrence pattern */
   recurrenceExdates: Date[] | null;
-  /** Array of additional occurrence dates to include in the recurrence pattern */
-  recurrenceDates: Date[] | null;
-  /**
-   * For recurring event exceptions, points to the root recurring activity.
-   * Used when an individual occurrence of a recurring event is modified.
-   */
-  recurrence: Activity | null;
-  /**
-   * For recurring event exceptions, the original occurrence date being overridden.
-   * Used to identify which occurrence of a recurring event this exception replaces.
-   */
-  occurrence: Date | null;
   /** Metadata about the activity, typically from an external system that created it */
   meta: ActivityMeta | null;
 };
@@ -491,6 +479,109 @@ export type ActivityWithNotes = Activity & {
 export type NewActivityWithNotes = NewActivity & {
   notes: Omit<NewNote, "activity">[];
 };
+
+/**
+ * Represents a specific instance of a recurring activity.
+ * All field values are computed by merging the recurring activity's
+ * defaults with any occurrence-specific overrides.
+ */
+export type ActivityOccurrence = {
+  /**
+   * Original date/datetime of this occurrence.
+   * Use start for the occurrence's current start time.
+   * Format: Date object or "YYYY-MM-DD" for all-day events.
+   */
+  occurrence: Date | string;
+
+  /**
+   * The recurring activity of which this is an occurrence.
+   */
+  activity: Activity;
+
+  /**
+   * Effective values for this occurrence (series defaults + overrides).
+   * These are the actual values that apply to this specific instance.
+   */
+  start: Date | string;
+  end: Date | string | null;
+  done: Date | null;
+  title: string;
+  preview: string | null;
+  /**
+   * Meta is merged, with the occurrence's meta taking precedence.
+   */
+  meta: ActivityMeta | null;
+
+  /**
+   * Tags for this occurrence (merged with the recurring tags).
+   */
+  tags: Tags;
+
+  /**
+   * True if the occurrence is archived.
+   */
+  archived: boolean;
+};
+
+/**
+ * Type for creating or updating activity occurrences.
+ *
+ * Follows the same pattern as Activity/NewActivity:
+ * - Required fields: `occurrence` (key) and `start` (for scheduling)
+ * - Optional fields: All others from ActivityOccurrence
+ * - Additional fields: `twistTags` for add/remove, `unread` for notification control
+ *
+ * @example
+ * ```typescript
+ * const activity: NewActivity = {
+ *   type: ActivityType.Event,
+ *   recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
+ *   occurrences: [
+ *     {
+ *       occurrence: new Date("2025-01-27T14:00:00Z"),
+ *       start: new Date("2025-01-27T14:00:00Z"),
+ *       tags: { [Tag.Skip]: [user] }
+ *     }
+ *   ]
+ * };
+ * ```
+ */
+export type NewActivityOccurrence = Pick<
+  ActivityOccurrence,
+  "occurrence" | "start"
+> &
+  Partial<
+    Omit<ActivityOccurrence, "occurrence" | "start" | "activity" | "tags">
+  > & {
+    /**
+     * Tags specific to this occurrence.
+     * These replace any recurrence-level tags for this occurrence.
+     */
+    tags?: NewTags;
+
+    /**
+     * Add or remove the twist's tags on this occurrence.
+     * Maps tag ID to boolean: true = add tag, false = remove tag.
+     */
+    twistTags?: Partial<Record<Tag, boolean>>;
+
+    /**
+     * Whether this occurrence should be marked as unread for users.
+     * - true: Occurrence is unread for users
+     * - false: Occurrence is marked as read
+     */
+    unread?: boolean;
+  };
+
+/**
+ * Inline type for creating/updating occurrences within NewActivity/ActivityUpdate.
+ * Used to specify occurrence-specific overrides when creating or updating a recurring activity.
+ */
+export type ActivityOccurrenceUpdate = Pick<
+  NewActivityOccurrence,
+  "occurrence"
+> &
+  Partial<Omit<NewActivityOccurrence, "occurrence" | "activity">>;
 
 /**
  * Configuration for automatic priority selection based on activity similarity.
@@ -665,6 +756,39 @@ export type NewActivity = Pick<Activity, "type"> &
      * Use false for historical imports to avoid marking old items as unread.
      */
     unread?: boolean;
+
+    /**
+     * Create or update specific occurrences of a recurring activity.
+     * Each entry specifies overrides for a specific occurrence.
+     *
+     * When occurrence matches the recurrence rule but only tags are specified,
+     * the occurrence is created with just tags in activity_tag.occurrence (no activity_exception).
+     *
+     * When any other field is specified, creates/updates an activity_exception row.
+     *
+     * @example
+     * ```typescript
+     * // Create recurring event with per-occurrence RSVPs
+     * const meeting: NewActivity = {
+     *   type: ActivityType.Event,
+     *   recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
+     *   start: new Date("2025-01-20T14:00:00Z"),
+     *   duration: 1800000, // 30 minutes
+     *   occurrences: [
+     *     {
+     *       occurrence: new Date("2025-01-27T14:00:00Z"),
+     *       tags: { [Tag.Skip]: [{ email: "user@example.com" }] }
+     *     },
+     *     {
+     *       occurrence: new Date("2025-02-03T14:00:00Z"),
+     *       start: new Date("2025-02-03T15:00:00Z"), // Reschedule this one
+     *       tags: { [Tag.Attend]: [{ email: "user@example.com" }] }
+     *     }
+     *   ]
+     * };
+     * ```
+     */
+    occurrences?: NewActivityOccurrence[];
   };
 
 export type ActivityUpdate = (
@@ -694,11 +818,9 @@ export type ActivityUpdate = (
       | "archived"
       | "meta"
       | "recurrenceRule"
-      | "recurrenceDates"
       | "recurrenceExdates"
       | "recurrenceUntil"
       | "recurrenceCount"
-      | "occurrence"
     >
   > & {
     /**
@@ -713,6 +835,37 @@ export type ActivityUpdate = (
      * This is allowed on all activities the twist has access to.
      */
     twistTags?: Partial<Record<Tag, boolean>>;
+
+    /**
+     * Create or update specific occurrences of this recurring activity.
+     * Each entry specifies overrides for a specific occurrence.
+     *
+     * Setting a field to null reverts it to the series default.
+     * Omitting a field leaves it unchanged.
+     *
+     * @example
+     * ```typescript
+     * // Update RSVPs for specific occurrences
+     * await plot.updateActivity({
+     *   id: meetingId,
+     *   occurrences: [
+     *     {
+     *       occurrence: new Date("2025-01-27T14:00:00Z"),
+     *       tags: { [Tag.Skip]: [user] }
+     *     },
+     *     {
+     *       occurrence: new Date("2025-02-03T14:00:00Z"),
+     *       tags: { [Tag.Attend]: [user] }
+     *     },
+     *     {
+     *       occurrence: new Date("2025-02-10T14:00:00Z"),
+     *       archived: true  // Cancel this occurrence
+     *     }
+     *   ]
+     * });
+     * ```
+     */
+    occurrences?: (NewActivityOccurrence | ActivityOccurrenceUpdate)[];
   };
 
 /**

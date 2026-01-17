@@ -1,5 +1,6 @@
 import {
   type Activity,
+  type ActivityOccurrence,
   type ActivityUpdate,
   type Actor,
   type ActorId,
@@ -162,6 +163,10 @@ export abstract class Plot extends ITool {
         changes: {
           tagsAdded: Record<Tag, ActorId[]>;
           tagsRemoved: Record<Tag, ActorId[]>;
+          /**
+           * If present, this update is for a specific occurrence of a recurring activity.
+           */
+          occurrence?: ActivityOccurrence;
         }
       ) => Promise<void>;
     };
@@ -239,6 +244,10 @@ export abstract class Plot extends ITool {
   /**
    * Updates an existing activity in the Plot system.
    *
+   * **Important**: This method only updates existing activities. It will throw an error
+   * if the activity does not exist. Use `createActivity()` to create or update (upsert)
+   * activities.
+   *
    * Only the fields provided in the update object will be modified - all other fields
    * remain unchanged. This enables partial updates without needing to fetch and resend
    * the entire activity object.
@@ -252,8 +261,9 @@ export abstract class Plot extends ITool {
    * When updating scheduling fields (start, end, recurrence*), the database will
    * automatically recalculate duration and range values to maintain consistency.
    *
-   * @param activity - The activity update containing the ID and fields to change
+   * @param activity - The activity update containing the ID or source and fields to change
    * @returns Promise that resolves when the update is complete
+   * @throws Error if the activity does not exist
    *
    * @example
    * ```typescript
@@ -368,12 +378,16 @@ export abstract class Plot extends ITool {
   /**
    * Updates an existing note in the Plot system.
    *
+   * **Important**: This method only updates existing notes. It will throw an error
+   * if the note does not exist. Use `createNote()` to create or update (upsert) notes.
+   *
    * Only the fields provided in the update object will be modified - all other fields
    * remain unchanged. This enables partial updates without needing to fetch and resend
    * the entire note object.
    *
-   * @param note - The note update containing the ID and fields to change
+   * @param note - The note update containing the ID or key and fields to change
    * @returns Promise that resolves when the update is complete
+   * @throws Error if the note does not exist
    *
    * @example
    * ```typescript

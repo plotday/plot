@@ -75,9 +75,18 @@ export abstract class Twist<TSelf> {
    * const callback = await this.callback(this.onWebhook, "calendar", 123);
    * ```
    */
-  protected async callback<
+  protected callback<
     TArgs extends Serializable[],
     Fn extends (...args: TArgs) => any
+  >(fn: Fn, ...extraArgs: TArgs): Promise<Callback>;
+  // Overload when caller provides the first argument
+  protected callback<
+    TArgs extends Serializable[],
+    Fn extends (arg1: any, ...extraArgs: TArgs) => any
+  >(fn: Fn, ...extraArgs: TArgs): Promise<Callback>;
+  protected async callback<
+    TArgs extends Serializable[],
+    Fn extends (...args: any[]) => any
   >(fn: Fn, ...extraArgs: TArgs): Promise<Callback> {
     return this.tools.callbacks.create(fn, ...extraArgs);
   }

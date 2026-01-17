@@ -2,7 +2,10 @@ import {
   type Activity,
   type ActivityLink,
   ActivityLinkType,
+  type ActivityOccurrence,
+  type NewActivityOccurrence,
   type ActorId,
+  ActivityType,
   ConferencingProvider,
   type ContentType,
   type NewActivityWithNotes,
@@ -33,7 +36,6 @@ import {
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
-import { Uuid } from "@plotday/twister/utils/uuid";
 
 import {
   GraphApi,
@@ -360,9 +362,6 @@ export class OutlookCalendar
     // Ensure we have the user's identity for RSVP tagging
     await this.ensureUserIdentity(authToken);
 
-    // Get user email for RSVP tagging
-    const userEmail = await this.get<string>("user_email");
-
     // Load existing sync state
     const savedState = await this.get<SyncState>(
       `outlook_sync_state_${calendarId}`
@@ -410,7 +409,22 @@ export class OutlookCalendar
               );
             }
 
-            // Transform the Outlook event to a Plot activity
+            // Check if this is an exception or occurrence (instance of recurring event)
+            if (
+              (outlookEvent.type === "exception" ||
+                outlookEvent.type === "occurrence") &&
+              outlookEvent.seriesMasterId &&
+              outlookEvent.originalStart
+            ) {
+              await this.processEventInstance(
+                outlookEvent,
+                calendarId,
+                initialSync
+              );
+              continue;
+            }
+
+            // Transform the Outlook event to a Plot activity (master or single events)
             const activity = transformOutlookEvent(outlookEvent, calendarId);
 
             // Skip deleted events (transformOutlookEvent returns null for deleted)
@@ -418,9 +432,11 @@ export class OutlookCalendar
               continue;
             }
 
-            // Determine RSVP status for all attendees and set tags with NewActor[]
+            // For recurring events, DON'T add tags at series level
+            // Tags (RSVPs) should be per-occurrence via the occurrences array
+            // For non-recurring events, add tags normally
             let tags: Partial<Record<Tag, NewActor[]>> | null = null;
-            if (validAttendees.length > 0) {
+            if (validAttendees.length > 0 && !activity.recurrenceRule) {
               const attendTags: NewActor[] = [];
               const skipTags: NewActor[] = [];
               const undecidedTags: NewActor[] = [];
@@ -554,6 +570,113 @@ export class OutlookCalendar
     }
   }
 
+  /**
+   * Process a recurring event instance (occurrence or exception) from Outlook Calendar.
+   * This updates the master recurring activity with occurrence-specific data.
+   */
+  private async processEventInstance(
+    event: import("./graph-api").OutlookEvent,
+    calendarId: string,
+    initialSync: boolean
+  ): Promise<void> {
+    const originalStart = event.originalStart;
+    if (!originalStart) {
+      console.warn(`No original start time for instance: ${event.id}`);
+      return;
+    }
+
+    // The seriesMasterId points to the master activity
+    if (!event.seriesMasterId) {
+      console.warn(`No series master ID for instance: ${event.id}`);
+      return;
+    }
+
+    // Canonical URL for the master recurring event
+    const masterCanonicalUrl = `outlook-calendar:${calendarId}:${event.seriesMasterId}`;
+
+    // Transform the instance data
+    const instanceData = transformOutlookEvent(event, calendarId);
+
+    if (!instanceData) {
+      return; // Skip deleted events
+    }
+
+    // Determine RSVP status for attendees
+    const validAttendees =
+      event.attendees?.filter(
+        (att) => att.emailAddress?.address && att.type !== "resource"
+      ) || [];
+
+    let tags: Partial<Record<Tag, import("@plotday/twister").NewActor[]>> = {};
+    if (validAttendees.length > 0) {
+      const attendTags: import("@plotday/twister").NewActor[] = [];
+      const skipTags: import("@plotday/twister").NewActor[] = [];
+      const undecidedTags: import("@plotday/twister").NewActor[] = [];
+
+      validAttendees.forEach((attendee) => {
+        const newActor: import("@plotday/twister").NewActor = {
+          email: attendee.emailAddress!.address!,
+          name: attendee.emailAddress!.name,
+        };
+
+        const response = attendee.status?.response;
+        if (response === "accepted") {
+          attendTags.push(newActor);
+        } else if (response === "declined") {
+          skipTags.push(newActor);
+        } else if (
+          response === "tentativelyAccepted" ||
+          response === "none" ||
+          response === "notResponded"
+        ) {
+          undecidedTags.push(newActor);
+        }
+      });
+
+      if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
+      if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
+      if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
+    }
+
+    // Build occurrence object
+    // Always include start to ensure upsert_activity can infer scheduling when
+    // creating a new master activity. Use instanceData.start if available (for
+    // rescheduled instances), otherwise fall back to originalStart.
+    const occurrenceStart = instanceData.start ?? new Date(originalStart);
+
+    const occurrence: Omit<NewActivityOccurrence, "activity"> = {
+      occurrence: new Date(originalStart),
+      start: occurrenceStart,
+      tags: Object.keys(tags).length > 0 ? tags : undefined,
+      unread: !initialSync,
+    };
+
+    // Add additional field overrides if present
+    if (instanceData.end !== undefined && instanceData.end !== null) {
+      occurrence.end = instanceData.end;
+    }
+    if (instanceData.title) occurrence.title = instanceData.title;
+    if (instanceData.meta) occurrence.meta = instanceData.meta;
+
+    // Send occurrence data to the twist via callback
+    // The twist will decide whether to create or update the master activity
+    const callbackToken = await this.get<Callback>("event_callback_token");
+    if (!callbackToken) {
+      console.warn("No callback token found for occurrence update");
+      return;
+    }
+
+    // Build a minimal NewActivity with source and occurrences
+    // The twist's createActivity will upsert the master activity
+    const occurrenceUpdate = {
+      type: ActivityType.Event,
+      source: masterCanonicalUrl,
+      occurrences: [occurrence],
+    };
+
+    await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
+  }
+
   async onOutlookWebhook(
     request: WebhookRequest,
     calendarId: string,
@@ -637,6 +760,7 @@ export class OutlookCalendar
     changes: {
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
+      occurrence?: ActivityOccurrence;
     }
   ): Promise<void> {
     // Only process calendar events
@@ -711,13 +835,13 @@ export class OutlookCalendar
       return;
     }
 
-    const eventId = activity.meta.id;
+    const baseEventId = activity.meta.id;
     const calendarId = activity.meta.calendarId;
 
     if (
-      !eventId ||
+      !baseEventId ||
       !calendarId ||
-      typeof eventId !== "string" ||
+      typeof baseEventId !== "string" ||
       typeof calendarId !== "string"
     ) {
       console.warn(
@@ -726,7 +850,48 @@ export class OutlookCalendar
       return;
     }
 
-    // Get the auth token for this calendar
+    // Determine the event ID to update
+    // If this is an occurrence-level change, look up the instance ID
+    let eventId = baseEventId;
+    if (changes.occurrence) {
+      const occurrenceDate =
+        changes.occurrence.occurrence instanceof Date
+          ? changes.occurrence.occurrence
+          : new Date(changes.occurrence.occurrence);
+
+      console.log(`Looking up instance for occurrence: ${occurrenceDate.toISOString()}`);
+
+      // Get the auth token for this calendar
+      const authToken = await this.get<string>(`auth_token_${calendarId}`);
+
+      if (!authToken) {
+        console.warn("No auth token found for calendar", calendarId);
+        return;
+      }
+
+      try {
+        // Look up the instance ID for this occurrence
+        const instanceId = await this.getEventInstanceId(
+          authToken,
+          calendarId,
+          baseEventId,
+          occurrenceDate
+        );
+
+        if (instanceId) {
+          eventId = instanceId;
+          console.log(`Updating occurrence instance: ${eventId}`);
+        } else {
+          console.warn(`Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`);
+          return;
+        }
+      } catch (error) {
+        console.error(`Failed to look up instance ID:`, error);
+        return;
+      }
+    }
+
+    // Get the auth token for this calendar (if not already retrieved above)
     const authToken = await this.get<string>(`auth_token_${calendarId}`);
 
     if (!authToken) {
@@ -739,6 +904,63 @@ export class OutlookCalendar
       console.log(`Updated RSVP for event ${eventId} to ${newStatus}`);
     } catch (error) {
       console.error(`Failed to update RSVP for event ${eventId}:`, error);
+    }
+  }
+
+  /**
+   * Look up the instance ID for a specific occurrence of a recurring event.
+   * Uses the Microsoft Graph instances endpoint to find the matching occurrence.
+   */
+  private async getEventInstanceId(
+    authToken: string,
+    calendarId: string,
+    seriesMasterId: string,
+    occurrenceDate: Date
+  ): Promise<string | null> {
+    const api = await this.getApi(authToken);
+
+    // Query instances for the series master
+    const resource =
+      calendarId === "primary"
+        ? `/me/events/${seriesMasterId}/instances`
+        : `/me/calendars/${calendarId}/events/${seriesMasterId}/instances`;
+
+    // Format occurrence date as ISO string for comparison
+    const occurrenceDateStr = occurrenceDate.toISOString();
+
+    try {
+      // Query instances from the API
+      const response = await api.call("GET", `https://graph.microsoft.com/v1.0${resource}`);
+
+      if (!response || !Array.isArray(response.value)) {
+        console.warn("Invalid response from instances endpoint");
+        return null;
+      }
+
+      const instances = response.value as import("./graph-api").OutlookEvent[];
+
+      // Find the instance that matches this occurrence
+      // Match by originalStart (for exceptions) or start (for regular occurrences)
+      for (const instance of instances) {
+        const instanceStart = instance.originalStart || instance.start?.dateTime;
+        if (instanceStart) {
+          const instanceDate = new Date(instanceStart);
+          // Compare with a tolerance of 1 second to account for rounding
+          const diff = Math.abs(instanceDate.getTime() - occurrenceDate.getTime());
+          if (diff < 1000) {
+            return instance.id;
+          }
+        }
+      }
+
+      // If no exact match, log for debugging
+      console.warn(
+        `No instance found matching occurrence ${occurrenceDateStr}. Found ${instances.length} instances.`
+      );
+      return null;
+    } catch (error) {
+      console.error(`Failed to query instances for ${seriesMasterId}:`, error);
+      return null;
     }
   }
 

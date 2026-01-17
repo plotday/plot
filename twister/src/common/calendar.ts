@@ -50,13 +50,31 @@ export type SyncOptions = {
  * to integrate with external calendar services like Google Calendar,
  * Outlook Calendar, etc.
  *
+ * **Architecture: Tools Build, Twists Save**
+ *
+ * Calendar tools follow Plot's core architectural principle:
+ * - **Tools**: Fetch external data and transform it into Plot format (NewActivity objects)
+ * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
+ *
+ * This separation allows:
+ * - Tools to be reusable across different twists with different behaviors
+ * - Twists to have full control over what gets saved and how
+ * - Easier testing of tools in isolation
+ *
  * **Implementation Pattern:**
  * 1. Request an ActivityLink for authorization
- * 2. Create an Activity with the ActivityLink to prompt user
+ * 2. Create an Activity with the ActivityLink to prompt user (via twist)
  * 3. Receive a CalendarAuth in the specified callback
  * 4. Fetch list of available calendars
  * 5. Start sync for selected calendars
- * 6. Process incoming events via callbacks
+ * 6. **Tool builds NewActivity objects** and passes them to the twist via callback
+ * 7. **Twist decides** whether to save using createActivity/updateActivity
+ *
+ * **Tool Implementation Rules:**
+ * - **DO** build Activity/Note objects from external data
+ * - **DO** pass them to the twist via the callback
+ * - **DON'T** call plot.createActivity/updateActivity directly
+ * - **DON'T** save anything to Plot database
  *
  * **Recommended Data Sync Strategy:**
  * Use Activity.source and Note.key for automatic upserts without manual ID tracking.
@@ -90,7 +108,7 @@ export type SyncOptions = {
  *           authToken: auth.authToken,
  *           calendarId: primaryCalendar.id
  *         },
- *         this.onCalendarEvent,
+ *         this.onCalendarEvent,  // Callback receives data from tool
  *         { initialSync: true }
  *       );
  *     }
@@ -100,10 +118,15 @@ export type SyncOptions = {
  *     syncUpdate: SyncUpdate,
  *     syncMeta: { initialSync: boolean }
  *   ) {
- *     // Step 4: Process synced events using source/key pattern
- *     // The sync update will automatically use the event's URL as the source
- *     // for deduplication - no manual ID tracking needed
- *     await this.plot.createActivity(syncUpdate);
+ *     // Step 4: Twist decides what to do with the data
+ *     // Tool built the NewActivity, twist saves it
+ *     if ("activityId" in syncUpdate) {
+ *       // Update existing activity
+ *       await this.plot.updateActivity(syncUpdate.activityId, syncUpdate.update);
+ *     } else {
+ *       // Create/upsert new activity using source/key pattern
+ *       await this.plot.createActivity(syncUpdate);
+ *     }
  *   }
  * }
  * ```

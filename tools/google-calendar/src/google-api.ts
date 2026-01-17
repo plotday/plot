@@ -405,9 +405,14 @@ export function transformGoogleEvent(
       activity.recurrenceExdates = exdates;
     }
 
+    // Parse RDATEs (additional occurrence dates not in the recurrence rule)
+    // and create ActivityOccurrenceUpdate entries for each
     const rdates = parseRDates(event.recurrence);
     if (rdates.length > 0) {
-      activity.recurrenceDates = rdates;
+      activity.occurrences = rdates.map((rdate) => ({
+        occurrence: rdate,
+        start: rdate,
+      }));
     }
   }
 

@@ -3,7 +3,10 @@ import {
   type Activity,
   type ActivityLink,
   ActivityLinkType,
+  type ActivityOccurrence,
+  type NewActivityOccurrence,
   type ActorId,
+  ActivityType,
   ConferencingProvider,
   type NewActivityWithNotes,
   type NewActor,
@@ -432,8 +435,6 @@ export class GoogleCalendar
     initialSync: boolean
   ): Promise<void> {
     // Get user email for RSVP tagging
-    const userEmail = await this.get<string>("user_email");
-
     for (const event of events) {
       try {
         if (event.status === "cancelled") {
@@ -463,14 +464,16 @@ export class GoogleCalendar
 
         // Check if this is a recurring event instance (exception)
         if (event.recurringEventId && event.originalStartTime) {
-          await this.processEventException(event, calendarId, initialSync);
+          await this.processEventInstance(event, calendarId, initialSync);
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
 
-          // Determine RSVP status for all attendees and set tags with NewActor[]
+          // For recurring events, DON'T add tags at series level
+          // Tags (RSVPs) should be per-occurrence via the occurrences array
+          // For non-recurring events, add tags normally
           let tags: Partial<Record<Tag, NewActor[]>> | null = null;
-          if (validAttendees.length > 0) {
+          if (validAttendees.length > 0 && !activityData.recurrenceRule) {
             const attendTags: NewActor[] = [];
             const skipTags: NewActor[] = [];
             const undecidedTags: NewActor[] = [];
@@ -572,6 +575,7 @@ export class GoogleCalendar
               links: hasLinks ? links : null,
               contentType:
                 description && containsHtml(description) ? "html" : "text",
+              created: event.created ? new Date(event.created) : new Date(),
             });
           }
 
@@ -588,9 +592,6 @@ export class GoogleCalendar
             author: authorContact,
             recurrenceRule: activityData.recurrenceRule || null,
             recurrenceExdates: activityData.recurrenceExdates || null,
-            recurrenceDates: activityData.recurrenceDates || null,
-            recurrence: null,
-            occurrence: null,
             meta: activityData.meta ?? null,
             tags: tags || undefined,
             notes,
@@ -607,109 +608,137 @@ export class GoogleCalendar
     }
   }
 
-  private async processEventException(
+  /**
+   * Process a recurring event instance (occurrence) from Google Calendar.
+   * This updates the master recurring activity with occurrence-specific data.
+   */
+  private async processEventInstance(
     event: GoogleEvent,
     calendarId: string,
     initialSync: boolean
   ): Promise<void> {
-    // Similar to processCalendarEvents but for exceptions
-    // This would find the master recurring activity and create an exception
+    console.log(`[processEventInstance] Processing event instance:`, {
+      id: event.id,
+      recurringEventId: event.recurringEventId,
+      summary: event.summary,
+      status: event.status,
+      start: event.start,
+      end: event.end,
+      originalStartTime: event.originalStartTime,
+    });
+
     const originalStartTime =
       event.originalStartTime?.dateTime || event.originalStartTime?.date;
     if (!originalStartTime) {
-      console.warn(`No original start time for exception: ${event.id}`);
+      console.warn(`No original start time for instance: ${event.id}`);
       return;
     }
 
-    const activityData = transformGoogleEvent(event, calendarId);
-
-    const callbackToken = await this.get<Callback>("event_callback_token");
-    if (!callbackToken || !activityData.type) {
+    // The recurring event ID points to the master activity
+    if (!event.recurringEventId) {
+      console.warn(`No recurring event ID for instance: ${event.id}`);
       return;
     }
 
-    // Build links array for videoconferencing and calendar links
-    const links: ActivityLink[] = [];
-    const seenUrls = new Set<string>();
+    // Canonical URL for the master recurring event
+    const masterCanonicalUrl = `google-calendar:${calendarId}:${event.recurringEventId}`;
 
-    // Extract all conferencing links (Zoom, Teams, Webex, etc.)
-    const conferencingLinks = extractConferencingLinks(event);
-    for (const link of conferencingLinks) {
-      if (!seenUrls.has(link.url)) {
-        seenUrls.add(link.url);
-        links.push({
-          type: ActivityLinkType.conferencing,
-          url: link.url,
-          provider: link.provider,
-        });
-      }
-    }
+    // Transform the instance data
+    const instanceData = transformGoogleEvent(event, calendarId);
 
-    // Add Google Meet link from hangoutLink if not already added
-    if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
-      seenUrls.add(event.hangoutLink);
-      links.push({
-        type: ActivityLinkType.conferencing,
-        url: event.hangoutLink,
-        provider: ConferencingProvider.googleMeet,
+    console.log(`[processEventInstance] Transformed instance data:`, {
+      type: instanceData.type,
+      title: instanceData.title,
+      start: instanceData.start,
+      end: instanceData.end,
+      recurrenceRule: instanceData.recurrenceRule,
+      meta: instanceData.meta,
+    });
+
+    // Determine RSVP status for attendees
+    const validAttendees =
+      event.attendees?.filter((att) => att.email && !att.resource) || [];
+
+    let tags: Partial<Record<Tag, import("@plotday/twister").NewActor[]>> = {};
+    if (validAttendees.length > 0) {
+      const attendTags: import("@plotday/twister").NewActor[] = [];
+      const skipTags: import("@plotday/twister").NewActor[] = [];
+      const undecidedTags: import("@plotday/twister").NewActor[] = [];
+
+      validAttendees.forEach((attendee) => {
+        const newActor: import("@plotday/twister").NewActor = {
+          email: attendee.email!,
+          name: attendee.displayName,
+        };
+
+        if (attendee.responseStatus === "accepted") {
+          attendTags.push(newActor);
+        } else if (attendee.responseStatus === "declined") {
+          skipTags.push(newActor);
+        } else if (
+          attendee.responseStatus === "tentative" ||
+          attendee.responseStatus === "needsAction"
+        ) {
+          undecidedTags.push(newActor);
+        }
       });
+
+      if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
+      if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
+      if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
     }
 
-    // Add calendar link
-    if (event.htmlLink) {
-      links.push({
-        type: ActivityLinkType.external,
-        title: "View in Calendar",
-        url: event.htmlLink,
-      });
-    }
+    // Build occurrence object
+    // Always include start to ensure upsert_activity can infer scheduling when
+    // creating a new master activity. Use instanceData.start if available (for
+    // rescheduled instances), otherwise fall back to originalStartTime.
+    const occurrenceStart = instanceData.start ?? new Date(originalStartTime);
 
-    // Prepare description content
-    const descriptionValue =
-      activityData.meta?.description || event.description;
-    const description =
-      typeof descriptionValue === "string" ? descriptionValue : null;
-    const hasDescription = description && description.trim().length > 0;
-    const hasLinks = links.length > 0;
-
-    // Canonical URL for this event (required for upsert)
-    const canonicalUrl =
-      event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
-
-    // Create note with description and/or links
-    const notes: NewNote[] = [];
-    if (hasDescription || hasLinks) {
-      notes.push({
-        activity: { source: canonicalUrl },
-        key: "description",
-        content: hasDescription ? description : null,
-        links: hasLinks ? links : null,
-        contentType: description && containsHtml(description) ? "html" : "text",
-      });
-    }
-
-    const activity: NewActivityWithNotes = {
-      source: canonicalUrl,
-      type: activityData.type,
-      created: event.created ? new Date(event.created) : undefined,
-      start: activityData.start || null,
-      end: activityData.end || null,
-      recurrenceUntil: activityData.recurrenceUntil || null,
-      recurrenceCount: activityData.recurrenceCount || null,
-      done: null,
-      title: activityData.title || "",
-      recurrenceRule: null,
-      recurrenceExdates: null,
-      recurrenceDates: null,
-      recurrence: null, // Would need to find master activity
+    const occurrence: Omit<NewActivityOccurrence, "activity"> = {
       occurrence: new Date(originalStartTime),
-      meta: activityData.meta ?? null,
-      notes,
-      unread: !initialSync, // false for initial sync, true for incremental updates
+      start: occurrenceStart,
+      tags: Object.keys(tags).length > 0 ? tags : undefined,
+      unread: !initialSync,
     };
 
-    // Send activity - database handles upsert automatically
-    await this.tools.callbacks.run(callbackToken, activity);
+    // Add additional field overrides if present
+    if (instanceData.end !== undefined && instanceData.end !== null) {
+      occurrence.end = instanceData.end;
+    }
+    if (instanceData.title) occurrence.title = instanceData.title;
+    if (instanceData.meta) occurrence.meta = instanceData.meta;
+
+    // Send occurrence data to the twist via callback
+    // The twist will decide whether to create or update the master activity
+    const callbackToken = await this.get<Callback>("event_callback_token");
+    if (!callbackToken) {
+      console.warn("No callback token found for occurrence update");
+      return;
+    }
+
+    // Build a minimal NewActivity with source and occurrences
+    // The twist's createActivity will upsert the master activity
+    const occurrenceUpdate = {
+      type: ActivityType.Event,
+      source: masterCanonicalUrl,
+      occurrences: [occurrence],
+    };
+
+    console.log(`[processEventInstance] Sending occurrence update:`, {
+      source: occurrenceUpdate.source,
+      type: occurrenceUpdate.type,
+      occurrenceCount: occurrenceUpdate.occurrences.length,
+      occurrence: {
+        occurrence: occurrence.occurrence,
+        start: occurrence.start,
+        end: occurrence.end,
+        title: occurrence.title,
+        hasOriginalStart: !!originalStartTime,
+        instanceDataStart: instanceData.start,
+      },
+    });
+
+    await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
   }
 
   async onCalendarWebhook(
@@ -840,6 +869,7 @@ export class GoogleCalendar
     changes: {
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
+      occurrence?: ActivityOccurrence;
     }
   ): Promise<void> {
     // Only process calendar events
@@ -914,19 +944,39 @@ export class GoogleCalendar
       return;
     }
 
-    const eventId = activity.meta.id;
+    const baseEventId = activity.meta.id;
     const calendarId = activity.meta.calendarId;
 
     if (
-      !eventId ||
+      !baseEventId ||
       !calendarId ||
-      typeof eventId !== "string" ||
+      typeof baseEventId !== "string" ||
       typeof calendarId !== "string"
     ) {
       console.warn(
         "Missing or invalid event or calendar ID in activity metadata"
       );
       return;
+    }
+
+    // Determine the event ID to update
+    // If this is an occurrence-level change, construct the instance ID
+    let eventId = baseEventId;
+    if (changes.occurrence) {
+      // Google Calendar instance IDs are formatted as: {recurringEventId}_{YYYYMMDDTHHMMSSZ}
+      const occurrenceDate =
+        changes.occurrence.occurrence instanceof Date
+          ? changes.occurrence.occurrence
+          : new Date(changes.occurrence.occurrence);
+
+      // Format as YYYYMMDDTHHMMSSZ (e.g., 20250115T140000Z)
+      const instanceDateStr = occurrenceDate
+        .toISOString()
+        .replace(/[-:]/g, "") // Remove dashes and colons
+        .replace(/\.\d{3}/, ""); // Remove milliseconds
+
+      eventId = `${baseEventId}_${instanceDateStr}`;
+      console.log(`Updating occurrence instance: ${eventId}`);
     }
 
     // Get the auth token for this calendar
