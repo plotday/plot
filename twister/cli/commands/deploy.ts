@@ -356,9 +356,13 @@ export async function deployCommand(options: DeployOptions) {
       }
       // 404 means twist not published yet, which is expected for first deployment
     } catch (error) {
-      // Network errors, continue with publisher setup
+      // Network errors are fatal - we need connectivity to deploy
       const errorInfo = handleNetworkError(error);
-      out.warning("Could not check existing twist status", [errorInfo.message]);
+      out.error(
+        "Could not connect to Plot API",
+        "Please check your internet connection or try again later."
+      );
+      process.exit(1);
     }
 
     // Only prompt for publisher if needed
@@ -394,11 +398,17 @@ export async function deployCommand(options: DeployOptions) {
           fetchSucceeded = true;
         }
       } catch (error) {
+        // Network errors are fatal - we need connectivity to deploy
         const errorInfo = handleNetworkError(error);
-        out.warning("Failed to fetch publishers", [errorInfo.message]);
+        out.error(
+          "Could not connect to Plot API",
+          "Please check your internet connection or try again later."
+        );
+        process.exit(1);
       }
 
-      // Always prompt for publisher, even if fetch failed
+      // At this point, fetch succeeded or failed with non-network error
+      // Network errors would have caused exit above
       if (fetchSucceeded && publishers.length > 0) {
         // Show selection UI with existing publishers + "New publisher" option
         const choices = [
@@ -433,12 +443,7 @@ export async function deployCommand(options: DeployOptions) {
           publisherId = response.publisherId;
         }
       } else {
-        // No existing publishers or fetch failed - create new one
-        if (!fetchSucceeded) {
-          out.info("Could not fetch existing publishers", [
-            "You can create a new publisher to continue",
-          ]);
-        }
+        // No existing publishers - create new one
         publisherId = await createNewPublisher(options.apiUrl, deployToken!);
       }
     }

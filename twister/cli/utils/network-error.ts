@@ -68,8 +68,7 @@ export function handleNetworkError(
           };
         case status === 404:
           return {
-            message:
-              "API endpoint not found. You may need to update your CLI.",
+            message: "API endpoint not found. You may need to update your CLI.",
             shouldRetry: false,
           };
         case status === 429:
@@ -98,14 +97,14 @@ export function handleNetworkError(
       case "ECONNREFUSED":
         return {
           message:
-            "Cannot connect to Plot API. Please check your internet connection or try again later.",
+            "Could not connect to Plot API. Please check your internet connection or try again later.",
           details: context,
           shouldRetry: true,
         };
       case "ENOTFOUND":
         return {
           message:
-            "Cannot reach Plot API. Please check your internet connection.",
+            "Could not reach Plot API. Please check your internet connection.",
           details: context,
           shouldRetry: true,
         };
@@ -144,8 +143,7 @@ export function handleNetworkError(
   }
 
   // Handle generic errors
-  const errorMessage =
-    error instanceof Error ? error.message : String(error);
+  const errorMessage = error instanceof Error ? error.message : String(error);
   return {
     message: "An unexpected error occurred. Please try again later.",
     details: errorMessage,
@@ -156,10 +154,7 @@ export function handleNetworkError(
 /**
  * Formats a network error for display to the user
  */
-export function formatNetworkError(
-  error: unknown,
-  context?: string
-): string {
+export function formatNetworkError(error: unknown, context?: string): string {
   const result = handleNetworkError(error, context);
   if (result.details) {
     return `${result.message}\n${result.details}`;
