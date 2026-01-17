@@ -8,7 +8,6 @@ import {
   type NewActivityWithNotes,
   type NewNote,
   Serializable,
-  type SyncUpdate,
 } from "@plotday/twister";
 import type {
   Project,
@@ -277,15 +276,15 @@ export class Linear extends Tool<Linear> implements ProjectTool {
 
     // Process each issue
     for (const issue of issuesConnection.nodes) {
-      const syncUpdate = await this.convertIssueToSyncUpdate(
+      const activity = await this.convertIssueToActivity(
         issue,
         projectId,
         state.initialSync
       );
 
-      if (syncUpdate) {
+      if (activity) {
         // Execute the callback using the callback token
-        await this.tools.callbacks.run(callbackToken, syncUpdate);
+        await this.tools.callbacks.run(callbackToken, activity);
       }
     }
 
@@ -313,13 +312,13 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Convert a Linear issue to a SyncUpdate
+   * Convert a Linear issue to a NewActivityWithNotes
    */
-  private async convertIssueToSyncUpdate(
+  private async convertIssueToActivity(
     issue: Issue,
     projectId: string,
     initialSync: boolean
-  ): Promise<SyncUpdate | null> {
+  ): Promise<NewActivityWithNotes | null> {
     const creator = await issue.creator;
     const assignee = await issue.assignee;
     const comments = await issue.comments();
@@ -579,16 +578,16 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       const client = await this.getClient(authToken);
       const issue = await client.issue(payload.data.id);
 
-      const syncUpdate = await this.convertIssueToSyncUpdate(
+      const activity = await this.convertIssueToActivity(
         issue,
         projectId,
         false // incremental update, not initial sync
       );
 
-      if (!syncUpdate) return;
+      if (!activity) return;
 
-      // Execute stored callback (unread flag already set by convertIssueToSyncUpdate)
-      await this.tools.callbacks.run(callbackToken, syncUpdate);
+      // Execute stored callback (unread flag already set by convertIssueToActivity)
+      await this.tools.callbacks.run(callbackToken, activity);
     }
   }
 

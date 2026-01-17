@@ -219,12 +219,12 @@ export abstract class Plot extends ITool {
    * will be preserved in the created activity.
    *
    * @param activity - The activity data to create
-   * @returns Promise resolving to the complete created activity
+   * @returns Promise resolving to the created activity's ID
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createActivity(
     activity: NewActivity | NewActivityWithNotes
-  ): Promise<Activity>;
+  ): Promise<Uuid>;
 
   /**
    * Creates multiple activities in a single batch operation.
@@ -234,12 +234,12 @@ export abstract class Plot extends ITool {
    * All activities are created with the same author and access control rules.
    *
    * @param activities - Array of activity data to create
-   * @returns Promise resolving to array of created activities
+   * @returns Promise resolving to array of created activity IDs
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createActivities(
     activities: (NewActivity | NewActivityWithNotes)[]
-  ): Promise<Activity[]>;
+  ): Promise<Uuid[]>;
 
   /**
    * Updates an existing activity in the Plot system.
@@ -321,7 +321,7 @@ export abstract class Plot extends ITool {
    * an ID and author information based on the current execution context.
    *
    * @param note - The note data to create
-   * @returns Promise resolving to the complete created note
+   * @returns Promise resolving to the created note's ID
    *
    * @example
    * ```typescript
@@ -345,7 +345,7 @@ export abstract class Plot extends ITool {
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createNote(note: NewNote): Promise<Note>;
+  abstract createNote(note: NewNote): Promise<Uuid>;
 
   /**
    * Creates multiple notes in a single batch operation.
@@ -355,7 +355,7 @@ export abstract class Plot extends ITool {
    * All notes are created with the same author and access control rules.
    *
    * @param notes - Array of note data to create
-   * @returns Promise resolving to array of created notes
+   * @returns Promise resolving to array of created note IDs
    *
    * @example
    * ```typescript
@@ -373,7 +373,7 @@ export abstract class Plot extends ITool {
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createNotes(notes: NewNote[]): Promise<Note[]>;
+  abstract createNotes(notes: NewNote[]): Promise<Uuid[]>;
 
   /**
    * Updates an existing note in the Plot system.

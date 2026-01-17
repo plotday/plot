@@ -1,4 +1,4 @@
-import type { ActivityLink, Serializable, SyncUpdate } from "../index";
+import type { ActivityLink, NewActivityWithNotes, Serializable } from "../index";
 
 /**
  * Represents successful calendar authorization.
@@ -115,18 +115,12 @@ export type SyncOptions = {
  *   }
  *
  *   async onCalendarEvent(
- *     syncUpdate: SyncUpdate,
+ *     activity: NewActivityWithNotes,
  *     syncMeta: { initialSync: boolean }
  *   ) {
  *     // Step 4: Twist decides what to do with the data
  *     // Tool built the NewActivity, twist saves it
- *     if ("activityId" in syncUpdate) {
- *       // Update existing activity
- *       await this.plot.updateActivity(syncUpdate.activityId, syncUpdate.update);
- *     } else {
- *       // Create/upsert new activity using source/key pattern
- *       await this.plot.createActivity(syncUpdate);
- *     }
+ *     await this.plot.createActivity(activity);
  *   }
  * }
  * ```
@@ -183,14 +177,14 @@ export type CalendarTool = {
    * @param options.calendarId - ID of the calendar to sync
    * @param options.timeMin - Earliest date to sync events from (inclusive)
    * @param options.timeMax - Latest date to sync events to (exclusive)
-   * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced event
+   * @param callback - Function receiving (activity, ...extraArgs) for each synced event
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    * @throws When auth token is invalid or calendar doesn't exist
    */
   startSync<
     TArgs extends Serializable[],
-    TCallback extends (syncUpdate: SyncUpdate, ...args: TArgs) => any
+    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;

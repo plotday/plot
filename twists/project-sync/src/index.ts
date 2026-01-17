@@ -7,9 +7,9 @@ import {
   ActivityLinkType,
   ActivityType,
   ActorType,
+  type NewActivityWithNotes,
   type Note,
   type Priority,
-  type SyncUpdate,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
@@ -125,7 +125,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
 
     // Create onboarding activity with all provider options
     // Using start: null to create a "Do Someday" item - setup task, not urgent
-    const activity = await this.tools.plot.createActivity({
+    const activityId = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect a project management tool",
       start: null, // "Do Someday" - optional setup, not time-sensitive
@@ -139,7 +139,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
     });
 
     // Store for later updates
-    await this.set("onboarding_activity_id", activity.id);
+    await this.set("onboarding_activity_id", activityId);
   }
 
   /**
@@ -254,14 +254,10 @@ export default class ProjectSync extends Twist<ProjectSync> {
    * Creates or updates Plot activities based on issue state
    */
   async onIssue(
-    syncUpdate: SyncUpdate,
+    issue: NewActivityWithNotes,
     provider: ProjectProvider,
     _projectId: string
   ) {
-    // Only handle new issues, not updates
-    if ("activityId" in syncUpdate) return;
-
-    const issue = syncUpdate;
 
     // Add provider to meta for routing updates back to the correct tool
     issue.meta = { ...issue.meta, provider };

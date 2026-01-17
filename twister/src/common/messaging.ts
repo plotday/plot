@@ -1,4 +1,4 @@
-import type { ActivityLink, Serializable, SyncUpdate } from "../index";
+import type { ActivityLink, NewActivityWithNotes, Serializable } from "../index";
 
 /**
  * Represents a successful messaging service authorization.
@@ -77,8 +77,7 @@ export type MessagingTool = {
   /**
    * Begins synchronizing messages from a specific channel.
    *
-   * Email threads and chat conversations are converted to SyncUpdate objects,
-   * which can be either new items or updates to existing items.
+   * Email threads and chat conversations are converted to NewActivityWithNotes objects.
    *
    * **Recommended Implementation** (Strategy 2 - Upsert via Source/Key):
    * - Set Activity.source to the thread/conversation URL or stable ID (e.g., "slack:{channelId}:{threadTs}")
@@ -96,13 +95,13 @@ export type MessagingTool = {
    * @param options.authToken - Authorization token for access
    * @param options.channelId - ID of the channel (e.g., channel, inbox) to sync
    * @param options.timeMin - Earliest date to sync events from (inclusive)
-   * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced conversation
+   * @param callback - Function receiving (thread, ...extraArgs) for each synced conversation
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
   startSync<
     TArgs extends Serializable[],
-    TCallback extends (syncUpdate: SyncUpdate, ...args: TArgs) => any
+    TCallback extends (thread: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;

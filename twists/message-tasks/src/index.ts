@@ -8,7 +8,6 @@ import {
   ActivityType,
   type NewActivityWithNotes,
   type Priority,
-  type SyncUpdate,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
@@ -155,7 +154,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     );
 
     // Create onboarding activity with auth link
-    const connectActivity = await this.tools.plot.createActivity({
+    const connectActivityId = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect messaging to create tasks",
       start: new Date(),
@@ -169,7 +168,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     });
 
     // Store for parent relationship
-    await this.set("onboarding_activity_id", connectActivity.id);
+    await this.set("onboarding_activity_id", connectActivityId);
   }
 
   // ============================================================================
@@ -326,14 +325,10 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   // ============================================================================
 
   async onMessageThread(
-    syncUpdate: SyncUpdate,
+    thread: NewActivityWithNotes,
     provider: MessageProvider,
     channelId: string
   ): Promise<void> {
-    // Only handle new threads, not updates
-    if ("activityId" in syncUpdate) return;
-
-    const thread = syncUpdate;
     if (!thread.notes || thread.notes.length === 0) return;
 
     const threadId = "source" in thread ? thread.source : undefined;
@@ -497,7 +492,7 @@ If a task is needed, create a clear, actionable title that describes what the us
     const channelName = channelConfig?.channelName || channelId;
 
     // Create task activity - database handles upsert automatically
-    const task = await this.tools.plot.createActivity({
+    const taskId = await this.tools.plot.createActivity({
       source: `message-tasks:${threadId}`,
       type: ActivityType.Action,
       title: analysis.taskTitle || thread.title || "Action needed from message",
@@ -523,10 +518,10 @@ If a task is needed, create a clear, actionable title that describes what the us
       pickPriority: { content: 50, mentions: 50 },
     });
 
-    console.log(`Created task ${task.id} for thread ${threadId}`);
+    console.log(`Created task ${taskId} for thread ${threadId}`);
 
     // Store mapping
-    await this.storeThreadTask(threadId, task.id);
+    await this.storeThreadTask(threadId, taskId);
   }
 
   private async checkThreadForCompletion(

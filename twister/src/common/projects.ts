@@ -2,8 +2,8 @@ import type {
   Activity,
   ActivityLink,
   ActivityMeta,
+  NewActivityWithNotes,
   Serializable,
-  SyncUpdate,
 } from "../index";
 
 /**
@@ -83,8 +83,7 @@ export type ProjectTool = {
   /**
    * Begins synchronizing issues from a specific project.
    *
-   * Issues and tasks are converted to SyncUpdate objects, which can be either
-   * new items or updates to existing items.
+   * Issues and tasks are converted to NewActivityWithNotes objects.
    *
    * **Recommended Implementation** (Strategy 2 - Upsert via Source/Key):
    * - Set Activity.source to the issue's canonical URL (e.g., Linear issue URL, Jira issue URL)
@@ -104,13 +103,13 @@ export type ProjectTool = {
    * @param options.authToken - Authorization token for access
    * @param options.projectId - ID of the project to sync
    * @param options.timeMin - Earliest date to sync issues from (inclusive)
-   * @param callback - Function receiving (syncUpdate, ...extraArgs) for each synced issue
+   * @param callback - Function receiving (activity, ...extraArgs) for each synced issue
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
   startSync<
     TArgs extends Serializable[],
-    TCallback extends (syncUpdate: SyncUpdate, ...args: TArgs) => any
+    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;

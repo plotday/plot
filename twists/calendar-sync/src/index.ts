@@ -5,8 +5,8 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
+  type NewActivityWithNotes,
   type Priority,
-  type SyncUpdate,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
@@ -96,7 +96,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
     );
 
     // Create onboarding activity
-    const connectActivity = await this.tools.plot.createActivity({
+    const connectActivityId = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect your calendar",
       start: new Date(),
@@ -111,7 +111,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
     });
 
     // Store the original activity ID for use as parent
-    await this.set("connect_calendar_activity_id", connectActivity.id);
+    await this.set("connect_calendar_activity_id", connectActivityId);
   }
 
   async getCalendars(provider: CalendarProvider): Promise<Calendar[]> {
@@ -180,14 +180,10 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
   }
 
   async handleEvent(
-    syncUpdate: SyncUpdate,
+    activity: NewActivityWithNotes,
     provider: CalendarProvider,
     _calendarId: string
   ): Promise<void> {
-    // Only handle new events, not updates
-    if ("activityId" in syncUpdate) return;
-
-    const activity = syncUpdate;
 
     // Add provider to meta for routing updates back to the correct tool
     activity.meta = { ...activity.meta, provider };

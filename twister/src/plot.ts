@@ -506,7 +506,6 @@ export type ActivityOccurrence = {
   end: Date | string | null;
   done: Date | null;
   title: string;
-  preview: string | null;
   /**
    * Meta is merged, with the occurrence's meta taking precedence.
    */
@@ -867,45 +866,6 @@ export type ActivityUpdate = (
      */
     occurrences?: (NewActivityOccurrence | ActivityOccurrenceUpdate)[];
   };
-
-/**
- * Represents a sync update from a tool.
- *
- * Tools that sync from external sources can send either:
- * - A new activity with notes (for newly discovered items)
- * - An update to an existing activity with optional new notes (for changed items)
- *
- * This allows tools to manage their own update detection logic locally,
- * providing Plot with the appropriate operation to perform.
- *
- * @example
- * ```typescript
- * // Send a new activity
- * const newItem: SyncUpdate = {
- *   type: ActivityType.Event,
- *   title: "New Meeting",
- *   id: Uuid.Generate(), // Tool-generated ID
- *   notes: [{ id: Uuid.Generate(), content: "Description" }]
- * };
- *
- * // Send an update to existing activity
- * const update: SyncUpdate = {
- *   activityId: existingActivityId,
- *   update: { title: "Updated Meeting Title" },
- *   notes: [{ id: Uuid.Generate(), content: "New comment" }]
- * };
- * ```
- */
-export type SyncUpdate =
-  | NewActivityWithNotes
-  | {
-      /** ID of the activity to update */
-      activityId: string;
-      /** Optional updates to the activity itself */
-      update?: ActivityUpdate;
-      /** Optional new notes to add to the activity */
-      notes?: NewNote[];
-    };
 
 /**
  * Represents a note within an activity.

@@ -1,7 +1,7 @@
 import {
   type ActivityLink,
+  type NewActivityWithNotes,
   Serializable,
-  type SyncUpdate,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -200,7 +200,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (syncUpdate: SyncUpdate, ...args: TArgs) => any
+    TCallback extends (thread: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
       authToken: string;
