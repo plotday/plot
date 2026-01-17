@@ -1,5 +1,12 @@
 # @plotday/twister
 
+## 0.31.0
+
+### Fixed
+
+- BREAKING: Fixed many issues with recurring activity, which required some changes to ActivityOccurrence ([`289cd83`](https://github.com/plotday/plot/commit/289cd83e292d1ebdd83b55990bffa33c9639000b))
+- Clearer error when the server can't be reached during deploy ([`53585ca`](https://github.com/plotday/plot/commit/53585cac03d26ff0500dc227c81e349a3986380d))
+
 ## 0.30.0
 
 ### Changed
