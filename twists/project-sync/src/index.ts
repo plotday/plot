@@ -124,11 +124,9 @@ export default class ProjectSync extends Twist<ProjectSync> {
     );
 
     // Create onboarding activity with all provider options
-    // Using start: null to create a "Do Someday" item - setup task, not urgent
     const activityId = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect a project management tool",
-      start: null, // "Do Someday" - optional setup, not time-sensitive
       notes: [
         {
           content:
@@ -258,7 +256,6 @@ export default class ProjectSync extends Twist<ProjectSync> {
     provider: ProjectProvider,
     _projectId: string
   ) {
-
     // Add provider to meta for routing updates back to the correct tool
     issue.meta = { ...issue.meta, provider };
 
