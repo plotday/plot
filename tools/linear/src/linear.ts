@@ -384,7 +384,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       created: issue.createdAt,
       author: authorContact,
       assignee: assigneeContact ?? null,
-      done: issue.completedAt ?? null,
+      done: issue.completedAt ?? issue.canceledAt ?? null,
       start: assigneeContact ? undefined : null,
       meta: {
         linearId: issue.id,
