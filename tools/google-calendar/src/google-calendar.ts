@@ -4,10 +4,10 @@ import {
   type ActivityLink,
   ActivityLinkType,
   type ActivityOccurrence,
-  type NewActivityOccurrence,
-  type ActorId,
   ActivityType,
+  type ActorId,
   ConferencingProvider,
+  type NewActivityOccurrence,
   type NewActivityWithNotes,
   type NewActor,
   type NewContact,
@@ -146,8 +146,6 @@ export class GoogleCalendar
     TArgs extends Serializable[],
     TCallback extends (auth: CalendarAuth, ...args: TArgs) => any
   >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    console.log("Requesting Google Calendar auth");
-
     // Combine calendar and contacts scopes for single OAuth flow
     const combinedScopes = [...GoogleCalendar.SCOPES, ...GoogleContacts.SCOPES];
 
@@ -212,13 +210,10 @@ export class GoogleCalendar
 
     // Store for future use
     await this.set("user_email", email);
-
-    console.log("Stored user email:", email);
     return email;
   }
 
   async getCalendars(authToken: string): Promise<Calendar[]> {
-    console.log("Fetching Google Calendar list");
     const api = await this.getApi(authToken);
     const data = (await api.call(
       "GET",
@@ -231,7 +226,6 @@ export class GoogleCalendar
         primary?: boolean;
       }>;
     };
-    console.log("Got Google Calendar list", data.items);
 
     return data.items.map((item) => ({
       id: item.id,
@@ -253,7 +247,6 @@ export class GoogleCalendar
     ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, calendarId } = options;
-    console.log("Saving callback");
 
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
@@ -264,8 +257,6 @@ export class GoogleCalendar
 
     // Store auth token for calendar for later RSVP updates
     await this.set(`auth_token_${calendarId}`, authToken);
-
-    console.log("Setting up watch");
 
     // Setup webhook for this calendar
     await this.setupCalendarWatch(authToken, calendarId, authToken);
@@ -284,7 +275,6 @@ export class GoogleCalendar
 
     await this.set(`sync_state_${calendarId}`, initialState);
 
-    console.log("Starting sync");
     // Start sync batch using run tool for long-running operation
     const syncCallback = await this.callback(
       this.syncBatch,
@@ -351,8 +341,6 @@ export class GoogleCalendar
       calendarId,
       expiry: new Date(parseInt(watchData.expiration)),
     });
-
-    console.log("Calendar watch setup complete", { watchId, calendarId });
   }
 
   async syncBatch(
@@ -362,10 +350,6 @@ export class GoogleCalendar
     calendarId: string,
     initialSync: boolean
   ): Promise<void> {
-    console.log(
-      `Starting Google Calendar sync batch ${batchNumber} (${mode}) for calendar ${calendarId}`
-    );
-
     try {
       // Ensure we have the user's identity for RSVP tagging
       if (batchNumber === 1) {
@@ -617,16 +601,6 @@ export class GoogleCalendar
     calendarId: string,
     initialSync: boolean
   ): Promise<void> {
-    console.log(`[processEventInstance] Processing event instance:`, {
-      id: event.id,
-      recurringEventId: event.recurringEventId,
-      summary: event.summary,
-      status: event.status,
-      start: event.start,
-      end: event.end,
-      originalStartTime: event.originalStartTime,
-    });
-
     const originalStartTime =
       event.originalStartTime?.dateTime || event.originalStartTime?.date;
     if (!originalStartTime) {
@@ -645,15 +619,6 @@ export class GoogleCalendar
 
     // Transform the instance data
     const instanceData = transformGoogleEvent(event, calendarId);
-
-    console.log(`[processEventInstance] Transformed instance data:`, {
-      type: instanceData.type,
-      title: instanceData.title,
-      start: instanceData.start,
-      end: instanceData.end,
-      recurrenceRule: instanceData.recurrenceRule,
-      meta: instanceData.meta,
-    });
 
     // Determine RSVP status for attendees
     const validAttendees =
@@ -724,20 +689,6 @@ export class GoogleCalendar
       occurrences: [occurrence],
     };
 
-    console.log(`[processEventInstance] Sending occurrence update:`, {
-      source: occurrenceUpdate.source,
-      type: occurrenceUpdate.type,
-      occurrenceCount: occurrenceUpdate.occurrences.length,
-      occurrence: {
-        occurrence: occurrence.occurrence,
-        start: occurrence.start,
-        end: occurrence.end,
-        title: occurrence.title,
-        hasOriginalStart: !!originalStartTime,
-        instanceDataStart: instanceData.start,
-      },
-    });
-
     await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
   }
 
@@ -746,12 +697,6 @@ export class GoogleCalendar
     calendarId: string,
     authToken: string
   ): Promise<void> {
-    console.log("Received calendar webhook notification", {
-      headers: request.headers,
-      params: request.params,
-      calendarId,
-    });
-
     // Validate webhook authenticity
     const channelId = request.headers["X-Goog-Channel-ID"];
     const channelToken = request.headers["X-Goog-Channel-Token"];
@@ -818,7 +763,6 @@ export class GoogleCalendar
     // Trigger contacts sync with the same authorization
     // This happens automatically when calendar auth succeeds
     try {
-      console.log("Triggering Google Contacts sync");
       // Retrieve the actual auth token to pass to contacts
       const token = await this.tools.integrations.get(authResult);
       if (token) {
@@ -827,7 +771,6 @@ export class GoogleCalendar
           token,
           this.onContactsSynced
         );
-        console.log("Google Contacts sync started successfully");
       } else {
         console.error("Failed to retrieve auth token for contacts sync");
       }
@@ -855,7 +798,6 @@ export class GoogleCalendar
       return;
     }
 
-    console.log(`Adding ${contacts.length} contacts to Plot`);
     try {
       await this.tools.plot.addContacts(contacts);
       console.log(`Successfully added ${contacts.length} contacts`);
@@ -976,7 +918,6 @@ export class GoogleCalendar
         .replace(/\.\d{3}/, ""); // Remove milliseconds
 
       eventId = `${baseEventId}_${instanceDateStr}`;
-      console.log(`Updating occurrence instance: ${eventId}`);
     }
 
     // Get the auth token for this calendar
@@ -989,7 +930,6 @@ export class GoogleCalendar
 
     try {
       await this.updateEventRSVP(authToken, calendarId, eventId, newStatus);
-      console.log(`Updated RSVP for event ${eventId} to ${newStatus}`);
     } catch (error) {
       console.error(`Failed to update RSVP for event ${eventId}:`, error);
     }
@@ -1035,7 +975,6 @@ export class GoogleCalendar
 
     // Check if status already matches to avoid infinite loops
     if (attendees[userAttendeeIndex].responseStatus === status) {
-      console.log(`RSVP status already ${status}, skipping update`);
       return;
     }
 

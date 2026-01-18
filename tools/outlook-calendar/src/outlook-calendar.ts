@@ -3,11 +3,11 @@ import {
   type ActivityLink,
   ActivityLinkType,
   type ActivityOccurrence,
-  type NewActivityOccurrence,
-  type ActorId,
   ActivityType,
+  type ActorId,
   ConferencingProvider,
   type ContentType,
+  type NewActivityOccurrence,
   type NewActivityWithNotes,
   type NewActor,
   type NewContact,
@@ -228,8 +228,6 @@ export class OutlookCalendar
 
     // Store for future use
     await this.set("user_email", email);
-
-    console.log("Stored user email:", email);
     return email;
   }
 
@@ -280,7 +278,6 @@ export class OutlookCalendar
       try {
         const api = await this.getApi(authToken);
         await api.deleteSubscription(watchData.subscriptionId);
-        console.log("Deleted Outlook subscription:", watchData.subscriptionId);
       } catch (error) {
         console.error("Failed to delete Outlook subscription:", error);
         // Continue to clear local state even if API call fails
@@ -330,12 +327,6 @@ export class OutlookCalendar
       };
 
       await this.set(`outlook_watch_${calendarId}`, watchState);
-
-      console.log("Outlook Calendar webhook configured", {
-        subscriptionId: subscription.id,
-        calendarId,
-        expiry: subscription.expirationDateTime,
-      });
     } catch (error) {
       console.error("Failed to setup Outlook webhook:", error);
       // Continue without webhook - sync will still work via manual triggers
@@ -682,10 +673,6 @@ export class OutlookCalendar
     calendarId: string,
     authToken: string
   ): Promise<void> {
-    console.log("Received Outlook calendar webhook notification", {
-      calendarId,
-    });
-
     if (request.params?.validationToken) {
       // Return validation token for webhook verification
       return;
@@ -705,10 +692,6 @@ export class OutlookCalendar
 
     for (const notification of notifications) {
       if (notification.changeType) {
-        console.log(
-          `Calendar ${notification.changeType} notification for ${calendarId}`
-        );
-
         // Trigger incremental sync
         await this.startIncrementalSync(calendarId, authToken);
       }
@@ -859,8 +842,6 @@ export class OutlookCalendar
           ? changes.occurrence.occurrence
           : new Date(changes.occurrence.occurrence);
 
-      console.log(`Looking up instance for occurrence: ${occurrenceDate.toISOString()}`);
-
       // Get the auth token for this calendar
       const authToken = await this.get<string>(`auth_token_${calendarId}`);
 
@@ -880,9 +861,10 @@ export class OutlookCalendar
 
         if (instanceId) {
           eventId = instanceId;
-          console.log(`Updating occurrence instance: ${eventId}`);
         } else {
-          console.warn(`Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`);
+          console.warn(
+            `Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`
+          );
           return;
         }
       } catch (error) {
@@ -901,7 +883,6 @@ export class OutlookCalendar
 
     try {
       await this.updateEventRSVP(authToken, calendarId, eventId, newStatus);
-      console.log(`Updated RSVP for event ${eventId} to ${newStatus}`);
     } catch (error) {
       console.error(`Failed to update RSVP for event ${eventId}:`, error);
     }
@@ -930,7 +911,10 @@ export class OutlookCalendar
 
     try {
       // Query instances from the API
-      const response = await api.call("GET", `https://graph.microsoft.com/v1.0${resource}`);
+      const response = await api.call(
+        "GET",
+        `https://graph.microsoft.com/v1.0${resource}`
+      );
 
       if (!response || !Array.isArray(response.value)) {
         console.warn("Invalid response from instances endpoint");
@@ -942,11 +926,14 @@ export class OutlookCalendar
       // Find the instance that matches this occurrence
       // Match by originalStart (for exceptions) or start (for regular occurrences)
       for (const instance of instances) {
-        const instanceStart = instance.originalStart || instance.start?.dateTime;
+        const instanceStart =
+          instance.originalStart || instance.start?.dateTime;
         if (instanceStart) {
           const instanceDate = new Date(instanceStart);
           // Compare with a tolerance of 1 second to account for rounding
-          const diff = Math.abs(instanceDate.getTime() - occurrenceDate.getTime());
+          const diff = Math.abs(
+            instanceDate.getTime() - occurrenceDate.getTime()
+          );
           if (diff < 1000) {
             return instance.id;
           }
@@ -1002,7 +989,6 @@ export class OutlookCalendar
     );
 
     if (userAttendee && userAttendee.status?.response === status) {
-      console.log(`RSVP status already ${status}, skipping update`);
       return;
     }
 
