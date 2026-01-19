@@ -35,7 +35,7 @@ class _SignInPageState extends State<SignInPage> {
           child: Column(
             spacing: 16,
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Center(
                 child: SvgPicture.asset(
@@ -143,6 +143,7 @@ class _SignInPageState extends State<SignInPage> {
                 },
                 style: FButtonStyle.secondary(),
                 prefix: const FaIcon(FontAwesomeIcons.envelope),
+                mainAxisSize: .min,
                 child: const Text('Continue with email'),
               ),
 

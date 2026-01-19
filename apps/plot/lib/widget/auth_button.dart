@@ -439,6 +439,7 @@ class _AuthButtonState extends State<AuthButton> {
           fontWeight: config.fontWeight,
           fontFamily: config.fontFamily,
           color: _isLoading ? config.disabledTextColor : config.textColor,
+          height: 1,
         ),
       ),
     );
@@ -472,11 +473,12 @@ class _AuthButtonState extends State<AuthButton> {
         ),
       }),
       contentStyle: FButtonContentStyle(
-        padding: widgetPadding,
+        padding: context.theme.buttonStyles.secondary.contentStyle.padding,
         textStyle: FWidgetStateMap.all(
           context.theme.typography.base.copyWith(
             fontWeight: config.fontWeight,
             fontFamily: config.fontFamily,
+            height: 1,
           ),
         ),
         iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
