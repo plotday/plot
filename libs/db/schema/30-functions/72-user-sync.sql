@@ -403,7 +403,8 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for priority_contact changes (also triggers actor sync)
+-- User sync trigger function for priority_contact changes (triggers actor sync only)
+-- The actor sync is sufficient because user_actor view includes contact data via priority_contact
 CREATE OR REPLACE FUNCTION public.sync_user_for_priority_contact ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -412,7 +413,6 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_priority_contact ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
-    v_users_to_notify_contact uuid[] := '{}';
     v_users_to_notify_actor uuid[] := '{}';
     v_user_id uuid;
     v_prev_update_at timestamptz;
@@ -432,31 +432,6 @@ BEGIN
         JOIN user_priority_expanded upe ON upe.priority_id = n.priority_id
     WHERE
         upe.archived_at IS NULL LOOP
-            -- Handle priority_contact entity
-            SELECT
-                last_update_at,
-                last_sync_at INTO v_prev_update_at,
-                v_prev_sync_at
-            FROM
-                user_sync
-            WHERE
-                user_id = v_user_id
-                AND entity = 'priority_contact';
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority_contact', v_max_updated_at)
-            ON CONFLICT (user_id, entity)
-                DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
-            SELECT
-                last_sync_at INTO v_current_sync_at
-            FROM
-                user_sync
-            WHERE
-                user_id = v_user_id
-                AND entity = 'priority_contact';
-            IF (v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at) THEN
-                v_users_to_notify_contact := array_append(v_users_to_notify_contact, v_user_id);
-            END IF;
             -- Handle actor entity (priority_contact contributes to actor view)
             SELECT
                 last_update_at,
@@ -483,10 +458,6 @@ BEGIN
                 v_users_to_notify_actor := array_append(v_users_to_notify_actor, v_user_id);
             END IF;
         END LOOP;
-    IF array_length(v_users_to_notify_contact, 1) > 0 THEN
-        PERFORM
-            call_user_sync_api (v_users_to_notify_contact);
-    END IF;
     IF array_length(v_users_to_notify_actor, 1) > 0 THEN
         PERFORM
             call_user_sync_api (v_users_to_notify_actor);
