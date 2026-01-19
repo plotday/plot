@@ -249,7 +249,13 @@ export class CallbacksState extends DurableObject<Bindings> {
         .from("priority_twist")
         .select("priority_id")
         .eq("id", callback.priorityTwistId)
-        .single()
+        .single(),
+      {
+        table: "priority_twist",
+        operation: "SELECT",
+        description: "Fetch priority for callback execution",
+        identifiers: { priorityTwistId: callback.priorityTwistId },
+      }
     );
 
     const factory = twistFactory({

@@ -9,6 +9,7 @@ import type { Context } from "hono";
 import type { LogContext } from "./logger";
 import type { Bindings, LogMessage } from "../env";
 import type { RunMessage } from "../twist/tools/tasks";
+import { DbError } from "@plotday/db";
 
 /**
  * Extract log context from Hono request context.
@@ -87,6 +88,12 @@ export function extractErrorContext(error: Error | unknown): LogContext {
     error_name: error.name,
     error_message: error.message,
   };
+
+  // Handle DbError specially to extract rich debugging context
+  if (error instanceof DbError) {
+    context.error_type = "database";
+    Object.assign(context, error.toLogContext());
+  }
 
   // Extract any custom properties from the error
   // (e.g., TwistError might have additional context)
