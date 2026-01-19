@@ -1,5 +1,13 @@
 # @plotday/tool-linear
 
+## 0.4.3
+
+### Changed
+
+- Use new return values from create functions ([`9428f5b`](https://github.com/plotday/plot/commit/9428f5bdca0221984836a67f902c8e7e691223b8))
+- Updated dependencies:
+- @plotday/twister@0.31.0
+
 ## 0.4.2
 
 ### Changed

@@ -1,5 +1,12 @@
 # @plotday/tool-google-contacts
 
+## 0.4.7
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.31.0
+
 ## 0.4.6
 
 ### Changed
