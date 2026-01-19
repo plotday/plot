@@ -163,7 +163,7 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     parseTokenResponse: parseGoogleTokenResponse,
     additionalParams: {
       access_type: "offline",
-      prompt: "select_account",
+      prompt: "select_account consent",  // Google supports combined values
     },
   },
   microsoft: {
@@ -172,6 +172,9 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     emailScopes: ["openid", "email"],
     parseTokenResponse: parseMicrosoftTokenResponse,
+    additionalParams: {
+      prompt: "consent",  // Microsoft only supports single values; consent ensures permission screen shows
+    },
   },
   notion: {
     name: "Notion",

@@ -739,8 +739,6 @@ export class Integrations extends Tool implements IAuth {
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
       ...config.additionalParams,
-      // Override prompt for twist auth to always show consent
-      prompt: "select_account consent",
     });
 
     const url = `${config.authUrl}?${params.toString()}`;
