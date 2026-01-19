@@ -107,7 +107,7 @@ ORDER BY
 -- priority_settings.color before priority.color at same distance
 SET check_function_bodies = OFF;
 
-CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid)
+CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid, p_user_id uuid)
     RETURNS SETOF twist
     LANGUAGE sql
     STABLE
@@ -121,11 +121,11 @@ CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid)
     WHERE
         twist.environment = 'public'
         OR (twist.environment = 'personal'
-            AND twist_admin.user_id = auth.uid ())
-        OR can_access_priority (twist_admin.priority_id)
+            AND twist_admin.user_id = p_user_id)
+        OR user_has_priority_access (p_user_id, twist_admin.priority_id)
 $function$;
 
-CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_priority_id uuid)
+CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_priority_id uuid, p_user_id uuid)
     RETURNS boolean
     LANGUAGE sql
     STABLE
@@ -142,7 +142,13 @@ CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_prio
                 twist.id = p_twist_id
                 AND (twist.environment = 'public'
                     OR (twist.environment = 'personal'
-                        AND twist_admin.user_id = auth.uid ())
-                    OR can_access_priority (twist_admin.priority_id)))
+                        AND twist_admin.user_id = p_user_id)
+                    OR user_has_priority_access (p_user_id, twist_admin.priority_id)))
 $function$;
+
+-- Restrict access: only service_role can call these functions
+-- These functions expose twist accessibility information
+REVOKE EXECUTE ON FUNCTION public.get_accessible_twists (uuid, uuid) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.is_accessible_twist (bigint, uuid, uuid) FROM PUBLIC;
 

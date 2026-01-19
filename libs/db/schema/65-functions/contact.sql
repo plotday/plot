@@ -48,3 +48,7 @@ $$
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER;
+
+-- Restrict access: only service_role can call this function
+-- This function accesses auth.users table
+REVOKE EXECUTE ON FUNCTION public.get_primary_contact_id (uuid) FROM PUBLIC;

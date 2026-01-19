@@ -39,7 +39,8 @@ account.post("/activate", async (c) => {
   }
 
   // Step 1: Atomically validate and redeem invitation code
-  const { data: redeemResult, error: redeemError } = await c.var.supabase.rpc(
+  // Using supabaseAdmin since function is revoked from authenticated
+  const { data: redeemResult, error: redeemError } = await c.var.supabaseAdmin.rpc(
     "redeem_invitation_code",
     {
       invitation_code: code,
@@ -442,7 +443,8 @@ account.post("/activate", async (c) => {
   }
 
   // Step 9: Set user status to active
-  const { error: statusError } = await c.var.supabase.rpc("set_user_status", {
+  // Using supabaseAdmin since function is revoked from authenticated
+  const { error: statusError } = await c.var.supabaseAdmin.rpc("set_user_status", {
     user_id: user.id,
     status: "active",
   });
@@ -529,7 +531,8 @@ account.delete("/", async (c) => {
     }
 
     // Step 4: Set user status to deleted
-    const { error: statusError } = await c.var.supabase.rpc("set_user_status", {
+    // Using supabaseAdmin since function is revoked from authenticated
+    const { error: statusError } = await c.var.supabaseAdmin.rpc("set_user_status", {
       user_id: user.id,
       status: "deleted",
     });

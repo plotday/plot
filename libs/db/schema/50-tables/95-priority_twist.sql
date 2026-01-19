@@ -68,15 +68,8 @@ CREATE TRIGGER prevent_priority_twist_immutable_changes
     FOR EACH ROW
     EXECUTE FUNCTION prevent_priority_twist_immutable_changes ();
 
-CREATE TRIGGER priority_twist_insert_api_call
-    AFTER INSERT ON "public"."priority_twist"
-    REFERENCING NEW TABLE AS new_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION notify_internal_api_for_priority_twist ();
+-- Trigger functions cannot be called via RPC, but REVOKE for defense-in-depth
+REVOKE EXECUTE ON FUNCTION public.set_priority_twist_owner_id () FROM PUBLIC;
 
-CREATE TRIGGER priority_twist_update_api_call
-    AFTER UPDATE ON "public"."priority_twist"
-    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION notify_internal_api_for_priority_twist ();
+REVOKE EXECUTE ON FUNCTION public.prevent_priority_twist_immutable_changes () FROM PUBLIC;
 

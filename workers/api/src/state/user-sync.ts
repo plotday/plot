@@ -1,0 +1,250 @@
+import { DurableObject } from "cloudflare:workers";
+
+import { type SupabaseClient, createClient } from "@plotday/db";
+
+import type { Bindings } from "../env";
+import { createLogger } from "../utils/logger";
+import { disposeRpc } from "../utils/rpc";
+
+// Debouncing configuration (compile-time constants)
+const MIN_WAIT_MS = 100; // Minimum time to wait before sending, allowing batching
+const MAX_WAIT_MS = 2000; // Maximum time to wait if updates keep arriving
+const MIN_INTERVAL_MS = 500; // Minimum gap between sync deliveries
+
+interface UserSyncState {
+  lastNotifyTime: number;
+  lastSyncTime: number;
+  pendingAlarm: boolean;
+}
+
+export class UserSync extends DurableObject<Bindings> {
+  private supabase: SupabaseClient;
+  private userId: string | null = null;
+  private state: UserSyncState;
+
+  constructor(ctx: DurableObjectState, env: Bindings) {
+    super(ctx, env);
+    this.supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+    this.state = {
+      lastNotifyTime: 0,
+      lastSyncTime: 0,
+      pendingAlarm: false,
+    };
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/notify" && request.method === "POST") {
+      const body = await request.json<{ id: string }>();
+      await this.notify(body.id);
+      return new Response("OK", { status: 200 });
+    }
+
+    if (url.pathname === "/onClientConnected" && request.method === "POST") {
+      const body = await request.json<{ userId: string }>();
+      await this.onClientConnected(body.userId);
+      return new Response("OK", { status: 200 });
+    }
+
+    return new Response("Not found", { status: 404 });
+  }
+
+  /**
+   * Called when the API receives a sync notification
+   * Schedules an alarm based on debouncing rules
+   */
+  private async notify(userId: string): Promise<void> {
+    // Store userId on first notify
+    if (!this.userId) {
+      this.userId = userId;
+      await this.ctx.storage.put("userId", userId);
+    }
+
+    const now = Date.now();
+    this.state.lastNotifyTime = now;
+
+    // If we have a pending alarm, let it handle the sync
+    if (this.state.pendingAlarm) {
+      return;
+    }
+
+    // Calculate when we should sync
+    const timeSinceLastSync = now - this.state.lastSyncTime;
+    let delayMs: number;
+
+    if (timeSinceLastSync < MIN_INTERVAL_MS) {
+      // If we synced recently, wait until MIN_INTERVAL_MS has passed
+      delayMs = MIN_INTERVAL_MS - timeSinceLastSync;
+    } else {
+      // Otherwise, use MIN_WAIT_MS to allow batching
+      delayMs = MIN_WAIT_MS;
+    }
+
+    // Schedule the alarm
+    this.state.pendingAlarm = true;
+    await this.ctx.storage.setAlarm(now + delayMs);
+  }
+
+  /**
+   * Called when the alarm fires
+   * Performs the sync if conditions are met
+   */
+  async alarm(): Promise<void> {
+    const logger = createLogger({
+      durable_object: "UserSync",
+      operation: "alarm",
+    });
+
+    this.state.pendingAlarm = false;
+
+    // Get userId from storage
+    if (!this.userId) {
+      const storedUserId = await this.ctx.storage.get<string>("userId");
+      if (storedUserId) {
+        this.userId = storedUserId;
+      } else {
+        logger.error("UserSync DO has no stored userId - notify() was never called");
+        return;
+      }
+    }
+
+    try {
+      const now = Date.now();
+
+      // Check if more notifications arrived while we were waiting
+      if (now - this.state.lastNotifyTime < MIN_WAIT_MS) {
+        // More notifications came in recently, reschedule
+        const delayMs = MIN_WAIT_MS - (now - this.state.lastNotifyTime);
+        this.state.pendingAlarm = true;
+        await this.ctx.storage.setAlarm(now + delayMs);
+        return;
+      }
+
+      // Enforce MAX_WAIT_MS - if we've been waiting too long, sync now
+      if (
+        this.state.lastNotifyTime > 0 &&
+        now - this.state.lastNotifyTime > MAX_WAIT_MS
+      ) {
+        // Waited long enough, proceed with sync
+      }
+
+      // Check if there are connected clients
+      const broadcastId = this.env.BROADCAST.idFromName(this.userId);
+      const broadcast = this.env.BROADCAST.get(broadcastId);
+      const hasClients = await broadcast
+        .fetch(new Request("http://do/hasConnectedClients"))
+        .then((r) => r.json())
+        .then((data: any) => data.hasConnectedClients);
+
+      if (!hasClients) {
+        // No connected clients, skip sync
+        logger.info("Skipping sync - no connected clients", {
+          user_id: this.userId,
+        });
+        this.state.lastSyncTime = now;
+        return;
+      }
+
+      // Query pending updates using RPC to compare columns
+      const { data: pendingUpdates, error } = await this.supabase.rpc(
+        "get_pending_user_sync",
+        { p_user_id: this.userId }
+      );
+
+      if (error) {
+        logger.error("Error querying user_sync", error, {
+          user_id: this.userId,
+        });
+        return;
+      }
+
+      if (!pendingUpdates || pendingUpdates.length === 0) {
+        // No pending updates
+        this.state.lastSyncTime = now;
+        return;
+      }
+
+      // Calculate the sync timestamp from query results (max last_update_at)
+      // This ensures we use database timestamps consistently rather than local server time
+      // and avoids race conditions where new updates could arrive between query and mark complete
+      const syncUpTo = pendingUpdates.reduce((max, update) => {
+        return update.last_update_at > max ? update.last_update_at : max;
+      }, pendingUpdates[0]?.last_update_at);
+
+      // Send sync messages for each entity
+      for (const update of pendingUpdates) {
+        const result = await broadcast.send({
+          type: "sync",
+          table: update.entity,
+        });
+        disposeRpc(result);
+      }
+
+      // Update last_sync_at for the entities we just synced using the max timestamp from the query
+      const entities = pendingUpdates.map((u) => u.entity);
+      const { error: updateError } = await this.supabase
+        .from("user_sync")
+        .update({ last_sync_at: syncUpTo })
+        .eq("user_id", this.userId)
+        .in("entity", entities);
+
+      if (updateError) {
+        logger.error("Error updating user_sync last_sync_at", updateError, {
+          user_id: this.userId,
+        });
+      }
+
+      this.state.lastSyncTime = now;
+
+      logger.info("User sync completed", {
+        user_id: this.userId,
+        entity_count: pendingUpdates.length,
+        entities: pendingUpdates.map((u) => u.entity),
+      });
+    } catch (error) {
+      logger.error("Error in UserSync alarm", error as Error, {
+        user_id: this.userId,
+      });
+    }
+  }
+
+  /**
+   * Called when a client connects to the Broadcast DO
+   * Syncs user_sync table so incremental updates work correctly
+   */
+  async onClientConnected(userId: string): Promise<void> {
+    const logger = createLogger({
+      durable_object: "UserSync",
+      operation: "onClientConnected",
+    });
+
+    // Store userId for future use
+    if (!this.userId) {
+      this.userId = userId;
+      await this.ctx.storage.put("userId", userId);
+    }
+
+    try {
+      // Call database function to sync last_sync_at to match last_update_at
+      // This ensures incremental updates work correctly after client reconnects
+      const { error } = await this.supabase.rpc("sync_user_on_connect", {
+        p_user_id: userId,
+      });
+
+      if (error) {
+        logger.error("Error calling sync_user_on_connect", error, {
+          user_id: userId,
+        });
+      } else {
+        logger.info("User sync state updated on client connect", {
+          user_id: userId,
+        });
+      }
+    } catch (error) {
+      logger.error("Error in onClientConnected", error as Error, {
+        user_id: userId,
+      });
+    }
+  }
+}

@@ -225,10 +225,12 @@ export default class extends WorkerEntrypoint {
   }
 
   async init(twistInit) {
+    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
     const { twist } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
   }
 
   async activate(twistInit, priority) {
+    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
     try {
       const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
 
@@ -256,6 +258,7 @@ export default class extends WorkerEntrypoint {
   }
 
   async upgrade(twistInit) {
+    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
     try {
       const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
 
@@ -283,6 +286,7 @@ export default class extends WorkerEntrypoint {
   }
 
   async deactivate(twistInit) {
+    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
     try {
       const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
 
@@ -310,6 +314,7 @@ export default class extends WorkerEntrypoint {
   }
 
   async callCallback(twistInit, path, functionName, ...args) {
+    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
     try {
       const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
 
@@ -338,6 +343,7 @@ export default class extends WorkerEntrypoint {
   }
 
   async dispatchToTool(twistInit, paths, optionPath, ...args) {
+    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
     try {
       // Build twist ONCE for all paths
       const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);

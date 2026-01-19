@@ -22,7 +22,7 @@ import {
 } from "@plotday/twister/tools/plot";
 
 import type { Bindings } from "../../../env";
-import { type ActivityItem, type NoteItem } from "../../../types";
+import type { EnrichedActivity, EnrichedNote } from "../../view-types";
 import { createLogger } from "../../../utils/logger";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
@@ -30,12 +30,7 @@ import { AI } from "../ai";
 import { Tool } from "../tool";
 import * as activityOps from "./activity";
 import * as contactsOps from "./contacts";
-import {
-  buildActivityFromDbRecord,
-  buildNoteFromDbRecord,
-  calculateTagsAdded,
-  calculateTagsRemoved,
-} from "./db";
+import { buildActivityFromDbRecord, buildNoteFromDbRecord } from "./db";
 import * as intentOps from "./intent";
 import * as priorityOps from "./priority";
 
@@ -74,14 +69,18 @@ function cleanupExpiredTwistIdCache(): void {
 export type DispatchItem =
   | {
       itemType: "activity";
-      item: ActivityItem;
-      previous?: ActivityItem;
+      item: EnrichedActivity;
+      isCreate?: boolean;
       syncDepth?: number;
+      changes?: {
+        tagsAdded: Record<number, string[]>;
+        tagsRemoved: Record<number, string[]>;
+      };
     }
   | {
       itemType: "note";
-      item: NoteItem;
-      previous?: NoteItem;
+      item: EnrichedNote;
+      isCreate?: boolean;
       syncDepth?: number;
     };
 
@@ -340,7 +339,15 @@ export class Plot extends Tool implements IPlot {
   async dispatch(
     dispatchItem: DispatchItem
   ): Promise<Array<{ optionPath: string[]; args: any[] }>> {
-    if (!this.plotOptions) return [];
+    const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+
+    if (!this.plotOptions) {
+      logger.info("[DEBUG] Plot.dispatch: no plotOptions, skipping", {
+        item_type: dispatchItem.itemType,
+        item_id: dispatchItem.item.id ?? undefined,
+      });
+      return [];
+    }
 
     // Set sync depth from dispatch context (defaults to 1 if not provided)
     this.syncDepth = dispatchItem.syncDepth ?? 1;
@@ -349,8 +356,7 @@ export class Plot extends Tool implements IPlot {
 
     // Handle note items
     if (dispatchItem.itemType === "note") {
-      const { item, previous } = dispatchItem;
-      const isUpdate = !!previous;
+      const { item, isCreate = true } = dispatchItem; // Default true for backwards compat
 
       // Build the current note
       const currentNote = buildNoteFromDbRecord(item);
@@ -359,7 +365,7 @@ export class Plot extends Tool implements IPlot {
       const isMentioned = (currentNote.mentions ?? []).includes(
         this.priorityTwistId
       );
-      if (isMentioned && !isUpdate) {
+      if (isMentioned && isCreate) {
         const result = await intentOps.handleIntent(this, currentNote);
         if (result) {
           callbacks.push(result);
@@ -367,7 +373,6 @@ export class Plot extends Tool implements IPlot {
       }
 
       // Dispatch note.created callback for new notes on activities created by this twist
-      const isCreate = !isUpdate;
       if (isCreate) {
         // Check if parent activity was created by this twist (from payload metadata)
         const activityCreatedByThisTwist =
@@ -375,6 +380,19 @@ export class Plot extends Tool implements IPlot {
 
         // Check if note was created by this twist
         const noteCreatedByThisTwist = item.created_by === this.priorityTwistId;
+
+        // DEBUG: Log note.created decision
+        logger.info("[DEBUG] Plot.dispatch note.created check", {
+          note_id: item.id ?? undefined,
+          activity_id: item.activity_id ?? undefined,
+          activity_created_by: item.activity_created_by ?? undefined,
+          note_created_by: item.created_by ?? undefined,
+          this_twist: this.priorityTwistId,
+          activityCreatedByThisTwist,
+          noteCreatedByThisTwist,
+          isCreate,
+          will_dispatch: activityCreatedByThisTwist && !noteCreatedByThisTwist && typeof this.plotOptions?.note?.created === "function",
+        });
 
         // Only dispatch if activity owned by twist AND note NOT created by twist
         // This prevents infinite loops when twist creates notes on its own activities
@@ -392,67 +410,59 @@ export class Plot extends Tool implements IPlot {
 
     // Handle activity items
     if (dispatchItem.itemType === "activity") {
-      const { item, previous } = dispatchItem;
-      const isUpdate = !!previous;
+      const { item, isCreate = false, changes } = dispatchItem;
 
       // Build the current activity
       const currentActivity = buildActivityFromDbRecord(item);
 
-      // Only dispatch activity.updated for updates (not creates) of activities created by this twist
+      // Check if activity was created by this twist
       const createdByThisTwist =
         (item.created_by ?? item.author_id) === this.priorityTwistId;
-      if (createdByThisTwist && isUpdate) {
-        // Build the previous activity
-        const previousActivity = buildActivityFromDbRecord(previous);
 
-        // Calculate ActivityUpdate with only changed fields
-        const update: ActivityUpdate = {
-          id: currentActivity.id,
-        };
-
-        // Check each field for changes
-        if (currentActivity.type !== previousActivity.type) {
-          update.type = currentActivity.type;
-        }
-        if (currentActivity.title !== previousActivity.title) {
-          update.title = currentActivity.title;
-        }
-        if (currentActivity.assignee?.id !== previousActivity.assignee?.id) {
-          update.assignee = currentActivity.assignee;
-        }
-        if (currentActivity.start !== previousActivity.start) {
-          update.start = currentActivity.start;
-        }
-        if (currentActivity.end !== previousActivity.end) {
-          update.end = currentActivity.end;
-        }
-        if (currentActivity.done !== previousActivity.done) {
-          update.done = currentActivity.done;
-        }
-        if (currentActivity.draft !== previousActivity.draft) {
-          update.draft = currentActivity.draft;
-        }
-        if (currentActivity.private !== previousActivity.private) {
-          update.private = currentActivity.private;
-        }
-
-        // Build changes object with both current and previous
-        const changes = {
-          update,
-          previous: previousActivity,
-          tagsAdded: calculateTagsAdded(item.tags, previous.tags),
-          tagsRemoved: calculateTagsRemoved(item.tags, previous.tags),
-        };
-
-        // Check if activity.updated callback exists
-        const callback = this.plotOptions?.activity?.updated;
-        if (typeof callback === "function") {
-          callbacks.push({
-            optionPath: ["activity", "updated"],
-            args: [currentActivity, changes],
+      if (createdByThisTwist) {
+        if (isCreate) {
+          // Future: call activity.created callback when added to twister
+          // For now, log for debugging
+          logger.info("Activity create received (no callback yet)", {
+            activity_id: item.id ?? undefined,
+            title: item.title?.substring(0, 30) ?? undefined,
+            created_by: item.created_by ?? undefined,
           });
+        } else {
+          // DEBUG: Log activity.updated decision
+          logger.info("[DEBUG] Plot.dispatch activity.updated check", {
+            activity_id: item.id ?? undefined,
+            title: item.title?.substring(0, 30) ?? undefined,
+            created_by: item.created_by ?? undefined,
+            author_id: item.author_id ?? undefined,
+            updated_by: item.updated_by ?? undefined,
+            this_twist: this.priorityTwistId,
+            createdByThisTwist,
+            isCreate,
+            has_callback: typeof this.plotOptions?.activity?.updated === "function",
+            will_dispatch: !isCreate && typeof this.plotOptions?.activity?.updated === "function",
+          });
+
+          // Check if activity.updated callback exists
+          const callback = this.plotOptions?.activity?.updated;
+          if (typeof callback === "function") {
+            callbacks.push({
+              optionPath: ["activity", "updated"],
+              args: [currentActivity, changes ?? { tagsAdded: {}, tagsRemoved: {} }],
+            });
+          }
         }
       }
+    }
+
+    // DEBUG: Log what callbacks are being returned
+    if (callbacks.length > 0) {
+      logger.info("[DEBUG] Plot.dispatch returning callbacks", {
+        item_type: dispatchItem.itemType,
+        item_id: dispatchItem.item.id ?? undefined,
+        callback_count: callbacks.length,
+        callback_paths: callbacks.map((c) => c.optionPath.join(".")).join(", "),
+      });
     }
 
     return callbacks;
@@ -734,7 +744,7 @@ export class Plot extends Tool implements IPlot {
   // Activity operations
   async createActivity(
     activity: NewActivity | NewActivityWithNotes
-  ): Promise<Activity> {
+  ): Promise<Uuid> {
     return activityOps.createActivity(this, activity);
   }
 
@@ -748,7 +758,9 @@ export class Plot extends Tool implements IPlot {
     return activityOps.getActivity(this, activity);
   }
 
-  async createActivities(activities: NewActivity[]): Promise<Activity[]> {
+  async createActivities(
+    activities: (NewActivity | NewActivityWithNotes)[]
+  ): Promise<Uuid[]> {
     return activityOps.createActivities(this, activities);
   }
 
@@ -787,11 +799,11 @@ export class Plot extends Tool implements IPlot {
     return activityOps.getNote(this, note);
   }
 
-  async createNote(note: NewNote, skipActivityRead = false): Promise<Note> {
+  async createNote(note: NewNote, skipActivityRead = false): Promise<Uuid> {
     return activityOps.createNote(this, note, skipActivityRead);
   }
 
-  async createNotes(notes: NewNote[]): Promise<Note[]> {
+  async createNotes(notes: NewNote[]): Promise<Uuid[]> {
     return activityOps.createNotes(this, notes);
   }
 

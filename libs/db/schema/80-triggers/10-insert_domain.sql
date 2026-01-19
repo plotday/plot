@@ -19,3 +19,6 @@ CREATE TRIGGER on_contact_created
     FOR EACH ROW
     EXECUTE FUNCTION insert_email_domain ();
 
+-- Trigger function cannot be called via RPC, but REVOKE for defense-in-depth
+REVOKE EXECUTE ON FUNCTION public.insert_email_domain () FROM PUBLIC;
+

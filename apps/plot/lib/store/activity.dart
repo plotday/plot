@@ -41,8 +41,6 @@ class Activities extends Table
       text().nullable().map(const RecurrenceRuleConverter())();
   TextColumn get recurrenceExdates =>
       text().nullable().map(const DateTimeListConverter())();
-  TextColumn get recurrenceDates =>
-      text().nullable().map(const DateTimeListConverter())();
   TextColumn get mentions => text().nullable().map(const UuidListConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   BoolColumn get unreadUpdated => boolean().nullable()();
@@ -878,30 +876,36 @@ class Activity extends Equatable implements Comparable<Activity> {
     var query = startingQuery.join([]);
     final now = DateTime.now();
 
-    // Add priority path filtering if priorityPath is provided
+    // Add priority filtering:
+    // 1. Filter by priorityPath if provided
+    // 2. Exclude activities with archived priorities when archived == false
+    final p = Store.get.alias(Store.get.priorities, 'p');
     if (priorityPath != null) {
-      final p = Store.get.alias(Store.get.priorities, 'p');
+      // Join conditions for priority path matching
+      Expression<bool> pathCondition =
+          p.path.equalsValue(priorityPath) |
+          p.path.likeExp(Constant('$priorityPath%'));
+
       if (includeAllFutureEvents) {
-        query = query.join([
-          innerJoin(
-            p,
-            p.id.equalsExp(a.priorityId) &
-                (p.path.equalsValue(priorityPath) |
-                    p.path.likeExp(Constant('$priorityPath%')) |
-                    (a.type.equalsValue(ActivityType.event) &
-                        a.endAt.isBiggerOrEqualValue(now))),
-          ),
-        ]);
-      } else {
-        query = query.join([
-          innerJoin(
-            p,
-            p.id.equalsExp(a.priorityId) &
-                (p.path.equalsValue(priorityPath) |
-                    p.path.likeExp(Constant('$priorityPath%'))),
-          ),
-        ]);
+        pathCondition =
+            pathCondition |
+            (a.type.equalsValue(ActivityType.event) &
+                a.endAt.isBiggerOrEqualValue(now));
       }
+
+      // Also filter by priority archived status when looking at non-archived activities
+      Expression<bool> joinCondition =
+          p.id.equalsExp(a.priorityId) & pathCondition;
+      if (archived == false) {
+        joinCondition = joinCondition & p.archivedAt.isNull();
+      }
+
+      query = query.join([innerJoin(p, joinCondition)]);
+    } else if (archived == false) {
+      // When no priorityPath filter, still need to exclude activities with archived priorities
+      query = query.join([
+        innerJoin(p, p.id.equalsExp(a.priorityId) & p.archivedAt.isNull()),
+      ]);
     }
 
     if (doNow) {
@@ -1271,7 +1275,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       final activityRow = group.first.readTable(a);
       final priority = priorityMap[activityRow.priorityId];
       if (priority == null) {
-        // Skip activities with missing priority
+        // Skip activities with missing priority (e.g., priority was deleted or archived)
         continue;
       }
 
@@ -1445,7 +1449,6 @@ class Activity extends Equatable implements Comparable<Activity> {
   DateTime? get lastNoteSourceCreatedAt => _activity.lastNoteSourceCreatedAt;
   RecurrenceRule? get recurrenceRule => _activity.recurrenceRule;
   List<DateTime>? get recurrenceExdates => _activity.recurrenceExdates;
-  List<DateTime>? get recurrenceDates => _activity.recurrenceDates;
   Map<Tag, List<ActorId>> get tags => {
     ...Map.fromEntries(
       [
@@ -1610,7 +1613,6 @@ class Activity extends Equatable implements Comparable<Activity> {
     Value<DateTime?> recurrenceDeletedAt = const Value.absent(),
     Value<RecurrenceRule?> recurrenceRule = const Value.absent(),
     Value<List<DateTime>?> recurrenceExdates = const Value.absent(),
-    Value<List<DateTime>?> recurrenceDates = const Value.absent(),
     Value<String?> recurrenceTitle = const Value.absent(),
     Value<Duration?> recurrenceDuration = const Value.absent(),
   }) {
@@ -1648,7 +1650,6 @@ class Activity extends Equatable implements Comparable<Activity> {
         recurrenceDeletedAt.present ||
         recurrenceRule.present ||
         recurrenceExdates.present ||
-        recurrenceDates.present ||
         recurrenceTitle.present ||
         recurrenceDuration.present ||
         (!recurring &&
@@ -1719,7 +1720,6 @@ class Activity extends Equatable implements Comparable<Activity> {
         archivedAt: rootDeletedAt,
         recurrenceRule: recurrenceRule,
         recurrenceExdates: recurrenceExdates,
-        recurrenceDates: recurrenceDates,
         title: rootTitle,
         duration: rootDuration,
         unread: unread,
@@ -2060,13 +2060,6 @@ class Activity extends Equatable implements Comparable<Activity> {
       );
     }
 
-    // Add recurrenceDates (extra dates to include) if they fall within the range
-    if (recurrenceDates?.isNotEmpty == true) {
-      instanceSet.addAll(
-        recurrenceDates!.where((dt) => range.includes(dt.toDate())),
-      );
-    }
-
     // Convert back to sorted list
     final finalInstances = instanceSet.toList()..sort();
 
@@ -2145,13 +2138,6 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (recurrenceExdates?.isNotEmpty == true) {
       instanceSet.removeAll(
         recurrenceExdates!.where((dt) => range.includes(dt.toDate())),
-      );
-    }
-
-    // Add recurrenceDates (extra dates to include) if they fall within the range
-    if (recurrenceDates?.isNotEmpty == true) {
-      instanceSet.addAll(
-        recurrenceDates!.where((dt) => range.includes(dt.toDate())),
       );
     }
 

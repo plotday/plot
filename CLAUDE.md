@@ -261,6 +261,7 @@ When building Google-based tools (calendar, contacts, gmail, etc.), use this pat
 #### Pattern Overview
 
 This pattern allows one Google tool to:
+
 1. Request combined OAuth scopes for multiple tools in a single authorization flow
 2. Automatically trigger syncing in related tools after successful authorization
 3. Share authorization tokens explicitly across tool boundaries
@@ -308,7 +309,7 @@ export default class GoogleContacts extends Tool<GoogleContacts> {
     ...extraArgs: any[]
   ): Promise<void> {
     // Validate authorization has required scopes
-    const hasRequiredScopes = GoogleContacts.SCOPES.every(scope =>
+    const hasRequiredScopes = GoogleContacts.SCOPES.every((scope) =>
       authorization.scopes.includes(scope)
     );
 
@@ -332,6 +333,7 @@ export default class GoogleContacts extends Tool<GoogleContacts> {
 **3. Add Dependency and Combine Scopes in Coordinator Tool**
 
 The coordinating tool (e.g., google-calendar) should:
+
 - Declare the consumer tool as a dependency
 - Combine scopes in `requestAuth()`
 - Trigger `syncWithAuth()` in `onAuthSuccess()`
@@ -449,39 +451,47 @@ export class GoogleGmail extends Tool<GoogleGmail> {
 ### The Correct Schema Change Workflow
 
 1. **Make schema changes in `libs/db/schema/` files ONLY**
+
    - The schema files are the source of truth
    - Organize changes in the appropriate subdirectories (50-tables, 60-views, 70-rls, 80-triggers, etc.)
    - Never modify migration files directly or create migrations manually
 
 2. **Generate a migration**
+
    ```bash
    pnpm gen-migration <descriptive_migration_name>
    ```
+
    - This compares the schema files with existing migrations and generates a new timestamped migration file
    - The migration will be created in `libs/db/supabase/migrations/`
 
 3. **Add data migrations if needed (optional)**
+
    - If you need to migrate existing data (not schema), add SQL to the generated migration file
    - Example: UPDATE statements to populate new columns, data transformations, etc.
    - Keep data migrations separate from schema changes when possible
 
 4. **Apply the migration to the LOCAL database**
+
    ```bash
    # Apply the migration file using psql
    psql postgresql://postgres:postgres@localhost:54322/postgres < libs/db/supabase/migrations/YOUR_MIGRATION.sql
    ```
+
    - This targets the LOCAL database only (localhost:54322)
    - Migrations are automatically wrapped in transactions by PostgreSQL
    - If a migration fails, the transaction rolls back - no partial changes
    - You can modify the migration file and try again until it succeeds
 
 5. **If migration fails or you need more schema changes**
+
    - Fix the migration file or make additional schema changes
    - Generate another migration: `pnpm gen-migration <another_descriptive_name>`
    - Apply it with psql: `psql postgresql://postgres:postgres@localhost:54322/postgres < libs/db/supabase/migrations/NEW_MIGRATION.sql`
    - Repeat as needed
 
 6. **Verify the changes**
+
    ```bash
    # Check that schema and database are in sync
    pnpm diff-schema-db
@@ -511,6 +521,7 @@ pnpm types
 ### Understanding Diff Commands
 
 **`pnpm diff-schema-db` (Schema vs Database)**
+
 - Compares schema files with the running local database
 - **Often shows false-positive function changes** that have already been applied
 - If a function/extension already exists in migrations, ignore it in the diff output
@@ -518,6 +529,7 @@ pnpm types
 - The migration generator (`pnpm gen-migration`) is smarter about what needs to be migrated
 
 **`pnpm diff-schema-migrations` (Schema vs Migrations)**
+
 - Compares schema files with existing migration files
 - **Should return no changes** once all migrations have been generated
 - If it shows differences, you have unapplied schema changes
@@ -581,5 +593,6 @@ pnpm types
 - If you see import errors for `@plotday/twister/*` after making Twister changes, ensure Twister has been rebuilt and the package exports are configured correctly in `public/twist/package.json`.
 - Only work locally. Never deploy. This includes workers, which only run locally.
 - When creating Cloudflare Durable Objects via idFromName(), ctx.id.name IS NOT SET inside the DO. If the DO needs the name (often the priorityTwistId), you MUST add a separate init() method to the DO and ensure it's called after creation to set the name.
-- In TypeScript, use static imports at the top of the file wherever possible.
+- In TypeScript, use static imports at the top of the file wherever possible. DO NOT insert dynamic import('filename') unless absolutely necessary to resolve a circular dependency.
 - **When adding new features**, update `docs/features.md` to reflect the new capabilities for marketing content generation.
+- **Never ignore database errors** in the API. Use `safeQuery()` from `@plotday/db` which throws a `DbError` if the query fails. Never use fire-and-forget patterns like `await supabase.from(...).insert(...)` without checking the result.

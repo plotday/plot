@@ -6,8 +6,9 @@ import { createLogger } from "../utils/logger";
 
 /**
  * Tail handler for capturing console logs and usage metrics from dynamically loaded twist workers.
- * Twist metadata (twistRootId, environment, priorityTwistId) is passed as trusted props from the
- * API worker, preventing malicious twist code from spoofing log metadata.
+ * Twist metadata (twistRootId, environment) is passed as trusted props from the API worker.
+ * priorityTwistId is extracted from per-invocation context logs to support worker sharing across
+ * multiple priority_twist instances.
  */
 export class TwistTail extends WorkerEntrypoint<
   {
@@ -17,28 +18,57 @@ export class TwistTail extends WorkerEntrypoint<
   {
     twistRootId: string;
     environment: TwistEnvironment;
-    priorityTwistId: string;
   }
 > {
   async tail(events: TraceItem[]): Promise<void> {
     const logMessages: LogMessage[] = [];
 
     // Get trusted metadata from props (passed from API worker)
-    const { twistRootId, environment, priorityTwistId } = this.ctx.props;
+    const { twistRootId, environment } = this.ctx.props;
 
-    // Get Usage DurableObject instance for tracking metrics
-    const usage = Usage.Get(this.env, priorityTwistId);
-
-    // Track Workers usage metrics
-    let totalInvocations = 0;
-    let totalCpuTimeMs = 0;
+    // Track Workers usage metrics per priorityTwistId
+    // Map of priorityTwistId -> { invocations, cpuTimeMs }
+    const usageByPriorityTwist = new Map<
+      string,
+      { invocations: number; cpuTimeMs: number }
+    >();
 
     for (const event of events) {
+      // Extract priorityTwistId from context logs
+      let priorityTwistId: string | undefined;
+      for (const logEntry of event.logs || []) {
+        const message = logEntry.message
+          .map((msg: any) => (typeof msg === "string" ? msg : String(msg)))
+          .join(" ");
+
+        // Parse context log: [TWIST_CONTEXT] priorityTwistId=<id>
+        const contextMatch = message.match(/^\[TWIST_CONTEXT\] priorityTwistId=(.+)$/);
+        if (contextMatch) {
+          priorityTwistId = contextMatch[1];
+          break; // Found context, stop looking
+        }
+      }
+
+      // Skip events without priorityTwistId (shouldn't happen in normal operation)
+      if (!priorityTwistId) {
+        console.warn("TwistTail: Event missing priorityTwistId context");
+        continue;
+      }
+
+      // Initialize usage tracking for this priorityTwistId if needed
+      if (!usageByPriorityTwist.has(priorityTwistId)) {
+        usageByPriorityTwist.set(priorityTwistId, {
+          invocations: 0,
+          cpuTimeMs: 0,
+        });
+      }
+      const usageMetrics = usageByPriorityTwist.get(priorityTwistId)!;
+
       // Track worker invocations (1 per event)
-      totalInvocations++;
+      usageMetrics.invocations++;
 
       // Track CPU time in milliseconds
-      totalCpuTimeMs += event.cpuTime;
+      usageMetrics.cpuTimeMs += event.cpuTime;
 
       // Process logs
       if (event.logs && event.logs.length > 0) {
@@ -56,6 +86,11 @@ export class TwistTail extends WorkerEntrypoint<
               }
             })
             .join(" ");
+
+          // Skip TWIST_CONTEXT logs (internal metadata, not user-facing)
+          if (message.startsWith("[TWIST_CONTEXT]")) {
+            continue;
+          }
 
           // Map log level to severity
           let severity: "log" | "info" | "warn" | "error";
@@ -85,6 +120,9 @@ export class TwistTail extends WorkerEntrypoint<
 
       // Process diagnosticsChannelEvents for AI usage tracking
       if (event.diagnosticsChannelEvents) {
+        // Get usage instance for this priorityTwistId
+        const usage = Usage.Get(this.env, priorityTwistId);
+
         for (const diagEvent of event.diagnosticsChannelEvents) {
           // AI Gateway sends usage data in diagnosticsChannelEvents
           // Look for AI-related events (typically from cloudflare:ai-gateway channel)
@@ -128,20 +166,31 @@ export class TwistTail extends WorkerEntrypoint<
               }
             } catch (error) {
               // Log parsing errors but don't fail the tail handler
-              const logger = createLogger({ twist_root_id: twistRootId, environment, priority_twist_id: priorityTwistId });
-              logger.error("Failed to parse AI usage from diagnostics", error as Error);
+              const logger = createLogger({
+                twist_root_id: twistRootId,
+                environment,
+                priority_twist_id: priorityTwistId,
+              });
+              logger.error(
+                "Failed to parse AI usage from diagnostics",
+                error as Error
+              );
             }
           }
         }
       }
     }
 
-    // Record Workers usage metrics
-    if (totalInvocations > 0) {
-      usage.spend("worker:invocation", totalInvocations);
-    }
-    if (totalCpuTimeMs > 0) {
-      usage.spend("worker:cpu_ms", totalCpuTimeMs);
+    // Record Workers usage metrics per priorityTwistId
+    for (const [priorityTwistId, metrics] of usageByPriorityTwist.entries()) {
+      const usage = Usage.Get(this.env, priorityTwistId);
+
+      if (metrics.invocations > 0) {
+        usage.spend("worker:invocation", metrics.invocations);
+      }
+      if (metrics.cpuTimeMs > 0) {
+        usage.spend("worker:cpu_ms", metrics.cpuTimeMs);
+      }
     }
 
     // Send logs to queue if we have any

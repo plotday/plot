@@ -149,31 +149,33 @@ class NoteEditorState extends State<NoteEditor> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 spacing: 4,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(
-                            top: 8,
-                            bottom: 4,
-                            left: 6,
-                            right: 6,
+                  Flexible(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              top: 8,
+                              bottom: 4,
+                              left: 6,
+                              right: 6,
+                            ),
+                            child: editor,
                           ),
-                          child: editor,
                         ),
-                      ),
 
-                      if (_isEmpty)
-                        SpeechDictationButton(
-                          onResult: (text) {
-                            _editorKey.currentState?.insertTextAtCursor(text);
-                          },
-                          onError: (error) {
-                            Alert.show(context, error);
-                          },
-                        ),
-                    ],
+                        if (_isEmpty)
+                          SpeechDictationButton(
+                            onResult: (text) {
+                              _editorKey.currentState?.insertTextAtCursor(text);
+                            },
+                            onError: (error) {
+                              Alert.show(context, error);
+                            },
+                          ),
+                      ],
+                    ),
                   ),
                   // Bottom bar - stays at bottom, above keyboard
                   Row(

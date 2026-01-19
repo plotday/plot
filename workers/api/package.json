@@ -35,6 +35,7 @@
     "hono": "^4.6.15",
     "hono-rate-limiter": "^0.5.3",
     "linkify-it": "^5.0.0",
+    "p-limit": "^7.2.0",
     "posthog-node": "^5.18.1",
     "stripe": "^17.5.0",
     "superjson": "^2.2.6",

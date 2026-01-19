@@ -37,15 +37,3 @@ CREATE TRIGGER set_session_created_at
     FOR EACH ROW
     EXECUTE FUNCTION set_created_at ();
 
-CREATE TRIGGER session_insert_api_call
-    AFTER INSERT ON public.session
-    REFERENCING NEW TABLE AS new_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION notify_internal_api_for_session ();
-
-CREATE TRIGGER session_update_api_call
-    AFTER UPDATE ON public.session
-    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION notify_internal_api_for_session ();
-

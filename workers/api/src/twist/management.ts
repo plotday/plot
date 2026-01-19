@@ -1,5 +1,5 @@
 import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
-import { Uuid } from "@plotday/twister/plot";
+import type { Uuid } from "@plotday/twister/plot";
 
 import type { twistFactory } from ".";
 import { type TwistEnvironment } from "../env";
@@ -108,12 +108,19 @@ export async function add(
       throw new Error("twist_environment is required and must be a string");
     }
 
-    // Verify user has access to this twist
-    const { data: hasAccess, error: accessError} = await supabase.rpc(
+    // Get user for access check
+    const { user } = await getUser(supabase);
+    if (!user) {
+      throw new Error("Unauthorized: No user found");
+    }
+
+    // Verify user has access to this twist (using supabaseAdmin since function is revoked from authenticated)
+    const { data: hasAccess, error: accessError} = await supabaseAdmin.rpc(
       "is_accessible_twist",
       {
         p_twist_id: twist_id,
         p_priority_id: priority_id,
+        p_user_id: user.id,
       }
     );
     if (accessError) {
@@ -238,13 +245,21 @@ export async function getAll(
       throw new Error("priorityId is required and must be a string");
     }
 
+    // Get user for access check
+    const { user } = await getUser(supabase);
+    if (!user) {
+      throw new Error("Unauthorized: No user found");
+    }
+
     // Query twists that are either:
     // 1. Public (environment = 'public'), OR
     // 2. User has access via twist_access table AND
     //    - priority_access_id is NULL (can install anywhere), OR
     //    - target priority is descendant of or equal to priority_access_id
-    const { data, error } = await supabase.rpc("get_accessible_twists", {
+    // Using supabaseAdmin since function is revoked from authenticated
+    const { data, error } = await supabaseAdmin.rpc("get_accessible_twists", {
       p_priority_id: priorityId,
+      p_user_id: user.id,
     });
 
     if (error) {

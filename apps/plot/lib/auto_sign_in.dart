@@ -47,7 +47,7 @@ class AutoSignIn {
         _log.info(
           'Signed in as different user ($currentEmail), signing out first',
         );
-        await Base.client.auth.signOut();
+        await Base.signOut();
         // Wait a moment for sign-out to complete
         await Future<void>.delayed(const Duration(milliseconds: 500));
       }

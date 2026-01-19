@@ -97,3 +97,7 @@ $$
 LANGUAGE sql
 SECURITY DEFINER;
 
+-- Restrict access: only service_role can call this function
+-- This function exposes user access information
+REVOKE EXECUTE ON FUNCTION public.get_users_with_priority_access (uuid) FROM PUBLIC;
+

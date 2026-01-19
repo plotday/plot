@@ -2,15 +2,16 @@ import type { PostHog } from "posthog-node";
 
 import { type SupabaseClient, createClient } from "@plotday/db";
 
+import { type Bindings, type TwistBatchMessage } from "../env";
 import { twistFactory } from "../twist";
-import { type Bindings, type UpdateMessage } from "../env";
-import { type ActivityItem, type NoteItem } from "../types";
 import { createLogger } from "../utils/logger";
-import { extractUpdateQueueContext, addTwistContext } from "../utils/log-context";
-import { truncateUuidForUpdatedBy } from "../utils/uuid";
 
+/**
+ * Process a batch of twist update messages from the queue.
+ * Each message contains enriched entity data for a single twist instance.
+ */
 export async function processUpdates(
-  batch: MessageBatch<UpdateMessage>,
+  batch: MessageBatch<TwistBatchMessage>,
   env: Bindings,
   ctx: ExecutionContext,
   postHog: PostHog
@@ -18,229 +19,144 @@ export async function processUpdates(
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
   for (const message of batch.messages) {
-    await processUpdate(message.body, env, ctx, supabase, batch.queue, postHog);
+    await processTwistBatch(
+      message.body,
+      env,
+      ctx,
+      supabase,
+      batch.queue,
+      postHog
+    );
   }
 }
 
-async function processUpdate(
-  updateData: UpdateMessage,
+/**
+ * Build tagsAdded/tagsRemoved from tag change events
+ */
+function buildTagChanges(
+  activityId: string,
+  tagChanges: TwistBatchMessage["activityTagChanges"]
+): {
+  tagsAdded: Record<number, string[]>;
+  tagsRemoved: Record<number, string[]>;
+} {
+  const tagsAdded: Record<number, string[]> = {};
+  const tagsRemoved: Record<number, string[]> = {};
+
+  for (const change of tagChanges) {
+    if (change.activityId !== activityId) continue;
+
+    const target = change.changeType === "added" ? tagsAdded : tagsRemoved;
+    if (!target[change.tagId]) {
+      target[change.tagId] = [];
+    }
+    if (!target[change.tagId].includes(change.actorId)) {
+      target[change.tagId].push(change.actorId);
+    }
+  }
+
+  return { tagsAdded, tagsRemoved };
+}
+
+/**
+ * Process a batched twist update message
+ * Handles notes, activities, and priority_twist updates for a single twist
+ */
+async function processTwistBatch(
+  batchData: TwistBatchMessage,
   env: Bindings,
   ctx: ExecutionContext,
   supabase: SupabaseClient,
   queue: string,
   postHog: PostHog
 ): Promise<void> {
-  const { type, item, previous, twists, users } = updateData;
+  const {
+    priorityTwistId,
+    twistId,
+    environment,
+    version,
+    newNotes,
+    updatedNotes,
+    newActivities,
+    updatedActivities,
+    activityTagChanges,
+    priorityTwist,
+  } = batchData;
 
-  // Create logger with queue context
-  const baseContext = extractUpdateQueueContext(updateData, queue);
-  const logger = createLogger(baseContext);
+  const logger = createLogger({
+    priority_twist_id: priorityTwistId,
+    twist_id: String(twistId),
+    environment,
+    version,
+    queue,
+  });
 
-  // Process activities
-  if (type === "activity") {
-    for (const twist of twists) {
-      try {
-        // Type guard to ensure we have an activity item
-        if (!("priority_id" in item) || !("author_id" in item)) {
-          logger.warn("Item type does not have required activity fields", {
-            item_type: type,
-            twist_id: String(twist.id),
-          });
-          continue;
-        }
+  try {
+    // Get twist factory and create twist instance
+    const factory = twistFactory({
+      env,
+      ctx,
+      supabase,
+    });
 
-        // Type assertion after guard
-        const activityItem = item as ActivityItem;
-        let previousActivityItem = previous as ActivityItem | undefined;
-
-        // Skip processing if activity is draft
-        if (activityItem.draft) {
-          logger.debug("Skipping twist processing for draft activity", {
-            twist_id: String(twist.id),
-            activity_id: activityItem.id,
-          });
-          continue;
-        }
-
-        // If transitioning from draft to non-draft, treat as creation
-        if (previousActivityItem?.draft === true && activityItem.draft === false) {
-          logger.info("Activity transitioned from draft to non-draft", {
-            activity_id: activityItem.id,
-            operation: "draft_to_published",
-          });
-          previousActivityItem = undefined;
-        }
-
-        // Skip processing if this twist triggered the update
-        const itemUpdatedBy = activityItem.updated_by;
-        if (itemUpdatedBy !== undefined) {
-          try {
-            const twistUpdatedBy = truncateUuidForUpdatedBy(
-              twist.priority_twist_id
-            );
-            if (itemUpdatedBy === twistUpdatedBy) {
-              logger.debug("Skipping self-triggered update", {
-                twist_id: String(twist.id),
-                priority_twist_id: twist.priority_twist_id,
-                updated_by: itemUpdatedBy,
-              });
-              continue;
-            }
-          } catch (error) {
-            logger.warn("Failed to process UUID truncation, continuing with processing", error as Error, {
-              twist_id: String(twist.id),
-            });
-            // Continue processing if UUID truncation fails - better to process than skip incorrectly
-          }
-        }
-
-        // Check cascade depth limit
-        const syncDepth = activityItem.sync_depth ?? 1;
-        if (syncDepth > 4) {
-          logger.warn("Sync cascade depth limit reached", {
-            sync_depth: syncDepth,
-            twist_id: String(twist.id),
-            priority_twist_id: twist.priority_twist_id,
-            item_type: "activity",
-            item_id: activityItem.id,
-            priority_id: activityItem.priority_id,
-          });
-
-          postHog.captureException(
-            new Error("Sync cascade depth limit reached"),
-            undefined,
-            {
-              sync_depth: syncDepth,
-              twist_id: String(twist.id),
-              priority_twist_id: twist.priority_twist_id,
-              item_type: "activity",
-              item_id: activityItem.id,
-              priority_id: activityItem.priority_id,
-            }
-          );
-
-          // TODO: Add twist logger warning (visible to twist logs)
-
-          continue;
-        }
-
-        // Get twist and tools dynamically
-        const factory = twistFactory({
-          env,
-          ctx,
-          supabase,
-        });
-        const twistWrapper = await factory({
-          version: twist.version,
-          priorityId: String(activityItem.priority_id),
-          priorityTwistId: twist.priority_twist_id,
-        });
-
-        // Dispatch to Plot tool - it will handle all filtering and processing logic
-        await twistWrapper.dispatch("Plot", {
-          itemType: "activity",
-          item: activityItem,
-          previous: previousActivityItem,
-          syncDepth,
-        });
-      } catch (error) {
-        const context = addTwistContext(
-          twist.id,
-          twist.priority_twist_id,
-          "priority_id" in item ? String(item.priority_id) : undefined,
-          twist.environment
-        );
-        logger.error("Error processing activity for twist", error as Error, {
-          ...context,
-          version: twist.version,
-          event: updateData.event,
-        });
-        postHog.captureException(error as Error, undefined, {
-          ...context,
-          version: twist.version,
-          type: type,
-          event: updateData.event,
-          queue,
-        });
+    // Get priority_id from the first item or fetch it
+    let priorityId: string | undefined;
+    if (newActivities.length > 0) {
+      priorityId = String(newActivities[0].priority_id);
+    } else if (updatedActivities.length > 0) {
+      priorityId = String(updatedActivities[0].priority_id);
+    } else if (newNotes.length > 0) {
+      priorityId = String(newNotes[0].priority_id);
+    } else if (updatedNotes.length > 0) {
+      priorityId = String(updatedNotes[0].priority_id);
+    } else {
+      // Fallback: fetch priority_id from priority_twist table
+      const { data: pt } = await supabase
+        .from("priority_twist")
+        .select("priority_id")
+        .eq("id", priorityTwistId)
+        .single();
+      if (pt) {
+        priorityId = String(pt.priority_id);
       }
     }
-  }
 
-  // Process notes
-  if (type === "note") {
-    for (const twist of twists) {
+    if (!priorityId) {
+      logger.warn("Could not determine priority_id for twist batch");
+      return;
+    }
+
+    const twistWrapper = await factory({
+      version,
+      priorityId,
+      priorityTwistId,
+    });
+
+    // Process new notes (for note.created callback and mention handling)
+    for (const note of newNotes) {
+      // Skip if note.id is null (shouldn't happen, but view types are nullable)
+      if (!note.id) continue;
+      const noteId = note.id;
+
       try {
-        // Type guard to ensure we have a note item
-        if (!("activity_id" in item) || !("author_id" in item)) {
-          logger.warn("Item type does not have required note fields", {
-            item_type: type,
-            twist_id: String(twist.id),
-          });
-          continue;
-        }
+        // Read sync_depth from the entity
+        const syncDepth = note.sync_depth ?? 1;
 
-        // Type assertion after guard
-        const noteItem = item as NoteItem;
-        let previousNoteItem = previous as NoteItem | undefined;
-
-        // Skip processing if note is draft
-        if (noteItem.draft) {
-          logger.debug("Skipping twist processing for draft note", {
-            twist_id: String(twist.id),
-            note_id: noteItem.id,
-          });
-          continue;
-        }
-
-        // If transitioning from draft to non-draft, treat as creation
-        if (previousNoteItem?.draft === true && noteItem.draft === false) {
-          logger.info("Note transitioned from draft to non-draft", {
-            note_id: noteItem.id,
-            operation: "draft_to_published",
-          });
-          previousNoteItem = undefined;
-        }
-
-        logger.info("Processing note update for twist", {
-          twist_id: String(twist.id),
-          priority_twist_id: twist.priority_twist_id,
-          note_id: noteItem.id,
-          activity_id: noteItem.activity_id,
+        // DEBUG: Log each new note being processed
+        logger.info("[DEBUG] Processing new note", {
+          note_id: noteId,
+          activity_id: note.activity_id ?? undefined,
+          created_by: note.created_by ?? undefined,
+          activity_created_by: note.activity_created_by ?? undefined,
+          sync_depth: syncDepth,
         });
 
-        // Skip processing if this twist triggered the update
-        const itemUpdatedBy = noteItem.updated_by;
-        if (itemUpdatedBy !== undefined) {
-          try {
-            const twistUpdatedBy = truncateUuidForUpdatedBy(
-              twist.priority_twist_id
-            );
-            if (itemUpdatedBy === twistUpdatedBy) {
-              logger.debug("Skipping self-triggered update", {
-                twist_id: String(twist.id),
-                priority_twist_id: twist.priority_twist_id,
-                updated_by: itemUpdatedBy,
-              });
-              continue;
-            }
-          } catch (error) {
-            logger.warn("Failed to process UUID truncation, continuing with processing", error as Error, {
-              twist_id: String(twist.id),
-            });
-            // Continue processing if UUID truncation fails - better to process than skip incorrectly
-          }
-        }
-
         // Check cascade depth limit
-        const syncDepth = noteItem.sync_depth ?? 1;
         if (syncDepth > 4) {
-          logger.warn("Sync cascade depth limit reached", {
+          logger.warn("Sync cascade depth limit reached for note", {
             sync_depth: syncDepth,
-            twist_id: String(twist.id),
-            priority_twist_id: twist.priority_twist_id,
-            item_type: "note",
-            item_id: noteItem.id,
-            activity_id: noteItem.activity_id,
+            note_id: noteId,
+            activity_id: note.activity_id ?? undefined,
           });
 
           postHog.captureException(
@@ -248,123 +164,295 @@ async function processUpdate(
             undefined,
             {
               sync_depth: syncDepth,
-              twist_id: String(twist.id),
-              priority_twist_id: twist.priority_twist_id,
+              twist_id: String(twistId),
+              priority_twist_id: priorityTwistId,
               item_type: "note",
-              item_id: noteItem.id,
-              activity_id: noteItem.activity_id,
+              item_id: noteId,
+              activity_id: note.activity_id,
             }
           );
-
-          // TODO: Add twist logger warning (visible to twist logs)
-
           continue;
         }
 
-        // Get twist and tools dynamically
-        const factory = twistFactory({
-          env,
-          ctx,
-          supabase,
-        });
-        const twistWrapper = await factory({
-          version: twist.version,
-          priorityId: String(noteItem.priority_id),
-          priorityTwistId: twist.priority_twist_id,
-        });
-
-        // Dispatch to Plot tool - it will handle all filtering and processing logic
+        // Dispatch to Plot tool - this is a new note (created callback)
         await twistWrapper.dispatch("Plot", {
           itemType: "note",
-          item: noteItem,
-          previous: previousNoteItem,
+          item: note,
+          isCreate: true, // New notes
           syncDepth,
         });
       } catch (error) {
-        const context = addTwistContext(
-          twist.id,
-          twist.priority_twist_id,
-          undefined,
-          twist.environment
+        logger.error(
+          "Error processing new note in twist batch",
+          error as Error,
+          {
+            note_id: noteId,
+            activity_id: note.activity_id ?? undefined,
+          }
         );
-        logger.error("Error processing note for twist", error as Error, {
-          ...context,
-          activity_id: "activity_id" in item ? String(item.activity_id) : undefined,
-          version: twist.version,
-          event: updateData.event,
-        });
         postHog.captureException(error as Error, undefined, {
-          ...context,
-          activity_id: "activity_id" in item ? String(item.activity_id) : undefined,
-          version: twist.version,
-          type: type,
-          event: updateData.event,
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          note_id: noteId,
+          activity_id: note.activity_id,
           queue,
         });
       }
     }
-  }
 
-  // Process users for broadcast notifications
-  if (users && users.length > 0) {
-    // Extract table name from the updateData (should be present in payload)
-    const updatedBy =
-      "updated_by" in item ? item.updated_by?.toString() : undefined;
+    // Process updated notes (for notes the twist created)
+    for (const note of updatedNotes) {
+      // Skip if note.id is null (shouldn't happen, but view types are nullable)
+      if (!note.id) continue;
+      const noteId = note.id;
 
-    for (const user of users) {
       try {
-        // Get the Broadcast DurableObject for this user
-        const broadcastId = env.BROADCAST.idFromName(user.user_id);
-        const broadcast = env.BROADCAST.get(broadcastId);
+        const syncDepth = note.sync_depth ?? 1;
 
-        // Send sync message to user via Broadcast DO
-        await broadcast.send(
-          {
-            type: "sync",
-            table: type,
-          },
-          updatedBy
-        );
+        // DEBUG: Log each updated note being processed
+        logger.info("[DEBUG] Processing updated note", {
+          note_id: noteId,
+          activity_id: note.activity_id ?? undefined,
+          created_by: note.created_by ?? undefined,
+          sync_depth: syncDepth,
+        });
 
-        // For priority_twist updates, also sync actor view since priority_twist is part of actor
-        if (type === "priority_twist") {
-          await broadcast.send(
-            {
-              type: "sync",
-              table: "actor",
-            },
-            updatedBy
-          );
+        if (syncDepth > 4) {
+          logger.warn("Sync cascade depth limit reached for updated note", {
+            sync_depth: syncDepth,
+            note_id: noteId,
+            activity_id: note.activity_id ?? undefined,
+          });
+          continue;
         }
 
-        // For priority_contact updates, also sync actor view since contacts are part of actor
-        if (type === "priority_contact") {
-          await broadcast.send(
-            {
-              type: "sync",
-              table: "actor",
-            },
-            updatedBy
-          );
-        }
-
-        logger.info("Sent broadcast to user", {
-          user_id: user.user_id,
-          table: type,
+        // Dispatch to Plot tool - this is an update to a note the twist created
+        await twistWrapper.dispatch("Plot", {
+          itemType: "note",
+          item: note,
+          isCreate: false, // Updated notes
+          syncDepth,
         });
       } catch (error) {
-        logger.error("Error broadcasting to user", error as Error, {
-          user_id: user.user_id,
-          table: type,
-          updated_by: updatedBy,
-        });
+        logger.error(
+          "Error processing updated note in twist batch",
+          error as Error,
+          {
+            note_id: noteId,
+            activity_id: note.activity_id ?? undefined,
+          }
+        );
         postHog.captureException(error as Error, undefined, {
-          user_id: user.user_id,
-          type: type,
-          updated_by: updatedBy,
-          queue: queue,
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          note_id: noteId,
+          activity_id: note.activity_id,
+          queue,
         });
       }
     }
+
+    // Process new activities (for activity.created callback)
+    for (const activity of newActivities) {
+      // Skip if activity.id is null (shouldn't happen, but view types are nullable)
+      if (!activity.id) continue;
+      const activityId = activity.id;
+
+      try {
+        // Read sync_depth from the entity
+        const syncDepth = activity.sync_depth ?? 1;
+
+        // DEBUG: Log each new activity being processed
+        logger.info("[DEBUG] Processing new activity", {
+          activity_id: activityId,
+          title: activity.title?.substring(0, 50) ?? undefined,
+          created_by: activity.created_by ?? undefined,
+          sync_depth: syncDepth,
+        });
+
+        // Check cascade depth limit
+        if (syncDepth > 4) {
+          logger.warn("Sync cascade depth limit reached for new activity", {
+            sync_depth: syncDepth,
+            activity_id: activityId,
+            priority_id: activity.priority_id ?? undefined,
+          });
+
+          postHog.captureException(
+            new Error("Sync cascade depth limit reached"),
+            undefined,
+            {
+              sync_depth: syncDepth,
+              twist_id: String(twistId),
+              priority_twist_id: priorityTwistId,
+              item_type: "activity",
+              item_id: activityId,
+              priority_id: activity.priority_id,
+            }
+          );
+          continue;
+        }
+
+        // Build tag changes for this activity
+        const { tagsAdded, tagsRemoved } = buildTagChanges(
+          activityId,
+          activityTagChanges
+        );
+
+        // Dispatch to Plot tool - this is a new activity (created callback)
+        await twistWrapper.dispatch("Plot", {
+          itemType: "activity",
+          item: activity,
+          isCreate: true, // New activities
+          syncDepth,
+          changes: {
+            tagsAdded,
+            tagsRemoved,
+          },
+        });
+      } catch (error) {
+        logger.error(
+          "Error processing new activity in twist batch",
+          error as Error,
+          {
+            activity_id: activityId,
+            priority_id: activity.priority_id ?? undefined,
+          }
+        );
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          activity_id: activityId,
+          priority_id: activity.priority_id,
+          queue,
+        });
+      }
+    }
+
+    // Process updated activities (for activity.updated callback)
+    for (const activity of updatedActivities) {
+      // Skip if activity.id is null (shouldn't happen, but view types are nullable)
+      if (!activity.id) continue;
+      const activityId = activity.id;
+
+      try {
+        // Read sync_depth from the entity
+        const syncDepth = activity.sync_depth ?? 1;
+
+        // DEBUG: Log each updated activity being processed
+        logger.info("[DEBUG] Processing updated activity", {
+          activity_id: activityId,
+          title: activity.title?.substring(0, 50) ?? undefined,
+          created_by: activity.created_by ?? undefined,
+          updated_by: activity.updated_by ?? undefined,
+          sync_depth: syncDepth,
+        });
+
+        // Check cascade depth limit
+        if (syncDepth > 4) {
+          logger.warn("Sync cascade depth limit reached for activity", {
+            sync_depth: syncDepth,
+            activity_id: activityId,
+            priority_id: activity.priority_id ?? undefined,
+          });
+
+          postHog.captureException(
+            new Error("Sync cascade depth limit reached"),
+            undefined,
+            {
+              sync_depth: syncDepth,
+              twist_id: String(twistId),
+              priority_twist_id: priorityTwistId,
+              item_type: "activity",
+              item_id: activityId,
+              priority_id: activity.priority_id,
+            }
+          );
+          continue;
+        }
+
+        // Build tag changes for this activity
+        const { tagsAdded, tagsRemoved } = buildTagChanges(
+          activityId,
+          activityTagChanges
+        );
+
+        // Dispatch to Plot tool with tag changes - this is an update
+        await twistWrapper.dispatch("Plot", {
+          itemType: "activity",
+          item: activity,
+          isCreate: false, // Updated activities
+          syncDepth,
+          changes: {
+            tagsAdded,
+            tagsRemoved,
+          },
+        });
+      } catch (error) {
+        logger.error(
+          "Error processing activity in twist batch",
+          error as Error,
+          {
+            activity_id: activityId,
+            priority_id: activity.priority_id ?? undefined,
+          }
+        );
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          activity_id: activityId,
+          priority_id: activity.priority_id,
+          queue,
+        });
+      }
+    }
+
+    // Process priority_twist config changes (no sync_depth for config)
+    if (priorityTwist) {
+      try {
+        // Dispatch priority_twist config change to the twist
+        await twistWrapper.dispatch("Plot", {
+          itemType: "priority_twist",
+          item: priorityTwist,
+          syncDepth: undefined, // Config changes don't cascade
+        });
+
+        logger.info("Priority twist config processed", {
+          priority_twist_id: priorityTwistId,
+        });
+      } catch (error) {
+        logger.error(
+          "Error processing priority_twist in batch",
+          error as Error,
+          {
+            priority_twist_id: priorityTwistId,
+          }
+        );
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          queue,
+        });
+      }
+    }
+
+    logger.info("Twist batch processed successfully", {
+      new_note_count: newNotes.length,
+      updated_note_count: updatedNotes.length,
+      new_activity_count: newActivities.length,
+      updated_activity_count: updatedActivities.length,
+      tag_change_count: activityTagChanges.length,
+      has_priority_twist_update: !!priorityTwist,
+    });
+  } catch (error) {
+    logger.error("Error processing twist batch", error as Error, {
+      priority_twist_id: priorityTwistId,
+      twist_id: String(twistId),
+    });
+    postHog.captureException(error as Error, undefined, {
+      twist_id: String(twistId),
+      priority_twist_id: priorityTwistId,
+      queue,
+    });
   }
 }

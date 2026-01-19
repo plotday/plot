@@ -7,7 +7,7 @@
 
 import type { Context } from "hono";
 import type { LogContext } from "./logger";
-import type { Bindings, UpdateMessage, LogMessage } from "../env";
+import type { Bindings, LogMessage } from "../env";
 import type { RunMessage } from "../twist/tools/tasks";
 
 /**
@@ -32,44 +32,6 @@ export function extractRequestContext(c: Context<{ Bindings: Bindings }>): LogCo
   } catch {
     // User not available (not authenticated or middleware not run)
   }
-
-  return context;
-}
-
-/**
- * Extract log context from queue update messages.
- *
- * Extracts twist_id, priority_twist_id, priority_id, environment, queue info.
- */
-export function extractUpdateQueueContext(
-  message: UpdateMessage,
-  queue?: string
-): LogContext {
-  const context: LogContext = {
-    queue: queue ?? "updates",
-  };
-
-  // Extract from first twist if available
-  if (message.twists && message.twists.length > 0) {
-    const twist = message.twists[0];
-    context.twist_id = String(twist.id);
-    context.priority_twist_id = twist.priority_twist_id;
-    context.environment = twist.environment;
-    if (twist.version) {
-      context.version = twist.version;
-    }
-  }
-
-  // Extract priority_id from item if available
-  if ("priority_id" in message.item && message.item.priority_id) {
-    context.priority_id = String(message.item.priority_id);
-  }
-
-  // Add event type and item type
-  if (message.event) {
-    context.event = message.event;
-  }
-  context.item_type = message.type;
 
   return context;
 }

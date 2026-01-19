@@ -6,10 +6,6 @@ CREATE OR REPLACE FUNCTION public.set_user_status (user_id uuid, status text)
     SET search_path TO 'public', 'auth'
     AS $function$
 BEGIN
-    -- Authorization: Only allow users to update their own status
-    IF auth.uid () != user_id THEN
-        RAISE EXCEPTION 'Unauthorized: Cannot update status for other users';
-    END IF;
     -- Atomically update the user's app_metadata with status
     -- This avoids race conditions by doing the read and write in one operation
     UPDATE
@@ -21,9 +17,8 @@ BEGIN
 END;
 $function$;
 
-REVOKE EXECUTE ON FUNCTION set_user_status (uuid, text) FROM anon;
-
-REVOKE EXECUTE ON FUNCTION set_user_status (uuid, text) FROM authenticated;
+-- Restrict access: only service_role can call this function
+REVOKE EXECUTE ON FUNCTION set_user_status (uuid, text) FROM PUBLIC;
 
 -- Function to redeem an invitation code (atomic operation)
 CREATE OR REPLACE FUNCTION public.redeem_invitation_code (invitation_code text, user_id uuid)
@@ -35,10 +30,6 @@ CREATE OR REPLACE FUNCTION public.redeem_invitation_code (invitation_code text, 
 DECLARE
     _remaining numeric;
 BEGIN
-    -- Authorization: Only allow users to redeem codes for themselves
-    IF auth.uid () != user_id THEN
-        RAISE EXCEPTION 'Unauthorized: Cannot redeem invitation for other users';
-    END IF;
     -- Atomically decrement the invitation code's remaining count
     -- Returns NULL if code doesn't exist or has no remaining uses
     UPDATE
@@ -59,7 +50,6 @@ BEGIN
 END;
 $function$;
 
-REVOKE EXECUTE ON FUNCTION redeem_invitation_code (text, uuid) FROM anon;
-
-REVOKE EXECUTE ON FUNCTION redeem_invitation_code (text, uuid) FROM authenticated;
+-- Restrict access: only service_role can call this function
+REVOKE EXECUTE ON FUNCTION redeem_invitation_code (text, uuid) FROM PUBLIC;
 

@@ -73,18 +73,6 @@ CREATE TRIGGER set_note_author_and_created_by
     FOR EACH ROW
     EXECUTE FUNCTION update_author_and_created_by ();
 
-CREATE TRIGGER note_insert_api_call
-    AFTER INSERT ON public.note
-    REFERENCING NEW TABLE AS new_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION public.notify_internal_api_for_note ();
-
-CREATE TRIGGER note_update_api_call
-    AFTER UPDATE ON public.note
-    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION public.notify_internal_api_for_note ();
-
 -- Function to update activity's last_note_created_at and activity_read when notes change
 CREATE OR REPLACE FUNCTION public.update_activity_on_note_change ()
     RETURNS TRIGGER
@@ -148,29 +136,18 @@ BEGIN
                         AND n.created_at > activity_read.read_at);
         -- Update activity's last_note_created_at and last_note_source_created_at when notes are inserted/deleted
         -- Note: note.updated_at changes do NOT trigger this
+        -- Uses GREATEST() instead of MAX subquery since we only need to update if the new value exceeds the current
         UPDATE
             activity
         SET
-            last_note_created_at = (
-                SELECT
-                    MAX(created_at)
-                FROM
-                    note
-                WHERE
-                    activity_id = COALESCE(NEW.activity_id, OLD.activity_id)
-                    AND draft = FALSE
-                    AND archived_at IS NULL),
-            last_note_source_created_at = (
-                SELECT
-                    MAX(source_created_at)
-                FROM
-                    note
-                WHERE
-                    activity_id = COALESCE(NEW.activity_id, OLD.activity_id)
-                    AND draft = FALSE
-                    AND archived_at IS NULL)
+            last_note_created_at = GREATEST (last_note_created_at, NEW.created_at),
+            last_note_source_created_at = GREATEST (last_note_source_created_at, NEW.source_created_at)
         WHERE
-            id = COALESCE(NEW.activity_id, OLD.activity_id);
+            id = NEW.activity_id
+            AND (last_note_created_at IS NULL
+                OR last_note_created_at < NEW.created_at
+                OR last_note_source_created_at IS NULL
+                OR last_note_source_created_at < NEW.source_created_at);
     END IF;
     RETURN COALESCE(NEW, OLD);
 END;
@@ -189,4 +166,7 @@ CREATE TRIGGER update_activity_last_note_created_at_on_status_change
     FOR EACH ROW
     WHEN ((OLD.draft IS DISTINCT FROM NEW.draft OR OLD.archived_at IS DISTINCT FROM NEW.archived_at))
     EXECUTE FUNCTION update_activity_on_note_change ();
+
+-- Trigger function cannot be called via RPC, but REVOKE for defense-in-depth
+REVOKE EXECUTE ON FUNCTION public.update_activity_on_note_change () FROM PUBLIC;
 

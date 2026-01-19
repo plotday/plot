@@ -66,7 +66,7 @@ To get started:
       // Get or create parent activity for this environment
       let parentId = parentIds[environment];
       if (!parentId) {
-        const parentActivity = await this.tools.plot.createActivity({
+        parentId = await this.tools.plot.createActivity({
           type: ActivityType.Note,
           title: `Twist Logs (${environment})`,
           notes: [
@@ -75,7 +75,6 @@ To get started:
             },
           ],
         });
-        parentId = parentActivity.id;
         parentIds[environment] = parentId;
         await this.tools.store.set("log_parent_ids", parentIds);
       }

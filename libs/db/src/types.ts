@@ -45,7 +45,7 @@ export type Database = {
           created_by_twist_id: number | null
           done_at: string | null
           draft: boolean
-          duration: unknown
+          duration: string | null
           embedding: unknown
           id: string
           last_note_created_at: string | null
@@ -57,7 +57,6 @@ export type Database = {
           preview: string | null
           priority_id: string
           private: boolean
-          recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           source: string | null
@@ -99,7 +98,7 @@ export type Database = {
           created_by_twist_id?: number | null
           done_at?: string | null
           draft?: boolean
-          duration?: unknown
+          duration?: string | null
           embedding?: unknown
           id?: string
           last_note_created_at?: string | null
@@ -111,7 +110,6 @@ export type Database = {
           preview?: string | null
           priority_id: string
           private?: boolean
-          recurrence_dates?: string[] | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
           source?: string | null
@@ -133,7 +131,7 @@ export type Database = {
           created_by_twist_id?: number | null
           done_at?: string | null
           draft?: boolean
-          duration?: unknown
+          duration?: string | null
           embedding?: unknown
           id?: string
           last_note_created_at?: string | null
@@ -145,7 +143,6 @@ export type Database = {
           preview?: string | null
           priority_id?: string
           private?: boolean
-          recurrence_dates?: string[] | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
           source?: string | null
@@ -216,12 +213,12 @@ export type Database = {
           at: unknown
           created_at: string
           done_at: string | null
-          duration: unknown
+          duration: string | null
           id: string
           meta: Json | null
-          note: string | null
           occurrence: string
           on: unknown
+          preview: string | null
           title: string | null
           updated_at: string
           updated_by: number
@@ -232,12 +229,12 @@ export type Database = {
           at?: unknown
           created_at?: string
           done_at?: string | null
-          duration?: unknown
+          duration?: string | null
           id?: string
           meta?: Json | null
-          note?: string | null
           occurrence: string
           on?: unknown
+          preview?: string | null
           title?: string | null
           updated_at?: string
           updated_by?: number
@@ -248,12 +245,12 @@ export type Database = {
           at?: unknown
           created_at?: string
           done_at?: string | null
-          duration?: unknown
+          duration?: string | null
           id?: string
           meta?: Json | null
-          note?: string | null
           occurrence?: string
           on?: unknown
+          preview?: string | null
           title?: string | null
           updated_at?: string
           updated_by?: number
@@ -277,14 +274,21 @@ export type Database = {
             foreignKeyName: "activity_exception_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity"
+            referencedRelation: "priority_twist_activity_create"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_exception_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity_exception"
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
             referencedColumns: ["id"]
           },
           {
@@ -341,14 +345,21 @@ export type Database = {
             foreignKeyName: "activity_read_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity"
+            referencedRelation: "priority_twist_activity_create"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_read_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity_exception"
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_read_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
             referencedColumns: ["id"]
           },
           {
@@ -417,14 +428,21 @@ export type Database = {
             foreignKeyName: "activity_tag_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity"
+            referencedRelation: "priority_twist_activity_create"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_tag_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity_exception"
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
             referencedColumns: ["id"]
           },
           {
@@ -642,14 +660,21 @@ export type Database = {
             foreignKeyName: "note_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity"
+            referencedRelation: "priority_twist_activity_create"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "note_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity_exception"
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
             referencedColumns: ["id"]
           },
           {
@@ -702,6 +727,20 @@ export type Database = {
             columns: ["note_id"]
             isOneToOne: false
             referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_update"
             referencedColumns: ["id"]
           },
           {
@@ -1030,6 +1069,59 @@ export type Database = {
             columns: ["twist_id"]
             isOneToOne: false
             referencedRelation: "twist"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      priority_twist_sync: {
+        Row: {
+          entity: string
+          last_sync_at: string
+          last_update_at: string
+          operation: Database["public"]["Enums"]["sync_operation"]
+          priority_twist_id: string
+        }
+        Insert: {
+          entity: string
+          last_sync_at?: string
+          last_update_at: string
+          operation: Database["public"]["Enums"]["sync_operation"]
+          priority_twist_id: string
+        }
+        Update: {
+          entity?: string
+          last_sync_at?: string
+          last_update_at?: string
+          operation?: Database["public"]["Enums"]["sync_operation"]
+          priority_twist_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["priority_twist_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            isOneToOne: false
+            referencedRelation: "user_twist"
             referencedColumns: ["id"]
           },
         ]
@@ -1548,6 +1640,13 @@ export type Database = {
             foreignKeyName: "usage_priority_twist_id_fkey"
             columns: ["priority_twist_id"]
             isOneToOne: false
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["priority_twist_id"]
+          },
+          {
+            foreignKeyName: "usage_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            isOneToOne: false
             referencedRelation: "user_twist"
             referencedColumns: ["id"]
           },
@@ -1610,6 +1709,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_sync: {
+        Row: {
+          entity: string
+          last_sync_at: string
+          last_update_at: string
+          user_id: string
+        }
+        Insert: {
+          entity: string
+          last_sync_at?: string
+          last_update_at: string
+          user_id: string
+        }
+        Update: {
+          entity?: string
+          last_sync_at?: string
+          last_update_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       activity_tags: {
@@ -1639,14 +1759,21 @@ export type Database = {
             foreignKeyName: "activity_tag_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity"
+            referencedRelation: "priority_twist_activity_create"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_tag_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity_exception"
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
             referencedColumns: ["id"]
           },
           {
@@ -1676,7 +1803,7 @@ export type Database = {
           created_by_twist_id: number | null
           done_at: string | null
           draft: boolean | null
-          duration: unknown
+          duration: string | null
           embedding: unknown
           id: string | null
           last_note_created_at: string | null
@@ -1690,7 +1817,6 @@ export type Database = {
           priority_id: string | null
           priority_path: unknown
           private: boolean | null
-          recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           source: string | null
@@ -1701,6 +1827,16 @@ export type Database = {
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
           updated_by: number | null
+          actor: {
+            archived_at: string | null
+            avatar_url: string | null
+            created_at: string | null
+            email: string | null
+            id: string | null
+            name: string | null
+            type: string | null
+            updated_at: string | null
+          } | null
         }
         Relationships: [
           {
@@ -1780,6 +1916,20 @@ export type Database = {
             columns: ["note_id"]
             isOneToOne: false
             referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_update"
             referencedColumns: ["id"]
           },
           {
@@ -1954,6 +2104,499 @@ export type Database = {
           },
         ]
       }
+      priority_twist_activity_create: {
+        Row: {
+          archived_at: string | null
+          assignee_id: string | null
+          at: unknown
+          author_id: string | null
+          author_name: string | null
+          author_type: string | null
+          created_at: string | null
+          created_by: string | null
+          done_at: string | null
+          draft: boolean | null
+          duration: string | null
+          id: string | null
+          mentions: string[] | null
+          meta: Json | null
+          on: unknown
+          order: number | null
+          preview: string | null
+          priority_id: string | null
+          priority_title: string | null
+          priority_twist_id: string | null
+          private: boolean | null
+          recurrence_exdates: string[] | null
+          recurrence_rule: string | null
+          source: string | null
+          source_created_at: string | null
+          sync_depth: number | null
+          tags: Json | null
+          title: string | null
+          type: Database["public"]["Enums"]["activity_type"] | null
+          updated_at: string | null
+          updated_by: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+        ]
+      }
+      priority_twist_activity_tag_change: {
+        Row: {
+          activity_id: string | null
+          actor_id: string | null
+          change_type: string | null
+          occurrence: string | null
+          priority_twist_id: string | null
+          tag_id: number | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_unread"
+            referencedColumns: ["activity_id"]
+          },
+        ]
+      }
+      priority_twist_activity_update: {
+        Row: {
+          archived_at: string | null
+          assignee_id: string | null
+          at: unknown
+          author_id: string | null
+          author_name: string | null
+          author_type: string | null
+          created_at: string | null
+          created_by: string | null
+          done_at: string | null
+          draft: boolean | null
+          duration: string | null
+          id: string | null
+          mentions: string[] | null
+          meta: Json | null
+          on: unknown
+          order: number | null
+          preview: string | null
+          priority_id: string | null
+          priority_title: string | null
+          priority_twist_id: string | null
+          private: boolean | null
+          recurrence_exdates: string[] | null
+          recurrence_rule: string | null
+          source: string | null
+          source_created_at: string | null
+          sync_depth: number | null
+          tags: Json | null
+          title: string | null
+          type: Database["public"]["Enums"]["activity_type"] | null
+          updated_at: string | null
+          updated_by: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+        ]
+      }
+      priority_twist_note_create: {
+        Row: {
+          activity_created_by: string | null
+          activity_id: string | null
+          activity_mentions: string[] | null
+          activity_meta: Json | null
+          activity_title: string | null
+          archived_at: string | null
+          author_id: string | null
+          author_name: string | null
+          author_type: string | null
+          content: string | null
+          created_at: string | null
+          created_by: string | null
+          draft: boolean | null
+          first_mentioned_at: string | null
+          id: string | null
+          key: string | null
+          links: Json | null
+          mentions: string[] | null
+          priority_id: string | null
+          priority_twist_id: string | null
+          private: boolean | null
+          source_created_at: string | null
+          sync_depth: number | null
+          tags: Json | null
+          updated_at: string | null
+          updated_by: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_unread"
+            referencedColumns: ["activity_id"]
+          },
+        ]
+      }
+      priority_twist_note_update: {
+        Row: {
+          activity_created_by: string | null
+          activity_id: string | null
+          activity_mentions: string[] | null
+          activity_meta: Json | null
+          activity_title: string | null
+          archived_at: string | null
+          author_id: string | null
+          author_name: string | null
+          author_type: string | null
+          content: string | null
+          created_at: string | null
+          created_by: string | null
+          draft: boolean | null
+          id: string | null
+          key: string | null
+          links: Json | null
+          mentions: string[] | null
+          priority_id: string | null
+          priority_twist_id: string | null
+          private: boolean | null
+          source_created_at: string | null
+          sync_depth: number | null
+          tags: Json | null
+          updated_at: string | null
+          updated_by: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_unread"
+            referencedColumns: ["activity_id"]
+          },
+        ]
+      }
       user_activity: {
         Row: {
           archived_at: string | null
@@ -1964,7 +2607,7 @@ export type Database = {
           created_by_twist_id: number | null
           done_at: string | null
           draft: boolean | null
-          duration: unknown
+          duration: string | null
           id: string | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
@@ -1978,7 +2621,6 @@ export type Database = {
           private: boolean | null
           range_at: unknown
           range_on: unknown
-          recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           source: string | null
@@ -2054,12 +2696,13 @@ export type Database = {
       }
       user_activity_exception: {
         Row: {
+          activity_id: string | null
           archived_at: string | null
           at: unknown
           id: string | null
-          note: string | null
           occurrence: string | null
           on: unknown
+          preview: string | null
           priority_path: unknown
           range_at: unknown
           range_on: unknown
@@ -2067,7 +2710,57 @@ export type Database = {
           updated_at: string | null
           user_id: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_unread"
+            referencedColumns: ["activity_id"]
+          },
+        ]
       }
       user_activity_tags: {
         Row: {
@@ -2144,14 +2837,21 @@ export type Database = {
             foreignKeyName: "note_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity"
+            referencedRelation: "priority_twist_activity_create"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "note_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "user_activity_exception"
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity"
             referencedColumns: ["id"]
           },
           {
@@ -2329,6 +3029,25 @@ export type Database = {
             }
           }
         | {
+            Args: { "": Database["public"]["Views"]["activity_x"]["Row"] }
+            Returns: {
+              archived_at: string | null
+              avatar_url: string | null
+              created_at: string | null
+              email: string | null
+              id: string | null
+              name: string | null
+              type: string | null
+              updated_at: string | null
+            }
+            SetofOptions: {
+              from: "activity_x"
+              to: "actor"
+              isOneToOne: true
+              isSetofReturn: true
+            }
+          }
+        | {
             Args: { "": Database["public"]["Tables"]["note"]["Row"] }
             Returns: {
               archived_at: string | null
@@ -2386,6 +3105,11 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      call_twist_sync_api: {
+        Args: { priority_twist_ids: string[] }
+        Returns: undefined
+      }
+      call_user_sync_api: { Args: { user_ids: string[] }; Returns: undefined }
       can_access_priority:
         | { Args: { _priority_id: string }; Returns: boolean }
         | { Args: { _priority_path: unknown }; Returns: boolean }
@@ -2423,7 +3147,7 @@ export type Database = {
       gen_random_uuid_v7: { Args: never; Returns: string }
       generate_path: { Args: { parent?: unknown }; Returns: unknown }
       get_accessible_twists: {
-        Args: { p_priority_id: string }
+        Args: { p_priority_id: string; p_user_id: string }
         Returns: {
           archived_at: string | null
           created_at: string
@@ -2443,12 +3167,30 @@ export type Database = {
           isSetofReturn: true
         }
       }
-      get_api_root: { Args: never; Returns: string }
       get_domain: { Args: { email: string }; Returns: string }
+      get_pending_user_sync: {
+        Args: { p_user_id: string }
+        Returns: {
+          entity: string
+          last_update_at: string
+        }[]
+      }
       get_primary_contact_id: { Args: { p_user_id: string }; Returns: string }
       get_priority_twist_owner_contact: {
         Args: { p_priority_twist_id: string }
         Returns: string
+      }
+      get_stale_twist_syncs: {
+        Args: { p_limit?: number; p_stale_threshold: string }
+        Returns: {
+          priority_twist_id: string
+        }[]
+      }
+      get_stale_user_syncs: {
+        Args: { p_limit?: number; p_stale_threshold: string }
+        Returns: {
+          user_id: string
+        }[]
       }
       get_tag_type: {
         Args: { tag_id: number }
@@ -2462,28 +3204,13 @@ export type Database = {
       }
       insert_domain: { Args: { email: string }; Returns: number }
       is_accessible_twist: {
-        Args: { p_priority_id: string; p_twist_id: number }
+        Args: { p_priority_id: string; p_twist_id: number; p_user_id: string }
         Returns: boolean
       }
       is_finite: { Args: { test: unknown }; Returns: boolean }
       is_lower: { Args: { "": string }; Returns: boolean }
-      migrate_existing_users_to_contacts: { Args: never; Returns: undefined }
       move_priority: {
         Args: { p_new_parent_path: unknown; p_priority_id: string }
-        Returns: undefined
-      }
-      notify_internal_api_for_activity_from_record: {
-        Args: {
-          current_record: Record<string, unknown>
-          previous_record: Record<string, unknown>
-        }
-        Returns: undefined
-      }
-      notify_internal_api_for_note_from_record: {
-        Args: {
-          current_record: Record<string, unknown>
-          previous_record: Record<string, unknown>
-        }
         Returns: undefined
       }
       order_first: { Args: never; Returns: number }
@@ -2510,6 +3237,7 @@ export type Database = {
         Args: { status: string; user_id: string }
         Returns: undefined
       }
+      sync_user_on_connect: { Args: { p_user_id: string }; Returns: undefined }
       text2ltree: { Args: { "": string }; Returns: unknown }
       tstzrange_to_daterange: {
         Args: { p_range: unknown; p_timezone?: string }
@@ -2520,6 +3248,7 @@ export type Database = {
           p_activity_id: string
           p_actor_id: string
           p_client_id: number
+          p_occurrence?: string
           p_tag_updates: Json
         }
         Returns: undefined
@@ -2533,30 +3262,48 @@ export type Database = {
         }
         Returns: undefined
       }
+      updated_by_uuid: { Args: { id: string }; Returns: number }
       upsert_activity: {
-        Args: {
-          p_archived_at?: string
-          p_assignee_id?: string
-          p_at?: unknown
-          p_done_at?: string
-          p_draft?: boolean
-          p_duration?: unknown
-          p_id: string
-          p_occurrence_start?: string
-          p_on?: unknown
-          p_order?: number
-          p_preview?: string
-          p_priority_id?: string
-          p_private?: boolean
-          p_recurrence_dates?: string[]
-          p_recurrence_exdates?: string[]
-          p_recurrence_rule?: string
-          p_series?: string
-          p_title?: string
-          p_updated_by: number
-          p_user_id: string
+        Args: { p_activity: Json; p_defaults?: Json }
+        Returns: {
+          archived_at: string | null
+          assignee_id: string | null
+          at: unknown
+          author_id: string
+          created_at: string
+          created_by: string
+          created_by_twist_id: number | null
+          done_at: string | null
+          draft: boolean
+          duration: string | null
+          embedding: unknown
+          id: string
+          last_note_created_at: string | null
+          last_note_source_created_at: string | null
+          meta: Json | null
+          on: unknown
+          order: number
+          pick_priority: Json | null
+          preview: string | null
+          priority_id: string
+          private: boolean
+          recurrence_exdates: string[] | null
+          recurrence_rule: string | null
+          source: string | null
+          source_created_at: string
+          source_priority_root: unknown
+          sync_depth: number | null
+          title: string | null
+          type: Database["public"]["Enums"]["activity_type"]
+          updated_at: string
+          updated_by: number
         }
-        Returns: string
+        SetofOptions: {
+          from: "*"
+          to: "activity"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       upsert_contacts:
         | {
@@ -2612,6 +3359,7 @@ export type Database = {
         | "incomplete"
         | "incomplete_expired"
         | "unpaid"
+      sync_operation: "create" | "update"
       tag_type: "toggle" | "count" | "compute"
       twist_environment: "personal" | "private" | "review" | "public"
     }
@@ -3046,26 +3794,44 @@ export type Database = {
         Returns: undefined
       }
       operation: { Args: never; Returns: string }
-      search: {
-        Args: {
-          bucketname: string
-          levels?: number
-          limits?: number
-          offsets?: number
-          prefix: string
-          search?: string
-          sortcolumn?: string
-          sortorder?: string
-        }
-        Returns: {
-          created_at: string
-          id: string
-          last_accessed_at: string
-          metadata: Json
-          name: string
-          updated_at: string
-        }[]
-      }
+      search:
+        | {
+            Args: {
+              bucketname: string
+              levels?: number
+              limits?: number
+              offsets?: number
+              prefix: string
+            }
+            Returns: {
+              created_at: string
+              id: string
+              last_accessed_at: string
+              metadata: Json
+              name: string
+              updated_at: string
+            }[]
+          }
+        | {
+            Args: {
+              bucketname: string
+              levels?: number
+              limits?: number
+              offsets?: number
+              prefix: string
+              search?: string
+              sortcolumn?: string
+              sortorder?: string
+            }
+            Returns: {
+              created_at: string
+              id: string
+              last_accessed_at: string
+              metadata: Json
+              name: string
+              updated_at: string
+            }[]
+          }
       search_legacy_v1: {
         Args: {
           bucketname: string
@@ -3106,27 +3872,45 @@ export type Database = {
           updated_at: string
         }[]
       }
-      search_v2: {
-        Args: {
-          bucket_name: string
-          levels?: number
-          limits?: number
-          prefix: string
-          sort_column?: string
-          sort_column_after?: string
-          sort_order?: string
-          start_after?: string
-        }
-        Returns: {
-          created_at: string
-          id: string
-          key: string
-          last_accessed_at: string
-          metadata: Json
-          name: string
-          updated_at: string
-        }[]
-      }
+      search_v2:
+        | {
+            Args: {
+              bucket_name: string
+              levels?: number
+              limits?: number
+              prefix: string
+              start_after?: string
+            }
+            Returns: {
+              created_at: string
+              id: string
+              key: string
+              metadata: Json
+              name: string
+              updated_at: string
+            }[]
+          }
+        | {
+            Args: {
+              bucket_name: string
+              levels?: number
+              limits?: number
+              prefix: string
+              sort_column?: string
+              sort_column_after?: string
+              sort_order?: string
+              start_after?: string
+            }
+            Returns: {
+              created_at: string
+              id: string
+              key: string
+              last_accessed_at: string
+              metadata: Json
+              name: string
+              updated_at: string
+            }[]
+          }
     }
     Enums: {
       buckettype: "STANDARD" | "ANALYTICS"
@@ -3272,6 +4056,7 @@ export const Constants = {
         "incomplete_expired",
         "unpaid",
       ],
+      sync_operation: ["create", "update"],
       tag_type: ["toggle", "count", "compute"],
       twist_environment: ["personal", "private", "review", "public"],
     },

@@ -156,7 +156,7 @@ class SignOut extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await Base.client.auth.signOut();
+      await Base.signOut();
       return CommandDone();
     } on supa.AuthException catch (e, t) {
       log.warning("Sign out failed", e, t);

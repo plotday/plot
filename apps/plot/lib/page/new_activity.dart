@@ -52,6 +52,9 @@ class NewActivityPageState extends State<NewActivityPage> {
   PriorityShortcutsProviderState? _provider;
   bool _hasAppliedQueryParams = false;
 
+  // Twists for the selected draft priority (may differ from context priority)
+  List<PriorityTwist>? _draftTwists;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -183,6 +186,11 @@ class NewActivityPageState extends State<NewActivityPage> {
         );
         await bloc.updateDraft(updatedDraft);
       }
+
+      // Load twists for the selected priority if different from context
+      if (queryPriority != null) {
+        await _loadTwistsForPriority(queryPriority);
+      }
     }
   }
 
@@ -191,6 +199,24 @@ class NewActivityPageState extends State<NewActivityPage> {
     // Unregister from the focus coordination provider using saved reference
     _provider?.unregisterActivityPanel();
     super.dispose();
+  }
+
+  /// Loads twists for the given priority and updates local state.
+  /// If the priority matches the context priority, clears local state to use context twists.
+  Future<void> _loadTwistsForPriority(Priority priority) async {
+    final bloc = context.read<PriorityBloc>();
+    if (priority.id == bloc.state.context.id) {
+      // Priority matches context, use context twists (no need to load separately)
+      setState(() {
+        _draftTwists = null;
+      });
+    } else {
+      // Load twists for the selected priority
+      final twists = await PriorityTwist.get(priority: priority);
+      setState(() {
+        _draftTwists = twists;
+      });
+    }
   }
 
   Future<void> _selectPriority(
@@ -220,6 +246,10 @@ class NewActivityPageState extends State<NewActivityPage> {
       // Update just the draft's priority without changing the global priority context
       final updatedDraft = state.draft.copyWith(priority: result.value);
       await bloc.updateDraft(updatedDraft);
+
+      // Load twists for the newly selected priority
+      await _loadTwistsForPriority(result.value);
+
       log.info(
         '[NewActivityPage._selectPriority] Draft priority update complete',
       );
@@ -328,7 +358,7 @@ class NewActivityPageState extends State<NewActivityPage> {
                             key: _activityEditorKey,
                             draft: state.draft,
                             draftNote: state.draftNote,
-                            twists: state.twists,
+                            twists: _draftTwists ?? state.twists,
                             onDraftChanged: (activity, {note}) async {
                               await context.read<PriorityBloc>().updateDraft(
                                 activity,
@@ -383,7 +413,7 @@ class NewActivityPageState extends State<NewActivityPage> {
                             key: _activityEditorKey,
                             draft: state.draft,
                             draftNote: state.draftNote,
-                            twists: state.twists,
+                            twists: _draftTwists ?? state.twists,
                             onDraftChanged: (activity, {note}) async {
                               await context.read<PriorityBloc>().updateDraft(
                                 activity,

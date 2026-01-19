@@ -98,9 +98,8 @@ $$
 LANGUAGE plpgsql
 SECURITY DEFINER;
 
-REVOKE EXECUTE ON FUNCTION insert_priority_user () FROM anon;
-
-REVOKE EXECUTE ON FUNCTION insert_priority_user () FROM authenticated;
+-- Trigger function cannot be called via RPC, but REVOKE for defense-in-depth
+REVOKE EXECUTE ON FUNCTION insert_priority_user () FROM PUBLIC;
 
 CREATE TRIGGER priority_insert_trigger
     AFTER INSERT ON public.priority
@@ -128,16 +127,4 @@ CREATE TRIGGER set_priority_settings_updated_at
     BEFORE INSERT OR UPDATE ON "public"."priority_settings"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
-
-CREATE TRIGGER priority_insert_api_call
-    AFTER INSERT ON public.priority
-    REFERENCING NEW TABLE AS new_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION notify_internal_api_for_priority ();
-
-CREATE TRIGGER priority_update_api_call
-    AFTER UPDATE ON public.priority
-    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION notify_internal_api_for_priority ();
 

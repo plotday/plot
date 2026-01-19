@@ -30,6 +30,11 @@ export class Broadcast extends DurableObject<Bindings> {
       return this.handleWebSocket(request);
     }
 
+    const url = new URL(request.url);
+    if (url.pathname === "/hasConnectedClients" && request.method === "GET") {
+      return Response.json({ hasConnectedClients: this.hasConnectedClients() });
+    }
+
     return new Response("Not found", { status: 404 });
   }
 
@@ -132,6 +137,25 @@ export class Broadcast extends DurableObject<Bindings> {
 
     // Store the connection
     this.connections.set(clientId, server);
+
+    // Notify UserSync DO that a client connected
+    // This syncs the user_sync table so incremental updates work correctly
+    try {
+      const userSyncId = this.env.USER_SYNC.idFromName(this.userId);
+      const userSync = this.env.USER_SYNC.get(userSyncId);
+      await userSync.fetch(
+        new Request("http://do/onClientConnected", {
+          method: "POST",
+          body: JSON.stringify({ userId: this.userId }),
+        })
+      );
+    } catch (error) {
+      logger.error("Error notifying UserSync of client connection", error as Error, {
+        user_id: this.userId,
+        client_id: clientId,
+      });
+      // Don't fail the connection if UserSync notification fails
+    }
 
     // Handle WebSocket events
     server.addEventListener("close", () => {
@@ -246,6 +270,14 @@ export class Broadcast extends DurableObject<Bindings> {
    */
   getConnectionCount(): number {
     return this.connections.size;
+  }
+
+  /**
+   * Check if there are any connected clients
+   * Used by UserSync DO to skip sync when no clients are connected
+   */
+  hasConnectedClients(): boolean {
+    return this.connections.size > 0;
   }
 
   /**

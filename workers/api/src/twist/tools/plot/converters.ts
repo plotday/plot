@@ -156,7 +156,6 @@ export function fromDbActivity(
     done: dbActivity.done_at ? new Date(dbActivity.done_at) : null,
     title: dbActivity.title || "",
     assignee,
-    draft: dbActivity.draft ?? false,
     private: dbActivity.private ?? false,
     archived: dbActivity.archived_at !== null,
     priority: {
@@ -168,10 +167,6 @@ export function fromDbActivity(
     recurrenceRule: dbActivity.recurrence_rule || null,
     recurrenceExdates:
       dbActivity.recurrence_exdates?.map((d: string) => new Date(d)) || null,
-    recurrenceDates:
-      dbActivity.recurrence_dates?.map((d: string) => new Date(d)) || null,
-    recurrence: null,
-    occurrence: null,
     meta: dbActivity.meta as ActivityMeta | null,
     tags: (dbActivity.tags as Tags) || {},
     mentions: (dbActivity.mentions as ActorId[]) || [],

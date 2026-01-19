@@ -122,10 +122,12 @@ describe("Store", () => {
       ).rejects.toThrow();
     });
 
-    it("should throw error for undefined values", async () => {
-      await expect(
-        store.set("undefined-key", { val: undefined })
-      ).rejects.toThrow();
+    it("should clean undefined values from objects", async () => {
+      await store.set("undefined-key", { val: undefined, keep: "value" });
+
+      const calledWith = mockStorage.set.mock.calls[0][1];
+      expect(calledWith).toContain('"keep"');
+      expect(calledWith).not.toContain('"val"');
     });
 
     it("should handle null values", async () => {

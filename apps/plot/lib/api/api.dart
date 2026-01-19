@@ -69,11 +69,9 @@ String _getErrorTitle(int statusCode) {
 /// so we just let it throw - the calling code can display an error to the user
 Future<void> _checkAuthError(http.Response response, String url) async {
   if (response.statusCode == 401) {
-    log.warning(
-      "Auth error from API: 401 Unauthorized $url ${response.body}",
-    );
+    log.warning("Auth error from API: 401 Unauthorized $url ${response.body}");
     try {
-      await Base.client.auth.signOut();
+      await Base.signOut();
     } catch (e, stackTrace) {
       log.warning("Error during auth failure sign-out", e, stackTrace);
     }

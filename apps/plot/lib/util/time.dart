@@ -929,7 +929,8 @@ class IntervalConverter extends TypeConverter<Duration, int>
   }
 }
 
-class DateTimeListConverter extends TypeConverter<List<DateTime>, String> {
+class DateTimeListConverter extends TypeConverter<List<DateTime>, String>
+    with JsonTypeConverter2<List<DateTime>, String, List<dynamic>> {
   const DateTimeListConverter();
 
   @override
@@ -944,5 +945,18 @@ class DateTimeListConverter extends TypeConverter<List<DateTime>, String> {
   @override
   String toSql(List<DateTime> value) {
     return value.map((date) => date.toUtc().toIso8601String()).join(',');
+  }
+
+  @override
+  List<DateTime> fromJson(List<dynamic> json) {
+    return json
+        .where((item) => item != null)
+        .map((item) => DateTime.parse(item as String))
+        .toList();
+  }
+
+  @override
+  List<dynamic> toJson(List<DateTime> value) {
+    return value.map((date) => date.toUtc().toIso8601String()).toList();
   }
 }

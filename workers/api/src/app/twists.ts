@@ -14,6 +14,7 @@ import {
 } from "../twist/management";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "../utils/logger";
+import { disposeRpc } from "../utils/rpc";
 import { handleValidationError } from "../utils/validation";
 
 const twists = new Hono<{ Bindings: Bindings }>();
@@ -92,6 +93,50 @@ twists.post("/twist", async (c) => {
         }),
       }
     );
+
+    // Broadcast sync for priority_twist and actor tables to all users with access
+    // (priority twists appear as actors in user_priority_actor view)
+    // Using supabaseAdmin since function is revoked from authenticated
+    try {
+      const usersResult = await c.var.supabaseAdmin.rpc(
+        "get_users_with_priority_access",
+        {
+          target_priority_id: body.priorityId,
+        }
+      );
+
+      if (usersResult.data && usersResult.data.length > 0) {
+        for (const user of usersResult.data) {
+          try {
+            const broadcastId = c.env.BROADCAST.idFromName(user.user_id);
+            const broadcast = c.env.BROADCAST.get(broadcastId);
+            const result1 = await broadcast.send({
+              type: "sync",
+              table: "priority_twist",
+            });
+            disposeRpc(result1);
+            const result2 = await broadcast.send({
+              type: "sync",
+              table: "actor",
+            });
+            disposeRpc(result2);
+          } catch (broadcastError) {
+            const logger = createLogger();
+            logger.error("Error broadcasting to user", broadcastError as Error, {
+              user_id: user.user_id,
+              priority_id: body.priorityId,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      const logger = createLogger();
+      logger.error("Error broadcasting twist add", error as Error, {
+        priority_id: body.priorityId,
+      });
+      // Don't fail the request if broadcast fails
+    }
+
     return c.json({ id: dbPriorityTwist.id });
   } catch (error) {
     const context = extractRequestContext(c);
@@ -144,7 +189,8 @@ twists.delete("/twist/:id/archive-activities", async (c) => {
   if (result?.priority_id) {
     try {
       // Get users with access to this priority
-      const usersResult = await c.var.supabase.rpc(
+      // Using supabaseAdmin since function is revoked from authenticated
+      const usersResult = await c.var.supabaseAdmin.rpc(
         "get_users_with_priority_access",
         {
           target_priority_id: result.priority_id,
@@ -157,15 +203,17 @@ twists.delete("/twist/:id/archive-activities", async (c) => {
           try {
             const broadcastId = c.env.BROADCAST.idFromName(user.user_id);
             const broadcast = c.env.BROADCAST.get(broadcastId);
-            await broadcast.send({
+            const result1 = await broadcast.send({
               type: "sync",
               table: "priority_twist",
             });
+            disposeRpc(result1);
             // Also sync actor view since priority_twist is part of actor
-            await broadcast.send({
+            const result2 = await broadcast.send({
               type: "sync",
               table: "actor",
             });
+            disposeRpc(result2);
           } catch (broadcastError) {
             const logger = createLogger();
             logger.error("Error broadcasting to user", broadcastError as Error, {

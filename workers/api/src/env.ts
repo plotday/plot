@@ -6,59 +6,27 @@ import { type LogStream } from "./state/log-stream";
 import { type LogSubscriptions } from "./state/log-subscriptions";
 import { type SdkTokenStore } from "./state/sdk-token-store";
 import { type Storage } from "./state/storage";
+import { type TwistSync } from "./state/twist-sync";
+import { type SyncRecovery } from "./state/sync-recovery";
 import { type Usage } from "./state/usage";
-import {
-  type ActivityItem,
-  type ActivityReadItem,
-  type NoteItem,
-  type PriorityItem,
-  type SessionItem,
-  type UpdateItem,
-} from "./types";
+import { type UserSync } from "./state/user-sync";
+import type {
+  NoteCreate,
+  NoteUpdate,
+  ActivityCreate,
+  ActivityUpdate,
+} from "./twist/view-types";
 
 export type TwistEnvironment = "personal" | "private" | "review" | "public";
 
-export type UpdateMessage = {
-  type: "activity" | "priority" | "session" | "note" | "priority_twist" | "activity_read" | "priority_contact";
-  event?: "created" | "updated" | "deleted";
-  item: UpdateItem;
-  previous?: UpdateItem;
-  twists: {
-    id: number;
-    environment: TwistEnvironment;
-    priority_twist_id: string;
-    config?: any;
-    version?: string;
-  }[];
-  users?: { user_id: string }[];
-  timestamp?: number;
-  table?: string;
-};
-
-// Specific typed versions for each item type
-export type ActivityUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
-  type: "activity";
-  item: ActivityItem;
-};
-
-export type NoteUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
-  type: "note";
-  item: NoteItem;
-};
-
-export type PriorityUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
-  type: "priority";
-  item: PriorityItem;
-};
-
-export type SessionUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
-  type: "session";
-  item: SessionItem;
-};
-
-export type ActivityReadUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
-  type: "activity_read";
-  item: ActivityReadItem;
+/**
+ * User sync broadcast message.
+ * Simple notification that tells clients to re-fetch data for a specific table.
+ * No entity data is included - clients pull fresh data themselves.
+ */
+export type UserSyncMessage = {
+  type: "sync";
+  table: string;
 };
 
 export type LogMessage = {
@@ -69,8 +37,45 @@ export type LogMessage = {
   timestamp: number;
 };
 
+/**
+ * Tag change event for activity updates.
+ * Aggregates tag additions/removals per activity for twist callbacks.
+ */
+export type ActivityTagChange = {
+  activityId: string;
+  occurrence: string | null;
+  tagId: number;
+  actorId: string;
+  changeType: "added" | "removed";
+};
+
+/**
+ * Batched twist update message.
+ * Contains enriched entity data from database views for twist processing.
+ * Uses view types that include JOINed fields like author_name, tags, etc.
+ */
+export type TwistBatchMessage = {
+  type: "twist_batch";
+  priorityTwistId: string;
+  twistId: number;
+  environment: TwistEnvironment;
+  version: string;
+  // Notes created on activities this twist created or was mentioned in
+  newNotes: NoteCreate[];
+  // Notes updated by this twist (for the update callback)
+  updatedNotes: NoteUpdate[];
+  // Activities created by this twist (for the create callback)
+  newActivities: ActivityCreate[];
+  // Activities updated that this twist created (for the update callback)
+  updatedActivities: ActivityUpdate[];
+  // Tag changes for building tagsAdded/tagsRemoved per activity
+  activityTagChanges: ActivityTagChange[];
+  // Priority twist config changes
+  priorityTwist: any | null;
+};
+
 // Queue message type union for proper type handling
-export type QueueMessage = RunMessage | UpdateMessage | LogMessage;
+export type QueueMessage = RunMessage | TwistBatchMessage | LogMessage;
 
 export type Bindings = {
   readonly API_HMAC_SECRET?: string;
@@ -135,7 +140,7 @@ export type Bindings = {
   readonly TWIST_BUILDER: DurableObjectNamespace<TwistBuilder>;
   readonly LOADER: WorkerLoader;
   readonly RUN_QUEUE: Queue<RunMessage>;
-  readonly UPDATES_QUEUE: Queue<UpdateMessage>;
+  readonly UPDATES_QUEUE: Queue<TwistBatchMessage>;
   readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
   readonly AI: Ai;
   readonly STORAGE: DurableObjectNamespace<Storage>;
@@ -145,5 +150,8 @@ export type Bindings = {
   readonly LOG_SUBSCRIPTIONS: DurableObjectNamespace<LogSubscriptions>;
   readonly LOG_STREAM: DurableObjectNamespace<LogStream>;
   readonly SDK_TOKEN_STORE: DurableObjectNamespace<SdkTokenStore>;
+  readonly USER_SYNC: DurableObjectNamespace<UserSync>;
+  readonly TWIST_SYNC: DurableObjectNamespace<TwistSync>;
+  readonly SYNC_RECOVERY: DurableObjectNamespace<SyncRecovery>;
   readonly TWIST_MODULES_BUCKET: R2Bucket;
 };

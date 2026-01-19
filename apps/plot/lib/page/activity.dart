@@ -275,16 +275,19 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                             context,
                           ),
                         ),
-                        Padding(
-                          padding: .only(
-                            left: layoutStateForPanels.multiPanel ? 12 : 0,
-                            right: layoutStateForPanels.multiPanel ? 12 : 0,
-                            bottom: layoutStateForPanels.multiPanel ? 12 : 0,
-                          ),
-                          child: NoteEditor(
-                            key: _noteEditorKey,
-                            draft: state.draft,
-                            flushToBottom: !layoutStateForPanels.multiPanel,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 300),
+                          child: Padding(
+                            padding: .only(
+                              left: layoutStateForPanels.multiPanel ? 12 : 0,
+                              right: layoutStateForPanels.multiPanel ? 12 : 0,
+                              bottom: layoutStateForPanels.multiPanel ? 12 : 0,
+                            ),
+                            child: NoteEditor(
+                              key: _noteEditorKey,
+                              draft: state.draft,
+                              flushToBottom: !layoutStateForPanels.multiPanel,
+                            ),
                           ),
                         ),
                       ],

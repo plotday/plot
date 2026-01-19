@@ -42,20 +42,14 @@ export { HttpProxy } from "./twist/http-proxy";
 export { LogStream } from "./state/log-stream";
 export { SdkTokenStore } from "./state/sdk-token-store";
 export { TwistTail } from "./twist/tail";
+export { UserSync } from "./state/user-sync";
+export { TwistSync } from "./state/twist-sync";
+export { SyncRecovery } from "./state/sync-recovery";
 
 export class TwistBuilder extends Container {
   defaultPort = 3000;
   sleepAfter = "60m";
 }
-
-// Export types for external use
-export type {
-  ActivityItem,
-  PriorityItem,
-  SessionItem,
-  UpdateItem,
-} from "./types";
-export type { DatabaseUpdateRequest } from "./sync/database";
 
 // Create main app
 const app = new Hono<{ Bindings: Bindings }>();
@@ -79,8 +73,8 @@ app.use("*", async (c, next) => {
   }
 });
 
-// Add general rate limiting to all endpoints
-app.use("*", generalRateLimiter);
+// Rate limiting is now applied per-section instead of globally
+// This allows sync endpoints to be exempt from rate limiting
 
 // Add error handler for PostHog error tracking and structured logging
 app.onError(async (err, c) => {
@@ -125,6 +119,7 @@ app.onError(async (err, c) => {
 
 // App section - endpoints called by the Flutter app
 const appSection = new Hono<{ Bindings: Bindings }>();
+appSection.use("*", generalRateLimiter);
 appSection.use(appCorsMiddleware);
 appSection.use("*", appAuthMiddleware);
 appSection.route("/", account);
@@ -141,6 +136,7 @@ syncSection.route("/", database);
 
 // SDK section - endpoints called by plot CLI
 const sdkSection = new Hono<{ Bindings: Bindings }>();
+sdkSection.use("*", generalRateLimiter);
 sdkSection.use("*", sdkAuthMiddleware);
 sdkSection.route("/", twist);
 sdkSection.route("/", priority);
@@ -148,6 +144,7 @@ sdkSection.route("/", tokens);
 
 // Stripe section - webhook endpoints
 const stripeSection = new Hono<{ Bindings: Bindings }>();
+stripeSection.use("*", generalRateLimiter);
 stripeSection.use("*", stripeMiddleware);
 stripeSection.route("/", stripe);
 
@@ -160,8 +157,32 @@ app.route("/stripe", stripeSection);
 // Mount webhook route at top level
 app.route("/", webhook);
 
-// Export app with queue handler
+// Scheduled handler for cron triggers
+async function scheduled(
+  _event: ScheduledEvent,
+  env: Bindings,
+  _ctx: ExecutionContext
+): Promise<void> {
+  const logger = createLogger({ operation: "scheduled" });
+
+  try {
+    // Use a singleton DO instance by using a fixed name
+    const syncRecoveryId = env.SYNC_RECOVERY.idFromName("singleton");
+    const syncRecoveryDO = env.SYNC_RECOVERY.get(syncRecoveryId);
+
+    await syncRecoveryDO.fetch(
+      new Request("http://do/trigger", { method: "POST" })
+    );
+
+    logger.info("Sync recovery triggered by cron");
+  } catch (error) {
+    logger.error("Error in scheduled handler", error as Error);
+  }
+}
+
+// Export app with queue and scheduled handlers
 export default {
   ...(app as any),
   queue,
+  scheduled,
 };

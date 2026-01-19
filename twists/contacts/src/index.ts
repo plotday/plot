@@ -177,7 +177,7 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
     authToken: string
   ): Promise<void> {
     // Create callback link for sync using the cleaner API
-    const token = await this.callback(this.onSyncSelected, provider, authToken);
+    const token = await this.linkCallback(this.onSyncSelected, provider, authToken);
 
     const link: ActivityLink = {
       title: `🔄 Start syncing ${provider} contacts`,

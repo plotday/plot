@@ -94,8 +94,10 @@ class PriorityBloc extends Cubit<PriorityState> {
               expandedCount -
               state.agendaItems.length; // positive = need after
 
-    log.fine(
-      'Fetching more agenda items: expandedFirst=$expandedFirst, expandedCount=$expandedCount, moveStart=$moveStart, moveEnd=$moveEnd, doneStart=${state.doneStart}, doneEnd=${state.doneEnd}',
+    log.info(
+      '[fetchMoreAgendaItems] expandedFirst=$expandedFirst, expandedCount=$expandedCount, '
+      'moveStart=$moveStart, moveEnd=$moveEnd, doneStart=${state.doneStart}, doneEnd=${state.doneEnd}, '
+      'previous=${state.previous}, next=${state.next}, range=${state.range}',
     );
 
     final currentRange = state.range!;
@@ -526,13 +528,31 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
 
     // Ensure the new range overlaps with the previous one by at least one day
-    // Find the first and last AgendaHeaderItem with date in the current agenda items
-    var overlappingIndex =
-        state.range == null || range.start == state.range?.start
-        ? -1
-        : state.agendaItems.indexWhere(
-            (item) => item is AgendaHeaderItem && item.date != null,
-          );
+    // Find the header at the scroll anchor position (BidirectionalList index 0)
+    var overlappingIndex = -1;
+    if (state.range != null && range.start != state.range?.start) {
+      // The scroll anchor is at agendaItems[0 - state.first]
+      final anchorIndex = 0 - state.first;
+
+      // Find the nearest header at or after the anchor position
+      if (anchorIndex >= 0 && anchorIndex < state.agendaItems.length) {
+        overlappingIndex = state.agendaItems.indexWhere(
+          (item) => item is AgendaHeaderItem && item.date != null,
+          anchorIndex, // Start search from anchor position
+        );
+      }
+
+      // Fallback: if no header found at/after anchor, find the last header before it
+      if (overlappingIndex == -1 && anchorIndex > 0) {
+        for (var i = anchorIndex - 1; i >= 0; i--) {
+          if (state.agendaItems[i] is AgendaHeaderItem &&
+              (state.agendaItems[i] as AgendaHeaderItem).date != null) {
+            overlappingIndex = i;
+            break;
+          }
+        }
+      }
+    }
     Date? overlappingDate;
     if (overlappingIndex != -1) {
       overlappingDate = state.agendaItems[overlappingIndex].when<Date?>(
@@ -604,7 +624,11 @@ class PriorityBloc extends Cubit<PriorityState> {
             .listen((schedule) {
               // Calculate the new first index based on date overlap
               int first = state.first;
-              if (overlappingIndex != -1) {
+
+              // If we have an overlapping date, find its new position in the agenda
+              // and adjust first to keep it at the same visual position.
+              // This needs to happen on EVERY emission since sync can insert new items.
+              if (overlappingDate != null) {
                 final newScheduleItems = PriorityState._makeAgenda(
                   schedule.days,
                   context: priorityToLoad,
@@ -615,18 +639,79 @@ class PriorityBloc extends Cubit<PriorityState> {
                     activity: (activity) => false,
                   ),
                 );
-                log.fine(
-                  'First was $first, overlappingIndex is $overlappingIndex, newIndex is $newIndex newFirst = ${first + overlappingIndex - newIndex}',
-                );
                 if (newIndex != -1) {
-                  first += overlappingIndex - newIndex;
+                  // The anchor should be at position (0 - first) in the list.
+                  // If overlappingDate is now at newIndex, set first so that
+                  // (0 - first) == newIndex, i.e., first = -newIndex.
+                  final newFirst = -newIndex;
+                  if (first != newFirst) {
+                    log.fine(
+                      'Adjusting first from $first to $newFirst to keep anchor at $overlappingDate (now at index $newIndex)',
+                    );
+                    first = newFirst;
+                  }
+                } else {
+                  // overlappingDate not found in new agenda - reset to 0 (start of list)
+                  // This can happen when the date range changes significantly
+                  log.fine(
+                    'overlappingDate $overlappingDate not found in new agenda, resetting first to 0',
+                  );
+                  first = 0;
                 }
-                // The listener may trigger multiple times, but we only want to adjust first once
-                overlappingIndex = -1;
               }
 
-              log.fine(
-                'Schedule updated (${range.start} to ${range.end}, first=$first, count=${schedule.days.length}, previous=${schedule.previous}, next=${schedule.next})',
+              // Log anchor mapping and clamp first to valid bounds
+              final newAgenda = PriorityState._makeAgenda(
+                schedule.days,
+                context: priorityToLoad,
+              );
+              if (newAgenda.isNotEmpty) {
+                var anchorIndex = 0 - first;
+                final anchorItem = anchorIndex >= 0 && anchorIndex < newAgenda.length
+                    ? newAgenda[anchorIndex]
+                    : null;
+                final anchorDescription = anchorItem?.when(
+                  header: (h) => 'Header(date=${h.date}, priority=${h.priority?.title})',
+                  activity: (a) => 'Activity(id=${a.activity.id}, title=${a.activity.title})',
+                ) ?? 'OUT OF BOUNDS';
+                log.info(
+                  '[_loadSchedule] Anchor mapping: first=$first, '
+                  'anchorIndex=$anchorIndex, agendaItems[$anchorIndex]=$anchorDescription',
+                );
+
+                // Clamp first to valid bounds if agenda shrunk
+                if (anchorIndex >= newAgenda.length) {
+                  final oldFirst = first;
+                  // Point anchor to the last valid item
+                  first = -(newAgenda.length - 1);
+                  anchorIndex = 0 - first;
+                  log.info(
+                    '[_loadSchedule] Clamped first from $oldFirst to $first '
+                    '(agenda length=${newAgenda.length}, new anchorIndex=$anchorIndex)',
+                  );
+                } else if (anchorIndex < 0) {
+                  final oldFirst = first;
+                  first = 0;
+                  log.info(
+                    '[_loadSchedule] Clamped first from $oldFirst to $first '
+                    '(anchorIndex was negative)',
+                  );
+                }
+              } else {
+                // Empty agenda - reset first to 0
+                if (first != 0) {
+                  log.info(
+                    '[_loadSchedule] Empty agenda, resetting first from $first to 0',
+                  );
+                  first = 0;
+                }
+              }
+
+              log.info(
+                '[_loadSchedule] Schedule updated: range=${range.start} to ${range.end}, '
+                'first=$first, dayCount=${schedule.days.length}, '
+                'previous=${schedule.previous}, next=${schedule.next}, '
+                'doneStart=${schedule.previous == null}, doneEnd=${schedule.next == null}',
               );
 
               emit(

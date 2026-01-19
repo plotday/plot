@@ -1132,4 +1132,177 @@ void main() {
       expect(controller.lastFocusedIndex, equals(0));
     });
   });
+
+  group('BidirectionalList Scroll Position Preservation', () {
+    testWidgets(
+      'should keep anchor in place when items are added before it',
+      (WidgetTester tester) async {
+        // Start with items at indices 0, 1, 2
+        var first = 0;
+        var count = 3;
+        final items = <int, String>{0: 'Anchor', 1: 'Item 1', 2: 'Item 2'};
+        final scrollController = ScrollController();
+
+        late StateSetter setStateCallback;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  setStateCallback = setState;
+                  return SizedBox(
+                    height: 400,
+                    child: BidirectionalList(
+                      first: first,
+                      count: count,
+                      scrollController: scrollController,
+                      doneStart: true,
+                      doneEnd: true,
+                      builder: (context, index, focusNode, {reorderableIndex}) {
+                        final item = items[index];
+                        if (item == null) return null;
+                        return SizedBox(
+                          height: 50,
+                          child: Text(item, key: ValueKey('text_$index')),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        // Verify anchor item is visible
+        expect(find.text('Anchor'), findsOneWidget);
+
+        // Get the initial position of the anchor item using the text key
+        final anchorFinder = find.byKey(const ValueKey('text_0'));
+        final initialAnchorPosition = tester.getTopLeft(anchorFinder);
+        final initialScrollOffset = scrollController.offset;
+
+        // Add an item before the anchor (at index -1)
+        setStateCallback(() {
+          first = -1;
+          count = 4;
+          items[-1] = 'New Item -1';
+        });
+
+        await tester.pumpAndSettle();
+
+        // The new item is in the up list (above the viewport when scroll is 0)
+        // The anchor should stay at the same position
+        final newScrollOffset = scrollController.offset;
+        final newAnchorPosition = tester.getTopLeft(anchorFinder);
+
+        // Scroll offset should remain the same (0)
+        expect(
+          newScrollOffset,
+          closeTo(initialScrollOffset, 1.0),
+          reason: 'Scroll offset should remain unchanged',
+        );
+
+        // Anchor position should remain the same
+        expect(
+          newAnchorPosition.dy,
+          closeTo(initialAnchorPosition.dy, 1.0),
+          reason:
+              'Anchor should stay in the same position when items are added before it',
+        );
+
+        // Add another item before the anchor (at index -2)
+        setStateCallback(() {
+          first = -2;
+          count = 5;
+          items[-2] = 'New Item -2';
+        });
+
+        await tester.pumpAndSettle();
+
+        // Verify the anchor item is still at the same position
+        final finalAnchorPosition = tester.getTopLeft(anchorFinder);
+        expect(
+          finalAnchorPosition.dy,
+          closeTo(initialAnchorPosition.dy, 1.0),
+          reason:
+              'Anchor should stay in the same position after multiple items are added',
+        );
+
+        // Now scroll up to verify the new items exist
+        scrollController.jumpTo(scrollController.position.minScrollExtent);
+        await tester.pumpAndSettle();
+
+        // New items should now be visible
+        expect(find.text('New Item -1'), findsOneWidget);
+        expect(find.text('New Item -2'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'should not shift content when items are added after anchor',
+      (WidgetTester tester) async {
+        // Start with items at indices 0, 1, 2
+        var count = 3;
+        final items = <int, String>{0: 'Anchor', 1: 'Item 1', 2: 'Item 2'};
+
+        late StateSetter setStateCallback;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  setStateCallback = setState;
+                  return SizedBox(
+                    height: 400,
+                    child: BidirectionalList(
+                      first: 0,
+                      count: count,
+                      doneStart: true,
+                      doneEnd: true,
+                      builder: (context, index, focusNode, {reorderableIndex}) {
+                        final item = items[index];
+                        if (item == null) return null;
+                        return SizedBox(
+                          height: 50,
+                          child: Text(item, key: ValueKey('text_$index')),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        // Get the initial position of the anchor item using the text key
+        final anchorFinder = find.byKey(const ValueKey('text_0'));
+        final initialAnchorPosition = tester.getTopLeft(anchorFinder);
+
+        // Add an item after the anchor (at index 3)
+        setStateCallback(() {
+          count = 4;
+          items[3] = 'New Item 3';
+        });
+
+        await tester.pumpAndSettle();
+
+        // Verify the anchor item is still at the same position
+        final newAnchorPosition = tester.getTopLeft(anchorFinder);
+        expect(
+          newAnchorPosition.dy,
+          closeTo(initialAnchorPosition.dy, 1.0),
+          reason:
+              'Anchor should stay in the same position when items are added after it',
+        );
+      },
+    );
+  });
 }

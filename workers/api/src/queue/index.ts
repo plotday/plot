@@ -5,7 +5,7 @@ import {
   type Bindings,
   type LogMessage,
   type QueueMessage,
-  type UpdateMessage,
+  type TwistBatchMessage,
 } from "../env";
 import { createLogger } from "../utils/logger";
 import { processLogs } from "./logs";
@@ -50,7 +50,7 @@ export async function queue(
       case "updates-development":
       case "updates-production":
         await processUpdates(
-          batch as MessageBatch<UpdateMessage>,
+          batch as MessageBatch<TwistBatchMessage>,
           env,
           ctx,
           postHog

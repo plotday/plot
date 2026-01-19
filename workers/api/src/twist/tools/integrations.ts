@@ -1,9 +1,6 @@
 import { type SupabaseClient } from "@plotday/db";
 import { type ActivityLink, ActivityLinkType } from "@plotday/twister/plot";
-import {
-  type Callback,
-  type NoFunctions,
-} from "@plotday/twister/tools/callbacks";
+import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   type AuthLevel,
   type AuthProvider,
@@ -26,6 +23,14 @@ import type { Storage } from "../../state/storage";
 import { createLogger } from "../../utils/logger";
 import { getRpcFunctionName } from "../../utils/rpc";
 import { Tool } from "./tool";
+
+/**
+ * Utility type to filter out function types from a tuple.
+ * Used to ensure callback extra arguments are serializable.
+ */
+type NoFunctions<T extends unknown[]> = {
+  [K in keyof T]: T[K] extends (...args: any[]) => any ? never : T[K];
+};
 
 type AuthState = {
   provider: AuthProvider;

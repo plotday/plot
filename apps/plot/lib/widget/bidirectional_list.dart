@@ -446,10 +446,8 @@ class BidirectionalListState extends State<BidirectionalList> {
 
     setState(() {
       _setCounts();
-      if (oldWidget.first != widget.first) {
-        log.info('First moved ${oldWidget.first} to ${widget.first}');
-      }
     });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.controller.clamp(widget.first, widget.first + widget.count - 1);
       _loadIfNecessary();

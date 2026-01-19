@@ -3,6 +3,7 @@ import type { Serializable } from "@plotday/twister";
 import superjson from "superjson";
 
 import { type Storage } from "../../state/storage";
+import { disposeRpc } from "../../utils/rpc";
 import { Tool } from "./tool";
 import { validateSerializable } from "./validation";
 
@@ -25,6 +26,9 @@ export class Store extends Tool implements IStore {
 
   async get<T extends Serializable>(key: string): Promise<T | null> {
     const value = await this.storage.get(key);
+    // Dispose RPC result to prevent stub leak warnings
+    // (primitives like strings are safely ignored by disposeRpc)
+    disposeRpc(value);
     if (value === null) return null;
 
     try {
@@ -46,14 +50,17 @@ export class Store extends Tool implements IStore {
     validateSerializable(`store value for key "${key}"`, value);
 
     const serializedValue = superjson.stringify(value);
-    return await this.storage.set(key, serializedValue);
+    const result = await this.storage.set(key, serializedValue);
+    disposeRpc(result);
   }
 
   async clear(key: string) {
-    await this.storage.clear(key);
+    const result = await this.storage.clear(key);
+    disposeRpc(result);
   }
 
   async clearAll() {
-    await this.storage.clearAll();
+    const result = await this.storage.clearAll();
+    disposeRpc(result);
   }
 }

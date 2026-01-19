@@ -12,3 +12,7 @@ $$
 LANGUAGE sql
 STABLE
 SECURITY DEFINER;
+
+-- Restrict access: only service_role can call this function
+-- This function accesses owner contact information
+REVOKE EXECUTE ON FUNCTION public.get_priority_twist_owner_contact (uuid) FROM PUBLIC;

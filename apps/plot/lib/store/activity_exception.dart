@@ -34,7 +34,7 @@ class ActivityExceptions extends Table with SyncableTable, UuidTable {
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get title => text().nullable()();
-  TextColumn get note => text().nullable()();
+  TextColumn get preview => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {activityId, occurrence};

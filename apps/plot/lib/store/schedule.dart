@@ -27,6 +27,10 @@ class Schedule extends Equatable {
             )
           : Stream.value(null);
 
+      log.fine(
+        '[Schedule.watch] Watching range $range (today: $today, context: ${context?.path})',
+      );
+
       return Rx.combineLatest4(
         _watchRangeExcludingToday(
           range,
@@ -41,10 +45,24 @@ class Schedule extends Equatable {
           range.start,
           context: context,
           archived: archived,
-        ).map((activity) => activity?.agendaAt.toDate()),
+        ).map((activity) {
+          final date = activity?.agendaAt.toDate();
+          log.fine(
+            '[Schedule.watch] watchPrevious(${range.start}) returned activity: '
+            '${activity != null ? "${activity.title ?? activity.id} at ${activity.agendaAt}" : "null"} '
+            '→ previous date: $date',
+          );
+          return date;
+        }),
         Activity.watchNext(range.end, context: context, archived: archived).map(
           (activity) {
-            return activity?.agendaAt.toDate();
+            final date = activity?.agendaAt.toDate();
+            log.fine(
+              '[Schedule.watch] watchNext(${range.end}) returned activity: '
+              '${activity != null ? "${activity.title ?? activity.id} at ${activity.agendaAt}" : "null"} '
+              '→ next date: $date',
+            );
+            return date;
           },
         ),
         (rangeMap, todaySchedule, previous, next) {

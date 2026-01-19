@@ -37,3 +37,37 @@ When making changes to the Drift schema, follow these steps:
 - **Class equality**: Use the equatable package for class equality checks to avoid boilerplate code.
 
 Run `flutter analyze` before committing to ensure code quality.
+
+# Debugging: Local SQLite Database
+
+The app uses Drift (SQLite) for local storage. Each user has their own database file.
+
+**Database location (macOS)**:
+```
+~/Library/Containers/day.plot.app/Data/Documents/plot-{user_id}.sqlite
+```
+
+**Finding the right database**:
+```bash
+# List all user databases
+ls ~/Library/Containers/day.plot.app/Data/Documents/plot-*.sqlite
+
+# Find database for a specific user ID
+ls ~/Library/Containers/day.plot.app/Data/Documents/plot-e71c60e9-2e89-49bb-a038-a0e10b399d30.sqlite
+```
+
+**Querying the database**:
+```bash
+# List tables
+sqlite3 ~/Library/Containers/day.plot.app/Data/Documents/plot-{user_id}.sqlite ".tables"
+
+# Query activities
+sqlite3 ~/Library/Containers/day.plot.app/Data/Documents/plot-{user_id}.sqlite \
+  "SELECT hex(id), title, archived_at, updated_at FROM activities LIMIT 10;"
+
+# Check sync state
+sqlite3 ~/Library/Containers/day.plot.app/Data/Documents/plot-{user_id}.sqlite \
+  "SELECT * FROM sync_states;"
+```
+
+**Note**: The local database column names use snake_case (e.g., `archived_at`, `updated_at`) while the Dart models use camelCase.

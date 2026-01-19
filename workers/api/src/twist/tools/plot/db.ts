@@ -9,7 +9,7 @@ import {
   type Uuid,
 } from "@plotday/twister/plot";
 
-import { type ActivityItem, type NoteItem } from "../../../types";
+import type { EnrichedActivity, EnrichedNote } from "../../view-types";
 
 /**
  * Parses the start date/time from range fields in database records.
@@ -125,7 +125,7 @@ export function calculateTagsRemoved(
  * Converts a database activity record into an Activity object.
  */
 export function buildActivityFromDbRecord(
-  activityRecord: ActivityItem
+  activityRecord: EnrichedActivity
 ): Activity {
   // Convert string activity type to ActivityType enum
   let activityType: ActivityType;
@@ -144,7 +144,7 @@ export function buildActivityFromDbRecord(
     // @ts-ignore - activityRecord.id is a string from DB, but Uuid is a branded type
     id: activityRecord.id as any,
     type: activityType,
-    created: new Date(activityRecord.created_at),
+    created: activityRecord.created_at ? new Date(activityRecord.created_at) : new Date(),
     author: {
       id: (activityRecord.author_id ?? activityRecord.created_by) as ActorId,
       name: activityRecord.author_name,
@@ -157,12 +157,12 @@ export function buildActivityFromDbRecord(
     },
     priority: {
       id: activityRecord.priority_id as Uuid,
-      title: activityRecord.priority_title,
+      title: activityRecord.priority_title ?? "",
       archived: false,
       key: null,
     },
-    start: parseRangeStart(activityRecord.on, activityRecord.at),
-    end: parseRangeEnd(activityRecord.on, activityRecord.at),
+    start: parseRangeStart(activityRecord.on as string | null, activityRecord.at as string | null),
+    end: parseRangeEnd(activityRecord.on as string | null, activityRecord.at as string | null),
     recurrenceUntil: null,
     recurrenceCount: null,
     done: activityRecord.done_at ? new Date(activityRecord.done_at) : null,
@@ -170,22 +170,16 @@ export function buildActivityFromDbRecord(
     assignee: activityRecord.assignee_id
       ? {
           id: activityRecord.assignee_id as ActorId,
-          name: null, // Not enriched in ActivityItem
-          type: ActorType.User, // Default type, not enriched in ActivityItem
+          name: null, // Not enriched in database view
+          type: ActorType.User, // Default type, not enriched in database view
         }
       : null,
-    draft: activityRecord.draft ?? false,
     private: activityRecord.private ?? false,
     archived: activityRecord.archived_at !== null,
     recurrenceRule: activityRecord.recurrence_rule,
     recurrenceExdates: activityRecord.recurrence_exdates
       ? activityRecord.recurrence_exdates.map((date: string) => new Date(date))
       : null,
-    recurrenceDates: activityRecord.recurrence_dates
-      ? activityRecord.recurrence_dates.map((date: string) => new Date(date))
-      : null,
-    recurrence: null,
-    occurrence: null,
     meta: activityRecord.meta as ActivityMeta | null,
     source: activityRecord.source || null,
     tags: (activityRecord.tags as Partial<Record<number, ActorId[]>>) || {},
@@ -196,13 +190,13 @@ export function buildActivityFromDbRecord(
 /**
  * Converts a database note record into a Note object.
  * Note: The activity field only contains minimal data (id and priority) since the full activity
- * is not included in NoteItem. This is sufficient for intent handlers.
+ * is not included in enriched note views. This is sufficient for intent handlers.
  */
-export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
+export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
   return {
     // @ts-ignore - noteRecord.id is a string from DB, but Uuid is a branded type
     id: noteRecord.id as any,
-    created: new Date(noteRecord.created_at),
+    created: noteRecord.created_at ? new Date(noteRecord.created_at) : new Date(),
     // @ts-ignore - Partial Activity data from NoteItem payload
     activity: {
       id: noteRecord.activity_id,
@@ -226,8 +220,7 @@ export function buildNoteFromDbRecord(noteRecord: NoteItem): Note {
     key: noteRecord.key || null,
     mentions: (noteRecord.mentions as ActorId[]) || [],
     tags: (noteRecord.tags as Partial<Record<number, ActorId[]>>) || {},
-    draft: noteRecord.draft,
-    private: noteRecord.private,
+    private: noteRecord.private ?? false,
     archived: noteRecord.archived_at !== null,
     links: noteRecord.links as Array<ActivityLink> | null,
   };

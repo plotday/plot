@@ -58,54 +58,10 @@ CREATE TRIGGER on_user_updated_sync_contact
     WHEN (OLD.email IS DISTINCT FROM NEW.email OR OLD.raw_user_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_user_meta_data ->> 'full_name' OR OLD.raw_app_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'full_name' OR OLD.raw_app_meta_data ->> 'name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'name' OR OLD.raw_app_meta_data ->> 'avatar_url' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'avatar_url')
     EXECUTE FUNCTION public.sync_user_contact_trigger ();
 
--- Migration function to populate user_id for existing users
--- This should be run once to sync existing auth.users with contacts
--- Note: To run the migration, execute: SELECT public.migrate_existing_users_to_contacts();
-CREATE OR REPLACE FUNCTION public.migrate_existing_users_to_contacts ()
-    RETURNS void
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    SET search_path TO 'public', 'auth'
-    AS $function$
-DECLARE
-    _user_record record;
-    _user_name text;
-    _contact_id uuid;
-    _updated_app_metadata jsonb;
-BEGIN
-    -- Loop through all existing auth users and create/update corresponding contacts
-    FOR _user_record IN
-    SELECT
-        id,
-        email,
-        raw_app_meta_data,
-        raw_user_meta_data
-    FROM
-        auth.users
-    WHERE
-        email IS NOT NULL LOOP
-            -- Extract name from user metadata (check both raw_user_meta_data and raw_app_meta_data)
-            -- If no name in metadata, will be NULL (displayName generated from email in app)
-            _user_name := COALESCE(_user_record.raw_user_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'full_name', _user_record.raw_app_meta_data ->> 'name');
-            -- Upsert contact for this user and get contact ID
-            _contact_id := public.upsert_user_contact (_user_record.id, _user_record.email, _user_name, _user_record.raw_app_meta_data ->> 'avatar_url');
-            -- Update the user's app_metadata with contact_id
-            _updated_app_metadata := COALESCE(_user_record.raw_app_meta_data, '{}'::jsonb) || jsonb_build_object('contact_id', _contact_id);
-            -- Update the user record with the new app_metadata
-            UPDATE
-                auth.users
-            SET
-                raw_app_meta_data = _updated_app_metadata
-            WHERE
-                id = _user_record.id;
-        END LOOP;
-    RAISE NOTICE 'Migration completed: synchronized % users with contacts', (
-        SELECT
-            COUNT(*)
-        FROM
-            auth.users
-        WHERE
-            email IS NOT NULL);
-END;
-$function$;
+-- Restrict access: only service_role can call these functions
+-- These functions modify contacts and access auth.users
+REVOKE EXECUTE ON FUNCTION public.upsert_user_contact (uuid, text, text, text) FROM PUBLIC;
+
+-- Trigger function cannot be called via RPC, but REVOKE for defense-in-depth
+REVOKE EXECUTE ON FUNCTION public.sync_user_contact_trigger () FROM PUBLIC;
 

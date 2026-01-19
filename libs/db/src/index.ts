@@ -38,5 +38,5 @@ export function formatDatetimeRange(start: Date, end: Date) {
   return `[${start.toISOString()},${end.toISOString()})`;
 }
 
-export { safeQuery } from "./query";
+export { DbError, safeQuery } from "./query";
 export * from "./path";

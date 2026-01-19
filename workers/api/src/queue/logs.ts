@@ -6,6 +6,7 @@ import { Callbacks } from "../twist/tools/callbacks";
 import { type Bindings, type LogMessage } from "../env";
 import { extractLogQueueContext } from "../utils/log-context";
 import { createLogger } from "../utils/logger";
+import { disposeRpc } from "../utils/rpc";
 
 export async function processLogs(
   batch: MessageBatch<LogMessage>,
@@ -31,7 +32,10 @@ export async function processLogs(
       const logSubscriptions = env.LOG_SUBSCRIPTIONS.get(logSubscriptionsId);
 
       // Get subscribers for this twist
-      const subscribers = await logSubscriptions.getSubscribers(twistRootId);
+      const subscribersResult = await logSubscriptions.getSubscribers(twistRootId);
+      // Copy array before disposing RPC result
+      const subscribers = [...subscribersResult];
+      disposeRpc(subscribersResult);
 
       // Convert logs to the format expected by the callback
       const formattedLogs = logs.map((log) => ({
@@ -68,7 +72,8 @@ export async function processLogs(
       try {
         const logStreamId = env.LOG_STREAM.idFromName(twistRootId);
         const logStream = env.LOG_STREAM.get(logStreamId);
-        await logStream.sendLogs(logs);
+        const sendResult = await logStream.sendLogs(logs);
+        disposeRpc(sendResult);
       } catch (error) {
         const context = extractLogQueueContext(logs[0], batch.queue);
         const logger = createLogger(context);

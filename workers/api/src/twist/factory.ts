@@ -1,7 +1,7 @@
-import { type Priority } from "@plotday/twister/plot";
 import { type SupabaseClient } from "@plotday/db";
+import { type Priority } from "@plotday/twister/plot";
 
-import { type TwistEnvironment, type Bindings } from "../env";
+import { type Bindings, type TwistEnvironment } from "../env";
 import { createLogger } from "../utils/logger";
 import { handleTwistOperation } from "./error-handling";
 import { getTwist } from "./loader";
@@ -106,7 +106,10 @@ export function twistFactory({
           const currentAccess = (options as any)?.contact?.access;
           const ContactAccessWrite = 1; // ContactAccess.Write enum value
 
-          if (currentAccess === undefined || currentAccess < ContactAccessWrite) {
+          if (
+            currentAccess === undefined ||
+            currentAccess < ContactAccessWrite
+          ) {
             options = {
               ...options,
               contact: {
@@ -197,7 +200,10 @@ export function twistFactory({
             const currentAccess = (instance.options as any)?.contact?.access;
             const ContactAccessWrite = 1; // ContactAccess.Write enum value
 
-            if (currentAccess === undefined || currentAccess < ContactAccessWrite) {
+            if (
+              currentAccess === undefined ||
+              currentAccess < ContactAccessWrite
+            ) {
               // Update options to include ContactAccess.Write
               instance.options = {
                 ...instance.options,
@@ -298,9 +304,8 @@ export function twistFactory({
         }
 
         const logger = createLogger({ twist_id: id, environment });
-        logger.info("Dispatching twist to tool", {
+        logger.info("Dispatching to twist tool", {
           tool_name: toolName,
-          instance_count: toolPaths.length,
         });
 
         const twistInit = {

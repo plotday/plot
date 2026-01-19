@@ -151,7 +151,6 @@ class ActivityWidget extends StatelessWidget {
           activity: activity,
           tagSuggestions: tagSuggestions,
           showCommands: isHovered || hasFocus,
-          reverse: true,
         ),
       ),
       selected: selected,
@@ -193,14 +192,12 @@ class ActivityCommands extends HookWidget {
     required this.activity,
     this.tagSuggestions = const [],
     this.showCommands = false,
-    this.reverse = false,
     super.key,
   });
 
   final Activity activity;
   final List<Tag> tagSuggestions;
   final bool showCommands;
-  final bool reverse;
 
   @override
   Widget build(BuildContext context) {
@@ -282,45 +279,41 @@ class ActivityCommands extends HookWidget {
         final loadedTagButtons =
             snapshot.hasData && snapshot.connectionState == ConnectionState.done
             ? snapshot.data!
-            : activityTags.map((tag) {
-                final key = ValueKey(Object.hash(activity.id, tag.id));
-                final command = tag == Tag.now
-                    ? FinishAction(activity, stateIcon: true)
-                    : ToggleActivityTag(activity, tag);
-                return Button.icon(
-                  command,
-                  key: key,
-                  selected: true,
-                  selectedColor: activityColor,
-                );
-              }).toList();
+            : activityTags
+                  .map((tag) {
+                    final key = ValueKey(Object.hash(activity.id, tag.id));
+                    final command = tag == Tag.now
+                        ? FinishAction(activity, stateIcon: true)
+                        : ToggleActivityTag(activity, tag);
+                    return Button.icon(
+                      command,
+                      key: key,
+                      selected: true,
+                      selectedColor: activityColor,
+                    );
+                  })
+                  .take(5)
+                  .toList();
 
         // Combine tags and commands with 6 button limit
         final List<Widget> allButtons;
         if (showCommands) {
-          const maxOtherButtons =
-              5; // Reserve 1 slot for ShowActivityCommands (6 total)
-
-          // Combine in priority order: Tags → Commands → Suggestions
-          final priorityButtons = [
-            ...loadedTagButtons,
-            ...activityCommandButtons,
-            ...tagSuggestionButtons,
-          ].take(maxOtherButtons).toList();
-
-          // Always add ShowActivityCommands as the 6th button
-          final showAllButton = Button.icon(
-            CommandWrapper(
-              ShowActivityCommands(activity),
-              icon: Value(PlotIcon.more),
+          allButtons = [
+            ...[
+              ...activityCommandButtons,
+              ...tagSuggestionButtons,
+            ].take((5 - loadedTagButtons.length).clamp(0, 5)),
+            // Always add ShowActivityCommands as the 6th button
+            Button.icon(
+              CommandWrapper(
+                ShowActivityCommands(activity),
+                icon: Value(PlotIcon.more),
+              ),
             ),
-          );
-
-          allButtons = [...priorityButtons, showAllButton];
+            ...loadedTagButtons.take(5),
+          ];
         } else {
-          allButtons = reverse
-              ? loadedTagButtons.reversed.toList()
-              : loadedTagButtons;
+          allButtons = loadedTagButtons;
         }
 
         return Row(mainAxisSize: MainAxisSize.min, children: allButtons);

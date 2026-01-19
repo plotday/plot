@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/widgets.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+
+import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
 import 'package:plot/base.dart';
 import 'package:plot/env.dart';
@@ -12,26 +15,33 @@ import 'package:plot/api/broadcast_channel.dart';
 
 typedef MessageHandler = Future<void> Function(Map<String, dynamic> message);
 
-class BroadcastClient {
+class BroadcastClient with WidgetsBindingObserver {
   static BroadcastClient? _instance;
   static BroadcastClient get instance => _instance ??= BroadcastClient._();
 
-  BroadcastClient._();
+  BroadcastClient._() {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   WebSocketChannel? _channel;
   Timer? _reconnectTimer;
   StreamSubscription<dynamic>? _messageSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
-  int _reconnectAttempts = 0;
-  static const int _maxReconnectAttempts = 10;
   static const Duration _baseReconnectDelay = Duration(seconds: 1);
+  static const Duration _maxReconnectDelay = Duration(seconds: 30);
 
   bool _isConnected = false;
   bool _shouldReconnect = false;
   bool _hasConnectivity = false;
+  bool _wasEverConnected =
+      false; // Track if we've ever had a successful connection
+  int _currentDelayMs = 1000; // Track current backoff delay
   MessageHandler? _messageHandler;
   int? _clientId;
+  bool _isRefreshingToken = false; // Prevent concurrent refresh attempts
+  int _authFailureCount = 0; // Track consecutive auth failures
+  static const int _maxAuthRetries = 2; // Max refresh attempts before sign-out
 
   bool get isConnected => _isConnected;
 
@@ -50,7 +60,6 @@ class BroadcastClient {
       _hasConnectivity = initialResults.any(
         (result) => result != ConnectivityResult.none,
       );
-      log.info("Initial connectivity: $_hasConnectivity");
     } catch (e) {
       log.warning("Error checking initial connectivity: $e");
       _hasConnectivity = true;
@@ -71,10 +80,27 @@ class BroadcastClient {
 
       // Only attempt to reconnect when transitioning from offline to online
       if (!hadConnectivity && hasConnection && !_isConnected) {
-        log.info("Network connectivity restored, attempting to reconnect");
+        _resetBackoff(); // Reset backoff for immediate reconnect
         _connect();
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _shouldReconnect &&
+        !_isConnected) {
+      _resetBackoff(); // Reset backoff for immediate reconnect
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      _connect();
+    }
+  }
+
+  /// Reset backoff delay for immediate reconnection
+  void _resetBackoff() {
+    _currentDelayMs = _baseReconnectDelay.inMilliseconds;
   }
 
   /// Connect to the WebSocket endpoint
@@ -93,7 +119,6 @@ class BroadcastClient {
       );
 
       if (!hasConnection) {
-        log.warning("No network connectivity, skipping WebSocket connection");
         _scheduleReconnect();
         return;
       }
@@ -101,9 +126,6 @@ class BroadcastClient {
       // Get current session tokens
       final session = Base.client.auth.currentSession;
       if (session?.accessToken == null || session?.refreshToken == null) {
-        log.warning(
-          "No valid session tokens available for WebSocket connection",
-        );
         _scheduleReconnect();
         return;
       }
@@ -112,13 +134,9 @@ class BroadcastClient {
       final userId = session.user.id;
 
       // Build WebSocket URL
-      //
-
       final wsUri = Uri.parse(
         _wsScheme('${Env.apiRoot}/updates/$userId'),
       ).replace(queryParameters: {'clientId': _clientId.toString()});
-
-      log.info("Connecting to WebSocket: $wsUri");
 
       _channel = createWebSocketChannel(wsUri, ['plot-v1', token]);
 
@@ -134,28 +152,48 @@ class BroadcastClient {
       );
 
       _isConnected = true;
-      _reconnectAttempts = 0;
+      _resetBackoff();
+      _authFailureCount = 0; // Reset auth failure count on successful connection
       _reconnectTimer?.cancel();
 
-      log.info("WebSocket connected successfully");
-    } on WebSocketChannelException catch (e, stackTrace) {
-      log.warning("WebSocket connection failed", e, stackTrace);
+      if (_wasEverConnected) {
+        log.info("WebSocket connection restored");
+      } else {
+        _wasEverConnected = true;
+        log.info("WebSocket connected");
+      }
+    } on WebSocketChannelException catch (e) {
       // Check for auth errors during connection establishment
       if (_isAuthError(e)) {
-        _shouldReconnect = false;
+        log.warning("WebSocket authentication failed");
         await _handleAuthError();
       } else {
         await _handleError(e);
       }
     } catch (e, stackTrace) {
-      log.warning("Failed to connect to WebSocket", e, stackTrace);
+      // Log unexpected non-network errors
+      if (!_isNetworkError(e)) {
+        log.warning("WebSocket connection error", e, stackTrace);
+      }
       await _handleError(e);
     }
   }
 
+  /// Check if an error is a network-related error (expected during connectivity issues)
+  bool _isNetworkError(Object error) {
+    final errorString = error.toString().toLowerCase();
+    return errorString.contains('connection refused') ||
+        errorString.contains('network is unreachable') ||
+        errorString.contains('no route to host') ||
+        errorString.contains('host is down') ||
+        errorString.contains('socketexception') ||
+        errorString.contains('connection reset') ||
+        errorString.contains('connection timed out') ||
+        errorString.contains('no internet');
+  }
+
   /// Disconnect from the WebSocket
   void disconnect() {
-    log.info("Disconnecting WebSocket");
     _messageSubscription?.cancel();
     _messageSubscription = null;
 
@@ -169,7 +207,12 @@ class BroadcastClient {
     _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
 
+    WidgetsBinding.instance.removeObserver(this);
+
     _isConnected = false;
+    _wasEverConnected = false;
+    _isRefreshingToken = false;
+    _authFailureCount = 0;
     _messageHandler = null;
     _clientId = null;
     _instance = null;
@@ -179,7 +222,6 @@ class BroadcastClient {
   void _handleMessage(dynamic data) async {
     try {
       final message = jsonDecode(data as String) as Map<String, dynamic>;
-      log.info("Received WebSocket message: $message");
 
       if (_messageHandler != null) {
         await _messageHandler!(message);
@@ -206,19 +248,89 @@ class BroadcastClient {
     return errorString.contains('401') || errorString.contains('unauthorized');
   }
 
-  /// Handle authentication errors by signing out the user
+  /// Handle authentication errors by attempting token refresh before signing out
   Future<void> _handleAuthError() async {
-    log.warning("WebSocket authentication failure detected - signing out user");
+    // Clean up any existing broken channel before attempting reconnection
+    // This is critical: when _connect() fails with a 401 during await _channel!.ready,
+    // _channel is already set but points to a broken channel. Without this cleanup,
+    // _scheduleReconnect() will call _connect() which returns early due to _channel != null.
+    if (_channel != null) {
+      _messageSubscription?.cancel();
+      _channel = null;
+    }
+    _isConnected = false;
+
+    // Guard against concurrent refresh attempts
+    if (_isRefreshingToken) {
+      log.info("Token refresh already in progress, skipping");
+      return;
+    }
+
+    // Check if we've exceeded max retries
+    _authFailureCount++;
+    if (_authFailureCount > _maxAuthRetries) {
+      log.warning(
+        "WebSocket auth failed $_authFailureCount times - signing out user",
+      );
+      _shouldReconnect = false;
+      try {
+        await Base.signOut();
+      } catch (e, stackTrace) {
+        log.warning("Error during auth failure sign-out", e, stackTrace);
+      }
+      return;
+    }
+
+    log.info(
+      "WebSocket auth failed (attempt $_authFailureCount/$_maxAuthRetries) - attempting token refresh",
+    );
+
+    _isRefreshingToken = true;
     try {
-      await Base.client.auth.signOut();
-    } catch (e, stackTrace) {
-      log.warning("Error during auth failure sign-out", e, stackTrace);
+      await Base.refreshSession();
+      log.info("Token refresh successful - reconnecting WebSocket");
+
+      // Reset backoff and enable reconnect
+      _resetBackoff();
+      _shouldReconnect = true;
+      _isRefreshingToken = false;
+
+      // Schedule reconnect with new token
+      _scheduleReconnect();
+    } on supa.AuthException catch (e) {
+      // Refresh token is invalid - must sign out
+      log.warning("Token refresh failed (AuthException: ${e.message}) - signing out user");
+      _isRefreshingToken = false;
+      _shouldReconnect = false;
+      try {
+        await Base.signOut();
+      } catch (signOutError, stackTrace) {
+        log.warning("Error during sign-out", signOutError, stackTrace);
+      }
+    } catch (e) {
+      _isRefreshingToken = false;
+
+      // Check if this is a network error - retry when online
+      if (_isNetworkError(e)) {
+        log.info("Token refresh failed (network error) - will retry when online");
+        _shouldReconnect = true;
+        _scheduleReconnect();
+      } else {
+        // Unknown error - sign out to be safe
+        log.warning("Token refresh failed (unknown error: $e) - signing out user");
+        _shouldReconnect = false;
+        try {
+          await Base.signOut();
+        } catch (signOutError, stackTrace) {
+          log.warning("Error during sign-out", signOutError, stackTrace);
+        }
+      }
     }
   }
 
   /// Handle WebSocket errors
   Future<void> _handleError(Object error) async {
-    log.warning("WebSocket error: $error");
+    final wasConnected = _isConnected;
     _isConnected = false;
 
     if (_channel != null) {
@@ -228,9 +340,19 @@ class BroadcastClient {
 
     // Check if this is an authentication error and handle it
     if (_isAuthError(error)) {
-      _shouldReconnect = false;
+      log.warning("WebSocket authentication failed");
       await _handleAuthError();
       return;
+    }
+
+    // Only log connection lost once (when we were connected)
+    if (wasConnected && _wasEverConnected) {
+      // Log non-network errors, otherwise just note connection lost
+      if (!_isNetworkError(error)) {
+        log.warning("WebSocket connection lost: $error");
+      } else {
+        log.info("WebSocket connection lost");
+      }
     }
 
     if (_shouldReconnect) {
@@ -241,22 +363,25 @@ class BroadcastClient {
   /// Handle WebSocket disconnection
   Future<void> _handleDisconnection() async {
     final closeCode = _channel?.closeCode;
-    final closeReason = _channel?.closeReason;
-
-    log.info("WebSocket disconnected: code=$closeCode, reason=$closeReason");
+    final wasConnected = _isConnected;
     _isConnected = false;
 
     // Check for authentication-related close codes
     // 4401: Custom auth failure code (private use range 3000-4999)
     // 1008: Policy violation (can indicate auth failure)
     if (closeCode == 4401 || closeCode == 1008) {
-      _shouldReconnect = false;
+      log.warning("WebSocket authentication failed (close code: $closeCode)");
       if (_channel != null) {
         _messageSubscription?.cancel();
         _channel = null;
       }
       await _handleAuthError();
       return;
+    }
+
+    // Only log connection lost once (when we were connected)
+    if (wasConnected && _wasEverConnected) {
+      log.info("WebSocket connection lost");
     }
 
     if (_channel != null) {
@@ -269,32 +394,23 @@ class BroadcastClient {
     }
   }
 
-  /// Schedule a reconnection attempt with exponential backoff
+  /// Schedule a reconnection attempt with exponential backoff (no max attempts)
   void _scheduleReconnect() {
     if (!_shouldReconnect || _reconnectTimer != null) {
       return;
     }
 
-    _reconnectAttempts++;
-
-    if (_reconnectAttempts > _maxReconnectAttempts) {
-      log.warning("Max reconnection attempts reached, giving up");
-      return;
-    }
-
-    // Exponential backoff with jitter
-    final delayMs =
-        (_baseReconnectDelay.inMilliseconds * pow(2, _reconnectAttempts - 1))
-            .round();
+    // Add jitter (0-1000ms) to prevent thundering herd
     final jitterMs = Random().nextInt(1000);
-    final totalDelay = Duration(milliseconds: delayMs + jitterMs);
-
-    log.info(
-      "Scheduling reconnection attempt $_reconnectAttempts in ${totalDelay.inSeconds}s",
-    );
+    final totalDelay = Duration(milliseconds: _currentDelayMs + jitterMs);
 
     _reconnectTimer = Timer(totalDelay, () {
       _reconnectTimer = null;
+      // Increase delay for next attempt (exponential backoff), capped at max
+      _currentDelayMs = min(
+        _currentDelayMs * 2,
+        _maxReconnectDelay.inMilliseconds,
+      );
       _connect();
     });
   }

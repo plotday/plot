@@ -50,6 +50,14 @@
     {
       "tag": "v11",
       "new_sqlite_classes": ["SdkTokenStore"]
+    },
+    {
+      "tag": "v12",
+      "new_sqlite_classes": ["UserSync", "TwistSync"]
+    },
+    {
+      "tag": "v13",
+      "new_sqlite_classes": ["SyncRecovery"]
     }
   ],
   "env": {
@@ -181,6 +189,18 @@
           {
             "name": "SDK_TOKEN_STORE",
             "class_name": "SdkTokenStore"
+          },
+          {
+            "name": "USER_SYNC",
+            "class_name": "UserSync"
+          },
+          {
+            "name": "TWIST_SYNC",
+            "class_name": "TwistSync"
+          },
+          {
+            "name": "SYNC_RECOVERY",
+            "class_name": "SyncRecovery"
           }
         ]
       },
@@ -189,7 +209,10 @@
           "binding": "TWIST_MODULES_BUCKET",
           "bucket_name": "twist-modules-development"
         }
-      ]
+      ],
+      "triggers": {
+        "crons": ["* * * * *"]
+      }
     },
     "production": {
       "routes": [
@@ -323,6 +346,18 @@
           {
             "name": "SDK_TOKEN_STORE",
             "class_name": "SdkTokenStore"
+          },
+          {
+            "name": "USER_SYNC",
+            "class_name": "UserSync"
+          },
+          {
+            "name": "TWIST_SYNC",
+            "class_name": "TwistSync"
+          },
+          {
+            "name": "SYNC_RECOVERY",
+            "class_name": "SyncRecovery"
           }
         ]
       },
@@ -331,7 +366,10 @@
           "binding": "TWIST_MODULES_BUCKET",
           "bucket_name": "twist-modules-production"
         }
-      ]
+      ],
+      "triggers": {
+        "crons": ["* * * * *"]
+      }
     }
   },
   "observability": {

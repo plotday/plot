@@ -118,3 +118,22 @@ export function isRpcStub(value: unknown): value is Rpc.Stub<any> {
     typeof value === "function" && typeof (value as any).dup === "function"
   );
 }
+
+/**
+ * Safely dispose an RPC result or stub using Symbol.dispose.
+ * Call this after you're done with any RPC method call result.
+ *
+ * Per Cloudflare docs: "Store returned objects in `using` declarations
+ * even without expected stubs (future-proofs against API changes)"
+ *
+ * @see https://developers.cloudflare.com/workers/runtime-apis/rpc/lifecycle/
+ */
+export function disposeRpc(value: unknown): void {
+  if (value != null && typeof value === "object" && Symbol.dispose in value) {
+    try {
+      (value as { [Symbol.dispose]: () => void })[Symbol.dispose]();
+    } catch {
+      // Ignore disposal errors - stub may already be disposed
+    }
+  }
+}

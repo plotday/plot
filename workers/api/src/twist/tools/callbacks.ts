@@ -7,7 +7,7 @@ import type {
 import { type TwistEnvironment } from "../../env";
 import { CallbacksState } from "../../state/callbacks";
 import { createLogger } from "../../utils/logger";
-import { getRpcFunctionName } from "../../utils/rpc";
+import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { Tool } from "./tool";
 
 export * from "@plotday/twister/tools/callbacks";
@@ -60,6 +60,8 @@ export class Callbacks extends Tool implements ICallbackTool {
       functionName,
       extraArgs,
     });
+    // Dispose RPC result (token is a string primitive, safely ignored)
+    disposeRpc(token);
 
     return token as Callback;
   }
@@ -78,6 +80,8 @@ export class Callbacks extends Tool implements ICallbackTool {
       functionName,
       extraArgs,
     });
+    // Dispose RPC result (token is a string primitive, safely ignored)
+    disposeRpc(token);
 
     return token as Callback;
   }
@@ -96,14 +100,16 @@ export class Callbacks extends Tool implements ICallbackTool {
   }
 
   async delete(callback: Callback): Promise<void> {
-    await this.callbacks.delete(callback);
+    const result = await this.callbacks.delete(callback);
+    disposeRpc(result);
   }
 
   async deleteAll(): Promise<void> {
-    await this.callbacks.deleteAll({
+    const result = await this.callbacks.deleteAll({
       priorityTwistId: this.priorityTwistId,
       path: this.path,
     });
+    disposeRpc(result);
   }
 
   /**

@@ -120,7 +120,7 @@ class RootProviderState extends State<RootProvider> {
                 if (context.mounted) {
                   context.showToast(message: 'Failed to load', isError: true);
                 }
-                await Base.client.auth.signOut();
+                await Base.signOut();
               }
               break;
             case UserSignedOut _:

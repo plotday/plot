@@ -1,3 +1,4 @@
+// dart format width=80
 // coverage:ignore-file
 // ignore_for_file: type=lint
 // ignore_for_file: unused_import, prefer_relative_imports, directives_ordering
@@ -9,41 +10,47 @@
 // **************************************************************************
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
-import 'package:plot_widgetbook/activity.dart' as _i2;
-import 'package:plot_widgetbook/list_tile.dart' as _i3;
-import 'package:widgetbook/widgetbook.dart' as _i1;
+import 'package:plot_widgetbook/bidirectional_list.dart'
+    as _plot_widgetbook_bidirectional_list;
+import 'package:plot_widgetbook/list_tile.dart' as _plot_widgetbook_list_tile;
+import 'package:widgetbook/widgetbook.dart' as _widgetbook;
 
-final directories = <_i1.WidgetbookNode>[
-  _i1.WidgetbookFolder(
+final directories = <_widgetbook.WidgetbookNode>[
+  _widgetbook.WidgetbookFolder(
     name: 'widget',
     children: [
-      _i1.WidgetbookComponent(
-        name: 'ActivityWidget',
+      _widgetbook.WidgetbookComponent(
+        name: 'BidirectionalList',
         useCases: [
-          _i1.WidgetbookUseCase(
-            name: 'Do now',
-            builder: _i2.buildActivityDoNow,
+          _widgetbook.WidgetbookUseCase(
+            name: 'Add to start',
+            builder: _plot_widgetbook_bidirectional_list.buildAddToStart,
           ),
-          _i1.WidgetbookUseCase(
-            name: 'Plain',
-            builder: _i2.buildActivity,
+          _widgetbook.WidgetbookUseCase(
+            name: 'Insert before anchor',
+            builder:
+                _plot_widgetbook_bidirectional_list.buildInsertBeforeAnchor,
           ),
         ],
       ),
-      _i1.WidgetbookComponent(
+      _widgetbook.WidgetbookComponent(
         name: 'ListTile',
         useCases: [
-          _i1.WidgetbookUseCase(
-            name: 'Leading',
-            builder: _i3.buildListTileLeading,
+          _widgetbook.WidgetbookUseCase(
+            name: 'Header style',
+            builder: _plot_widgetbook_list_tile.buildListTileHeader,
           ),
-          _i1.WidgetbookUseCase(
+          _widgetbook.WidgetbookUseCase(
             name: 'Selected',
-            builder: _i3.buildListTileSelected,
+            builder: _plot_widgetbook_list_tile.buildListTileSelected,
           ),
-          _i1.WidgetbookUseCase(
+          _widgetbook.WidgetbookUseCase(
             name: 'Title only',
-            builder: _i3.buildListTile,
+            builder: _plot_widgetbook_list_tile.buildListTile,
+          ),
+          _widgetbook.WidgetbookUseCase(
+            name: 'With subtitle',
+            builder: _plot_widgetbook_list_tile.buildListTileWithSubtitle,
           ),
         ],
       ),

@@ -94,7 +94,7 @@ SELECT
     upe.user_id,
     a.id,
     a.created_at,
-    -- updated_at includes last_note_source_created_at for sync
+    -- updated_at includes last_note_created_at for unread status
     GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz), COALESCE(uau.updated_at, 'epoch'::timestamptz)) AS updated_at,
     a.source_created_at,
     a.author_id,
@@ -115,7 +115,6 @@ SELECT
     a.done_at,
     a.recurrence_rule,
     a.recurrence_exdates,
-    a.recurrence_dates,
     a.meta,
     a.source,
     a.created_by_twist_id,
@@ -125,15 +124,16 @@ SELECT
     CASE WHEN a.done_at IS NOT NULL THEN
         tstzrange(a.done_at, a.done_at, '[]')
         -- Skip scheduled time cases if assigned to someone other than current user
-    WHEN a.assignee_id IS NOT NULL
-        AND ac.user_id != upe.user_id THEN
-        tstzrange(GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), '[]')
-    WHEN a.at IS NOT NULL THEN
-        a.at
-    WHEN a."on" IS NOT NULL THEN
-        NULL::tstzrange
+    WHEN (a.assignee_id IS NOT NULL
+        AND ac.user_id != upe.user_id)
+        OR a."on" IS NULL THEN
+        CASE WHEN LOWER(a.at) >= GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, 'epoch'::timestamptz)) THEN
+            a.at
+        ELSE
+            tstzrange(GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, 'epoch'::timestamptz)), GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, 'epoch'::timestamptz)), '[]')
+        END
     ELSE
-        tstzrange(GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, a.source_created_at)), '[]')
+        NULL::tstzrange
     END AS range_at,
     CASE WHEN a.done_at IS NOT NULL THEN
         NULL::daterange
@@ -161,7 +161,8 @@ CREATE OR REPLACE VIEW "public"."user_activity_exception" WITH ( security_invoke
 AS
 SELECT
     ua.user_id,
-    ua.id,
+    ae.id,
+    ae.activity_id,
     COALESCE(ae.archived_at, ua.archived_at) AS archived_at,
     ae.occurrence,
     ae.updated_at,
@@ -172,7 +173,7 @@ SELECT
     ae.at,
     ae.on,
     ae.title,
-    ae.note
+    ae.preview
 FROM
     activity_exception ae
     JOIN user_activity ua ON ua.id = ae.activity_id;

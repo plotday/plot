@@ -397,7 +397,7 @@ class Store extends _$Store {
         if (!await Priority.hasDefault()) {
           log.warning("No default priority after sync - signing out user");
           try {
-            await Base.client.auth.signOut();
+            await Base.signOut();
           } catch (e, stackTrace) {
             log.warning("Error during no-priority sign-out", e, stackTrace);
           }
@@ -433,7 +433,7 @@ class Store extends _$Store {
   static Future<void> _handleAuthError() async {
     log.warning("Authentication failure detected - signing out user");
     try {
-      await Base.client.auth.signOut();
+      await Base.signOut();
     } catch (e, stackTrace) {
       log.warning("Error during auth failure sign-out", e, stackTrace);
     }
@@ -779,7 +779,12 @@ class Store extends _$Store {
       });
 
       await batch((batch) {
-        batch.insertAllOnConflictUpdate(table, storeRows);
+        // Use insertOrReplace mode to ensure null values are explicitly set.
+        // - insertAllOnConflictUpdate uses toColumns(true) which treats null as
+        //   "don't update this column" - causing unarchived items to stay archived
+        // - insertOrReplace deletes and re-inserts the row, ensuring all columns
+        //   including nulls are set correctly
+        batch.insertAll(table, storeRows, mode: InsertMode.insertOrReplace);
       });
 
       totalRows += baseRows.length;
@@ -898,7 +903,12 @@ class Store extends _$Store {
     });
 
     await batch((batch) {
-      batch.insertAllOnConflictUpdate(table, storeRows);
+      // Use insertOrReplace mode to ensure null values are explicitly set.
+      // - insertAllOnConflictUpdate uses toColumns(true) which treats null as
+      //   "don't update this column" - causing unarchived items to stay archived
+      // - insertOrReplace deletes and re-inserts the row, ensuring all columns
+      //   including nulls are set correctly
+      batch.insertAll(table, storeRows, mode: InsertMode.insertOrReplace);
     });
 
     // Mark as pulled
@@ -1158,7 +1168,12 @@ class Store extends _$Store {
       });
 
       await batch((batch) {
-        batch.insertAllOnConflictUpdate(table, storeRows);
+        // Use insertOrReplace mode to ensure null values are explicitly set.
+        // - insertAllOnConflictUpdate uses toColumns(true) which treats null as
+        //   "don't update this column" - causing unarchived items to stay archived
+        // - insertOrReplace deletes and re-inserts the row, ensuring all columns
+        //   including nulls are set correctly
+        batch.insertAll(table, storeRows, mode: InsertMode.insertOrReplace);
       });
 
       totalRows += baseRows.length;
@@ -1398,7 +1413,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 221;
+  int get schemaVersion => 225;
 
   @override
   MigrationStrategy get migration {

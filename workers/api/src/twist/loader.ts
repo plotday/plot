@@ -138,7 +138,9 @@ export async function getTwist({
     };
   }
 
-  const moduleId = `${priorityTwistId}-${version}`;
+  // Use twistId instead of priorityTwistId to share workers across priority_twist instances
+  // priorityTwistId is passed per-invocation via twistInit context
+  const moduleId = `${id}-${version}`;
   const worker = env.LOADER.get(moduleId, async () => {
     // Use provided module or load from R2
     let module: string;
@@ -173,7 +175,7 @@ export async function getTwist({
           props: {
             twistRootId: id,
             environment,
-            priorityTwistId,
+            // priorityTwistId removed - now extracted from per-invocation logs
           },
         }),
       ],

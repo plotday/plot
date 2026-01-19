@@ -33,6 +33,9 @@
    - Automatically wrapped in a transaction by PostgreSQL
    - If migration fails, transaction rolls back - no partial state
    - Fix the migration file and re-run the psql command
+   - **IMPORTANT**: We apply migrations directly via psql and do NOT update the migrations tracking table
+   - This means the database doesn't "know" which migrations have been applied
+   - Use `pnpm diff-schema-db` to check if schema and database are in sync (see below for caveats)
 
 5. **Handle migration failures**
    - If a migration fails, the database state is unchanged (transaction rollback)
@@ -150,10 +153,14 @@ pnpm lint:pending-types
 ### `pnpm diff-schema-db` (Schema vs Database)
 
 - Compares schema files with the running local database
-- **Often shows false-positive function changes** even when already applied
-- If a function or extension already exists in migration files, **ignore it** in the diff output
-- Use this for general awareness, but don't trust it completely
-- The migration generator is smarter about filtering out already-applied changes
+- **This is the primary way to check if you have unapplied schema changes**
+- Since we don't track migrations in the database, this is more reliable than checking migration status
+- **Known false-positives** (can usually be ignored):
+  - Formatting differences in function definitions (especially `actor(user_activity)`)
+  - Extension versions or metadata
+  - Functions that exist in migrations but show formatting differences
+- If you see substantive differences (new columns, tables, constraints), those need to be applied
+- Use this for general awareness, but understand some formatting diffs are expected
 
 ### `pnpm diff-schema-migrations` (Schema vs Migrations)
 

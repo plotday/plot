@@ -63,6 +63,38 @@ class Base {
     return await client.auth.refreshSession();
   }
 
+  /// Signs out the current user explicitly.
+  /// This is the only place that clears _userId - auth events like token
+  /// expiry should not clear it to maintain local-first functionality.
+  static Future<void> signOut() async {
+    final base = Injector.appInstance.get<Base>();
+    final currentUser = base._currentUserController.valueOrNull;
+
+    log.info('Processing explicit sign out (user: ${currentUser?.id})');
+
+    // Clear userId
+    base._userId = null;
+
+    // Track analytics
+    if (base._signInTime != null) {
+      final sessionDurationMs =
+          DateTime.now().difference(base._signInTime!).inMilliseconds;
+      await Tracker.trackSession(EventAction.signedOut, {
+        PropertyKey.sessionDurationMs: sessionDurationMs,
+      });
+    } else {
+      await Tracker.trackSession(EventAction.signedOut);
+    }
+    await Tracker.reset();
+    base._signInTime = null;
+
+    // Emit null to trigger UI sign-out flow
+    base._currentUserController.add(null);
+
+    // Then sign out from Supabase
+    await base._client!.auth.signOut();
+  }
+
   Base() : _client = supa.Supabase.instance.client, _userId = null {
     _client!.auth.onAuthStateChange.listen((data) {
       _handleAuthStateChange(data);
@@ -146,6 +178,17 @@ class Base {
       return;
     }
 
+    // Ignore signedOut events from Supabase - these can happen due to token
+    // expiry while offline. Actual sign-out is handled by Base.signOut() which
+    // clears _userId and emits to the user stream before calling Supabase signOut.
+    // This maintains local-first functionality when the user is offline.
+    if (event == supa.AuthChangeEvent.signedOut) {
+      log.info(
+        'Received signedOut event from Supabase - no action (sign-out handled by Base.signOut() if intentional)',
+      );
+      return;
+    }
+
     // Skip if user hasn't changed (same ID and status)
     // Exception: always process token refresh and user updated events
     if (_initialized &&
@@ -157,56 +200,38 @@ class Base {
       return;
     }
 
+    // At this point, we have a valid user (signedOut and tokenRefreshed with
+    // null user are handled above). Set _userId - never clear it here.
     User? user = supaUser == null ? null : User(supaUser);
-    _userId = user == null ? null : Uuid.fromString(user.id);
-    // Don't clear _actorId here during sign-out - let it persist during bloc cleanup
-    // It will be cleared later by clearActorId() after Store.stop()
     if (user != null) {
+      _userId = Uuid.fromString(user.id);
       _actorId = user.contactId == null
           ? null
           : ActorId.fromString(user.contactId!);
     }
     _initialized = true;
-    if (user == null) {
-      // User signing out
-      log.info('Processing sign out (previous user: ${currentUser?.id})');
 
-      // Track sign out event with session duration
-      if (_signInTime != null) {
-        final sessionDurationMs = DateTime.now()
-            .difference(_signInTime!)
-            .inMilliseconds;
-        await Tracker.trackSession(EventAction.signedOut, {
-          PropertyKey.sessionDurationMs: sessionDurationMs,
-        });
-      } else {
-        await Tracker.trackSession(EventAction.signedOut);
-      }
+    // Handle sign-in and token refresh events
+    if (event == supa.AuthChangeEvent.signedIn && user != null) {
+      log.info('Processing sign in: ${user.primaryEmail}');
+      await Tracker.identify(
+        user.id,
+        properties: {
+          ...(user.primaryEmail == null ? {} : {"email": user.primaryEmail!}),
+          ...(user.name == null ? {} : {"name": user.name!}),
+        },
+        propertiesSetOnce: {
+          "signed_up_time": DateTime.now().toUtc().toIso8601String(),
+        },
+      );
 
-      await Tracker.reset();
-      _signInTime = null;
-    } else {
-      // User signing in or being updated
-      if (event == supa.AuthChangeEvent.signedIn) {
-        log.info('Processing sign in: ${user.primaryEmail}');
-        await Tracker.identify(
-          user.id,
-          properties: {
-            ...(user.primaryEmail == null ? {} : {"email": user.primaryEmail!}),
-            ...(user.name == null ? {} : {"name": user.name!}),
-          },
-          propertiesSetOnce: {
-            "signed_up_time": DateTime.now().toUtc().toIso8601String(),
-          },
-        );
-
-        // Track sign in event
-        _signInTime = DateTime.now();
-        await Tracker.trackSession(EventAction.signedIn);
-      } else if (event == supa.AuthChangeEvent.tokenRefreshed) {
-        log.info('Token refreshed, session updated');
-      }
+      // Track sign in event
+      _signInTime = DateTime.now();
+      await Tracker.trackSession(EventAction.signedIn);
+    } else if (event == supa.AuthChangeEvent.tokenRefreshed) {
+      log.info('Token refreshed, session updated');
     }
+
     _currentUserController.add(user);
   }
 }

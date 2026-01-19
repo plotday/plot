@@ -32,7 +32,6 @@ CREATE TABLE "public"."activity" (
     "done_at" timestamp with time zone,
     "recurrence_rule" text,
     "recurrence_exdates" timestamptz[],
-    "recurrence_dates" timestamptz[],
     "meta" jsonb,
     "source" text,
     "created_by_twist_id" bigint,
@@ -52,7 +51,7 @@ CREATE TABLE "public"."activity_exception" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_by" integer NOT NULL DEFAULT 0,
     "archived_at" timestamp with time zone,
-    "activity_id" uuid NOT NULL REFERENCES public.activity (id),
+    "activity_id" uuid NOT NULL REFERENCES public.activity (id) ON DELETE CASCADE,
     "occurrence" text NOT NULL,
     -- overrides the root activity's fields
     "at" tstzrange,
@@ -60,7 +59,7 @@ CREATE TABLE "public"."activity_exception" (
     "duration" interval,
     "done_at" timestamp with time zone,
     "title" text,
-    "note" text,
+    "preview" text,
     "meta" jsonb
 );
 
@@ -110,7 +109,8 @@ CREATE INDEX idx_activity_at ON "public"."activity" USING gist ("at");
 
 CREATE INDEX idx_activity_on ON "public"."activity" USING gist ("on");
 
-CREATE INDEX idx_activity_occurrence ON "public"."activity_exception" ("activity_id", "occurrence");
+-- Ensure unique occurrence per activity for upsert support
+CREATE UNIQUE INDEX activity_exception_occurrence_unique ON "public"."activity_exception" ("activity_id", "occurrence");
 
 CREATE INDEX idx_activity_done_at ON "public"."activity" ("done_at");
 
@@ -184,16 +184,4 @@ CREATE TRIGGER set_activity_author_and_created_by
     BEFORE INSERT ON "public"."activity"
     FOR EACH ROW
     EXECUTE FUNCTION update_author_and_created_by ();
-
-CREATE TRIGGER activity_insert_api_call
-    AFTER INSERT ON public.activity
-    REFERENCING NEW TABLE AS new_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION public.notify_internal_api_for_activity ();
-
-CREATE TRIGGER activity_update_api_call
-    AFTER UPDATE ON public.activity
-    REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION public.notify_internal_api_for_activity ();
 

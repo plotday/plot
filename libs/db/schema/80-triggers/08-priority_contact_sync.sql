@@ -88,3 +88,10 @@ CREATE TRIGGER sync_priority_contact_delete
     FOR EACH ROW
     EXECUTE FUNCTION sync_priority_contact_on_delete ();
 
+-- Trigger functions cannot be called via RPC, but REVOKE for defense-in-depth
+REVOKE EXECUTE ON FUNCTION public.sync_priority_contact_on_insert () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_priority_contact_on_update () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_priority_contact_on_delete () FROM PUBLIC;
+
