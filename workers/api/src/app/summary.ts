@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import type { Bindings } from "../env";
-import { extractRequestContext } from "../utils/log-context";
+import { captureServerError } from "../utils/error-capture";
 import { createLogger } from "../utils/logger";
 import { handleValidationError } from "../utils/validation";
 
@@ -24,10 +24,7 @@ summary.post("/summary", async (c) => {
     const body = parseResult.data;
     return c.json(await summarize(c.env.AI, body.body));
   } catch (error) {
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.error("Error processing summary request", error as Error);
-    return c.json({ message: "Error processing request." }, 500);
+    return captureServerError(c, error, "Error processing request.");
   }
 });
 

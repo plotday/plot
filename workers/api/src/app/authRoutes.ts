@@ -7,6 +7,7 @@ import type { AuthProvider } from "@plotday/twister/tools/integrations";
 
 import type { Bindings } from "../env";
 import { Integrations } from "../twist/tools/integrations";
+import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "../utils/logger";
 import { handleValidationError } from "../utils/validation";
@@ -41,10 +42,7 @@ authRoutes.post("/auth", async (c) => {
       c.env
     );
   } catch (error) {
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.error("Error processing auth callback", error as Error);
-    return c.json({ message: "Internal server error" }, 500);
+    return captureServerError(c, error, "Internal server error");
   }
 });
 
@@ -106,16 +104,13 @@ authRoutes.get("/auth", async (c) => {
 
     return c.json(result);
   } catch (error) {
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.error("Error generating auth URL", error as Error);
     if (error instanceof Error) {
       return c.json(
         { message: `Error generating auth URL: ${error.message}` },
         400
       );
     }
-    return c.json({ message: "Internal server error" }, 500);
+    return captureServerError(c, error, "Internal server error");
   }
 });
 

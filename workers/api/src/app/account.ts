@@ -11,6 +11,7 @@ import {
 } from "../stripe/utils";
 import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
+import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "../utils/logger";
 import { handleValidationError } from "../utils/validation";
@@ -49,13 +50,10 @@ account.post("/activate", async (c) => {
   );
 
   if (redeemError) {
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.error("Failed to redeem invitation", new Error(redeemError.message), {
+    return captureServerError(c, new Error(redeemError.message), "Failed to redeem invitation", {
       invitation_code: code,
       user_id: user.id,
     });
-    return c.json({ message: "Failed to redeem invitation" }, 500);
   }
 
   if (!(redeemResult as any).success) {
@@ -75,17 +73,9 @@ account.post("/activate", async (c) => {
       .maybeSingle();
 
   if (existingPriorityError) {
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.error("Failed to check for existing priority", new Error(existingPriorityError.message), {
+    return captureServerError(c, new Error(existingPriorityError.message), `Failed to check for existing priority: ${existingPriorityError.message}`, {
       user_id: user.id,
     });
-    return c.json(
-      {
-        message: `Failed to check for existing priority: ${existingPriorityError.message}`,
-      },
-      500
-    );
   }
 
   let priority: { id: string } | null = null;
@@ -110,17 +100,7 @@ account.post("/activate", async (c) => {
     );
 
     if (pathError || !pathData) {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.error("Failed to generate path", pathError ? new Error(pathError.message) : new Error("Unknown error"));
-      return c.json(
-        {
-          message: `Failed to generate path: ${
-            pathError?.message || "Unknown error"
-          }`,
-        },
-        500
-      );
+      return captureServerError(c, pathError ? new Error(pathError.message) : new Error("Unknown error"), `Failed to generate path: ${pathError?.message || "Unknown error"}`);
     }
 
     // Step 4: Create root priority
@@ -137,19 +117,9 @@ account.post("/activate", async (c) => {
         .single();
 
     if (priorityError || !newPriority) {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.error("Failed to create root priority", priorityError ? new Error(priorityError.message) : new Error("Unknown error"), {
+      return captureServerError(c, priorityError ? new Error(priorityError.message) : new Error("Unknown error"), `Failed to create root priority: ${priorityError?.message || "Unknown error"}`, {
         user_id: user.id,
       });
-      return c.json(
-        {
-          message: `Failed to create root priority: ${
-            priorityError?.message || "Unknown error"
-          }`,
-        },
-        500
-      );
     }
 
     // Step 4.5: Mark the priority_user entry as root
@@ -161,18 +131,10 @@ account.post("/activate", async (c) => {
       .eq("priority_id", newPriority.id);
 
     if (keyError) {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.error("Failed to set personal flag on priority_user", new Error(keyError.message), {
+      return captureServerError(c, new Error(keyError.message), `Failed to set personal flag: ${keyError.message}`, {
         user_id: user.id,
         priority_id: newPriority.id,
       });
-      return c.json(
-        {
-          message: `Failed to set personal flag: ${keyError.message}`,
-        },
-        500
-      );
     }
 
     priority = newPriority;
@@ -188,18 +150,10 @@ account.post("/activate", async (c) => {
       .maybeSingle();
 
   if (existingSettingsError) {
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.error("Failed to check for existing priority settings", new Error(existingSettingsError.message), {
+    return captureServerError(c, new Error(existingSettingsError.message), `Failed to check for existing priority settings: ${existingSettingsError.message}`, {
       user_id: user.id,
       priority_id: priority.id,
     });
-    return c.json(
-      {
-        message: `Failed to check for existing priority settings: ${existingSettingsError.message}`,
-      },
-      500
-    );
   }
 
   if (!existingSettings) {
@@ -211,18 +165,10 @@ account.post("/activate", async (c) => {
       });
 
     if (settingsError) {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.error("Failed to create priority settings", new Error(settingsError.message), {
+      return captureServerError(c, new Error(settingsError.message), `Failed to create priority settings: ${settingsError.message}`, {
         user_id: user.id,
         priority_id: priority.id,
       });
-      return c.json(
-        {
-          message: `Failed to create priority settings: ${settingsError.message}`,
-        },
-        500
-      );
     }
   } else {
     const context = extractRequestContext(c);
@@ -337,17 +283,7 @@ account.post("/activate", async (c) => {
     );
 
     if (plotPathError || !plotPathData) {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.error("Failed to generate path for Plot priority", plotPathError ? new Error(plotPathError.message) : new Error("Unknown error"));
-      return c.json(
-        {
-          message: `Failed to generate path for Plot priority: ${
-            plotPathError?.message || "Unknown error"
-          }`,
-        },
-        500
-      );
+      return captureServerError(c, plotPathError ? new Error(plotPathError.message) : new Error("Unknown error"), `Failed to generate path for Plot priority: ${plotPathError?.message || "Unknown error"}`);
     }
 
     // Create Plot priority
@@ -365,19 +301,9 @@ account.post("/activate", async (c) => {
         .single();
 
     if (plotPriorityError || !newPlotPriority) {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.error("Failed to create Plot priority", plotPriorityError ? new Error(plotPriorityError.message) : new Error("Unknown error"), {
+      return captureServerError(c, plotPriorityError ? new Error(plotPriorityError.message) : new Error("Unknown error"), `Failed to create Plot priority: ${plotPriorityError?.message || "Unknown error"}`, {
         user_id: user.id,
       });
-      return c.json(
-        {
-          message: `Failed to create Plot priority: ${
-            plotPriorityError?.message || "Unknown error"
-          }`,
-        },
-        500
-      );
     }
 
     _plotPriority = newPlotPriority;
@@ -450,16 +376,10 @@ account.post("/activate", async (c) => {
   });
 
   if (statusError) {
-    const context9 = extractRequestContext(c);
-    const logger9 = createLogger(context9);
-    logger9.error("Failed to set user status", new Error(statusError.message), {
+    return captureServerError(c, new Error(statusError.message), `Failed to set user status: ${statusError.message}`, {
       user_id: user.id,
       status: "active",
     });
-    return c.json(
-      { message: `Failed to set user status: ${statusError.message}` },
-      500
-    );
   }
 
   return c.json({ success: true });
@@ -593,12 +513,9 @@ The account has been deactivated. Please complete manual data deletion within 14
 
     return c.json({ success: true });
   } catch (error) {
-    const context16 = extractRequestContext(c);
-    const logger16 = createLogger(context16);
-    logger16.error("Account deletion error", error as Error, {
+    return captureServerError(c, error, "Failed to delete account", {
       user_id: user.id,
     });
-    return c.json({ message: "Failed to delete account" }, 500);
   }
 });
 
