@@ -148,7 +148,8 @@ class _AuthButtonState extends State<AuthButton> {
       final GoogleSignIn signIn = GoogleSignIn.instance;
 
       // On web, listen to the user stream to handle sign-in from the rendered button
-      if (kIsWeb && !signIn.supportsAuthenticate()) {
+      // Only cache the web button for sign-in flows, not authorize flows
+      if (kIsWeb && !signIn.supportsAuthenticate() && widget._link == null) {
         // Cache the web button widget to prevent re-rendering
         _cachedWebButton = web.buildGoogleSignInButton();
 
@@ -500,7 +501,14 @@ class _AuthButtonState extends State<AuthButton> {
   void _onPress() {
     if (_isLoading) return;
     if (widget.provider == AuthProvider.google) {
-      _startGoogleAuth();
+      // On web, use backend OAuth for authorize flows to avoid:
+      // 1. Multiple popup blocking (authorizeScopes/authorizeServer open separate popups)
+      // 2. User sign-out when selecting a different account
+      if (kIsWeb && widget._link != null) {
+        _startOAuth();
+      } else {
+        _startGoogleAuth();
+      }
     } else if (widget.provider == AuthProvider.apple) {
       _startAppleAuth();
     } else {
