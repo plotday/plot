@@ -529,8 +529,14 @@ class Store extends _$Store {
       log.warning("Error saving ${toString()}", e, t);
       rethrow;
     }
-    // Fire and forget push
-    push(table, baseTable);
+    // Fire and forget push through orchestrator for dependency awareness
+    final entity = SyncOrchestrator.getEntityByTableName(baseTable.table);
+    if (entity != null) {
+      SyncOrchestrator.instance.push(entity);
+    } else {
+      // Fallback to direct push for entities not in orchestrator
+      push(table, baseTable);
+    }
   }
 
   Future<bool> push<TABLE extends SyncableTable, DATA extends DataClass>(
