@@ -40,6 +40,10 @@ class _AuthUrlResult {
 }
 
 class AuthButton extends StatefulWidget {
+  /// Notifies when OAuth authorization (not sign-in) is in progress.
+  /// Used to prevent router reevaluation from navigating away during OAuth.
+  static final ValueNotifier<bool> oauthInProgress = ValueNotifier(false);
+
   static Future<void> init() async {
     late final String clientId;
     String? serverClientId;
@@ -198,6 +202,10 @@ class _AuthButtonState extends State<AuthButton> {
 
   void _startGoogleAuth() async {
     setState(() => _isLoading = true);
+    // Only set oauthInProgress for authorize flows (not sign-in)
+    if (widget._link != null) {
+      AuthButton.oauthInProgress.value = true;
+    }
     try {
       // Always sign out first to force account selection
       await GoogleSignIn.instance.signOut();
@@ -232,6 +240,9 @@ class _AuthButtonState extends State<AuthButton> {
       }
       return;
     } finally {
+      if (widget._link != null) {
+        AuthButton.oauthInProgress.value = false;
+      }
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -240,6 +251,10 @@ class _AuthButtonState extends State<AuthButton> {
 
   void _startAppleAuth() async {
     setState(() => _isLoading = true);
+    // Only set oauthInProgress for authorize flows (not sign-in)
+    if (widget._link != null) {
+      AuthButton.oauthInProgress.value = true;
+    }
     try {
       final credential = await SignInWithApple.getAppleIDCredential(
         scopes: [
@@ -287,6 +302,9 @@ class _AuthButtonState extends State<AuthButton> {
       }
       return;
     } finally {
+      if (widget._link != null) {
+        AuthButton.oauthInProgress.value = false;
+      }
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -295,6 +313,7 @@ class _AuthButtonState extends State<AuthButton> {
 
   void _startOAuth() async {
     setState(() => _isLoading = true);
+    AuthButton.oauthInProgress.value = true;
 
     try {
       log.info('Starting OAuth flow for ${widget.provider.name}');
@@ -338,6 +357,7 @@ class _AuthButtonState extends State<AuthButton> {
         }
       }
     } finally {
+      AuthButton.oauthInProgress.value = false;
       if (mounted) {
         setState(() => _isLoading = false);
       }

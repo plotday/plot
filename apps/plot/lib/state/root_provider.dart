@@ -14,6 +14,7 @@ import 'package:plot/util/theme_color.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/widget/auth_button.dart';
 import 'package:plot/widget/root_menu_bar.dart';
 import 'package:plot/widget/toast.dart';
 import 'logging.dart';
@@ -138,7 +139,10 @@ class RootProviderState extends State<RootProvider> {
               Base.clearActorId();
               break;
             case UserWaitlisted _:
-              await router.replaceAll([InvitationRoute()]);
+              // Skip redirect if OAuth authorization is in progress
+              if (!AuthButton.oauthInProgress.value) {
+                await router.replaceAll([InvitationRoute()]);
+              }
               break;
             case UserPasswordRequired _:
               await router.replaceAll([PasswordSetupRoute()]);
