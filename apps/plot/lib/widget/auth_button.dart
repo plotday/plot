@@ -799,31 +799,14 @@ class _ProviderIcon extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: Container(
-        decoration: BoxDecoration(
-          color: _getIconColor(),
-          borderRadius: BorderRadius.circular(size * 0.1),
-        ),
+      child: Center(
         child: SvgPicture.asset(
           icon,
-          width: size * 0.7,
-          height: size * 0.7,
+          width: size,
+          height: size,
         ),
       ),
     );
-  }
-
-  Color _getIconColor() {
-    switch (provider) {
-      case AuthProvider.slack:
-      case AuthProvider.apple:
-      case AuthProvider.github:
-      case AuthProvider.discord:
-      case AuthProvider.monday:
-        return Colors.white;
-      default:
-        return Colors.transparent;
-    }
   }
 
   String? _getIcon() {
