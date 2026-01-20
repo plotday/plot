@@ -176,6 +176,8 @@ class NoteCommands extends StatelessWidget {
 
     // Get tags for this note
     final actorId = Base.actorId;
+    // Capture accent color before async gap to avoid use_build_context_synchronously
+    final accentColor = context.colour.accent;
     final tagFutures = Tag.getAll()
         .where((tag) {
           // Show tags if ANY actor has them (not just current user)
@@ -197,6 +199,15 @@ class NoteCommands extends StatelessWidget {
           final wrappedCommand = actorNames.isNotEmpty
               ? CommandWrapper(command, subtitle: Value(actorNames))
               : command;
+
+          // Use pulsing animation for twist tags
+          if (tag == Tag.twist) {
+            return PulsingColorButton(
+              wrappedCommand,
+              key: key,
+              primaryColor: accentColor,
+            );
+          }
 
           return Button.icon(wrappedCommand, key: key, selected: true);
         })
@@ -245,6 +256,14 @@ class NoteCommands extends StatelessWidget {
                     final command = tag == Tag.now
                         ? FinishTask(note)
                         : ToggleNoteTag(note, tag, actorId);
+                    // Use pulsing animation for twist tags
+                    if (tag == Tag.twist) {
+                      return PulsingColorButton(
+                        command,
+                        key: key,
+                        primaryColor: context.colour.accent,
+                      );
+                    }
                     return Button.icon(command, key: key, selected: true);
                   })
                   .toList();

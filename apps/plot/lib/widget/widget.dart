@@ -26,6 +26,7 @@ export 'link.dart';
 export 'list_tile.dart';
 export 'priority_selector.dart';
 export 'priority.dart';
+export 'pulsing_color_button.dart';
 export 'reorderable_list_view.dart';
 export 'reschedule_event_modal.dart';
 export 'scaffold.dart';

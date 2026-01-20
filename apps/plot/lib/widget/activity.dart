@@ -245,6 +245,15 @@ class ActivityCommands extends HookWidget {
             ? CommandWrapper(command, subtitle: Value(actorNames))
             : command;
 
+        // Use pulsing animation for twist tags
+        if (tag == Tag.twist) {
+          return PulsingColorButton(
+            wrappedCommand,
+            key: key,
+            primaryColor: activityColor,
+          );
+        }
+
         return Button.icon(
           wrappedCommand,
           key: key,
@@ -285,6 +294,14 @@ class ActivityCommands extends HookWidget {
                     final command = tag == Tag.now
                         ? FinishAction(activity, stateIcon: true)
                         : ToggleActivityTag(activity, tag);
+                    // Use pulsing animation for twist tags
+                    if (tag == Tag.twist) {
+                      return PulsingColorButton(
+                        command,
+                        key: key,
+                        primaryColor: activityColor,
+                      );
+                    }
                     return Button.icon(
                       command,
                       key: key,
