@@ -419,6 +419,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     bool self = true,
     ActivityOrder order = ActivityOrder.sorted,
     List<Tag>? filter,
+    bool includeAllFutureEvents = false,
   }) async {
     return await _get(
       range: range,
@@ -431,6 +432,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       search: search,
       self: self,
       filter: filter,
+      includeAllFutureEvents: includeAllFutureEvents,
     );
   }
 
@@ -445,6 +447,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     bool self = true,
     ActivityOrder order = ActivityOrder.sorted,
     List<Tag>? filter,
+    bool includeAllFutureEvents = false,
   }) {
     return _getQuery(
       range: range,
@@ -457,6 +460,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       search: search,
       self: self,
       filter: filter,
+      includeAllFutureEvents: includeAllFutureEvents,
     ).watch().asyncMap(
       (results) =>
           _mapResultsToActivities(results, archived: archived, range: range),
@@ -781,6 +785,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     bool self = true,
     bool? archived = false,
     bool? draft = false,
+    bool includeAllFutureEvents = false,
     String? search,
     List<Tag>? filter,
 
@@ -803,6 +808,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       self: self,
       archived: archived,
       draft: draft,
+      includeAllFutureEvents: includeAllFutureEvents,
       search: search,
       filter: filter,
       order: order,
@@ -829,7 +835,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     bool self = true,
     bool? archived = false,
     bool? draft = false,
-    bool includeAllFutureEvents = true,
+    bool includeAllFutureEvents = false,
     String? search,
     List<Tag>? filter,
 
