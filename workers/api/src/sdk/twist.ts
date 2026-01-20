@@ -619,6 +619,8 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           name: name!,
           description,
           userId,
+          userName: user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0],
+          userEmail: user?.email,
           dryRun,
           onProgress: (message) => stream.sendProgress(message),
         });
@@ -709,6 +711,8 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         name: name!,
         description,
         userId,
+        userName: user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0],
+        userEmail: user?.email,
         dryRun,
       });
     } catch (error) {

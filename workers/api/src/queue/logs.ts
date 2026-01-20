@@ -3,6 +3,7 @@ import type { PostHog } from "posthog-node";
 import type { Callback } from "@plotday/twister/tools/callbacks";
 
 import { Callbacks } from "../twist/tools/callbacks";
+import { addLogsNote } from "../twist/dev-activities";
 import { type Bindings, type LogMessage } from "../env";
 import { extractLogQueueContext } from "../utils/log-context";
 import { createLogger } from "../utils/logger";
@@ -82,6 +83,16 @@ export async function processLogs(
           twist_root_id: twistRootId,
           queue: batch.queue,
         });
+      }
+
+      // Persist logs to Logs activity
+      try {
+        await addLogsNote(env, twistRootId, logs);
+      } catch (error) {
+        // Log but don't fail the queue processing
+        const context = extractLogQueueContext(logs[0], batch.queue);
+        const logger = createLogger(context);
+        logger.error("Failed to persist logs to activity", error as Error);
       }
     } catch (error) {
       const logger = createLogger({ twist_root_id: twistRootId, queue: batch.queue });

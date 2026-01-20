@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@plotday/db";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { createLogger } from "../utils/logger";
 import { buildTwist } from "./builder";
+import { addReleaseNote } from "./dev-activities";
 import { type TwistPermissions, storeTwistModule } from "./index";
 import type { TwistSource } from "./types";
 
@@ -20,6 +21,8 @@ export interface DeployTwistOptions {
   name: string;
   description?: string;
   userId?: string | null;
+  userName?: string;
+  userEmail?: string;
   dryRun?: boolean;
   onProgress?: (message: string) => void;
 }
@@ -50,7 +53,9 @@ export async function deployTwist({
   environment,
   name,
   description,
-  userId: _userId,
+  userId,
+  userName,
+  userEmail,
   dryRun = false,
   onProgress,
 }: DeployTwistOptions): Promise<DeployTwistResult> {
@@ -285,6 +290,7 @@ export async function deployTwist({
   }
 
   // If deploying to review and auto_approve is true, also deploy to public
+  let autoApproved = false;
   if (environment === "review") {
     const { data: twistAdmin, error: adminFetchError } = await supabase
       .from("twist_admin")
@@ -313,8 +319,32 @@ export async function deployTwist({
         logger.error("Error auto-deploying to public", upsertPublicError as Error);
       } else {
         logger.info("Successfully auto-deployed twist to public environment");
+        autoApproved = true;
       }
     }
+  }
+
+  // Add release note for successful deployment
+  try {
+    const { data: adminForRelease } = await supabase
+      .from("twist_admin")
+      .select("twist_package_id, priority_id")
+      .eq("id", twistAdminId)
+      .single();
+
+    if (adminForRelease?.priority_id) {
+      await addReleaseNote(supabase, adminForRelease.twist_package_id, adminForRelease.priority_id, {
+        userName,
+        userEmail,
+        userId: userId || undefined,
+        environment,
+        version,
+        autoApproveToPublic: environment === "review" && autoApproved,
+      });
+    }
+  } catch (releaseNoteError) {
+    // Log but don't fail the deployment
+    logger.error("Failed to add release note (deployment succeeded)", releaseNoteError as Error);
   }
 
   return {
