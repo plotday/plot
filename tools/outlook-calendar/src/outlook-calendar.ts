@@ -261,14 +261,15 @@ export class OutlookCalendar
     // Setup webhook for this calendar
     await this.setupOutlookWatch(authToken, calendarId, authToken);
 
-    // Start sync batch using run tool for long-running operation
+    // Start sync batch using runTask for batched processing
     const syncCallback = await this.callback(
       this.syncOutlookBatch,
       calendarId,
       authToken,
-      true // initialSync = true for initial sync
+      true, // initialSync = true for initial sync
+      1 // batchNumber = 1 for first batch
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async stopSync(authToken: string, calendarId: string): Promise<void> {
@@ -336,7 +337,8 @@ export class OutlookCalendar
   async syncOutlookBatch(
     calendarId: string,
     authToken: string,
-    initialSync: boolean
+    initialSync: boolean,
+    batchNumber: number = 1
   ): Promise<void> {
     let api: GraphApi;
 
@@ -350,8 +352,17 @@ export class OutlookCalendar
       return;
     }
 
-    // Ensure we have the user's identity for RSVP tagging
-    await this.ensureUserIdentity(authToken);
+    // Ensure we have the user's identity for RSVP tagging (only on first batch)
+    if (batchNumber === 1) {
+      await this.ensureUserIdentity(authToken);
+    }
+
+    // Hoist callback token retrieval outside event loop - saves N-1 subrequests
+    const callbackToken = await this.get<Callback>("event_callback_token");
+    if (!callbackToken) {
+      console.warn("No callback token found, skipping event processing");
+      return;
+    }
 
     // Load existing sync state
     const savedState = await this.get<SyncState>(
@@ -363,201 +374,216 @@ export class OutlookCalendar
       sequence: 1,
     };
 
-    let hasMore = true;
-    let eventCount = 0;
-    const maxEvents = 10000;
-
     try {
-      while (hasMore && eventCount < maxEvents) {
-        // Use the syncOutlookCalendar function from graph-api
-        const result = await syncOutlookCalendar(api, calendarId, syncState);
+      // Process ONE batch (single API page) instead of while loop
+      const result = await syncOutlookCalendar(api, calendarId, syncState);
 
-        // Process each event
-        for (const outlookEvent of result.events) {
-          try {
-            // Skip deleted events
-            if (outlookEvent["@removed"]) {
-              continue;
-            }
+      // Process events with hoisted callback token
+      await this.processOutlookEvents(
+        result.events,
+        calendarId,
+        initialSync,
+        callbackToken
+      );
 
-            // Extract contacts from organizer and attendees
-            let validAttendees: typeof outlookEvent.attendees = [];
+      console.log(
+        `Synced ${result.events.length} events in batch ${batchNumber} for calendar ${calendarId}`
+      );
 
-            // Prepare author contact (organizer) - will be passed directly as NewContact
-            let authorContact: NewContact | undefined = undefined;
-            if (outlookEvent.organizer?.emailAddress?.address) {
-              authorContact = {
-                email: outlookEvent.organizer.emailAddress.address,
-                name: outlookEvent.organizer.emailAddress.name,
-              };
-            }
+      // Save sync state
+      await this.set(`outlook_sync_state_${calendarId}`, result.state);
 
-            // Prepare attendee contacts for tags
-            if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
-              // Filter to get only valid attendees (with email, not resources)
-              validAttendees = outlookEvent.attendees.filter(
-                (att) => att.emailAddress?.address && att.type !== "resource"
-              );
-            }
+      // Queue next batch as separate task if there's more
+      if (result.state.more) {
+        const syncCallback = await this.callback(
+          this.syncOutlookBatch,
+          calendarId,
+          authToken,
+          initialSync,
+          batchNumber + 1
+        );
+        await this.runTask(syncCallback);
+      } else {
+        console.log(
+          `Outlook Calendar sync completed after ${batchNumber} batches for calendar ${calendarId}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Outlook Calendar sync failed for ${calendarId} in batch ${batchNumber}:`,
+        error
+      );
+      // Re-throw to let the caller handle it
+      throw error;
+    }
+  }
 
-            // Check if this is an exception or occurrence (instance of recurring event)
-            if (
-              (outlookEvent.type === "exception" ||
-                outlookEvent.type === "occurrence") &&
-              outlookEvent.seriesMasterId &&
-              outlookEvent.originalStart
-            ) {
-              await this.processEventInstance(
-                outlookEvent,
-                calendarId,
-                initialSync
-              );
-              continue;
-            }
+  /**
+   * Process Outlook events from a sync batch.
+   * Extracted to receive hoisted callback token and reduce subrequests.
+   */
+  private async processOutlookEvents(
+    events: import("./graph-api").OutlookEvent[],
+    calendarId: string,
+    initialSync: boolean,
+    callbackToken: Callback
+  ): Promise<void> {
+    for (const outlookEvent of events) {
+      try {
+        // Skip deleted events
+        if (outlookEvent["@removed"]) {
+          continue;
+        }
 
-            // Transform the Outlook event to a Plot activity (master or single events)
-            const activity = transformOutlookEvent(outlookEvent, calendarId);
+        // Extract contacts from organizer and attendees
+        let validAttendees: typeof outlookEvent.attendees = [];
 
-            // Skip deleted events (transformOutlookEvent returns null for deleted)
-            if (!activity) {
-              continue;
-            }
+        // Prepare author contact (organizer) - will be passed directly as NewContact
+        let authorContact: NewContact | undefined = undefined;
+        if (outlookEvent.organizer?.emailAddress?.address) {
+          authorContact = {
+            email: outlookEvent.organizer.emailAddress.address,
+            name: outlookEvent.organizer.emailAddress.name,
+          };
+        }
 
-            // For recurring events, DON'T add tags at series level
-            // Tags (RSVPs) should be per-occurrence via the occurrences array
-            // For non-recurring events, add tags normally
-            let tags: Partial<Record<Tag, NewActor[]>> | null = null;
-            if (validAttendees.length > 0 && !activity.recurrenceRule) {
-              const attendTags: NewActor[] = [];
-              const skipTags: NewActor[] = [];
-              const undecidedTags: NewActor[] = [];
+        // Prepare attendee contacts for tags
+        if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
+          // Filter to get only valid attendees (with email, not resources)
+          validAttendees = outlookEvent.attendees.filter(
+            (att) => att.emailAddress?.address && att.type !== "resource"
+          );
+        }
 
-              // Iterate through valid attendees and group by response status
-              validAttendees.forEach((attendee) => {
-                const newActor: NewActor = {
-                  email: attendee.emailAddress!.address!,
-                  name: attendee.emailAddress!.name,
-                };
+        // Check if this is an exception or occurrence (instance of recurring event)
+        if (
+          (outlookEvent.type === "exception" ||
+            outlookEvent.type === "occurrence") &&
+          outlookEvent.seriesMasterId &&
+          outlookEvent.originalStart
+        ) {
+          await this.processEventInstance(
+            outlookEvent,
+            calendarId,
+            initialSync,
+            callbackToken
+          );
+          continue;
+        }
 
-                const response = attendee.status?.response;
-                if (response === "accepted") {
-                  attendTags.push(newActor);
-                } else if (response === "declined") {
-                  skipTags.push(newActor);
-                } else if (
-                  response === "tentativelyAccepted" ||
-                  response === "none" ||
-                  response === "notResponded"
-                ) {
-                  undecidedTags.push(newActor);
-                }
-                // organizer has no response status, so they won't get a tag
-              });
+        // Transform the Outlook event to a Plot activity (master or single events)
+        const activity = transformOutlookEvent(outlookEvent, calendarId);
 
-              // Only set tags if we have at least one
-              if (
-                attendTags.length > 0 ||
-                skipTags.length > 0 ||
-                undecidedTags.length > 0
-              ) {
-                tags = {};
-                if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
-                if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
-                if (undecidedTags.length > 0)
-                  tags[Tag.Undecided] = undecidedTags;
-              }
-            }
+        // Skip deleted events (transformOutlookEvent returns null for deleted)
+        if (!activity) {
+          continue;
+        }
 
-            // Build links array for videoconferencing and calendar links
-            const links: ActivityLink[] = [];
+        // For recurring events, DON'T add tags at series level
+        // Tags (RSVPs) should be per-occurrence via the occurrences array
+        // For non-recurring events, add tags normally
+        let tags: Partial<Record<Tag, NewActor[]>> | null = null;
+        if (validAttendees.length > 0 && !activity.recurrenceRule) {
+          const attendTags: NewActor[] = [];
+          const skipTags: NewActor[] = [];
+          const undecidedTags: NewActor[] = [];
 
-            // Add conferencing link if available
-            if (outlookEvent.onlineMeeting?.joinUrl) {
-              links.push({
-                type: ActivityLinkType.conferencing,
-                url: outlookEvent.onlineMeeting.joinUrl,
-                provider: detectConferencingProvider(
-                  outlookEvent.onlineMeeting.joinUrl
-                ),
-              });
-            }
-
-            // Add calendar link
-            if (outlookEvent.webLink) {
-              links.push({
-                type: ActivityLinkType.external,
-                title: "View in Calendar",
-                url: outlookEvent.webLink,
-              });
-            }
-
-            // Create note with description and/or links
-            const notes: NewNote[] = [];
-            const hasDescription =
-              outlookEvent.body?.content &&
-              outlookEvent.body.content.trim().length > 0;
-            const hasLinks = links.length > 0;
-
-            if (hasDescription || hasLinks) {
-              notes.push({
-                activity: {
-                  source:
-                    outlookEvent.webLink ||
-                    `outlook-calendar:${outlookEvent.id}`,
-                },
-                key: "description",
-                content: hasDescription ? outlookEvent.body!.content! : null,
-                links: hasLinks ? links : null,
-                contentType: (outlookEvent.body?.contentType === "html"
-                  ? "html"
-                  : "text") as ContentType,
-              });
-            }
-
-            // Build NewActivityWithNotes from the transformed activity
-            const activityWithNotes: NewActivityWithNotes = {
-              ...activity,
-              author: authorContact,
-              meta: activity.meta,
-              tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
-              notes,
-              unread: !initialSync, // false for initial sync, true for incremental updates
+          // Iterate through valid attendees and group by response status
+          validAttendees.forEach((attendee) => {
+            const newActor: NewActor = {
+              email: attendee.emailAddress!.address!,
+              name: attendee.emailAddress!.name,
             };
 
-            // Call the event callback
-            const callbackToken = await this.get<Callback>(
-              "event_callback_token"
-            );
-            if (callbackToken) {
-              await this.tools.callbacks.run(callbackToken, activityWithNotes);
+            const response = attendee.status?.response;
+            if (response === "accepted") {
+              attendTags.push(newActor);
+            } else if (response === "declined") {
+              skipTags.push(newActor);
+            } else if (
+              response === "tentativelyAccepted" ||
+              response === "none" ||
+              response === "notResponded"
+            ) {
+              undecidedTags.push(newActor);
             }
-          } catch (error) {
-            console.error(`Error processing event ${outlookEvent.id}:`, error);
-            // Continue processing other events
+            // organizer has no response status, so they won't get a tag
+          });
+
+          // Only set tags if we have at least one
+          if (
+            attendTags.length > 0 ||
+            skipTags.length > 0 ||
+            undecidedTags.length > 0
+          ) {
+            tags = {};
+            if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
+            if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
+            if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
           }
         }
 
-        // Save sync state
-        await this.set(`outlook_sync_state_${calendarId}`, result.state);
+        // Build links array for videoconferencing and calendar links
+        const links: ActivityLink[] = [];
 
-        hasMore = result.state.more || false;
-        eventCount += result.events.length;
+        // Add conferencing link if available
+        if (outlookEvent.onlineMeeting?.joinUrl) {
+          links.push({
+            type: ActivityLinkType.conferencing,
+            url: outlookEvent.onlineMeeting.joinUrl,
+            provider: detectConferencingProvider(
+              outlookEvent.onlineMeeting.joinUrl
+            ),
+          });
+        }
 
-        // Update syncState for next iteration
-        Object.assign(syncState, result.state);
+        // Add calendar link
+        if (outlookEvent.webLink) {
+          links.push({
+            type: ActivityLinkType.external,
+            title: "View in Calendar",
+            url: outlookEvent.webLink,
+          });
+        }
 
-        console.log(
-          `Synced ${result.events.length} events, total: ${eventCount} for calendar ${calendarId}`
-        );
+        // Create note with description and/or links
+        const notes: NewNote[] = [];
+        const hasDescription =
+          outlookEvent.body?.content &&
+          outlookEvent.body.content.trim().length > 0;
+        const hasLinks = links.length > 0;
+
+        if (hasDescription || hasLinks) {
+          notes.push({
+            activity: {
+              source:
+                outlookEvent.webLink || `outlook-calendar:${outlookEvent.id}`,
+            },
+            key: "description",
+            content: hasDescription ? outlookEvent.body!.content! : null,
+            links: hasLinks ? links : null,
+            contentType: (outlookEvent.body?.contentType === "html"
+              ? "html"
+              : "text") as ContentType,
+          });
+        }
+
+        // Build NewActivityWithNotes from the transformed activity
+        const activityWithNotes: NewActivityWithNotes = {
+          ...activity,
+          author: authorContact,
+          meta: activity.meta,
+          tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
+          notes,
+          unread: !initialSync, // false for initial sync, true for incremental updates
+        };
+
+        // Call the event callback using hoisted token
+        await this.tools.callbacks.run(callbackToken, activityWithNotes);
+      } catch (error) {
+        console.error(`Error processing event ${outlookEvent.id}:`, error);
+        // Continue processing other events
       }
-
-      console.log(
-        `Outlook Calendar sync completed: ${eventCount} events for calendar ${calendarId}`
-      );
-    } catch (error) {
-      console.error(`Outlook Calendar sync failed for ${calendarId}:`, error);
-      // Re-throw to let the caller handle it
-      throw error;
     }
   }
 
@@ -568,7 +594,8 @@ export class OutlookCalendar
   private async processEventInstance(
     event: import("./graph-api").OutlookEvent,
     calendarId: string,
-    initialSync: boolean
+    initialSync: boolean,
+    callbackToken: Callback
   ): Promise<void> {
     const originalStart = event.originalStart;
     if (!originalStart) {
@@ -651,11 +678,6 @@ export class OutlookCalendar
 
     // Send occurrence data to the twist via callback
     // The twist will decide whether to create or update the master activity
-    const callbackToken = await this.get<Callback>("event_callback_token");
-    if (!callbackToken) {
-      console.warn("No callback token found for occurrence update");
-      return;
-    }
 
     // Build a minimal NewActivity with source and occurrences
     // The twist's createActivity will upsert the master activity
@@ -718,9 +740,10 @@ export class OutlookCalendar
       this.syncOutlookBatch,
       calendarId,
       authToken,
-      false // initialSync = false for incremental updates
+      false, // initialSync = false for incremental updates
+      1 // batchNumber = 1 for first batch
     );
-    await this.run(callback);
+    await this.runTask(callback);
   }
 
   async onAuthSuccess(

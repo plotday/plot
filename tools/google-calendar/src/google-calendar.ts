@@ -418,6 +418,13 @@ export class GoogleCalendar
     calendarId: string,
     initialSync: boolean
   ): Promise<void> {
+    // Hoist callback token retrieval outside loop - saves N-1 subrequests
+    const callbackToken = await this.get<Callback>("event_callback_token");
+    if (!callbackToken) {
+      console.warn("No callback token found, skipping event processing");
+      return;
+    }
+
     // Get user email for RSVP tagging
     for (const event of events) {
       try {
@@ -448,7 +455,7 @@ export class GoogleCalendar
 
         // Check if this is a recurring event instance (exception)
         if (event.recurringEventId && event.originalStartTime) {
-          await this.processEventInstance(event, calendarId, initialSync);
+          await this.processEventInstance(event, calendarId, initialSync, callbackToken);
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
@@ -538,10 +545,7 @@ export class GoogleCalendar
           const hasDescription = description && description.trim().length > 0;
           const hasLinks = links.length > 0;
 
-          const callbackToken = await this.get<Callback>(
-            "event_callback_token"
-          );
-          if (!callbackToken || !activityData.type) {
+          if (!activityData.type) {
             continue;
           }
 
@@ -599,7 +603,8 @@ export class GoogleCalendar
   private async processEventInstance(
     event: GoogleEvent,
     calendarId: string,
-    initialSync: boolean
+    initialSync: boolean,
+    callbackToken: Callback
   ): Promise<void> {
     const originalStartTime =
       event.originalStartTime?.dateTime || event.originalStartTime?.date;
@@ -675,11 +680,6 @@ export class GoogleCalendar
 
     // Send occurrence data to the twist via callback
     // The twist will decide whether to create or update the master activity
-    const callbackToken = await this.get<Callback>("event_callback_token");
-    if (!callbackToken) {
-      console.warn("No callback token found for occurrence update");
-      return;
-    }
 
     // Build a minimal NewActivity with source and occurrences
     // The twist's createActivity will upsert the master activity
@@ -698,8 +698,9 @@ export class GoogleCalendar
     authToken: string
   ): Promise<void> {
     // Validate webhook authenticity
-    const channelId = request.headers["X-Goog-Channel-ID"];
-    const channelToken = request.headers["X-Goog-Channel-Token"];
+    // Headers are normalized to lowercase by HTTP standards
+    const channelId = request.headers["x-goog-channel-id"];
+    const channelToken = request.headers["x-goog-channel-token"];
 
     if (!channelId || !channelToken) {
       throw new Error("Invalid webhook headers");
