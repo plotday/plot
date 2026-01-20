@@ -4,6 +4,7 @@ import { type SupabaseClient, createClient } from "@plotday/db";
 
 import { type Bindings } from "../env";
 import { createLogger } from "../utils/logger";
+import { disposeRpc } from "../utils/rpc";
 
 const FLUSH_INTERVAL_MS = 60_000; // 1 minute
 const HOUR_MS = 60 * 60 * 1000;
@@ -28,7 +29,9 @@ export class Usage extends DurableObject<Bindings> {
     priorityTwistId: string
   ) {
     const usage = env.USAGE.get(env.USAGE.idFromName(priorityTwistId));
-    usage.init(priorityTwistId);
+    // Note: init() returns void, but we still dispose the RPC result
+    // to clean up any RPC resources from crossing the DO boundary
+    usage.init(priorityTwistId).then((result: void) => disposeRpc(result));
     return usage;
   }
 

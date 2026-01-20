@@ -9,6 +9,7 @@ import { getUser } from "../utils/auth";
 import { handleValidationError } from "../utils/validation";
 import { createLogger } from "../utils/logger";
 import { tokenCreationRateLimiter } from "../middleware/rate-limit";
+import { disposeRpc } from "../utils/rpc";
 
 const tokens = new Hono<{ Bindings: Bindings }>();
 
@@ -127,13 +128,15 @@ tokens.get("/session/:sessionId", async (c) => {
   const sdkTokenStoreId = c.env.SDK_TOKEN_STORE.idFromName(sessionId);
   const sdkTokenStore = c.env.SDK_TOKEN_STORE.get(sdkTokenStoreId);
   const session = await sdkTokenStore.get(sessionId);
+  disposeRpc(session);
 
   if (!session) {
     return new Response("Session not found or expired", { status: 404 });
   }
 
   // Return token and user info, then delete session
-  await sdkTokenStore.delete(sessionId);
+  const deleteResult = await sdkTokenStore.delete(sessionId);
+  disposeRpc(deleteResult);
 
   return c.json({
     token: session.token,
@@ -214,11 +217,12 @@ tokens.post("/session/authorize", tokenCreationRateLimiter, async (c) => {
   const sdkTokenStoreId = c.env.SDK_TOKEN_STORE.idFromName(sessionId);
   const sdkTokenStore = c.env.SDK_TOKEN_STORE.get(sdkTokenStoreId);
 
-  await sdkTokenStore.set(sessionId, {
+  const setResult = await sdkTokenStore.set(sessionId, {
     token: tokenValue,
     userId,
     email: userEmail,
   });
+  disposeRpc(setResult);
 
   // Expiration and cleanup are handled automatically by the Durable Object alarm
 

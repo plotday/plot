@@ -96,7 +96,9 @@ export class Callbacks extends Tool implements ICallbackTool {
   }
 
   async run(callback: Callback, ...args: any[]): Promise<any> {
-    return await this.callbacks.callCallback(callback, ...(args ?? []));
+    const result = await this.callbacks.callCallback(callback, ...(args ?? []));
+    disposeRpc(result);
+    return result;
   }
 
   async delete(callback: Callback): Promise<void> {

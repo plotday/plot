@@ -27,6 +27,7 @@ import { authMiddleware as syncAuthMiddleware } from "./sync/auth";
 import database from "./sync/database";
 import { createLogger } from "./utils/logger";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
+import { disposeRpc } from "./utils/rpc";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
@@ -170,9 +171,10 @@ async function scheduled(
     const syncRecoveryId = env.SYNC_RECOVERY.idFromName("singleton");
     const syncRecoveryDO = env.SYNC_RECOVERY.get(syncRecoveryId);
 
-    await syncRecoveryDO.fetch(
+    const result = await syncRecoveryDO.fetch(
       new Request("http://do/trigger", { method: "POST" })
     );
+    disposeRpc(result);
 
     logger.info("Sync recovery triggered by cron");
   } catch (error) {

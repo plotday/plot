@@ -422,6 +422,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const callbacksId = callbacks.idFromString(id);
     const callbacksStub = callbacks.get(callbacksId);
     // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
+    // Note: We don't dispose here as the caller (queue/logs.ts) will handle disposal
     return await callbacksStub.callCallback(token, ...args);
   }
 }
