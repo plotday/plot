@@ -110,6 +110,47 @@ void _addMentionAttributions(MutableDocument document, _MentionInfo mention) {
   }
 }
 
+/// Trim trailing newlines from code block nodes
+void _trimCodeBlockTrailingNewlines(MutableDocument document) {
+  for (int i = 0; i < document.nodeCount; i++) {
+    final node = document.getNodeAt(i);
+    if (node is! TextNode) continue;
+
+    // Check if this is a code block node by metadata
+    final blockType = node.metadata['blockType'];
+    if (blockType != codeAttribution) continue;
+
+    // Trim trailing whitespace from code block content
+    final text = node.text.toPlainText();
+    final trimmedText = text.trimRight();
+
+    if (text != trimmedText) {
+      // Create new text with trimmed content, preserving attributions
+      final newText = AttributedText(trimmedText);
+
+      // Copy attributions that still fit within the trimmed text
+      if (trimmedText.isNotEmpty) {
+        final spans = node.text.getAttributionSpansInRange(
+          attributionFilter: (attr) => true,
+          range: SpanRange(0, trimmedText.length - 1),
+        );
+        for (final span in spans) {
+          final endIndex = span.end < trimmedText.length ? span.end : trimmedText.length - 1;
+          if (span.start <= endIndex) {
+            newText.addAttribution(span.attribution, SpanRange(span.start, endIndex));
+          }
+        }
+      }
+
+      // Replace the node with trimmed content
+      document.replaceNodeById(
+        node.id,
+        ParagraphNode(id: node.id, text: newText, metadata: node.metadata),
+      );
+    }
+  }
+}
+
 /// Deserialize markdown with mentions into a MutableDocument
 MutableDocument _deserializeMarkdownWithMentions(String markdown) {
   // Extract mentions before preprocessing
@@ -121,6 +162,9 @@ MutableDocument _deserializeMarkdownWithMentions(String markdown) {
   // Deserialize to base document
   final baseDocument = deserializeMarkdownToDocument(preprocessed);
   final document = MutableDocument(nodes: baseDocument.toList());
+
+  // Trim trailing newlines from code blocks
+  _trimCodeBlockTrailingNewlines(document);
 
   // Add mention attributions
   for (final mention in mentions) {
@@ -1083,6 +1127,20 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
       }),
       StyleRule(const BlockSelector("listItem"), (doc, docNode) {
         return {Styles.padding: CascadingPadding.only(top: spacing.sm)};
+      }),
+      // Code blocks with monospace font
+      StyleRule(const BlockSelector("code"), (doc, docNode) {
+        return {
+          Styles.textStyle: baseStyle.copyWith(
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: baseStyle.fontSize != null ? baseStyle.fontSize! * 0.9 : null,
+            height: 1.5,
+          ),
+          Styles.padding: CascadingPadding.symmetric(
+            horizontal: spacing.md,
+            vertical: spacing.sm,
+          ),
+        };
       }),
       // Add spacing after the last item in a list (creates spacing after entire list)
       // StyleRule(const BlockSelector("paragraph"), (doc, docNode) {
