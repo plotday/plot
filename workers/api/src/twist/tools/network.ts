@@ -315,7 +315,7 @@ export class Network extends Tool implements INetwork {
     // Store the actual priorityTwistId in meta for callback execution
     const callbackToken = await teamCallbacksStub.create({
       priorityTwistId: this.priorityTwistId!,
-      path: this.path!.slice(0, -1), // Remove this tool from path to target parent
+      path: this.path!,
       functionName: callbackFunctionName,
       extraArgs,
       key: teamId,
@@ -395,7 +395,7 @@ export class Network extends Tool implements INetwork {
       // Use standard callback creation with priorityTwistId for DO sharding
       const callbackToken = await this.callbacks!.create({
         priorityTwistId: this.priorityTwistId!,
-        path: this.path!.slice(0, -1), // Remove this tool from path to target parent
+        path: this.path!,
         functionName: callbackFunctionName,
         extraArgs,
         meta: {
@@ -501,7 +501,7 @@ export class Network extends Tool implements INetwork {
     // Default webhook creation for non-provider-specific webhooks
     const token = await this.callbacks.create({
       priorityTwistId: this.priorityTwistId,
-      path: this.path.slice(0, -1), // Remove this tool from path to target parent
+      path: this.path,
       functionName: callbackFunctionName,
       extraArgs: extraArgs,
     });
