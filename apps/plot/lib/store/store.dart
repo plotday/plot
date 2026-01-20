@@ -146,6 +146,16 @@ abstract class BaseTable {
 
   Insertable<DataClass> fromBase(Map<String, dynamic> json);
 
+  /// Process rows pulled from server before inserting to local DB.
+  /// Subclasses can override to preserve local pending state.
+  /// Default implementation returns rows unchanged.
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    return rows.toList();
+  }
+
   Future<
     (
       Iterable<Map<String, dynamic>> rows,
@@ -1173,13 +1183,16 @@ class Store extends _$Store {
         }
       });
 
+      // Allow base table to merge with local pending state
+      final processedRows = await baseTable.processPulledRows(this, storeRows);
+
       await batch((batch) {
         // Use insertOrReplace mode to ensure null values are explicitly set.
         // - insertAllOnConflictUpdate uses toColumns(true) which treats null as
         //   "don't update this column" - causing unarchived items to stay archived
         // - insertOrReplace deletes and re-inserts the row, ensuring all columns
         //   including nulls are set correctly
-        batch.insertAll(table, storeRows, mode: InsertMode.insertOrReplace);
+        batch.insertAll(table, processedRows, mode: InsertMode.insertOrReplace);
       });
 
       totalRows += baseRows.length;

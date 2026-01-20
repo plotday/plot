@@ -211,6 +211,25 @@ class Note extends Equatable implements Comparable<Note> {
     await pullUpdates();
   }
 
+  /// Get a single note by ID with its tags
+  static Future<Note?> get(NoteId id) async {
+    final n = Store.get.notes;
+    final tags = Store.get.alias(Store.get.noteTags, 'tags');
+
+    final query =
+        Store.get.select(n).join([leftOuterJoin(tags, tags.id.equalsExp(n.id))])
+          ..where(n.id.equalsValue(id))
+          ..addColumns([tags.tags])
+          ..limit(1);
+
+    final results = await query.get();
+    if (results.isEmpty) return null;
+
+    final noteRow = results.first.readTable(n);
+    final tagsRow = results.first.readTableOrNull(tags);
+    return Note._fromStore(noteRow: noteRow, tags: tagsRow);
+  }
+
   /// Helper to ensure notes are loaded for an activity before watching.
   /// Triggers pullForActivity if this is the first time viewing the activity.
   static void _ensureNotesLoadedForActivity(ActivityId activityId) {

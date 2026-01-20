@@ -79,7 +79,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                 spacing: 8,
                 runSpacing: 8,
                 children: noteLinks
-                    .map((link) => NoteLinkWidget(link: link))
+                    .map((link) => NoteLinkWidget(link: link, note: widget.note))
                     .toList(),
               ),
             ),

@@ -4,16 +4,21 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
-import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/api/api.dart' as api;
 import 'logging.dart';
 
 /// Widget that displays a single note link with appropriate styling based on type
 class NoteLinkWidget extends StatelessWidget {
-  const NoteLinkWidget({required this.link, this.onAuthComplete, super.key});
+  const NoteLinkWidget({
+    required this.link,
+    required this.note,
+    this.onAuthComplete,
+    super.key,
+  });
 
   final Link link;
+  final Note note;
   final VoidCallback? onAuthComplete;
 
   @override
@@ -25,7 +30,7 @@ class NoteLinkWidget extends StatelessWidget {
           onAuth: onAuthComplete,
         );
       case LinkType.callback:
-        return CallbackLinkButton(link: link as CallbackLink);
+        return CallbackLinkButton(link: link as CallbackLink, note: note);
       case LinkType.external:
         return ExternalLinkButton(link: link as ExternalLink);
       case LinkType.conferencing:
@@ -36,9 +41,10 @@ class NoteLinkWidget extends StatelessWidget {
 
 /// A button widget for callback links that makes API calls
 class CallbackLinkButton extends StatefulWidget {
-  const CallbackLinkButton({required this.link, super.key});
+  const CallbackLinkButton({required this.link, required this.note, super.key});
 
   final CallbackLink link;
+  final Note note;
 
   @override
   State<CallbackLinkButton> createState() => _CallbackLinkButtonState();
@@ -53,17 +59,24 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
       style: FButtonStyle.secondary(),
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
-      suffix: _isLoading ? Spinner(size: 15) : null,
       child: Text(widget.link.title),
     );
   }
 
   Future<void> _handleTap() async {
+    setState(() => _isLoading = true);
+
     final callbackToken = widget.link.callback;
 
-    setState(() {
-      _isLoading = true;
-    });
+    // Get the twist actor ID from the note's author (only twists add callback buttons)
+    final twistActorId =
+        widget.note.authorId.isTwist ? widget.note.authorId : null;
+
+    // Add twist tag at start (if the author is a twist)
+    if (twistActorId != null) {
+      final updated = widget.note.toggleTag(Tag.twist, twistActorId);
+      await updated.save();
+    }
 
     try {
       await api.post<Map<String, dynamic>>(
@@ -81,10 +94,19 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
         );
       }
     } finally {
+      // Remove twist tag at end (if we have a twist actor)
+      if (twistActorId != null) {
+        // Re-fetch the note to get fresh state with the tag
+        final freshNote = await Note.get(widget.note.id);
+        if (freshNote != null && freshNote.hasTag(Tag.twist, twistActorId)) {
+          final updated = freshNote.toggleTag(Tag.twist, twistActorId);
+          await updated.save();
+        }
+      }
+
+      // Always reset local loading state
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }

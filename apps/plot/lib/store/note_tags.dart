@@ -170,4 +170,32 @@ class NoteTagsBase extends BaseTable {
       log.info('NoteTagsBase.put - completed processing row: $id');
     }
   }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    final result = <Insertable<DataClass>>[];
+
+    for (final row in rows) {
+      final noteTagsRow = row as NoteTagsRow;
+
+      // Check if local has pending tagsUpdated changes
+      final local = await (store.select(store.noteTags)
+            ..where((t) => t.id.equals(noteTagsRow.id.toBytes())))
+          .getSingleOrNull();
+
+      if (local != null &&
+          local.tagsUpdated != null &&
+          local.tagsUpdated!.isNotEmpty) {
+        // Preserve pending local changes by keeping local tagsUpdated
+        result.add(noteTagsRow.copyWith(tagsUpdated: Value(local.tagsUpdated)));
+      } else {
+        result.add(row);
+      }
+    }
+
+    return result;
+  }
 }
