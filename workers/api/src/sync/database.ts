@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Bindings } from "../env";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "../utils/logger";
+import { disposeRpc } from "../utils/rpc";
 import { handleValidationError } from "../utils/validation";
 
 const database = new Hono<{ Bindings: Bindings }>();
@@ -48,12 +49,13 @@ database.post("/users", async (c) => {
     for (const userId of ids) {
       const doId = c.env.USER_SYNC.idFromName(userId);
       const userSync = c.env.USER_SYNC.get(doId);
-      await userSync.fetch(
+      const result = await userSync.fetch(
         new Request("http://do/notify", {
           method: "POST",
           body: JSON.stringify({ id: userId }),
         })
       );
+      disposeRpc(result);
     }
 
     return c.json({ success: true, count: ids.length });
@@ -105,12 +107,13 @@ database.post("/twists", async (c) => {
     for (const priorityTwistId of ids) {
       const doId = c.env.TWIST_SYNC.idFromName(priorityTwistId);
       const twistSync = c.env.TWIST_SYNC.get(doId);
-      await twistSync.fetch(
+      const result = await twistSync.fetch(
         new Request("http://do/notify", {
           method: "POST",
           body: JSON.stringify({ id: priorityTwistId }),
         })
       );
+      disposeRpc(result);
     }
 
     return c.json({ success: true, count: ids.length });

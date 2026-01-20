@@ -4,6 +4,7 @@ import { type SupabaseClient, createClient } from "@plotday/db";
 
 import type { Bindings } from "../env";
 import { createLogger } from "../utils/logger";
+import { disposeRpc } from "../utils/rpc";
 
 interface QueuedMessage {
   message: any;
@@ -143,12 +144,13 @@ export class Broadcast extends DurableObject<Bindings> {
     try {
       const userSyncId = this.env.USER_SYNC.idFromName(this.userId);
       const userSync = this.env.USER_SYNC.get(userSyncId);
-      await userSync.fetch(
+      const result = await userSync.fetch(
         new Request("http://do/onClientConnected", {
           method: "POST",
           body: JSON.stringify({ userId: this.userId }),
         })
       );
+      disposeRpc(result);
     } catch (error) {
       logger.error("Error notifying UserSync of client connection", error as Error, {
         user_id: this.userId,

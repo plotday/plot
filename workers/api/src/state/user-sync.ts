@@ -132,10 +132,12 @@ export class UserSync extends DurableObject<Bindings> {
       // Check if there are connected clients
       const broadcastId = this.env.BROADCAST.idFromName(this.userId);
       const broadcast = this.env.BROADCAST.get(broadcastId);
-      const hasClients = await broadcast
-        .fetch(new Request("http://do/hasConnectedClients"))
-        .then((r) => r.json())
-        .then((data: any) => data.hasConnectedClients);
+      const broadcastResponse = await broadcast.fetch(
+        new Request("http://do/hasConnectedClients")
+      );
+      const broadcastData: any = await broadcastResponse.json();
+      disposeRpc(broadcastResponse);
+      const hasClients = broadcastData.hasConnectedClients;
 
       if (!hasClients) {
         // No connected clients, skip sync
