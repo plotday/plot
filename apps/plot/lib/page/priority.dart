@@ -45,6 +45,7 @@ class PriorityWrapper implements AutoRouteWrapper {
                 child: AutoRouter(
                   key: _routerKey,
                   placeholder: (context) => const LoadingPage(),
+                  clipBehavior: Clip.none,
                 ),
               ),
             ),
