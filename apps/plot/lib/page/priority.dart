@@ -507,14 +507,28 @@ class PriorityPage extends StatelessWidget {
                                   onSearchClosed: () => context
                                       .read<PriorityBloc>()
                                       .updateFilter([]),
-                                  filterCommands: state.tags
-                                      .map(
-                                        (tagData) => ToggleActivityFilter(
-                                          tagData.$1,
-                                          context: context,
+                                  filterCommands: [
+                                    // Tags that exist in the current priority
+                                    ...state.tags.map(
+                                      (tagData) => ToggleActivityFilter(
+                                        tagData.$1,
+                                        context: context,
+                                      ),
+                                    ),
+                                    // Active filter tags that don't exist in the current priority
+                                    ...state.filter
+                                        .where(
+                                          (tag) => !state.tags.any(
+                                            (t) => t.$1 == tag,
+                                          ),
+                                        )
+                                        .map(
+                                          (tag) => ToggleActivityFilter(
+                                            tag,
+                                            context: context,
+                                          ),
                                         ),
-                                      )
-                                      .toList(),
+                                  ],
                                   commands: [
                                     if (layoutState.multiPanel) NewActivity(),
                                     ShowPriorityCommands(
