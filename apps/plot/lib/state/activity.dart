@@ -60,6 +60,7 @@ class ActivityBloc extends Cubit<ActivityState> {
 
   /// Adds a note by converting the current draft to a non-draft.
   /// Creates a fresh draft note for the activity afterward.
+  /// Note: Twisting tag for twist mentions is added in Note.save()
   Future<void> add(Note note) async {
     // Convert the draft to a non-draft
     note = note.copyWith(draft: false);
@@ -142,11 +143,7 @@ class ActivityBloc extends Cubit<ActivityState> {
         filter: state.filter.isNotEmpty ? state.filter : null,
         search: state.search.isNotEmpty ? state.search : null,
       ).listen((notes) {
-        // Sort notes by creation date in reverse chronological order (newest first)
-        final sortedNotes = List<Note>.from(notes);
-        sortedNotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-        emit(state.copyWith(notes: sortedNotes));
+        emit(state.copyWith(notes: notes));
       }),
     );
   }

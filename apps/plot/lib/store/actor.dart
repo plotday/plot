@@ -81,6 +81,11 @@ class Actor extends ActorRow {
       archived: archived,
     ).get();
 
+    // Cache all fetched actors for synchronous lookups
+    for (final actor in actors) {
+      _cache[actor.id] = actor;
+    }
+
     return actors;
   }
 
@@ -336,5 +341,14 @@ extension ActorIdHelpers on ActorId {
       return this == Base.actorId;
     }
     return actor.self;
+  }
+
+  /// Check if this actor is a twist (priorityTwist type).
+  /// Uses PriorityTwist cache for synchronous lookup - returns false if not cached.
+  /// Note: PriorityTwist.id IS the ActorId for twists.
+  bool get isTwist {
+    // Convert ActorId to Uuid since PriorityTwist._cache uses PriorityTwistId (Uuid)
+    final twistId = toUuid();
+    return PriorityTwist._cache.containsKey(twistId);
   }
 }

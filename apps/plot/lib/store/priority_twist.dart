@@ -41,6 +41,14 @@ class PriorityTwistsBase extends BaseTable {
 class PriorityTwist extends PriorityTwistRow {
   static $PriorityTwistsTable get table => Store.get.priorityTwists;
 
+  // In-memory cache for PriorityTwist lookups
+  static final Map<PriorityTwistId, PriorityTwist> _cache = {};
+
+  /// Clear the entire PriorityTwist cache
+  static void clearCache() {
+    _cache.clear();
+  }
+
   static Future<bool> push() => Store.get.push(table, PriorityTwistsBase());
 
   static Future<void> pullInitial() async {
@@ -69,7 +77,12 @@ class PriorityTwist extends PriorityTwistRow {
       archived: archived,
     );
     final rows = await query.get();
-    return rows.map((row) => PriorityTwist(row)).toList();
+    final twists = rows.map((row) => PriorityTwist(row)).toList();
+    // Cache all fetched twists for synchronous lookups
+    for (final twist in twists) {
+      _cache[twist.id] = twist;
+    }
+    return twists;
   }
 
   static Stream<List<PriorityTwist>> watch({
@@ -84,9 +97,14 @@ class PriorityTwist extends PriorityTwistRow {
       includeAncestors: includeAncestors,
       archived: archived,
     );
-    return query.watch().map(
-      (rows) => rows.map((row) => PriorityTwist(row)).toList(),
-    );
+    return query.watch().map((rows) {
+      final twists = rows.map((row) => PriorityTwist(row)).toList();
+      // Cache all watched twists for synchronous lookups
+      for (final twist in twists) {
+        _cache[twist.id] = twist;
+      }
+      return twists;
+    });
   }
 
   static SimpleSelectStatement<$PriorityTwistsTable, PriorityTwistRow> _get({

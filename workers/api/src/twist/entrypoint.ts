@@ -378,6 +378,18 @@ export default class extends WorkerEntrypoint {
                   console.log(
                     \`Callback completed at path: \${callbackInfo.optionPath.join('.')}\`
                   );
+
+                  // Remove deferred Twisting tag after callback completes
+                  if (callbackInfo.deferredTagRemoval) {
+                    const { noteId, actorId } = callbackInfo.deferredTagRemoval;
+                    try {
+                      if (typeof tool.removeTagFromNote === 'function') {
+                        await tool.removeTagFromNote(noteId, actorId);
+                      }
+                    } catch (error) {
+                      console.warn('Failed to remove deferred Twisting tag:', error);
+                    }
+                  }
                 }
               }
             }

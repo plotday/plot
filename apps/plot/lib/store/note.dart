@@ -264,7 +264,7 @@ class Note extends Equatable implements Comparable<Note> {
     var query =
         Store.get.select(n).join([leftOuterJoin(tags, tags.id.equalsExp(n.id))])
           ..where(n.activityId.equalsValue(activityId))
-          ..orderBy([OrderingTerm.asc(n.createdAt)])
+          ..orderBy([OrderingTerm.desc(n.createdAt)])
           ..addColumns([tags.tags]);
 
     // Filter by archived status if archived parameter is provided
@@ -708,6 +708,47 @@ class Note extends Equatable implements Comparable<Note> {
             ? _extractMentionsFromMarkdown(content)
             : this.mentions);
 
+    // Detect publishing (draft → non-draft) and add Twisting tag for twist mentions
+    NoteTagsRow? effectiveTags = tags ?? _tags;
+    final isPublishing = draft == false && this.draft;
+    if (isPublishing &&
+        effectiveMentions != null &&
+        effectiveMentions.isNotEmpty) {
+      for (final mentionId in effectiveMentions) {
+        if (mentionId.isTwist) {
+          // Build updated tags
+          Map<Tag, List<ActorId>> currentTags = effectiveTags?.tags != null
+              ? Map<Tag, List<ActorId>>.from(effectiveTags!.tags!)
+              : {};
+          Map<int, bool> currentTagUpdates = effectiveTags?.tagsUpdated != null
+              ? Map<int, bool>.from(effectiveTags!.tagsUpdated!)
+              : {};
+
+          // Add Twisting tag if not already present
+          currentTags.putIfAbsent(Tag.twist, () => []);
+          if (!currentTags[Tag.twist]!.contains(mentionId)) {
+            currentTags[Tag.twist]!.add(mentionId);
+            currentTagUpdates[Tag.twist.id] = true;
+          }
+
+          effectiveTags =
+              effectiveTags?.copyWith(
+                updatedAt: now,
+                tags: Value(currentTags.isEmpty ? null : currentTags),
+                tagsUpdated: Value(currentTagUpdates),
+              ) ??
+              NoteTagsRow(
+                id: id,
+                updatedAt: now,
+                tags: currentTags.isEmpty ? null : currentTags,
+                tagsUpdated: currentTagUpdates.isEmpty
+                    ? null
+                    : currentTagUpdates,
+              );
+        }
+      }
+    }
+
     return Note._fromStore(
       noteRow: NoteRow(
         id: id,
@@ -716,14 +757,14 @@ class Note extends Equatable implements Comparable<Note> {
         draft: draft ?? this.draft,
         private: private ?? this.private,
         content: content ?? this.content,
-        sourceCreatedAt: draft == false && this.draft ? now : sourceCreatedAt,
+        sourceCreatedAt: isPublishing ? now : sourceCreatedAt,
         links: links ?? this.links,
         mentions: effectiveMentions,
-        createdAt: draft == false && this.draft ? now : createdAt,
+        createdAt: isPublishing ? now : createdAt,
         updatedAt: DateTime.now(),
         archivedAt: archivedAt,
       ),
-      tags: tags ?? _tags,
+      tags: effectiveTags,
     );
   }
 

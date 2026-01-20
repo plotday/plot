@@ -14,6 +14,7 @@ import {
   type PriorityUpdate,
   type Uuid,
 } from "@plotday/twister/plot";
+import { Tag } from "@plotday/twister/tag";
 import {
   ActivityAccess,
   ContactAccess,
@@ -22,10 +23,10 @@ import {
 } from "@plotday/twister/tools/plot";
 
 import type { Bindings } from "../../../env";
-import type { EnrichedActivity, EnrichedNote } from "../../view-types";
 import { createLogger } from "../../../utils/logger";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
+import type { EnrichedActivity, EnrichedNote } from "../../view-types";
 import { AI } from "../ai";
 import { Tool } from "../tool";
 import * as activityOps from "./activity";
@@ -342,17 +343,17 @@ export class Plot extends Tool implements IPlot {
     const logger = createLogger({ priority_twist_id: this.priorityTwistId });
 
     if (!this.plotOptions) {
-      logger.info("[DEBUG] Plot.dispatch: no plotOptions, skipping", {
-        item_type: dispatchItem.itemType,
-        item_id: dispatchItem.item.id ?? undefined,
-      });
       return [];
     }
 
     // Set sync depth from dispatch context (defaults to 1 if not provided)
     this.syncDepth = dispatchItem.syncDepth ?? 1;
 
-    const callbacks: Array<{ optionPath: string[]; args: any[] }> = [];
+    const callbacks: Array<{
+      optionPath: string[];
+      args: any[];
+      deferredTagRemoval?: { noteId: string; actorId: string };
+    }> = [];
 
     // Handle note items
     if (dispatchItem.itemType === "note") {
@@ -367,8 +368,33 @@ export class Plot extends Tool implements IPlot {
       );
       if (isMentioned && isCreate) {
         const result = await intentOps.handleIntent(this, currentNote);
-        if (result) {
-          callbacks.push(result);
+
+        if (!result) {
+          // Built-in intent handled or no intent matched - notes already created
+          // Remove tag immediately
+          try {
+            await this.supabase.rpc("update_note_tags", {
+              p_note_id: currentNote.id,
+              p_actor_id: this.priorityTwistId,
+              p_client_id: 0, // API client
+              p_tag_updates: { [Tag.Twist]: false },
+            });
+          } catch (error) {
+            // Log but don't fail - tag removal is best-effort
+            logger.warn("Failed to remove Twisting tag from note", {
+              note_id: currentNote.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        } else {
+          // Custom intent - defer tag removal until callback completes
+          callbacks.push({
+            ...result,
+            deferredTagRemoval: {
+              noteId: currentNote.id,
+              actorId: this.priorityTwistId,
+            },
+          });
         }
       }
 
@@ -380,19 +406,6 @@ export class Plot extends Tool implements IPlot {
 
         // Check if note was created by this twist
         const noteCreatedByThisTwist = item.created_by === this.priorityTwistId;
-
-        // DEBUG: Log note.created decision
-        logger.info("[DEBUG] Plot.dispatch note.created check", {
-          note_id: item.id ?? undefined,
-          activity_id: item.activity_id ?? undefined,
-          activity_created_by: item.activity_created_by ?? undefined,
-          note_created_by: item.created_by ?? undefined,
-          this_twist: this.priorityTwistId,
-          activityCreatedByThisTwist,
-          noteCreatedByThisTwist,
-          isCreate,
-          will_dispatch: activityCreatedByThisTwist && !noteCreatedByThisTwist && typeof this.plotOptions?.note?.created === "function",
-        });
 
         // Only dispatch if activity owned by twist AND note NOT created by twist
         // This prevents infinite loops when twist creates notes on its own activities
@@ -429,40 +442,19 @@ export class Plot extends Tool implements IPlot {
             created_by: item.created_by ?? undefined,
           });
         } else {
-          // DEBUG: Log activity.updated decision
-          logger.info("[DEBUG] Plot.dispatch activity.updated check", {
-            activity_id: item.id ?? undefined,
-            title: item.title?.substring(0, 30) ?? undefined,
-            created_by: item.created_by ?? undefined,
-            author_id: item.author_id ?? undefined,
-            updated_by: item.updated_by ?? undefined,
-            this_twist: this.priorityTwistId,
-            createdByThisTwist,
-            isCreate,
-            has_callback: typeof this.plotOptions?.activity?.updated === "function",
-            will_dispatch: !isCreate && typeof this.plotOptions?.activity?.updated === "function",
-          });
-
           // Check if activity.updated callback exists
           const callback = this.plotOptions?.activity?.updated;
           if (typeof callback === "function") {
             callbacks.push({
               optionPath: ["activity", "updated"],
-              args: [currentActivity, changes ?? { tagsAdded: {}, tagsRemoved: {} }],
+              args: [
+                currentActivity,
+                changes ?? { tagsAdded: {}, tagsRemoved: {} },
+              ],
             });
           }
         }
       }
-    }
-
-    // DEBUG: Log what callbacks are being returned
-    if (callbacks.length > 0) {
-      logger.info("[DEBUG] Plot.dispatch returning callbacks", {
-        item_type: dispatchItem.itemType,
-        item_id: dispatchItem.item.id ?? undefined,
-        callback_count: callbacks.length,
-        callback_paths: callbacks.map((c) => c.optionPath.join(".")).join(", "),
-      });
     }
 
     return callbacks;
@@ -481,6 +473,27 @@ export class Plot extends Tool implements IPlot {
         error_message: error instanceof Error ? error.message : String(error),
       });
       return 0;
+    }
+  }
+
+  /**
+   * Removes the Twisting tag from a note. Used for deferred tag removal after callbacks.
+   */
+  async removeTagFromNote(noteId: string, actorId: string): Promise<void> {
+    const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+    try {
+      await this.supabase.rpc("update_note_tags", {
+        p_note_id: noteId,
+        p_actor_id: actorId,
+        p_client_id: 0, // API client
+        p_tag_updates: { [Tag.Twist]: false },
+      });
+    } catch (error) {
+      // Log but don't fail - tag removal is best-effort
+      logger.warn("Failed to remove deferred Twisting tag from note", {
+        note_id: noteId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
