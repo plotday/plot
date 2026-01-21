@@ -1631,6 +1631,11 @@ class Activity extends Equatable implements Comparable<Activity> {
       at = Value(null);
     }
 
+    // Mark activity as read when marking as done
+    if (doneAt.present && doneAt.value != null && unread == null && this.unread) {
+      unread = false;
+    }
+
     // Ensure assigneeId is set when converting to action type
     // If type is being changed to action and no assigneeId is provided, default to current user
     if (type == ActivityType.action &&
