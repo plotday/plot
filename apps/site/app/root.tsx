@@ -17,12 +17,23 @@ import {
 
 import type { Route } from "./+types/root";
 import stylesheet from "./app.css?url";
+import { PostHogIdentify } from "./components/posthog-identify";
+import { getUser } from "./lib/supabase.server";
 import { resolver, theme } from "./theme";
 
-export async function loader({ context }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const { user } = await getUser(request, context.cloudflare.env);
   return {
     posthogApiKey: context.cloudflare.env.POSTHOG_API_KEY || "",
     posthogProxy: context.cloudflare.env.POSTHOG_PROXY || "",
+    user: user
+      ? {
+          id: user.id,
+          email: user.email,
+          name: user.user_metadata?.name || user.user_metadata?.full_name,
+          createdAt: user.created_at,
+        }
+      : null,
   };
 }
 
@@ -52,6 +63,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const data = useRouteLoaderData<typeof loader>("root");
   const posthogApiKey = data?.posthogApiKey || "";
   const posthogProxy = data?.posthogProxy || "";
+  const user = data?.user || null;
 
   return (
     <html lang="en" {...mantineHtmlProps}>
@@ -106,6 +118,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </MantineProvider>
         <ScrollRestoration />
         <Scripts />
+        <PostHogIdentify user={user} />
       </body>
     </html>
   );
