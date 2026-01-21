@@ -17,6 +17,9 @@ import 'widget/auth_button.dart';
 import 'util/time_service.dart' show Time;
 
 Future<void> run(List<String> args) async {
+  // Initialize bindings first - required for platform channels used by Env.init()
+  WidgetsFlutterBinding.ensureInitialized();
+
   // Initialize logging first
   try {
     hierarchicalLoggingEnabled = true;
@@ -61,8 +64,6 @@ Future<void> run(List<String> args) async {
   }
 
   try {
-    WidgetsFlutterBinding.ensureInitialized();
-
     // Parse command-line arguments early
     CliArgs.init(args);
 
