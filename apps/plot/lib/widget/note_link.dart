@@ -64,19 +64,15 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
   }
 
   Future<void> _handleTap() async {
-    setState(() => _isLoading = true);
+    if (_isLoading) return;
+    _isLoading = true;
 
     final callbackToken = widget.link.callback;
 
-    // Get the twist actor ID from the note's author (only twists add callback buttons)
-    final twistActorId =
-        widget.note.authorId.isTwist ? widget.note.authorId : null;
-
-    // Add twist tag at start (if the author is a twist)
-    if (twistActorId != null) {
-      final updated = widget.note.toggleTag(Tag.twist, twistActorId);
-      await updated.save();
-    }
+    // Add twist tag
+    final twistActorId = widget.note.authorId;
+    final updated = widget.note.setTag(Tag.twist, twistActorId);
+    await updated.save();
 
     try {
       await api.post<Map<String, dynamic>>(
@@ -94,20 +90,10 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
         );
       }
     } finally {
-      // Remove twist tag at end (if we have a twist actor)
-      if (twistActorId != null) {
-        // Re-fetch the note to get fresh state with the tag
-        final freshNote = await Note.get(widget.note.id);
-        if (freshNote != null && freshNote.hasTag(Tag.twist, twistActorId)) {
-          final updated = freshNote.toggleTag(Tag.twist, twistActorId);
-          await updated.save();
-        }
-      }
-
-      // Always reset local loading state
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      _isLoading = false;
+      await (await widget.note.refresh())
+          .setTag(Tag.twist, twistActorId, false)
+          .save();
     }
   }
 }

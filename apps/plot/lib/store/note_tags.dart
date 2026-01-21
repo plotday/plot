@@ -189,8 +189,28 @@ class NoteTagsBase extends BaseTable {
       if (local != null &&
           local.tagsUpdated != null &&
           local.tagsUpdated!.isNotEmpty) {
-        // Preserve pending local changes by keeping local tagsUpdated
-        result.add(noteTagsRow.copyWith(tagsUpdated: Value(local.tagsUpdated)));
+        // Check which pending changes are not yet reflected on server
+        final serverTags = noteTagsRow.tags ?? {};
+        final pendingChanges = <int, bool>{};
+
+        for (final entry in local.tagsUpdated!.entries) {
+          final tagId = entry.key;
+          final wantTagPresent = entry.value;
+          final tag = Tag.get(id: tagId);
+          if (tag == null) continue; // Unknown tag, skip
+          final tagPresentOnServer = serverTags.containsKey(tag);
+
+          // Only keep pending changes where server doesn't match desired state
+          if (tagPresentOnServer != wantTagPresent) {
+            pendingChanges[tagId] = wantTagPresent;
+          }
+        }
+
+        if (pendingChanges.isNotEmpty) {
+          result.add(noteTagsRow.copyWith(tagsUpdated: Value(pendingChanges)));
+        } else {
+          result.add(row);
+        }
       } else {
         result.add(row);
       }

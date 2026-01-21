@@ -523,6 +523,10 @@ class Note extends Equatable implements Comparable<Note> {
   /// Get actors who have completed this note (have Tag.done)
   List<ActorId> get completedAssignees => tags[Tag.done] ?? const [];
 
+  Future<Note> refresh() async {
+    return await Note.get(id) ?? this;
+  }
+
   /// Check if all assignees have marked the note as done
   bool get isComplete {
     final allAssignees = assignees;
@@ -630,12 +634,9 @@ class Note extends Equatable implements Comparable<Note> {
     return updated;
   }
 
-  /// Toggle a tag for a specific actor
-  /// Returns a new Note instance with the updated tag - caller must call save()
-  Note toggleTag(Tag tag, ActorId actorId) {
-    final hasIt = hasTag(tag, actorId);
-    final add = !hasIt;
-
+  /// Sets or unsets a tag for a specific actor.
+  /// Returns a new Note instance with the updated tag - caller must call save().
+  Note setTag(Tag tag, ActorId actorId, [bool value = true]) {
     // Get current tags or create empty map
     Map<Tag, List<ActorId>> currentTags = _tags?.tags != null
         ? Map<Tag, List<ActorId>>.from(_tags!.tags!)
@@ -646,7 +647,7 @@ class Note extends Equatable implements Comparable<Note> {
         ? Map<int, bool>.from(_tags!.tagsUpdated!)
         : {};
 
-    if (add) {
+    if (value) {
       // Add actor to tag
       currentTags.putIfAbsent(tag, () => []);
       if (!currentTags[tag]!.contains(actorId)) {
@@ -663,7 +664,7 @@ class Note extends Equatable implements Comparable<Note> {
     }
 
     // Track which tag changed
-    currentTagUpdates[tag.id] = add;
+    currentTagUpdates[tag.id] = value;
 
     // Create new tags row with updated data
     final newTags =
@@ -681,6 +682,13 @@ class Note extends Equatable implements Comparable<Note> {
 
     // Return new Note instance with modified tags
     return Note._fromStore(noteRow: toRow(), tags: newTags);
+  }
+
+  /// Toggles a tag for a specific actor.
+  /// Returns a new Note instance with the updated tag - caller must call save().
+  Note toggleTag(Tag tag, ActorId actorId) {
+    final hasIt = hasTag(tag, actorId);
+    return setTag(tag, actorId, !hasIt);
   }
 
   /// Extract mention UUIDs from markdown text.

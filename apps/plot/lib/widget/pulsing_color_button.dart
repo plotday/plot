@@ -24,7 +24,6 @@ class _PulsingColorButtonState extends State<PulsingColorButton>
 
   @override
   void initState() {
-    print("Let's go!!!!");
     super.initState();
     _controller = AnimationController(
       duration: const Duration(milliseconds: 1000),
