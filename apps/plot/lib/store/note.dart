@@ -283,7 +283,7 @@ class Note extends Equatable implements Comparable<Note> {
     var query =
         Store.get.select(n).join([leftOuterJoin(tags, tags.id.equalsExp(n.id))])
           ..where(n.activityId.equalsValue(activityId))
-          ..orderBy([OrderingTerm.desc(n.createdAt)])
+          ..orderBy([OrderingTerm.desc(n.sourceCreatedAt)])
           ..addColumns([tags.tags]);
 
     // Filter by archived status if archived parameter is provided
@@ -805,6 +805,6 @@ class Note extends Equatable implements Comparable<Note> {
 
   @override
   int compareTo(Note other) {
-    return createdAt.compareTo(other.createdAt);
+    return sourceCreatedAt.compareTo(other.sourceCreatedAt);
   }
 }
