@@ -19,6 +19,7 @@ class ActivityWidget extends StatelessWidget {
     this.focusNode,
     this.onHover,
     this.reorderableIndex,
+    this.isReorderMode = false,
     super.key,
   });
 
@@ -30,6 +31,7 @@ class ActivityWidget extends StatelessWidget {
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
+  final bool isReorderMode;
 
   Command? _getSwipeRightCommand() {
     if (activity.type == ActivityType.event) return null;
@@ -155,6 +157,7 @@ class ActivityWidget extends StatelessWidget {
       focusNode: focusNode,
       onHover: onHover,
       reorderableIndex: reorderableIndex,
+      showLeadingDragHandle: isReorderMode,
     );
   }
 
@@ -163,8 +166,8 @@ class ActivityWidget extends StatelessWidget {
     final isTouchDevice = !hasPhysicalKeyboard();
     final listTile = _buildListTile(buildContext, isTouchDevice);
 
-    // Only wrap in Swipeable on touch devices
-    if (!isTouchDevice) {
+    // Skip swipeable when in reorder mode or not on touch device
+    if (!isTouchDevice || isReorderMode) {
       return listTile;
     }
 

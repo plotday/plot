@@ -93,6 +93,9 @@ class ListTile extends StatefulWidget {
     /// Whether to show the keyboard shortcut (default: false).
     this.showShortcut = false,
 
+    /// Whether to show a drag handle in the leading area (for reorder mode).
+    this.showLeadingDragHandle = false,
+
     super.key,
   }) : subtitle = subtitle ?? command?.subtitle;
 
@@ -124,6 +127,7 @@ class ListTile extends StatefulWidget {
   final FocusNode? focusNode;
   final int? reorderableIndex;
   final bool showShortcut;
+  final bool showLeadingDragHandle;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -159,9 +163,6 @@ class _ListTileState extends State<ListTile> {
     super.dispose();
   }
 
-  bool get showDragBar =>
-      !hasPhysicalKeyboard() && widget.reorderableIndex != null;
-
   @override
   Widget build(BuildContext context) {
     final child = MouseRegion(
@@ -188,7 +189,7 @@ class _ListTileState extends State<ListTile> {
         onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
         child: ReorderableDragStartListener(
           index: widget.reorderableIndex ?? 0,
-          enabled: widget.reorderableIndex != null && !showDragBar,
+          enabled: widget.reorderableIndex != null && hasPhysicalKeyboard(),
           child: Container(
             decoration: BoxDecoration(
               color: widget.selected
@@ -211,7 +212,21 @@ class _ListTileState extends State<ListTile> {
                       : 0,
                 ),
 
-                ...[
+                // Leading area: either drag handle (in reorder mode) or custom leading builder
+                if (widget.showLeadingDragHandle && widget.reorderableIndex != null)
+                  ReorderableDragStartListener(
+                    index: widget.reorderableIndex!,
+                    child: Container(
+                      color: Color(0x00000000),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Icon(
+                        FontAwesomeIcons.gripDotsVertical,
+                        size: context.theme.iconSizes.sm,
+                        color: context.theme.plotColors.muted,
+                      ),
+                    ),
+                  )
+                else ...[
                   if (widget.leadingBuilder != null)
                     widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
                 ].whereType<Widget>(),
@@ -419,26 +434,10 @@ class _ListTileState extends State<ListTile> {
                   if (widget.trailingBuilder != null)
                     widget.trailingBuilder!(_isHovered, _focusNode.hasFocus),
                 ].whereType<Widget>(),
-                // Drag bar at the end (outside main drag listener)
-                if (showDragBar && widget.reorderableIndex != null)
-                  ReorderableDragStartListener(
-                    index: widget.reorderableIndex!,
-                    child: Container(
-                      color: Color(0x00000000),
-                      padding: const EdgeInsets.only(left: 7.5, right: 16),
-                      child: Icon(
-                        FontAwesomeIcons.gripDotsVertical,
-                        size: context.theme.iconSizes.xs,
-                        color: context.theme.plotColors.muted,
-                      ),
-                    ),
-                  ),
                 SizedBox(
-                  width:
-                      (!(showDragBar && widget.reorderableIndex != null) &&
-                          widget.trailingBuilder == null
+                  width: widget.trailingBuilder == null
                       ? widget.padding?.resolve(null).right ?? 16
-                      : 0),
+                      : 0,
                 ),
               ],
             ),

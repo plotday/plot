@@ -9,6 +9,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
+import 'package:plot/util/platform.dart';
 import 'priorities.dart';
 import 'loading.dart';
 
@@ -537,7 +538,10 @@ class PriorityPage extends StatelessWidget {
                                     ),
                                   ],
                                 ),
-                                body: BidirectionalList(
+                                body: Column(
+                                  children: [
+                                    Expanded(
+                                      child: BidirectionalList(
                                   anchorOffset: 0.35,
                                   controller: listController,
                                   scrollController: ScrollControllerContext.of(
@@ -606,6 +610,7 @@ class PriorityPage extends StatelessWidget {
                                               context: state.context,
                                               reorderableIndex:
                                                   reorderableIndex,
+                                              isReorderMode: state.isReorderMode,
                                             ),
                                           ],
                                         ),
@@ -663,6 +668,11 @@ class PriorityPage extends StatelessWidget {
                                       onReorderActivity(activity, prev, next);
                                     };
                                   },
+                                ),
+                                    ),
+                                    if (state.isReorderMode && !hasPhysicalKeyboard())
+                                      const ReorderModeBottomBar(),
+                                  ],
                                 ),
                               ),
                             ),
