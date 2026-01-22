@@ -38,6 +38,9 @@ class Base {
   static Uuid get userId => Injector.appInstance.get<Base>()._userId!;
   static ActorId get actorId => Injector.appInstance.get<Base>()._actorId!;
 
+  // Global refresh lock - only one refresh at a time
+  static Completer<supa.AuthResponse>? _refreshCompleter;
+
   /// Clears the actor ID. This should be called after all blocs and Store
   /// are stopped during sign-out to prevent race conditions with streams
   /// that access actorId during cleanup.
@@ -53,14 +56,75 @@ class Base {
         anonKey: Env.supabaseAnonKey,
       );
       Injector.appInstance.registerSingleton<Base>(() => Base());
+
+      // Wait for token refresh if session is expired
+      final session = supa.Supabase.instance.client.auth.currentSession;
+      if (session != null) {
+        final expiresAt = session.expiresAt;
+        if (expiresAt != null) {
+          final expiryTime =
+              DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
+          if (expiryTime.isBefore(DateTime.now())) {
+            log.info('Session expired, waiting for refresh to complete');
+            try {
+              await refreshSession();
+              log.info('Session refresh completed during init');
+            } on supa.AuthException catch (e) {
+              // If refresh fails with "Already Used", check if we have a valid session now
+              // (another refresh might have succeeded)
+              final newSession =
+                  supa.Supabase.instance.client.auth.currentSession;
+              final newExpiresAt = newSession?.expiresAt;
+              if (newExpiresAt != null) {
+                final newExpiry =
+                    DateTime.fromMillisecondsSinceEpoch(newExpiresAt * 1000);
+                if (newExpiry.isAfter(DateTime.now())) {
+                  log.info(
+                    'Refresh failed but valid session exists (concurrent refresh succeeded)',
+                  );
+                  // Session is valid, continue
+                } else {
+                  log.warning('Refresh failed and no valid session: ${e.message}');
+                  rethrow;
+                }
+              } else {
+                rethrow;
+              }
+            }
+          }
+        }
+      }
+
       log.info("Supabase ready");
     } catch (e, stack) {
-      log.warning("Supabase errore", e, stack);
+      log.warning("Supabase error", e, stack);
     }
   }
 
+  /// Refreshes the session with global locking to prevent concurrent attempts.
+  /// If a refresh is already in progress, waits for that refresh instead.
   static Future<supa.AuthResponse> refreshSession() async {
-    return await client.auth.refreshSession();
+    // If refresh already in progress, wait for it
+    if (_refreshCompleter != null) {
+      log.fine('Refresh already in progress, waiting for existing refresh');
+      return _refreshCompleter!.future;
+    }
+
+    _refreshCompleter = Completer<supa.AuthResponse>();
+
+    try {
+      log.info('Starting session refresh');
+      final response = await client.auth.refreshSession();
+      log.info('Session refresh completed successfully');
+      _refreshCompleter!.complete(response);
+      return response;
+    } catch (e) {
+      log.warning('Session refresh failed: $e');
+      _refreshCompleter!.completeError(e);
+      rethrow;
+    } finally {
+      _refreshCompleter = null;
+    }
   }
 
   /// Signs out the current user explicitly.
@@ -179,10 +243,25 @@ class Base {
     }
 
     // Ignore signedOut events from Supabase - these can happen due to token
-    // expiry while offline. Actual sign-out is handled by Base.signOut() which
-    // clears _userId and emits to the user stream before calling Supabase signOut.
+    // expiry while offline or "Already Used" errors from race conditions.
+    // Actual sign-out is handled by Base.signOut() which clears _userId and
+    // emits to the user stream before calling Supabase signOut.
     // This maintains local-first functionality when the user is offline.
     if (event == supa.AuthChangeEvent.signedOut) {
+      // Check if we still have a valid session (another refresh might have succeeded)
+      final currentSession = _client!.auth.currentSession;
+      if (currentSession != null) {
+        final expiresAt = currentSession.expiresAt;
+        if (expiresAt != null) {
+          final expiry = DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
+          if (expiry.isAfter(DateTime.now())) {
+            log.info(
+              'Ignoring signedOut - valid session still exists (concurrent refresh succeeded)',
+            );
+            return;
+          }
+        }
+      }
       log.info(
         'Received signedOut event from Supabase - no action (sign-out handled by Base.signOut() if intentional)',
       );
