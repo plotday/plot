@@ -104,6 +104,7 @@ class RootProviderState extends State<RootProvider> {
             case UserReady _:
               try {
                 await prioritiesBloc.start();
+                await PriorityTwist.start();
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
 
@@ -127,6 +128,7 @@ class RootProviderState extends State<RootProvider> {
               _teardownNowBlocListener();
               prioritiesBloc.stop();
               nowBloc.stop();
+              PriorityTwist.stopGlobalWatch();
               // Set theme to Catalyst when signed out
               themeBloc.setPriorityColor(ThemeColor(0));
               await router.replaceAll([SignInRoute()]);

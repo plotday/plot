@@ -7,7 +7,8 @@ class PriorityTwists extends Table
     with SyncableTable, UuidTable, CreatedTable, DeletableTable {
   BlobColumn get priorityId => blob().map(const UuidConverter())();
   Int64Column get twistId => int64()(); // Changed from UUID to bigint
-  TextColumn get twistEnvironment => text()(); // Read from user_twist view (JOIN with twist table)
+  TextColumn get twistEnvironment =>
+      text()(); // Read from user_twist view (JOIN with twist table)
   TextColumn get name => text()();
   TextColumn get config => text().map(const JsonConverter())();
 }
@@ -47,6 +48,30 @@ class PriorityTwist extends PriorityTwistRow {
   /// Clear the entire PriorityTwist cache
   static void clearCache() {
     _cache.clear();
+  }
+
+  // Static subscription for global cache watch
+  static StreamSubscription<List<PriorityTwist>>? _globalWatchSubscription;
+
+  /// Start watching all priority twists globally to populate the cache.
+  /// This enables synchronous isTwist checks from any context.
+  static Future<void> start() async {
+    _globalWatchSubscription?.cancel();
+    final completer = Completer<void>();
+    _globalWatchSubscription = watch().listen((twists) {
+      // Cache is populated automatically by watch()
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    });
+    return completer.future;
+  }
+
+  /// Stop the global watch.
+  static void stopGlobalWatch() {
+    _globalWatchSubscription?.cancel();
+    _globalWatchSubscription = null;
+    clearCache();
   }
 
   static Future<bool> push() => Store.get.push(table, PriorityTwistsBase());
@@ -150,25 +175,23 @@ class PriorityTwist extends PriorityTwistRow {
   }
 
   PriorityTwist(PriorityTwistRow row)
-      : super(
-          id: row.id,
-          priorityId: row.priorityId,
-          twistId: row.twistId,
-          twistEnvironment: row.twistEnvironment,
-          name: row.name,
-          config: row.config,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          archivedAt: row.archivedAt,
-          pending: row.pending,
-        );
+    : super(
+        id: row.id,
+        priorityId: row.priorityId,
+        twistId: row.twistId,
+        twistEnvironment: row.twistEnvironment,
+        name: row.name,
+        config: row.config,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        archivedAt: row.archivedAt,
+        pending: row.pending,
+      );
 
   Future<void> save() async {
     await Store.get.save(
       table,
-      copyWith(
-        updatedAt: DateTime.now(),
-      ),
+      copyWith(updatedAt: DateTime.now()),
       PriorityTwistsBase(),
     );
   }
