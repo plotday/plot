@@ -248,6 +248,16 @@ export class GoogleCalendar
   ): Promise<void> {
     const { authToken, calendarId } = options;
 
+    // Check if sync is already in progress for this calendar
+    const syncInProgress = await this.get<boolean>(`sync_lock_${calendarId}`);
+    if (syncInProgress) {
+      console.log(`Sync already in progress for calendar ${calendarId}, skipping`);
+      return;
+    }
+
+    // Set sync lock
+    await this.set(`sync_lock_${calendarId}`, true);
+
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
@@ -295,8 +305,9 @@ export class GoogleCalendar
       await this.clear(`calendar_watch_${calendarId}`);
     }
 
-    // Clear sync state
+    // Clear sync state and lock
     await this.clear(`sync_state_${calendarId}`);
+    await this.clear(`sync_lock_${calendarId}`);
   }
 
   private async setupCalendarWatch(
@@ -358,7 +369,9 @@ export class GoogleCalendar
 
       const state = await this.get<SyncState>(`sync_state_${calendarId}`);
       if (!state) {
-        throw new Error("No sync state found");
+        console.warn(`No sync state found for calendar ${calendarId}, sync may have been superseded`);
+        await this.clear(`sync_lock_${calendarId}`);
+        return;
       }
 
       // Convert date strings back to Date objects after deserialization
@@ -402,6 +415,8 @@ export class GoogleCalendar
         if (mode === "full") {
           await this.clear(`sync_state_${calendarId}`);
         }
+        // Always clear lock when sync completes (no more batches)
+        await this.clear(`sync_lock_${calendarId}`);
       }
     } catch (error) {
       console.error(
