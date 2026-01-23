@@ -29,7 +29,7 @@ class _SignInPageState extends State<SignInPage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const LoadingPage(message: 'Signing in...');
+      return const LoadingPage(message: 'Plotting your success…');
     }
 
     return Scaffold(
