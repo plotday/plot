@@ -120,6 +120,7 @@ export type Bindings = {
   readonly RESEND_API_KEY: string;
 
   readonly API_ROOT: string;
+  readonly SITE_ROOT: string;
 
   readonly AI_GATEWAY_ACCOUNT_ID: string;
   readonly AI_GATEWAY_ID: string;

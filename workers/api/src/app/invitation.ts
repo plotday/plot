@@ -24,6 +24,7 @@ interface SendInvitationParams {
   priorityId: string;
   inviterUserId: string;
   resendApiKey?: string; // Optional, only needed in production
+  siteRoot: string;
 }
 
 interface SendInvitationResult {
@@ -51,7 +52,7 @@ export async function sendInvitation(
   supabaseAdmin: SupabaseClient,
   params: SendInvitationParams
 ): Promise<SendInvitationResult> {
-  const { contactId, priorityId, inviterUserId, resendApiKey } = params;
+  const { contactId, priorityId, inviterUserId, resendApiKey, siteRoot } = params;
 
   // 1. Get contact info
   const { data: contact, error: contactError } = await supabaseAdmin
@@ -108,7 +109,7 @@ export async function sendInvitation(
   const priorityName = priorityResult.data?.title || "a priority";
 
   // 5. Render and send email via Resend
-  const inviteUrl = `https://plot.day/join?invite=${token}`;
+  const inviteUrl = `${siteRoot}/join?invite=${token}`;
   const { html, text } = await render("priority-invitation" as EmailType, {
     inviterName,
     priorityName,
