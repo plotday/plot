@@ -17,14 +17,15 @@ interface SharePriorityResult {
 }
 
 // UUID regex pattern for validation
-const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuidRegex =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Email regex pattern for validation
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Schema for share request - accepts both UUIDs and emails in 'add'
 const ShareRequestSchema = z.object({
-  add: z.array(z.string()).default([]),      // UUIDs or emails
+  add: z.array(z.string()).default([]), // UUIDs or emails
   remove: z.array(z.string().uuid()).default([]), // UUIDs only
 });
 
@@ -69,7 +70,12 @@ share.post("/priority/:id/share", async (c) => {
     } else if (emailRegex.test(item)) {
       addEmails.push(item.toLowerCase());
     } else {
-      return c.json({ message: `Invalid identifier: ${item}. Must be a UUID or email address.` }, 400);
+      return c.json(
+        {
+          message: `Invalid identifier: ${item}. Must be a UUID or email address.`,
+        },
+        400
+      );
     }
   }
 
@@ -77,27 +83,37 @@ share.post("/priority/:id/share", async (c) => {
   let contactIdsFromEmails: string[] = [];
   let nonUserContactIds: string[] = [];
   if (addEmails.length > 0) {
-    const contactsToUpsert = addEmails.map(email => ({ email }));
+    const contactsToUpsert = addEmails.map((email) => ({ email }));
 
-    const { data: upsertedContacts, error: upsertError } = await c.var.supabaseAdmin.rpc(
-      "upsert_contacts",
-      { contacts: contactsToUpsert }
-    );
+    const { data: upsertedContacts, error: upsertError } =
+      await c.var.supabaseAdmin.rpc("upsert_contacts", {
+        contacts: contactsToUpsert,
+      });
 
     if (upsertError) {
-      return captureServerError(c, new Error(upsertError.message), "Failed to create contacts", {
-        priority_id: priorityId,
-        user_id: user.id,
-        emails: addEmails,
-      });
+      return captureServerError(
+        c,
+        new Error(upsertError.message),
+        "Failed to create contacts",
+        {
+          priority_id: priorityId,
+          user_id: user.id,
+          emails: addEmails,
+        }
+      );
     }
 
     // Extract contact IDs from the upserted results
-    const contacts = upsertedContacts as Array<{ id: string; user_id: string | null }>;
-    contactIdsFromEmails = contacts.map(c => c.id);
+    const contacts = upsertedContacts as Array<{
+      id: string;
+      user_id: string | null;
+    }>;
+    contactIdsFromEmails = contacts.map((c) => c.id);
 
     // Track non-user contacts (user_id is null)
-    nonUserContactIds = contacts.filter(c => c.user_id === null).map(c => c.id);
+    nonUserContactIds = contacts
+      .filter((c) => c.user_id === null)
+      .map((c) => c.id);
   }
 
   // Combine UUIDs with contact IDs from emails
@@ -124,41 +140,48 @@ share.post("/priority/:id/share", async (c) => {
     if (shareError.message.includes("not found")) {
       return c.json({ message: "Priority not found" }, 404);
     }
-    return captureServerError(c, new Error(shareError.message), "Failed to share priority", {
-      priority_id: priorityId,
-      user_id: user.id,
-    });
+    return captureServerError(
+      c,
+      new Error(shareError.message),
+      "Failed to share priority",
+      {
+        priority_id: priorityId,
+        user_id: user.id,
+      }
+    );
   }
 
-  // Send invitation emails to non-user contacts (fire-and-forget)
+  // Send invitation emails to non-user contacts (fire-and-forget with waitUntil)
   if (nonUserContactIds.length > 0) {
-    Promise.allSettled(
-      nonUserContactIds.map(contactId =>
-        sendInvitation(c.var.supabaseAdmin, {
-          contactId,
-          priorityId,
-          inviterUserId: user.id,
-          resendApiKey: c.env.RESEND_API_KEY,
-        })
+    // Use waitUntil to ensure emails complete even after response is sent
+    c.executionCtx.waitUntil(
+      Promise.allSettled(
+        nonUserContactIds.map((contactId) =>
+          sendInvitation(c.var.supabaseAdmin, {
+            contactId,
+            priorityId,
+            inviterUserId: user.id,
+            resendApiKey: c.env.RESEND_API_KEY,
+            isDevelopment,
+          })
+        )
       )
-    ).then(results => {
-      // Log any failures
-      results.forEach((result, index) => {
-        if (result.status === "rejected") {
-          console.error(
-            `Failed to send invitation email for contact ${nonUserContactIds[index]}:`,
-            result.reason
-          );
-        } else if (!result.value.success && !result.value.skipped) {
-          console.error(
-            `Failed to send invitation email for contact ${nonUserContactIds[index]}:`,
-            result.value.error
-          );
-        }
-      });
-    }).catch(error => {
-      console.error("Unexpected error sending invitation emails:", error);
-    });
+        .then((results) => {
+          // Log all results
+          results.forEach((result, index) => {
+            const contactId = nonUserContactIds[index];
+            if (result.status === "rejected") {
+              console.error(
+                `[Contact ${contactId}] Email send rejected:`,
+                result.reason
+              );
+            }
+          });
+        })
+        .catch((error) => {
+          console.error("Unexpected error sending invitation emails:", error);
+        })
+    );
   }
 
   // Fetch updated priority info
@@ -171,7 +194,9 @@ share.post("/priority/:id/share", async (c) => {
   if (priorityError || !priority) {
     return captureServerError(
       c,
-      priorityError ? new Error(priorityError.message) : new Error("Priority not found"),
+      priorityError
+        ? new Error(priorityError.message)
+        : new Error("Priority not found"),
       "Failed to fetch updated priority",
       { priority_id: priorityId }
     );
@@ -180,32 +205,47 @@ share.post("/priority/:id/share", async (c) => {
   // Fetch users with access (via priority_contact)
   const { data: users, error: usersError } = await c.var.supabaseAdmin
     .from("priority_contact")
-    .select(`
+    .select(
+      `
       contact:contact!inner(id, email, name, user_id)
-    `)
+    `
+    )
     .eq("priority_id", priorityId)
     .is("archived_at", null);
 
   if (usersError) {
-    return captureServerError(c, new Error(usersError.message), "Failed to fetch priority users", {
-      priority_id: priorityId,
-    });
+    return captureServerError(
+      c,
+      new Error(usersError.message),
+      "Failed to fetch priority users",
+      {
+        priority_id: priorityId,
+      }
+    );
   }
 
   // Fetch pending invitations
-  const { data: invitations, error: invitationsError } = await c.var.supabaseAdmin
-    .from("priority_invitation")
-    .select(`
+  const { data: invitations, error: invitationsError } =
+    await c.var.supabaseAdmin
+      .from("priority_invitation")
+      .select(
+        `
       id,
       contact:contact!inner(id, email, name)
-    `)
-    .eq("priority_id", priorityId)
-    .is("archived_at", null);
+    `
+      )
+      .eq("priority_id", priorityId)
+      .is("archived_at", null);
 
   if (invitationsError) {
-    return captureServerError(c, new Error(invitationsError.message), "Failed to fetch invitations", {
-      priority_id: priorityId,
-    });
+    return captureServerError(
+      c,
+      new Error(invitationsError.message),
+      "Failed to fetch invitations",
+      {
+        priority_id: priorityId,
+      }
+    );
   }
 
   return c.json({
