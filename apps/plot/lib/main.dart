@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:logging/logging.dart';
 import 'package:super_editor/super_editor.dart' show LogNames;
+import 'package:app_links/app_links.dart';
 
 import 'analytics/tracker.dart';
 import 'app.dart';
@@ -19,6 +20,30 @@ import 'util/time_service.dart' show Time;
 Future<void> run(List<String> args) async {
   // Initialize bindings first - required for platform channels used by Env.init()
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize deep link handling (iOS/Android only)
+  if (!kIsWeb) {
+    try {
+      final appLinks = AppLinks();
+
+      // Listen to incoming links while app is running
+      appLinks.uriLinkStream.listen((uri) {
+        log.info('Received deep link: $uri');
+        // The router will handle navigation automatically via auto_route's deep link support
+      }, onError: (err) {
+        log.warning('Deep link error: $err');
+      });
+
+      // Check for initial link (app was opened via link when not running)
+      final initialUri = await appLinks.getInitialLink();
+      if (initialUri != null) {
+        log.info('App opened with deep link: $initialUri');
+        // The router will handle this automatically when it initializes
+      }
+    } catch (error, stackTrace) {
+      log.warning('Deep link initialization failed', error, stackTrace);
+    }
+  }
 
   // Initialize logging first
   try {

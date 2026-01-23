@@ -20,5 +20,9 @@
     </array>
     <key>com.apple.security.device.audio-input</key>
     <true/>
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+      <string>applinks:app.plot.day</string>
+    </array>
   </dict>
 </plist>

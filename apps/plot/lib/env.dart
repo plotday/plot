@@ -10,7 +10,7 @@ abstract class Env {
     inAndroidEmulator = await _inAndroidEmuilator();
     await dotenv.load(fileName: ".env");
 
-    appBaseUrl = getEnvOrThrow('APP_BASE_URL');
+    appBaseUrl = getEnvOrThrow('APP_ROOT');
 
     posthogApiKey = getEnvOrThrow('POSTHOG_API_KEY');
     posthogHost = getEnvOrThrow('POSTHOG_PROXY');
@@ -20,9 +20,7 @@ abstract class Env {
 
     apiRoot = _translateUrl('${getEnvOrThrow('API_ROOT')}/app');
     authServerCallbackUrl = getEnvOrThrow('AUTH_GOOGLE_URI');
-    authCallbackUrl = kIsWeb
-        ? Uri.base.resolve('/auth.html').toString()
-        : "plot-auth://callback";
+    authCallbackUrl = "https://app.plot.day/auth/callback";
 
     googleClientId = getEnvOrThrow('AUTH_GOOGLE_ID');
     googleIosClientId = getEnvOrThrow('AUTH_GOOGLE_IOS_ID');

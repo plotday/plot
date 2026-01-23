@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "day.plot.app",
+      "sha256_cert_fingerprints": [
+        "B816ACDBD02FDD7737308702C9ABEA42C831F414F007055FEC70C4FF4BDB2098"
+      ]
+    }
+  }
+]
