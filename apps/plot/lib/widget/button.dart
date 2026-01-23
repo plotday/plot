@@ -144,8 +144,8 @@ class _ButtonState extends State<Button> {
     final onPress = widget.enabled ? () => context.run(widget.command) : null;
 
     final button = MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
+      onEnter: widget.enabled ? (_) => setState(() => _isHovered = true) : null,
+      onExit: widget.enabled ? (_) => setState(() => _isHovered = false) : null,
       child: PlatformBuilder(
         builder: (_) {
           // Priority order for icon display:

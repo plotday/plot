@@ -30,7 +30,7 @@ Future<void> run(List<String> args) async {
       appLinks.uriLinkStream.listen((uri) {
         log.info('Received deep link: $uri');
         // The router will handle navigation automatically via auto_route's deep link support
-      }, onError: (err) {
+      }, onError: (Object err) {
         log.warning('Deep link error: $err');
       });
 

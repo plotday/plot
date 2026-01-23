@@ -94,6 +94,7 @@ dependencies:
   prism: ^2.1.0
   prism_flutter: ^2.1.0
   flutter_spinkit: ^5.2.2
+  app_links: ^6.3.3
 
 dev_dependencies:
   analyzer: ^8.4.1

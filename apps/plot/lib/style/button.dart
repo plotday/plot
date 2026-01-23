@@ -85,6 +85,19 @@ FButtonStyles buildButtonStyles(
     secondary: baseStyles.outline.copyWith(
       // ignore: unused_result
       decoration: FWidgetStateMap({
+        WidgetState.disabled: BoxDecoration(
+          borderRadius: borderRadius,
+          border: colourScheme.brightness == .light
+              ? Border.all(
+                  color: colourScheme.colours.highlight
+                      .withLightness(0.86)
+                      .withOpacity(0.5)
+                      .toColor(),
+                  width: 1,
+                )
+              : null,
+          color: colourScheme.colours.highlight.toColor(),
+        ),
         WidgetState.hovered | WidgetState.pressed: BoxDecoration(
           borderRadius: borderRadius,
           border: colourScheme.brightness == .light
@@ -116,6 +129,24 @@ FButtonStyles buildButtonStyles(
       // ignore: unused_result
       contentStyle: baseStyles.outline.contentStyle.copyWith(
         padding: widgetPadding,
+        textStyle: FWidgetStateMap({
+          WidgetState.disabled: typography.base.copyWith(
+            color: colourScheme.muted,
+            fontWeight: FontWeight.w500,
+            height: 1,
+          ),
+          WidgetState.any: typography.base.copyWith(
+            fontWeight: FontWeight.w500,
+            height: 1,
+          ),
+        }),
+        iconStyle: FWidgetStateMap({
+          WidgetState.disabled: IconThemeData(
+            color: colourScheme.muted,
+            size: iconSizes.base,
+          ),
+          WidgetState.any: IconThemeData(size: iconSizes.base),
+        }),
       ),
     ),
     // ignore: unused_result
@@ -150,6 +181,11 @@ FButtonStyles buildButtonStyles(
       contentStyle: baseStyles.ghost.contentStyle.copyWith(
         padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         textStyle: FWidgetStateMap({
+          WidgetState.disabled: typography.base.copyWith(
+            color: colourScheme.muted,
+            fontWeight: FontWeight.w500,
+            height: 1,
+          ),
           WidgetState.hovered | WidgetState.pressed: typography.base.copyWith(
             color: colourScheme.foreground,
             fontWeight: FontWeight.w500,
@@ -162,6 +198,10 @@ FButtonStyles buildButtonStyles(
           ),
         }),
         iconStyle: FWidgetStateMap({
+          WidgetState.disabled: IconThemeData(
+            color: colourScheme.muted,
+            size: iconSizes.base,
+          ),
           WidgetState.hovered | WidgetState.pressed: IconThemeData(
             color: colourScheme.foreground,
             size: iconSizes.base,
@@ -172,6 +212,10 @@ FButtonStyles buildButtonStyles(
       // ignore: unused_result
       iconContentStyle: baseStyles.ghost.iconContentStyle.copyWith(
         iconStyle: FWidgetStateMap({
+          WidgetState.disabled: IconThemeData(
+            color: colourScheme.muted,
+            size: iconSizes.lg,
+          ),
           WidgetState.hovered | WidgetState.pressed: IconThemeData(
             color: colourScheme.foreground,
             size: iconSizes.lg,

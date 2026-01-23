@@ -4,6 +4,7 @@ export 'invitation.dart';
 export 'loading.dart';
 export 'new_activity.dart';
 export 'password_setup.dart';
+export 'platform_picker_page.dart';
 export 'priorities.dart';
 export 'priority.dart';
 export 'sign_in.dart';

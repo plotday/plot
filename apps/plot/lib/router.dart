@@ -9,6 +9,7 @@ import 'auto_sign_in.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
+import 'state/local_preferences.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
@@ -64,26 +65,32 @@ class AppRouter extends RootStackRouter {
       page: AppShellRoute.page,
       path: '/',
       children: [
-        AutoRoute(page: SignInRoute.page, path: 'login', guards: [AuthGuard()]),
+        AutoRoute(page: PlatformPickerRoute.page, path: 'start'),
+        AutoRoute(
+          page: SignInRoute.page,
+          path: 'login',
+          guards: [PlatformPickerGuard(), AuthGuard()],
+        ),
         AutoRoute(
           page: EmailSignInRoute.page,
           path: 'login/email',
-          guards: [AuthGuard()],
+          guards: [PlatformPickerGuard(), AuthGuard()],
         ),
         AutoRoute(
           page: PasswordSetupRoute.page,
           path: 'account/password',
-          guards: [AuthGuard()],
+          guards: [PlatformPickerGuard(), AuthGuard()],
         ),
         AutoRoute(
           page: InvitationRoute.page,
           path: 'invitation',
-          guards: [AuthGuard()],
+          guards: [PlatformPickerGuard(), AuthGuard()],
         ),
         AutoRoute(
           page: EmptyShellRoute("Now"),
           path: '',
           guards: [
+            PlatformPickerGuard(),
             AuthGuard(),
             AutoRouteGuardCallback((resolver, router) async {
               if (resolver.context.read<NowBloc>().loading) {
@@ -102,7 +109,7 @@ class AppRouter extends RootStackRouter {
         ),
         AutoRoute(
           page: PrioritiesShellRoute.page,
-          guards: [AuthGuard()],
+          guards: [PlatformPickerGuard(), AuthGuard()],
           path: '',
           children: [
             AutoRoute(
@@ -180,6 +187,40 @@ extension FocusedRouterExtension on BuildContext {
   }
 }
 
+/// Guard that ensures web users see the platform picker on first visit
+class PlatformPickerGuard extends AutoRouteGuard {
+  PlatformPickerGuard();
+
+  @override
+  void onNavigation(NavigationResolver resolver, StackRouter router) async {
+    // Only check on web
+    if (!kIsWeb) {
+      resolver.next();
+      return;
+    }
+
+    // Don't redirect if already on platform picker
+    if (resolver.route.name == PlatformPickerRoute.page.name) {
+      resolver.next();
+      return;
+    }
+
+    // Check if user has selected web platform
+    final localPreferencesBloc = resolver.context.read<LocalPreferencesBloc>();
+    final hasSelectedWeb = await localPreferencesBloc
+        .getHasSelectedWebPlatform();
+
+    if (!hasSelectedWeb) {
+      // User hasn't selected web yet, redirect to platform picker
+      _logger.info('PlatformPickerGuard: Redirecting to PlatformPickerRoute');
+      resolver.redirectUntil(PlatformPickerRoute());
+    } else {
+      // User has selected web, proceed with navigation
+      resolver.next();
+    }
+  }
+}
+
 class AuthGuard extends AutoRouteGuard {
   AuthGuard();
 
@@ -233,7 +274,9 @@ class AuthGuard extends AutoRouteGuard {
 
           // Redirect to plot.day/signin with returnTo pointing back here
           final currentPath = Uri.base.path;
-          final returnTo = Uri.encodeComponent('https://app.plot.day$currentPath');
+          final returnTo = Uri.encodeComponent(
+            'https://app.plot.day$currentPath',
+          );
           _logger.info('AuthGuard: Redirecting to plot.day/signin (web)');
           redirectToUrl('https://plot.day/signin?returnTo=$returnTo');
           return;

@@ -12,6 +12,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   }
 
   static const String _kMentionMruKey = 'mention_mru_ids';
+  static const String _kHasSelectedWebPlatformKey = 'has_selected_web_platform';
   static const int _maxMruItems = 50;
 
   /// Record usage of a mention, moving it to the front of the MRU list
@@ -53,14 +54,32 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
       });
   }
 
+  /// Mark that the user has selected to continue using the web platform
+  Future<void> selectWebPlatform() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kHasSelectedWebPlatformKey, true);
+    emit(state.copyWith(hasSelectedWebPlatform: true));
+  }
+
+  /// Gets the platform selection directly from SharedPreferences
+  /// This bypasses the Bloc state to avoid race conditions during initialization
+  Future<bool> getHasSelectedWebPlatform() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kHasSelectedWebPlatformKey) ?? false;
+  }
+
   /// Load state from shared preferences
   Future<void> _loadFromPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     final idsString = prefs.getString(_kMentionMruKey);
-    if (idsString != null && idsString.isNotEmpty) {
-      final ids = idsString.split(',');
-      emit(state.copyWith(mentionMruIds: ids));
-    }
+    final hasSelectedWebPlatform = prefs.getBool(_kHasSelectedWebPlatformKey);
+
+    emit(state.copyWith(
+      mentionMruIds: idsString != null && idsString.isNotEmpty
+          ? idsString.split(',')
+          : null,
+      hasSelectedWebPlatform: hasSelectedWebPlatform,
+    ));
   }
 
   /// Persist state to shared preferences
