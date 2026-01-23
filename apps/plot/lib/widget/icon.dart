@@ -37,6 +37,8 @@ class PlotIcon {
   static const previous = FontAwesomeIcons.arrowUpToLine;
   static const note = FontAwesomeIcons.notes;
   static const reschedule = FontAwesomeIcons.calendarPen;
+  static const share = FontAwesomeIcons.userPlus;
+  static const users = FontAwesomeIcons.users;
 
   // Tags
   static const now = FontAwesomeIcons.circlePlay;

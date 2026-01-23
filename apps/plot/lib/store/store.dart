@@ -47,6 +47,7 @@ part 'sync_orchestrator.dart';
 part 'actor.dart';
 part 'priority.dart';
 part 'priority_user.dart';
+part 'priority_invitation.dart';
 part 'priority_actor.dart';
 part 'priority_twist.dart';
 part 'link.dart';
@@ -330,6 +331,7 @@ abstract class BaseTable {
     Actors,
     Priorities,
     PriorityUsers,
+    PriorityInvitations,
     PriorityActors,
     PriorityTwists,
     Activities,
@@ -1432,7 +1434,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 225;
+  int get schemaVersion => 226;
 
   @override
   MigrationStrategy get migration {

@@ -496,6 +496,9 @@ importers:
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
+      '@plotday/email':
+        specifier: workspace:^
+        version: link:../../libs/email
       '@plotday/twister':
         specifier: workspace:*
         version: link:../../public/twister

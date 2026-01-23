@@ -55,6 +55,14 @@ class SyncOrchestrator {
     pullFn: PriorityUser.pull,
   );
 
+  /// PriorityInvitation entity (depends on priority and actor)
+  static final priorityInvitation = SyncEntity(
+    debugName: 'priority_invitation',
+    dependsOn: [priority, actor],
+    pushFn: PriorityInvitation.push,
+    pullFn: PriorityInvitation.pull,
+  );
+
   /// PriorityActor entity (read-only, depends on priority and actor)
   static final priorityActor = SyncEntity(
     debugName: 'priority_actor',
@@ -111,6 +119,7 @@ class SyncOrchestrator {
     userSettings,
     priority,
     priorityUser,
+    priorityInvitation,
     priorityActor,
     priorityTwist,
     activity,
@@ -131,6 +140,7 @@ class SyncOrchestrator {
       'user_settings' => userSettings,
       'priority' => priority,
       'priority_user' => priorityUser,
+      'priority_invitation' => priorityInvitation,
       'user_priority_actor' => priorityActor,
       'priority_twist' => priorityTwist,
       'activity' || 'activity_read' => activity,

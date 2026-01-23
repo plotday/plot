@@ -31,6 +31,17 @@ class CommandMessage extends CommandReturn {
   final bool isError;
 }
 
+// Command completed successfully and requests refresh of parent modal
+class CommandRefresh extends CommandReturn {
+  const CommandRefresh({this.message, this.title});
+
+  /// Optional success message to show to the user
+  final String? message;
+
+  /// Optional title for the success message
+  final String? title;
+}
+
 // Command is triggering navigation
 class CommandRoute extends CommandReturn {
   const CommandRoute(this.route, {this.replace = false});
@@ -332,12 +343,17 @@ class StaticCommandGroup extends CommandGroup {
 }
 
 class Commands {
-  const Commands({String? prompt, required this.groups, this.secondaryCommand})
-    : prompt = prompt ?? 'Run a command';
+  const Commands({
+    String? prompt,
+    required this.groups,
+    this.secondaryCommand,
+    this.emptyMessage,
+  }) : prompt = prompt ?? 'Run a command';
 
   final String prompt;
   final List<CommandGroup> groups;
   final Command? Function(String promptValue)? secondaryCommand;
+  final String? emptyMessage;
 
   Future<CommandReturn> show(BuildContext context) async {
     try {

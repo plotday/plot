@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
 
@@ -10,6 +11,9 @@ import 'package:plot/util/uuid.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'env.dart';
 import 'logging.dart';
+import 'web/cookie_storage_stub.dart'
+    if (dart.library.html) 'web/cookie_storage.dart';
+import 'web/web_utils_stub.dart' if (dart.library.html) 'web/web_utils.dart';
 
 class User extends Equatable {
   const User(this._baseUser);
@@ -51,10 +55,22 @@ class Base {
   static Future<void> init() async {
     try {
       log.info("Initializing Supabase (${Env.supabaseUrl})");
-      await supa.Supabase.initialize(
-        url: Env.supabaseUrl,
-        anonKey: Env.supabaseAnonKey,
-      );
+      // On web, use cookie-based storage to enable cross-subdomain auth
+      // (plot.day <-> app.plot.day). Native platforms use default storage.
+      if (kIsWeb) {
+        await supa.Supabase.initialize(
+          url: Env.supabaseUrl,
+          anonKey: Env.supabaseAnonKey,
+          authOptions: supa.FlutterAuthClientOptions(
+            localStorage: CookieLocalStorage(),
+          ),
+        );
+      } else {
+        await supa.Supabase.initialize(
+          url: Env.supabaseUrl,
+          anonKey: Env.supabaseAnonKey,
+        );
+      }
       Injector.appInstance.registerSingleton<Base>(() => Base());
 
       // Wait for token refresh if session is expired
@@ -62,8 +78,9 @@ class Base {
       if (session != null) {
         final expiresAt = session.expiresAt;
         if (expiresAt != null) {
-          final expiryTime =
-              DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
+          final expiryTime = DateTime.fromMillisecondsSinceEpoch(
+            expiresAt * 1000,
+          );
           if (expiryTime.isBefore(DateTime.now())) {
             log.info('Session expired, waiting for refresh to complete');
             try {
@@ -76,15 +93,18 @@ class Base {
                   supa.Supabase.instance.client.auth.currentSession;
               final newExpiresAt = newSession?.expiresAt;
               if (newExpiresAt != null) {
-                final newExpiry =
-                    DateTime.fromMillisecondsSinceEpoch(newExpiresAt * 1000);
+                final newExpiry = DateTime.fromMillisecondsSinceEpoch(
+                  newExpiresAt * 1000,
+                );
                 if (newExpiry.isAfter(DateTime.now())) {
                   log.info(
                     'Refresh failed but valid session exists (concurrent refresh succeeded)',
                   );
                   // Session is valid, continue
                 } else {
-                  log.warning('Refresh failed and no valid session: ${e.message}');
+                  log.warning(
+                    'Refresh failed and no valid session: ${e.message}',
+                  );
                   rethrow;
                 }
               } else {
@@ -141,8 +161,9 @@ class Base {
 
     // Track analytics
     if (base._signInTime != null) {
-      final sessionDurationMs =
-          DateTime.now().difference(base._signInTime!).inMilliseconds;
+      final sessionDurationMs = DateTime.now()
+          .difference(base._signInTime!)
+          .inMilliseconds;
       await Tracker.trackSession(EventAction.signedOut, {
         PropertyKey.sessionDurationMs: sessionDurationMs,
       });
@@ -155,7 +176,17 @@ class Base {
     // Emit null to trigger UI sign-out flow
     base._currentUserController.add(null);
 
-    // Then sign out from Supabase
+    // On web, redirect to plot.day/signout to clear cookies on root domain
+    // and ensure sign-out across all subdomains. This causes a full page
+    // navigation, so code after this point won't execute on web.
+    if (kIsWeb) {
+      const signOutUrl =
+          'https://plot.day/signout?returnTo=https%3A%2F%2Fapp.plot.day%2F';
+      redirectToUrl(signOutUrl);
+      return;
+    }
+
+    // On native platforms, sign out from Supabase directly
     await base._client!.auth.signOut();
   }
 

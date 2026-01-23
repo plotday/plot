@@ -499,6 +499,38 @@ export type Database = {
         }
         Relationships: []
       }
+      contact_invitation: {
+        Row: {
+          contact_id: string
+          created_at: string
+          id: number
+          sent_at: string
+          token: string
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          id?: never
+          sent_at?: string
+          token: string
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          id?: never
+          sent_at?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_invitation_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
+            referencedRelation: "contact"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cost: {
         Row: {
           amount: number | null
@@ -893,6 +925,93 @@ export type Database = {
           },
           {
             foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+        ]
+      }
+      priority_invitation: {
+        Row: {
+          archived_at: string | null
+          contact_id: string
+          created_at: string
+          id: string
+          invited_by: string
+          priority_id: string
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          contact_id: string
+          created_at?: string
+          id?: string
+          invited_by: string
+          priority_id: string
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          contact_id?: string
+          created_at?: string
+          id?: string
+          invited_by?: string
+          priority_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_invitation_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contact"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_invitation_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_invitation_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "priority_invitation_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_invitation_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "priority_invitation_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_invitation_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_invitation_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "user_priority_unread"
@@ -3168,6 +3287,10 @@ export type Database = {
         }
       }
       get_domain: { Args: { email: string }; Returns: string }
+      get_invitation_token: {
+        Args: { p_contact_id: string; p_new_token: string }
+        Returns: Json
+      }
       get_pending_user_sync: {
         Args: { p_user_id: string }
         Returns: {
@@ -3233,9 +3356,22 @@ export type Database = {
         Args: { invitation_code: string; user_id: string }
         Returns: Json
       }
+      redeem_invitation_token: {
+        Args: { p_token: string; p_user_id: string }
+        Returns: Json
+      }
       set_user_status: {
         Args: { status: string; user_id: string }
         Returns: undefined
+      }
+      share_priority: {
+        Args: {
+          p_add_actor_ids: string[]
+          p_priority_id: string
+          p_remove_actor_ids: string[]
+          p_user_id: string
+        }
+        Returns: Json
       }
       sync_user_on_connect: { Args: { p_user_id: string }; Returns: undefined }
       text2ltree: { Args: { "": string }; Returns: unknown }
@@ -3251,6 +3387,10 @@ export type Database = {
           p_occurrence?: string
           p_tag_updates: Json
         }
+        Returns: undefined
+      }
+      update_invitation_sent_at: {
+        Args: { p_contact_id: string }
         Returns: undefined
       }
       update_note_tags: {

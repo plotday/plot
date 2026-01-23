@@ -5,13 +5,27 @@ import { redirect } from "react-router";
 import { createSupabaseServerClient } from "../lib/supabase.server";
 import type { Route } from "./+types/auth.callback";
 
+/**
+ * Validates that a returnTo URL is safe to redirect to.
+ * Only allows redirects to plot.day subdomains and relative paths.
+ */
+function isValidReturnTo(returnTo: string): boolean {
+  if (returnTo === "/") return true;
+  if (returnTo.startsWith("/") && !returnTo.startsWith("//")) return true;
+  if (returnTo.startsWith("https://app.plot.day")) return true;
+  if (returnTo.startsWith("https://plot.day")) return true;
+  return false;
+}
+
 export async function loader({ request, context }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const error_code = url.searchParams.get("error");
   const error_description = url.searchParams.get("error_description");
   const encodedReturnTo = url.searchParams.get("returnTo") || "/";
-  const returnTo = encodedReturnTo === "/" ? "/" : decodeURIComponent(encodedReturnTo);
+  const decodedReturnTo = encodedReturnTo === "/" ? "/" : decodeURIComponent(encodedReturnTo);
+  // Validate returnTo to prevent open redirect vulnerabilities
+  const returnTo = isValidReturnTo(decodedReturnTo) ? decodedReturnTo : "/";
 
   console.log("Auth callback - URL:", request.url);
   console.log("Auth callback - error:", error_code, error_description);

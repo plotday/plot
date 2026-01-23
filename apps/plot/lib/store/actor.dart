@@ -158,6 +158,29 @@ class Actor extends ActorRow {
     });
   }
 
+  /// Get Actor by auth user ID (via contact.user_id lookup).
+  /// Returns null if no contact is found for the given user ID.
+  static Future<Actor?> getByUserId(Uuid userId) async {
+    try {
+      // Query the contact table to find the contact for this user_id
+      final result = await Base.client
+          .from('contact')
+          .select('id')
+          .eq('user_id', userId.toString())
+          .isFilter('archived_at', null)
+          .limit(1) as List<dynamic>;
+
+      if (result.isEmpty) return null;
+
+      final contactId = result.first['id'] as String;
+      final actorId = ActorId.fromString(contactId);
+
+      return await getOne(actorId);
+    } catch (e) {
+      return null;
+    }
+  }
+
   static MultiSelectable<Actor> _get({
     ActorId? id,
     String? priorityPath,

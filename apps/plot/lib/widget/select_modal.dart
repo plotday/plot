@@ -38,6 +38,8 @@ class SelectModal<T> extends Modal {
     this.prompt = 'Search',
     this.onSelect,
     this.initialItems,
+    this.emptyMessage,
+    this.onRefreshNeeded,
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
@@ -48,6 +50,8 @@ class SelectModal<T> extends Modal {
            prompt: prompt,
            onSelect: onSelect,
            initialItems: initialItems,
+           emptyMessage: emptyMessage,
+           onRefreshNeeded: onRefreshNeeded,
          ),
        );
 
@@ -74,6 +78,14 @@ class SelectModal<T> extends Modal {
   /// Pre-fetched items for empty search to avoid empty list on first build.
   final List<SelectGroup<T>>? initialItems;
 
+  /// Custom message to show when no items match the search.
+  /// Defaults to 'No matches' if not provided.
+  final String? emptyMessage;
+
+  /// Optional callback to receive a refresh function that can be called
+  /// to reload the items while keeping the modal open.
+  final void Function(Future<void> Function() refresh)? onRefreshNeeded;
+
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
@@ -84,6 +96,8 @@ class SelectModal<T> extends Modal {
     String prompt = 'Search',
     Future<bool> Function(BuildContext context, T item, String searchText)?
     onSelect,
+    String? emptyMessage,
+    void Function(Future<void> Function() refresh)? onRefreshNeeded,
   }) async {
     // Pre-fetch items for empty search to avoid empty list on first build
     List<SelectGroup<T>>? initialItems;
@@ -105,6 +119,8 @@ class SelectModal<T> extends Modal {
       prompt: prompt,
       onSelect: onSelect,
       initialItems: initialItems,
+      emptyMessage: emptyMessage,
+      onRefreshNeeded: onRefreshNeeded,
     ).show<T>(context);
 
     return result;
@@ -119,6 +135,8 @@ class _SelectModal<T> extends StatefulWidget {
     required this.prompt,
     this.onSelect,
     this.initialItems,
+    this.emptyMessage,
+    this.onRefreshNeeded,
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
@@ -128,6 +146,8 @@ class _SelectModal<T> extends StatefulWidget {
   final Future<bool> Function(BuildContext context, T item, String searchText)?
   onSelect;
   final List<SelectGroup<T>>? initialItems;
+  final String? emptyMessage;
+  final void Function(Future<void> Function() refresh)? onRefreshNeeded;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
@@ -145,6 +165,10 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   void initState() {
     super.initState();
+
+    // Expose refresh capability to parent
+    widget.onRefreshNeeded?.call(() => _refreshItems());
+
     // If initial items are provided, use them immediately to avoid empty list
     if (widget.initialItems != null) {
       _groups = widget.initialItems!
@@ -155,6 +179,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     } else {
       _initItems();
     }
+  }
+
+  /// Refresh items while preserving search text
+  Future<void> _refreshItems() async {
+    _initItems();
   }
 
   @override
@@ -193,21 +222,21 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
   void _initItems() async {
     try {
-      setState(() {
-        _error = null;
-      });
-      final searchText = _controller.text.isEmpty ? null : _controller.text;
+      // Trim whitespace and treat empty trimmed string as null
+      final trimmedText = _controller.text.trim();
+      final searchText = trimmedText.isEmpty ? null : trimmedText;
 
       // Use cached results for empty search if available
       if (searchText == null && _emptySearchCache != null) {
         setState(() {
+          _error = null;
           _groups = _emptySearchCache!;
           final totalItems = _groups.fold<int>(
             0,
             (sum, group) => sum + group.items.length,
           );
           if (totalItems == 0) {
-            _error = 'No matches';
+            _error = widget.emptyMessage ?? 'No matches';
           }
           _updateHighlightedIndex();
         });
@@ -219,6 +248,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       if (_isDisposed) return;
 
       setState(() {
+        _error = null;
         // Filter out groups with empty items
         _groups = groupsList.where((group) => group.items.isNotEmpty).toList();
 
@@ -234,7 +264,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         );
 
         if (totalItems == 0) {
-          _error = 'No matches';
+          _error = widget.emptyMessage ?? 'No matches';
         }
 
         // Update highlighted index to match selected value

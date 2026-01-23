@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.33",
+    "@plotday/email": "workspace:^",
     "@ai-sdk/google": "^2.0.23",
     "@ai-sdk/openai": "^2.0.52",
     "@cloudflare/containers": "^0.0.28",

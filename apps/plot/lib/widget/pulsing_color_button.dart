@@ -43,7 +43,7 @@ class _PulsingColorButtonState extends State<PulsingColorButton>
 
   @override
   Widget build(BuildContext context) {
-    final mutedColor = context.colour.muted.withOpacity(0.4);
+    final mutedColor = context.colour.muted.withValues(alpha: 0.4);
 
     return AnimatedBuilder(
       animation: _animation,

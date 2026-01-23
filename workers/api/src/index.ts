@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import { PostHog } from "posthog-node";
 
 import account from "./app/account";
+import invitation from "./app/invitation";
+import share from "./app/share";
 import twists from "./app/twists";
 // Import app routes and middleware
 import { authMiddleware as appAuthMiddleware } from "./app/auth";
@@ -126,6 +128,8 @@ appSection.use(appCorsMiddleware);
 appSection.use("*", appAuthMiddleware);
 appSection.use("*", postHogIdentifyMiddleware);
 appSection.route("/", account);
+appSection.route("/", invitation);
+appSection.route("/", share);
 appSection.route("/", twists);
 appSection.route("/", authRoutes);
 appSection.route("/", callbacks);
