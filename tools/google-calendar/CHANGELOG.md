@@ -1,5 +1,12 @@
 # @plotday/tool-google-calendar
 
+## 0.10.1
+
+### Fixed
+
+- Skip Google Calendar sync if one already in progress ([`2b10e23`](https://github.com/plotday/plot/commit/2b10e23a0f13aff6039d79e50666641c7caae10c))
+- Limit size of batches ([`7e21de7`](https://github.com/plotday/plot/commit/7e21de7f5eb153e206fa7069bef60cbc25edc0d3))
+
 ## 0.10.0
 
 ### Changed
