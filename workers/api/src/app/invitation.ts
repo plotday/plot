@@ -4,6 +4,7 @@ import { type EmailType, render } from "@plotday/email";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Hono } from "hono";
 
+import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
 import {
   createFreeSubscription,
@@ -22,7 +23,7 @@ interface SendInvitationParams {
   contactId: string;
   priorityId: string;
   inviterUserId: string;
-  resendApiKey: string;
+  resendApiKey?: string; // Optional, only needed in production
 }
 
 interface SendInvitationResult {
@@ -108,33 +109,28 @@ export async function sendInvitation(
 
   // 5. Render and send email via Resend
   const inviteUrl = `https://plot.day/join?invite=${token}`;
-  const { html, text } = render("priority-invitation" as EmailType, {
+  const { html, text } = await render("priority-invitation" as EmailType, {
     inviterName,
     priorityName,
     inviteUrl,
     recipientName: contact.name || undefined,
   });
 
-  const emailResponse = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const emailResult = await sendEmail(
+    {
       from: "Plot <info@updates.plot.day>",
-      reply_to: "Plot <team@plot.day>",
       to: [contact.email],
       subject: `${inviterName} invited you to collaborate on Plot`,
       html,
       text,
-    }),
-  });
+      replyTo: "Plot <team@plot.day>",
+    },
+    resendApiKey
+  );
 
-  if (!emailResponse.ok) {
-    const errorBody = await emailResponse.text();
-    console.error("Failed to send invitation email:", errorBody);
-    return { success: false, error: "email_send_failed" };
+  if (!emailResult.success) {
+    console.error("Failed to send invitation email:", emailResult.error);
+    return { success: false, error: emailResult.error || "email_send_failed" };
   }
 
   // 6. Update sent_at timestamp (for existing tokens)

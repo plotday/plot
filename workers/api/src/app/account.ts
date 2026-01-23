@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
+import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
 import {
   createFreeSubscription,
@@ -467,29 +468,23 @@ account.delete("/", async (c) => {
     }
 
     // Step 5: Send notification email to team@plot.day
-    try {
-      await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${c.env.RESEND_API_KEY}`,
-        },
-        body: JSON.stringify({
-          from: "Plot <info@updates.plot.day>",
-          to: ["team@plot.day"],
-          subject: "Account Deletion Request",
-          html: `
-            <h2>Account Deletion Request</h2>
-            <p>A user has requested account deletion:</p>
-            <ul>
-              <li><strong>User ID:</strong> ${user.id}</li>
-              <li><strong>Email:</strong> ${user.email}</li>
-              <li><strong>Deletion Requested:</strong> ${new Date().toISOString()}</li>
-              <li><strong>Permanent Deletion Scheduled:</strong> ${bannedUntil.toISOString()}</li>
-            </ul>
-            <p>The account has been deactivated. Please complete manual data deletion within 14 days.</p>
-          `,
-          text: `
+    const emailResult = await sendEmail(
+      {
+        from: "Plot <info@updates.plot.day>",
+        to: ["team@plot.day"],
+        subject: "Account Deletion Request",
+        html: `
+          <h2>Account Deletion Request</h2>
+          <p>A user has requested account deletion:</p>
+          <ul>
+            <li><strong>User ID:</strong> ${user.id}</li>
+            <li><strong>Email:</strong> ${user.email}</li>
+            <li><strong>Deletion Requested:</strong> ${new Date().toISOString()}</li>
+            <li><strong>Permanent Deletion Scheduled:</strong> ${bannedUntil.toISOString()}</li>
+          </ul>
+          <p>The account has been deactivated. Please complete manual data deletion within 14 days.</p>
+        `,
+        text: `
 Account Deletion Request
 
 A user has requested account deletion:
@@ -499,15 +494,19 @@ A user has requested account deletion:
 - Permanent Deletion Scheduled: ${bannedUntil.toISOString()}
 
 The account has been deactivated. Please complete manual data deletion within 14 days.
-          `,
-        }),
-      });
-    } catch (emailError) {
+        `,
+      },
+      c.env.RESEND_API_KEY
+    );
+
+    if (!emailResult.success) {
       const context15 = extractRequestContext(c);
       const logger15 = createLogger(context15);
-      logger15.error("Failed to send notification email", emailError as Error, {
-        user_id: user.id,
-      });
+      logger15.error(
+        "Failed to send notification email",
+        new Error(emailResult.error || "Unknown email error"),
+        { user_id: user.id }
+      );
       // Don't fail the request if email fails
     }
 

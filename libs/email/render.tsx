@@ -17,7 +17,7 @@ type EmailProps = {
   "priority-invitation": PriorityInvitationProps;
 };
 
-export const render = <T extends EmailType>(
+export const render = async <T extends EmailType>(
   type: T,
   ...args: EmailProps[T] extends undefined ? [] : [EmailProps[T]]
 ) => {
@@ -34,10 +34,10 @@ export const render = <T extends EmailType>(
       throw new Error(`Unknown email type: ${type}`);
   }
   return {
-    html: reactEmailRender(<Component {...(props as any)} />, {
+    html: await reactEmailRender(<Component {...(props as any)} />, {
       pretty: true,
     }),
-    text: reactEmailRender(<Component {...(props as any)} />, {
+    text: await reactEmailRender(<Component {...(props as any)} />, {
       plainText: true,
     }),
   };

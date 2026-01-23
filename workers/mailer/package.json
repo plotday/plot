@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@plotday/email": "workspace:^",
-    "posthog-node": "^5.18.1"
+    "posthog-node": "^5.18.1",
+    "worker-mailer": "^1.2.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

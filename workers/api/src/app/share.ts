@@ -162,7 +162,6 @@ share.post("/priority/:id/share", async (c) => {
             priorityId,
             inviterUserId: user.id,
             resendApiKey: c.env.RESEND_API_KEY,
-            isDevelopment,
           })
         )
       )
