@@ -9,6 +9,7 @@ import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/router.dart' show EmailSignInRoute;
+import 'package:plot/page/loading.dart';
 import 'logging.dart';
 
 @RoutePage()
@@ -23,9 +24,14 @@ class SignInPage extends StatefulWidget {
 
 class _SignInPageState extends State<SignInPage> {
   String? _errorMessage;
+  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const LoadingPage(message: 'Signing in...');
+    }
+
     return Scaffold(
       center: true,
       body: ConstrainedBox(
@@ -59,6 +65,7 @@ class _SignInPageState extends State<SignInPage> {
                   if (mounted) {
                     setState(() {
                       _errorMessage = null;
+                      _isLoading = true;
                     });
                   }
 
@@ -81,6 +88,7 @@ class _SignInPageState extends State<SignInPage> {
                     if (!mounted) return;
                     setState(() {
                       _errorMessage = e.message;
+                      _isLoading = false;
                     });
                   }
                 },
@@ -100,6 +108,7 @@ class _SignInPageState extends State<SignInPage> {
                   if (mounted) {
                     setState(() {
                       _errorMessage = null;
+                      _isLoading = true;
                     });
                   }
 
@@ -122,6 +131,7 @@ class _SignInPageState extends State<SignInPage> {
                     if (!mounted) return;
                     setState(() {
                       _errorMessage = e.message;
+                      _isLoading = false;
                     });
                   }
                 },
