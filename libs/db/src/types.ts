@@ -3127,6 +3127,7 @@ export type Database = {
       }
     }
     Functions: {
+      activate_invited_user: { Args: { p_user_id: string }; Returns: Json }
       actor:
         | {
             Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
