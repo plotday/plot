@@ -175,7 +175,6 @@ export interface GeneratedPriority {
   created_by: string; // UUID
   title: string;
   path: string; // ltree path
-  root: boolean;
   archived_at: string | null; // ISO timestamp
 }
 

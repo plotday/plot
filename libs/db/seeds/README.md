@@ -5,10 +5,6 @@ Generate SQL seed data from YAML definitions for screenshots and testing.
 ## Quick Start
 
 ```bash
-# Set required environment variables
-export SUPABASE_URL="http://127.0.0.1:54321"
-export SUPABASE_SERVICE_KEY="your-service-role-key"
-
 # Generate SQL to stdout
 pnpm gen-seed libs/db/seeds/screenshot-data.yaml
 

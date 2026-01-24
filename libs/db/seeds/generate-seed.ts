@@ -289,6 +289,13 @@ async function applySQL(
 
     psql.on("close", (code) => {
       if (code === 0) {
+        // Show stderr even on success - it may contain important warnings or errors
+        if (stderr.trim()) {
+          console.error("⚠️  psql output (warnings/errors):");
+          console.error(stderr);
+          console.error("");
+        }
+
         console.error("✓ Seed applied successfully");
         console.error("");
         console.error("Summary:");
@@ -906,7 +913,8 @@ function generateSQL(
   }
 
   // Link all contacts to the user's root priority for visibility
-  const rootPriority = priorities.find((p) => p.root);
+  // Root priorities have paths with no dots (single level path)
+  const rootPriority = priorities.find((p) => !p.path.includes("."));
   if (rootPriority && contacts.length > 0) {
     for (const contact of contacts) {
       priorityContacts.push({
@@ -976,7 +984,7 @@ function generateSQL(
   if (priorities.length > 0) {
     lines.push("-- Priorities");
     lines.push(
-      "INSERT INTO priority (id, created_by, title, path, root, archived_at, created_at, updated_at)"
+      "INSERT INTO priority (id, created_by, title, path, archived_at, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < priorities.length; i++) {
@@ -985,7 +993,7 @@ function generateSQL(
       lines.push(
         `  (${sqlString(p.id)}, ${sqlString(p.created_by)}, ${sqlString(
           p.title
-        )}, ${sqlString(p.path)}, ${p.root}, ${sqlString(
+        )}, ${sqlString(p.path)}, ${sqlString(
           p.archived_at
         )}, NOW(), NOW())${comma}`
       );
@@ -1176,7 +1184,6 @@ function processPriority(
     created_by: userId,
     title: priority.title,
     path,
-    root: priority.root ?? false,
     archived_at: priority.archived_at
       ? parseDateOffset(baseDate, priority.archived_at).toISOString()
       : null,
