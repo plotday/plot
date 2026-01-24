@@ -199,7 +199,7 @@ FButtonStyles buildButtonStyles(
         }),
         iconStyle: FWidgetStateMap({
           WidgetState.disabled: IconThemeData(
-            color: colourScheme.muted,
+            color: colourScheme.muted.withValues(alpha: 0.5),
             size: iconSizes.base,
           ),
           WidgetState.hovered | WidgetState.pressed: IconThemeData(
@@ -213,7 +213,7 @@ FButtonStyles buildButtonStyles(
       iconContentStyle: baseStyles.ghost.iconContentStyle.copyWith(
         iconStyle: FWidgetStateMap({
           WidgetState.disabled: IconThemeData(
-            color: colourScheme.muted,
+            color: colourScheme.muted.withValues(alpha: 0.5),
             size: iconSizes.lg,
           ),
           WidgetState.hovered | WidgetState.pressed: IconThemeData(
