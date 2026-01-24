@@ -152,9 +152,18 @@ class _SignInPageState extends State<SignInPage> {
                   );
                 },
                 style: FButtonStyle.secondary(),
-                prefix: const FaIcon(FontAwesomeIcons.envelope),
+                prefix: FaIcon(
+                  FontAwesomeIcons.envelope,
+                  color: context.theme.colors.foreground,
+                ),
                 mainAxisSize: .min,
-                child: const Text('Continue with email'),
+                child: Text(
+                  'Continue with email',
+                  style: context.theme.typography.base.copyWith(
+                    color: context.theme.colors.foreground,
+                    height: 1,
+                  ),
+                ),
               ),
 
               // Error message
