@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -10,19 +11,30 @@ class GlobalShortcuts extends StatelessWidget {
   final Widget child;
 
   List<StaticCommandGroup> _getCommands(bool signedIn) {
-    // When signed out, only show settings commands
+    // When signed out, only show settings commands (and debug commands in debug mode)
     if (!signedIn) {
-      return [signedOutSettingsCommands];
+      final commands = [signedOutSettingsCommands];
+      if (kDebugMode && debugCommands != null) {
+        commands.add(debugCommands!);
+      }
+      return commands;
     }
 
     // When signed in, show all commands
-    return [
+    final commands = [
       StaticCommandGroup(
         title: 'Priorities',
         commands: [PickCurrentPriority(), NewPriority()],
       ),
       settingsCommands,
     ];
+
+    // Add debug commands in debug mode
+    if (kDebugMode && debugCommands != null) {
+      commands.add(debugCommands!);
+    }
+
+    return commands;
   }
 
   @override

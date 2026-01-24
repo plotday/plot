@@ -9,4 +9,5 @@ export 'note.dart';
 export 'twist.dart';
 export 'provider.dart';
 export 'settings.dart';
+export 'debug.dart';
 export 'package:plot/util/value.dart';

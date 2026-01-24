@@ -18,16 +18,19 @@ class Clock {
   }
 
   Clock._init() {
-    _timer = Timer.periodic(const Duration(seconds: 1), _tick);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) => _tick());
     seconds = _controller.stream.asBroadcastStream();
     minutes = seconds.where((DateTime now) {
       if (now.minute == _lastMinute) return false;
       _lastMinute = now.minute;
       return true;
     }).asBroadcastStream();
+
+    // Register for frozen time changes to trigger immediate updates
+    Time.setOnTimeChanged(_tick);
   }
 
-  void _tick(Timer timer) {
+  void _tick() {
     _controller.sink.add(Time.now());
   }
 
