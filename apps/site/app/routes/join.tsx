@@ -53,14 +53,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     const { data: sessionData } = await supabase.auth.getSession();
     const session = sessionData?.session;
 
-    if (session?.access_token) {
+    if (session?.access_token && session?.refresh_token) {
       // Call the redeem API
       const apiUrl = context.cloudflare.env.API_ROOT;
       try {
         const response = await fetch(`${apiUrl}/app/invitation/redeem`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${session.access_token}`,
+            Authorization: `Bearer ${session.access_token}/${session.refresh_token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ token: inviteToken }),
