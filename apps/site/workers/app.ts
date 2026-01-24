@@ -5,6 +5,7 @@ declare global {
     SUPABASE_URL: string;
     SUPABASE_ANON_KEY: string;
     API_ROOT?: string;
+    APP_ROOT?: string;
   }
 }
 

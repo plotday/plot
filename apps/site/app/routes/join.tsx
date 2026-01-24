@@ -46,6 +46,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   );
 
   const { user } = await getUser(request, context.cloudflare.env);
+  const appRoot: string = context.cloudflare.env.APP_ROOT || "/";
 
   // If user is authenticated and we have a token, redeem it
   if (user && inviteToken) {
@@ -65,17 +66,20 @@ export async function loader({ request, context }: Route.LoaderArgs) {
           body: JSON.stringify({ token: inviteToken }),
         });
 
-        const result = await response.json() as { success: boolean; error?: string };
+        const result = (await response.json()) as {
+          success: boolean;
+          error?: string;
+        };
 
         // Clear the cookie
         headers.append(
           "Set-Cookie",
-          `${INVITE_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+          `${INVITE_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`,
         );
 
         if (result.success) {
           // Redirect to app on success
-          return redirect("/go", { headers });
+          return redirect(appRoot, { headers });
         }
 
         // On failure, show error
@@ -84,12 +88,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
           supabaseAnonKey: context.cloudflare.env.SUPABASE_ANON_KEY,
           authenticated: true,
           redeemError: result.error || "Failed to accept invitation",
+          appRoot,
         };
       } catch (error) {
         // Clear the cookie even on error
         headers.append(
           "Set-Cookie",
-          `${INVITE_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+          `${INVITE_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`,
         );
 
         return {
@@ -97,6 +102,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
           supabaseAnonKey: context.cloudflare.env.SUPABASE_ANON_KEY,
           authenticated: true,
           redeemError: "Failed to connect to server",
+          appRoot,
         };
       }
     }
@@ -104,14 +110,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
   // If authenticated but no token, redirect to app
   if (user && !inviteToken) {
-    return redirect("/go");
+    return redirect(appRoot);
   }
 
   // Not authenticated - store token in cookie and show signin UI
   if (inviteFromUrl) {
     headers.append(
       "Set-Cookie",
-      `${INVITE_COOKIE_NAME}=${encodeURIComponent(inviteFromUrl)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=3600`
+      `${INVITE_COOKIE_NAME}=${encodeURIComponent(inviteFromUrl)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=3600`,
     );
   }
 
@@ -122,6 +128,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       supabaseAnonKey: context.cloudflare.env.SUPABASE_ANON_KEY,
       authenticated: false,
       noToken: true,
+      appRoot,
     };
   }
 
@@ -129,6 +136,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     supabaseUrl: context.cloudflare.env.SUPABASE_URL,
     supabaseAnonKey: context.cloudflare.env.SUPABASE_ANON_KEY,
     authenticated: false,
+    appRoot,
   };
 }
 
@@ -158,18 +166,15 @@ export default function Join({ loaderData }: Route.ComponentProps) {
         <Stack gap="md" align="center">
           <Title order={2}>Invitation Error</Title>
           <Alert color="red" title="Unable to accept invitation">
-            {loaderData.redeemError === "invalid_token" && (
-              "This invitation link is invalid or has already been used."
-            )}
-            {loaderData.redeemError === "contact_linked_to_other_user" && (
-              "This invitation was sent to a different account."
-            )}
+            {loaderData.redeemError === "invalid_token" &&
+              "This invitation link is invalid or has already been used."}
+            {loaderData.redeemError === "contact_linked_to_other_user" &&
+              "This invitation was sent to a different account."}
             {loaderData.redeemError !== "invalid_token" &&
-             loaderData.redeemError !== "contact_linked_to_other_user" && (
-              loaderData.redeemError
-            )}
+              loaderData.redeemError !== "contact_linked_to_other_user" &&
+              loaderData.redeemError}
           </Alert>
-          <Button component="a" href="/go">
+          <Button component="a" href={loaderData.appRoot}>
             Go to Plot
           </Button>
         </Stack>
@@ -272,7 +277,7 @@ export default function Join({ loaderData }: Route.ComponentProps) {
   return (
     <Container size="xs" mt="xl">
       <Stack gap="md">
-        <Title order={2}>Accept Invitation</Title>
+        <Title order={2}>You've been invited to collaborate on Plot</Title>
         <Text c="dimmed">
           Sign in or create an account to accept your invitation and start
           collaborating on Plot.

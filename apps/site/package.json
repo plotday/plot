@@ -5,7 +5,7 @@
   "sideEffects": false,
   "type": "module",
   "config": {
-    "deploy_vars": "API_ROOT SUPABASE_URL SUPABASE_ANON_KEY POSTHOG_API_KEY POSTHOG_PROXY"
+    "deploy_vars": "API_ROOT APP_ROOT SUPABASE_URL SUPABASE_ANON_KEY POSTHOG_API_KEY POSTHOG_PROXY"
   },
   "scripts": {
     "env": "bash ../../scripts/gen-env development > .env",
