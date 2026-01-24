@@ -54,4 +54,53 @@ extension ToastExtension on BuildContext {
       log.warning("Failed to show toast: $message", e, t);
     }
   }
+
+  /// Show a toast notification that appears above all modals and barriers
+  ///
+  /// This uses the Overlay API directly to insert toast entries at the top
+  /// of the overlay stack, ensuring they appear above modal barriers.
+  ///
+  /// Parameters:
+  /// - [message]: The main message to display
+  /// - [title]: Optional title (defaults to message itself)
+  /// - [duration]: Custom duration (defaults to 3s)
+  void showOverlayToast({
+    required String message,
+    String? title,
+    Duration? duration,
+  }) {
+    try {
+      // Get the root overlay
+      final overlay = Overlay.of(this, rootOverlay: true);
+
+      // Create the overlay entry
+      late OverlayEntry entry;
+      entry = OverlayEntry(
+        builder: (context) => Positioned(
+          top: 16,
+          right: 16,
+          child: SafeArea(
+            child: FToast(
+              title: Text(title ?? message),
+              description: title != null ? Text(message) : null,
+            ),
+          ),
+        ),
+      );
+
+      // Insert the entry
+      overlay.insert(entry);
+
+      // Auto-remove after duration
+      Future.delayed(duration ?? const Duration(seconds: 3), () {
+        if (entry.mounted) {
+          entry.remove();
+        }
+      });
+    } catch (e, t) {
+      log.warning("Failed to show overlay toast: $message", e, t);
+      // Fallback to regular toast
+      showToast(message: message, title: title, duration: duration);
+    }
+  }
 }

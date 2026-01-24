@@ -91,11 +91,12 @@ class CommandModal {
     // Handle CommandRefresh - show message, refresh commands, keep modal open
     if (result is CommandRefresh) {
       // Show success message if provided
-      if (result.message != null) {
-        final toastContext = rootContext.mounted ? rootContext : modalContext;
-        if (toastContext.mounted) {
-          toastContext.showToast(title: result.title, message: result.message!);
-        }
+      if (result.message != null && modalContext.mounted) {
+        // Use overlay toast to ensure it appears above modal barriers
+        modalContext.showOverlayToast(
+          title: result.title,
+          message: result.message!,
+        );
       }
 
       // Trigger refresh
@@ -146,9 +147,13 @@ class CommandModal {
           );
           return result;
         } else {
-          // Show success toast in root context (survives modal closure)
-          final toastContext = rootContext.mounted ? rootContext : modalContext;
-          toastContext.showToast(title: result.title, message: result.message);
+          // Show success toast using overlay (survives modal closure and appears above barriers)
+          if (modalContext.mounted) {
+            modalContext.showOverlayToast(
+              title: result.title,
+              message: result.message,
+            );
+          }
         }
       }
 
