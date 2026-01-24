@@ -4,9 +4,6 @@ config:
   userName: "Rebecca Welton"
 
 contacts:
-  - ref: user
-    email: rebecca.welton@afcrichmond.com
-    name: Rebecca Welton
   - ref: keeley
     email: keeley.jones@afcrichmond.com
     name: Keeley Jones
@@ -113,18 +110,15 @@ activities:
           I don't do rescue anymore. I do support.
 
   - type: note
+    author_ref: keeley
     priority_ref: community
     title: "Supporter sentiment - social media summary"
     created: "-2d"
     notes:
-      - created: "-2d 11:00"
+      - author_ref: keeley
+        created: "-2d 11:00"
         content: |
-          **From: Keeley Jones (PR & Marketing)**
-          **Subject: Fan Sentiment Update**
-
-          Becca,
-
-          Social media roundup from the weekend:
+          Becca - social media roundup from the weekend:
 
           **The mood:** Frustrated but not hostile. Fans see the effort, just not the results.
 
@@ -139,14 +133,10 @@ activities:
           **Concern:** If this continues another month, frustration could shift to anger.
 
           Recommend: Visible club engagement. Show we're aware, we're working on it, we believe.
-
-          - Keels
         source:
           type: email
           title: Fan Sentiment Update
           href: mailto:keeley.jones@afcrichmond.com
-        mentions:
-          - keeley
     tags:
       pinned: [user]
 
@@ -189,35 +179,22 @@ activities:
     tags:
       pinned: [user]
     notes:
-      - created: "-1d 14:50"
+      - author_ref: roy
+        created: "-1d 14:50"
         content: |
-          Met with Roy in his office. Direct, as always.
+          Check-in with Rebecca. Team's playing well, creating chances. Just can't finish. Confidence issue, not effort.
 
-          **Me:** "Tell me what you're seeing."
+          Told her: Keep training. Keep supporting. Wait for one to go in, then floodgates open. Panic would make it worse.
 
-          **Roy:** "Team's playing well. Creating chances. Just can't put the fucking ball in the net. Confidence issue, not effort issue."
+          She's not panicking. That's why I can be honest. Just needs to trust the process and not change things because people are nervous.
+      - author_ref: user
+        created: "-1d 14:55"
+        content: |
+          Good conversation with Roy. He's confident it's just a finishing slump, not a deeper problem. Confidence, not effort.
 
-          **Me:** "Solutions?"
-
-          **Roy:** "Keep training. Keep supporting. Wait for one to go in, then the floodgates open. Panic would make it worse."
-
-          **Me:** "I'm not panicking."
-
-          **Roy:** [looked at me] "I know. That's why I can be honest."
-
-          **Me:** "Do you need anything from me?"
-
-          **Roy:** "Just... don't change things because people are nervous. Trust the process. I fucking hate that phrase, but it's true."
-
-          **Me:** "I trust you."
-
-          **Roy:** "Good."
-
-          No drama. No rescue. Just support and trust.
+          I trust him. No drama. No rescue. Just support and trust.
 
           That's the relationship we've built.
-        mentions:
-          - roy
 
   - type: event
     priority_ref: mens_team
@@ -578,27 +555,20 @@ activities:
     title: "Lunch with Keeley - catch up"
     at: "+0d 12:30 / +0d 13:45"
     notes:
-      - created: "+0d 14:00"
+      - author_ref: keeley
+        created: "+0d 14:00"
         content: |
-          Lunch with Keeley. Told her about the women's team proposal.
+          Lunch with Becca. She told me about the women's team proposal - it's brilliant! The fans are already asking about it. The culture's perfect.
 
-          **Keeley:** "Babe! This is brilliant!"
+          Told her: Richmond isn't about playing it safe. It's about belief. Ted fucking Lasso proved that.
 
-          **Me:** "You think it'll work?"
+          I'll help with the PR strategy when we launch. Already have ideas.
+      - author_ref: user
+        created: "+0d 14:05"
+        content: |
+          Good lunch with Keeley. She's excited about the women's team proposal. Says the fans are ready, the culture's right.
 
-          **Keeley:** "Fuck yes it'll work. The fans are already asking about it. The culture's perfect for it. You just need to make the board see it."
-
-          **Me:** "What if they think it's too risky during a rough patch with the men's team?"
-
-          **Keeley:** "Then you remind them that Richmond isn't about playing it safe. It's about belief. Ted fucking Lasso proved that."
-
-          **Me:** [smiled] "You're very good at this."
-
-          **Keeley:** "I know."
-
-          She'll help with the PR strategy when we launch. She already has ideas.
-        mentions:
-          - keeley
+          She's very good at this. She'll help with PR when we launch.
     tags:
       star: [user]
 

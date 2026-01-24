@@ -528,6 +528,11 @@ function validate(
 
       if (!contact.ref) {
         addError(`${path}.ref`, "Missing ref");
+      } else if (contact.ref === "user") {
+        addError(
+          `${path}.ref`,
+          'The ref "user" is reserved and cannot be used for contacts. Remove this contact from the YAML - the user contact is created automatically from config.email.'
+        );
       } else if (contactRefs.has(contact.ref)) {
         addError(`${path}.ref`, `Duplicate ref: ${contact.ref}`);
       } else {
@@ -853,9 +858,6 @@ function generateSQL(
   lines.push("");
   lines.push("BEGIN;");
   lines.push("");
-  lines.push("-- Enable seed mode to allow setting created_at timestamps");
-  lines.push("SET LOCAL plot.seed_mode = 'true';");
-  lines.push("");
   lines.push("-- Cleanup existing data for this user");
   lines.push(`DELETE FROM activity WHERE created_by = ${sqlString(userId)};`);
   lines.push(
@@ -884,6 +886,14 @@ function generateSQL(
   // Process contacts
   if (data.contacts) {
     for (const contact of data.contacts) {
+      // Skip "user" ref - it's reserved for the user's own contact_id from app_metadata
+      if (contact.ref === "user") {
+        console.error(
+          `⚠️  Skipping contact with reserved ref "user" (validation should have caught this)`
+        );
+        continue;
+      }
+
       const id = generateUUID();
       contactIdMap[contact.ref] = id;
       contacts.push({
@@ -1066,7 +1076,7 @@ function generateSQL(
   if (activities.length > 0) {
     lines.push("-- Activities");
     lines.push(
-      'INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, "order", draft, private, title, preview, at, "on", duration, done_at, recurrence_rule, archived_at, created_at, updated_at)'
+      'INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, "order", draft, private, title, preview, at, "on", duration, done_at, recurrence_rule, archived_at, source_created_at, updated_at)'
     );
     lines.push("VALUES");
     for (let i = 0; i < activities.length; i++) {
@@ -1086,7 +1096,7 @@ function generateSQL(
         }, ${sqlString(a.done_at)}, ${sqlString(
           a.recurrence_rule
         )}, ${sqlString(a.archived_at)}, ${sqlString(
-          a.created_at
+          a.source_created_at
         )}, ${sqlString(a.updated_at)})${comma}`
       );
     }
@@ -1116,7 +1126,7 @@ function generateSQL(
   if (notes.length > 0) {
     lines.push("-- Notes");
     lines.push(
-      "INSERT INTO note (id, activity_id, author_id, created_by, draft, private, content, links, mentions, created_at, updated_at)"
+      "INSERT INTO note (id, activity_id, author_id, created_by, draft, private, content, links, mentions, source_created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < notes.length; i++) {
@@ -1129,7 +1139,7 @@ function generateSQL(
           n.content
         )}, ${n.links ? sqlString(n.links) : "NULL"}, ${
           n.mentions ? sqlString(n.mentions) : "NULL"
-        }, ${sqlString(n.created_at)}, ${sqlString(n.updated_at)})${comma}`
+        }, ${sqlString(n.source_created_at)}, ${sqlString(n.updated_at)})${comma}`
       );
     }
     lines.push("");
@@ -1281,7 +1291,7 @@ function processActivity(
     archived_at: activity.archived_at
       ? parseDateOffset(baseDate, activity.archived_at).toISOString()
       : null,
-    created_at: createdAt,
+    source_created_at: createdAt,
     updated_at: createdAt,
   });
 
@@ -1361,7 +1371,7 @@ function processNote(
     content: note.content ?? note.note ?? null,
     links,
     mentions,
-    created_at: createdAt,
+    source_created_at: createdAt,
     updated_at: createdAt,
   });
 

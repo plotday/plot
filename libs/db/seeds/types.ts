@@ -214,7 +214,7 @@ export interface GeneratedActivity {
   done_at: string | null; // ISO timestamp
   recurrence_rule: string | null;
   archived_at: string | null; // ISO timestamp
-  created_at: string; // ISO timestamp
+  source_created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp
 }
 
@@ -235,7 +235,7 @@ export interface GeneratedNote {
   content: string | null;
   links: string | null; // JSONB
   mentions: string | null; // Array literal
-  created_at: string; // ISO timestamp
+  source_created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp
 }
 

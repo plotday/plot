@@ -4,9 +4,6 @@ config:
   userName: "Carmen Berzatto"
 
 contacts:
-  - ref: user
-    email: carmy@thebearchicago.com
-    name: Carmen Berzatto
   - ref: sydney
     email: sydney@thebearchicago.com
     name: Sydney Adamu
@@ -98,59 +95,57 @@ activities:
           - marcus
 
   - type: action
+    author_ref: sydney
     priority_ref: menu
     title: "Test vegetarian centerpiece concepts - v1"
-    assignee_ref: user
+    assignee_ref: sydney
     on: "-2d"
     tags:
-      urgent: [user]
+      urgent: [user, sydney]
     notes:
-      - created: "-2d 10:00"
+      - author_ref: sydney
+        created: "-2d 10:00"
         content: |
-          Three concepts to test today:
+          Testing three vegetarian concepts for Carmy today:
 
           **Concept 1: Roasted cauliflower, tahini, za'atar, pickled raisins**
-          - Beautiful. Flavorful. Safe.
-          - Problem: It's... fine. Not exciting. Not Bear-level.
+          - Safe, beautiful, but not exciting enough
 
           **Concept 2: Spring vegetable risotto, pea shoots, parmesan crisp**
-          - Classic technique. Solid execution.
-          - Problem: Every Italian place does risotto. What makes this ours?
+          - Classic but every Italian place does risotto
 
           **Concept 3: Charred cabbage, miso butter, sesame, crispy rice**
-          - Interesting. Different. Sydney's idea.
-          - Problem: Is it too different? Will it read as "vegetarian option" or "this is a dish you'd order anyway"?
+          - This is the one I'm pushing. Bold, different, actually exciting.
 
-          Testing all three. Family meal at 3pm. Need honest feedback, not nice feedback.
-        mentions:
-          - sydney
+          Family meal at 3pm for feedback.
 
   - type: event
     priority_ref: service
     title: "Family meal - dish testing"
     at: "-2d 15:00 / -2d 15:45"
     notes:
-      - created: "-2d 16:00"
+      - author_ref: richie
+        created: "-2d 16:00"
         content: |
-          **Results:**
+          Tried the three vegetarian concepts. Cauliflower was nice. Risotto was fine. Cabbage was... cabbage? I don't get it but Syd seems excited.
+      - author_ref: tina
+        created: "-2d 16:02"
+        content: |
+          Cauliflower was good, safe. Risotto reminded me of my old restaurant - that's not a compliment. Cabbage is bold, interesting.
+      - author_ref: marcus
+        created: "-2d 16:05"
+        content: |
+          Cabbage dish is actually intriguing. Good char, interesting flavors. Takes confidence to put that on a menu.
+      - author_ref: sydney
+        created: "-2d 16:08"
+        content: |
+          The charred cabbage is the one. It's bold, it makes people talk, it's OURS. Carmy wants to test it more but we have time to overthink it into mediocrity.
+      - author_ref: user
+        created: "-2d 16:15"
+        content: |
+          Three dishes tested. Cauliflower safe but boring. Risotto classic but not special. Cabbage bold but risky.
 
-          - Cauliflower: Everyone liked it. No one loved it. Richie said "it's nice." That's a death sentence.
-          - Risotto: Tina said it reminded her of a place she used to work. That's also a death sentence.
-          - Charred cabbage: Divided room. Sydney excited. Marcus intrigued. Richie confused ("it's just cabbage?"). Nat said it was bold.
-
-          Sydney wants to push the cabbage. "This is the one that makes people talk."
-
-          I want to test it more. "We have time to get it right."
-
-          Sydney: "We have time to overthink it into mediocrity."
-
-          She's probably right. I hate that she's probably right.
-        mentions:
-          - sydney
-          - richie
-          - tina
-          - marcus
-          - nat
+          Syd wants to commit to the cabbage now. She's probably right. I hate that she's probably right.
     tags:
       decision: [user, sydney]
 
@@ -183,21 +178,23 @@ activities:
       urgent: [user]
 
   - type: action
+    author_ref: tina
     priority_ref: team
     title: "Order ramps and morels for weekend service"
-    assignee_ref: user
+    assignee_ref: tina
     on: "-2d"
     notes:
-      - created: "-2d 12:00"
+      - author_ref: tina
+        created: "-2d 12:00"
         content: |
-          Need to lock in the ramps before someone else does. Limited window.
+          Locked in the spring ingredients before they sold out:
 
           Ordered:
           - 10 lbs ramps
           - 5 lbs morels
           - Pea shoots and tendrils (ongoing)
 
-          Can work these into specials while we finalize the menu. Good product shouldn't wait for perfect planning.
+          Chef can work these into specials this weekend.
 
   - type: note
     priority_ref: personal
@@ -247,37 +244,39 @@ activities:
     title: "Prep meeting - weekend service"
     at: "-1d 09:30 / -1d 10:15"
     notes:
-      - created: "-1d 10:15"
+      - author_ref: tina
+        created: "-1d 10:15"
         content: |
-          **Kitchen Slack - #prep-meeting notes**
+          **Kitchen Slack - #prep-meeting**
 
-          **Friday/Saturday service (Mar 14-15):**
-          - Full menu (current spring draft)
-          - + Ramp special (Marcus suggesting ramp pasta?)
-          - + Morel toast (confirmed)
-          - Reservations: 87% booked Friday, 92% Saturday
-          - Tina prepping stocks today
-          - Marcus needs oven space 2-4pm for dessert components
-
-          **Sunday:**
-          - Closed (weekly break)
-
-          **Monday:**
-          - Back to testing for menu lockdown
-
-          Richie asked about the vegetarian dish again. "Are we doing the cabbage or what?"
-
-          I said we're close.
-
-          Sydney mouthed "we're doing the cabbage" behind me.
+          Weekend service plan:
+          - Friday/Saturday: Current spring menu + ramp special + morel toast
+          - Reservations looking good (87% Friday, 92% Saturday)
+          - Prepping stocks today for service
         source:
           type: slack_message
           title: "#prep-meeting"
-        mentions:
-          - marcus
-          - tina
-          - richie
-          - sydney
+      - author_ref: marcus
+        created: "-1d 10:18"
+        content: |
+          Need oven space 2-4pm today for dessert components. Also thinking ramp pasta for the special - rich, seasonal, people will love it.
+        source:
+          type: slack_message
+          title: "#prep-meeting"
+      - author_ref: richie
+        created: "-1d 10:20"
+        content: |
+          Are we doing the cabbage or what? Need to know for menu descriptions.
+        source:
+          type: slack_message
+          title: "#prep-meeting"
+      - author_ref: user
+        created: "-1d 10:22"
+        content: |
+          We're close on the cabbage decision. Final call by Monday.
+        source:
+          type: slack_message
+          title: "#prep-meeting"
 
   - type: note
     priority_ref: team
@@ -313,27 +312,20 @@ activities:
     title: "Sydney - menu lockdown conversation"
     at: "-1d 16:00 / -1d 16:28"
     notes:
-      - created: "-1d 16:45"
+      - author_ref: sydney
+        created: "-1d 16:30"
         content: |
-          Met with Syd after service. She's frustrated.
+          Met with Carmy after service. Had to be direct - the cabbage is good, better than good. We tested it twice, team liked it. He wants to keep testing but we're out of time.
 
-          **Syd:** "The cabbage is good. It's better than good. We tested it twice. The team liked it. What are we waiting for?"
+          Told him: We're doing the cabbage. I'm putting it on the prep sheet for Monday. If he wants to change it, he has until Sunday. Otherwise, we're locked.
 
-          **Me:** "I just want to make sure—"
+          He didn't argue. Progress.
+      - author_ref: user
+        created: "-1d 16:45"
+        content: |
+          Syd's right. The cabbage is ready. I'm looking for problems that aren't there. She's putting it on Monday's prep sheet. I have until Sunday to object.
 
-          **Syd:** "Make sure of what? That it's perfect? It doesn't have to be perfect. It has to be good enough to launch, then we make it better."
-
-          **Me:** "What if it's not ready?"
-
-          **Syd:** "What if it is and you just can't see it because you're looking for problems?"
-
-          She's right. I do this. I know I do this.
-
-          **Syd:** "We're doing the cabbage. I'm putting it on the prep sheet for Monday. If you want to change it, you have until Sunday to tell me. Otherwise, we're locked."
-
-          I didn't argue.
-        mentions:
-          - sydney
+          I'm not going to object. She's right. I hate that she's right.
     tags:
       decision: [sydney]
       warning: [user]
@@ -428,24 +420,22 @@ activities:
           **Version one. Good enough. Done.**
 
           That's the mantra. That's what I'm learning to say.
+      - author_ref: user
+        created: "+0d 08:32"
+        content: |
+          Syd - cabbage is locked. You were right.
+      - author_ref: sydney
+        created: "+0d 08:33"
+        content: |
+          Say that again, I want to remember it.
 
-          ---
-
-          **Conversation with Syd (this morning):**
-
-          **Me:** "Cabbage is locked. You were right."
-
-          **Syd:** [smiled] "Say that again, I want to remember it."
-
-          **Me:** "Don't push it."
-
-          **Syd:** "Does this mean we're actually launching the menu on time?"
-
-          **Me:** "Don't push it."
+          Does this mean we're actually launching the menu on time?
+      - author_ref: user
+        created: "+0d 08:34"
+        content: |
+          Don't push it.
 
           But yeah. We're launching on time.
-        mentions:
-          - sydney
       - created: "+0d 08:35"
         content: |
           ---
@@ -467,36 +457,42 @@ activities:
     title: "Team meeting - menu lockdown announcement"
     at: "+0d 10:00 / +0d 10:30"
     notes:
-      - created: "+0d 10:30"
+      - author_ref: user
+        created: "+0d 10:30"
         content: |
           Announced to the team: menu is locked. Launch in 9 days.
 
-          **Reactions:**
-          - Tina: "Finally. Let me start prepping."
-          - Marcus: "Desserts are ready when you are."
-          - Richie: "So we're doing the cabbage? Good. I liked the cabbage."
-          - Nat: "I'll update the website and reservation notes."
-          - Sydney: [quiet smile]
-
-          Walked through the full menu:
+          Full menu:
           - Pea agnolotti
           - Crudo station
           - Morel toast
           - Duck breast
           - Halibut
           - Lamb saddle
-          - Charred cabbage (the new one)
-          - Marcus's desserts (he's keeping them secret until launch)
+          - Charred cabbage
+          - Marcus's desserts
 
-          Everyone knows their stations. Prep schedule starts tomorrow.
-
-          We're doing this.
-        mentions:
-          - tina
-          - marcus
-          - richie
-          - nat
-          - sydney
+          Prep schedule starts tomorrow.
+      - author_ref: tina
+        created: "+0d 10:32"
+        content: |
+          Finally. Let me start prepping. I'll have stocks and bases ready by tomorrow.
+      - author_ref: marcus
+        created: "+0d 10:33"
+        content: |
+          Desserts are ready when you are. Keeping them secret until launch.
+      - author_ref: richie
+        created: "+0d 10:34"
+        content: |
+          So we're doing the cabbage? Good. I liked the cabbage. I'll update the menu descriptions.
+      - author_ref: nat
+        created: "+0d 10:35"
+        content: |
+          I'll update the website and reservation notes today.
+      - author_ref: sydney
+        created: "+0d 10:36"
+        content: |
+          We're doing this. On time. Let's go.
 
   - type: action
     priority_ref: menu
@@ -605,12 +601,14 @@ activities:
       star: [user]
 
   - type: action
+    author_ref: sydney
     priority_ref: menu
     title: "Prep schedule - spring menu rollout"
-    assignee_ref: user
+    assignee_ref: sydney
     on: "+1d"
     notes:
-      - created: "+1d 10:00"
+      - author_ref: sydney
+        created: "+1d 10:00"
         content: |
           **Spring menu launch timeline:**
 
@@ -621,34 +619,30 @@ activities:
 
           **Prep assignments:**
           - Tina: stocks, sauces, base prep
-          - Marcus: desserts (his domain)
-          - Syd: oversight, quality control, my backup brain
-          - Me: final dishes, plating, consistency
+          - Marcus: desserts
+          - Me: oversight, quality control
+          - Carmy: final dishes, plating, consistency
 
-          It's tight. It's doable. We've done tighter.
+          Tight but doable. We're ready.
 
   - type: note
+    author_ref: richie
     priority_ref: service
     title: "Reservation update - launch week"
     created: "+1d"
     notes:
-      - created: "+1d 14:30"
+      - author_ref: richie
+        created: "+1d 14:30"
         content: |
-          **Kitchen Slack - Richie**
-
           Launch week reservations:
           - Thursday (launch): FULL + waitlist
           - Friday: FULL + waitlist
           - Saturday: FULL + waitlist
 
           We're going to be slammed. Good problem to have.
-
-          - R
         source:
           type: slack_message
           title: "#general"
-        mentions:
-          - richie
 
   # Day +2: Execution focus
   - type: event
@@ -750,14 +744,14 @@ activities:
           **14:00+** - Open questions, prep start
 
   - type: note
+    author_ref: nat
     priority_ref: service
     title: "Friends & family service - March 20"
     created: "+3d"
     notes:
-      - created: "+3d 11:00"
+      - author_ref: nat
+        created: "+3d 11:00"
         content: |
-          **Kitchen Slack - Nat**
-
           Friends & family list for Wednesday rehearsal dinner:
           - Jimmy + 3
           - Fak + 2
@@ -766,13 +760,10 @@ activities:
           - Food writers (2 - selected)
 
           ~35 covers. Full menu. This is the dress rehearsal.
-
-          - Nat
         source:
           type: slack_message
           title: "#general"
         mentions:
-          - nat
           - cicero
           - fak
           - michelle
@@ -794,29 +785,25 @@ activities:
           - sydney
 
   - type: note
+    author_ref: nat
     priority_ref: bear
     title: "Spring menu press release"
     created: "+2d"
     notes:
-      - created: "+2d 16:00"
+      - author_ref: nat
+        created: "+2d 16:00"
         content: |
-          **From: Nat**
-
-          Draft press release for spring menu launch. Thoughts?
+          Draft press release for spring menu launch ready for review.
 
           [Link to press draft]
 
           Highlights the seasonal sourcing, the team, the philosophy. Doesn't oversell.
 
-          Let me know if you want changes. Sending to food media tomorrow.
-
-          - Nat
+          Sending to food media tomorrow unless you want changes.
         source:
           type: email
           title: Press Release Draft
           href: mailto:natalie@thebearchicago.com
-        mentions:
-          - nat
 
   - type: event
     priority_ref: team

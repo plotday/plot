@@ -4,9 +4,6 @@ config:
   userName: "Jackson Lamb"
 
 contacts:
-  - ref: user
-    email: jackson.lamb@sloughhouse.gov.uk
-    name: Jackson Lamb
   - ref: catherine
     email: catherine.standish@sloughhouse.gov.uk
     name: Catherine Standish
@@ -79,14 +76,16 @@ activities:
       pinned: [user]
 
   - type: action
+    author_ref: user
     priority_ref: team
     title: "River - check old East German networks"
-    assignee_ref: user
+    assignee_ref: river
     on: "-2d"
     notes:
-      - created: "-2d 10:00"
+      - author_ref: user
+        created: "-2d 10:00"
         content: |
-          Told River to pull old files on defunct GDR networks. Didn't tell him why. Let him think it's busywork.
+          Asked River to pull old files on defunct GDR networks. Didn't tell him why. Let him think it's busywork.
 
           He'll figure it out or he won't. Either way, I need someone looking at this who doesn't know they're looking at it.
 
@@ -125,7 +124,27 @@ activities:
           title: NHS Appointments
 
   # Day -1: Pieces moving
+  - type: note
+    author_ref: river
+    priority_ref: team
+    title: "GDR network files - pulled as requested"
+    created: "-1d 09:00"
+    notes:
+      - author_ref: river
+        created: "-1d 09:00"
+        content: |
+          Pulled the old GDR Curtain network files for Jackson. Not sure what he's looking for, but here's what I found:
+
+          - Network supposedly dismantled 2009
+          - East German sleepers, rolled up during reunification
+          - Files closed, everyone accounted for
+
+          One odd detail: Hans Wetzel (Asset CUR-17) listed as "presumed deceased" after a fire in Leipzig, May 2009. No body recovered. Case closed on presumption.
+
+          Academic exercise or is there something here?
+
   - type: action
+    author_ref: user
     priority_ref: containment
     title: "Review Curtain network files - something's off"
     assignee_ref: user
@@ -133,9 +152,10 @@ activities:
     tags:
       urgent: [user]
     notes:
-      - created: "-1d 10:15"
+      - author_ref: user
+        created: "-1d 10:15"
         content: |
-          River pulled the files. Good lad, thorough when he wants to be.
+          River pulled the files. Thorough work.
 
           Curtain network: Supposedly dismantled 2009. East German sleepers, rolled up during reunification cleanup. Everyone accounted for, files closed.
 
@@ -145,8 +165,6 @@ activities:
           3. This is a provocation to see who responds (clever)
 
           Need to know which without letting anyone know I'm looking.
-        mentions:
-          - river
 
   - type: event
     priority_ref: team
@@ -166,18 +184,18 @@ activities:
       pinned: [user]
 
   - type: action
+    author_ref: user
     priority_ref: team
     title: "Roddy - trace old signal patterns"
-    assignee_ref: user
+    assignee_ref: roddy
     on: "-1d"
     notes:
-      - created: "-1d 15:15"
+      - author_ref: user
+        created: "-1d 15:15"
         content: |
-          Told Roddy to look for old East German signal patterns in current intercepts. Told him it's for "historical analysis."
+          Asked Roddy to look for old East German signal patterns in current intercepts. Told him it's for "historical analysis."
 
           He'll spend three days building an algorithm and emerge thinking he's a genius. Which is fine. I need the data, not the credit.
-        mentions:
-          - roddy
 
   - type: note
     priority_ref: admin
@@ -288,7 +306,8 @@ activities:
     title: "Team meeting - vague instructions"
     at: "+0d 10:00 / +0d 10:17"
     notes:
-      - created: "+0d 10:25"
+      - author_ref: user
+        created: "+0d 10:25"
         content: |
           Assignments delivered with appropriate vagueness:
 
@@ -298,15 +317,21 @@ activities:
           - **Shirley**: Standby for potential field work. "Maybe."
           - **Catherine**: Keep the office running. "As always."
 
-          River asked if this was connected to anything real. Told him everything's connected to everything. Technically true.
+          River questioned whether this connects to anything real. Everything's connected to everything. Technically true.
 
-          Louisa gave me a look. She knows. That's fine. She won't say.
-        mentions:
-          - river
-          - louisa
-          - roddy
-          - shirley
-          - catherine
+          Louisa knows something's happening. That's fine. She won't say.
+      - author_ref: river
+        created: "+0d 10:30"
+        content: |
+          Got another vague archival assignment from Jackson. "Historical value." Right.
+
+          Something's up. He wouldn't be pulling old GDR files for no reason.
+      - author_ref: louisa
+        created: "+0d 10:32"
+        content: |
+          Jackson's running something quiet. Pattern analysis, archival research, field prep. He's building toward something without telling us what.
+
+          I'll do what he asked. And I'll keep my eyes open.
 
   - type: action
     priority_ref: containment
@@ -327,25 +352,21 @@ activities:
           - whelan
 
   - type: note
+    author_ref: catherine
     priority_ref: admin
     title: "Expense report - taxi receipts"
     created: "+0d"
     notes:
-      - created: "+0d 12:15"
+      - author_ref: catherine
+        created: "+0d 12:15"
         content: |
-          **From: Catherine Standish**
-
           Jackson, you need to submit last month's expenses. I can't process the office budget until you do.
 
           I know you have taxi receipts somewhere. Please find them.
-
-          - Catherine
         source:
           type: email
           title: Expense Report Reminder
           href: mailto:catherine.standish@sloughhouse.gov.uk
-        mentions:
-          - catherine
 
   - type: event
     priority_ref: personal
@@ -577,19 +598,22 @@ activities:
     title: "Roddy - signal analysis update"
     at: "+2d 16:00 / +2d 16:12"
     notes:
-      - created: "+2d 16:20"
+      - author_ref: roddy
+        created: "+2d 16:05"
         content: |
-          Roddy brought his analysis. Proud as a new father.
+          Jackson, finished the signal pattern analysis. Built an algorithm to scan for old GDR encryption signatures.
 
-          London signals are coming from... Shoreditch area. Consistent with River's address.
+          Results: Found matches in three locations - Leipzig, Berlin, and... Shoreditch, London. Someone's using original one-time pad materials from the 1980s.
 
-          Signal pattern suggests old GDR one-time pad encryption. Someone's using the original materials.
+          Fascinating historical data. Thought you'd find this interesting.
+      - author_ref: user
+        created: "+2d 16:20"
+        content: |
+          Roddy's analysis confirms it. London signals from Shoreditch area. Consistent with River's safehouse address.
 
-          Told Roddy it's "fascinating historical data." He beamed.
+          Someone's using the original GDR materials. Not a recreation. The actual one-time pads.
 
           Everything's coming together. Now we just need to know who's in the safehouse and what they want.
-        mentions:
-          - roddy
 
   - type: note
     priority_ref: containment

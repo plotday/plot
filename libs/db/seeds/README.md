@@ -92,10 +92,10 @@ activities:
   - title: A task
     priority_ref: my-project # References the priority above
     author_ref: alice # References a contact
-    assignee_ref: bob
+    assignee_ref: user # Assign to the user
 ```
 
-Special ref: `user` always refers to the user specified in `config.email`
+**Reserved ref**: `user` is a special ref that always refers to the user specified in `config.email`. Do NOT define a contact with `ref: user` - the user contact is created automatically from the config.
 
 ### Nested Structures
 

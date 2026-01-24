@@ -4,9 +4,6 @@ config:
   userName: "Kate Wyler"
 
 contacts:
-  - ref: user
-    email: kate.wyler@state.gov
-    name: Kate Wyler
   - ref: hal
     email: hal.wyler@state.gov
     name: Hal Wyler
@@ -120,25 +117,41 @@ activities:
     title: "Stuart - pre-meeting alignment call"
     at: "-2d 14:00 / -2d 14:25"
     notes:
-      - created: "-2d 14:30"
+      - author_ref: stuart
+        created: "-2d 14:05"
         content: |
-          **Signal call with Stuart Hayford (UK Foreign Office)**
-
-          Stuart's on board with the climate proposal but worried about UK Treasury resistance.
-
-          **Stuart:** "They'll want guarantees on ROI. Climate adaptation doesn't have an ROI column."
-
-          **Me:** "Then we give them a different spreadsheet. Infrastructure development. Trade relationships. Strategic positioning in developing markets."
-
-          **Stuart:** "So we lie?"
-
-          **Me:** "We emphasize different truths."
-
-          He laughed. He'll help sell it to Treasury.
-
-          Meeting next week with EU partners. Stuart will pre-position the economic framing with UK delegation.
-        mentions:
-          - stuart
+          Kate - on board with the climate proposal but Treasury will want guarantees on ROI. Climate adaptation doesn't have an ROI column.
+        source:
+          type: signal_call
+          title: "Stuart Hayford - Signal"
+      - author_ref: user
+        created: "-2d 14:10"
+        content: |
+          Then we give them a different spreadsheet. Infrastructure development. Trade relationships. Strategic positioning in developing markets.
+        source:
+          type: signal_call
+          title: "Stuart Hayford - Signal"
+      - author_ref: stuart
+        created: "-2d 14:12"
+        content: |
+          So we lie?
+        source:
+          type: signal_call
+          title: "Stuart Hayford - Signal"
+      - author_ref: user
+        created: "-2d 14:13"
+        content: |
+          We emphasize different truths.
+        source:
+          type: signal_call
+          title: "Stuart Hayford - Signal"
+      - author_ref: stuart
+        created: "-2d 14:25"
+        content: |
+          Fair enough. I'll help sell it to Treasury using the economic angle. Meeting next week with EU partners - I'll pre-position the economic framing with UK delegation.
+        source:
+          type: signal_call
+          title: "Stuart Hayford - Signal"
     tags:
       pinned: [user]
 
@@ -521,44 +534,39 @@ activities:
     title: "Eidra - proposal review and feedback"
     at: "+0d 09:00 / +0d 09:45"
     notes:
-      - created: "+0d 10:00"
+      - author_ref: eidra
+        created: "+0d 09:50"
         content: |
-          Walked Eidra through the final draft.
+          Kate walked me through the final draft. She's basically transformed this into something completely different - same fund, same amount, same climate outcomes, but the framing makes it passable.
 
-          **Eidra:** "You've basically transformed this into something completely different."
+          I'll present it at the Paris conference. She'll join via video for questions. She's really good at making dangerous ideas safe.
+      - author_ref: user
+        created: "+0d 10:00"
+        content: |
+          Good meeting with Eidra. She gets it - the framing is everything. Same policy, different story.
 
-          **Me:** "Have I? Same fund. Same amount. Same climate outcomes."
-
-          **Eidra:** "But the framing—"
-
-          **Me:** "Is what makes it passable. The framing is everything."
-
-          **Eidra:** "You're really good at this."
-
-          **Me:** "I'm good at making dangerous ideas safe."
-
-          She'll present it at the Paris conference. I'll join via video for questions. She's better at the optimistic pitch anyway. I'm better at the defensive maneuvering.
-        mentions:
-          - eidra
+          She's better at the optimistic pitch. I'm better at the defensive maneuvering. Good division of labor.
 
   - type: action
+    author_ref: ganon
     priority_ref: active
     title: "Prepare congressional briefing materials"
-    assignee_ref: user
+    assignee_ref: ganon
     on: "+0d"
     tags:
-      urgent: [user]
+      urgent: [user, ganon]
     notes:
-      - created: "+0d 10:30"
+      - author_ref: ganon
+        created: "+0d 10:30"
         content: |
-          Materials needed for tomorrow's briefing:
+          Preparing materials for tomorrow's congressional briefing per Kate's requirements:
           - Executive summary (2 pages max)
           - Budget impact analysis (emphasize guarantees vs direct spending)
           - Economic benefit projections (jobs, exports)
           - Comparison to alternative approaches (show this is the conservative option)
           - FAQ on common objections
 
-          Make it easy to say yes. Make it hard to find a good reason to say no.
+          Making it easy to say yes, hard to say no.
 
   - type: note
     priority_ref: strategic
