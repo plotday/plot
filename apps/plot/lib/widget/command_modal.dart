@@ -32,9 +32,8 @@ class CommandModal {
     final result = await SelectModal.open<Command>(
       context,
       items: (search) async {
-        final commandsList = (search == null || search.isEmpty)
-            ? baseCommandList
-            : await commands.list(search: search);
+        // Always fetch fresh data to ensure refresh works correctly
+        final commandsList = await commands.list(search: search);
         return commandsList
             .map(
               (cg) => SelectGroup<Command>(

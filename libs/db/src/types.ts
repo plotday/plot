@@ -857,6 +857,7 @@ export type Database = {
           contact_id: string
           created_at: string
           id: number
+          invited_by: string | null
           priority_id: string
         }
         Insert: {
@@ -864,6 +865,7 @@ export type Database = {
           contact_id: string
           created_at?: string
           id?: never
+          invited_by?: string | null
           priority_id: string
         }
         Update: {
@@ -871,6 +873,7 @@ export type Database = {
           contact_id?: string
           created_at?: string
           id?: never
+          invited_by?: string | null
           priority_id?: string
         }
         Relationships: [
@@ -932,96 +935,10 @@ export type Database = {
           },
         ]
       }
-      priority_invitation: {
-        Row: {
-          archived_at: string | null
-          contact_id: string
-          created_at: string
-          id: string
-          invited_by: string
-          priority_id: string
-          updated_at: string
-        }
-        Insert: {
-          archived_at?: string | null
-          contact_id: string
-          created_at?: string
-          id?: string
-          invited_by: string
-          priority_id: string
-          updated_at?: string
-        }
-        Update: {
-          archived_at?: string | null
-          contact_id?: string
-          created_at?: string
-          id?: string
-          invited_by?: string
-          priority_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "priority_invitation_contact_id_fkey"
-            columns: ["contact_id"]
-            isOneToOne: false
-            referencedRelation: "contact"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_invitation_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_invitation_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "priority_invitation_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_invitation_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child_twist"
-            referencedColumns: ["priority_child_id"]
-          },
-          {
-            foreignKeyName: "priority_invitation_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_invitation_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_invitation_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-        ]
-      }
       priority_settings: {
         Row: {
           color: number | null
+          order: number | null
           path: unknown
           pomodoro: number | null
           priority_id: string
@@ -1031,6 +948,7 @@ export type Database = {
         }
         Insert: {
           color?: number | null
+          order?: number | null
           path?: unknown
           pomodoro?: number | null
           priority_id: string
@@ -1040,6 +958,7 @@ export type Database = {
         }
         Update: {
           color?: number | null
+          order?: number | null
           path?: unknown
           pomodoro?: number | null
           priority_id?: string
@@ -2154,6 +2073,76 @@ export type Database = {
           },
         ]
       }
+      priority_member: {
+        Row: {
+          archived_at: string | null
+          contact_id: string | null
+          created_at: string | null
+          invited_by: string | null
+          personal: boolean | null
+          priority_id: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_contact_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contact"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+        ]
+      }
       priority_settings_inherited: {
         Row: {
           color: number | null
@@ -3009,6 +2998,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           id: string | null
+          order: number | null
           path: unknown
           pomodoro: number | null
           root: boolean | null

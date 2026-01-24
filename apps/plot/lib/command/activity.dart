@@ -94,6 +94,12 @@ class NewActivity extends Command {
       );
 
   @override
+  bool enabled(BuildContext context) {
+    // Disable when already on the new activity page
+    return context.router.current.name != NewActivityRoute.name;
+  }
+
+  @override
   Future<CommandReturn> run(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
     final priorityId = priorityBloc.state.context.id;
@@ -987,11 +993,13 @@ class ShowActivityCommands extends ShowCommands {
         title: 'More Commands',
         icon: PlotIcon.menu,
         commands: (context) => Future.value(
-          Commands(groups: activityCommandGroups(
-            activity,
-            open: open,
-            isTouchDevice: !hasPhysicalKeyboard(),
-          )),
+          Commands(
+            groups: activityCommandGroups(
+              activity,
+              open: open,
+              isTouchDevice: !hasPhysicalKeyboard(),
+            ),
+          ),
         ),
       );
 }
@@ -1125,7 +1133,11 @@ List<StaticCommandGroup> activityCommandGroups(
       )
       .map((tag) => ToggleActivityTag(activity, tag))
       .toList();
-  final commands = activityCommands(activity, open: open, isTouchDevice: isTouchDevice);
+  final commands = activityCommands(
+    activity,
+    open: open,
+    isTouchDevice: isTouchDevice,
+  );
   final remove = tags
       .where(
         (cmd) => cmd.tag.type != TagType.compute && activity.hasTag(cmd.tag),

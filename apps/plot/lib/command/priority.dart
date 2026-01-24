@@ -507,7 +507,7 @@ class SharePriority extends PriorityCommand {
 }
 
 /// Command to manage sharing for a priority.
-/// Shows three sections: Sharing (users with access), Invited (pending), and Share (available contacts).
+/// Shows three sections: Members (accepted users), Invited (pending invitations), and Share (available contacts).
 class ManagePrioritySharing extends ShowCommands {
   ManagePrioritySharing(this.priority)
     : super(
@@ -529,9 +529,8 @@ class ManagePrioritySharing extends ShowCommands {
       prompt: 'Share with',
       emptyMessage: 'Enter an email address to invite someone else',
       groups: [
-        // Use dynamic groups that re-fetch on each list() call
-        SharingGroup(title: 'Sharing', priority: priority),
-        InvitationGroup(title: 'Invited', priority: priority),
+        AcceptedMembersGroup(title: 'Members', priority: priority),
+        InvitedMembersGroup(title: 'Invited', priority: priority),
         ContactGroup(
           title: 'Share',
           priority: priority,
@@ -570,31 +569,15 @@ class ContactGroup extends CommandGroup {
       );
     }
 
-    // Dynamically fetch exclude set from current users and invitations
-    final priorityUsers = await PriorityUser.getForPriority(priority.id);
-    final invitations = await PriorityInvitation.getForPriority(priority.id);
+    // Dynamically fetch exclude set from priority members (both accepted and invited)
+    final members = await PriorityMember.getForPriority(priority.id);
 
-    // Build exclude set
-    final excludeActorIds = <Uuid>{};
-
-    // Add users with access
-    for (final pu in priorityUsers) {
-      if (pu.userId != Base.userId) {
-        final actor = await Actor.getByUserId(pu.userId);
-        if (actor != null) {
-          excludeActorIds.add(actor.id.toUuid());
-        }
-      }
-    }
-
-    // Add invited users
-    for (final inv in invitations) {
-      excludeActorIds.add(inv.contactId);
-    }
+    // Build exclude set from member contact_ids (already ActorId)
+    final excludeActorIds = members.map((m) => m.contactId).toSet();
 
     // Filter out excluded and self
     final filteredActors = actors
-        .where((a) => !excludeActorIds.contains(a.id.toUuid()) && !a.self)
+        .where((a) => !excludeActorIds.contains(a.id) && !a.self)
         .toList();
 
     final commands = <Command>[
@@ -619,72 +602,76 @@ class ContactGroup extends CommandGroup {
   }
 }
 
-class SharingGroup extends CommandGroup {
-  SharingGroup({required super.title, required this.priority});
+class AcceptedMembersGroup extends CommandGroup {
+  AcceptedMembersGroup({required super.title, required this.priority});
 
   final Priority priority;
 
   @override
   Future<List<Command>> list({String? search}) async {
-    // Re-fetch users on each call
-    final users = await PriorityUser.getForPriority(priority.id);
+    // Get only accepted members
+    final members = await PriorityMember.getAcceptedForPriority(priority.id);
 
-    // Get actors and build commands
     final commands = <Command>[];
-    for (final pu in users) {
-      // Skip current user - can't remove own access
-      if (pu.userId == Base.userId) continue;
+    for (final member in members) {
+      // Get actor by contact_id (no remote lookup needed!)
+      final actor = await Actor.getOne(member.contactId);
 
-      // Get the Actor for this user (via contact.user_id lookup)
-      final actor = await Actor.getByUserId(pu.userId);
-      if (actor != null) {
-        // Filter based on search
-        if (search != null && search.isNotEmpty) {
-          final searchLower = search.toLowerCase();
-          if (!actor.nameOrEmail.toLowerCase().contains(searchLower)) {
-            continue;
-          }
+      // Filter by search
+      if (search != null && search.isNotEmpty) {
+        final searchLower = search.toLowerCase();
+        if (!actor.nameOrEmail.toLowerCase().contains(searchLower)) {
+          continue;
         }
-        commands.add(EditSharingCommand(priority, actor));
       }
+
+      // Show current user with special command
+      if (actor.self) {
+        commands.add(CurrentUserMemberCommand(priority, actor));
+        continue;
+      }
+
+      // All members in this group are accepted
+      commands.add(EditSharingCommand(priority, actor));
     }
 
     return commands;
   }
 }
 
-class InvitationGroup extends CommandGroup {
-  InvitationGroup({required super.title, required this.priority});
+class InvitedMembersGroup extends CommandGroup {
+  InvitedMembersGroup({required super.title, required this.priority});
 
   final Priority priority;
 
   @override
   Future<List<Command>> list({String? search}) async {
-    // Re-fetch invitations on each call
-    final invitations = await PriorityInvitation.getForPriority(priority.id);
+    // Get only invited members
+    final members = await PriorityMember.getInvitedForPriority(priority.id);
 
-    // Get actors and build commands
     final commands = <Command>[];
-    for (final inv in invitations) {
-      try {
-        // Create command using factory method that looks up both actors
-        final command = await EditInvitationCommand.fromInvitation(
-          priority,
-          inv,
-        );
+    for (final member in members) {
+      // Get actor by contact_id (no remote lookup needed!)
+      final actor = await Actor.getOne(member.contactId);
 
-        // Filter based on search
-        if (search != null && search.isNotEmpty) {
-          final searchLower = search.toLowerCase();
-          if (!command.actor.nameOrEmail.toLowerCase().contains(searchLower)) {
-            continue;
-          }
+      // Skip current user - shouldn't be in invited list anyway
+      if (actor.self) continue;
+
+      // Filter by search
+      if (search != null && search.isNotEmpty) {
+        final searchLower = search.toLowerCase();
+        if (!actor.nameOrEmail.toLowerCase().contains(searchLower)) {
+          continue;
         }
-
-        commands.add(command);
-      } catch (e) {
-        // Skip if actor not found
       }
+
+      // Look up inviter name for subtitle
+      String inviterName = 'Unknown';
+      if (member.invitedBy != null) {
+        final inviter = await Actor.getByUserId(member.invitedBy!);
+        inviterName = inviter?.nameOrEmail ?? 'Unknown';
+      }
+      commands.add(EditInvitationCommand(priority, actor, inviterName));
     }
 
     return commands;
@@ -747,8 +734,7 @@ class _RemoveSharingCommand extends Command {
     ).run(context);
     if (result is CommandDone) {
       // Pull sync data so the local database is updated before refresh
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityUser);
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityInvitation);
+      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
 
       return CommandRefresh(message: 'Access removed for ${actor.nameOrEmail}');
     }
@@ -756,9 +742,89 @@ class _RemoveSharingCommand extends Command {
   }
 }
 
+/// Show current user's membership with option to leave priority.
+class CurrentUserMemberCommand extends Command {
+  CurrentUserMemberCommand(this.priority, this.actor)
+    : super(
+        title: 'You',
+        subtitle: actor.email ?? actor.name,
+        icon: PlotIcon.users,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.viewed,
+      );
+
+  final Priority priority;
+  final Actor actor;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Show details with Leave Priority option
+    return ShowCommands(
+      title: 'You',
+      icon: PlotIcon.users,
+      commands: (context) => Future.value(Commands(
+        groups: [
+          StaticCommandGroup(
+            commands: [
+              LeavePriorityCommand(priority),
+            ],
+          ),
+        ],
+      )),
+    ).run(context);
+  }
+}
+
+/// Leave priority command - allows user to remove their own access.
+class LeavePriorityCommand extends Command {
+  LeavePriorityCommand(this.priority)
+    : super(
+        title: 'Leave Priority',
+        subtitle: 'Remove your access to this priority',
+        icon: PlotIcon.signOut,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.deleted,
+      );
+
+  final Priority priority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Check if user is the only member
+    final members = await PriorityMember.getAcceptedForPriority(priority.id);
+    if (members.length <= 1) {
+      return const CommandMessage(
+        'Cannot leave priority - you are the only member',
+        isError: true,
+      );
+    }
+
+    // Get current user's actor
+    final currentUser = await Actor.getOne(Base.actorId);
+
+    if (!context.mounted) {
+      return const CommandSkipped();
+    }
+
+    final result = await SharePriority(
+      priority,
+      currentUser.id.toUuid(),
+      add: false,
+    ).run(context);
+
+    if (result is CommandDone) {
+      // Pull priority_member to reflect removal
+      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
+
+      return CommandRefresh(message: 'Left priority');
+    }
+    return result;
+  }
+}
+
 /// View/manage a pending invitation - opens a form with cancel option.
 class EditInvitationCommand extends ShowForm {
-  EditInvitationCommand._(this.priority, this.actor, String inviterName)
+  EditInvitationCommand(this.priority, this.actor, String inviterName)
     : super(
         title: actor.nameOrEmail,
         subtitle: 'Invited by $inviterName',
@@ -768,23 +834,6 @@ class EditInvitationCommand extends ShowForm {
 
   final Priority priority;
   final Actor actor;
-
-  /// Create an EditInvitationCommand from a PriorityInvitation.
-  /// Looks up both the invited actor and the inviter to display proper names.
-  static Future<EditInvitationCommand> fromInvitation(
-    Priority priority,
-    PriorityInvitationRow invitation,
-  ) async {
-    // Look up the invited actor
-    final actor = await Actor.getOne(ActorId.fromUuid(invitation.contactId));
-
-    // Look up the inviter actor
-    final inviter = await Actor.getByUserId(invitation.invitedBy);
-    final inviterName = inviter?.nameOrEmail ?? 'Unknown';
-
-    // Create and return the command with inviter info
-    return EditInvitationCommand._(priority, actor, inviterName);
-  }
 
   static Future<FormData> _buildForm(Priority priority, Actor actor) async {
     return FormData(
@@ -829,7 +878,7 @@ class _CancelInvitationCommand extends Command {
     ).run(context);
     if (result is CommandDone) {
       // Pull sync data so the local database is updated before refresh
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityInvitation);
+      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
 
       return CommandRefresh(
         message: 'Invitation canceled for ${actor.nameOrEmail}',
@@ -861,9 +910,9 @@ class InviteContact extends Command {
       add: true,
     ).run(context);
     if (result is CommandDone) {
-      // Pull sync data so the local database has the invitation before refresh
+      // Pull sync data so the local database has the member before refresh
       await SyncOrchestrator.instance.pull(SyncOrchestrator.actor);
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityInvitation);
+      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
 
       return CommandRefresh(message: 'Invited ${actor.nameOrEmail}');
     }
@@ -896,10 +945,10 @@ class InviteByEmail extends Command {
           'remove': <String>[],
         },
       );
-      // Pull sync data so the local database has the new contact and invitation
+      // Pull sync data so the local database has the new contact and member
       // before the modal refreshes
       await SyncOrchestrator.instance.pull(SyncOrchestrator.actor);
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityInvitation);
+      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
 
       return CommandRefresh(message: 'Invitation sent to $email');
     } on ApiException catch (e) {

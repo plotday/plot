@@ -113,6 +113,7 @@ CREATE TABLE "public"."priority_settings" (
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     -- All fields added below must be handled in handle_user_priority_upsert
     "top_order" double precision,
+    "order" double precision,
     -- The fields below are inherited by sub-priorities
     -- If path is set, it overrides the sub-path below the root
     "path" ltree,

@@ -1,5 +1,5 @@
--- Function to share a priority with other users/contacts
--- Handles extraction from personal tree when needed
+SET check_function_bodies = OFF;
+
 CREATE OR REPLACE FUNCTION public.share_priority (p_user_id uuid, p_priority_id uuid, p_add_actor_ids uuid[], p_remove_actor_ids uuid[])
     RETURNS jsonb
     LANGUAGE plpgsql
@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION public.share_priority (p_user_id uuid, p_priority_id 
     AS $function$
 DECLARE
     v_priority record;
-    v_root_priority_id uuid;
+    v_root_priority record;
     v_is_under_personal boolean := FALSE;
     v_old_path ltree;
     v_new_path ltree;
@@ -36,15 +36,15 @@ BEGIN
     -- 1. Priority is NOT at top level (nlevel > 1)
     -- 2. Top-level priority is user's personal root
     IF nlevel (v_priority.path) > 1 THEN
-        -- Get the root priority ID
+        -- Get the root priority
         SELECT
-            p.id INTO v_root_priority_id
+            p.* INTO v_root_priority
         FROM
             public.priority p
         WHERE
             p.path = subltree (v_priority.path, 0, 1);
         -- Check if root is user's personal priority
-        IF v_root_priority_id IS NOT NULL THEN
+        IF v_root_priority IS NOT NULL THEN
             SELECT
                 EXISTS (
                     SELECT
@@ -52,14 +52,21 @@ BEGIN
                     FROM
                         public.priority_user pu
                     WHERE
-                        pu.priority_id = v_root_priority_id
+                        pu.priority_id = v_root_priority.id
                         AND pu.user_id = p_user_id
                         AND pu.personal = TRUE
                         AND pu.archived_at IS NULL) INTO v_is_under_personal;
+            RAISE NOTICE 'DEBUG: v_is_under_personal=%', v_is_under_personal;
+        ELSE
+            RAISE NOTICE 'DEBUG: v_root_priority IS NULL';
         END IF;
+    ELSE
+        RAISE NOTICE 'DEBUG: nlevel(v_priority.path) <= 1, path=%', v_priority.path;
     END IF;
     -- Perform extraction if needed
+    RAISE NOTICE 'DEBUG: About to check extraction, v_is_under_personal=%', v_is_under_personal;
     IF v_is_under_personal THEN
+        RAISE NOTICE 'DEBUG: EXTRACTING!';
         -- Generate new top-level path
         v_new_path := public.generate_path (NULL);
         -- Update priority and all descendants
@@ -174,7 +181,29 @@ BEGIN
 END;
 $function$;
 
--- Restrict access: only service_role can call this function
--- This function performs privileged operations bypassing RLS
-REVOKE EXECUTE ON FUNCTION public.share_priority (uuid, uuid, uuid[], uuid[]) FROM PUBLIC;
-
+ALTER VIEW "public"."user_note" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_twist" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_update" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_note_create" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_create" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_note_update" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_expanded" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_settings_inherited" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_tag_change" SET ( security_invoker = TRUE);
+ALTER VIEW public.priority_member SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child_twist" SET ( security_invoker = TRUE);

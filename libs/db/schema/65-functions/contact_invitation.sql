@@ -104,26 +104,19 @@ BEGIN
     -- Delete the invitation token (one-time use)
     DELETE FROM public.contact_invitation
     WHERE contact_id = v_contact_id;
-    -- Accept any pending priority_invitations for this contact
+    -- Accept any pending invitations for this contact (from priority_contact)
     INSERT INTO public.priority_user (user_id, priority_id)
     SELECT
         p_user_id,
-        pi.priority_id
+        pc.priority_id
     FROM
-        public.priority_invitation pi
+        public.priority_contact pc
     WHERE
-        pi.contact_id = v_contact_id
-        AND pi.archived_at IS NULL
+        pc.contact_id = v_contact_id
+        AND pc.archived_at IS NULL
     ON CONFLICT
         DO NOTHING;
-    -- Archive the priority_invitations
-    UPDATE
-        public.priority_invitation
-    SET
-        archived_at = now()
-    WHERE
-        contact_id = v_contact_id
-        AND archived_at IS NULL;
+    -- Note: priority_contact remains - status changes from 'invited' to 'accepted' in priority_member view
     -- Activate the user (creates root priority, settings, sets status to active)
     -- This is idempotent and safe to call multiple times
     PERFORM

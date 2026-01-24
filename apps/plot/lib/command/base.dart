@@ -79,6 +79,10 @@ abstract class Command {
   // state for toggle actions
   final bool? on;
 
+  /// Override to provide custom enabled logic based on context.
+  /// Returns true by default (command is enabled).
+  bool enabled(BuildContext context) => true;
+
   Future<CommandReturn> run(BuildContext context);
 
   /// Override to provide a custom icon widget (e.g., Avatar) instead of IconData.

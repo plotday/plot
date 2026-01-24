@@ -9,6 +9,9 @@ class Priorities extends Table
   TextColumn get path => text().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
   RealColumn get topOrder => real().nullable().map(const OrderConverter())();
+  RealColumn get order => real()
+      .map(const OrderConverter())
+      .clientDefault(() => DateTime.now().millisecondsSinceEpoch.toDouble())();
   IntColumn get pomodoro => integer()
       .nullable()
       .withDefault(const Constant(25 * 60))
@@ -653,6 +656,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
          path: Path.generate(parent: parent.path),
+         order: Order(DateTime.now().millisecondsSinceEpoch.toDouble()),
          root: false,
          unread: false,
        ) {
@@ -705,6 +709,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          archivedAt: row.archivedAt,
          title: row.title,
          topOrder: row.topOrder,
+         order: row.order,
          pomodoro: row.pomodoro,
          color: row.color,
          root: row.root,
@@ -853,6 +858,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Path? path,
     Uuid? createdBy,
     Value<Order?> topOrder = const Value.absent(),
+    Order? order,
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
     bool? root,
@@ -884,6 +890,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         title: title ?? this.title,
         path: path ?? this.path,
         topOrder: topOrder,
+        order: order,
         pomodoro: pomodoro,
         color: color,
       ),
@@ -1045,6 +1052,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // If only one has effective topOrder, that one comes first
     if (thisEffectiveOrder != null && otherEffectiveOrder == null) return -1;
     if (thisEffectiveOrder == null && otherEffectiveOrder != null) return 1;
+
+    // For peers (same parent), sort by order
+    if (parent?.id == other.parent?.id) {
+      final orderCompare = order.value.compareTo(other.order.value);
+      if (orderCompare != 0) return orderCompare;
+    }
 
     // Fall back to createdAt
     return createdAt.compareTo(other.createdAt);

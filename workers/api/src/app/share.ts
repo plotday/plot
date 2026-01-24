@@ -202,51 +202,34 @@ share.post("/priority/:id/share", async (c) => {
     );
   }
 
-  // Fetch users with access (via priority_contact)
-  const { data: users, error: usersError } = await c.var.supabaseAdmin
+  // Fetch all contacts with access (via priority_contact)
+  // This includes both users (contact.user_id is set) and invitations (contact.user_id is null)
+  const { data: contacts, error: contactsError } = await c.var.supabaseAdmin
     .from("priority_contact")
     .select(
       `
+      id,
       contact:contact!inner(id, email, name, user_id)
     `
     )
     .eq("priority_id", priorityId)
     .is("archived_at", null);
 
-  if (usersError) {
+  if (contactsError) {
     return captureServerError(
       c,
-      new Error(usersError.message),
-      "Failed to fetch priority users",
+      new Error(contactsError.message),
+      "Failed to fetch priority contacts",
       {
         priority_id: priorityId,
       }
     );
   }
 
-  // Fetch pending invitations
-  const { data: invitations, error: invitationsError } =
-    await c.var.supabaseAdmin
-      .from("priority_invitation")
-      .select(
-        `
-      id,
-      contact:contact!inner(id, email, name)
-    `
-      )
-      .eq("priority_id", priorityId)
-      .is("archived_at", null);
-
-  if (invitationsError) {
-    return captureServerError(
-      c,
-      new Error(invitationsError.message),
-      "Failed to fetch invitations",
-      {
-        priority_id: priorityId,
-      }
-    );
-  }
+  // Separate contacts into users (has user_id) and invitations (no user_id)
+  const allContacts = contacts ?? [];
+  const users = allContacts.filter((c: any) => c.contact?.user_id != null);
+  const invitations = allContacts.filter((c: any) => c.contact?.user_id == null);
 
   return c.json({
     id: priority.id,
@@ -254,13 +237,13 @@ share.post("/priority/:id/share", async (c) => {
     path: priority.path,
     extracted: shareResult?.extracted ?? false,
     oldPath: shareResult?.oldPath ?? null,
-    users: (users ?? []).map((u: any) => ({
+    users: users.map((u: any) => ({
       id: u.contact?.user_id,
       contactId: u.contact?.id,
       email: u.contact?.email,
       name: u.contact?.name,
     })),
-    invitations: (invitations ?? []).map((i: any) => ({
+    invitations: invitations.map((i: any) => ({
       id: i.id,
       contactId: i.contact?.id,
       email: i.contact?.email,

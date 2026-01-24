@@ -141,7 +141,9 @@ class _ButtonState extends State<Button> {
       }
     }
 
-    final onPress = widget.enabled ? () => context.run(widget.command) : null;
+    final onPress = widget.enabled && widget.command.enabled(context)
+        ? () => context.run(widget.command)
+        : null;
 
     final button = MouseRegion(
       onEnter: widget.enabled ? (_) => setState(() => _isHovered = true) : null,

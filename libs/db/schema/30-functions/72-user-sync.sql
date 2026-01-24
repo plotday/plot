@@ -414,6 +414,7 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_priority_contact ()
 DECLARE
     v_max_updated_at timestamptz;
     v_users_to_notify_actor uuid[] := '{}';
+    v_users_to_notify_member uuid[] := '{}';
     v_user_id uuid;
     v_prev_update_at timestamptz;
     v_prev_sync_at timestamptz;
@@ -457,10 +458,47 @@ BEGIN
             IF (v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at) THEN
                 v_users_to_notify_actor := array_append(v_users_to_notify_actor, v_user_id);
             END IF;
-        END LOOP;
+            -- Handle priority_member entity only for actual invitations (invited_by IS NOT NULL)
+            IF EXISTS (
+                SELECT
+                    1
+                FROM
+                    new_table n2
+                WHERE
+                    n2.invited_by IS NOT NULL) THEN
+            SELECT
+                last_update_at,
+                last_sync_at INTO v_prev_update_at,
+                v_prev_sync_at
+            FROM
+                user_sync
+            WHERE
+                user_id = v_user_id
+                AND entity = 'priority_member';
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'priority_member', v_max_updated_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+            SELECT
+                last_sync_at INTO v_current_sync_at
+            FROM
+                user_sync
+            WHERE
+                user_id = v_user_id
+                AND entity = 'priority_member';
+            IF (v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at) THEN
+                v_users_to_notify_member := array_append(v_users_to_notify_member, v_user_id);
+            END IF;
+        END IF;
+END LOOP;
     IF array_length(v_users_to_notify_actor, 1) > 0 THEN
         PERFORM
             call_user_sync_api (v_users_to_notify_actor);
+    END IF;
+    IF array_length(v_users_to_notify_member, 1) > 0 THEN
+        PERFORM
+            call_user_sync_api (v_users_to_notify_member);
     END IF;
     RETURN NULL;
 END;
@@ -651,8 +689,33 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for priority_invitation changes
-CREATE OR REPLACE FUNCTION public.sync_user_for_priority_invitation ()
+-- Restrict access: only service_role can call these functions
+-- call_user_sync_api calls external API with internal credentials
+REVOKE EXECUTE ON FUNCTION public.call_user_sync_api (uuid[]) FROM PUBLIC;
+
+-- Trigger functions cannot be called via RPC, but REVOKE for defense-in-depth
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_activity () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_note () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_priority () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_session () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_priority_twist () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_activity_read () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_priority_contact () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_activity_tag () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_note_tag () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.sync_user_for_contact () FROM PUBLIC;
+
+-- User sync trigger function for priority_user changes (for priority_member sync)
+CREATE OR REPLACE FUNCTION public.sync_user_for_priority_user ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -686,9 +749,9 @@ BEGIN
                 user_sync
             WHERE
                 user_id = v_user_id
-                AND entity = 'priority_invitation';
+                AND entity = 'priority_member';
             INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority_invitation', v_max_updated_at)
+                VALUES (v_user_id, 'priority_member', v_max_updated_at)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
                     last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
@@ -698,41 +761,7 @@ BEGIN
                 user_sync
             WHERE
                 user_id = v_user_id
-                AND entity = 'priority_invitation';
-            IF (v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at) THEN
-                v_users_to_notify := array_append(v_users_to_notify, v_user_id);
-            END IF;
-        END LOOP;
-    -- Also notify invitees who have user accounts (so they can see their pending invitations)
-    FOR v_user_id IN SELECT DISTINCT
-        c.user_id
-    FROM
-        new_table n
-        JOIN contact c ON c.id = n.contact_id
-    WHERE
-        c.user_id IS NOT NULL
-        AND c.archived_at IS NULL LOOP
-            SELECT
-                last_update_at,
-                last_sync_at INTO v_prev_update_at,
-                v_prev_sync_at
-            FROM
-                user_sync
-            WHERE
-                user_id = v_user_id
-                AND entity = 'priority_invitation';
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority_invitation', v_max_updated_at)
-            ON CONFLICT (user_id, entity)
-                DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
-            SELECT
-                last_sync_at INTO v_current_sync_at
-            FROM
-                user_sync
-            WHERE
-                user_id = v_user_id
-                AND entity = 'priority_invitation';
+                AND entity = 'priority_member';
             IF (v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at) THEN
                 v_users_to_notify := array_append(v_users_to_notify, v_user_id);
             END IF;
@@ -745,29 +774,3 @@ BEGIN
 END;
 $function$;
 
--- Restrict access: only service_role can call these functions
--- call_user_sync_api calls external API with internal credentials
-REVOKE EXECUTE ON FUNCTION public.call_user_sync_api (uuid[]) FROM PUBLIC;
-
--- Trigger functions cannot be called via RPC, but REVOKE for defense-in-depth
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_activity () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_note () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_priority () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_session () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_priority_twist () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_activity_read () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_priority_contact () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_activity_tag () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_note_tag () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_contact () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.sync_user_for_priority_invitation () FROM PUBLIC;

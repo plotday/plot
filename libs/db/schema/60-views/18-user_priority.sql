@@ -23,6 +23,7 @@ SELECT
         user_root.path || p.path
     END AS path,
     settings.top_order,
+    COALESCE(settings."order", extract(epoch FROM p.created_at) * 1000) AS "order",
     inherited_settings.pomodoro,
     inherited_settings.color,
     COALESCE(upu.unread, FALSE) AS unread
@@ -87,13 +88,14 @@ BEGIN
     -- Update priority_settings for user-specific inherited fields
     -- Always update priority_settings.color when color changes (for all users)
     -- Initialize color from priority.color if not provided by user
-    IF ((OLD IS NULL AND (NEW."path" IS NOT NULL OR NEW."top_order" IS NOT NULL OR NEW."pomodoro" IS NOT NULL OR NEW."color" IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."path" IS DISTINCT FROM OLD."path" OR NEW."top_order" IS DISTINCT FROM OLD."top_order" OR NEW."pomodoro" IS DISTINCT FROM OLD."pomodoro" OR NEW."color" IS DISTINCT FROM OLD."color"))) THEN
-        INSERT INTO priority_settings (user_id, priority_id, path, top_order, pomodoro, color)
-            VALUES (COALESCE(auth.uid (), NEW.user_id), _priority_id, NEW.path, NEW.top_order, NEW.pomodoro, COALESCE(NEW.color, _priority_default_color))
+    IF ((OLD IS NULL AND (NEW."path" IS NOT NULL OR NEW."top_order" IS NOT NULL OR NEW."order" IS NOT NULL OR NEW."pomodoro" IS NOT NULL OR NEW."color" IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."path" IS DISTINCT FROM OLD."path" OR NEW."top_order" IS DISTINCT FROM OLD."top_order" OR NEW."order" IS DISTINCT FROM OLD."order" OR NEW."pomodoro" IS DISTINCT FROM OLD."pomodoro" OR NEW."color" IS DISTINCT FROM OLD."color"))) THEN
+        INSERT INTO priority_settings (user_id, priority_id, path, top_order, "order", pomodoro, color)
+            VALUES (COALESCE(auth.uid (), NEW.user_id), _priority_id, NEW.path, NEW.top_order, NEW.order, NEW.pomodoro, COALESCE(NEW.color, _priority_default_color))
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
                 path = COALESCE(NEW.path, priority_settings.path),
                 top_order = COALESCE(NEW.top_order, priority_settings.top_order),
+                "order" = COALESCE(NEW.order, priority_settings.order),
                 pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro),
                 color = COALESCE(NEW.color, priority_settings.color);
     END IF;

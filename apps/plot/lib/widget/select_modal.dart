@@ -183,6 +183,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
   /// Refresh items while preserving search text
   Future<void> _refreshItems() async {
+    // Clear cache to force re-fetch on refresh
+    _emptySearchCache = null;
     _initItems();
   }
 

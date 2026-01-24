@@ -128,15 +128,15 @@ CREATE TRIGGER user_sync_contact_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_contact();
 
--- User sync triggers for priority_invitation table
-CREATE TRIGGER user_sync_priority_invitation_insert
-  AFTER INSERT ON priority_invitation
+-- User sync triggers for priority_user table (for priority_member sync)
+CREATE TRIGGER user_sync_priority_user_insert
+  AFTER INSERT ON priority_user
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_invitation();
+  EXECUTE FUNCTION sync_user_for_priority_user();
 
-CREATE TRIGGER user_sync_priority_invitation_update
-  AFTER UPDATE ON priority_invitation
+CREATE TRIGGER user_sync_priority_user_update
+  AFTER UPDATE ON priority_user
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_invitation();
+  EXECUTE FUNCTION sync_user_for_priority_user();
