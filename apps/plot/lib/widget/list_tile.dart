@@ -142,6 +142,8 @@ class _ListTileState extends State<ListTile> {
   FocusNode? _internalFocusNode;
   Offset? lastMousePosition;
   bool _isHovered = false;
+  Offset? _tapStartPosition;
+  DateTime? _tapStartTime;
 
   FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
 
@@ -241,40 +243,48 @@ class _ListTileState extends State<ListTile> {
                       widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
                   ].whereType<Widget>(),
                 Expanded(
-                  child: GestureDetector(
-                    onTap: !widget.noRun && widget.command != null
-                        ? () {
-                            log.info(
-                              "Running command: ${widget.command?.title}",
-                            );
+                  child: Listener(
+                    onPointerDown: (event) {
+                      _tapStartPosition = event.position;
+                      _tapStartTime = DateTime.now();
+                    },
+                    onPointerUp: (event) {
+                      if (_tapStartPosition != null) {
+                        final delta = event.position - _tapStartPosition!;
+                        final duration = DateTime.now().difference(_tapStartTime!);
+                        // Check if this is a tap (not a drag/swipe)
+                        if (delta.distance < 10 && duration < Duration(milliseconds: 500)) {
+                          if (!widget.noRun && widget.command != null) {
+                            log.info("Running command: ${widget.command?.title}");
                             try {
                               context.run(widget.command!);
                             } catch (e, t) {
-                              log.warning(
-                                "Action ${widget.command?.title} failed",
-                                e,
-                                t,
-                              );
+                              log.warning("Action ${widget.command?.title} failed", e, t);
                             }
                           }
-                        : null,
-                    onLongPress: widget.longPressCommand != null
-                        ? () {
-                            try {
-                              context.run(widget.longPressCommand!);
-                            } catch (e, t) {
-                              log.warning(
-                                "Action ${widget.longPressCommand?.title} failed",
-                                e,
-                                t,
-                              );
+                        }
+                      }
+                      _tapStartPosition = null;
+                      _tapStartTime = null;
+                    },
+                    child: GestureDetector(
+                      onLongPress: widget.longPressCommand != null
+                          ? () {
+                              try {
+                                context.run(widget.longPressCommand!);
+                              } catch (e, t) {
+                                log.warning(
+                                  "Action ${widget.longPressCommand?.title} failed",
+                                  e,
+                                  t,
+                                );
+                              }
                             }
-                          }
-                        : null,
-                    child: Container(
-                      color: Color(0x00000000), // Transparent to capture taps
-                      child: Builder(
-                        builder: (context) {
+                          : null,
+                      child: Container(
+                        color: Color(0x00000000), // Transparent to capture taps
+                        child: Builder(
+                          builder: (context) {
                           // Build the icon widget
                           final iconWidget = () {
                             // If running, show spinner instead of icon
@@ -456,6 +466,7 @@ class _ListTileState extends State<ListTile> {
                             ],
                           );
                         },
+                        ),
                       ),
                     ),
                   ),
