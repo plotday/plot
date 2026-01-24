@@ -1011,14 +1011,51 @@ class Activity extends Equatable implements Comparable<Activity> {
       }
     }
 
+    // Get all user contact IDs for assignee checks
+    // Used for both filtering and sorting
+    final actorId = Base.actorId;
+    final userActorIds = Actor._cache.values
+        .where((actor) => actor.self)
+        .map((actor) => actor.id.toBytes())
+        .toList();
+    if (userActorIds.isEmpty) {
+      userActorIds.add(actorId.toBytes());
+    }
+
     if (range != null) {
       final rangeStart = range.start?.toDateTime();
       final rangeEnd = range.end?.toDateTime();
       Expression<bool> condition = Constant(false);
 
-      // Activity was created within the range OR got a new note within the range
+      // Activities assigned to others - ALWAYS treat like notes (use creation times)
+      // This matches agendaAt logic (lines 1528-1536) where assigned-to-others
+      // return max(sourceCreatedAt, lastNoteSourceCreatedAt)
+      Expression<bool> assignedToOthersInRange =
+          a.assigneeId.isNotNull() & a.assigneeId.isNotIn(userActorIds);
+      if (rangeStart != null) {
+        assignedToOthersInRange =
+            assignedToOthersInRange &
+            (a.sourceCreatedAt.isBiggerOrEqualValue(rangeStart) |
+                (a.lastNoteSourceCreatedAt.isNotNull() &
+                    a.lastNoteSourceCreatedAt.isBiggerOrEqualValue(
+                      rangeStart,
+                    )));
+      }
+      if (rangeEnd != null) {
+        assignedToOthersInRange =
+            assignedToOthersInRange &
+            (a.sourceCreatedAt.isSmallerThanValue(rangeEnd) |
+                (a.lastNoteSourceCreatedAt.isNotNull() &
+                    a.lastNoteSourceCreatedAt.isSmallerThanValue(rangeEnd)));
+      }
+      condition = condition | assignedToOthersInRange;
+
+      // Unscheduled activities assigned to self/unassigned - use creation time
       Expression<bool> createdInRange =
-          a.startOn.isNull() & a.startAt.isNull() & a.doneAt.isNull();
+          a.startOn.isNull() &
+          a.startAt.isNull() &
+          a.doneAt.isNull() &
+          (a.assigneeId.isNull() | a.assigneeId.isIn(userActorIds));
       if (rangeStart != null) {
         createdInRange =
             createdInRange &
@@ -1038,21 +1075,43 @@ class Activity extends Equatable implements Comparable<Activity> {
       condition = condition | createdInRange;
 
       // Activity was completed within the range
+      // For assigned-to-others, also check creation times (matching agendaAt line 1531)
       Expression<bool> completedInRange = a.doneAt.isNotNull();
       if (rangeStart != null) {
+        // For assigned-to-others, check if created after start OR done after start
+        final assignedToOthersCreatedAfterStart =
+            (a.assigneeId.isNotNull() & a.assigneeId.isNotIn(userActorIds)) &
+            (a.sourceCreatedAt.isBiggerOrEqualValue(rangeStart) |
+                (a.lastNoteSourceCreatedAt.isNotNull() &
+                    a.lastNoteSourceCreatedAt.isBiggerOrEqualValue(
+                      rangeStart,
+                    )));
         completedInRange =
-            completedInRange & a.doneAt.isBiggerOrEqualValue(rangeStart);
+            completedInRange &
+            (a.doneAt.isBiggerOrEqualValue(rangeStart) |
+                assignedToOthersCreatedAfterStart);
       }
       if (rangeEnd != null) {
+        // For assigned-to-others, check if created before end OR done before end
+        final assignedToOthersCreatedBeforeEnd =
+            (a.assigneeId.isNotNull() & a.assigneeId.isNotIn(userActorIds)) &
+            (a.sourceCreatedAt.isSmallerThanValue(rangeEnd) |
+                (a.lastNoteSourceCreatedAt.isNotNull() &
+                    a.lastNoteSourceCreatedAt.isSmallerThanValue(rangeEnd)));
         completedInRange =
-            completedInRange & a.doneAt.isSmallerThanValue(rangeEnd);
+            completedInRange &
+            (a.doneAt.isSmallerThanValue(rangeEnd) |
+                assignedToOthersCreatedBeforeEnd);
       }
       condition = condition | completedInRange;
 
       // Activity is scheduled before the end of the range (Date-based)
+      // Exclude activities assigned to others - they use creation time via assignedToOthersInRange
       if (range.start != null || range.end != null) {
         Expression<bool> dateScheduled =
-            a.startOn.isNotNull() & a.doneAt.isNull();
+            a.startOn.isNotNull() &
+            a.doneAt.isNull() &
+            (a.assigneeId.isNull() | a.assigneeId.isIn(userActorIds));
         if (range.start != null) {
           if (strictRange) {
             // For strict range, the activity must start on or after the range start
@@ -1075,8 +1134,11 @@ class Activity extends Equatable implements Comparable<Activity> {
       }
 
       // Activity is scheduled before the end of the range (DateTime-based)
+      // Exclude activities assigned to others - they use creation time via assignedToOthersInRange
       Expression<bool> dateTimeScheduled =
-          a.startAt.isNotNull() & a.doneAt.isNull();
+          a.startAt.isNotNull() &
+          a.doneAt.isNull() &
+          (a.assigneeId.isNull() | a.assigneeId.isIn(userActorIds));
       if (rangeStart != null) {
         if (strictRange) {
           dateTimeScheduled =
@@ -1100,7 +1162,6 @@ class Activity extends Equatable implements Comparable<Activity> {
       query.limit(limit, offset: offset);
     }
 
-    final actorId = Base.actorId;
     final sortExpression = CaseWhenExpression(
       cases: [
         CaseWhen(a.doneAt.isNotNull(), then: a.doneAt),
