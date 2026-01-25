@@ -113,7 +113,7 @@ BEGIN
         public.priority_contact pc
     WHERE
         pc.contact_id = v_contact_id
-        AND pc.archived_at IS NULL
+        AND pc.invited_at IS NOT NULL
     ON CONFLICT
         DO NOTHING;
     -- Note: priority_contact remains - status changes from 'invited' to 'accepted' in priority_member view

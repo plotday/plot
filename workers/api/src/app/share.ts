@@ -213,7 +213,7 @@ share.post("/priority/:id/share", async (c) => {
     `
     )
     .eq("priority_id", priorityId)
-    .is("archived_at", null);
+    .or("invited_by.is.null,invited_at.not.is.null");
 
   if (contactsError) {
     return captureServerError(

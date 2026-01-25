@@ -420,9 +420,9 @@ DECLARE
     v_prev_sync_at timestamptz;
     v_current_sync_at timestamptz;
 BEGIN
-    -- priority_contact doesn't have updated_at, use created_at or archived_at
+    -- Get max updated_at from priority_contact changes
     SELECT
-        MAX(GREATEST (created_at, COALESCE(archived_at, created_at))) INTO v_max_updated_at
+        MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
     -- Get all users with access to the priority (including hierarchical access)
@@ -654,8 +654,7 @@ BEGIN
         JOIN priority_contact pc ON pc.contact_id = n.id
         JOIN user_priority_expanded upe ON upe.priority_id = pc.priority_id
     WHERE
-        upe.archived_at IS NULL
-        AND pc.archived_at IS NULL LOOP
+        upe.archived_at IS NULL LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,

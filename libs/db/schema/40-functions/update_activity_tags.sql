@@ -49,19 +49,17 @@ BEGIN
                         contact
                     WHERE
                         id = p_actor_id) THEN
-                INSERT INTO priority_contact (priority_id, contact_id, archived_at)
+                INSERT INTO priority_contact (priority_id, contact_id)
                 SELECT
                     a.priority_id,
-                    p_actor_id,
-                    NULL
+                    p_actor_id
                 FROM
                     activity a
                 WHERE
                     a.id = p_activity_id
                 ON CONFLICT (priority_id,
                     contact_id)
-                    DO UPDATE SET
-                        archived_at = NULL;
+                    DO NOTHING;
             END IF;
         ELSE
             -- Removing a tag - use update to soft delete existing records

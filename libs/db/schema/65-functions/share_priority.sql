@@ -109,11 +109,11 @@ BEGIN
                 CONTINUE;
             END IF;
             -- Create priority_contact for all contacts (both users and non-users)
-            INSERT INTO public.priority_contact (priority_id, contact_id, invited_by)
-                VALUES (p_priority_id, v_actor_id, p_user_id)
+            INSERT INTO public.priority_contact (priority_id, contact_id, invited_by, invited_at)
+                VALUES (p_priority_id, v_actor_id, p_user_id, now())
             ON CONFLICT (priority_id, contact_id)
                 DO UPDATE SET
-                    archived_at = NULL,
+                    invited_at = now(),
                     invited_by = COALESCE(priority_contact.invited_by, EXCLUDED.invited_by);
             IF v_contact.user_id IS NOT NULL THEN
                 -- Contact is an existing user - also create priority_user
@@ -139,15 +139,15 @@ BEGIN
                 -- Skip invalid actor_ids
                 CONTINUE;
             END IF;
-            -- Archive priority_contact (for all contacts)
+            -- Cancel invitation for priority_contact (set invited_at to NULL)
             UPDATE
                 public.priority_contact
             SET
-                archived_at = now()
+                invited_at = NULL
             WHERE
                 contact_id = v_actor_id
                 AND priority_id = p_priority_id
-                AND archived_at IS NULL;
+                AND invited_at IS NOT NULL;
             IF v_contact.user_id IS NOT NULL THEN
                 -- Archive priority_user for users
                 UPDATE

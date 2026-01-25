@@ -1,7 +1,8 @@
 CREATE TABLE "public"."priority_contact" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "archived_at" timestamp with time zone,
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "invited_at" timestamp with time zone,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "contact_id" uuid NOT NULL REFERENCES public.contact ON DELETE CASCADE,
     "invited_by" uuid REFERENCES auth.users(id) ON DELETE SET NULL,

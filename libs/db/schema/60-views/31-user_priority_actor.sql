@@ -19,7 +19,7 @@ FROM (
         pc.contact_id AS actor_id,
         LEAST (COALESCE(pc.created_at, c.created_at), COALESCE(c.created_at, pc.created_at)) AS created_at,
         GREATEST (COALESCE(pc.created_at, c.updated_at), COALESCE(c.updated_at, pc.created_at)) AS updated_at,
-        GREATEST (COALESCE(pc.archived_at, c.archived_at), COALESCE(c.archived_at, pc.archived_at)) AS archived_at
+        c.archived_at AS archived_at
     FROM
         user_priority_expanded upe
         JOIN priority_contact pc ON pc.priority_id = upe.priority_id
