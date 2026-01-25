@@ -159,8 +159,8 @@ class NewActivityPageState extends State<NewActivityPage> {
             at: hasDateTime
                 ? Value(
                     DateTimeRange(
-                      DateTime.now(),
-                      DateTime.now().add(Duration(hours: 1)),
+                      Time.now(),
+                      Time.now().add(Duration(hours: 1)),
                     ),
                   )
                 : const Value.absent(),

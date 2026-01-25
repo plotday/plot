@@ -36,10 +36,18 @@ class SessionsBase extends BaseTable {
   @override
   Map<String, dynamic> toBase(DataClass row) {
     final json = super.toBase(row);
-    final range = DateTimeRange(
-      DateTime.parse(json['start'] as String),
-      DateTime.parse(json['end'] as String),
-    );
+    var start = DateTime.parse(json['start'] as String);
+    var end = DateTime.parse(json['end'] as String);
+
+    // Handle time travel edge cases where start might be after end
+    // This can happen when frozen time is in the past but session dates
+    // use real time from DateTime.now()
+    if (start.isAfter(end)) {
+      // Use a minimal valid range to prevent sync errors during time travel
+      end = start.add(const Duration(seconds: 1));
+    }
+
+    final range = DateTimeRange(start, end);
     json['at'] = range.toDb();
     json['user_id'] = Base.userId.toString();
     json.remove('start');
@@ -78,7 +86,7 @@ class Session extends SessionRow {
           if (session.priority == priority) {
             session = Session.fromStore(session.copyWith(end: end));
           } else {
-            session = Session.fromStore(session.copyWith(end: DateTime.now()));
+            session = Session.fromStore(session.copyWith(end: Time.now()));
             await session.save();
             session = null;
           }
@@ -178,7 +186,7 @@ class Session extends SessionRow {
     if (expiring) {
       return sessionStream.transform(
         ExpiringStreamTransformer((sessions) {
-          final now = DateTime.now();
+          final now = Time.now();
           final expiry = sessions.isEmpty || sessions.first.at.end.isBefore(now)
               ? null
               : (now +
@@ -211,7 +219,7 @@ class Session extends SessionRow {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         priorityId: priority?.id,
-        start: DateTime.now(),
+        start: Time.now(),
         pomodoro: null,
         pomodoroAt: null,
         precedence: 0,
@@ -265,7 +273,16 @@ class Session extends SessionRow {
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), SessionsBase());
 
-  BoundedDateTimeRange get at => BoundedDateTimeRange(start, end);
+  BoundedDateTimeRange get at {
+    // Handle time travel edge cases where start might be after end
+    // This can happen when frozen time is in the past but session dates
+    // use real time from DateTime.now()
+    if (start.isAfter(end)) {
+      // Return a minimal valid range to prevent crashes during time travel
+      return BoundedDateTimeRange(start, start.add(const Duration(seconds: 1)));
+    }
+    return BoundedDateTimeRange(start, end);
+  }
 
   @override
   bool operator ==(Object other) {

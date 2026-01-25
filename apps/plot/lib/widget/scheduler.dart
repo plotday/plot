@@ -25,8 +25,8 @@ import 'package:plot/widget/time_range_input.dart';
 ///   constraints: BoxConstraints(maxHeight: 500, maxWidth: 750),
 ///   builder: (context) {
 ///     DateTimeRange range = DateTimeRange(
-///       DateTime.now(),
-///       DateTime.now().add(Duration(hours: 1)),
+///       Time.now(),
+///       Time.now().add(Duration(hours: 1)),
 ///     );
 ///
 ///     return Scheduler(
@@ -60,8 +60,8 @@ import 'package:plot/widget/time_range_input.dart';
 ///   void initState() {
 ///     super.initState();
 ///     _range = DateTimeRange(
-///       DateTime.now(),
-///       DateTime.now().add(Duration(hours: 1)),
+///       Time.now(),
+///       Time.now().add(Duration(hours: 1)),
 ///     );
 ///   }
 ///
@@ -137,7 +137,7 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
         : FTime.now();
     _localEndTime = widget.value.end != null
         ? FTime.fromDateTime(widget.value.end!)
-        : FTime.fromDateTime(DateTime.now().add(const Duration(hours: 1)));
+        : FTime.fromDateTime(Time.now().add(const Duration(hours: 1)));
 
     // Add focus listeners to rebuild when focus changes
     _durationHoursFocusNode.addListener(() => setState(() {}));
@@ -220,7 +220,7 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
   void _navigateTimeRange(Duration delta) {
     final startTime = _localStartTime ?? FTime.now();
     final endTime = _localEndTime ?? FTime.now();
-    final currentDate = _localDate ?? DateTime.now();
+    final currentDate = _localDate ?? Time.now();
 
     // Convert to DateTime for easier calculation
     var startDateTime = DateTime(
@@ -245,7 +245,7 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
 
     // Prevent scheduling in the past (unless explicitly allowed)
     if (!widget.allowPastTimes) {
-      final now = DateTime.now();
+      final now = Time.now();
       if (startDateTime.isBefore(now)) {
         final adjustment = now.difference(startDateTime);
         startDateTime = now;
@@ -282,7 +282,7 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
     _updating = true;
     try {
       // Get current values
-      DateTime date = newDate ?? _localDate ?? DateTime.now();
+      DateTime date = newDate ?? _localDate ?? Time.now();
       FTime startTime = newStartTime ?? _localStartTime ?? FTime.now();
 
       // Build start DateTime
@@ -342,7 +342,7 @@ class _SchedulerState extends State<Scheduler> with TickerProviderStateMixin {
 
     DateTime start = range.start!;
     DateTime end = range.end!;
-    final now = DateTime.now();
+    final now = Time.now();
 
     // Prevent past scheduling (unless explicitly allowed)
     if (!widget.allowPastTimes && start.isBefore(now)) {

@@ -1458,7 +1458,7 @@ class Activity extends Equatable implements Comparable<Activity> {
              assigneeId ?? (type == ActivityType.action ? Base.actorId : null),
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
-         sourceCreatedAt: DateTime.now(),
+         sourceCreatedAt: Time.now(),
          priorityId: priority.id,
          draft: draft,
          private: private,
@@ -1615,7 +1615,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       return times.first; // Return the greatest (most recent)
     }
 
-    return (doNow ? DateTime.now() : null) ??
+    return (doNow ? Time.now() : null) ??
         at?.start ??
         on?.start?.toDateTime() ??
         sourceCreatedAt;
@@ -1624,11 +1624,11 @@ class Activity extends Equatable implements Comparable<Activity> {
   bool get doNow =>
       (assigneeId == null || assigneeId?.isCurrentUser() == true) &&
       todo &&
-      at?.includes(DateTime.now()) == true;
+      at?.includes(Time.now()) == true;
   bool get doLater =>
       (assigneeId == null || assigneeId?.isCurrentUser() == true) &&
       todo &&
-      at?.start?.isAfter(DateTime.now()) == true;
+      at?.start?.isAfter(Time.now()) == true;
   bool get doSomeday =>
       type == .action &&
       (on == null && at == null ||
@@ -1701,7 +1701,10 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     // Mark activity as read when marking as done
-    if (doneAt.present && doneAt.value != null && unread == null && this.unread) {
+    if (doneAt.present &&
+        doneAt.value != null &&
+        unread == null &&
+        this.unread) {
       unread = false;
     }
 
@@ -1861,8 +1864,8 @@ class Activity extends Equatable implements Comparable<Activity> {
             at: hasDateTime
                 ? Value(
                     DateTimeRange(
-                      DateTime.now(),
-                      DateTime.now().add(Duration(hours: 1)),
+                      Time.now(),
+                      Time.now().add(Duration(hours: 1)),
                     ),
                   )
                 : const Value(null),
@@ -1874,7 +1877,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         }
       case Tag.done:
         return copyWith(
-          doneAt: Value(done ? null : DateTime.now()),
+          doneAt: Value(done ? null : Time.now()),
           on: const Value(null),
           at: const Value(null),
         );

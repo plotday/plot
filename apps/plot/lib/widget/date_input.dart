@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/util/time.dart';
 
 /// A compound input widget for selecting dates with chevron navigation.
 ///
@@ -62,11 +63,11 @@ class _DateInputState extends State<DateInput> {
   }
 
   void _navigateDate(int days) {
-    final currentDate = widget.value ?? DateTime.now();
+    final currentDate = widget.value ?? Time.now();
     final newDate = currentDate.add(Duration(days: days));
 
     // Prevent navigating to past dates
-    final today = DateTime.now();
+    final today = Time.now();
     final todayStart = DateTime(today.year, today.month, today.day);
     final newDateStart = DateTime(newDate.year, newDate.month, newDate.day);
 
@@ -100,15 +101,12 @@ class _DateInputState extends State<DateInput> {
         // Date field
         Expanded(
           child: FDateField.calendar(
-            control: .lifted(
-              date: widget.value,
-              onChange: widget.onChanged,
-            ),
+            control: .lifted(date: widget.value, onChange: widget.onChanged),
             focusNode: _focusNode,
             format: DateFormat.yMMMEd(),
             textAlign: TextAlign.center,
             prefixBuilder: null,
-            start: DateTime.now(),
+            start: Time.now(),
             style: (style) {
               final textField = style.textFieldStyle.copyWith(
                 contentPadding: EdgeInsets.symmetric(

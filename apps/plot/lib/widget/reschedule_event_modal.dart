@@ -32,8 +32,8 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
     _initialRange =
         widget.activity.at ??
         DateTimeRange(
-          DateTime.now(),
-          DateTime.now().add(const Duration(hours: 1)),
+          Time.now(),
+          Time.now().add(const Duration(hours: 1)),
         );
     _currentRange = _initialRange;
     _selectedPriority = widget.activity.priority;

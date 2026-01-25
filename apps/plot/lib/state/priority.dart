@@ -605,7 +605,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Schedule.watch() uses distinct() to filter duplicate data emissions.
     // However, PriorityState._makeAgenda() performs time-dependent calculations
-    // using DateTime.now() for "now" indicator placement and event transitions.
+    // using Time.now() for "now" indicator placement and event transitions.
     // We need to re-evaluate every minute to ensure these calculations use
     // fresh time values, even when the underlying schedule data hasn't changed.
     _agendaSubscription =
@@ -619,7 +619,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             .transform(
               ExpiringStreamTransformer((schedule) {
                 // Re-evaluate every minute on the minute to update time-dependent UI
-                final now = DateTime.now();
+                final now = Time.now();
                 final expiry = now.add(
                   Duration(
                     seconds: 60 - now.second,

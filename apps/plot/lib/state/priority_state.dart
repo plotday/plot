@@ -175,7 +175,7 @@ class PriorityState extends Equatable {
 
   /// Builds the agenda UI items from schedule data.
   ///
-  /// This method performs time-dependent calculations using DateTime.now():
+  /// This method performs time-dependent calculations using Time.now():
   /// - Places the "now" indicator at the current time or event
   /// - Determines which events are "current" (happening right now)
   /// - Splits activities into past/future relative to current time

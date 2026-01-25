@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:plot/util/time_service.dart';
 
 class StreamListenable<T> {
   final Stream<T> _stream;
@@ -46,7 +47,7 @@ class ExpiringStreamTransformer<T, S> extends StreamTransformerBase<T, S> {
       controller.add(result.value);
 
       if (result.expiry != null) {
-        final duration = result.expiry!.difference(DateTime.now());
+        final duration = result.expiry!.difference(Time.now());
         timer = Timer(duration, () {
           handle(event);
         });
@@ -126,7 +127,7 @@ Stream<T> streamWithExpiryRevaluation<T>({
         if (!isActive) return;
         // Schedule the next evaluation based on the new expiry time received from the stream.
         cancelTimer();
-        final now = DateTime.now();
+        final now = Time.now();
         if (nextExpiry == null) return;
         if (nextExpiry.isAfter(now)) {
           final delay = nextExpiry.difference(now);
@@ -195,7 +196,7 @@ Stream<T> streamWithExpiry<T>(
 
         // Schedule next evaluation based on expiry time
         cancelTimer();
-        final now = DateTime.now();
+        final now = Time.now();
         final nextExpiry = result.expiry;
 
         if (nextExpiry != null && nextExpiry.isAfter(now)) {

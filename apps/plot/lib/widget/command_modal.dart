@@ -27,7 +27,6 @@ class CommandModal {
   Timer? _spinnerDelayTimer;
 
   Future<CommandReturn> run(BuildContext context) async {
-    final baseCommandList = await commands.list();
     if (!context.mounted) return CommandSkipped();
     final result = await SelectModal.open<Command>(
       context,

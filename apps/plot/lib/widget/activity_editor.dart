@@ -274,8 +274,8 @@ class ActivityEditorState extends State<ActivityEditor> {
                         : ScheduleEvent(
                             widget.draft,
                             at: DateTimeRange(
-                              DateTime.now(),
-                              DateTime.now().add(const Duration(hours: 1)),
+                              Time.now(),
+                              Time.now().add(const Duration(hours: 1)),
                             ),
                             onUpdate: (activity) =>
                                 widget.onDraftChanged(activity),
@@ -347,8 +347,8 @@ class ActivityEditorState extends State<ActivityEditor> {
       at: shouldSchedule && hasDateTime
           ? Value(
               DateTimeRange(
-                DateTime.now(),
-                DateTime.now().add(Duration(hours: 1)),
+                Time.now(),
+                Time.now().add(Duration(hours: 1)),
               ),
             )
           : const Value.absent(),
