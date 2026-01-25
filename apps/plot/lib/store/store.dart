@@ -216,6 +216,12 @@ abstract class BaseTable {
     } catch (e) {
       if (Store._isAuthError(e)) {
         await Store._handleAuthError();
+      } else if (Store._isRlsViolation(e)) {
+        // Log RLS violations for debugging without signing out
+        log.warning(
+          "RLS policy violation - this indicates an app bug where code is accessing restricted data",
+          e,
+        );
       }
       rethrow;
     }
@@ -319,6 +325,12 @@ abstract class BaseTable {
     } catch (e) {
       if (Store._isAuthError(e)) {
         await Store._handleAuthError();
+      } else if (Store._isRlsViolation(e)) {
+        // Log RLS violations for debugging without signing out
+        log.warning(
+          "RLS policy violation during write - this indicates an app bug where code is trying to write restricted data",
+          e,
+        );
       }
       rethrow;
     }
@@ -419,24 +431,38 @@ class Store extends _$Store {
     });
   }
 
-  /// Checks if an error is an authentication failure (401 or JWT expired)
+  /// Checks if an error is an authentication failure (JWT expired/invalid only)
   /// Note: 403 (Forbidden) means user is authenticated but not authorized,
-  /// so it should NOT trigger sign-out
+  /// so it should NOT trigger sign-out. Similarly, RLS violations (code 42501)
+  /// indicate authorization failures, not authentication failures.
   static bool _isAuthError(dynamic error) {
     // Check for PostgrestException (from Supabase database operations)
     if (error is PostgrestException) {
+      // Only JWT auth failures trigger sign-out
       return error.code == 'PGRST301' || // JWT expired
-          error.code == 'PGRST302' || // JWT invalid
-          error.details?.toString().toLowerCase().contains('unauthorized') ==
-              true;
+          error.code == 'PGRST302'; // JWT invalid
     }
 
     // Check for generic exceptions with 401 status code (not 403)
     if (error is Exception) {
       final message = error.toString().toLowerCase();
-      return message.contains('401') || message.contains('unauthorized');
+      // 401 = Unauthorized (auth failure), 403 = Forbidden (authorization failure)
+      return message.contains('401') && !message.contains('403');
     }
 
+    return false;
+  }
+
+  /// Checks if an error is a Row-Level Security (RLS) violation
+  /// RLS violations (code 42501) indicate an app bug where the code is trying
+  /// to access data it shouldn't. These should NOT trigger sign-out but should
+  /// be logged so developers can identify and fix the app bug.
+  static bool _isRlsViolation(dynamic error) {
+    if (error is PostgrestException) {
+      // PostgreSQL error code 42501 = insufficient_privilege
+      // This includes RLS policy violations
+      return error.code == '42501';
+    }
     return false;
   }
 
@@ -1282,6 +1308,12 @@ class Store extends _$Store {
         log.warning("Auth error during sync", e, stackTrace);
         await _handleAuthError();
         rethrow; // Stop sync on auth errors
+      } else if (_isRlsViolation(e)) {
+        log.warning(
+          "RLS policy violation during sync - this indicates an app bug",
+          e,
+          stackTrace,
+        );
       }
       // Network errors and other issues are logged but don't stop the app
       log.warning("Error during _syncAll", e, stackTrace);

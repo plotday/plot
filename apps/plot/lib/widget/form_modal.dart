@@ -337,6 +337,13 @@ class FormModalState extends State<_FormModal> {
         return;
       }
 
+      // Handle CommandRefresh by popping this modal with the value
+      // so the parent CommandModal can handle the refresh and show the toast
+      if (result is CommandRefresh) {
+        Modal.pop<CommandReturn>(context, Value(result));
+        return;
+      }
+
       // Capture route info before closing modal to avoid accessing deactivated widget
       if (result is CommandRoute) {
         final routeToNavigate = result.route;
@@ -363,11 +370,7 @@ class FormModalState extends State<_FormModal> {
             ? (e.title, e.description)
             : ('Error', e.toString());
 
-        context.showToast(
-          title: title,
-          message: message,
-          isError: true,
-        );
+        context.showToast(title: title, message: message, isError: true);
       }
     }
   }
@@ -399,6 +402,13 @@ class FormModalState extends State<_FormModal> {
         return const CommandDone();
       }
 
+      // Handle CommandRefresh by popping this modal with the value
+      // so the parent CommandModal can handle the refresh and show the toast
+      if (result is CommandRefresh) {
+        Modal.pop<CommandReturn>(context, Value(result));
+        return result;
+      }
+
       // Capture route info before closing modal to avoid accessing deactivated widget
       if (result is CommandRoute) {
         final routeToNavigate = result.route;
@@ -426,11 +436,7 @@ class FormModalState extends State<_FormModal> {
             ? (e.title, e.description)
             : ('Error', e.toString());
 
-        context.showToast(
-          title: title,
-          message: message,
-          isError: true,
-        );
+        context.showToast(title: title, message: message, isError: true);
       }
     }
     return const CommandDone();
