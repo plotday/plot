@@ -1,17 +1,28 @@
-Make progress on your priorities by organizing all your tasks, documents, messages, and meetings in one focused workspace. When you choose what to focus on, you have the context and clarity to make real progress.
+<b>Stop running notification to notification. Start making real progress.</b>
 
-<b>DESIGNED FOR PRODUCTIVE FOCUS</b>
+Plot is the prioritized workspace that ambitious people and teams use to move work forward. Unified views of tasks, documents, messages, and meetings deliver clarity on what to do next with the context to get it done.
 
-• <b>Unified Timeline</b>: See all your activity and upcoming actions in one place  
-• <b>Flexible Timeboxing</b>: Plan your day without messing with schedules  
-• <b>Zoom In, Zoom Out</b>: Drill into a specific priority, or step back to see the big picture  
-• <b>Cross-Platform Sync</b>: Access your work on iOS, macOS, Android, and web (Windows coming soon)  
-• <b>Works Offline</b>: Your information is always available, even without an internet connection
+<b>PRIORITIZED FOR PROGRESS</b>
 
-<b>... WITH A TWIST</b>
+- <b>Shared Priorities</b>: Invite teammates to collaborate on tasks, meetings, and decisions. Everyone sees what's important and what comes next.
+- <b>Personalized Focus</b>: Each person gets a tailored view highlighting their next action—no digging through noise to find what you should work on.
+- <b>Unified Timeline</b>: All your activity and upcoming actions in one place. Meetings, tasks, notes, and discussions flow together naturally.
+- <b>Context When You Need It</b>: Zoom into a specific priority to see every detail, or step back to view the big picture. Notes and discussions live right alongside the work.
 
-• <b>Plot Twists</b> integrate your favorite apps and services and automate your routines  
-• Use pre-built twists or create your own  
-• Popular twists include calendars, task managers, AI chat, notes, and communication tools
+<b>DESIGNED FOR CLARITY AND MOMENTUM</b>
 
-Plot is designed so you can do your best work even when there's more to do than time to do it.
+- <b>Flexible Timeboxing</b>: Plan your day without rigid scheduling. Block focus time for specific priorities and easily reprioritize as things change.
+- <b>Focused Meetings</b>: See scheduled meetings with all related notes and actions. Turn conversations into progress automatically.
+- <b>Smart Rescheduling</b>: Push actions to when you'll actually handle them, keeping your focus on what matters today.
+- <b>Better Than Busy</b>: When there is far more to do than time to do it, Plot helps you focus on what's most important while ensuring the details don't slip through the cracks.
+
+<b>WORKS WITH EVERYTHING YOU ALREADY USE</b>
+
+- <b>No Migration Required</b>: Connect your existing chat, calendar, tasks, and notes apps. Plot brings them together without forcing your team to switch.
+- <b>Plot Twists</b>: Integrate Slack, Google Calendar, Asana, Notion, and more. Create custom automations and workflows.
+- <b>Cross-Platform</b>: Access your workspace on Mac, Windows, iOS, Android, and web.
+- <b>Work Offline</b>: Your information is always available, even without internet. Work anywhere, sync everywhere.
+
+<b>LESS TALK, MORE ROCK</b>
+
+Teams use Plot to replace endless chat and meetings with focused collaboration that drives real outcomes. When communication lives alongside priorities and action, you spend less time talking and more time doing.
