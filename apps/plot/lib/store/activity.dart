@@ -570,6 +570,8 @@ class Activity extends Equatable implements Comparable<Activity> {
     Priority? context,
     bool? archived = false,
     int offset = 0,
+    List<Tag>? filter,
+    String? search,
   }) {
     if (fromDate == null) {
       return Stream.value(null);
@@ -585,6 +587,8 @@ class Activity extends Equatable implements Comparable<Activity> {
       order: ActivityOrder.sorted,
       limit: 1,
       offset: offset,
+      filter: filter,
+      search: search,
     ).watch().asyncMap((results) async {
       final activities = await _mapResultsToActivities(
         results,
@@ -600,6 +604,8 @@ class Activity extends Equatable implements Comparable<Activity> {
     Priority? context,
     bool? archived = false,
     int offset = 0,
+    List<Tag>? filter,
+    String? search,
   }) {
     if (fromDate == null) {
       return Stream.value(null);
@@ -615,6 +621,8 @@ class Activity extends Equatable implements Comparable<Activity> {
       order: ActivityOrder.reverse,
       limit: 1,
       offset: offset,
+      filter: filter,
+      search: search,
     ).watch().asyncMap((results) async {
       final activities = await _mapResultsToActivities(
         results,

@@ -45,6 +45,8 @@ class Schedule extends Equatable {
           range.start,
           context: context,
           archived: archived,
+          filter: filter,
+          search: search,
         ).map((activity) {
           final date = activity?.agendaAt.toDate();
           log.fine(
@@ -54,7 +56,13 @@ class Schedule extends Equatable {
           );
           return date;
         }),
-        Activity.watchNext(range.end, context: context, archived: archived).map(
+        Activity.watchNext(
+          range.end,
+          context: context,
+          archived: archived,
+          filter: filter,
+          search: search,
+        ).map(
           (activity) {
             final date = activity?.agendaAt.toDate();
             log.fine(
