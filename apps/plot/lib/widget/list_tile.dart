@@ -376,7 +376,6 @@ class _ListTileState extends State<ListTile> {
                                                     spacing: 4,
                                                     children: [
                                                       Flexible(
-                                                        flex: 0,
                                                         child: Text(
                                                           widget.title ??
                                                               widget
