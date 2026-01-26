@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.31.1
+
+### Added
+
+- Activity.kind to indicate the icon that should be used to depict the activity ([`3c8f841`](https://github.com/plotday/plot/commit/3c8f841b5c881fc42e0acadcc1d54859354a7815))
+
 ## 0.31.0
 
 ### Changed
