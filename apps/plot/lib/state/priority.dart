@@ -9,6 +9,7 @@ import 'package:drift/drift.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/async.dart';
 import 'package:plot/util/list.dart';
+import 'package:plot/util/time_service.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/now.dart';
 import 'logging.dart';
@@ -23,6 +24,14 @@ class PriorityBloc extends Cubit<PriorityState> {
       _tagsSubscription = null,
       super(PriorityState(context: priority, activity: activity)) {
     _loadPriority();
+
+    // Register callback to reload schedule when time changes (e.g., via TimeTravel)
+    Time.setOnTimeChanged(() {
+      if (state.range != null) {
+        log.fine('Time changed, reloading schedule to update time-dependent UI');
+        _loadSchedule(state.range!);
+      }
+    });
   }
 
   void toggleShowArchived() {
@@ -141,6 +150,9 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   @override
   Future<void> close() {
+    // Unregister time change callback
+    Time.setOnTimeChanged(null);
+
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }

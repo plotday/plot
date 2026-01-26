@@ -12,15 +12,14 @@ class UserSettings extends Table with SyncableTable {
 
 class UserSettingsBase extends BaseTable {
   UserSettingsBase()
-      : super(
-          table: 'user_settings',
-          name: "user_settings",
-          order: 'updated_at',
-          upsertAsUpdate: true,
-          supportsArchiving: false,
-          cursorColumn: 'user_id',
-          secondarySortColumns: const ['user_id'],
-        );
+    : super(
+        table: 'user_settings',
+        name: "user_settings",
+        order: 'updated_at',
+        supportsArchiving: false,
+        cursorColumn: 'user_id',
+        secondarySortColumns: const ['user_id'],
+      );
 
   @override
   Insertable<UserSettingsRow> fromBase(Map<String, dynamic> json) {
@@ -38,8 +37,7 @@ class UserSettingsBase extends BaseTable {
 class UserSettingsEntity {
   static $UserSettingsTable get table => Store.get.userSettings;
 
-  static Future<bool> push() =>
-      Store.get.push(table, UserSettingsBase());
+  static Future<bool> push() => Store.get.push(table, UserSettingsBase());
 
   static Future<void> pull() async {
     await Store.get.pull(table, UserSettingsBase(), initial: true);
@@ -47,9 +45,10 @@ class UserSettingsEntity {
   }
 
   static Future<UserSettingsRow?> get() async {
-    final result = await (table.select()
-          ..where((tbl) => tbl.userId.equals(Base.userId.toBytes())))
-        .getSingleOrNull();
+    final result =
+        await (table.select()
+              ..where((tbl) => tbl.userId.equals(Base.userId.toBytes())))
+            .getSingleOrNull();
     return result;
   }
 

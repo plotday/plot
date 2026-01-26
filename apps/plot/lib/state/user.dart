@@ -3,9 +3,9 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/util/profile_preferences.dart';
 import 'logging.dart';
 
 part 'user_state.dart';
@@ -48,7 +48,7 @@ class UserBloc extends Cubit<UserState> {
   /// Sets whether password setup is required and updates state accordingly
   Future<void> setPasswordSetupRequired(bool required) async {
     _passwordSetupRequired = required;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     if (required) {
       await prefs.setBool(_kPasswordSetupRequiredKey, true);
     } else {
@@ -76,7 +76,7 @@ class UserBloc extends Cubit<UserState> {
 
   Future<void> _clearPasswordSetupRequired() async {
     _passwordSetupRequired = false;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     await prefs.remove(_kPasswordSetupRequiredKey);
   }
 

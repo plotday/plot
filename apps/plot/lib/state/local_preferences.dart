@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:plot/util/profile_preferences.dart';
 
 part 'local_preferences_state.dart';
 
@@ -56,21 +57,21 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
 
   /// Mark that the user has selected to continue using the web platform
   Future<void> selectWebPlatform() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     await prefs.setBool(_kHasSelectedWebPlatformKey, true);
     emit(state.copyWith(hasSelectedWebPlatform: true));
   }
 
-  /// Gets the platform selection directly from SharedPreferences
+  /// Gets the platform selection directly from ProfilePreferences
   /// This bypasses the Bloc state to avoid race conditions during initialization
   Future<bool> getHasSelectedWebPlatform() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     return prefs.getBool(_kHasSelectedWebPlatformKey) ?? false;
   }
 
-  /// Load state from shared preferences
+  /// Load state from profile preferences
   Future<void> _loadFromPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     final idsString = prefs.getString(_kMentionMruKey);
     final hasSelectedWebPlatform = prefs.getBool(_kHasSelectedWebPlatformKey);
 
@@ -82,9 +83,9 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     ));
   }
 
-  /// Persist state to shared preferences
+  /// Persist state to profile preferences
   Future<void> _persistState() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     await prefs.setString(_kMentionMruKey, state.mentionMruIds.join(','));
   }
 }

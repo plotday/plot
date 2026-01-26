@@ -1,12 +1,12 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/util/profile_preferences.dart';
 import 'header.dart';
 
 class ResizablePanelLayout extends StatefulWidget {
@@ -52,9 +52,9 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     super.dispose();
   }
 
-  /// Load panel dimensions from shared preferences
+  /// Load panel dimensions from profile preferences
   Future<void> _loadFromPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     _leftPanelWidth = prefs.getDouble('layout_left_panel_width') ?? 280.0;
     _middlePanelRatio = prefs.getDouble('layout_middle_panel_ratio') ?? 0.5;
   }
@@ -254,7 +254,7 @@ class _HoverableResizableState extends State<_HoverableResizable> {
     final regions = _controller.regions;
     if (regions.isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     double? newLeftWidth;
     double? newMiddleRatio;
 

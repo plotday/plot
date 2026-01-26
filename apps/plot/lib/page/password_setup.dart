@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/router.dart';
+import 'package:plot/util/profile_preferences.dart';
 import 'logging.dart';
 
 @RoutePage()
@@ -34,7 +34,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
   }
 
   Future<void> _loadResetMode() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     setState(() {
       _isPasswordReset = prefs.getBool('is_password_reset') ?? false;
     });
@@ -101,7 +101,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
       }
 
       // Clear the reset mode flag
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProfilePreferences.instance;
       await prefs.remove('is_password_reset');
 
       if (!mounted) return;
@@ -133,7 +133,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
         : null;
 
     // Clear both flags and navigate back to sign-in page
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     await prefs.remove('is_password_reset');
 
     if (!mounted) return;

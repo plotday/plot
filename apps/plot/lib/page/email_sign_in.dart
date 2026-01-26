@@ -4,12 +4,12 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'package:plot/env.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/util/profile_preferences.dart';
 import 'logging.dart';
 
 @RoutePage()
@@ -215,7 +215,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
       // Store whether this is a password reset (not a new signup)
       // This will be used by the password setup page to show appropriate UI
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProfilePreferences.instance;
       await prefs.setBool('is_password_reset', !isNewUser);
     } on AuthException catch (e) {
       log.warning('Error verifying OTP', e);

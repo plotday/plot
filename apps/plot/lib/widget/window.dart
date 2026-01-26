@@ -5,10 +5,11 @@ import 'package:macos_window_utils/macos/ns_window_button_type.dart';
 import 'package:macos_window_utils/widgets/visual_effect_subview_container/visual_effect_subview_container.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 
 import 'package:plot/style/colors.dart';
+import 'package:plot/util/profile_preferences.dart';
+import 'package:plot/main.dart' show instanceLock;
 import 'logging.dart';
 
 class Window extends StatefulWidget {
@@ -50,7 +51,7 @@ class Window extends StatefulWidget {
 
   static Future<void> _restoreWindowState() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProfilePreferences.instance;
 
       // Get screen info to validate restored position
       final displays = await screenRetriever.getAllDisplays();
@@ -115,7 +116,7 @@ class Window extends StatefulWidget {
 
   static Future<void> _saveWindowState() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = ProfilePreferences.instance;
       final isMaximized = await windowManager.isMaximized();
 
       await prefs.setBool('window_maximized', isMaximized);
@@ -179,6 +180,11 @@ class WindowState extends State<Window> with WindowListener {
   @override
   void onWindowClose() async {
     await Window._saveWindowState();
+
+    // Release instance lock on window close
+    if (instanceLock != null) {
+      await instanceLock!.release();
+    }
   }
 
   @override

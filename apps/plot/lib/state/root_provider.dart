@@ -16,6 +16,7 @@ import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/root_menu_bar.dart';
 import 'package:plot/widget/toast.dart';
+import 'package:plot/main.dart' show setNavigatorKey;
 import 'logging.dart';
 
 class RootProvider extends StatefulWidget {
@@ -31,7 +32,7 @@ class RootProviderState extends State<RootProvider> {
   final UserBloc userBloc = UserBloc();
   final NowBloc nowBloc = NowBloc();
   final PrioritiesBloc prioritiesBloc = PrioritiesBloc();
-  final AppRouter router = AppRouter();
+  late final AppRouter router;
   late final RouterConfig<UrlState> routerConfig;
 
   void Function()? _nowBlocListener;
@@ -41,6 +42,11 @@ class RootProviderState extends State<RootProvider> {
   @override
   void initState() {
     Bloc.observer = BlocLogger();
+
+    // Create router and expose its navigator key globally for deep link handling
+    router = AppRouter();
+    setNavigatorKey(router.navigatorKey);
+
     routerConfig = router.config(
       reevaluateListenable: ReevaluateListenable.stream(userBloc.stream),
     );

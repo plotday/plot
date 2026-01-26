@@ -60,6 +60,7 @@ dependencies:
   device_info_plus: ^12.1.0
   flutter_resizable_container: ^4.2.0
   package_info_plus: ^8.0.0
+  path_provider: ^2.1.5
   macos_window_utils: ^1.9.1
   window_manager: ^0.5.1
   screen_retriever: ^0.2.0

@@ -2,10 +2,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/cli_args.dart';
 import 'package:plot/util/theme_color.dart';
+import 'package:plot/util/profile_preferences.dart';
 
 part 'theme_state.dart';
 
@@ -36,9 +36,9 @@ class ThemeBloc extends Cubit<ThemeState> {
     _persistState();
   }
 
-  /// Load state from shared preferences
+  /// Load state from profile preferences
   Future<void> _loadFromPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     final modeString = prefs.getString('theme_mode') ?? 'system';
     final mode = AppThemeMode.values.firstWhere(
       (m) => m.name == modeString,
@@ -57,9 +57,9 @@ class ThemeBloc extends Cubit<ThemeState> {
     emit(state.copyWith(mode: finalMode, priorityColor: ThemeColor(colorIndex)));
   }
 
-  /// Persist state to shared preferences
+  /// Persist state to profile preferences
   Future<void> _persistState() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     await prefs.setString('theme_mode', state.mode.name);
     await prefs.setInt('priority_color', state.priorityColor.index);
   }

@@ -28,6 +28,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
+import 'package:plot/cli_args.dart';
 import 'enums.dart';
 import 'types.dart';
 import 'logging.dart';
@@ -1457,7 +1458,7 @@ class Store extends _$Store {
   Store._(User user)
     : super(
         driftDatabase(
-          name: 'plot-${user.id}',
+          name: _databaseName(user.id),
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),
             driftWorker: Uri.parse('drift_worker.dart.js'),
@@ -1465,8 +1466,16 @@ class Store extends _$Store {
         ),
       );
 
+  static String _databaseName(String userId) {
+    final profile = CliArgs.profile;
+    if (profile != null) {
+      return 'plot-$userId-$profile';
+    }
+    return 'plot-$userId';
+  }
+
   @override
-  int get schemaVersion => 231;
+  int get schemaVersion => 233;
 
   @override
   MigrationStrategy get migration {

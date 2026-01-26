@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 
 /// Centralized service for parsing and accessing command-line arguments.
@@ -9,6 +10,7 @@ import 'package:logging/logging.dart';
 /// - --dark-mode: Force dark theme
 /// - --light-mode: Force light theme
 /// - --frozen-time=ISO8601: Freeze time for testing
+/// - --profile=NAME: Run in isolated profile with separate database and preferences
 class CliArgs {
   CliArgs._();
 
@@ -21,6 +23,7 @@ class CliArgs {
   static bool _darkMode = false;
   static bool _lightMode = false;
   static DateTime? _frozenTime;
+  static String? _profile;
 
   /// Initializes the CLI argument parser.
   ///
@@ -59,6 +62,18 @@ class CliArgs {
             'Error: $e',
           );
         }
+      } else if (arg.startsWith('--profile=')) {
+        _profile = arg.substring('--profile='.length);
+        // Validate profile name (alphanumeric, dash, underscore only)
+        if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(_profile!)) {
+          _log.warning(
+            'Invalid profile name: "$_profile". '
+            'Must contain only letters, numbers, dashes, and underscores.',
+          );
+          _profile = null;
+        } else {
+          _log.info('Profile: $_profile');
+        }
       }
     }
 
@@ -72,6 +87,12 @@ class CliArgs {
 
     if (_password != null && _user == null) {
       _log.warning('--password specified without --user. Password will be ignored.');
+    }
+
+    // Automatically use "dev" profile for debug builds if no profile specified
+    if (_profile == null && kDebugMode) {
+      _profile = 'dev';
+      _log.info('Debug build detected: Using default profile "dev"');
     }
 
     _initialized = true;
@@ -94,6 +115,9 @@ class CliArgs {
 
   /// Returns the frozen time if --frozen-time argument was provided.
   static DateTime? get frozenTime => _frozenTime;
+
+  /// Returns the profile name if --profile argument was provided.
+  static String? get profile => _profile;
 
   /// Returns true if theme mode was overridden via CLI.
   static bool get hasThemeOverride => _darkMode || _lightMode;

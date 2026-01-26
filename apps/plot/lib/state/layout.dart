@@ -2,7 +2,8 @@ import 'dart:math';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:plot/util/profile_preferences.dart';
 
 part 'layout_state.dart';
 
@@ -83,17 +84,17 @@ class LayoutBloc extends Cubit<LayoutState> {
     _persistState();
   }
 
-  /// Load state from shared preferences
+  /// Load state from profile preferences
   Future<void> _loadFromPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     leftPanelRequested = prefs.getBool('layout_left_panel_visible') ?? true;
     middlePanelRequested = prefs.getBool('layout_middle_panel_visible') ?? true;
     _recalculate();
   }
 
-  /// Persist state to shared preferences
+  /// Persist state to profile preferences
   Future<void> _persistState() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ProfilePreferences.instance;
     await Future.wait([
       prefs.setBool('layout_left_panel_visible', leftPanelRequested),
       prefs.setBool('layout_middle_panel_visible', middlePanelRequested),
