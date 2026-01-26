@@ -34,28 +34,73 @@ priorities:
     title: Everything
     root: true
     children:
-      - ref: containment
-        title: Containment operations
+      - ref: active_ops
+        title: Active operations
         settings:
           color: 1
+        children:
+          - ref: current_cases
+            title: Current cases
+            children:
+              - ref: curtain
+                title: Curtain network
+              - ref: russian
+                title: Russian activity
+          - ref: intelligence
+            title: Intelligence gathering
+          - ref: threat_assess
+            title: Threat assessment
+      - ref: slough_house
+        title: Slough House
+        settings:
+          color: 2
+        children:
+          - ref: team_assignments
+            title: Team assignments
+            children:
+              - ref: river_research
+                title: River - research
+              - ref: louisa_contacts
+                title: Louisa - contacts
+              - ref: roddy_technical
+                title: Roddy - technical
+          - ref: office_ops
+            title: Office operations
+          - ref: catherine_coord
+            title: Catherine coordination
+      - ref: regents_park
+        title: Regent's Park politics
+        settings:
+          color: 5
+        children:
+          - ref: taverner_mgmt
+            title: Taverner management
+          - ref: cover
+            title: Cover & misdirection
       - ref: admin
         title: Administrative necessities
         settings:
           color: 3
-      - ref: team
-        title: Slow Horses
-        settings:
-          color: 2
+        children:
+          - ref: budget_expenses
+            title: Budget & expenses
+          - ref: reports
+            title: Reports & compliance
       - ref: personal
         title: Personal
         settings:
           color: 4
+        children:
+          - ref: medical
+            title: Medical
+          - ref: maintenance
+            title: Maintenance
 
 activities:
   # Day -2: Setting pieces in motion
   - type: note
     kind: messages
-    priority_ref: containment
+    priority_ref: threat_assess
     title: "Weekly threat digest - mostly harmless"
     created: "-2d"
     notes:
@@ -78,7 +123,7 @@ activities:
 
   - type: action
     author_ref: user
-    priority_ref: team
+    priority_ref: river_research
     title: "River - check old East German networks"
     assignee_ref: river
     on: "-2d"
@@ -92,7 +137,7 @@ activities:
 
   - type: event
     kind: phone
-    priority_ref: containment
+    priority_ref: regents_park
     title: "Call: Whelan (Regent's Park)"
     at: "-2d 11:15 / -2d 11:23"
     notes:
@@ -111,7 +156,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: personal
+    priority_ref: medical
     title: "GP surgery - missed call"
     created: "-2d"
     notes:
@@ -130,7 +175,7 @@ activities:
   - type: note
     kind: document
     author_ref: river
-    priority_ref: team
+    priority_ref: river_research
     title: "GDR network files - pulled as requested"
     created: "-1d 09:00"
     notes:
@@ -149,7 +194,7 @@ activities:
 
   - type: action
     author_ref: user
-    priority_ref: containment
+    priority_ref: curtain
     title: "Review Curtain network files - something's off"
     assignee_ref: user
     on: "-1d"
@@ -172,7 +217,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: team
+    priority_ref: louisa_contacts
     title: "Louisa - coffee, downstairs"
     at: "-1d 14:30 / -1d 14:42"
     notes:
@@ -190,7 +235,7 @@ activities:
 
   - type: action
     author_ref: user
-    priority_ref: team
+    priority_ref: roddy_technical
     title: "Roddy - trace old signal patterns"
     assignee_ref: roddy
     on: "-1d"
@@ -204,7 +249,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: admin
+    priority_ref: budget_expenses
     title: "Budget report - due next week"
     created: "-1d"
     notes:
@@ -223,7 +268,7 @@ activities:
 
   - type: event
     kind: phone
-    priority_ref: containment
+    priority_ref: taverner_mgmt
     title: "Taverner - 'courtesy call'"
     at: "-1d 16:45 / -1d 16:52"
     notes:
@@ -244,7 +289,7 @@ activities:
   # Day 0 (Base date): The work gets real
   - type: note
     kind: document
-    priority_ref: containment
+    priority_ref: curtain
     title: "OPERATION CURTAIN CALL - active situation"
     created: "-1d"
     tags:
@@ -311,7 +356,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: team
+    priority_ref: slough_house
     title: "Team meeting - vague instructions"
     at: "+0d 10:00 / +0d 10:17"
     notes:
@@ -343,7 +388,7 @@ activities:
           I'll do what he asked. And I'll keep my eyes open.
 
   - type: action
-    priority_ref: containment
+    priority_ref: cover
     title: "Feed Regent's Park false priority"
     assignee_ref: user
     created: "-1d"
@@ -363,7 +408,7 @@ activities:
   - type: note
     kind: messages
     author_ref: catherine
-    priority_ref: admin
+    priority_ref: budget_expenses
     title: "Expense report - taxi receipts"
     created: "-1d"
     notes:
@@ -380,7 +425,7 @@ activities:
 
   - type: event
     kind: meal
-    priority_ref: personal
+    priority_ref: maintenance
     title: "Lunch - pub, alone"
     at: "+0d 13:00 / +0d 14:15"
     notes:
@@ -392,7 +437,7 @@ activities:
 
   # Day +1: Threads tightening
   - type: action
-    priority_ref: containment
+    priority_ref: roddy_technical
     title: "Analyze Roddy's signal intercepts"
     assignee_ref: user
     created: "-1d"
@@ -419,7 +464,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: team
+    priority_ref: slough_house
     title: "Shirley - field assignment prep"
     at: "+1d 11:30 / +1d 11:45"
     notes:
@@ -437,7 +482,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: containment
+    priority_ref: louisa_contacts
     title: "Louisa update - former asset locations"
     created: "-1d"
     notes:
@@ -467,7 +512,7 @@ activities:
       warning: [user]
 
   - type: action
-    priority_ref: team
+    priority_ref: river_research
     title: "River - research London GDR connections"
     assignee_ref: user
     created: "-1d"
@@ -484,7 +529,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: admin
+    priority_ref: budget_expenses
     title: "Budget meeting (unavoidable)"
     at: "+1d 15:00 / +1d 15:47"
     notes:
@@ -498,7 +543,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: personal
+    priority_ref: medical
     title: "Medical - another missed call"
     created: "-1d"
     notes:
@@ -518,7 +563,7 @@ activities:
   # Day +2: Pieces in play
   - type: note
     kind: messages
-    priority_ref: containment
+    priority_ref: river_research
     title: "River's findings - London connection identified"
     created: "-1d"
     tags:
@@ -552,7 +597,7 @@ activities:
           - river
 
   - type: action
-    priority_ref: containment
+    priority_ref: curtain
     title: "Shirley - observe 47B Kingsland Road"
     assignee_ref: user
     created: "-1d"
@@ -576,7 +621,7 @@ activities:
 
   - type: event
     kind: phone
-    priority_ref: containment
+    priority_ref: taverner_mgmt
     title: "Call: Taverner (escalation attempt)"
     at: "+2d 14:20 / +2d 14:33"
     notes:
@@ -597,7 +642,7 @@ activities:
       blocked: [taverner]
 
   - type: action
-    priority_ref: admin
+    priority_ref: budget_expenses
     title: "Submit taxi receipts to Catherine"
     assignee_ref: user
     created: "-1d"
@@ -612,7 +657,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: team
+    priority_ref: roddy_technical
     title: "Roddy - signal analysis update"
     at: "+2d 16:00 / +2d 16:12"
     notes:
@@ -635,7 +680,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: containment
+    priority_ref: curtain
     title: "Working theory update - need to move soon"
     created: "-1d"
     tags:
@@ -680,7 +725,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: personal
+    priority_ref: maintenance
     title: "Reminder: Catherine's birthday next month"
     created: "-1d"
     notes:
@@ -693,7 +738,7 @@ activities:
           - catherine
 
   - type: action
-    priority_ref: team
+    priority_ref: slough_house
     title: "Weekly team review meeting"
     assignee_ref: user
     on: "+4d"
@@ -707,7 +752,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: containment
+    priority_ref: cover
     title: "Contingency: if Regent's Park moves first"
     created: "-1d"
     tags:

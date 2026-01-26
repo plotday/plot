@@ -41,24 +41,65 @@ priorities:
         title: Active negotiations
         settings:
           color: 0
+        children:
+          - ref: climate_proposal
+            title: Climate finance proposal
+            children:
+              - ref: congressional_strategy
+                title: US congressional strategy
+              - ref: eu_coord
+                title: EU coordination
+              - ref: partner_alignment
+                title: Partner alignment
+          - ref: trade
+            title: Trade discussions
+          - ref: security
+            title: Security frameworks
       - ref: strategic
         title: Strategic relationships
         settings:
           color: 2
+        children:
+          - ref: us_partnerships
+            title: US partnerships
+            children:
+              - ref: white_house
+                title: White House liaison
+              - ref: congressional_affairs
+                title: Congressional affairs
+          - ref: european_allies
+            title: European allies
+            children:
+              - ref: uk_coord
+                title: UK coordination
+              - ref: eu_engagement
+                title: EU engagement
+          - ref: bilateral_contacts
+            title: Bilateral contacts
       - ref: policy
         title: Policy shaping
         settings:
           color: 5
+        children:
+          - ref: climate_policy
+            title: Climate policy
+          - ref: economic_positioning
+            title: Economic positioning
       - ref: household
         title: Household coordination
         settings:
           color: 6
+        children:
+          - ref: hal_coord
+            title: Hal coordination
+          - ref: personal_time
+            title: Personal time
 
 activities:
   # Day -2: Early groundwork
   - type: note
     kind: document
-    priority_ref: active
+    priority_ref: climate_proposal
     title: "Climate financing proposal - initial review"
     created: "-2d"
     tags:
@@ -92,7 +133,7 @@ activities:
           href: mailto:climate@state.gov
 
   - type: action
-    priority_ref: policy
+    priority_ref: climate_policy
     title: "Reframe climate proposal language - make it safe"
     assignee_ref: user
     on: "-2d"
@@ -115,7 +156,7 @@ activities:
 
   - type: event
     kind: phone
-    priority_ref: strategic
+    priority_ref: uk_coord
     title: "Stuart - pre-meeting alignment call"
     at: "-2d 14:00 / -2d 14:25"
     notes:
@@ -159,7 +200,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: household
+    priority_ref: hal_coord
     title: "Hal - scheduling conflict"
     created: "-2d"
     notes:
@@ -196,7 +237,7 @@ activities:
       pinned: [user]
 
   - type: action
-    priority_ref: strategic
+    priority_ref: eu_engagement
     title: "Prep Veronica (EU) for climate proposal"
     assignee_ref: user
     on: "-2d"
@@ -217,7 +258,7 @@ activities:
   # Day -1: Shaping the narrative
   - type: event
     kind: videoconference
-    priority_ref: strategic
+    priority_ref: eu_engagement
     title: "Veronica Penn - exploratory call"
     at: "-1d 10:00 / -1d 10:45"
     notes:
@@ -246,7 +287,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: active
+    priority_ref: white_house
     title: "Dennison update - White House concerns"
     created: "-1d"
     notes:
@@ -274,7 +315,7 @@ activities:
       warning: [user]
 
   - type: action
-    priority_ref: policy
+    priority_ref: climate_policy
     title: "Add revenue angle to climate proposal"
     assignee_ref: user
     on: "-1d"
@@ -311,7 +352,7 @@ activities:
 
   - type: event
     kind: videoconference
-    priority_ref: household
+    priority_ref: hal_coord
     title: "Video call with Hal"
     at: "-1d 19:00 / -1d 19:35"
     notes:
@@ -347,7 +388,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: strategic
+    priority_ref: bilateral_contacts
     title: "Billie - ground-level intelligence"
     created: "-1d"
     notes:
@@ -372,7 +413,7 @@ activities:
 
   - type: event
     kind: phone
-    priority_ref: active
+    priority_ref: congressional_strategy
     title: "Austin Ganon - congressional liaison update"
     at: "-1d 16:00 / -1d 16:20"
     notes:
@@ -404,7 +445,7 @@ activities:
   # Day 0 (Base date): The pivot and the proposal
   - type: note
     kind: document
-    priority_ref: active
+    priority_ref: climate_proposal
     title: "CLIMATE FINANCE PROPOSAL - Final draft (version 4.0)"
     created: "-1d"
     tags:
@@ -540,7 +581,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: strategic
+    priority_ref: us_partnerships
     title: "Eidra - proposal review and feedback"
     at: "-1d 09:00 / -1d 09:45"
     notes:
@@ -559,7 +600,7 @@ activities:
 
   - type: action
     author_ref: ganon
-    priority_ref: active
+    priority_ref: congressional_strategy
     title: "Prepare congressional briefing materials"
     assignee_ref: ganon
     created: "-1d"
@@ -580,7 +621,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: strategic
+    priority_ref: bilateral_contacts
     title: "Billie intel - French proposal details"
     created: "-1d"
     tags:
@@ -616,7 +657,7 @@ activities:
 
   - type: event
     kind: meal
-    priority_ref: household
+    priority_ref: personal_time
     title: "Lunch - actually taking a break"
     at: "-1d 12:30 / -1d 13:15"
     notes:
@@ -633,7 +674,7 @@ activities:
   # Day +1: Congressional briefing and alliance building
   - type: event
     kind: meeting
-    priority_ref: active
+    priority_ref: congressional_strategy
     title: "Congressional briefing - moderate caucus"
     at: "+1d 10:00 / +1d 11:30"
     tags:
@@ -670,7 +711,7 @@ activities:
           - ganon
 
   - type: action
-    priority_ref: strategic
+    priority_ref: uk_coord
     title: "Brief Stuart on congressional response"
     assignee_ref: user
     created: "-1d"
@@ -687,7 +728,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: active
+    priority_ref: white_house
     title: "White House preliminary feedback"
     created: "-1d"
     tags:
@@ -717,7 +758,7 @@ activities:
 
   - type: event
     kind: videoconference
-    priority_ref: household
+    priority_ref: hal_coord
     title: "Evening call with Hal - actual good news"
     at: "+1d 19:30 / +1d 20:00"
     notes:
@@ -752,7 +793,7 @@ activities:
   # Day +2: Alliance management
   - type: event
     kind: videoconference
-    priority_ref: strategic
+    priority_ref: uk_coord
     title: "Stuart Hayford - update call"
     at: "+2d 09:00 / +2d 09:30"
     notes:
@@ -778,7 +819,7 @@ activities:
 
   - type: event
     kind: videoconference
-    priority_ref: strategic
+    priority_ref: partner_alignment
     title: "EU partner coordination - video conference"
     at: "+2d 14:00 / +2d 15:15"
     notes:
@@ -796,7 +837,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: active
+    priority_ref: climate_proposal
     title: "Updated timeline - proposal advancement"
     created: "-1d"
     tags:
@@ -831,7 +872,7 @@ activities:
           Now it's just... happening.
 
   - type: action
-    priority_ref: policy
+    priority_ref: climate_policy
     title: "Draft joint announcement statement"
     assignee_ref: user
     created: "-1d"
@@ -869,7 +910,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: household
+    priority_ref: hal_coord
     title: "Hal arrives Wednesday - dinner plans"
     created: "-1d"
     tags:
@@ -901,7 +942,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: active
+    priority_ref: us_partnerships
     title: "Weekly staff meeting"
     at: "+3d 10:00 / +3d 11:00"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=TU"
@@ -914,7 +955,7 @@ activities:
 
   - type: event
     kind: meal
-    priority_ref: household
+    priority_ref: hal_coord
     title: "Dinner with Hal - finally same city"
     at: "+3d 19:00 / +3d 21:30"
     tags:
@@ -953,7 +994,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: policy
+    priority_ref: climate_policy
     title: "Reflection - how this works"
     created: "-2d"
     notes:

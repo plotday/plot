@@ -50,16 +50,51 @@ priorities:
         children:
           - ref: menu
             title: Menu development
+            children:
+              - ref: spring_menu
+                title: Spring menu
+              - ref: specials
+                title: Specials & experimentation
+              - ref: desserts
+                title: Dessert program
           - ref: service
             title: Service & operations
+            children:
+              - ref: kitchen_prep
+                title: Kitchen prep & mise
+              - ref: foh
+                title: Front of house
+              - ref: quality
+                title: Quality control
+          - ref: business
+            title: Business operations
+            settings:
+              color: 1
+            children:
+              - ref: financial_mgmt
+                title: Financial management
+              - ref: inventory
+                title: Inventory & suppliers
       - ref: team
         title: Team & suppliers
         settings:
           color: 2
+        children:
+          - ref: kitchen_staff
+            title: Kitchen staff
+          - ref: vendor_relations
+            title: Vendor relationships
+          - ref: training
+            title: Training & development
       - ref: personal
         title: Personal
         settings:
           color: 6
+        children:
+          - ref: family
+            title: Family connections
+          - ref: growth
+            title: Personal growth
 
 activities:
   # Day -2: Testing and iteration
@@ -165,7 +200,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: team
+    priority_ref: vendor_relations
     title: "Supplier order - spring ingredients"
     created: "-2d"
     notes:
@@ -194,7 +229,7 @@ activities:
 
   - type: action
     author_ref: tina
-    priority_ref: team
+    priority_ref: vendor_relations
     title: "Order ramps and morels for weekend service"
     assignee_ref: tina
     on: "-2d"
@@ -213,7 +248,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: personal
+    priority_ref: family
     title: "Michelle - Sunday dinner this weekend?"
     created: "-2d"
     notes:
@@ -319,7 +354,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: team
+    priority_ref: financial_mgmt
     title: "Cicero - quarterly check-in"
     created: "-1d"
     notes:
@@ -372,7 +407,7 @@ activities:
       warning: [user]
 
   - type: action
-    priority_ref: personal
+    priority_ref: family
     title: "Confirm Sunday dinner with Michelle"
     assignee_ref: user
     on: "-1d"
@@ -558,7 +593,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: team
+    priority_ref: vendor_relations
     title: "Supplier confirmation - menu ingredients"
     created: "-1d"
     notes:
@@ -597,7 +632,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: personal
+    priority_ref: family
     title: "Michelle - confirmed for Sunday"
     created: "-1d"
     notes:
@@ -821,7 +856,7 @@ activities:
   - type: note
     kind: messages
     author_ref: nat
-    priority_ref: bear
+    priority_ref: business
     title: "Spring menu press release"
     created: "-2d"
     notes:

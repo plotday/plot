@@ -47,22 +47,67 @@ priorities:
         children:
           - ref: mens_team
             title: Men's team
+            children:
+              - ref: coaching_staff
+                title: Coaching staff
+              - ref: player_performance
+                title: Player performance
+              - ref: match_prep
+                title: Match preparation
           - ref: womens_team
-            title: Women's team exploration
+            title: Women's team development
+            children:
+              - ref: business_case
+                title: Business case
+              - ref: board_process
+                title: Board approval process
+              - ref: facility_planning
+                title: Facility planning
+          - ref: business_ops
+            title: Business operations
+            children:
+              - ref: financial_mgmt
+                title: Financial management
+              - ref: commercial
+                title: Commercial partnerships
+          - ref: facilities
+            title: Facilities & infrastructure
+            children:
+              - ref: training_ground
+                title: Training ground
+              - ref: stadium_ops
+                title: Stadium operations
       - ref: community
         title: Community & supporters
         settings:
           color: 4
+        children:
+          - ref: supporter_relations
+            title: Supporter relations
+            children:
+              - ref: richmond_trust
+                title: Richmond Trust
+              - ref: fan_comm
+                title: Fan communication
+          - ref: community_programs
+            title: Community programs
+          - ref: media_pr
+            title: Media & PR
       - ref: personal
         title: Personal
         settings:
           color: 6
+        children:
+          - ref: social_life
+            title: Social life
+          - ref: personal_dev
+            title: Personal development
 
 activities:
   # Day -2: Quiet observation
   - type: note
     kind: document
-    priority_ref: mens_team
+    priority_ref: player_performance
     title: "Match review - Bournemouth loss (1-2)"
     created: "-2d"
     tags:
@@ -95,7 +140,7 @@ activities:
           - analytics
 
   - type: action
-    priority_ref: mens_team
+    priority_ref: coaching_staff
     title: "Review coaching strategy with Roy and Beard"
     assignee_ref: user
     on: "-2d"
@@ -113,7 +158,7 @@ activities:
   - type: note
     kind: messages
     author_ref: keeley
-    priority_ref: community
+    priority_ref: media_pr
     title: "Supporter sentiment - social media summary"
     created: "-2d"
     notes:
@@ -144,7 +189,7 @@ activities:
 
   - type: event
     kind: social
-    priority_ref: personal
+    priority_ref: social_life
     title: "Coffee with Barbara - weekly catchup"
     at: "-2d 10:00 / -2d 11:00"
     notes:
@@ -177,7 +222,7 @@ activities:
   # Day -1: Individual conversations
   - type: event
     kind: meeting
-    priority_ref: mens_team
+    priority_ref: coaching_staff
     title: "Meeting with Roy - coaching check-in"
     at: "-1d 14:00 / -1d 14:45"
     tags:
@@ -202,7 +247,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: mens_team
+    priority_ref: coaching_staff
     title: "Meeting with Nate - separate check-in"
     at: "-1d 15:30 / -1d 16:15"
     notes:
@@ -242,7 +287,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: womens_team
+    priority_ref: business_case
     title: "Women's team exploration - initial research"
     created: "-1d"
     tags:
@@ -266,7 +311,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: personal
+    priority_ref: social_life
     title: "Rupert being Rupert (ignore)"
     created: "-1d"
     notes:
@@ -290,7 +335,7 @@ activities:
   # Day 0 (Base date): Building the future
   - type: note
     kind: document
-    priority_ref: womens_team
+    priority_ref: business_case
     title: "WOMEN'S TEAM PROPOSAL - Vision and viability"
     created: "-1d"
     tags:
@@ -491,7 +536,7 @@ activities:
           Both can be true.
 
   - type: event
-    priority_ref: operations
+    priority_ref: business_ops
     title: "Morning office time - quiet work"
     at: "+0d 08:00 / +0d 09:30"
     notes:
@@ -506,7 +551,7 @@ activities:
           The question is "can we afford not to be who we say we are?"
 
   - type: action
-    priority_ref: womens_team
+    priority_ref: board_process
     title: "Schedule board presentation for women's team proposal"
     assignee_ref: user
     created: "-1d"
@@ -523,7 +568,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: community
+    priority_ref: richmond_trust
     title: "Supporter feedback - women's team interest"
     created: "-1d"
     notes:
@@ -561,7 +606,7 @@ activities:
 
   - type: event
     kind: meal
-    priority_ref: personal
+    priority_ref: social_life
     title: "Lunch with Keeley - catch up"
     at: "+0d 12:30 / +0d 13:45"
     notes:
@@ -585,7 +630,7 @@ activities:
   # Day +1: Building support
   - type: event
     kind: meeting
-    priority_ref: womens_team
+    priority_ref: board_process
     title: "Higgins - women's team preliminary discussion"
     at: "+1d 10:00 / +1d 10:45"
     notes:
@@ -619,7 +664,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: mens_team
+    priority_ref: match_prep
     title: "Upcoming fixture - Chelsea (away)"
     created: "-1d"
     notes:
@@ -647,7 +692,7 @@ activities:
 
   - type: event
     kind: meeting
-    priority_ref: operations
+    priority_ref: business_ops
     title: "Weekly operations meeting"
     at: "+1d 14:00 / +1d 15:00"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
@@ -664,7 +709,7 @@ activities:
           - New business (will mention women's team exploration)
 
   - type: action
-    priority_ref: community
+    priority_ref: supporter_relations
     title: "Review supporter engagement initiatives"
     assignee_ref: user
     created: "-1d"
@@ -711,7 +756,7 @@ activities:
   # Day +2: Confidence building
   - type: note
     kind: messages
-    priority_ref: mens_team
+    priority_ref: coaching_staff
     title: "Training report - confidence exercises"
     created: "-1d"
     notes:
@@ -738,7 +783,7 @@ activities:
           - nate
 
   - type: event
-    priority_ref: personal
+    priority_ref: personal_dev
     title: "Evening walk - think time"
     at: "+2d 18:00 / +2d 19:00"
     notes:
@@ -760,7 +805,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: womens_team
+    priority_ref: business_case
     title: "Potential coaching candidates - preliminary research"
     created: "-1d"
     tags:
@@ -788,7 +833,7 @@ activities:
 
   - type: event
     kind: meal
-    priority_ref: operations
+    priority_ref: board_process
     title: "Board dinner - informal"
     at: "+3d 19:00 / +3d 21:30"
     notes:
@@ -814,7 +859,7 @@ activities:
           - higgins
 
   - type: action
-    priority_ref: womens_team
+    priority_ref: financial_mgmt
     title: "Finalize women's team financial model"
     assignee_ref: user
     created: "-2d"
@@ -834,7 +879,7 @@ activities:
 
   - type: note
     kind: messages
-    priority_ref: community
+    priority_ref: media_pr
     title: "Trent Crimm - potential feature story"
     created: "-2d"
     notes:
@@ -862,7 +907,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: operations
+    priority_ref: business_ops
     title: "Looking ahead - Feb-March priorities"
     created: "-2d"
     tags:
@@ -889,7 +934,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: personal
+    priority_ref: personal_dev
     title: "Reflection - what Ted built here"
     created: "-2d"
     notes:
@@ -924,7 +969,7 @@ activities:
           Believe.
 
   - type: event
-    priority_ref: mens_team
+    priority_ref: match_prep
     title: "Match day - Chelsea (A)"
     at: "+6d 12:30 / +6d 14:30"
     notes:
@@ -942,7 +987,7 @@ activities:
 
   - type: note
     kind: document
-    priority_ref: womens_team
+    priority_ref: board_process
     title: "March board presentation - draft outline"
     created: "+4d"
     tags:
@@ -966,7 +1011,7 @@ activities:
           Need to practice this. Make it confident, not defensive. Vision, not plea.
 
   - type: action
-    priority_ref: community
+    priority_ref: richmond_trust
     title: "Schedule supporter trust meeting - women's team feedback"
     assignee_ref: user
     on: "+4d"
