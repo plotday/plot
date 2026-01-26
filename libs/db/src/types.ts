@@ -386,6 +386,7 @@ export type Database = {
           activity_id: string
           actor_id: string
           archived_at: string | null
+          id: number
           occurrence: string | null
           sync_depth: number | null
           tag_id: number
@@ -396,6 +397,7 @@ export type Database = {
           activity_id: string
           actor_id: string
           archived_at?: string | null
+          id?: never
           occurrence?: string | null
           sync_depth?: number | null
           tag_id: number
@@ -406,6 +408,7 @@ export type Database = {
           activity_id?: string
           actor_id?: string
           archived_at?: string | null
+          id?: never
           occurrence?: string | null
           sync_depth?: number | null
           tag_id?: number
@@ -732,6 +735,7 @@ export type Database = {
         Row: {
           actor_id: string
           archived_at: string | null
+          id: number
           note_id: string
           sync_depth: number | null
           tag_id: number
@@ -741,6 +745,7 @@ export type Database = {
         Insert: {
           actor_id: string
           archived_at?: string | null
+          id?: never
           note_id: string
           sync_depth?: number | null
           tag_id: number
@@ -750,6 +755,7 @@ export type Database = {
         Update: {
           actor_id?: string
           archived_at?: string | null
+          id?: never
           note_id?: string
           sync_depth?: number | null
           tag_id?: number
@@ -1875,6 +1881,16 @@ export type Database = {
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
           updated_by: number | null
+          actor: {
+            archived_at: string | null
+            avatar_url: string | null
+            created_at: string | null
+            email: string | null
+            id: string | null
+            name: string | null
+            type: string | null
+            updated_at: string | null
+          } | null
         }
         Relationships: [
           {
@@ -2739,6 +2755,16 @@ export type Database = {
           updated_at: string | null
           updated_by: number | null
           user_id: string | null
+          actor: {
+            archived_at: string | null
+            avatar_url: string | null
+            created_at: string | null
+            email: string | null
+            id: string | null
+            name: string | null
+            type: string | null
+            updated_at: string | null
+          } | null
         }
         Relationships: [
           {
@@ -3129,6 +3155,25 @@ export type Database = {
             }
           }
         | {
+            Args: { "": Database["public"]["Views"]["activity_x"]["Row"] }
+            Returns: {
+              archived_at: string | null
+              avatar_url: string | null
+              created_at: string | null
+              email: string | null
+              id: string | null
+              name: string | null
+              type: string | null
+              updated_at: string | null
+            }
+            SetofOptions: {
+              from: "activity_x"
+              to: "actor"
+              isOneToOne: true
+              isSetofReturn: true
+            }
+          }
+        | {
             Args: { "": Database["public"]["Tables"]["note"]["Row"] }
             Returns: {
               archived_at: string | null
@@ -3142,6 +3187,25 @@ export type Database = {
             }
             SetofOptions: {
               from: "note"
+              to: "actor"
+              isOneToOne: true
+              isSetofReturn: true
+            }
+          }
+        | {
+            Args: { "": Database["public"]["Views"]["user_activity"]["Row"] }
+            Returns: {
+              archived_at: string | null
+              avatar_url: string | null
+              created_at: string | null
+              email: string | null
+              id: string | null
+              name: string | null
+              type: string | null
+              updated_at: string | null
+            }
+            SetofOptions: {
+              from: "user_activity"
               to: "actor"
               isOneToOne: true
               isSetofReturn: true

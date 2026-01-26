@@ -15,10 +15,17 @@ SELECT
     pu.personal = TRUE
     AND p.id = root.id AS root,
     COALESCE(settings.title, p.title) AS title,
-    CASE WHEN inherited_settings.path IS NOT NULL THEN
+    CASE
+    -- Priority has explicit inherited settings
+    WHEN inherited_settings.path IS NOT NULL THEN
         inherited_settings.path
+        -- Priority's actual path is already under user's personal root
     WHEN user_root.path @> p.path THEN
         p.path
+        -- Priority's parent has inherited settings - use parent's visual path + this priority's label
+    WHEN parent_inherited_settings.path IS NOT NULL THEN
+        parent_inherited_settings.path || text(subpath (p.path, nlevel (p.path) - 1, 1))::ltree
+        -- Fallback: concatenate user root + actual path
     ELSE
         user_root.path || p.path
     END AS path,
@@ -34,6 +41,11 @@ FROM
         AND pu_root.personal = TRUE
     JOIN priority user_root ON pu_root.priority_id = user_root.id
     JOIN priority p ON root.path @> p.path
+    -- Join parent priority to get its inherited settings for visual path computation
+    LEFT JOIN priority parent_p ON nlevel (p.path) > 1
+        AND parent_p.path = subpath (p.path, 0, nlevel (p.path) - 1)
+    LEFT JOIN priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = pu.user_id
+        AND parent_p.id = parent_inherited_settings.priority_id
     LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
         AND p.id = settings.priority_id
     LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id
@@ -52,9 +64,47 @@ DECLARE
     _priority_id uuid;
     _is_creator boolean;
     _priority_default_color integer;
+    _parent_visual_path ltree;
+    _label text;
+    _parent_id uuid;
+    _parent_actual_path ltree;
+    _actual_path ltree;
 BEGIN
     _priority_id := NEW.id;
     _is_creator := (NEW.created_by = COALESCE(auth.uid (), NEW.user_id));
+    -- Translate visual path to actual path for new sub-priorities
+    -- For root priorities or existing priorities, use path as-is
+    IF OLD IS NULL AND nlevel (NEW.path) > 1 THEN
+        -- Extract parent path and label from visual path
+        _parent_visual_path := subpath (NEW.path, 0, nlevel (NEW.path) - 1);
+        _label := text(subpath (NEW.path, nlevel (NEW.path) - 1, 1));
+        -- Look up parent priority ID via user_priority view (which has visual paths)
+        SELECT
+            id INTO _parent_id
+        FROM
+            user_priority
+        WHERE
+            user_id = COALESCE(auth.uid (), NEW.user_id)
+            AND path = _parent_visual_path
+        LIMIT 1;
+        -- Get parent's ACTUAL path from priority table
+        IF _parent_id IS NOT NULL THEN
+            SELECT
+                path INTO _parent_actual_path
+            FROM
+                priority
+            WHERE
+                id = _parent_id;
+            -- Compute actual path for new priority
+            _actual_path := _parent_actual_path || _label::ltree;
+        ELSE
+            -- Fallback: parent not found, use path as-is (shouldn't happen)
+            _actual_path := NEW.path;
+        END IF;
+    ELSE
+        -- Use provided path as-is (root priority or existing priority)
+        _actual_path := NEW.path;
+    END IF;
     -- Get the priority's default color for initializing new priority_settings
     SELECT
         color INTO _priority_default_color
@@ -64,13 +114,14 @@ BEGIN
         id = NEW.id;
     -- Update priority table fields (title, path, archived_at, updated_by)
     -- If creator is updating color, also update priority.color
-    IF (OLD IS NULL OR NEW.archived_at IS DISTINCT FROM OLD.archived_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.updated_by IS DISTINCT FROM OLD.updated_by OR (_is_creator AND NEW.color IS DISTINCT FROM OLD.color)) THEN
+    -- Note: path is only set on INSERT, never updated (removed path check from condition)
+    IF (OLD IS NULL OR NEW.archived_at IS DISTINCT FROM OLD.archived_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.updated_by IS DISTINCT FROM OLD.updated_by OR (_is_creator AND NEW.color IS DISTINCT FROM OLD.color)) THEN
         INSERT INTO priority (id, archived_at, title, color, path, created_by, updated_by)
             VALUES (NEW.id, NEW.archived_at, NEW.title, CASE WHEN _is_creator THEN
                     NEW.color
                 ELSE
                     NULL
-                END, NEW.path, NEW.created_by, NEW.updated_by)
+                END, _actual_path, NEW.created_by, NEW.updated_by)
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = NEW.archived_at,
@@ -80,7 +131,7 @@ BEGIN
                 ELSE
                     priority.color
                 END,
-                path = NEW.path,
+                -- path is intentionally NOT updated - it never changes after creation
                 updated_by = NEW.updated_by
             RETURNING
                 id INTO _priority_id;

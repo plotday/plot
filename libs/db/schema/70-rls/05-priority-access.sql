@@ -63,9 +63,11 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION can_access_priority (_priority_id uuid)
-    RETURNS bool
-    AS $$
+CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_id uuid)
+    RETURNS boolean
+    LANGUAGE sql
+    SECURITY DEFINER
+    AS $function$
     SELECT
         EXISTS (
             SELECT
@@ -73,15 +75,17 @@ CREATE FUNCTION can_access_priority (_priority_id uuid)
             FROM
                 public.user_priority_expanded upe
             WHERE
-                upe.user_id = (select auth.uid ())
-                AND upe.priority_id = _priority_id);
-$$
-LANGUAGE sql
-SECURITY DEFINER;
+                upe.user_id = (
+                    SELECT
+                        auth.uid ())
+                    AND upe.priority_id = _priority_id);
+$function$;
 
-CREATE FUNCTION can_access_priority (_priority_path ltree)
-    RETURNS bool
-    AS $$
+CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path ltree)
+    RETURNS boolean
+    LANGUAGE sql
+    SECURITY DEFINER
+    AS $function$
     SELECT
         EXISTS (
             SELECT
@@ -90,12 +94,12 @@ CREATE FUNCTION can_access_priority (_priority_path ltree)
                 public.priority_user pu
                 JOIN public.priority p ON p.id = pu.priority_id
             WHERE
-                pu.user_id = (select auth.uid ())
-                AND pu.archived_at IS NULL
-                AND p.path @> _priority_path);
-$$
-LANGUAGE sql
-SECURITY DEFINER;
+                pu.user_id = (
+                    SELECT
+                        auth.uid ())
+                    AND pu.archived_at IS NULL
+                    AND p.path @> _priority_path);
+$function$;
 
 -- Restrict access: only service_role can call this function
 -- This function exposes user access information
