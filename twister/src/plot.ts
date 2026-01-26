@@ -157,6 +157,24 @@ export enum ActivityType {
 }
 
 /**
+ * Kinds of activities. Used only for visual categorization (icon).
+ */
+export enum ActivityKind {
+  document = "document", // any external document or item in an external system
+  messages = "messages", // emails and chat threads
+  meeting = "meeting", // in-person meeting
+  videoconference = "videoconference",
+  phone = "phone",
+  focus = "focus",
+  meal = "meal",
+  exercise = "exercise",
+  family = "family",
+  travel = "travel",
+  social = "social",
+  entertainment = "entertainment",
+}
+
+/**
  * Enumeration of supported activity link types.
  *
  * Different link types have different behaviors when clicked by users
@@ -362,6 +380,8 @@ export type Activity = ActivityCommon & {
   title: string;
   /** The type of activity (Note, Task, or Event) */
   type: ActivityType;
+  /** Optional kind for additional categorization within the activity */
+  kind: ActivityKind | null;
   /**
    * The actor assigned to this activity.
    *
@@ -808,6 +828,7 @@ export type ActivityUpdate = (
     Pick<
       Activity,
       | "type"
+      | "kind"
       | "start"
       | "end"
       | "done"
