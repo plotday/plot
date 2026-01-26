@@ -14,6 +14,8 @@ class Activities extends Table
       .map(const OrderConverter())();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
   TextColumn get type => text().map(const EnumConverter<ActivityType>())();
+  TextColumn get kind =>
+      text().nullable().map(const EnumConverter<ActivityKind>())();
 
   TextColumn get title => text().nullable()();
   TextColumn get preview => text().nullable()();
@@ -1519,6 +1521,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   ActorId get authorId => _activity.authorId;
   ActorId? get assigneeId => _activity.assigneeId;
   ActivityType get type => _activity.type;
+  ActivityKind? get kind => _activity.kind;
   DateTime? get doneAt => _exception?.doneAt ?? _activity.doneAt;
   DateTime? get lastNoteCreatedAt => _activity.lastNoteCreatedAt;
   DateTime? get lastNoteSourceCreatedAt => _activity.lastNoteSourceCreatedAt;
@@ -1650,12 +1653,52 @@ class Activity extends Equatable implements Comparable<Activity> {
   String? get occurrence => _exception?.occurrence;
 
   IconData get icon {
-    if (done) return assignedToOther ? PlotIcon.otherDone : PlotIcon.done;
-    if (doNow) return assignedToOther ? PlotIcon.other : PlotIcon.now;
-    if (doLater) return PlotIcon.later;
-    if (doSomeday) return PlotIcon.someday;
+    // For actions, always use state-based icons (done, doNow, doLater, doSomeday)
+    if (type == ActivityType.action) {
+      if (done) return assignedToOther ? PlotIcon.otherDone : PlotIcon.done;
+      if (doNow) return assignedToOther ? PlotIcon.other : PlotIcon.now;
+      if (doLater) return PlotIcon.later;
+      if (doSomeday) return PlotIcon.someday;
+    }
+
+    // For events and notes, check for kind-specific icon first
+    final kindIcon = _iconForKind(kind);
+    if (kindIcon != null) return kindIcon;
+
+    // Fall back to type-based icons
     if (type == ActivityType.event) return PlotIcon.event;
     return PlotIcon.note;
+  }
+
+  IconData? _iconForKind(ActivityKind? kind) {
+    if (kind == null) return null;
+
+    switch (kind) {
+      case ActivityKind.document:
+        return PlotIcon.document;
+      case ActivityKind.messages:
+        return PlotIcon.messages;
+      case ActivityKind.meeting:
+        return PlotIcon.meeting;
+      case ActivityKind.videoconference:
+        return PlotIcon.videoconference;
+      case ActivityKind.phone:
+        return PlotIcon.phone;
+      case ActivityKind.focus:
+        return PlotIcon.focus;
+      case ActivityKind.meal:
+        return PlotIcon.meal;
+      case ActivityKind.exercise:
+        return PlotIcon.exercise;
+      case ActivityKind.family:
+        return PlotIcon.family;
+      case ActivityKind.travel:
+        return PlotIcon.travel;
+      case ActivityKind.social:
+        return PlotIcon.social;
+      case ActivityKind.entertainment:
+        return PlotIcon.entertainment;
+    }
   }
 
   static const separator = ' › ';
@@ -1664,6 +1707,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     // These fields always update the root activity
     Priority? priority,
     ActivityType? type,
+    ActivityKind? kind,
     Order? order,
     bool? draft,
     bool? private,
@@ -1720,6 +1764,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     var activity = _activity;
     if (priority != null ||
         type != null ||
+        kind != null ||
         order != null ||
         draft != null ||
         private != null ||
@@ -1785,6 +1830,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       activity = _activity.copyWith(
         priorityId: priority?.id,
         type: type,
+        kind: kind != null ? Value(kind) : const Value.absent(),
         order: order,
         draft: draft,
         private: private,

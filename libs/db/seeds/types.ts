@@ -57,10 +57,25 @@ export interface PrioritySettings {
 
 export type ActivityType = "action" | "event" | "note";
 
+export type ActivityKind =
+  | "document"
+  | "messages"
+  | "meeting"
+  | "videoconference"
+  | "phone"
+  | "focus"
+  | "meal"
+  | "exercise"
+  | "family"
+  | "travel"
+  | "social"
+  | "entertainment";
+
 export interface Activity {
   ref?: string; // Optional unique reference
   title?: string;
   type: ActivityType;
+  kind?: ActivityKind;
   priority_ref: string; // Reference to a priority
   created?: string; // Date offset (e.g., "-2d", "+1w 14:30") - REQUIRED for type: note
   author_ref?: string; // Default: "user"
@@ -203,6 +218,7 @@ export interface GeneratedActivity {
   assignee_id: string | null; // UUID
   priority_id: string; // UUID
   type: ActivityType;
+  kind: ActivityKind | null;
   order: number; // Timestamp in milliseconds
   draft: boolean;
   private: boolean;

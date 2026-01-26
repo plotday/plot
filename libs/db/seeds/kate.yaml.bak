@@ -57,7 +57,6 @@ priorities:
 activities:
   # Day -2: Early groundwork
   - type: note
-    kind: document
     priority_ref: active
     title: "Climate financing proposal - initial review"
     created: "-2d"
@@ -114,7 +113,6 @@ activities:
           Same outcome. Different story. That's the work.
 
   - type: event
-    kind: phone
     priority_ref: strategic
     title: "Stuart - pre-meeting alignment call"
     at: "-2d 14:00 / -2d 14:25"
@@ -158,7 +156,6 @@ activities:
       pinned: [user]
 
   - type: note
-    kind: messages
     priority_ref: household
     title: "Hal - scheduling conflict"
     created: "-2d"
@@ -216,7 +213,6 @@ activities:
 
   # Day -1: Shaping the narrative
   - type: event
-    kind: videoconference
     priority_ref: strategic
     title: "Veronica Penn - exploratory call"
     at: "-1d 10:00 / -1d 10:45"
@@ -245,7 +241,6 @@ activities:
       star: [user]
 
   - type: note
-    kind: messages
     priority_ref: active
     title: "Dennison update - White House concerns"
     created: "-1d"
@@ -310,7 +305,6 @@ activities:
           Different story. Same outcome.
 
   - type: event
-    kind: videoconference
     priority_ref: household
     title: "Video call with Hal"
     at: "-1d 19:00 / -1d 19:35"
@@ -346,7 +340,6 @@ activities:
       star: [user]
 
   - type: note
-    kind: messages
     priority_ref: strategic
     title: "Billie - ground-level intelligence"
     created: "-1d"
@@ -371,7 +364,6 @@ activities:
           - billie
 
   - type: event
-    kind: phone
     priority_ref: active
     title: "Austin Ganon - congressional liaison update"
     at: "-1d 16:00 / -1d 16:20"
@@ -403,7 +395,6 @@ activities:
 
   # Day 0 (Base date): The pivot and the proposal
   - type: note
-    kind: document
     priority_ref: active
     title: "CLIMATE FINANCE PROPOSAL - Final draft (version 4.0)"
     created: "-1d"
@@ -539,7 +530,6 @@ activities:
           It'll work. It has to work. I've made it as safe as possible without gutting it.
 
   - type: event
-    kind: meeting
     priority_ref: strategic
     title: "Eidra - proposal review and feedback"
     at: "-1d 09:00 / -1d 09:45"
@@ -562,7 +552,7 @@ activities:
     priority_ref: active
     title: "Prepare congressional briefing materials"
     assignee_ref: ganon
-    created: "-1d"
+    on: "+0d"
     tags:
       urgent: [user, ganon]
     notes:
@@ -579,7 +569,6 @@ activities:
           Making it easy to say yes, hard to say no.
 
   - type: note
-    kind: messages
     priority_ref: strategic
     title: "Billie intel - French proposal details"
     created: "-1d"
@@ -615,7 +604,6 @@ activities:
           - alouette
 
   - type: event
-    kind: meal
     priority_ref: household
     title: "Lunch - actually taking a break"
     at: "-1d 12:30 / -1d 13:15"
@@ -632,7 +620,6 @@ activities:
 
   # Day +1: Congressional briefing and alliance building
   - type: event
-    kind: meeting
     priority_ref: active
     title: "Congressional briefing - moderate caucus"
     at: "+1d 10:00 / +1d 11:30"
@@ -640,7 +627,7 @@ activities:
       urgent: [user]
       pinned: [user]
     notes:
-      - created: "-2d 11:45"
+      - created: "+1d 11:45"
         content: |
           Briefed 12 congressional moderates on the climate proposal.
 
@@ -673,9 +660,9 @@ activities:
     priority_ref: strategic
     title: "Brief Stuart on congressional response"
     assignee_ref: user
-    created: "-1d"
+    on: "+1d"
     notes:
-      - created: "-2d 12:30"
+      - created: "+1d 12:30"
         content: |
           Need to update Stuart on US congressional support so he can use it to strengthen UK position internally.
 
@@ -686,14 +673,13 @@ activities:
           - stuart
 
   - type: note
-    kind: messages
     priority_ref: active
     title: "White House preliminary feedback"
-    created: "-1d"
+    created: "+1d"
     tags:
       star: [user]
     notes:
-      - created: "-2d 15:00"
+      - created: "+1d 15:00"
         content: |
           **From: Mara Tierney (Chief of Staff to SecState)**
 
@@ -716,12 +702,11 @@ activities:
           - chief_staff
 
   - type: event
-    kind: videoconference
     priority_ref: household
     title: "Evening call with Hal - actual good news"
     at: "+1d 19:30 / +1d 20:00"
     notes:
-      - created: "-2d 20:10"
+      - created: "+1d 20:10"
         content: |
           **Signal video call**
 
@@ -751,12 +736,11 @@ activities:
 
   # Day +2: Alliance management
   - type: event
-    kind: videoconference
     priority_ref: strategic
     title: "Stuart Hayford - update call"
     at: "+2d 09:00 / +2d 09:30"
     notes:
-      - created: "-2d 09:40"
+      - created: "+2d 09:40"
         content: |
           **Video call with Stuart**
 
@@ -777,17 +761,31 @@ activities:
           - stuart
 
   - type: event
-    kind: videoconference
     priority_ref: strategic
     title: "EU partner coordination - video conference"
     at: "+2d 14:00 / +2d 15:15"
     notes:
-      - author_ref: user
-        created: "-2d 13:00"
+      - created: "+2d 15:30"
         content: |
-          Planning for EU partner coordination call tomorrow. Need to present the proposal while making everyone feel like co-architects.
+          **Video conference with EU partners (Veronica, Alouette, others)**
 
-          Veronica (EU) is already aligned. Alouette (France) doesn't know we've been socializing this for weeks. She'll try to position French leadership - let her. As long as the fund exists.
+          Presented the final proposal. Emphasized EU co-leadership, shared governance, strategic partnership.
+
+          **Veronica (EU):** "This is exactly what we discussed. Well-structured."
+
+          **Alouette (France):** [slight pause] "We've been developing a similar framework. Perhaps we should coordinate?"
+
+          **Me:** "Absolutely. This works better with aligned partnership. Would love to incorporate French perspectives."
+
+          *(Translation: You're late, but we'll let you claim you shaped it.)*
+
+          **Alouette:** "I'll share our draft. I'm sure we can find alignment."
+
+          **Me:** "I'm confident we will."
+
+          France will join. They'll make some cosmetic changes and claim co-authorship. That's fine.
+
+          The fund will exist. That's what matters.
         mentions:
           - ronnie
           - alouette
@@ -795,7 +793,6 @@ activities:
       star: [user]
 
   - type: note
-    kind: document
     priority_ref: active
     title: "Updated timeline - proposal advancement"
     created: "-1d"
@@ -834,15 +831,15 @@ activities:
     priority_ref: policy
     title: "Draft joint announcement statement"
     assignee_ref: user
-    created: "-1d"
+    on: "+2d"
     tags:
       todo: [user]
     notes:
-      - created: "-2d 17:00"
+      - created: "+2d 17:00"
         content: |
           **@plot, draft a joint announcement statement for US-EU-UK climate partnership that emphasizes shared leadership and strategic infrastructure**
         ai_query: true
-      - created: "-2d 17:00"
+      - created: "+2d 17:00"
         content: |
           **Plot AI Response:**
 
@@ -859,7 +856,7 @@ activities:
           GCRP will launch a pilot program in 2025, supporting climate resilience projects in three regions with proven economic and environmental benefits.
 
           [Additional quotes from EU and UK leadership]
-      - created: "-2d 17:15"
+      - created: "+2d 17:15"
         content: |
           ---
 
@@ -868,15 +865,14 @@ activities:
           Everyone needs to feel like they're leading. That's the key to multilateral success.
 
   - type: note
-    kind: messages
     priority_ref: household
     title: "Hal arrives Wednesday - dinner plans"
-    created: "-1d"
+    created: "+2d"
     tags:
       pinned: [user]
       star: [user]
     notes:
-      - created: "-2d 18:00"
+      - created: "+2d 18:00"
         content: |
           **Signal - Hal**
 
@@ -900,20 +896,18 @@ activities:
           - hal
 
   - type: event
-    kind: meeting
     priority_ref: active
     title: "Weekly staff meeting"
     at: "+3d 10:00 / +3d 11:00"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=TU"
     notes:
-      - created: "-2d 11:15"
+      - created: "+3d 11:15"
         content: |
           Standing Tuesday meeting with immediate staff. Review active negotiations, upcoming travel, priority issues.
 
           This week's focus: Climate partnership advancement, upcoming EU meetings, congressional coordination.
 
   - type: event
-    kind: meal
     priority_ref: household
     title: "Dinner with Hal - finally same city"
     at: "+3d 19:00 / +3d 21:30"
@@ -921,7 +915,7 @@ activities:
       pinned: [user]
       star: [user]
     notes:
-      - created: "-2d 22:00"
+      - created: "+3d 22:00"
         content: |
           Quiet restaurant. Good food. No phones on the table.
 
@@ -952,12 +946,11 @@ activities:
           - hal
 
   - type: note
-    kind: document
     priority_ref: policy
     title: "Reflection - how this works"
-    created: "-2d"
+    created: "+3d"
     notes:
-      - created: "-2d 23:00"
+      - created: "+3d 23:00"
         content: |
           A year ago, someone said "we need a climate fund" and I thought "that's impossible."
 

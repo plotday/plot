@@ -54,7 +54,6 @@ priorities:
 activities:
   # Day -2: Setting pieces in motion
   - type: note
-    kind: messages
     priority_ref: containment
     title: "Weekly threat digest - mostly harmless"
     created: "-2d"
@@ -91,7 +90,6 @@ activities:
           He'll figure it out or he won't. Either way, I need someone looking at this who doesn't know they're looking at it.
 
   - type: event
-    kind: phone
     priority_ref: containment
     title: "Call: Whelan (Regent's Park)"
     at: "-2d 11:15 / -2d 11:23"
@@ -110,7 +108,6 @@ activities:
       question: [user]
 
   - type: note
-    kind: messages
     priority_ref: personal
     title: "GP surgery - missed call"
     created: "-2d"
@@ -128,7 +125,6 @@ activities:
 
   # Day -1: Pieces moving
   - type: note
-    kind: document
     author_ref: river
     priority_ref: team
     title: "GDR network files - pulled as requested"
@@ -171,7 +167,6 @@ activities:
           Need to know which without letting anyone know I'm looking.
 
   - type: event
-    kind: meeting
     priority_ref: team
     title: "Louisa - coffee, downstairs"
     at: "-1d 14:30 / -1d 14:42"
@@ -203,7 +198,6 @@ activities:
           He'll spend three days building an algorithm and emerge thinking he's a genius. Which is fine. I need the data, not the credit.
 
   - type: note
-    kind: messages
     priority_ref: admin
     title: "Budget report - due next week"
     created: "-1d"
@@ -222,7 +216,6 @@ activities:
           href: mailto:finance@sloughhouse.gov.uk
 
   - type: event
-    kind: phone
     priority_ref: containment
     title: "Taverner - 'courtesy call'"
     at: "-1d 16:45 / -1d 16:52"
@@ -243,16 +236,15 @@ activities:
 
   # Day 0 (Base date): The work gets real
   - type: note
-    kind: document
     priority_ref: containment
     title: "OPERATION CURTAIN CALL - active situation"
-    created: "-1d"
+    on: "+0d"
     tags:
       urgent: [user]
       pinned: [user]
       decision: [user]
     notes:
-      - created: "-1d 09:00"
+      - created: "+0d 09:00"
         content: |
           ## Situation Summary
 
@@ -291,13 +283,13 @@ activities:
           - river
           - roddy
           - shirley
-      - created: "-1d 09:20"
+      - created: "+0d 09:20"
         content: |
           ---
 
           **@plot, what did we decide about Hans Wetzel in the 2009 review?**
         ai_query: true
-      - created: "-1d 09:20"
+      - created: "+0d 09:20"
         content: |
           **Plot AI Response:**
 
@@ -310,7 +302,6 @@ activities:
           **Note:** No follow-up confirmation ever filed. Case closed on presumption, not evidence.
 
   - type: event
-    kind: meeting
     priority_ref: team
     title: "Team meeting - vague instructions"
     at: "+0d 10:00 / +0d 10:17"
@@ -346,9 +337,9 @@ activities:
     priority_ref: containment
     title: "Feed Regent's Park false priority"
     assignee_ref: user
-    created: "-1d"
+    on: "+0d"
     notes:
-      - created: "-1d 11:00"
+      - created: "+0d 11:00"
         content: |
           Called Whelan. Mentioned Slough House picked up "concerning chatter" about Russian botnet activity potentially targeting infrastructure.
 
@@ -361,11 +352,10 @@ activities:
           - whelan
 
   - type: note
-    kind: messages
     author_ref: catherine
     priority_ref: admin
     title: "Expense report - taxi receipts"
-    created: "-1d"
+    created: "+0d"
     notes:
       - author_ref: catherine
         created: "+0d 12:15"
@@ -379,12 +369,11 @@ activities:
           href: mailto:catherine.standish@sloughhouse.gov.uk
 
   - type: event
-    kind: meal
     priority_ref: personal
     title: "Lunch - pub, alone"
     at: "+0d 13:00 / +0d 14:15"
     notes:
-      - created: "-1d 14:30"
+      - created: "+0d 14:30"
         content: |
           Steak and kidney pie (questionable kidney provenance). Three pints (questionable life choices).
 
@@ -395,11 +384,11 @@ activities:
     priority_ref: containment
     title: "Analyze Roddy's signal intercepts"
     assignee_ref: user
-    created: "-1d"
+    on: "+1d"
     tags:
       urgent: [user]
     notes:
-      - created: "-2d 10:30"
+      - created: "+1d 10:30"
         content: |
           Roddy's algorithm actually found something useful (don't tell him, it'll go to his head).
 
@@ -418,12 +407,11 @@ activities:
           - roddy
 
   - type: event
-    kind: meeting
     priority_ref: team
     title: "Shirley - field assignment prep"
     at: "+1d 11:30 / +1d 11:45"
     notes:
-      - created: "-2d 11:50"
+      - created: "+1d 11:50"
         content: |
           Told Shirley she might need to do some "light observation" in the next few days. Didn't specify what or where.
 
@@ -436,12 +424,11 @@ activities:
           - shirley
 
   - type: note
-    kind: messages
     priority_ref: containment
     title: "Louisa update - former asset locations"
-    created: "-1d"
+    created: "+1d"
     notes:
-      - created: "-2d 13:15"
+      - created: "+1d 13:15"
         content: |
           **Secure message from Louisa:**
 
@@ -470,9 +457,9 @@ activities:
     priority_ref: team
     title: "River - research London GDR connections"
     assignee_ref: user
-    created: "-1d"
+    on: "+1d"
     notes:
-      - created: "-2d 14:00"
+      - created: "+1d 14:00"
         content: |
           Gave River a new assignment: research any GDR operations that had London components during the Cold War.
 
@@ -483,12 +470,11 @@ activities:
           - river
 
   - type: event
-    kind: meeting
     priority_ref: admin
     title: "Budget meeting (unavoidable)"
     at: "+1d 15:00 / +1d 15:47"
     notes:
-      - created: "-2d 16:00"
+      - created: "+1d 16:00"
         content: |
           Finance wants to know why Slough House needs its budget maintained when we "don't do anything important."
 
@@ -497,12 +483,11 @@ activities:
           They weren't amused. Approved the budget anyway. They always do. Slough House is a convenient line item for hiding things.
 
   - type: note
-    kind: messages
     priority_ref: personal
     title: "Medical - another missed call"
-    created: "-1d"
+    created: "+1d"
     notes:
-      - created: "-2d 17:30"
+      - created: "+1d 17:30"
         content: |
           **Voicemail from Dr. Mehta**
 
@@ -517,15 +502,14 @@ activities:
 
   # Day +2: Pieces in play
   - type: note
-    kind: messages
     priority_ref: containment
     title: "River's findings - London connection identified"
-    created: "-1d"
+    created: "+2d"
     tags:
       urgent: [user]
       pinned: [user]
     notes:
-      - created: "-2d 09:15"
+      - created: "+2d 09:15"
         content: |
           **From: River Cartwright**
 
@@ -555,12 +539,12 @@ activities:
     priority_ref: containment
     title: "Shirley - observe 47B Kingsland Road"
     assignee_ref: user
-    created: "-1d"
+    on: "+2d"
     tags:
       urgent: [user]
       waiting: [user]
     notes:
-      - created: "-2d 10:00"
+      - created: "+2d 10:00"
         content: |
           Sent Shirley to watch the Shoreditch address. Instructions:
 
@@ -575,12 +559,11 @@ activities:
           - shirley
 
   - type: event
-    kind: phone
     priority_ref: containment
     title: "Call: Taverner (escalation attempt)"
     at: "+2d 14:20 / +2d 14:33"
     notes:
-      - created: "-2d 14:40"
+      - created: "+2d 14:40"
         content: |
           Diana called, concerned about "historical network reactivation risks." Wants to "coordinate response."
 
@@ -600,9 +583,9 @@ activities:
     priority_ref: admin
     title: "Submit taxi receipts to Catherine"
     assignee_ref: user
-    created: "-1d"
+    on: "+2d"
     notes:
-      - created: "-2d 15:30"
+      - created: "+2d 15:30"
         content: |
           Found receipts in jacket pocket (slightly stained, mostly legible).
 
@@ -611,7 +594,6 @@ activities:
           - catherine
 
   - type: event
-    kind: meeting
     priority_ref: team
     title: "Roddy - signal analysis update"
     at: "+2d 16:00 / +2d 16:12"
@@ -634,18 +616,17 @@ activities:
           Everything's coming together. Now we just need to know who's in the safehouse and what they want.
 
   - type: note
-    kind: document
     priority_ref: containment
     title: "Working theory update - need to move soon"
-    created: "-1d"
+    created: "+2d"
     tags:
       decision: [user]
     notes:
-      - created: "-2d 17:00"
+      - created: "+2d 17:00"
         content: |
           **@plot, summarize what we know about the Curtain situation**
         ai_query: true
-      - created: "-2d 17:00"
+      - created: "+2d 17:00"
         content: |
           **Plot AI Summary:**
 
@@ -668,7 +649,7 @@ activities:
           - Await Shirley's surveillance report from Kingsland Road
           - Maintain Regent's Park misdirection
           - Prepare for quiet intervention if situation escalates
-      - created: "-2d 17:05"
+      - created: "+2d 17:05"
         content: |
           ---
 
@@ -679,12 +660,11 @@ activities:
           Either way: no headlines, no credit, no mess. That's the standard.
 
   - type: note
-    kind: document
     priority_ref: personal
     title: "Reminder: Catherine's birthday next month"
-    created: "-1d"
+    created: "+2d"
     notes:
-      - created: "-2d 18:00"
+      - created: "+2d 18:00"
         content: |
           Need to remember this. She never mentions it, which means it matters.
 
@@ -696,24 +676,23 @@ activities:
     priority_ref: team
     title: "Weekly team review meeting"
     assignee_ref: user
-    on: "+4d"
+    on: "+3d"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=FR"
     notes:
-      - created: "-2d 10:00"
+      - created: "+3d 10:00"
         content: |
           Friday ritual. Check in on the team without checking in too obviously.
 
           They think it's administrative. It is, in the sense that keeping them functional is administrative work.
 
   - type: note
-    kind: document
     priority_ref: containment
     title: "Contingency: if Regent's Park moves first"
-    created: "-1d"
+    created: "+2d"
     tags:
       warning: [user]
     notes:
-      - created: "-2d 19:00"
+      - created: "+2d 19:00"
         content: |
           If Diana escalates to committee before I wrap this:
 

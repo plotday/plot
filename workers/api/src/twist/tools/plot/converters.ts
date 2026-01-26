@@ -3,6 +3,7 @@ import {
   type Activity,
   type ActivityMeta,
   ActivityType,
+  type ActivityKind,
   type Actor,
   type ActorId,
   ActorType,
@@ -145,6 +146,7 @@ export function fromDbActivity(
     // @ts-ignore - dbActivity.id is a string from DB, but Uuid is a branded type
     id: dbActivity.id as any,
     type: activityType,
+    kind: dbActivity.kind as ActivityKind | null,
     created: dbActivity.source_created_at
       ? new Date(dbActivity.source_created_at)
       : new Date(dbActivity.created_at),

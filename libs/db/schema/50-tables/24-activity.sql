@@ -19,6 +19,7 @@ CREATE TABLE "public"."activity" (
     "archived_at" timestamp with time zone,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "type" activity_type NOT NULL DEFAULT 'note' ::activity_type,
+    "kind" activity_kind,
     "order" double precision NOT NULL DEFAULT public.order_first (),
     "draft" boolean NOT NULL DEFAULT FALSE,
     "private" boolean NOT NULL DEFAULT FALSE,

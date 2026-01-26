@@ -30,8 +30,43 @@ import {
 import { fromDbActivity } from "./converters";
 import { formatInterval } from "./datetime";
 import type { Plot } from "./index";
-import { createNotes } from "./note";
+import {
+  createNotes,
+  ensureIncreasingCreatedTimestamps,
+} from "./note";
 import { processOccurrences } from "./occurrences";
+
+/**
+ * Ensures activities have strictly increasing sourceCreatedAt timestamps.
+ * Activities with explicit created field keep it, activities without get assigned
+ * incrementally increasing timestamps based on array position.
+ */
+function ensureIncreasingActivityCreatedTimestamps(
+  activities: (NewActivity | NewActivityWithNotes)[]
+): (NewActivity | NewActivityWithNotes)[] {
+  if (activities.length === 0) return activities;
+
+  let lastTimestamp = Date.now();
+
+  return activities.map((activity) => {
+    if (activity.created) {
+      // Activity has explicit timestamp - use it and update tracking
+      const activityTime =
+        activity.created instanceof Date
+          ? activity.created.getTime()
+          : new Date(activity.created).getTime();
+      lastTimestamp = Math.max(lastTimestamp, activityTime);
+      return activity;
+    } else {
+      // Activity lacks timestamp - assign next incremental value
+      lastTimestamp += 1; // 1ms increment
+      return {
+        ...activity,
+        created: new Date(lastTimestamp),
+      };
+    }
+  });
+}
 
 // Re-export from split files
 export { createNote, createNotes, getNotes, updateNote } from "./note";
@@ -553,6 +588,7 @@ export async function getActivity(
       private: data.private ?? false,
       type: (data.type ??
         "note") as Database["public"]["Enums"]["activity_type"],
+      kind: (data as any).kind ?? null,
       updated_at: data.updated_at ?? new Date().toISOString(),
       updated_by: data.updated_by ?? 0,
       author: data.author,
@@ -813,13 +849,17 @@ export async function createActivities(
   }
 
   try {
+    // Ensure activities without created timestamps get strictly increasing values
+    const processedActivities =
+      ensureIncreasingActivityCreatedTimestamps(activities);
+
     const limit = pLimit(5);
     type ActivityRow = Database["public"]["Tables"]["activity"]["Row"];
     type DbActivity = Pick<ActivityRow, "id" | "priority_id" | "created_at">;
     const dbActivities: DbActivity[] = new Array(activities.length);
 
     const preparedActivities = await Promise.all(
-      activities.map((activity) =>
+      processedActivities.map((activity) =>
         limit(() => prepareActivityForDb(plot, activity))
       )
     );
@@ -929,19 +969,34 @@ export async function createActivities(
     }
 
     // Create notes for all activities
-    const allNotes: NewNote[] = activities.flatMap((activity, index) => {
-      if (!("notes" in activity) || !activity.notes || activity.notes.length === 0) {
-        return [];
+    const allNotes: NewNote[] = processedActivities.flatMap(
+      (activity, index) => {
+        if (
+          !("notes" in activity) ||
+          !activity.notes ||
+          activity.notes.length === 0
+        ) {
+          return [];
+        }
+
+        // Preprocess timestamps for this activity's notes before flattening
+        // Cast is safe: helper only examines 'created' field, not 'activity'
+        const processedActivityNotes = ensureIncreasingCreatedTimestamps(
+          activity.notes as NewNote[]
+        );
+
+        return processedActivityNotes.map(
+          (note): NewNote => ({
+            ...note,
+            activity: { id: dbActivities[index].id as Uuid },
+          })
+        );
       }
-      return activity.notes.map(
-        (note): NewNote => ({
-          ...note,
-          activity: { id: dbActivities[index].id as Uuid },
-        })
-      );
-    });
+    );
 
     if (allNotes.length > 0) {
+      // Notes already have timestamps assigned, but call createNotes which will
+      // apply the function again (idempotent since notes now have created field)
       await createNotes(plot, allNotes);
     }
 

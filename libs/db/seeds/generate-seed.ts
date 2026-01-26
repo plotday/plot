@@ -1076,7 +1076,7 @@ function generateSQL(
   if (activities.length > 0) {
     lines.push("-- Activities");
     lines.push(
-      'INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, "order", draft, private, title, preview, at, "on", duration, done_at, recurrence_rule, archived_at, source_created_at, updated_at)'
+      'INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, kind, "order", draft, private, title, preview, at, "on", duration, done_at, recurrence_rule, archived_at, source_created_at, updated_at)'
     );
     lines.push("VALUES");
     for (let i = 0; i < activities.length; i++) {
@@ -1087,17 +1087,19 @@ function generateSQL(
           a.created_by
         )}, ${sqlString(a.assignee_id)}, ${sqlString(
           a.priority_id
-        )}, ${sqlString(a.type)}, ${a.order}, ${a.draft}, ${
-          a.private
-        }, ${sqlString(a.title)}, ${sqlString(a.preview)}, ${
-          a.at ? sqlString(a.at) : "NULL"
-        }, ${a.on ? sqlString(a.on) : "NULL"}, ${
-          a.duration ? sqlString(a.duration) : "NULL"
-        }, ${sqlString(a.done_at)}, ${sqlString(
-          a.recurrence_rule
-        )}, ${sqlString(a.archived_at)}, ${sqlString(
-          a.source_created_at
-        )}, ${sqlString(a.updated_at)})${comma}`
+        )}, ${sqlString(a.type)}, ${a.kind ? sqlString(a.kind) : "NULL"}, ${
+          a.order
+        }, ${a.draft}, ${a.private}, ${sqlString(a.title)}, ${sqlString(
+          a.preview
+        )}, ${a.at ? sqlString(a.at) : "NULL"}, ${
+          a.on ? sqlString(a.on) : "NULL"
+        }, ${a.duration ? sqlString(a.duration) : "NULL"}, ${sqlString(
+          a.done_at
+        )}, ${sqlString(a.recurrence_rule)}, ${sqlString(
+          a.archived_at
+        )}, ${sqlString(a.source_created_at)}, ${sqlString(
+          a.updated_at
+        )})${comma}`
       );
     }
     lines.push("");
@@ -1276,6 +1278,7 @@ function processActivity(
     assignee_id: assigneeId,
     priority_id: priorityId,
     type: activity.type,
+    kind: activity.kind ?? null,
     order: order++,
     draft: activity.draft ?? false,
     private: activity.private ?? false,
@@ -1414,7 +1417,7 @@ function parseDateOffset(baseDate: string, offset: string): Date {
     );
   }
 
-  const base = new Date(baseDate + "T00:00:00Z");
+  const base = new Date(baseDate + "T00:00:00");
 
   // Parse offset
   const match = offset.match(/^([+-]?\d+)([dwMy])(?:\s+(\d{2}):(\d{2}))?$/);
@@ -1429,23 +1432,23 @@ function parseDateOffset(baseDate: string, offset: string): Date {
 
   switch (unit) {
     case "d":
-      result.setUTCDate(result.getUTCDate() + amount);
+      result.setDate(result.getDate() + amount);
       break;
     case "w":
-      result.setUTCDate(result.getUTCDate() + amount * 7);
+      result.setDate(result.getDate() + amount * 7);
       break;
     case "M":
-      result.setUTCMonth(result.getUTCMonth() + amount);
+      result.setMonth(result.getMonth() + amount);
       break;
     case "y":
-      result.setUTCFullYear(result.getUTCFullYear() + amount);
+      result.setFullYear(result.getFullYear() + amount);
       break;
   }
 
   // Set time if provided
   if (hoursStr && minutesStr) {
-    result.setUTCHours(parseInt(hoursStr, 10));
-    result.setUTCMinutes(parseInt(minutesStr, 10));
+    result.setHours(parseInt(hoursStr, 10));
+    result.setMinutes(parseInt(minutesStr, 10));
   }
 
   return result;

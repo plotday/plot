@@ -61,7 +61,6 @@ priorities:
 activities:
   # Day -2: Quiet observation
   - type: note
-    kind: document
     priority_ref: mens_team
     title: "Match review - Bournemouth loss (1-2)"
     created: "-2d"
@@ -111,7 +110,6 @@ activities:
           I don't do rescue anymore. I do support.
 
   - type: note
-    kind: messages
     author_ref: keeley
     priority_ref: community
     title: "Supporter sentiment - social media summary"
@@ -143,7 +141,6 @@ activities:
       pinned: [user]
 
   - type: event
-    kind: social
     priority_ref: personal
     title: "Coffee with Barbara - weekly catchup"
     at: "-2d 10:00 / -2d 11:00"
@@ -176,7 +173,6 @@ activities:
 
   # Day -1: Individual conversations
   - type: event
-    kind: meeting
     priority_ref: mens_team
     title: "Meeting with Roy - coaching check-in"
     at: "-1d 14:00 / -1d 14:45"
@@ -201,7 +197,6 @@ activities:
           That's the relationship we've built.
 
   - type: event
-    kind: meeting
     priority_ref: mens_team
     title: "Meeting with Nate - separate check-in"
     at: "-1d 15:30 / -1d 16:15"
@@ -241,7 +236,6 @@ activities:
       star: [user]
 
   - type: note
-    kind: document
     priority_ref: womens_team
     title: "Women's team exploration - initial research"
     created: "-1d"
@@ -265,7 +259,6 @@ activities:
           But it needs to be more than vision. It needs to be sustainable.
 
   - type: note
-    kind: messages
     priority_ref: personal
     title: "Rupert being Rupert (ignore)"
     created: "-1d"
@@ -289,16 +282,15 @@ activities:
 
   # Day 0 (Base date): Building the future
   - type: note
-    kind: document
     priority_ref: womens_team
     title: "WOMEN'S TEAM PROPOSAL - Vision and viability"
-    created: "-1d"
+    on: "+0d"
     tags:
       pinned: [user]
       goal: [user]
       decision: [user]
     notes:
-      - created: "-1d 07:30"
+      - created: "+0d 07:30"
         content: |
           ## AFC Richmond Women's Football Club
           ### Vision Document - Draft 1.0
@@ -454,11 +446,11 @@ activities:
           Because it's who we are.
 
           ---
-      - created: "-1d 08:30"
+      - created: "+0d 08:30"
         content: |
           **@plot, what are the common challenges football clubs face when launching women's teams?**
         ai_query: true
-      - created: "-1d 08:30"
+      - created: "+0d 08:30"
         content: |
           **Plot AI Response:**
 
@@ -480,7 +472,7 @@ activities:
           - Set realistic timelines for competitive success
 
           Richmond's advantage: Established culture of belief and community could translate well if authentically applied to women's team.
-      - created: "-1d 08:45"
+      - created: "+0d 08:45"
         content: |
           ---
 
@@ -495,7 +487,7 @@ activities:
     title: "Morning office time - quiet work"
     at: "+0d 08:00 / +0d 09:30"
     notes:
-      - created: "-1d 09:45"
+      - created: "+0d 09:45"
         content: |
           Early morning in the office before anyone else arrives. This is when I think clearest.
 
@@ -509,11 +501,11 @@ activities:
     priority_ref: womens_team
     title: "Schedule board presentation for women's team proposal"
     assignee_ref: user
-    created: "-1d"
+    on: "+0d"
     tags:
       todo: [user]
     notes:
-      - created: "-1d 10:00"
+      - created: "+0d 10:00"
         content: |
           Need to get this on the March board agenda.
 
@@ -522,12 +514,11 @@ activities:
           - higgins
 
   - type: note
-    kind: messages
     priority_ref: community
     title: "Supporter feedback - women's team interest"
-    created: "-1d"
+    created: "+0d"
     notes:
-      - created: "-1d 11:00"
+      - created: "+0d 11:00"
         content: |
           **From: Richmond Supporters Trust**
           **Subject: Women's Football - Survey Results**
@@ -560,7 +551,6 @@ activities:
       star: [user]
 
   - type: event
-    kind: meal
     priority_ref: personal
     title: "Lunch with Keeley - catch up"
     at: "+0d 12:30 / +0d 13:45"
@@ -584,12 +574,11 @@ activities:
 
   # Day +1: Building support
   - type: event
-    kind: meeting
     priority_ref: womens_team
     title: "Higgins - women's team preliminary discussion"
     at: "+1d 10:00 / +1d 10:45"
     notes:
-      - created: "-2d 11:00"
+      - created: "+1d 11:00"
         content: |
           Ran the women's team proposal by Higgins before taking it to the full board.
 
@@ -618,12 +607,11 @@ activities:
       pinned: [user]
 
   - type: note
-    kind: messages
     priority_ref: mens_team
     title: "Upcoming fixture - Chelsea (away)"
-    created: "-1d"
+    created: "+1d"
     notes:
-      - created: "-2d 12:00"
+      - created: "+1d 12:00"
         content: |
           **From: Performance Analytics**
           **Subject: Match Preview - Chelsea vs Richmond**
@@ -646,13 +634,12 @@ activities:
           href: mailto:analytics@afcrichmond.com
 
   - type: event
-    kind: meeting
     priority_ref: operations
     title: "Weekly operations meeting"
     at: "+1d 14:00 / +1d 15:00"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     notes:
-      - created: "-2d 15:15"
+      - created: "+1d 15:15"
         content: |
           Standing Monday meeting with senior staff.
 
@@ -667,13 +654,13 @@ activities:
     priority_ref: community
     title: "Review supporter engagement initiatives"
     assignee_ref: user
-    created: "-1d"
+    on: "+1d"
     notes:
-      - created: "-2d 16:00"
+      - created: "+1d 16:00"
         content: |
           **@plot, summarize recent supporter sentiment and engagement trends**
         ai_query: true
-      - created: "-2d 16:00"
+      - created: "+1d 16:00"
         content: |
           **Plot AI Response:**
 
@@ -698,7 +685,7 @@ activities:
           - Interest in women's team proposal growing organically
 
           **Assessment:** Fanbase is resilient but needs reassurance that club is stable and has vision beyond current form.
-      - created: "-2d 16:15"
+      - created: "+1d 16:15"
         content: |
           ---
 
@@ -710,12 +697,11 @@ activities:
 
   # Day +2: Confidence building
   - type: note
-    kind: messages
     priority_ref: mens_team
     title: "Training report - confidence exercises"
-    created: "-1d"
+    created: "+2d"
     notes:
-      - created: "-2d 10:00"
+      - created: "+2d 10:00"
         content: |
           **From: Roy Kent**
           **Subject: Training Update**
@@ -742,7 +728,7 @@ activities:
     title: "Evening walk - think time"
     at: "+2d 18:00 / +2d 19:00"
     notes:
-      - created: "-2d 19:15"
+      - created: "+2d 19:15"
         content: |
           Walked through Richmond Green. Quiet evening, almost spring weather.
 
@@ -759,14 +745,13 @@ activities:
           And when they do, wouldn't it be better if Richmond was already building something bigger?
 
   - type: note
-    kind: document
     priority_ref: womens_team
     title: "Potential coaching candidates - preliminary research"
-    created: "-1d"
+    created: "+2d"
     tags:
       idea: [user]
     notes:
-      - created: "-2d 20:00"
+      - created: "+2d 20:00"
         content: |
           Started thinking about who could coach a Richmond women's team.
 
@@ -787,12 +772,11 @@ activities:
           That's what Ted taught us.
 
   - type: event
-    kind: meal
     priority_ref: operations
     title: "Board dinner - informal"
     at: "+3d 19:00 / +3d 21:30"
     notes:
-      - created: "-2d 21:45"
+      - created: "+3d 21:45"
         content: |
           Quarterly board dinner. Social, but also useful for reading the room.
 
@@ -817,11 +801,11 @@ activities:
     priority_ref: womens_team
     title: "Finalize women's team financial model"
     assignee_ref: user
-    created: "-2d"
+    on: "+3d"
     tags:
       todo: [user]
     notes:
-      - created: "-2d 10:00"
+      - created: "+3d 10:00"
         content: |
           Need to tighten the numbers before board presentation:
           - 5-year projection (not just Year 1)
@@ -833,12 +817,11 @@ activities:
           Make it bulletproof. Make it clear this is strategic, sustainable, and right.
 
   - type: note
-    kind: messages
     priority_ref: community
     title: "Trent Crimm - potential feature story"
-    created: "-2d"
+    created: "+3d"
     notes:
-      - created: "-2d 11:30"
+      - created: "+3d 11:30"
         content: |
           **Email from Trent Crimm (The Independent)**
 
@@ -861,14 +844,13 @@ activities:
       idea: [user]
 
   - type: note
-    kind: document
     priority_ref: operations
     title: "Looking ahead - Feb-March priorities"
-    created: "-2d"
+    created: "+3d"
     tags:
       pinned: [user]
     notes:
-      - created: "-2d 12:00"
+      - created: "+3d 12:00"
         content: |
           **Immediate (Next 2 weeks):**
           - Support men's team through slump (patience, not panic)
@@ -888,12 +870,11 @@ activities:
           That's the job now.
 
   - type: note
-    kind: document
     priority_ref: personal
     title: "Reflection - what Ted built here"
-    created: "-2d"
+    created: "+3d"
     notes:
-      - created: "-2d 22:00"
+      - created: "+3d 22:00"
         content: |
           Ted left almost two years ago. Sometimes it feels like yesterday. Sometimes it feels like a lifetime.
 
@@ -941,7 +922,6 @@ activities:
       pinned: [user]
 
   - type: note
-    kind: document
     priority_ref: womens_team
     title: "March board presentation - draft outline"
     created: "+4d"

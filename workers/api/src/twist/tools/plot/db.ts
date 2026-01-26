@@ -3,6 +3,7 @@ import {
   type ActivityLink,
   type ActivityMeta,
   ActivityType,
+  type ActivityKind,
   type ActorId,
   ActorType,
   type Note,
@@ -144,6 +145,7 @@ export function buildActivityFromDbRecord(
     // @ts-ignore - activityRecord.id is a string from DB, but Uuid is a branded type
     id: activityRecord.id as any,
     type: activityType,
+    kind: (activityRecord as any).kind as ActivityKind | null ?? null,
     created: activityRecord.created_at ? new Date(activityRecord.created_at) : new Date(),
     author: {
       id: (activityRecord.author_id ?? activityRecord.created_by) as ActorId,

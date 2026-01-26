@@ -21,6 +21,36 @@ import {
 } from "./activity-helpers";
 import type { Plot } from "./index";
 
+/**
+ * Ensures notes have strictly increasing sourceCreatedAt timestamps.
+ * Notes with explicit created field keep it, notes without get assigned
+ * incrementally increasing timestamps based on array position.
+ */
+export function ensureIncreasingCreatedTimestamps(notes: NewNote[]): NewNote[] {
+  if (notes.length === 0) return notes;
+
+  let lastTimestamp = Date.now();
+
+  return notes.map((note) => {
+    if (note.created) {
+      // Note has explicit timestamp - use it and update tracking
+      const noteTime =
+        note.created instanceof Date
+          ? note.created.getTime()
+          : new Date(note.created).getTime();
+      lastTimestamp = Math.max(lastTimestamp, noteTime);
+      return note;
+    } else {
+      // Note lacks timestamp - assign next incremental value
+      lastTimestamp += 1; // 1ms increment
+      return {
+        ...note,
+        created: new Date(lastTimestamp),
+      };
+    }
+  });
+}
+
 export async function createNote(
   plot: Plot,
   note: NewNote,
@@ -273,10 +303,13 @@ export async function createNotes(
   plot: Plot,
   notes: NewNote[]
 ): Promise<Uuid[]> {
+  // Ensure notes without created timestamps get strictly increasing values
+  const processedNotes = ensureIncreasingCreatedTimestamps(notes);
+
   // Create all notes in parallel, filtering out empty notes
   // Pass skipActivityRead: true to avoid deadlock from parallel activity_read upserts
   const results = await Promise.allSettled(
-    notes.map((note) => createNote(plot, note, true))
+    processedNotes.map((note) => createNote(plot, note, true))
   );
 
   // Return only successfully created note IDs, log failures (except empty note errors)

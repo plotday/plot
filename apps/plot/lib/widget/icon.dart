@@ -40,6 +40,20 @@ class PlotIcon {
   static const share = FontAwesomeIcons.userPlus;
   static const users = FontAwesomeIcons.users;
 
+  // Activity kind icons
+  static const document = FontAwesomeIcons.fileLines;
+  static const messages = FontAwesomeIcons.messages;
+  static const meeting = FontAwesomeIcons.users;
+  static const videoconference = FontAwesomeIcons.video;
+  static const phone = FontAwesomeIcons.phone;
+  static const focus = FontAwesomeIcons.bullseye;
+  static const meal = FontAwesomeIcons.utensils;
+  static const exercise = FontAwesomeIcons.dumbbell;
+  static const family = FontAwesomeIcons.peopleGroup;
+  static const travel = FontAwesomeIcons.plane;
+  static const social = FontAwesomeIcons.userGroup;
+  static const entertainment = FontAwesomeIcons.film;
+
   // Tags
   static const now = FontAwesomeIcons.circlePlay;
   static const inbox = FontAwesomeIcons.inbox;
