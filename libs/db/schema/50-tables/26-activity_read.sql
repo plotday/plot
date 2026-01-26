@@ -4,7 +4,7 @@ CREATE TABLE "public"."activity_read" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "activity_id" uuid NOT NULL REFERENCES public.activity ON DELETE CASCADE,
     "read_at" timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT activity_read_unique UNIQUE (user_id, activity_id)
+    PRIMARY KEY (user_id, activity_id)
 );
 
 ALTER TABLE "public"."activity_read" ENABLE ROW LEVEL SECURITY;

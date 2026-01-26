@@ -37,6 +37,13 @@ CREATE TRIGGER set_twist_admin_created_at
     FOR EACH ROW
     EXECUTE FUNCTION set_created_at ();
 
+-- Indexes for foreign key performance
+CREATE INDEX idx_twist_admin_user_id ON "public"."twist_admin" (user_id);
+
+CREATE INDEX idx_twist_admin_publisher_id ON "public"."twist_admin" (publisher_id);
+
+CREATE INDEX idx_twist_admin_priority_id ON "public"."twist_admin" (priority_id);
+
 CREATE TABLE "public"."twist" (
     "id" bigint NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "twist_admin_id" bigint NOT NULL REFERENCES public.twist_admin (id) ON DELETE CASCADE,

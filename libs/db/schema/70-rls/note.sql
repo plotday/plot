@@ -7,14 +7,14 @@ CREATE POLICY "Users can view notes for accessible activities" ON "public"."note
             FROM
                 public.activity
             WHERE
-                activity.id = note.activity_id AND public.user_has_priority_access (auth.uid (), activity.priority_id))
+                activity.id = note.activity_id AND public.user_has_priority_access ((select auth.uid ()), activity.priority_id))
             -- Draft filtering: only creator can see drafts
             AND (note.draft = FALSE
-                OR note.created_by = auth.uid ())
+                OR note.created_by = (select auth.uid ()))
             -- Private filtering: creator or mentioned users can see private notes
             AND (note.private = FALSE
-                OR note.created_by = auth.uid ()
-                OR auth.uid () = ANY (note.mentions)));
+                OR note.created_by = (select auth.uid ())
+                OR (select auth.uid ()) = ANY (note.mentions)));
 
 CREATE POLICY "Users can insert notes for accessible activities" ON "public"."note"
     FOR INSERT
@@ -25,7 +25,7 @@ CREATE POLICY "Users can insert notes for accessible activities" ON "public"."no
             FROM
                 public.activity
             WHERE
-                activity.id = note.activity_id AND public.user_has_priority_access (auth.uid (), activity.priority_id)));
+                activity.id = note.activity_id AND public.user_has_priority_access ((select auth.uid ()), activity.priority_id)));
 
 CREATE POLICY "Users can update notes for accessible activities" ON "public"."note"
     FOR UPDATE
@@ -35,25 +35,25 @@ CREATE POLICY "Users can update notes for accessible activities" ON "public"."no
             FROM
                 public.activity
             WHERE
-                activity.id = note.activity_id AND public.user_has_priority_access (auth.uid (), activity.priority_id))
+                activity.id = note.activity_id AND public.user_has_priority_access ((select auth.uid ()), activity.priority_id))
             -- Draft filtering: only creator can update drafts
             AND (note.draft = FALSE
-                OR note.created_by = auth.uid ())
+                OR note.created_by = (select auth.uid ()))
             -- Private filtering: creator or mentioned users can update private notes
             AND (note.private = FALSE
-                OR note.created_by = auth.uid ()
-                OR auth.uid () = ANY (note.mentions)))
+                OR note.created_by = (select auth.uid ())
+                OR (select auth.uid ()) = ANY (note.mentions)))
             WITH CHECK (EXISTS (
                 SELECT
                     1
                 FROM
                     public.activity
                 WHERE
-                    activity.id = note.activity_id AND public.user_has_priority_access (auth.uid (), activity.priority_id))
+                    activity.id = note.activity_id AND public.user_has_priority_access ((select auth.uid ()), activity.priority_id))
             -- Draft filtering: only creator can update drafts
             AND (note.draft = FALSE
-                OR note.created_by = auth.uid ())
+                OR note.created_by = (select auth.uid ()))
             -- Private filtering: creator or mentioned users can update private notes
             AND (note.private = FALSE
-                OR note.created_by = auth.uid ()
-                OR auth.uid () = ANY (note.mentions)));
+                OR note.created_by = (select auth.uid ())
+                OR (select auth.uid ()) = ANY (note.mentions)));

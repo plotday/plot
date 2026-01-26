@@ -73,7 +73,7 @@ CREATE FUNCTION can_access_priority (_priority_id uuid)
             FROM
                 public.user_priority_expanded upe
             WHERE
-                upe.user_id = auth.uid ()
+                upe.user_id = (select auth.uid ())
                 AND upe.priority_id = _priority_id);
 $$
 LANGUAGE sql
@@ -90,7 +90,7 @@ CREATE FUNCTION can_access_priority (_priority_path ltree)
                 public.priority_user pu
                 JOIN public.priority p ON p.id = pu.priority_id
             WHERE
-                pu.user_id = auth.uid ()
+                pu.user_id = (select auth.uid ())
                 AND pu.archived_at IS NULL
                 AND p.path @> _priority_path);
 $$

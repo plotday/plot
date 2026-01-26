@@ -47,7 +47,7 @@ CREATE TABLE "public"."priority_user" (
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "archived_at" timestamp with time zone,
     "personal" boolean NOT NULL DEFAULT FALSE,
-    CONSTRAINT priority_user_unique UNIQUE (user_id, priority_id)
+    PRIMARY KEY (user_id, priority_id)
 );
 
 -- Ensure each user has max one personal priority
@@ -121,7 +121,7 @@ CREATE TABLE "public"."priority_settings" (
     "pomodoro" integer,
     "color" integer,
     "title" text,
-    CONSTRAINT priority_settings_unique UNIQUE (user_id, priority_id)
+    PRIMARY KEY (user_id, priority_id)
 );
 
 ALTER TABLE "public"."priority_settings" ENABLE ROW LEVEL SECURITY;

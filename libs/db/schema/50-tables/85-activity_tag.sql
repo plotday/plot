@@ -1,4 +1,5 @@
 CREATE TABLE "public"."activity_tag" (
+    "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "archived_at" timestamp with time zone,
     "actor_id" uuid NOT NULL,

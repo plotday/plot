@@ -27,6 +27,11 @@ ALTER TABLE "public"."session" ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX session_at_idx ON "session" USING spgist (at);
 
+-- Index for foreign key performance
+CREATE INDEX idx_session_user_id ON "public"."session" (user_id)
+WHERE
+    archived_at IS NULL;
+
 CREATE TRIGGER set_session_updated_at
     BEFORE INSERT OR UPDATE ON "public"."session"
     FOR EACH ROW

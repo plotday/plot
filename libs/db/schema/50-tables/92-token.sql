@@ -26,17 +26,26 @@ CREATE TRIGGER set_token_created_at
 -- RLS policies: Users can manage their own tokens
 CREATE POLICY "Users can view their own tokens" ON "public"."token"
     FOR SELECT
-    USING (auth.uid () = user_id);
+    USING ((select auth.uid ()) = user_id);
 
 CREATE POLICY "Users can create their own tokens" ON "public"."token"
     FOR INSERT
-    WITH CHECK (auth.uid () = user_id);
+    WITH CHECK ((select auth.uid ()) = user_id);
 
 CREATE POLICY "Users can delete their own tokens" ON "public"."token"
     FOR DELETE
-    USING (auth.uid () = user_id);
+    USING ((select auth.uid ()) = user_id);
 
 CREATE POLICY "Users can update their own tokens" ON "public"."token"
     FOR UPDATE
-    USING (auth.uid () = user_id)
-    WITH CHECK (auth.uid () = user_id);
+    USING ((select auth.uid ()) = user_id)
+    WITH CHECK ((select auth.uid ()) = user_id);
+
+-- Indexes for foreign key performance
+CREATE INDEX idx_token_user_id ON "public"."token" (user_id)
+WHERE
+    archived_at IS NULL;
+
+CREATE INDEX idx_token_publisher_id ON "public"."token" (publisher_id)
+WHERE
+    archived_at IS NULL;

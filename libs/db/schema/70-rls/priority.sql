@@ -2,7 +2,7 @@
 -- Also allow users to see priorities they created (needed for RETURNING clause before priority_user trigger runs)
 CREATE POLICY "Users can access their priorities" ON public.priority
     FOR SELECT TO authenticated
-        USING (can_access_priority (id) OR created_by = auth.uid ());
+        USING (can_access_priority (id) OR created_by = (select auth.uid ()));
 
 CREATE POLICY "Users change sharing for their priorities" ON public.priority_user
     FOR ALL TO authenticated
@@ -27,5 +27,5 @@ CREATE POLICY "Users can update their priorities" ON public.priority
 
 CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_settings"
     FOR ALL TO authenticated
-        USING (user_id = auth.uid ());
+        USING (user_id = (select auth.uid ()));
 
