@@ -45,7 +45,13 @@ class _LoadingPageState extends State<LoadingPage> {
           spacing: 16,
           children: [
             if (_showSpinner) Spinner(size: 22),
-            if (widget.message != null) Text(widget.message!),
+            if (widget.message != null)
+              Text(
+                widget.message!,
+                style: TextStyle(
+                  color: context.theme.colors.mutedForeground,
+                ),
+              ),
           ],
         ),
       ),
