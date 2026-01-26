@@ -88,7 +88,8 @@ CREATE OR REPLACE FUNCTION insert_priority_user ()
     AS $$
 BEGIN
     -- Only create entry for new, top-level priorities, and mark them as personal
-    IF nlevel (NEW.path) = 1 THEN
+    -- Skip global priorities (those with keys starting with @, except @plot which is user-specific)
+    IF nlevel (NEW.path) = 1 AND (NEW.key IS NULL OR NEW.key = '@plot' OR NOT NEW.key LIKE '@%') THEN
         INSERT INTO public.priority_user (user_id, priority_id, personal)
             VALUES (NEW.created_by, NEW.id, TRUE);
     END IF;
@@ -119,6 +120,7 @@ CREATE TABLE "public"."priority_settings" (
     "path" ltree,
     "pomodoro" integer,
     "color" integer,
+    "title" text,
     CONSTRAINT priority_settings_unique UNIQUE (user_id, priority_id)
 );
 

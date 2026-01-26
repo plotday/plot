@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import type { SupabaseClient } from "@plotday/db";
 
 import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
@@ -23,6 +24,7 @@ const account = new Hono<{ Bindings: Bindings }>();
 const ActivateRequestSchema = z.object({
   code: z.string().min(1, "Invitation code is required"),
 });
+
 
 // POST /activate - Activate user account with invitation code
 account.post("/activate", async (c) => {
@@ -80,19 +82,16 @@ account.post("/activate", async (c) => {
   }
 
   let priority: { id: string } | null = null;
-  let shouldInstallPlotTwist = true;
 
   if (existingPriorityUser) {
-    // Root priority already exists (e.g., from generate-seed script)
-    // Skip creating it and skip Plot twist installation
+    // Root priority already exists (e.g., from signup trigger or seed data)
     const context = extractRequestContext(c);
     const logger = createLogger(context);
-    logger.info("Root priority already exists, skipping creation and Plot twist installation", {
+    logger.info("Root priority already exists, skipping creation", {
       user_id: user.id,
       priority_id: existingPriorityUser.priority_id,
     });
     priority = { id: existingPriorityUser.priority_id };
-    shouldInstallPlotTwist = false;
   } else {
     // Step 3: Generate path for root priority
     const { data: pathData, error: pathError } = await c.var.supabase.rpc(
@@ -247,10 +246,11 @@ account.post("/activate", async (c) => {
     billingEnd = localDates.end;
   }
 
-  // Step 6: Insert user_subscription record with whatever Stripe data we have
+  // Step 6: Upsert user_subscription record with whatever Stripe data we have
+  // Use upsert to make this idempotent in case of retries after failed activations
   const { error: subscriptionError } = await c.var.supabaseAdmin
     .from("user_subscription")
-    .insert({
+    .upsert({
       user_id: user.id,
       stripe_customer_id: stripeCustomerId,
       stripe_subscription_id: stripeSubscriptionId,
@@ -258,6 +258,8 @@ account.post("/activate", async (c) => {
       status: "active",
       billing_cycle_start: billingStart.toISOString(),
       billing_cycle_end: billingEnd.toISOString(),
+    }, {
+      onConflict: 'user_id'
     });
 
   if (subscriptionError) {
@@ -274,13 +276,55 @@ account.post("/activate", async (c) => {
     );
   }
 
-  // Step 7: Create Plot priority (skip if root priority already existed)
-  let _plotPriority: { id: string } | null = null;
-  if (shouldInstallPlotTwist) {
+  // Step 7: Create Plot priority if it doesn't exist
+  // Get root priority path to search for @plot priority
+  const { data: rootPriorityData, error: rootError } = await c.var.supabaseAdmin
+    .from("priority")
+    .select("path")
+    .eq("id", priority.id)
+    .single();
+
+  if (rootError || !rootPriorityData) {
+    return captureServerError(c, rootError ? new Error(rootError.message) : new Error("Unknown error"), `Failed to get root priority path: ${rootError?.message || "Unknown error"}`, {
+      user_id: user.id,
+      priority_id: priority.id,
+    });
+  }
+
+  const rootPath = rootPriorityData.path as string;
+  const rootPathPart = rootPath.split(".")[0];
+
+  // Check if @plot priority already exists
+  const { data: existingPlotPriority, error: plotCheckError } = await c.var.supabaseAdmin
+    .from("priority")
+    .select("id")
+    .eq("key", "@plot")
+    .filter("path", "cd", rootPathPart)
+    .maybeSingle();
+
+  if (plotCheckError) {
+    return captureServerError(c, new Error(plotCheckError.message), `Failed to check for existing Plot priority: ${plotCheckError.message}`, {
+      user_id: user.id,
+    });
+  }
+
+  let plotPriorityId: string;
+
+  if (existingPlotPriority) {
+    // Plot priority already exists
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.info("Plot priority already exists, skipping creation", {
+      user_id: user.id,
+      plot_priority_id: existingPlotPriority.id,
+    });
+    plotPriorityId = existingPlotPriority.id;
+  } else {
+    // Create Plot priority
     // Generate path for Plot priority as child of root
     const { data: plotPathData, error: plotPathError } = await c.var.supabase.rpc(
       "generate_path",
-      { parent: (priority as any).path || priority.id }
+      { parent: rootPath }
     );
 
     if (plotPathError || !plotPathData) {
@@ -298,7 +342,7 @@ account.post("/activate", async (c) => {
           color: 0,
           key: "@plot",
         })
-        .select()
+        .select("id")
         .single();
 
     if (plotPriorityError || !newPlotPriority) {
@@ -307,11 +351,36 @@ account.post("/activate", async (c) => {
       });
     }
 
-    _plotPriority = newPlotPriority;
+    plotPriorityId = newPlotPriority.id;
   }
 
-  // Step 8: Install and activate Plot twist on root priority (skip if root priority already existed)
-  if (shouldInstallPlotTwist && priority) {
+  // Step 8: Install and activate Plot twist on root priority if not already installed
+  // Check if Plot twist is already installed on the root priority
+  const { data: existingPriorityTwist, error: twistCheckError } = await c.var.supabaseAdmin
+    .from("priority_twist")
+    .select("id")
+    .eq("priority_id", priority.id)
+    .is("archived_at", null)
+    .maybeSingle();
+
+  if (twistCheckError) {
+    return captureServerError(c, new Error(twistCheckError.message), `Failed to check for existing Plot twist: ${twistCheckError.message}`, {
+      user_id: user.id,
+      priority_id: priority.id,
+    });
+  }
+
+  if (existingPriorityTwist) {
+    // Plot twist already installed
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.info("Plot twist already installed on root priority, skipping installation", {
+      user_id: user.id,
+      priority_id: priority.id,
+      priority_twist_id: existingPriorityTwist.id,
+    });
+  } else {
+    // Install Plot twist
     try {
       const { data: plotTwist, error: plotTwistError } = await c.var.supabase
         .from("twist")
@@ -360,12 +429,36 @@ account.post("/activate", async (c) => {
         user_id: user.id,
       });
     }
-  } else {
-    const context8 = extractRequestContext(c);
-    const logger8 = createLogger(context8);
-    logger8.info("Skipping Plot twist installation (root priority already existed)", {
+  }
+
+  // Step 8.5: Set up Help & Feedback priority using database function
+  try {
+    const { data: helpFeedbackResult, error: helpFeedbackError } = await c.var.supabase.rpc(
+      'setup_help_feedback_priority',
+      { p_user_name: user.user_metadata?.name }
+    );
+
+    if (helpFeedbackError) {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.error("Failed to set up Help & Feedback priority", new Error(helpFeedbackError.message), {
+        user_id: user.id,
+        error: helpFeedbackError.message,
+      });
+    } else {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.info("Successfully set up Help & Feedback priority", {
+        user_id: user.id,
+        result: helpFeedbackResult,
+      });
+    }
+  } catch (error) {
+    // Fail open - log but don't block activation
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Exception setting up Help & Feedback priority", error as Error, {
       user_id: user.id,
-      priority_id: priority.id,
     });
   }
 

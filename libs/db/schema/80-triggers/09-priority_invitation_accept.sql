@@ -7,6 +7,7 @@ CREATE OR REPLACE FUNCTION public.accept_invitations_on_signup ()
     AS $function$
 DECLARE
     v_contact_id uuid;
+    v_invitation_count integer := 0;
 BEGIN
     -- Get the contact_id for this user (by email)
     SELECT
@@ -29,11 +30,17 @@ BEGIN
             AND pc.invited_at IS NOT NULL
         ON CONFLICT
             DO NOTHING;
+        -- Get count of how many invitations were processed
+        GET DIAGNOSTICS v_invitation_count = ROW_COUNT;
         -- Note: priority_contact remains - status changes from 'invited' to 'accepted' in priority_member view
-        -- Activate the user (creates root priority, settings, sets status to active)
-        -- This is idempotent and safe to call multiple times
-        PERFORM
-            public.activate_invited_user (NEW.id);
+        -- Only activate if user had pending invitations
+        -- This prevents auto-activation for users with contact records but no invitations
+        IF v_invitation_count > 0 THEN
+            -- Activate the user (creates root priority, settings, sets status to active)
+            -- This is idempotent and safe to call multiple times
+            PERFORM
+                public.activate_invited_user (NEW.id);
+        END IF;
     END IF;
     RETURN NEW;
 END;

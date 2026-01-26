@@ -14,7 +14,7 @@ SELECT
     p.updated_by,
     pu.personal = TRUE
     AND p.id = root.id AS root,
-    p.title,
+    COALESCE(settings.title, p.title) AS title,
     CASE WHEN inherited_settings.path IS NOT NULL THEN
         inherited_settings.path
     WHEN user_root.path @> p.path THEN
