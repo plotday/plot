@@ -56,6 +56,9 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   // Timer for delayed read marking
   Timer? _markReadTimer;
 
+  // Flag to ensure setActivity is only called once on initial load
+  bool _hasSetInitialActivity = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -63,6 +66,17 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     // Schedule marking activity as read after 750ms
     _scheduleMarkAsRead();
+
+    // Ensure PriorityBloc knows about this activity on first load
+    if (!_hasSetInitialActivity) {
+      _hasSetInitialActivity = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          final activity = context.read<ActivityBloc>().state.activity;
+          context.read<PriorityBloc>().setActivity(activity);
+        }
+      });
+    }
   }
 
   @override
