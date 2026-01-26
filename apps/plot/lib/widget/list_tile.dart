@@ -6,7 +6,6 @@ import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
-import 'package:plot/util/time.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -143,8 +142,6 @@ class _ListTileState extends State<ListTile> {
   FocusNode? _internalFocusNode;
   Offset? lastMousePosition;
   bool _isHovered = false;
-  Offset? _tapStartPosition;
-  DateTime? _tapStartTime;
 
   FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
 
@@ -197,7 +194,9 @@ class _ListTileState extends State<ListTile> {
         onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
         child: ReorderableDragStartListener(
           index: widget.reorderableIndex ?? 0,
-          enabled: widget.reorderableIndex != null && hasPhysicalKeyboard(),
+          enabled: widget.reorderableIndex != null &&
+              hasPhysicalKeyboard() &&
+              !widget.showLeadingDragHandle,
           child: Container(
             decoration: BoxDecoration(
               color: widget.selected
@@ -244,22 +243,10 @@ class _ListTileState extends State<ListTile> {
                       widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
                   ].whereType<Widget>(),
                 Expanded(
-                  child: Listener(
-                    onPointerDown: (event) {
-                      _tapStartPosition = event.position;
-                      _tapStartTime = Time.now();
-                    },
-                    onPointerUp: (event) {
-                      if (_tapStartPosition != null) {
-                        final delta = event.position - _tapStartPosition!;
-                        final duration = Time.now().difference(_tapStartTime!);
-                        // Check if this is a tap (not a drag/swipe)
-                        if (delta.distance < 10 &&
-                            duration < Duration(milliseconds: 500)) {
-                          if (!widget.noRun && widget.command != null) {
-                            log.info(
-                              "Running command: ${widget.command?.title}",
-                            );
+                  child: GestureDetector(
+                    onTap: !widget.noRun && widget.command != null
+                        ? () {
+                            log.info("Running command: ${widget.command?.title}");
                             try {
                               context.run(widget.command!);
                             } catch (e, t) {
@@ -270,27 +257,22 @@ class _ListTileState extends State<ListTile> {
                               );
                             }
                           }
-                        }
-                      }
-                      _tapStartPosition = null;
-                      _tapStartTime = null;
-                    },
-                    child: GestureDetector(
-                      onLongPress: widget.longPressCommand != null
-                          ? () {
-                              try {
-                                context.run(widget.longPressCommand!);
-                              } catch (e, t) {
-                                log.warning(
-                                  "Action ${widget.longPressCommand?.title} failed",
-                                  e,
-                                  t,
-                                );
-                              }
+                        : null,
+                    onLongPress: widget.longPressCommand != null
+                        ? () {
+                            try {
+                              context.run(widget.longPressCommand!);
+                            } catch (e, t) {
+                              log.warning(
+                                "Action ${widget.longPressCommand?.title} failed",
+                                e,
+                                t,
+                              );
                             }
-                          : null,
-                      child: Container(
-                        color: Color(0x00000000), // Transparent to capture taps
+                          }
+                        : null,
+                    child: Container(
+                      color: Color(0x00000000), // Transparent to capture taps
                         child: Builder(
                           builder: (context) {
                             // Build the icon widget
@@ -478,7 +460,6 @@ class _ListTileState extends State<ListTile> {
                       ),
                     ),
                   ),
-                ),
                 ...[
                   if (widget.trailingBuilder != null)
                     widget.trailingBuilder!(_isHovered, _focusNode.hasFocus),

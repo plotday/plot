@@ -53,15 +53,19 @@ class ChangeCurrentActivity extends ActivityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Read blocs once to avoid multiple lookups
+    final priorityBloc = context.read<PriorityBloc>();
+    final nowBloc = context.read<NowBloc>();
+
     // Get the currently viewed priority before making any changes
-    final currentPriority = context.read<PriorityBloc>().state.context;
+    final currentPriority = priorityBloc.state.context;
 
     // Update PriorityBloc to track current activity for navigation
-    context.read<PriorityBloc>().setActivity(activity);
+    priorityBloc.setActivity(activity);
 
     if (activity == null) {
       // Update NowBloc to match the current priority being viewed
-      context.read<NowBloc>().setFocus(currentPriority);
+      nowBloc.setFocus(currentPriority);
 
       // Navigate to just the PriorityRoute without ActivityRoute
       return CommandRoute(
@@ -70,7 +74,7 @@ class ChangeCurrentActivity extends ActivityCommand {
     }
 
     // Update NowBloc to the activity's priority (what user is working on)
-    context.read<NowBloc>().setFocus(activity!.priority);
+    nowBloc.setFocus(activity!.priority);
 
     // Navigate using the CURRENT priority (not activity's priority)
     // This keeps PriorityPage showing the parent priority
