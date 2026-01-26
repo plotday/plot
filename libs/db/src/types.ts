@@ -48,6 +48,7 @@ export type Database = {
           duration: string | null
           embedding: unknown
           id: string
+          kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           meta: Json | null
@@ -101,6 +102,7 @@ export type Database = {
           duration?: string | null
           embedding?: unknown
           id?: string
+          kind?: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
           meta?: Json | null
@@ -134,6 +136,7 @@ export type Database = {
           duration?: string | null
           embedding?: unknown
           id?: string
+          kind?: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
           meta?: Json | null
@@ -853,28 +856,31 @@ export type Database = {
       }
       priority_contact: {
         Row: {
-          archived_at: string | null
           contact_id: string
           created_at: string
           id: number
+          invited_at: string | null
           invited_by: string | null
           priority_id: string
+          updated_at: string
         }
         Insert: {
-          archived_at?: string | null
           contact_id: string
           created_at?: string
           id?: never
+          invited_at?: string | null
           invited_by?: string | null
           priority_id: string
+          updated_at?: string
         }
         Update: {
-          archived_at?: string | null
           contact_id?: string
           created_at?: string
           id?: never
+          invited_at?: string | null
           invited_by?: string | null
           priority_id?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -942,6 +948,7 @@ export type Database = {
           path: unknown
           pomodoro: number | null
           priority_id: string
+          title: string | null
           top_order: number | null
           updated_at: string
           user_id: string
@@ -952,6 +959,7 @@ export type Database = {
           path?: unknown
           pomodoro?: number | null
           priority_id: string
+          title?: string | null
           top_order?: number | null
           updated_at?: string
           user_id: string
@@ -962,6 +970,7 @@ export type Database = {
           path?: unknown
           pomodoro?: number | null
           priority_id?: string
+          title?: string | null
           top_order?: number | null
           updated_at?: string
           user_id?: string
@@ -1844,6 +1853,7 @@ export type Database = {
           duration: string | null
           embedding: unknown
           id: string | null
+          kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           mentions: string[] | null
@@ -1865,16 +1875,6 @@ export type Database = {
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
           updated_by: number | null
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
         }
         Relationships: [
           {
@@ -2739,16 +2739,6 @@ export type Database = {
           updated_at: string | null
           updated_by: number | null
           user_id: string | null
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
         }
         Relationships: [
           {
@@ -3139,25 +3129,6 @@ export type Database = {
             }
           }
         | {
-            Args: { "": Database["public"]["Views"]["activity_x"]["Row"] }
-            Returns: {
-              archived_at: string | null
-              avatar_url: string | null
-              created_at: string | null
-              email: string | null
-              id: string | null
-              name: string | null
-              type: string | null
-              updated_at: string | null
-            }
-            SetofOptions: {
-              from: "activity_x"
-              to: "actor"
-              isOneToOne: true
-              isSetofReturn: true
-            }
-          }
-        | {
             Args: { "": Database["public"]["Tables"]["note"]["Row"] }
             Returns: {
               archived_at: string | null
@@ -3171,25 +3142,6 @@ export type Database = {
             }
             SetofOptions: {
               from: "note"
-              to: "actor"
-              isOneToOne: true
-              isSetofReturn: true
-            }
-          }
-        | {
-            Args: { "": Database["public"]["Views"]["user_activity"]["Row"] }
-            Returns: {
-              archived_at: string | null
-              avatar_url: string | null
-              created_at: string | null
-              email: string | null
-              id: string | null
-              name: string | null
-              type: string | null
-              updated_at: string | null
-            }
-            SetofOptions: {
-              from: "user_activity"
               to: "actor"
               isOneToOne: true
               isSetofReturn: true
@@ -3355,6 +3307,10 @@ export type Database = {
         Args: { status: string; user_id: string }
         Returns: undefined
       }
+      setup_help_feedback_priority: {
+        Args: { p_user_name?: string }
+        Returns: Json
+      }
       share_priority: {
         Args: {
           p_add_actor_ids: string[]
@@ -3409,6 +3365,7 @@ export type Database = {
           duration: string | null
           embedding: unknown
           id: string
+          kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           meta: Json | null
@@ -3479,6 +3436,19 @@ export type Database = {
       week_from_date: { Args: { d: string }; Returns: unknown }
     }
     Enums: {
+      activity_kind:
+        | "document"
+        | "messages"
+        | "meeting"
+        | "videoconference"
+        | "phone"
+        | "focus"
+        | "meal"
+        | "exercise"
+        | "family"
+        | "travel"
+        | "social"
+        | "entertainment"
       activity_type: "action" | "event" | "note"
       enter_behavior: "enter_newline" | "enter_submits"
       subscription_plan: "free"
@@ -4175,6 +4145,20 @@ export const Constants = {
   },
   public: {
     Enums: {
+      activity_kind: [
+        "document",
+        "messages",
+        "meeting",
+        "videoconference",
+        "phone",
+        "focus",
+        "meal",
+        "exercise",
+        "family",
+        "travel",
+        "social",
+        "entertainment",
+      ],
       activity_type: ["action", "event", "note"],
       enter_behavior: ["enter_newline", "enter_submits"],
       subscription_plan: ["free"],
