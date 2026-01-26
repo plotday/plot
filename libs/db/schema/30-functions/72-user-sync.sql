@@ -189,13 +189,14 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Only notify the priority creator
+    -- Get all users with access to the priority (including hierarchical access via ancestors)
     FOR v_user_id IN SELECT DISTINCT
-        created_by
+        upe.user_id
     FROM
-        new_table
+        new_table n
+        JOIN user_priority_expanded upe ON upe.priority_id = n.id
     WHERE
-        created_by IS NOT NULL LOOP
+        upe.archived_at IS NULL LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -761,6 +762,39 @@ BEGIN
             WHERE
                 user_id = v_user_id
                 AND entity = 'priority_member';
+            IF (v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at) THEN
+                v_users_to_notify := array_append(v_users_to_notify, v_user_id);
+            END IF;
+        END LOOP;
+    -- Also sync priority entity so user's accessible priorities update
+    FOR v_user_id IN SELECT DISTINCT
+        upe.user_id
+    FROM
+        new_table n
+        JOIN user_priority_expanded upe ON upe.priority_id = n.priority_id
+    WHERE
+        upe.archived_at IS NULL LOOP
+            SELECT
+                last_update_at,
+                last_sync_at INTO v_prev_update_at,
+                v_prev_sync_at
+            FROM
+                user_sync
+            WHERE
+                user_id = v_user_id
+                AND entity = 'priority';
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'priority', v_max_updated_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+            SELECT
+                last_sync_at INTO v_current_sync_at
+            FROM
+                user_sync
+            WHERE
+                user_id = v_user_id
+                AND entity = 'priority';
             IF (v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at) THEN
                 v_users_to_notify := array_append(v_users_to_notify, v_user_id);
             END IF;

@@ -15,6 +15,13 @@ CREATE TYPE "public"."activity_kind" AS enum (
 
 DROP TRIGGER IF EXISTS "upsert_user_priority" ON "public"."user_priority";
 
+-- Drop all actor-related functions that depend on views before dropping the views
+DROP FUNCTION IF EXISTS public.actor(user_activity) CASCADE;
+DROP FUNCTION IF EXISTS public.actor(activity_x) CASCADE;
+DROP FUNCTION IF EXISTS public.actor(activity) CASCADE;
+DROP FUNCTION IF EXISTS public.actor(note) CASCADE;
+DROP FUNCTION IF EXISTS public.assignee(activity) CASCADE;
+
 DROP VIEW IF EXISTS "public"."priority_tags";
 
 DROP VIEW IF EXISTS "public"."priority_twist_activity_create";
@@ -596,6 +603,72 @@ CREATE TRIGGER upsert_user_priority
     INSTEAD OF INSERT OR UPDATE ON public.user_priority
     FOR EACH ROW
     EXECUTE FUNCTION handle_user_priority_upsert ();
+
+-- Recreate actor functions that were dropped earlier
+CREATE OR REPLACE FUNCTION public.actor (activity)
+    RETURNS SETOF actor ROWS 1
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        actor.*
+    FROM
+        actor
+    WHERE
+        actor.id = $1.author_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.actor (note)
+    RETURNS SETOF actor
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        actor.*
+    FROM
+        actor
+    WHERE
+        actor.id = $1.author_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.actor (user_activity)
+    RETURNS SETOF actor
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        actor.*
+    FROM
+        actor
+    WHERE
+        actor.id = $1.author_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.actor (activity_x)
+    RETURNS SETOF actor
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        actor.*
+    FROM
+        actor
+    WHERE
+        actor.id = $1.author_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.assignee (activity)
+    RETURNS SETOF actor
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        actor.*
+    FROM
+        actor
+    WHERE
+        actor.id = $1.assignee_id
+$function$;
 
 ALTER VIEW "public"."user_note" SET ( security_invoker = TRUE);
 ALTER VIEW "public"."note_tags" SET ( security_invoker = TRUE);
