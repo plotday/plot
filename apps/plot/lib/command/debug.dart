@@ -15,33 +15,30 @@ import 'command.dart';
 final debugCommands = kDebugMode
     ? StaticCommandGroup(
         title: 'Debug',
-        commands: [
-          TimeTravel(),
-          if (Time.isFrozen()) UnfreezeTime(),
-        ],
+        commands: [TimeTravel(), if (Time.isFrozen()) UnfreezeTime()],
       )
     : null;
 
 /// Command to freeze time to a specific date/time for testing and screenshots.
 class TimeTravel extends ShowPage {
   TimeTravel()
-      : super(
-          title: 'Time Travel',
-          icon: FontAwesomeIcons.clock,
-          builder: (context) => _TimeTravelPage(),
-        );
+    : super(
+        title: 'Time Travel',
+        icon: FontAwesomeIcons.clock,
+        builder: (context) => _TimeTravelPage(),
+      );
 }
 
 /// Command to unfreeze time and return to live time.
 class UnfreezeTime extends Command {
   UnfreezeTime()
-      : super(
-          title: 'Unfreeze Time',
-          subtitle: 'Return to live time',
-          icon: FontAwesomeIcons.clockRotateLeft,
-          eventObject: EventObject.settings,
-          eventAction: EventAction.clicked,
-        );
+    : super(
+        title: 'Unfreeze Time',
+        subtitle: 'Return to live time',
+        icon: FontAwesomeIcons.clockRotateLeft,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -72,7 +69,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
     _selectedHour = initial.hour;
     _selectedMinute = initial.minute;
 
-    _calendarController = FCalendarController.date();
+    _calendarController = FCalendarController.date(initial: _selectedDate);
 
     _hourController = TextEditingController(
       text: _selectedHour.toString().padLeft(2, '0'),
@@ -134,10 +131,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
       );
 
       Time.setFrozenTime(frozenTime);
-      Modal.pop(
-        context,
-        Value(CommandMessage('Time frozen to $frozenTime')),
-      );
+      Modal.pop(context, Value(CommandMessage('Time frozen to $frozenTime')));
     } catch (e) {
       Modal.pop(
         context,
@@ -190,15 +184,17 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
             // Calendar
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
-              child: FCalendar(
-                control: .managedDate(controller: _calendarController),
-                style: (style) =>
-                    style.copyWith(decoration: const BoxDecoration()),
-                onPress: (date) {
-                  setState(() {
-                    _selectedDate = date;
-                  });
-                },
+              child: Center(
+                child: FCalendar(
+                  control: .managedDate(controller: _calendarController),
+                  style: (style) =>
+                      style.copyWith(decoration: const BoxDecoration()),
+                  onPress: (date) {
+                    setState(() {
+                      _selectedDate = date;
+                    });
+                  },
+                ),
               ),
             ),
 
