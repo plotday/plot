@@ -339,7 +339,7 @@ account.post("/activate", async (c) => {
           created_by: user.id,
           title: "Plot",
           path: plotPathData,
-          color: 0,
+          color: 7, // Resolution color (blue-gray)
           key: "@plot",
         })
         .select("id")
