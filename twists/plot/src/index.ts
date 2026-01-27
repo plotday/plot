@@ -1,4 +1,5 @@
 import {
+  ActivityLinkType,
   ActivityType,
   type Priority,
   ThemeColor,
@@ -73,6 +74,45 @@ class PlotTwist extends Twist<PlotTwist> {
         {
           content:
             "**Best practice:** Organize from broad to specific. Example: Work > Marketing Campaign > Content Strategy, or Personal > Home Renovation > Kitchen Planning. Start with top-level contexts (Work, Personal, Family) then add specific projects within each. This allows you to zoom in for focus, and zoom out to make sure you're not missing anything.",
+        },
+      ],
+      priority: onboardingPriority,
+      type: ActivityType.Action,
+      start: new Date(),
+    });
+
+    // Pick your twists
+    await this.tools.plot.createActivity({
+      title: "Pick your twists",
+      notes: [
+        {
+          content:
+            "**Twists** are ways to bring your work from other apps into Plot, automate workflows, and organize your activities. For example, sync your Google Calendar to see events in Plot, or automatically create tasks from emails. Use the **Twists** button to explore available twists and add them to this priority or any of your other priorities.",
+        },
+        {
+          content:
+            "You can also **create your own twists**, either by describing what you want (Plot AI will generate it for you) or by writing code. Custom twists can integrate any app or automate any workflow specific to your needs.",
+          links: [
+            {
+              type: ActivityLinkType.external,
+              title: "Learn more about creating twists",
+              url: "https://twist.plot.day",
+            },
+          ],
+        },
+      ],
+      priority: onboardingPriority,
+      type: ActivityType.Action,
+      start: new Date(),
+    });
+
+    // Archive when done
+    await this.tools.plot.createActivity({
+      title: "Archive this priority",
+      notes: [
+        {
+          content:
+            "When you're done with the onboarding activities and no longer need this Getting Started priority, you can **archive it**. Archived priorities and their activities are always available in Plot - they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
         },
       ],
       priority: onboardingPriority,
