@@ -97,16 +97,16 @@ priorities:
             title: Personal growth
 
 activities:
-  # Day -2: Testing and iteration
+  # Day -1: Testing and iteration
   - type: note
     kind: document
     priority_ref: menu
     title: "Spring menu - dish lineup draft"
-    created: "-2d"
+    created: "-1d"
     tags:
       pinned: [user]
     notes:
-      - created: "-2d"
+      - created: "-1d"
         content: |
           ## Spring 2025 Menu - Working Draft
 
@@ -135,12 +135,12 @@ activities:
     priority_ref: menu
     title: "Test vegetarian centerpiece concepts - v1"
     assignee_ref: sydney
-    on: "-2d"
+    on: "-1d"
     tags:
       urgent: [user, sydney]
     notes:
       - author_ref: sydney
-        created: "-2d 10:00"
+        created: "-1d 10:00"
         content: |
           Testing three vegetarian concepts for Carmy today:
 
@@ -159,38 +159,38 @@ activities:
     kind: meal
     priority_ref: service
     title: "Family meal - dish testing"
-    at: "-2d 15:00 / -2d 15:45"
+    at: "-1d 15:00 / -1d 15:45"
     notes:
       - author_ref: richie
-        created: "-2d 16:00"
+        created: "-1d 16:00"
         content: |
           Tried the three vegetarian concepts. Cauliflower was nice. Risotto was fine. Cabbage was... cabbage? I don't get it.
       - author_ref: sydney
-        created: "-2d 16:02"
+        created: "-1d 16:02"
         content: |
           What don't you get, Richie? It's bold. It's interesting. It's not trying to be something it's not.
       - author_ref: richie
-        created: "-2d 16:04"
+        created: "-1d 16:04"
         content: |
           I get that. I'm just saying - people expect fancy with vegetarian. Cauliflower feels fancy. Cabbage feels... I don't know. Brave?
       - author_ref: tina
-        created: "-2d 16:05"
+        created: "-1d 16:05"
         content: |
           Brave is good. Cauliflower is safe, safe is boring. Risotto reminded me of my old restaurant - that's not a compliment. The cabbage has attitude.
       - author_ref: marcus
-        created: "-2d 16:07"
+        created: "-1d 16:07"
         content: |
           Cabbage dish is actually intriguing. Good char, interesting flavors. Takes confidence to put that on a menu. But if you have the confidence, it pays off.
       - author_ref: sydney
-        created: "-2d 16:09"
+        created: "-1d 16:09"
         content: |
           Exactly. The charred cabbage is the one. It's bold, it makes people talk, it's OURS. We can keep testing or we can trust what we made.
       - author_ref: richie
-        created: "-2d 16:11"
+        created: "-1d 16:11"
         content: |
           Okay, okay. I'm not saying don't do it. I'm saying it's a risk. But maybe that's the point.
       - author_ref: user
-        created: "-2d 16:15"
+        created: "-1d 16:15"
         content: |
           Three dishes tested. Cauliflower safe but boring. Risotto classic but not special. Cabbage bold but risky.
 
@@ -202,9 +202,9 @@ activities:
     kind: messages
     priority_ref: vendor_relations
     title: "Supplier order - spring ingredients"
-    created: "-2d"
+    created: "-1d"
     notes:
-      - created: "-2d 11:30"
+      - created: "-1d 11:30"
         content: |
           **From: Green City Produce <delivery@greencityproduce.com>**
           **Subject: Spring Availability - First Harvest**
@@ -232,10 +232,10 @@ activities:
     priority_ref: vendor_relations
     title: "Order ramps and morels for weekend service"
     assignee_ref: tina
-    on: "-2d"
+    on: "-1d"
     notes:
       - author_ref: tina
-        created: "-2d 12:00"
+        created: "-1d 12:00"
         content: |
           Locked in the spring ingredients before they sold out:
 
@@ -250,9 +250,9 @@ activities:
     kind: messages
     priority_ref: family
     title: "Michelle - Sunday dinner this weekend?"
-    created: "-2d"
+    created: "-1d"
     notes:
-      - created: "-2d 19:30"
+      - created: "-1d 19:30"
         content: |
           **iMessage from Michelle**
 
@@ -267,16 +267,16 @@ activities:
         mentions:
           - michelle
 
-  # Day -1: Refinement and doubt
+  # Day 0: Refinement and doubt
   - type: action
     priority_ref: menu
     title: "Charred cabbage - refinement round 2"
     assignee_ref: user
-    on: "-1d"
+    on: "0d"
     tags:
       todo: [user]
     notes:
-      - created: "-1d 08:00"
+      - created: "0d 08:00"
         content: |
           Sydney's right, we should commit to the cabbage. But I need to test it one more time.
 
@@ -290,23 +290,23 @@ activities:
         mentions:
           - sydney
       - author_ref: sydney
-        created: "-1d 08:15"
+        created: "0d 08:15"
         content: |
           Carmy. We tested it. Twice. The team liked it. What exactly are you looking for?
       - author_ref: user
-        created: "-1d 08:18"
+        created: "0d 08:18"
         content: |
           I just want to make sure we're not missing something. One more test.
       - author_ref: sydney
-        created: "-1d 08:20"
+        created: "0d 08:20"
         content: |
           You're not missing something. You're looking for problems that aren't there. But fine. One more test. Then we lock it.
       - author_ref: tina
-        created: "-1d 08:25"
+        created: "0d 08:25"
         content: |
           Just so you both know - if we're launching in 9 days, I need the final spec by tomorrow. Prep schedule doesn't wait for perfection.
       - author_ref: user
-        created: "-1d 08:27"
+        created: "0d 08:27"
         content: |
           You'll have it tomorrow. Promise.
         mentions:
@@ -316,10 +316,10 @@ activities:
     kind: meeting
     priority_ref: service
     title: "Prep meeting - weekend service"
-    at: "-1d 09:30 / -1d 10:15"
+    at: "0d 09:30 / 0d 10:15"
     notes:
       - author_ref: tina
-        created: "-1d 10:15"
+        created: "0d 10:15"
         content: |
           **Kitchen Slack - #prep-meeting**
 
@@ -331,21 +331,21 @@ activities:
           type: slack_message
           title: "#prep-meeting"
       - author_ref: marcus
-        created: "-1d 10:18"
+        created: "0d 10:18"
         content: |
           Need oven space 2-4pm today for dessert components. Also thinking ramp pasta for the special - rich, seasonal, people will love it.
         source:
           type: slack_message
           title: "#prep-meeting"
       - author_ref: richie
-        created: "-1d 10:20"
+        created: "0d 10:20"
         content: |
           Are we doing the cabbage or what? Need to know for menu descriptions.
         source:
           type: slack_message
           title: "#prep-meeting"
       - author_ref: user
-        created: "-1d 10:22"
+        created: "0d 10:22"
         content: |
           We're close on the cabbage decision. Final call by Monday.
         source:
@@ -356,9 +356,9 @@ activities:
     kind: messages
     priority_ref: financial_mgmt
     title: "Cicero - quarterly check-in"
-    created: "-1d"
+    created: "0d"
     notes:
-      - created: "-1d 14:20"
+      - created: "0d 14:20"
         content: |
           **From: Jimmy Cicero <jimmy@cicerogroup.com>**
           **Subject: Q1 Numbers Looking Good**
@@ -386,10 +386,10 @@ activities:
     kind: meeting
     priority_ref: team
     title: "Sydney - menu lockdown conversation"
-    at: "-1d 16:00 / -1d 16:28"
+    at: "0d 16:00 / 0d 16:28"
     notes:
       - author_ref: sydney
-        created: "-1d 16:30"
+        created: "0d 16:30"
         content: |
           Met with Carmy after service. Had to be direct - the cabbage is good, better than good. We tested it twice, team liked it. He wants to keep testing but we're out of time.
 
@@ -397,7 +397,7 @@ activities:
 
           He didn't argue. Progress.
       - author_ref: user
-        created: "-1d 16:45"
+        created: "0d 16:45"
         content: |
           Syd's right. The cabbage is ready. I'm looking for problems that aren't there. She's putting it on Monday's prep sheet. I have until Sunday to object.
 
@@ -410,9 +410,9 @@ activities:
     priority_ref: family
     title: "Confirm Sunday dinner with Michelle"
     assignee_ref: user
-    on: "-1d"
+    on: "0d"
     notes:
-      - created: "-1d 18:00"
+      - created: "0d 18:00"
         content: |
           Should text Michelle. Tell her I'll be there. Actually be there this time.
 
@@ -424,9 +424,9 @@ activities:
     kind: messages
     priority_ref: service
     title: "Reservations update - Saturday full"
-    created: "-1d"
+    created: "0d"
     notes:
-      - created: "-1d 20:15"
+      - created: "0d 20:15"
         content: |
           **Kitchen Slack - @channel**
 
@@ -446,13 +446,13 @@ activities:
     kind: document
     priority_ref: menu
     title: "CHARRED CABBAGE DECISION - Version 1, locked"
-    created: "-1d"
+    created: "0d"
     tags:
       pinned: [user]
       decision: [user]
       goal: [user]
     notes:
-      - created: "-1d 18:00"
+      - created: "0d 18:00"
         content: |
           ## Charred Spring Cabbage
           ### Version 1.0 - LOCKED FOR MENU LAUNCH
@@ -499,28 +499,28 @@ activities:
 
           That's the mantra. That's what I'm learning to say.
       - author_ref: user
-        created: "-1d 18:32"
+        created: "0d 18:32"
         content: |
           Syd - cabbage is locked. You were right.
       - author_ref: sydney
-        created: "-1d 18:33"
+        created: "0d 18:33"
         content: |
           Say that again, I want to remember it.
 
           Does this mean we're actually launching the menu on time?
       - author_ref: user
-        created: "-1d 18:34"
+        created: "0d 18:34"
         content: |
           Don't push it.
 
           But yeah. We're launching on time.
-      - created: "-1d 18:35"
+      - created: "0d 18:35"
         content: |
           ---
 
           **@plot, add the cabbage dish to the spring menu lineup and mark the vegetarian slot as locked.**
         ai_query: true
-      - created: "-1d 18:36"
+      - created: "0d 18:36"
         content: |
           **Plot AI Response:**
 
@@ -534,10 +534,10 @@ activities:
     kind: meeting
     priority_ref: team
     title: "Team meeting - menu lockdown announcement"
-    at: "-1d 10:00 / -1d 10:30"
+    at: "0d 10:00 / 0d 10:30"
     notes:
       - author_ref: user
-        created: "-1d 10:30"
+        created: "0d 10:30"
         content: |
           Announced to the team: menu is locked. Launch in 9 days.
 
@@ -553,23 +553,23 @@ activities:
 
           Prep schedule starts tomorrow.
       - author_ref: tina
-        created: "-1d 10:32"
+        created: "0d 10:32"
         content: |
           Finally. Let me start prepping. I'll have stocks and bases ready by tomorrow.
       - author_ref: marcus
-        created: "-1d 10:33"
+        created: "0d 10:33"
         content: |
           Desserts are ready when you are. Keeping them secret until launch.
       - author_ref: richie
-        created: "-1d 10:34"
+        created: "0d 10:34"
         content: |
           So we're doing the cabbage? Good. I liked the cabbage. I'll update the menu descriptions.
       - author_ref: nat
-        created: "-1d 10:35"
+        created: "0d 10:35"
         content: |
           I'll update the website and reservation notes today.
       - author_ref: sydney
-        created: "-1d 10:36"
+        created: "0d 10:36"
         content: |
           We're doing this. On time. Let's go.
 
@@ -581,7 +581,7 @@ activities:
     tags:
       todo: [user]
     notes:
-      - created: "-1d 11:00"
+      - created: "0d 11:00"
         content: |
           Need to document everything:
           - Prep times
@@ -595,9 +595,9 @@ activities:
     kind: messages
     priority_ref: vendor_relations
     title: "Supplier confirmation - menu ingredients"
-    created: "-1d"
+    created: "0d"
     notes:
-      - created: "-1d 17:00"
+      - created: "0d 17:00"
         content: |
           **Email thread with suppliers:**
 
@@ -618,9 +618,9 @@ activities:
     kind: meal
     priority_ref: personal
     title: "Lunch break - actually taking one"
-    at: "-1d 13:00 / -1d 13:45"
+    at: "0d 13:00 / 0d 13:45"
     notes:
-      - created: "-1d 13:50"
+      - created: "0d 13:50"
         content: |
           Walked to the park. Sat on a bench. Ate a sandwich.
 
@@ -634,9 +634,9 @@ activities:
     kind: messages
     priority_ref: family
     title: "Michelle - confirmed for Sunday"
-    created: "-1d"
+    created: "0d"
     notes:
-      - created: "-1d 17:30"
+      - created: "0d 17:30"
         content: |
           **iMessage to Michelle**
 
@@ -661,7 +661,7 @@ activities:
     title: "Friday service - full menu + ramp special"
     at: "+1d 17:00 / +1d 23:30"
     notes:
-      - created: "-2d 15:00"
+      - created: "-1d 15:00"
         content: |
           Planning Friday service - current menu + ramp special. Team is ready for the weekend push.
           Friday night. Full room. Current menu (pre-spring launch) + ramp special.
@@ -691,7 +691,7 @@ activities:
     on: "+1d"
     notes:
       - author_ref: sydney
-        created: "-1d 14:00"
+        created: "0d 14:00"
         content: |
           **Spring menu launch timeline:**
 
@@ -713,10 +713,10 @@ activities:
     author_ref: richie
     priority_ref: service
     title: "Reservation update - launch week"
-    created: "-1d"
+    created: "0d"
     notes:
       - author_ref: richie
-        created: "-1d 14:00"
+        created: "0d 14:00"
         content: |
           Launch week reservations:
           - Thursday (launch): FULL + waitlist
@@ -734,7 +734,7 @@ activities:
     title: "Saturday service - last night of winter menu"
     at: "+2d 17:00 / +2d 23:45"
     notes:
-      - created: "-2d 14:00"
+      - created: "-1d 14:00"
         content: |
           Saturday will be the last service with the winter menu. Full room expected. Good way to close out this chapter.
 
@@ -753,7 +753,7 @@ activities:
     tags:
       star: [user]
     notes:
-      - created: "-1d 17:45"
+      - created: "0d 17:45"
         content: |
           Confirmed with Michelle for Sunday dinner. Restaurant's closed, no excuses.
 
@@ -769,7 +769,7 @@ activities:
     tags:
       todo: [user]
     notes:
-      - created: "-2d 16:00"
+      - created: "-1d 16:00"
         content: |
           Need to finish documenting all seven dishes:
           - Full ingredient lists
@@ -788,11 +788,11 @@ activities:
     title: "Monday prep - spring menu training"
     at: "+3d 09:00 / +3d 14:00"
     notes:
-      - created: "-2d 16:30"
+      - created: "-1d 16:30"
         content: |
           **@plot, create a schedule for Monday's spring menu training session covering all seven dishes**
         ai_query: true
-      - created: "-2d 16:31"
+      - created: "-1d 16:31"
         content: |
           **Plot AI Response:**
 
@@ -816,10 +816,10 @@ activities:
     author_ref: nat
     priority_ref: service
     title: "Friends & family service - March 20"
-    created: "-2d"
+    created: "-1d"
     notes:
       - author_ref: nat
-        created: "-2d 11:00"
+        created: "-1d 11:00"
         content: |
           Friends & family list for Wednesday rehearsal dinner:
           - Jimmy + 3
@@ -843,7 +843,7 @@ activities:
     assignee_ref: user
     on: "+3d"
     notes:
-      - created: "-2d 17:00"
+      - created: "-1d 17:00"
         content: |
           Even though it's locked, I want to run it one more time. Not to change it. To confirm I can execute it consistently.
 
@@ -858,10 +858,10 @@ activities:
     author_ref: nat
     priority_ref: business
     title: "Spring menu press release"
-    created: "-2d"
+    created: "-1d"
     notes:
       - author_ref: nat
-        created: "-2d 12:00"
+        created: "-1d 12:00"
         content: |
           Draft press release for spring menu launch ready for review.
 
@@ -882,7 +882,7 @@ activities:
     at: "+4d 16:00 / +4d 16:30"
     recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     notes:
-      - created: "-2d 13:00"
+      - created: "-1d 13:00"
         content: |
           Standing Monday meeting. Check in on everyone. Make sure no one's drowning.
 
@@ -894,11 +894,11 @@ activities:
     kind: document
     priority_ref: menu
     title: "Post-launch: feedback and iteration plan"
-    created: "-2d"
+    created: "-1d"
     tags:
       goal: [user]
     notes:
-      - created: "-2d 18:00"
+      - created: "-1d 18:00"
         content: |
           After launch, track:
           - Guest feedback (Richie listening on the floor)

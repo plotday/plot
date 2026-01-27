@@ -44,7 +44,7 @@ BEGIN
             v_new_path
             -- For descendants, replace the old path prefix with the new path
         ELSE
-            text2ltree (ltree2text (v_new_path) || ltree2text (subpath (path, nlevel (v_old_path))))
+            text2ltree (ltree2text (v_new_path) || '.' || ltree2text (subpath (path, nlevel (v_old_path))))
         END
     WHERE
         path <@ v_old_path

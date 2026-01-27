@@ -28,11 +28,14 @@ CREATE TRIGGER set_priority_twist_created_at
     EXECUTE FUNCTION set_created_at ();
 
 -- Function to set owner_id to current user on INSERT
+-- Uses COALESCE to support both authenticated users and service_role operations
+-- When auth.uid() is available (authenticated users), use it
+-- When auth.uid() is NULL (service_role/admin), use the explicitly provided owner_id
 CREATE OR REPLACE FUNCTION set_priority_twist_owner_id ()
     RETURNS TRIGGER
     AS $$
 BEGIN
-    NEW.owner_id := auth.uid ();
+    NEW.owner_id := COALESCE(auth.uid (), NEW.owner_id);
     RETURN NEW;
 END;
 $$
