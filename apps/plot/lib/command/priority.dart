@@ -14,6 +14,7 @@ import 'package:plot/router.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/theme_color.dart';
 
 abstract class PriorityCommand extends Command {
@@ -473,6 +474,31 @@ class ToggleShowArchived extends Command {
   }
 }
 
+/// Toggle showing all priorities (active + archived) vs active only
+class ToggleArchivedPrioritiesFilter extends Command {
+  ToggleArchivedPrioritiesFilter({required this.showAllPriorities})
+    : super(
+        title: showAllPriorities
+            ? 'Hide Archived Priorities'
+            : 'Show Archived Priorities',
+        subtitle: showAllPriorities
+            ? 'Showing all priorities (active & archived)'
+            : 'Showing active priorities only',
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
+        icon: PlotIcon.archived,
+        on: showAllPriorities, // Highlighted when showing all
+      );
+
+  final bool showAllPriorities;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    context.read<LocalPreferencesBloc>().toggleShowAllPriorities();
+    return const CommandDone();
+  }
+}
+
 class SharePriority extends PriorityCommand {
   SharePriority(Priority super.priority, this.contactId, {required this.add})
     : super(
@@ -762,15 +788,13 @@ class CurrentUserMemberCommand extends Command {
     return ShowCommands(
       title: 'You',
       icon: PlotIcon.users,
-      commands: (context) => Future.value(Commands(
-        groups: [
-          StaticCommandGroup(
-            commands: [
-              LeavePriorityCommand(priority),
-            ],
-          ),
-        ],
-      )),
+      commands: (context) => Future.value(
+        Commands(
+          groups: [
+            StaticCommandGroup(commands: [LeavePriorityCommand(priority)]),
+          ],
+        ),
+      ),
     ).run(context);
   }
 }

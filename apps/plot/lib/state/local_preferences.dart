@@ -14,6 +14,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
 
   static const String _kMentionMruKey = 'mention_mru_ids';
   static const String _kHasSelectedWebPlatformKey = 'has_selected_web_platform';
+  static const String _kShowAllPrioritiesKey = 'show_all_priorities';
   static const int _maxMruItems = 50;
 
   /// Record usage of a mention, moving it to the front of the MRU list
@@ -69,17 +70,25 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     return prefs.getBool(_kHasSelectedWebPlatformKey) ?? false;
   }
 
+  /// Toggle showing all priorities (active + archived) vs active only
+  Future<void> toggleShowAllPriorities() async {
+    emit(state.copyWith(showAllPriorities: !state.showAllPriorities));
+    await _persistState();
+  }
+
   /// Load state from profile preferences
   Future<void> _loadFromPreferences() async {
     final prefs = ProfilePreferences.instance;
     final idsString = prefs.getString(_kMentionMruKey);
     final hasSelectedWebPlatform = prefs.getBool(_kHasSelectedWebPlatformKey);
+    final showAllPriorities = prefs.getBool(_kShowAllPrioritiesKey) ?? false;
 
     emit(state.copyWith(
       mentionMruIds: idsString != null && idsString.isNotEmpty
           ? idsString.split(',')
           : null,
       hasSelectedWebPlatform: hasSelectedWebPlatform,
+      showAllPriorities: showAllPriorities,
     ));
   }
 
@@ -87,5 +96,6 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   Future<void> _persistState() async {
     final prefs = ProfilePreferences.instance;
     await prefs.setString(_kMentionMruKey, state.mentionMruIds.join(','));
+    await prefs.setBool(_kShowAllPrioritiesKey, state.showAllPriorities);
   }
 }

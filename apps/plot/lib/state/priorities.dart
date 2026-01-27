@@ -18,10 +18,25 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
     return super.close();
   }
 
+  /// Set the archived filter (false = active only, null = show all)
+  void setArchivedFilter(bool showAll) {
+    final newFilter = showAll ? null : false;
+    if (state.archivedFilter != newFilter) {
+      log.info('Setting archivedFilter to $newFilter (showAll: $showAll)');
+      // Use constructor instead of copyWith to properly set null value
+      emit(PrioritiesState(
+        priorities: state.priorities,
+        root: state.root,
+        archivedFilter: newFilter,
+      ));
+      start();
+    }
+  }
+
   Future<void> start() {
     final completer = Completer<void>();
     stop();
-    _subscription = Priority.watch().listen(
+    _subscription = Priority.watch(archived: state.archivedFilter).listen(
       (priorities) {
         emit(
           state.copyWith(

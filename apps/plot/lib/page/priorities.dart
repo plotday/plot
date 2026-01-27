@@ -9,6 +9,7 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
@@ -22,82 +23,103 @@ class PrioritiesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      childPad: false,
-      scrollable: false,
-      header: Header(
-        title: defaultTargetPlatform == TargetPlatform.macOS
-            ? null
-            : 'Priorities',
-        commands: [NewPriority()],
-      ),
-      body: BlocBuilder<LayoutBloc, LayoutState>(
-        builder: (context, layoutState) {
-          return Column(
-            children: [
-              Expanded(
-                child: BlocBuilder<PrioritiesBloc, PrioritiesState>(
-                  builder: (builderContext, state) {
-                    return BlocBuilder<NowBloc, NowState>(
-                      builder: (builderContext, priorityState) {
-                        return PrioritiesList(
-                          root: state.root!,
-                          priorities: state.priorities,
-                          selected: priorityState is NowLoaded
-                              ? priorityState.context
-                              : null,
+    return BlocBuilder<LocalPreferencesBloc, LocalPreferencesState>(
+      builder: (context, localPrefsState) {
+        // Sync filter when local prefs change
+        final prioritiesBloc = context.read<PrioritiesBloc>();
+        final expectedFilter = localPrefsState.showAllPriorities ? null : false;
+        if (prioritiesBloc.state.archivedFilter != expectedFilter) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            prioritiesBloc.setArchivedFilter(localPrefsState.showAllPriorities);
+          });
+        }
+
+        return Scaffold(
+          childPad: false,
+          scrollable: false,
+          header: Header(
+            title: defaultTargetPlatform == TargetPlatform.macOS
+                ? null
+                : 'Priorities',
+            commands: [
+              ToggleArchivedPrioritiesFilter(
+                showAllPriorities: localPrefsState.showAllPriorities,
+              ),
+              NewPriority(),
+            ],
+          ),
+          body: BlocBuilder<LayoutBloc, LayoutState>(
+            builder: (context, layoutState) {
+              return Column(
+                children: [
+                  Expanded(
+                    child: BlocBuilder<PrioritiesBloc, PrioritiesState>(
+                      builder: (builderContext, state) {
+                        return BlocBuilder<NowBloc, NowState>(
+                          builder: (builderContext, priorityState) {
+                            return PrioritiesList(
+                              root: state.root!,
+                              priorities: state.priorities,
+                              selected: priorityState is NowLoaded
+                                  ? priorityState.context
+                                  : null,
+                            );
+                          },
                         );
                       },
-                    );
-                  },
-                ),
-              ),
-              if (layoutState.multiPanel) ...[
-                ListTile(
-                  title: 'Twists',
-                  trailingBuilder: (isHovered, hasFocus) => Padding(
-                    padding: const .only(left: 4, right: 16),
-                    child: Icon(
-                      PlotIcon.twist,
-                      size: context.theme.iconSizes.base,
-                      color: context.theme.colors.mutedForeground,
                     ),
                   ),
-                  command: CommandWrapper(ManageTwists(), icon: Value(null)),
-                ),
-                BlocBuilder<UserBloc, UserState>(
-                  builder: (context, userState) {
-                    if (userState is UserReady) {
-                      final userName =
-                          userState.user.name ??
-                          userState.user.primaryEmail ??
-                          'User';
-                      return ListTile(
-                        title: userName,
-                        subtitle: userState.user.primaryEmail,
-                        trailingBuilder: (isHovered, hasFocus) => Padding(
-                          padding: const .only(left: 4, right: 16),
-                          child: Icon(
-                            PlotIcon.settings,
-                            size: context.theme.iconSizes.base,
-                            color: context.theme.colors.mutedForeground,
-                          ),
+                  if (layoutState.multiPanel) ...[
+                    ListTile(
+                      title: 'Twists',
+                      trailingBuilder: (isHovered, hasFocus) => Padding(
+                        padding: const .only(left: 4, right: 16),
+                        child: Icon(
+                          PlotIcon.twist,
+                          size: context.theme.iconSizes.base,
+                          color: context.theme.colors.mutedForeground,
                         ),
-                        command: CommandWrapper(
-                          ShowSettings(),
-                          icon: Value(null),
-                        ),
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  },
-                ),
-                SizedBox(height: 12),
-              ],
-            ],
-          );
-        },
-      ),
+                      ),
+                      command: CommandWrapper(
+                        ManageTwists(),
+                        icon: Value(null),
+                      ),
+                    ),
+                    BlocBuilder<UserBloc, UserState>(
+                      builder: (context, userState) {
+                        if (userState is UserReady) {
+                          final userName =
+                              userState.user.name ??
+                              userState.user.primaryEmail ??
+                              'User';
+                          return ListTile(
+                            title: userName,
+                            subtitle: userState.user.primaryEmail,
+                            trailingBuilder: (isHovered, hasFocus) => Padding(
+                              padding: const .only(left: 4, right: 16),
+                              child: Icon(
+                                PlotIcon.settings,
+                                size: context.theme.iconSizes.base,
+                                color: context.theme.colors.mutedForeground,
+                              ),
+                            ),
+                            command: CommandWrapper(
+                              ShowSettings(),
+                              icon: Value(null),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                    SizedBox(height: 12),
+                  ],
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

@@ -193,7 +193,11 @@ class _PrioritiesListState extends State<PrioritiesList>
               selected: widget.selected?.id == priority.id,
               selectedBorder: topSection || priority.topOrder == null,
               indentLevel: indentLevel,
-              textStyle: textStyle,
+              textStyle: textStyle.copyWith(
+                color: priority.archivedAt != null
+                    ? context.theme.colors.mutedForeground
+                    : textStyle.color,
+              ),
               showAncestry: topSection,
               unread: topSection
                   ? _hasDescendantUnread(priority)
@@ -212,9 +216,11 @@ class _PrioritiesListState extends State<PrioritiesList>
                         indentLevel: indentLevel + 1,
                         topSection: topSection,
                         textStyle: textStyle.copyWith(
-                          color: context.colour.colours.fromTheme(
-                            child.displayColor,
-                          ),
+                          color: child.archivedAt != null
+                              ? context.theme.colors.mutedForeground
+                              : context.colour.colours.fromTheme(
+                                  child.displayColor,
+                                ),
                         ),
                       ),
                     )
@@ -244,9 +250,11 @@ class _PrioritiesListState extends State<PrioritiesList>
                 selectedBorder: priority.topOrder == null,
                 indentLevel: indentLevel,
                 textStyle: textStyle.copyWith(
-                  color: context.colour.colours.fromTheme(
-                    priority.displayColor,
-                  ),
+                  color: priority.archivedAt != null
+                      ? context.theme.colors.mutedForeground
+                      : context.colour.colours.fromTheme(
+                          priority.displayColor,
+                        ),
                 ),
                 unread: !priorityExpanded && _hasDescendantUnread(priority)
                     ? true
@@ -282,9 +290,11 @@ class _PrioritiesListState extends State<PrioritiesList>
                       selectedBorder: priority.topOrder == null,
                       indentLevel: indentLevel,
                       textStyle: textStyle.copyWith(
-                        color: context.colour.colours.fromTheme(
-                          priority.displayColor,
-                        ),
+                        color: priority.archivedAt != null
+                            ? context.theme.colors.mutedForeground
+                            : context.colour.colours.fromTheme(
+                                priority.displayColor,
+                              ),
                       ),
                       unread:
                           !priorityExpanded && _hasDescendantUnread(priority)
