@@ -753,7 +753,10 @@ export async function prepareActivityForDb(
     sync_depth: plot.syncDepth + 1,
     embedding: embedding ? JSON.stringify(embedding) : null,
     pick_priority: (pickPriorityConfig ?? null) as Json | null,
-    archived_at: activity?.archived ? new Date().toDateString() : null,
+    // Only include archived_at if explicitly set
+    ...(activity.archived !== undefined
+      ? { archived_at: activity.archived ? new Date().toISOString() : null }
+      : {}),
     // Conditionally add optional fields
     ...("id" in activity && activity.id ? { id: activity.id } : {}),
     ...(assigneeId !== undefined ? { assignee_id: assigneeId } : {}),
@@ -768,7 +771,10 @@ export async function prepareActivityForDb(
       source: activity.source,
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
-      archived_at: activity.archived ? new Date().toISOString() : null,
+      // Only include archived_at if explicitly set
+      ...(activity.archived !== undefined
+        ? { archived_at: activity.archived ? new Date().toISOString() : null }
+        : {}),
     };
 
     // Add fields only if explicitly provided (not using defaults)

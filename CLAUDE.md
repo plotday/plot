@@ -254,6 +254,61 @@ await this.callback.deleteAll();
 - Callbacks persist across worker restarts and timeouts
 - Use callbacks instead of direct function references in webhook, auth, and tasks tools
 
+### Activity Sync Best Practices
+
+When syncing activities from external systems, follow these patterns to ensure correct archiving behavior and prevent notification spam:
+
+#### The `initialSync` Flag Pattern
+
+All sync-based tools should track whether they're performing an initial sync (first import) or an incremental sync (ongoing updates):
+
+```typescript
+async startSync(authToken: string, resourceId: string): Promise<void> {
+  // Store initial sync state
+  await this.set(`sync_state_${resourceId}`, {
+    resourceId,
+    sequence: 1,
+  });
+
+  // Start first batch with initialSync = true
+  const callback = await this.callback(
+    this.syncBatch,
+    authToken,
+    resourceId,
+    true  // initialSync flag
+  );
+  await this.runTask(callback);
+}
+
+async syncBatch(
+  authToken: string,
+  resourceId: string,
+  initialSync: boolean
+): Promise<void> {
+  // Create activities with proper flags
+  const activity: NewActivity = {
+    type: ActivityType.Event,
+    title: event.title,
+    unread: !initialSync,                      // false for initial, true for incremental
+    ...(initialSync ? { archived: false } : {}),  // unarchive on initial only
+    // ... other fields
+  };
+}
+```
+
+#### Field Behavior by Sync Type
+
+| Field | Initial Sync | Incremental Sync | Reason |
+|-------|--------------|------------------|---------|
+| `unread` | `false` | `true` | Avoid notification overload from historical items |
+| `archived` | `false` | *omit* | Unarchive on install, preserve user choice on updates |
+
+**Why this matters**:
+
+- **Initial sync**: Activities are unarchived and marked as read, avoiding spam from bulk historical imports
+- **Incremental sync**: New activities appear as unread, and archived state is preserved (respects user's archiving decisions)
+- **Reinstall**: Acts as initial sync, so archived activities are unarchived (fresh start)
+
 ### Google Tool Integration Pattern
 
 When building Google-based tools (calendar, contacts, gmail, etc.), use this pattern to enable cross-tool integration with a single OAuth flow and automatic data syncing.
