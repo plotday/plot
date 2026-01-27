@@ -730,6 +730,13 @@ export class Integrations extends Tool implements IAuth {
       return null;
     }
 
+    // For sign-in flows (no callback), use simplified Google OAuth params
+    // For authorization flows (has callback), use full params from config
+    const isSignInFlow = !callback && provider === "google";
+    const additionalParams = isSignInFlow
+      ? { prompt: "select_account" }
+      : config.additionalParams;
+
     const params = new URLSearchParams({
       response_type: "code",
       client_id: clientId,
@@ -738,7 +745,7 @@ export class Integrations extends Tool implements IAuth {
       state,
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
-      ...config.additionalParams,
+      ...additionalParams,
     });
 
     const url = `${config.authUrl}?${params.toString()}`;
