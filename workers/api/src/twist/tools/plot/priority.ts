@@ -87,6 +87,11 @@ export async function createPriority(
     dbPriority.key = priority.key;
   }
 
+  // If a color was provided, set it on the priority
+  if (priority.color !== undefined) {
+    dbPriority.color = priority.color;
+  }
+
   const result = await plot.supabase
     .from("priority")
     .insert(dbPriority)
@@ -114,7 +119,7 @@ export async function getPriority(
     const priorityRoot = await plot.getPriorityRoot();
     const result = await plot.supabase
       .from("priority")
-      .select("id, title, archived_at, key")
+      .select("id, title, archived_at, key, color")
       .eq("key", priority.key)
       .filter("path", "cd", priorityRoot)
       .single();
@@ -128,7 +133,7 @@ export async function getPriority(
     // Look up priority by ID
     const result = await plot.supabase
       .from("priority")
-      .select("id, title, archived_at, key")
+      .select("id, title, archived_at, key, color")
       .eq("id", priority.id)
       .single();
 

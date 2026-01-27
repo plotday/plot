@@ -1,6 +1,7 @@
 import {
   ActivityType,
   type Priority,
+  ThemeColor,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
@@ -28,6 +29,7 @@ class PlotTwist extends Twist<PlotTwist> {
     const onboardingPriority = await this.tools.plot.createPriority({
       title: "Getting Started",
       parent: { key: "@plot" },
+      color: ThemeColor.Catalyst, // Color 0 - Green
     });
 
     // Welcome note

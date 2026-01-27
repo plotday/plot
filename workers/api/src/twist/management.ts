@@ -16,7 +16,7 @@ import { createLogger } from "../utils/logger";
  * Errors are logged but not thrown to avoid masking the original installation error.
  */
 async function cleanupFailedInstallation(
-  supabase: SupabaseClient,
+  supabaseAdmin: SupabaseClient,
   priorityTwistId: string,
   deactivate?: {
     twistFactory: ReturnType<typeof twistFactory>;
@@ -30,8 +30,9 @@ async function cleanupFailedInstallation(
 
   try {
     // Step 1: Archive all activities created by this twist
+    // Use admin client to avoid RLS issues during cleanup
     logger.info("Cleaning up activities for failed installation");
-    const { error: archiveError } = await supabase
+    const { error: archiveError } = await supabaseAdmin
       .from("activity")
       .update({ archived_at: new Date().toISOString() })
       .eq("created_by", priorityTwistId)
@@ -67,9 +68,10 @@ async function cleanupFailedInstallation(
   }
 
   // Step 3: Archive the priority_twist record
+  // Use admin client to avoid RLS issues during cleanup
   try {
     logger.info("Archiving priority_twist record");
-    await supabase
+    await supabaseAdmin
       .from("priority_twist")
       .update({ archived_at: new Date().toISOString() })
       .eq("id", priorityTwistId);
@@ -183,8 +185,15 @@ export async function add(
       twist.config = config;
     }
 
+    // Use supabaseAdmin to bypass RLS after access check is complete
+    // This avoids circular dependency in RLS policies:
+    // - priority_twist insert policy checks can_access_priority()
+    // - can_access_priority() queries user_priority_expanded view
+    // - user_priority_expanded queries priority_user with security_invoker = TRUE
+    // - priority_user SELECT policy also checks can_access_priority()
+    // Using admin client after is_accessible_twist check ensures access is properly verified
     const priorityTwist = safeQuery(
-      await supabase.from("priority_twist").insert(twist).select().single()
+      await supabaseAdmin.from("priority_twist").insert(twist).select().single()
     );
 
     // Activate twist if requested
@@ -202,7 +211,7 @@ export async function add(
         logger.error("Twist activation failed, rolling back installation", activationError as Error);
 
         const cleanupWarnings = await cleanupFailedInstallation(
-          supabase,
+          supabaseAdmin,
           priorityTwist.id,
           {
             twistFactory: activate.twistFactory,

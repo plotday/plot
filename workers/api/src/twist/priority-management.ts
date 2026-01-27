@@ -63,6 +63,7 @@ export async function getOrCreatePlotPriority(
       path: pathResult.data,
       updated_by: 0,
       key: "@plot",
+      color: 7, // Resolution color (blue-gray)
     })
     .select("id")
     .single();

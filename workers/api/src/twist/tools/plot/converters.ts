@@ -165,6 +165,7 @@ export function fromDbActivity(
       title: dbActivity.title ?? "Untitled",
       archived: false,
       key: null,
+      color: null,
     },
     recurrenceRule: dbActivity.recurrence_rule || null,
     recurrenceExdates:
@@ -179,7 +180,7 @@ export function fromDbActivity(
 export function fromDbPriority(
   dbPriority: Pick<
     Database["public"]["Tables"]["priority"]["Row"],
-    "id" | "title" | "archived_at" | "key"
+    "id" | "title" | "archived_at" | "key" | "color"
   >
 ): Priority {
   return {
@@ -187,5 +188,6 @@ export function fromDbPriority(
     title: dbPriority.title,
     archived: dbPriority.archived_at !== null,
     key: dbPriority.key,
+    color: dbPriority.color,
   };
 }
