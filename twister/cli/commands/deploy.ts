@@ -8,7 +8,7 @@ import { bundleTwist } from "../utils/bundle";
 import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
 import { handleSSEStream } from "../utils/sse";
-import { getGlobalTokenPath } from "../utils/token";
+import { resolveToken } from "../utils/token.js";
 
 // Publisher types for API interaction
 interface Publisher {
@@ -248,38 +248,26 @@ export async function deployCommand(options: DeployOptions) {
   const deploymentName = options.name || twistName;
   const deploymentDescription = options.description || twistDescription;
 
-  // Load DEPLOY_TOKEN from multiple sources (CLI, env var, .env, global config)
-  let deployToken = options.deployToken;
+  // Load DEPLOY_TOKEN from multiple sources (CLI, env var, .env, namespaced token file)
   const envPath = path.join(twistPath, ".env");
 
-  if (!deployToken) {
-    // Try to load from PLOT_DEPLOY_TOKEN environment variable
-    deployToken = process.env.PLOT_DEPLOY_TOKEN;
+  // Read .env file if it exists
+  let dotEnvToken: string | undefined;
+  if (fs.existsSync(envPath)) {
+    const envConfig = dotenv.parse(fs.readFileSync(envPath));
+    dotEnvToken = envConfig.DEPLOY_TOKEN;
   }
 
+  // Resolve token using centralized function
+  let deployToken = resolveToken({
+    apiUrl: options.apiUrl,
+    deployToken: options.deployToken,
+    envToken: process.env.PLOT_DEPLOY_TOKEN,
+    dotEnvToken: dotEnvToken,
+  });
+
+  // If still no token, prompt for it
   if (!deployToken) {
-    // Try to load from .env file
-    if (fs.existsSync(envPath)) {
-      const envConfig = dotenv.parse(fs.readFileSync(envPath));
-      deployToken = envConfig.DEPLOY_TOKEN;
-    }
-
-    // Try to load from global token file
-    if (!deployToken) {
-      const globalTokenPath = getGlobalTokenPath();
-      if (fs.existsSync(globalTokenPath)) {
-        try {
-          deployToken = fs.readFileSync(globalTokenPath, "utf-8").trim();
-        } catch (error) {
-          console.warn(
-            `Warning: Failed to read global token file: ${globalTokenPath}`
-          );
-        }
-      }
-    }
-
-    // If still no token, prompt for it
-    if (!deployToken) {
       out.info("Authentication required", [
         "Run 'plot login' for easiest setup",
         "Or provide token via --deploy-token, PLOT_DEPLOY_TOKEN env var, or DEPLOY_TOKEN in .env",
@@ -314,7 +302,6 @@ export async function deployCommand(options: DeployOptions) {
         out.success("Token saved to .env file");
       }
     }
-  }
 
   // Handle publisher selection for non-personal deployments
   let publisherId: number | undefined;

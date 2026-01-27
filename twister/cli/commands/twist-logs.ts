@@ -4,7 +4,7 @@ import * as path from "path";
 import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
 import { handleSSEStream } from "../utils/sse";
-import { getGlobalTokenPath } from "../utils/token";
+import { resolveToken } from "../utils/token.js";
 
 interface PackageJson {
   plotTwistId?: string;
@@ -51,27 +51,12 @@ export async function twistLogsCommand(options: TwistLogsOptions) {
     process.exit(1);
   }
 
-  // Load deploy token
-  let deployToken = options.deployToken;
-
-  if (!deployToken) {
-    // Try to load from PLOT_DEPLOY_TOKEN environment variable
-    deployToken = process.env.PLOT_DEPLOY_TOKEN;
-  }
-
-  if (!deployToken) {
-    // Try to load from global token file
-    const globalTokenPath = getGlobalTokenPath();
-    if (fs.existsSync(globalTokenPath)) {
-      try {
-        deployToken = fs.readFileSync(globalTokenPath, "utf-8").trim();
-      } catch (error) {
-        console.warn(
-          `Warning: Failed to read global token file: ${globalTokenPath}`
-        );
-      }
-    }
-  }
+  // Load deploy token using centralized resolution
+  const deployToken = resolveToken({
+    apiUrl: options.apiUrl,
+    deployToken: options.deployToken,
+    envToken: process.env.PLOT_DEPLOY_TOKEN,
+  });
 
   if (!deployToken) {
     out.error(

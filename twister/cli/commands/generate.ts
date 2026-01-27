@@ -8,7 +8,7 @@ import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
 import { detectPackageManager } from "../utils/packageManager";
 import { handleSSEStream } from "../utils/sse";
-import { getGlobalTokenPath } from "../utils/token";
+import { resolveToken } from "../utils/token.js";
 
 interface GenerateOptions {
   dir: string;
@@ -108,31 +108,23 @@ export async function generateCommand(options: GenerateOptions) {
     twistId = crypto.randomUUID();
   }
 
-  // Load DEPLOY_TOKEN from multiple sources
-  let deployToken = options.deployToken;
+  // Load DEPLOY_TOKEN from multiple sources (CLI, env var, .env, namespaced token file)
   const envPath = path.join(twistPath, ".env");
 
-  if (!deployToken) {
-    deployToken = process.env.PLOT_DEPLOY_TOKEN;
-  }
-
-  if (!deployToken && fs.existsSync(envPath)) {
+  // Read .env file if it exists
+  let dotEnvToken: string | undefined;
+  if (fs.existsSync(envPath)) {
     const envConfig = dotenv.parse(fs.readFileSync(envPath));
-    deployToken = envConfig.DEPLOY_TOKEN;
+    dotEnvToken = envConfig.DEPLOY_TOKEN;
   }
 
-  if (!deployToken) {
-    const globalTokenPath = getGlobalTokenPath();
-    if (fs.existsSync(globalTokenPath)) {
-      try {
-        deployToken = fs.readFileSync(globalTokenPath, "utf-8").trim();
-      } catch (error) {
-        console.warn(
-          `Warning: Failed to read global token file: ${globalTokenPath}`
-        );
-      }
-    }
-  }
+  // Resolve token using centralized function
+  let deployToken = resolveToken({
+    apiUrl: options.apiUrl,
+    deployToken: options.deployToken,
+    envToken: process.env.PLOT_DEPLOY_TOKEN,
+    dotEnvToken: dotEnvToken,
+  });
 
   // Prompt for token if not found
   if (!deployToken) {

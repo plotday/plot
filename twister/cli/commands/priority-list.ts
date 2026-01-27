@@ -1,5 +1,5 @@
 import { handleNetworkError } from "../utils/network-error";
-import { getToken } from "../utils/token";
+import { resolveToken } from "../utils/token.js";
 
 interface PriorityListOptions {
   apiUrl: string;
@@ -7,7 +7,11 @@ interface PriorityListOptions {
 
 export async function priorityListCommand(options: PriorityListOptions) {
   // Get authentication token
-  const token = await getToken();
+  const token = resolveToken({
+    apiUrl: options.apiUrl,
+    envToken: process.env.PLOT_DEPLOY_TOKEN,
+  });
+
   if (!token) {
     console.error(
       "\n✗ No authentication token found. Please run 'plot login' first."

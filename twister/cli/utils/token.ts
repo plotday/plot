@@ -1,39 +1,91 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import * as os from "os";
+import { normalizeApiUrl } from "./url-normalize.js";
 
 /**
- * Get the path to the global token file.
- *
- * @returns The path to the global token file
+ * Get the namespaced token path for a specific API URL.
  */
-export function getGlobalTokenPath(): string {
-  const homeDir = os.homedir();
-  if (process.platform === "win32") {
-    // Windows: Use APPDATA
-    const appData = process.env.APPDATA || path.join(homeDir, "AppData", "Roaming");
-    return path.join(appData, "plot", "token");
-  } else {
-    // Unix-like: Use ~/.config/plot/token
-    return path.join(homeDir, ".config", "plot", "token");
-  }
+export function getNamespacedTokenPath(apiUrl: string): string {
+  const namespace = normalizeApiUrl(apiUrl);
+  const configDir =
+    process.platform === "win32"
+      ? process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming")
+      : path.join(os.homedir(), ".config");
+
+  return path.join(configDir, "plot", "credentials", namespace, "token");
 }
 
 /**
- * Read the authentication token from the global token file.
- *
- * @returns The token string if found, null otherwise
+ * Options for token resolution.
  */
-export async function getToken(): Promise<string | null> {
-  const globalTokenPath = getGlobalTokenPath();
-  if (fs.existsSync(globalTokenPath)) {
+export interface TokenResolutionOptions {
+  /** API URL for namespaced token lookup */
+  apiUrl?: string;
+
+  /** Token from --deploy-token CLI flag */
+  deployToken?: string;
+
+  /** Token from PLOT_DEPLOY_TOKEN env var */
+  envToken?: string;
+
+  /** Token from .env file DEPLOY_TOKEN */
+  dotEnvToken?: string;
+}
+
+/**
+ * Resolve token using the complete resolution chain:
+ * 1. --deploy-token CLI flag
+ * 2. PLOT_DEPLOY_TOKEN env var
+ * 3. .env file DEPLOY_TOKEN
+ * 4. Namespaced token file
+ *
+ * Returns undefined if no token found (caller handles prompting).
+ */
+export function resolveToken(
+  options: TokenResolutionOptions
+): string | undefined {
+  // Step 1: CLI flag
+  if (options.deployToken) {
+    return options.deployToken;
+  }
+
+  // Step 2: PLOT_DEPLOY_TOKEN env var
+  if (options.envToken) {
+    return options.envToken;
+  }
+
+  // Step 3: .env file DEPLOY_TOKEN
+  if (options.dotEnvToken) {
+    return options.dotEnvToken;
+  }
+
+  // Step 4: Namespaced token file
+  if (options.apiUrl) {
     try {
-      return fs.readFileSync(globalTokenPath, "utf-8").trim();
+      const namespacedPath = getNamespacedTokenPath(options.apiUrl);
+      if (fs.existsSync(namespacedPath)) {
+        const token = fs.readFileSync(namespacedPath, "utf-8").trim();
+        if (token) {
+          return token;
+        }
+      }
     } catch (error) {
-      console.warn(
-        `Warning: Failed to read global token file: ${globalTokenPath}`
-      );
+      // Invalid API URL or file read error
+      console.error(`Warning: Could not read namespaced token: ${error}`);
     }
   }
-  return null;
+
+  // Step 5: Prompt (handled by caller)
+  return undefined;
+}
+
+/**
+ * Legacy getToken() function updated to use resolveToken().
+ */
+export async function getToken(): Promise<string | null> {
+  const token = resolveToken({
+    apiUrl: process.env.PLOT_API_URL || "https://api.plot.day",
+  });
+  return token || null;
 }

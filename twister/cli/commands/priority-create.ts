@@ -1,7 +1,7 @@
 import prompts from "prompts";
 import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
-import { getToken } from "../utils/token";
+import { resolveToken } from "../utils/token.js";
 
 interface PriorityCreateOptions {
   name?: string;
@@ -43,7 +43,11 @@ export async function priorityCreateCommand(options: PriorityCreateOptions) {
   const parentId = options.parentId || response.parentId || undefined;
 
   // Get authentication token
-  const token = await getToken();
+  const token = resolveToken({
+    apiUrl: options.apiUrl,
+    envToken: process.env.PLOT_DEPLOY_TOKEN,
+  });
+
   if (!token) {
     out.error(
       "No authentication token found",

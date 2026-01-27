@@ -1,11 +1,11 @@
 import { exec } from "child_process";
 import * as crypto from "crypto";
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 
 import { handleNetworkError } from "../utils/network-error";
 import * as out from "../utils/output";
+import { getNamespacedTokenPath } from "../utils/token.js";
 
 interface LoginOptions {
   siteUrl: string;
@@ -21,17 +21,8 @@ interface SessionResponse {
   error?: string;
 }
 
-function getTokenPath(): string {
-  const homeDir = os.homedir();
-  if (process.platform === "win32") {
-    // Windows: Use APPDATA
-    const appData =
-      process.env.APPDATA || path.join(homeDir, "AppData", "Roaming");
-    return path.join(appData, "plot", "token");
-  } else {
-    // Unix-like: Use ~/.config/plot/token
-    return path.join(homeDir, ".config", "plot", "token");
-  }
+function getTokenPath(apiUrl: string): string {
+  return getNamespacedTokenPath(apiUrl);
 }
 
 function openBrowser(url: string): void {
@@ -130,22 +121,26 @@ export async function loginCommand(options: LoginOptions) {
   }
 
   // Save token to file
-  const tokenPath = getTokenPath();
+  const tokenPath = getTokenPath(options.apiUrl);
   const tokenDir = path.dirname(tokenPath);
 
-  // Create directory if it doesn't exist
+  // Create directory if it doesn't exist with secure permissions
   if (!fs.existsSync(tokenDir)) {
-    fs.mkdirSync(tokenDir, { recursive: true });
+    if (process.platform === "win32") {
+      fs.mkdirSync(tokenDir, { recursive: true });
+    } else {
+      fs.mkdirSync(tokenDir, { recursive: true, mode: 0o700 });
+    }
   }
 
-  // Write token with secure permissions
-  // Note: mode option is only supported on Unix-like systems
-  // On Windows, file permissions are handled differently
+  // Use atomic write to prevent corruption
+  const tempPath = `${tokenPath}.tmp`;
   if (process.platform === "win32") {
-    fs.writeFileSync(tokenPath, result.token);
+    fs.writeFileSync(tempPath, result.token);
   } else {
-    fs.writeFileSync(tokenPath, result.token, { mode: 0o600 });
+    fs.writeFileSync(tempPath, result.token, { mode: 0o600 });
   }
+  fs.renameSync(tempPath, tokenPath); // Atomic on most filesystems
 
   const details = [];
   if (result.user?.email) {
