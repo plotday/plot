@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.31.2
+
+### Added
+
+- Priority.color for setting the priority theme color ([`bdb98a5`](https://github.com/plotday/plot/commit/bdb98a50860da15a7e2156cf2ac07236f5016fc7))
+
 ## 0.31.1
 
 ### Added

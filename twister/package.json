@@ -1,6 +1,6 @@
 {
   "name": "@plotday/twister",
-  "version": "0.31.1",
+  "version": "0.31.2",
   "description": "Plot Twist Creator - Build intelligent extensions that integrate and automate",
   "packageManager": "pnpm@10.18.3",
   "type": "module",
