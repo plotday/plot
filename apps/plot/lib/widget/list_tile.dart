@@ -194,7 +194,8 @@ class _ListTileState extends State<ListTile> {
         onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
         child: ReorderableDragStartListener(
           index: widget.reorderableIndex ?? 0,
-          enabled: widget.reorderableIndex != null &&
+          enabled:
+              widget.reorderableIndex != null &&
               hasPhysicalKeyboard() &&
               !widget.showLeadingDragHandle,
           child: Container(
@@ -246,7 +247,9 @@ class _ListTileState extends State<ListTile> {
                   child: GestureDetector(
                     onTap: !widget.noRun && widget.command != null
                         ? () {
-                            log.info("Running command: ${widget.command?.title}");
+                            log.info(
+                              "Running command: ${widget.command?.title}",
+                            );
                             try {
                               context.run(widget.command!);
                             } catch (e, t) {
@@ -273,192 +276,185 @@ class _ListTileState extends State<ListTile> {
                         : null,
                     child: Container(
                       color: Color(0x00000000), // Transparent to capture taps
-                        child: Builder(
-                          builder: (context) {
-                            // Build the icon widget
-                            final iconWidget = () {
-                              // If running, show spinner instead of icon
-                              if (widget.isRunning) {
-                                return Spinner(
-                                  size: widget.style == ListTileStyle.header
-                                      ? context.theme.iconSizes.sm
-                                      : context.theme.iconSizes.base,
-                                  color: context.theme.plotColors.muted,
-                                );
-                              }
-
-                              // Check for custom icon widget first (like Button does)
-                              final customIcon = widget.command?.buildIcon(
-                                context,
+                      child: Builder(
+                        builder: (context) {
+                          // Build the icon widget
+                          final iconWidget = () {
+                            // If running, show spinner instead of icon
+                            if (widget.isRunning) {
+                              return Spinner(
+                                size: widget.style == ListTileStyle.header
+                                    ? context.theme.iconSizes.sm
+                                    : context.theme.iconSizes.base,
+                                color: context.theme.plotColors.muted,
                               );
-                              if (customIcon != null) return customIcon;
+                            }
 
-                              // Fall back to IconData icon
-                              if (widget.icon != null ||
-                                  widget.command?.icon != null) {
-                                return Icon(
-                                  widget.icon ?? widget.command?.icon,
-                                  size: widget.style == ListTileStyle.header
-                                      ? context.theme.iconSizes.sm
-                                      : context.theme.iconSizes.base,
-                                  color: context.theme.plotColors.muted,
-                                );
-                              }
+                            // Check for custom icon widget first (like Button does)
+                            final customIcon = widget.command?.buildIcon(
+                              context,
+                            );
+                            if (customIcon != null) return customIcon;
 
-                              return const SizedBox.shrink();
-                            }();
+                            // Fall back to IconData icon
+                            if (widget.icon != null ||
+                                widget.command?.icon != null) {
+                              return Icon(
+                                widget.icon ?? widget.command?.icon,
+                                size: widget.style == ListTileStyle.header
+                                    ? context.theme.iconSizes.sm
+                                    : context.theme.iconSizes.base,
+                                color: context.theme.plotColors.muted,
+                              );
+                            }
 
-                            // Only apply spacing when icon is present
-                            final hasIcon = iconWidget is! SizedBox;
+                            return const SizedBox.shrink();
+                          }();
 
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              spacing: hasIcon ? 12 : 0,
-                              children: [
-                                if (hasIcon) iconWidget else iconWidget,
-                                Expanded(
-                                  child: Padding(
-                                    padding:
-                                        (widget.padding?.resolve(null) ??
-                                                widgetPaddingSm)
-                                            .copyWith(
-                                              left: 0,
-                                              right: 0,
-                                              top: widget.style == .header
-                                                  ? 2
-                                                  : null,
-                                              bottom: widget.style == .header
-                                                  ? 2
-                                                  : null,
-                                            ),
-                                    child: Column(
-                                      crossAxisAlignment: widget.centered
-                                          ? CrossAxisAlignment.center
-                                          : CrossAxisAlignment.start,
-                                      spacing: 2,
-                                      children: [
-                                        if (widget.header != null)
-                                          widget.header!,
-                                        Builder(
-                                          builder: (context) {
-                                            // Calculate highlighted state
-                                            final isHighlighted =
-                                                _focusNode.hasFocus ||
-                                                _isHovered ||
-                                                widget.highlighted;
+                          // Only apply spacing when icon is present
+                          final hasIcon = iconWidget is! SizedBox;
 
-                                            final commandBody =
-                                                widget.bodyBuilder?.call(
-                                                  context,
-                                                  isHighlighted,
-                                                ) ??
-                                                widget.body ??
-                                                (widget.title == null
-                                                    ? widget.command?.buildBody(
-                                                        context,
-                                                      )
-                                                    : null);
-                                            return commandBody != null
-                                                ? Row(
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            spacing: hasIcon ? 12 : 0,
+                            children: [
+                              if (hasIcon) iconWidget else iconWidget,
+                              Expanded(
+                                child: Padding(
+                                  padding:
+                                      (widget.padding?.resolve(null) ??
+                                              widgetPaddingSm)
+                                          .copyWith(
+                                            left: 0,
+                                            right: 0,
+                                            top: widget.style == .header
+                                                ? 2
+                                                : null,
+                                            bottom: widget.style == .header
+                                                ? 2
+                                                : null,
+                                          ),
+                                  child: Column(
+                                    crossAxisAlignment: widget.centered
+                                        ? CrossAxisAlignment.center
+                                        : CrossAxisAlignment.start,
+                                    spacing: 2,
+                                    children: [
+                                      if (widget.header != null) widget.header!,
+                                      Builder(
+                                        builder: (context) {
+                                          // Calculate highlighted state
+                                          final isHighlighted =
+                                              _focusNode.hasFocus ||
+                                              _isHovered ||
+                                              widget.highlighted;
+
+                                          final commandBody =
+                                              widget.bodyBuilder?.call(
+                                                context,
+                                                isHighlighted,
+                                              ) ??
+                                              widget.body ??
+                                              (widget.title == null
+                                                  ? widget.command?.buildBody(
+                                                      context,
+                                                    )
+                                                  : null);
+                                          return commandBody != null
+                                              ? Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: commandBody,
+                                                    ),
+                                                  ],
+                                                )
+                                              : Text.rich(
+                                                  TextSpan(
                                                     children: [
-                                                      Expanded(
-                                                        child: commandBody,
-                                                      ),
-                                                    ],
-                                                  )
-                                                : Row(
-                                                    mainAxisAlignment:
-                                                        widget.centered
-                                                        ? MainAxisAlignment
-                                                              .center
-                                                        : MainAxisAlignment
-                                                              .start,
-                                                    spacing: 4,
-                                                    children: [
-                                                      Flexible(
-                                                        child: Text(
-                                                          widget.title ??
-                                                              widget
-                                                                  .command
-                                                                  ?.title ??
-                                                              'Untitled',
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          textAlign:
-                                                              widget.centered
-                                                              ? TextAlign.center
-                                                              : TextAlign.start,
-                                                          style:
-                                                              (widget.textStyle ??
-                                                                      (widget.style ==
-                                                                              ListTileStyle.header
-                                                                          ? context.theme.typography.sm
-                                                                          : context.theme.typography.base))
-                                                                  .copyWith(
-                                                                    color:
-                                                                        widget
-                                                                            .selected
+                                                      TextSpan(
+                                                        text:
+                                                            widget.title ??
+                                                            widget
+                                                                .command
+                                                                ?.title ??
+                                                            'Untitled',
+                                                        style:
+                                                            (widget.textStyle ??
+                                                                    (widget.style ==
+                                                                            ListTileStyle.header
                                                                         ? context
                                                                               .theme
-                                                                              .colors
-                                                                              .primary
-                                                                        : widget.style ==
-                                                                              ListTileStyle.header
-                                                                        ? context
+                                                                              .typography
+                                                                              .sm
+                                                                        : context
                                                                               .theme
-                                                                              .plotColors
-                                                                              .muted
-                                                                        : null,
-                                                                  ),
-                                                        ),
+                                                                              .typography
+                                                                              .base))
+                                                                .copyWith(
+                                                                  color:
+                                                                      widget
+                                                                          .selected
+                                                                      ? context
+                                                                            .theme
+                                                                            .colors
+                                                                            .primary
+                                                                      : widget.style ==
+                                                                            ListTileStyle.header
+                                                                      ? context
+                                                                            .theme
+                                                                            .plotColors
+                                                                            .muted
+                                                                      : null,
+                                                                ),
                                                       ),
                                                       if (widget.subtitle !=
                                                           null)
-                                                        Flexible(
-                                                          child: Text(
-                                                            widget.subtitle!,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                            style: context
-                                                                .theme
-                                                                .typography
-                                                                .base
-                                                                .copyWith(
-                                                                  color: context
-                                                                      .theme
-                                                                      .plotColors
-                                                                      .muted,
-                                                                ),
-                                                          ),
+                                                        TextSpan(
+                                                          text:
+                                                              ' ${widget.subtitle!}',
+                                                          style: context
+                                                              .theme
+                                                              .typography
+                                                              .base
+                                                              .copyWith(
+                                                                color: context
+                                                                    .theme
+                                                                    .plotColors
+                                                                    .muted,
+                                                              ),
                                                         ),
                                                     ],
-                                                  );
-                                          },
-                                        ),
-                                        if (widget.details != null)
-                                          widget.details!,
-                                      ],
-                                    ),
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  textAlign: widget.centered
+                                                      ? TextAlign.center
+                                                      : TextAlign.start,
+                                                );
+                                        },
+                                      ),
+                                      if (widget.details != null)
+                                        widget.details!,
+                                    ],
                                   ),
                                 ),
-                                if (widget.showShortcut &&
-                                    widget.command?.shortcut != null &&
-                                    hasPhysicalKeyboard())
-                                  Text(
-                                    formatShortcut(widget.command?.shortcut),
-                                    style: context.theme.typography.base
-                                        .copyWith(
-                                          color: context.theme.plotColors.muted,
-                                        ),
+                              ),
+                              if (widget.showShortcut &&
+                                  widget.command?.shortcut != null &&
+                                  hasPhysicalKeyboard())
+                                Text(
+                                  formatShortcut(widget.command?.shortcut),
+                                  style: context.theme.typography.base.copyWith(
+                                    color: context.theme.plotColors.muted,
                                   ),
-                              ],
-                            );
-                          },
-                        ),
+                                ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
+                ),
                 ...[
                   if (widget.trailingBuilder != null)
                     widget.trailingBuilder!(_isHovered, _focusNode.hasFocus),
