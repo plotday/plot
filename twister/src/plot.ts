@@ -79,6 +79,28 @@ export { type JSONValue } from "./utils/types";
 export type ActorId = string & { readonly __brand: "ActorId" };
 
 /**
+ * Theme colors for priorities.
+ */
+export enum ThemeColor {
+  /** Catalyst - Green */
+  Catalyst = 0,
+  /** Call to Adventure - Blue */
+  CallToAdventure = 1,
+  /** Rising Action - Purple */
+  RisingAction = 2,
+  /** Momentum - Pink-Purple */
+  Momentum = 3,
+  /** Turning Point - Pink */
+  TurningPoint = 4,
+  /** Breakthrough - Orange */
+  Breakthrough = 5,
+  /** Climax - Olive */
+  Climax = 6,
+  /** Resolution - Blue-Gray */
+  Resolution = 7,
+}
+
+/**
  * Represents a priority context within Plot.
  *
  * Priorities are similar to projects in other apps. All Activity is in a Priority.
@@ -96,6 +118,8 @@ export type Priority = {
    * Keys are unique per priority tree (a user's personal priorities or the root of a shared priority).
    */
   key: string | null;
+  /** Optional theme color for the priority (0-7). If not set, inherits from parent or defaults to 7 (Resolution). */
+  color: ThemeColor | null;
 };
 
 /**
