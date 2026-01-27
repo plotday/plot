@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
@@ -382,19 +383,61 @@ class _PrioritiesListState extends State<PrioritiesList>
             ),
           ],
 
-          // Third group: All Priorities
-          SizedBox(height: 16),
-          ListTile(
-            title: 'All Priorities',
-            style: ListTileStyle.header,
-            textStyle: headerStyle,
-            noHoverHighlight: true,
-          ),
-          ...buildReorderablePriorityItems(
-            context,
-            widget.root.children,
-            textStyle: itemStyle,
-          ),
+          // Third group: All Priorities (excluding @plot)
+          // Filter out the @plot priority
+          ...() {
+            // Debug: Print what we're seeing
+            print('=== DEBUG Plot Filtering ===');
+            print('Root children count: ${widget.root.children.length}');
+            for (final p in widget.root.children) {
+              print('  - ${p.title}: key="${p.key}"');
+            }
+
+            final plotPriority = widget.root.children.firstWhereOrNull(
+              (p) => p.key == '@plot',
+            );
+            print('Found plotPriority: ${plotPriority?.title} (key: ${plotPriority?.key})');
+
+            final allPriorities = widget.root.children.where(
+              (p) => p.key != '@plot',
+            ).toList();
+            print('All priorities count after filter: ${allPriorities.length}');
+            print('=== END DEBUG ===');
+
+            return [
+              // Only show header if there are priorities to display
+              if (allPriorities.isNotEmpty) ...[
+                SizedBox(height: 16),
+                ListTile(
+                  title: 'All Priorities',
+                  style: ListTileStyle.header,
+                  textStyle: headerStyle,
+                  noHoverHighlight: true,
+                ),
+                ...buildReorderablePriorityItems(
+                  context,
+                  allPriorities,
+                  textStyle: itemStyle,
+                ),
+              ],
+
+              // Fourth group: Plot section (children of @plot priority)
+              if (plotPriority != null && plotPriority.children.isNotEmpty) ...[
+                SizedBox(height: 16),
+                ListTile(
+                  title: 'Plot',
+                  style: ListTileStyle.header,
+                  textStyle: headerStyle,
+                  noHoverHighlight: true,
+                ),
+                ...buildReorderablePriorityItems(
+                  context,
+                  plotPriority.children,
+                  textStyle: itemStyle,
+                ),
+              ],
+            ];
+          }(),
         ],
       ),
     );

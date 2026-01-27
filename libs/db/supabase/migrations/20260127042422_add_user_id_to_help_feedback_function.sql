@@ -1,62 +1,127 @@
--- While priority_user defines the priority roots for a user,
--- user_priority has a row for every priority (including children)
--- the user can access, with unread status.
-CREATE OR REPLACE VIEW "public"."user_priority" WITH ( security_invoker = TRUE)
--- for formatting
-AS
-SELECT
-    pu.user_id,
-    p.id,
-    p.created_at,
-    GREATEST (settings.updated_at, pu.updated_at, p.updated_at, coalesce(upu.updated_at, 'epoch')) AS updated_at,
-    GREATEST (pu.archived_at, p.archived_at) AS archived_at,
-    p.created_by,
-    p.updated_by,
-    pu.personal = TRUE
-    AND p.id = root.id AS root,
-    COALESCE(settings.title, p.title) AS title,
-    CASE
-    -- Priority has explicit inherited settings
-    WHEN inherited_settings.path IS NOT NULL THEN
-        inherited_settings.path
-        -- Priority's actual path is already under user's personal root
-    WHEN user_root.path @> p.path THEN
-        p.path
-        -- Priority's parent has inherited settings - use parent's visual path + this priority's label
-    WHEN parent_inherited_settings.path IS NOT NULL THEN
-        parent_inherited_settings.path || text(subpath (p.path, nlevel (p.path) - 1, 1))::ltree
-        -- Fallback: concatenate user root + actual path
-    ELSE
-        user_root.path || p.path
-    END AS path,
-    p.path AS global_path,
-    settings.top_order,
-    COALESCE(settings."order", extract(epoch FROM p.created_at) * 1000) AS "order",
-    inherited_settings.pomodoro,
-    inherited_settings.color,
-    p.key,
-    COALESCE(upu.unread, FALSE) AS unread
-FROM
-    priority_user pu
-    JOIN priority root ON pu.priority_id = root.id
-    JOIN priority_user pu_root ON pu.user_id = pu_root.user_id
-        AND pu_root.personal = TRUE
-    JOIN priority user_root ON pu_root.priority_id = user_root.id
-    JOIN priority p ON root.path @> p.path
-    -- Join parent priority to get its inherited settings for visual path computation
-    LEFT JOIN priority parent_p ON nlevel (p.path) > 1
-        AND parent_p.path = subpath (p.path, 0, nlevel (p.path) - 1)
-    LEFT JOIN priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = pu.user_id
-        AND parent_p.id = parent_inherited_settings.priority_id
-    LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
-        AND p.id = settings.priority_id
-    LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id
-        AND p.id = inherited_settings.priority_id
-        -- Latest updated_at in descendant activities
-    LEFT JOIN user_priority_unread upu ON upu.user_id = pu.user_id
-        AND upu.priority_id = p.id
-WHERE
-    pu.archived_at IS NULL;
+DROP FUNCTION IF EXISTS "public"."setup_help_feedback_priority" (p_user_name text);
+
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.setup_help_feedback_priority (p_user_name text DEFAULT NULL::text, p_user_id uuid DEFAULT NULL::uuid)
+    RETURNS jsonb
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_user_id uuid;
+    v_user_email text;
+    v_user_name text;
+    v_global_priority_id uuid;
+    v_global_priority_path ltree;
+    v_user_priority_id uuid;
+    v_user_priority_path ltree;
+    v_plot_priority_id uuid;
+    v_plot_priority_path ltree;
+    v_override_path ltree;
+    v_user_root_path ltree;
+    v_user_root_path_part text;
+BEGIN
+    -- Get user ID from parameter or auth context
+    v_user_id := COALESCE(p_user_id, auth.uid ());
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'User not authenticated';
+    END IF;
+    -- Get user's email and name from auth.users
+    SELECT
+        email,
+        COALESCE(raw_user_meta_data ->> 'name', raw_user_meta_data ->> 'full_name') INTO v_user_email,
+        v_user_name
+    FROM
+        auth.users
+    WHERE
+        id = v_user_id;
+    -- Use provided name, or fall back to user metadata, or email
+    v_user_name := COALESCE(p_user_name, v_user_name, v_user_email, 'User Feedback');
+    -- Step 1: Get or create global Help & Feedback priority
+    SELECT
+        id,
+        path INTO v_global_priority_id,
+        v_global_priority_path
+    FROM
+        priority
+    WHERE
+        key = '@help-feedback'
+    LIMIT 1;
+    IF v_global_priority_id IS NULL THEN
+        -- Create global priority
+        -- The insert_priority_user trigger will not create a personal entry for priorities with keys like '@help-feedback'
+        v_global_priority_path := generate_path (NULL);
+        INSERT INTO priority (created_by, title, path, color, key)
+            VALUES (v_user_id, 'Help & Feedback', v_global_priority_path, 0, '@help-feedback')
+        RETURNING
+            id INTO v_global_priority_id;
+    END IF;
+    -- Step 2: Get user's root priority path for finding their @plot priority
+    SELECT
+        p.path INTO v_user_root_path
+    FROM
+        priority_user pu
+        JOIN priority p ON pu.priority_id = p.id
+    WHERE
+        pu.user_id = v_user_id
+        AND pu.personal = TRUE
+    LIMIT 1;
+    IF v_user_root_path IS NULL THEN
+        RAISE EXCEPTION 'User has no root priority';
+    END IF;
+    -- Extract root path part for filtering
+    v_user_root_path_part := split_part(v_user_root_path::text, '.', 1);
+    -- Step 3: Find user's @plot priority for path override
+    SELECT
+        id,
+        path INTO v_plot_priority_id,
+        v_plot_priority_path
+    FROM
+        priority
+    WHERE
+        key = '@plot'
+        AND path::text LIKE v_user_root_path_part || '%'
+    LIMIT 1;
+    -- Step 4: Check if user's Help & Feedback priority already exists
+    SELECT
+        id INTO v_user_priority_id
+    FROM
+        priority
+    WHERE
+        key = '@help-feedback-' || v_user_id::text
+        AND path <@ v_global_priority_path
+    LIMIT 1;
+    IF v_user_priority_id IS NULL THEN
+        -- Create user's child priority
+        v_user_priority_path := generate_path (v_global_priority_path);
+        INSERT INTO priority (created_by, title, path, color, key)
+            VALUES (v_user_id, v_user_name, v_user_priority_path, 0, '@help-feedback-' || v_user_id::text)
+        RETURNING
+            id INTO v_user_priority_id;
+        -- Create priority_user entry to give user access
+        INSERT INTO priority_user (user_id, priority_id, personal)
+            VALUES (v_user_id, v_user_priority_id, FALSE)
+        ON CONFLICT (user_id, priority_id)
+            DO NOTHING;
+    END IF;
+    -- Step 5: Create/update priority_settings for path and title override
+    IF v_plot_priority_id IS NOT NULL THEN
+        -- Generate override path under user's @plot priority
+        v_override_path := generate_path (v_plot_priority_path);
+        -- Upsert priority_settings
+        INSERT INTO priority_settings (user_id, priority_id, path, title)
+            VALUES (v_user_id, v_user_priority_id, v_override_path, 'Help & Feedback')
+        ON CONFLICT (user_id, priority_id)
+            DO UPDATE SET
+                path = EXCLUDED.path,
+                title = EXCLUDED.title,
+                updated_at = now();
+    END IF;
+    -- Return success with created IDs
+    RETURN jsonb_build_object('success', TRUE, 'global_priority_id', v_global_priority_id, 'user_priority_id', v_user_priority_id, 'has_plot_override', v_plot_priority_id IS NOT NULL);
+END;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.handle_user_priority_upsert ()
     RETURNS TRIGGER
@@ -325,8 +390,29 @@ BEGIN
 END;
 $function$;
 
-CREATE TRIGGER upsert_user_priority
-    INSTEAD OF INSERT OR UPDATE ON user_priority
-    FOR EACH ROW
-    EXECUTE FUNCTION handle_user_priority_upsert ();
-
+ALTER VIEW "public"."user_note" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_twist" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_update" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_note_create" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_create" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_note_update" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_expanded" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_settings_inherited" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_tag_change" SET ( security_invoker = TRUE);
+ALTER VIEW public.priority_member SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child_twist" SET ( security_invoker = TRUE);

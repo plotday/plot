@@ -4,8 +4,25 @@ CREATE POLICY "Users can access their priorities" ON public.priority
     FOR SELECT TO authenticated
         USING (can_access_priority (id) OR created_by = (select auth.uid ()));
 
-CREATE POLICY "Users change sharing for their priorities" ON public.priority_user
-    FOR ALL TO authenticated
+-- Split into separate policies to break circular dependency for initial root priority
+-- Allow users to see their own priority_user entries without requiring can_access_priority
+CREATE POLICY "Users can view their priority access" ON public.priority_user
+    FOR SELECT TO authenticated
+        USING (user_id = (SELECT auth.uid ()) OR can_access_priority (priority_id));
+
+-- Restrict INSERT to priorities they have access to
+CREATE POLICY "Users can add priority sharing" ON public.priority_user
+    FOR INSERT TO authenticated
+        WITH CHECK (can_access_priority (priority_id));
+
+-- Restrict UPDATE to priorities they have access to
+CREATE POLICY "Users can modify priority sharing" ON public.priority_user
+    FOR UPDATE TO authenticated
+        USING (can_access_priority (priority_id));
+
+-- Restrict DELETE to priorities they have access to
+CREATE POLICY "Users can remove priority sharing" ON public.priority_user
+    FOR DELETE TO authenticated
         USING (can_access_priority (priority_id));
 
 CREATE POLICY "Users can create new priorities in their priorities" ON public.priority

@@ -225,7 +225,9 @@ export default class extends WorkerEntrypoint {
   }
 
   async init(twistInit) {
-    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
+    if (twistInit.priorityTwistId) {
+      console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
+    }
     const { twist } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
   }
 

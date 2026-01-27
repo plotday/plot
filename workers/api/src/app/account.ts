@@ -433,9 +433,12 @@ account.post("/activate", async (c) => {
 
   // Step 8.5: Set up Help & Feedback priority using database function
   try {
-    const { data: helpFeedbackResult, error: helpFeedbackError } = await c.var.supabase.rpc(
+    const { data: helpFeedbackResult, error: helpFeedbackError } = await c.var.supabaseAdmin.rpc(
       'setup_help_feedback_priority',
-      { p_user_name: user.user_metadata?.name }
+      {
+        p_user_name: user.user_metadata?.name,
+        p_user_id: user.id
+      }
     );
 
     if (helpFeedbackError) {

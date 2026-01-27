@@ -97,7 +97,8 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql
-SECURITY DEFINER;
+SECURITY DEFINER
+SET row_security = off; -- Bypass RLS to break circular dependency with can_access_priority()
 
 -- Trigger function cannot be called via RPC, but REVOKE for defense-in-depth
 REVOKE EXECUTE ON FUNCTION insert_priority_user () FROM PUBLIC;

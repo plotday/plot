@@ -18,6 +18,7 @@ class Priorities extends Table
       .map(const DurationConverter())();
   IntColumn get color =>
       integer().nullable().map(const ThemeColorConverter())();
+  TextColumn get key => text().nullable()();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
 }
@@ -152,6 +153,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool self = true,
     PriorityOrder order = PriorityOrder.sorted,
   }) {
+    // Defensive check: Return empty stream if Store is not available (user signing out)
+    if (!Injector.appInstance.exists<Store>()) {
+      return Stream.value([]);
+    }
+
     // Trigger archived sync if needed
     if (archived == true) {
       Store.get.pullArchived(table, PrioritiesBase());
@@ -861,6 +867,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Order? order,
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
+    Value<String?> key = const Value.absent(),
     bool? root,
     Priority? parent,
     Value<int?> pending = const Value.absent(),
@@ -893,6 +900,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         order: order,
         pomodoro: pomodoro,
         color: color,
+        key: key,
       ),
       parent: currentParent,
       children: children,

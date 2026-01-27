@@ -4,12 +4,10 @@
 -- 2. Creates the user's child priority under the global root
 -- 3. Creates priority_user entry for access
 -- 4. Creates priority_settings with path and title overrides
-CREATE OR REPLACE FUNCTION public.setup_help_feedback_priority (
-    p_user_name text DEFAULT NULL
-)
+CREATE OR REPLACE FUNCTION public.setup_help_feedback_priority (p_user_name text DEFAULT NULL::text, p_user_id uuid DEFAULT NULL::uuid)
     RETURNS jsonb
     LANGUAGE plpgsql
-    SECURITY DEFINER -- Bypasses RLS
+    SECURITY DEFINER
     SET search_path TO 'public'
     AS $function$
 DECLARE
@@ -26,13 +24,11 @@ DECLARE
     v_user_root_path ltree;
     v_user_root_path_part text;
 BEGIN
-    -- Get current user ID from auth context
-    v_user_id := auth.uid ();
-
+    -- Get user ID from parameter or auth context
+    v_user_id := COALESCE(p_user_id, auth.uid ());
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'User not authenticated';
     END IF;
-
     -- Get user's email and name from auth.users
     SELECT
         email,
@@ -42,10 +38,8 @@ BEGIN
         auth.users
     WHERE
         id = v_user_id;
-
     -- Use provided name, or fall back to user metadata, or email
     v_user_name := COALESCE(p_user_name, v_user_name, v_user_email, 'User Feedback');
-
     -- Step 1: Get or create global Help & Feedback priority
     SELECT
         id,
@@ -56,7 +50,6 @@ BEGIN
     WHERE
         key = '@help-feedback'
     LIMIT 1;
-
     IF v_global_priority_id IS NULL THEN
         -- Create global priority
         -- The insert_priority_user trigger will not create a personal entry for priorities with keys like '@help-feedback'
@@ -66,7 +59,6 @@ BEGIN
         RETURNING
             id INTO v_global_priority_id;
     END IF;
-
     -- Step 2: Get user's root priority path for finding their @plot priority
     SELECT
         p.path INTO v_user_root_path
@@ -77,14 +69,11 @@ BEGIN
         pu.user_id = v_user_id
         AND pu.personal = TRUE
     LIMIT 1;
-
     IF v_user_root_path IS NULL THEN
         RAISE EXCEPTION 'User has no root priority';
     END IF;
-
     -- Extract root path part for filtering
     v_user_root_path_part := split_part(v_user_root_path::text, '.', 1);
-
     -- Step 3: Find user's @plot priority for path override
     SELECT
         id,
@@ -96,7 +85,6 @@ BEGIN
         key = '@plot'
         AND path::text LIKE v_user_root_path_part || '%'
     LIMIT 1;
-
     -- Step 4: Check if user's Help & Feedback priority already exists
     SELECT
         id INTO v_user_priority_id
@@ -106,7 +94,6 @@ BEGIN
         key = '@help-feedback-' || v_user_id::text
         AND path <@ v_global_priority_path
     LIMIT 1;
-
     IF v_user_priority_id IS NULL THEN
         -- Create user's child priority
         v_user_priority_path := generate_path (v_global_priority_path);
@@ -120,7 +107,6 @@ BEGIN
         ON CONFLICT (user_id, priority_id)
             DO NOTHING;
     END IF;
-
     -- Step 5: Create/update priority_settings for path and title override
     IF v_plot_priority_id IS NOT NULL THEN
         -- Generate override path under user's @plot priority
@@ -130,19 +116,17 @@ BEGIN
             VALUES (v_user_id, v_user_priority_id, v_override_path, 'Help & Feedback')
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                path = EXCLUDED.path, title = EXCLUDED.title, updated_at = now();
+                path = EXCLUDED.path,
+                title = EXCLUDED.title,
+                updated_at = now();
     END IF;
-
     -- Return success with created IDs
-    RETURN jsonb_build_object(
-        'success', TRUE,
-        'global_priority_id', v_global_priority_id,
-        'user_priority_id', v_user_priority_id,
-        'has_plot_override', v_plot_priority_id IS NOT NULL
-    );
+    RETURN jsonb_build_object('success', TRUE, 'global_priority_id', v_global_priority_id, 'user_priority_id', v_user_priority_id, 'has_plot_override', v_plot_priority_id IS NOT NULL);
 END;
 $function$;
 
--- Revoke public access, only authenticated users can call this
-REVOKE EXECUTE ON FUNCTION public.setup_help_feedback_priority (text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.setup_help_feedback_priority (text) TO authenticated;
+-- Revoke public access, only service role can call this (since it accepts user_id parameter)
+REVOKE EXECUTE ON FUNCTION public.setup_help_feedback_priority (text, uuid) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.setup_help_feedback_priority (text, uuid) FROM authenticated;
+

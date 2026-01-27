@@ -176,10 +176,10 @@ class ActivityEditorState extends State<ActivityEditor> {
         final editor = Editor(
           key: _editorKey,
           hint: widget.draft.type == .note
-              ? 'Add a note'
+              ? 'Start a new topic'
               : widget.draft.type == .event
               ? 'Event details'
-              : 'Describe the action',
+              : 'Add an action',
           autofocus: true,
           focusNode: focusNode,
           twists: widget.twists,
@@ -345,12 +345,7 @@ class ActivityEditorState extends State<ActivityEditor> {
           ? Value(CustomDateRange(Date.today(), null))
           : const Value.absent(),
       at: shouldSchedule && hasDateTime
-          ? Value(
-              DateTimeRange(
-                Time.now(),
-                Time.now().add(Duration(hours: 1)),
-              ),
-            )
+          ? Value(DateTimeRange(Time.now(), Time.now().add(Duration(hours: 1))))
           : const Value.absent(),
     );
 
