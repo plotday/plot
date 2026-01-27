@@ -362,65 +362,72 @@ export default class extends WorkerEntrypoint {
 
       // Loop through all paths
       for (const path of paths) {
-        try {
-          // Navigate through the tool tree to find the target tool and options
-          const { tool, options } = tools.getByPath(path);
+        // Navigate through the tool tree to find the target tool and options
+        const { tool, options } = tools.getByPath(path);
 
-          // Call dispatch on the tool if it exists
-          if (tool && typeof tool.dispatch === 'function') {
-            const callbacks = await tool.dispatch(optionPath, ...args);
+        // Call dispatch on the tool if it exists
+        if (tool && typeof tool.dispatch === 'function') {
+          const callbacks = await tool.dispatch(optionPath, ...args);
 
-            // Iterate over all callbacks returned by dispatch
-            for (const callbackInfo of callbacks) {
-              // Invoke the callback locally in twist worker
-              if (callbackInfo && callbackInfo.optionPath && callbackInfo.args && options) {
-                // Navigate the option path to find the callback
-                let callback = options;
-                for (const key of callbackInfo.optionPath) {
-                  callback = callback?.[key];
-                  if (!callback) break;
+          // Iterate over all callbacks returned by dispatch
+          for (const callbackInfo of callbacks) {
+            // Invoke the callback locally in twist worker
+            if (callbackInfo && callbackInfo.optionPath && callbackInfo.args && options) {
+              // Navigate the option path to find the callback
+              let callback = options;
+              for (const key of callbackInfo.optionPath) {
+                callback = callback?.[key];
+                if (!callback) break;
+              }
+
+              // Call the callback if it's a function, binding twist as 'this'
+              if (typeof callback === 'function') {
+                console.log(
+                  \`Calling callback at path: \${callbackInfo.optionPath.join('.')}\`
+                );
+
+                try {
+                  await callback.call(twist, ...callbackInfo.args);
+                } catch (error) {
+                  // Wrap in TwistError to preserve stack across RPC boundary
+                  const errorData = {
+                    message: error instanceof Error ? error.message : String(error),
+                    twistStack: error instanceof Error ? error.stack || '' : '',
+                    operation: \`dispatch callback: \${callbackInfo.optionPath.join('.')}\`,
+                    originalError: error instanceof Error ? error.name : 'Error',
+                  };
+                  const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
+                  twistError.name = 'TwistError';
+                  throw twistError;
                 }
 
-                // Call the callback if it's a function, binding twist as 'this'
-                if (typeof callback === 'function') {
-                  console.log(
-                    \`Calling callback at path: \${callbackInfo.optionPath.join('.')}\`
-                  );
-                  await callback.call(twist, ...callbackInfo.args);
-                  console.log(
-                    \`Callback completed at path: \${callbackInfo.optionPath.join('.')}\`
-                  );
+                console.log(
+                  \`Callback completed at path: \${callbackInfo.optionPath.join('.')}\`
+                );
 
-                  // Remove deferred Twisting tag after callback completes
-                  if (callbackInfo.deferredTagRemoval) {
-                    const { noteId, actorId } = callbackInfo.deferredTagRemoval;
-                    try {
-                      if (typeof tool.removeTagFromNote === 'function') {
-                        await tool.removeTagFromNote(noteId, actorId);
-                      }
-                    } catch (error) {
-                      console.warn('Failed to remove deferred Twisting tag:', error);
+                // Remove deferred Twisting tag after callback completes
+                if (callbackInfo.deferredTagRemoval) {
+                  const { noteId, actorId } = callbackInfo.deferredTagRemoval;
+                  try {
+                    if (typeof tool.removeTagFromNote === 'function') {
+                      await tool.removeTagFromNote(noteId, actorId);
                     }
+                  } catch (error) {
+                    console.warn('Failed to remove deferred Twisting tag:', error);
                   }
                 }
               }
             }
           }
-        } catch (error) {
-          // Log individual path errors but continue with other paths
-          console.warn(
-            \`Failed to dispatch to tool \${path[path.length-1]}:\`,
-            error instanceof Error ? error.message : error
-          );
         }
       }
     } catch (error) {
-      // Only wrap and throw errors that occur during twist build
+      // Wrap errors (from twist build OR callback execution)
       const errorData = {
-        message: error.message,
-        twistStack: error.stack || '',
-        operation: 'dispatchToTool(multiple paths)',
-        originalError: error.name || 'Error',
+        message: error instanceof Error ? error.message : String(error),
+        twistStack: error instanceof Error ? error.stack || '' : '',
+        operation: \`dispatchToTool(\${paths.length} path\${paths.length > 1 ? 's' : ''})\`,
+        originalError: error instanceof Error ? error.name : 'Error',
       };
       const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
       twistError.name = 'TwistError';

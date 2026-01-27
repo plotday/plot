@@ -5,6 +5,7 @@ import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 
 import { type Bindings } from "../env";
 import { twistFactory } from "../twist";
+import { handleTwistOperation } from "../twist/error-handling";
 import { validateSerializable } from "../twist/tools/validation";
 import { createLogger } from "../utils/logger";
 
@@ -257,17 +258,32 @@ export class CallbacksState extends DurableObject<Bindings> {
 
     const { path } = callback;
 
-    const twist = safeQuery(
+    const priorityTwist = safeQuery(
       await this.supabase
         .from("priority_twist")
-        .select("priority_id")
+        .select("priority_id, twist_id")
         .eq("id", callback.priorityTwistId)
         .single(),
       {
         table: "priority_twist",
         operation: "SELECT",
-        description: "Fetch priority for callback execution",
+        description: "Fetch priority and twist_id for callback execution",
         identifiers: { priorityTwistId: callback.priorityTwistId },
+      }
+    );
+
+    // Fetch twist metadata including environment
+    const twistMeta = safeQuery(
+      await this.supabase
+        .from("twist")
+        .select("environment")
+        .eq("id", priorityTwist.twist_id)
+        .single(),
+      {
+        table: "twist",
+        operation: "SELECT",
+        description: "Fetch twist environment for callback error logging",
+        identifiers: { twistId: priorityTwist.twist_id },
       }
     );
 
@@ -278,16 +294,27 @@ export class CallbacksState extends DurableObject<Bindings> {
     });
     const twistWrapper = await factory({
       version: callback.version,
-      priorityId: twist.priority_id,
+      priorityId: priorityTwist.priority_id,
       priorityTwistId: callback.priorityTwistId,
     });
 
-    // Call the callback (works for both twists and tools via path parameter)
-    const callResult = await twistWrapper.callCallback(
-      path,
-      callback.functionName,
-      ...(args ?? []),
-      ...(callback.extraArgs ?? [])
+    // Call the callback with error handling (works for both twists and tools via path parameter)
+    const callResult = await handleTwistOperation(
+      `callback: ${callback.functionName}`,
+      async () => {
+        return await twistWrapper.callCallback(
+          path,
+          callback.functionName,
+          ...(args ?? []),
+          ...(callback.extraArgs ?? [])
+        );
+      },
+      {
+        env: this.env,
+        id: String(priorityTwist.twist_id),
+        version: callback.version,
+        environment: twistMeta.environment,
+      }
     );
 
     if (callback.callOnce) {
