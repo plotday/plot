@@ -300,6 +300,28 @@ webhook.all(Network.PATH, async (c) => {
       return new Response("OK", { status: 200 });
     }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Map error types to appropriate HTTP status codes
+    if (
+      errorMessage.includes("Invalid callback token format") ||
+      errorMessage.includes("Invalid callback token")
+    ) {
+      logger.warn("Invalid webhook token", { error: errorMessage });
+      return new Response("Bad request (invalid token)", { status: 400 });
+    }
+
+    if (errorMessage.includes("Callback not found")) {
+      logger.warn("Callback not found");
+      return new Response("Not found", { status: 404 });
+    }
+
+    if (errorMessage.includes("Callback has expired")) {
+      logger.warn("Callback expired");
+      return new Response("Callback has expired", { status: 410 });
+    }
+
+    // All other errors are actual server errors
     logger.error("Error processing callback", error as Error);
     return new Response("Internal server error", { status: 500 });
   }

@@ -364,7 +364,6 @@ export async function processNewActorArray(
     const priorityContacts = actorIds.map((actorId) => ({
       priority_id: priorityId,
       contact_id: actorId,
-      archived_at: null,
     }));
 
     const { error } = await plot.supabase

@@ -22,6 +22,13 @@ export type CallbackData = {
   meta?: Record<string, any>;
 };
 
+/**
+ * Validates if a string is a valid Durable Object ID (64 hex characters)
+ */
+function isValidDoId(id: string): boolean {
+  return /^[0-9a-f]{64}$/i.test(id);
+}
+
 export class CallbacksState extends DurableObject<Bindings> {
   private sql: SqlStorage;
   private supabase: SupabaseClient;
@@ -189,7 +196,13 @@ export class CallbacksState extends DurableObject<Bindings> {
     }
 
     // Encode id in token for routing
-    return `${this.ctx.id}:${token}`;
+    // Safety check: validate that the DO ID is in the correct format
+    const doId = String(this.ctx.id);
+    if (!isValidDoId(doId)) {
+      throw new Error(`Generated invalid DO ID: ${doId}`);
+    }
+
+    return `${doId}:${token}`;
   }
 
   async callCallback(token: string, ...args: any[]): Promise<any> {
@@ -217,7 +230,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       .next();
     if (result.done) {
       logger.warn("Callback not found for token", { token });
-      return Promise.reject("Callback not found");
+      throw new Error("Callback not found");
     }
     const rawCallback = result.value as any;
     const callback: CallbackData = {
@@ -239,7 +252,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     // Check if callback has expired
     if (callback.expires && callback.expires < new Date()) {
       this.delete(token);
-      return Promise.reject("Callback has expired");
+      throw new Error("Callback has expired");
     }
 
     const { path } = callback;
@@ -418,7 +431,17 @@ export class CallbacksState extends DurableObject<Bindings> {
     token: string,
     ...args: any[]
   ): Promise<any> {
+    if (!token || token.trim() === "") {
+      throw new Error("Missing callback token");
+    }
+
     const [id] = token.split(":");
+
+    // Validate DO ID format before attempting to create stub
+    if (!isValidDoId(id)) {
+      throw new Error("Invalid callback token format");
+    }
+
     const callbacksId = callbacks.idFromString(id);
     const callbacksStub = callbacks.get(callbacksId);
     // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
