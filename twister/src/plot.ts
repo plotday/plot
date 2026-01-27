@@ -801,6 +801,17 @@ export type NewActivity = Pick<Activity, "type"> &
     unread?: boolean;
 
     /**
+     * Whether the activity is archived.
+     * - true: Archive the activity
+     * - false: Unarchive the activity
+     * - undefined (default): Preserve current archive state
+     *
+     * Best practice: Set to false during initial syncs to ensure activities
+     * are unarchived. Omit during incremental syncs to preserve user's choice.
+     */
+    archived?: boolean;
+
+    /**
      * Create or update specific occurrences of a recurring activity.
      * Each entry specifies overrides for a specific occurrence.
      *

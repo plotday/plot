@@ -274,12 +274,10 @@ export class GoogleCalendar
     // Start initial sync
     const now = new Date();
     const min = new Date(now.getFullYear() - 2, 0, 1);
-    const max = new Date(now.getFullYear() + 1, 11, 31);
 
     const initialState: SyncState = {
       calendarId,
       min,
-      max,
       sequence: 1,
     };
 
@@ -298,16 +296,155 @@ export class GoogleCalendar
   }
 
   async stopSync(_authToken: string, calendarId: string): Promise<void> {
-    // Stop webhook
-    const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
-    if (watchData) {
-      // Cancel the watch (would need Google API call)
-      await this.clear(`calendar_watch_${calendarId}`);
+    // 1. Cancel scheduled renewal task
+    const renewalTask = await this.get<string>(
+      `watch_renewal_task_${calendarId}`
+    );
+    if (renewalTask) {
+      await this.cancelTask(renewalTask);
+      await this.clear(`watch_renewal_task_${calendarId}`);
     }
 
-    // Clear sync state and lock
+    // 2. Stop watch via Google API
+    const authToken = await this.get<string>(`auth_token_${calendarId}`);
+    if (authToken) {
+      try {
+        await this.stopCalendarWatch(authToken, calendarId);
+      } catch (error) {
+        console.error("Failed to stop calendar watch:", error);
+        // Continue with cleanup even if API call fails
+      }
+    }
+
+    // 3. Clear all storage
+    await this.clear(`calendar_watch_${calendarId}`);
     await this.clear(`sync_state_${calendarId}`);
     await this.clear(`sync_lock_${calendarId}`);
+    await this.clear(`auth_token_${calendarId}`);
+  }
+
+  /**
+   * Stop a calendar watch by calling the Google Calendar API.
+   * This cancels the webhook subscription with Google.
+   *
+   * @private
+   */
+  private async stopCalendarWatch(
+    authToken: string,
+    calendarId: string
+  ): Promise<void> {
+    const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
+    if (!watchData) {
+      return;
+    }
+
+    const api = await this.getApi(authToken);
+
+    // Call Google Calendar API to stop the watch
+    // https://developers.google.com/calendar/api/v3/reference/channels/stop
+    await api.call(
+      "POST",
+      "https://www.googleapis.com/calendar/v3/channels/stop",
+      undefined,
+      {
+        id: watchData.watchId,
+        resourceId: watchData.resourceId,
+      }
+    );
+  }
+
+  /**
+   * Schedule proactive renewal of a calendar watch 24 hours before expiry.
+   * Creates a callback to renewCalendarWatch and schedules it using the Tasks tool.
+   *
+   * @private
+   */
+  private async scheduleWatchRenewal(calendarId: string): Promise<void> {
+    const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
+    if (!watchData?.expiry) {
+      console.warn(`No watch data found for calendar ${calendarId}`);
+      return;
+    }
+
+    // Calculate renewal time: 24 hours before expiry
+    const expiry = new Date(watchData.expiry);
+    const renewalTime = new Date(expiry.getTime() - 24 * 60 * 60 * 1000);
+
+    // Don't schedule if already past renewal time (edge case)
+    if (renewalTime <= new Date()) {
+      console.log(
+        `Watch for ${calendarId} expires soon, renewing immediately`
+      );
+      await this.renewCalendarWatch(calendarId);
+      return;
+    }
+
+    // Create callback for renewal (only pass calendarId - serializable!)
+    const renewalCallback = await this.callback(
+      this.renewCalendarWatch,
+      calendarId
+    );
+
+    // Schedule renewal task
+    const taskToken = await this.runTask(renewalCallback, {
+      runAt: renewalTime,
+    });
+
+    // Store task token for cleanup
+    if (taskToken) {
+      await this.set(`watch_renewal_task_${calendarId}`, taskToken);
+    }
+
+    console.log(
+      `Scheduled watch renewal for ${calendarId} at ${renewalTime.toISOString()}`
+    );
+  }
+
+  /**
+   * Renew a calendar watch by creating a new watch.
+   * This is called either proactively (scheduled task) or reactively (on webhook).
+   * Gracefully handles errors without throwing.
+   *
+   * @private
+   */
+  private async renewCalendarWatch(calendarId: string): Promise<void> {
+    try {
+      console.log(`Renewing watch for calendar ${calendarId}`);
+
+      // Get auth token
+      const authToken = await this.get<string>(`auth_token_${calendarId}`);
+      if (!authToken) {
+        console.error(
+          `No auth token found for calendar ${calendarId}, cannot renew watch`
+        );
+        return;
+      }
+
+      // Get existing watch data
+      const oldWatchData = await this.get<any>(`calendar_watch_${calendarId}`);
+      if (!oldWatchData) {
+        console.warn(
+          `No watch data found for calendar ${calendarId}, skipping renewal`
+        );
+        return;
+      }
+
+      // Stop the old watch (best effort - don't fail if this errors)
+      try {
+        await this.stopCalendarWatch(authToken, calendarId);
+      } catch (error) {
+        console.warn(`Failed to stop old watch for ${calendarId}:`, error);
+        // Continue with renewal anyway
+      }
+
+      // Create new watch (reuses existing webhook URL and callback)
+      await this.setupCalendarWatch(authToken, calendarId, authToken);
+
+      console.log(`Successfully renewed watch for calendar ${calendarId}`);
+    } catch (error) {
+      console.error(`Failed to renew watch for calendar ${calendarId}:`, error);
+      // Don't throw - let reactive checking handle it as fallback
+    }
   }
 
   private async setupCalendarWatch(
@@ -328,30 +465,46 @@ export class GoogleCalendar
       return;
     }
 
-    const api = await this.getApi(authToken);
+    try {
+      const api = await this.getApi(authToken);
 
-    // Setup watch for calendar
-    const watchId = crypto.randomUUID();
-    const secret = crypto.randomUUID();
+      // Setup watch for calendar
+      const watchId = crypto.randomUUID();
+      const secret = crypto.randomUUID();
 
-    const watchData = (await api.call(
-      "POST",
-      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/watch`,
-      undefined,
-      {
-        id: watchId,
-        type: "web_hook",
-        address: webhookUrl,
-        token: new URLSearchParams({ secret }).toString(),
-      }
-    )) as { expiration: string };
+      const watchData = (await api.call(
+        "POST",
+        `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/watch`,
+        undefined,
+        {
+          id: watchId,
+          type: "web_hook",
+          address: webhookUrl,
+          token: new URLSearchParams({ secret }).toString(),
+        }
+      )) as { expiration: string; resourceId: string };
 
-    await this.set(`calendar_watch_${calendarId}`, {
-      watchId,
-      secret,
-      calendarId,
-      expiry: new Date(parseInt(watchData.expiration)),
-    });
+      await this.set(`calendar_watch_${calendarId}`, {
+        watchId,
+        resourceId: watchData.resourceId,
+        secret,
+        calendarId,
+        expiry: new Date(parseInt(watchData.expiration)),
+      });
+
+      // Schedule proactive renewal 24 hours before expiry
+      await this.scheduleWatchRenewal(calendarId);
+
+      console.log(
+        `Successfully setup calendar watch for ${calendarId}, expires: ${new Date(parseInt(watchData.expiration)).toISOString()}`
+      );
+    } catch (error) {
+      console.error(
+        `Failed to setup calendar watch for calendar ${calendarId}:`,
+        error
+      );
+      throw error;
+    }
   }
 
   async syncBatch(
@@ -369,17 +522,22 @@ export class GoogleCalendar
 
       const state = await this.get<SyncState>(`sync_state_${calendarId}`);
       if (!state) {
-        console.warn(`No sync state found for calendar ${calendarId}, sync may have been superseded`);
-        await this.clear(`sync_lock_${calendarId}`);
+        // Check if sync lock is also cleared - if so, sync completed normally
+        const syncLock = await this.get<boolean>(`sync_lock_${calendarId}`);
+        if (!syncLock) {
+          // Both state and lock are cleared - sync completed normally, this is a stale callback
+          console.log(`Sync already completed for calendar ${calendarId}, skipping duplicate batch callback`);
+        } else {
+          // State missing but lock still set - sync may have been superseded
+          console.warn(`No sync state found for calendar ${calendarId}, sync may have been superseded`);
+          await this.clear(`sync_lock_${calendarId}`);
+        }
         return;
       }
 
       // Convert date strings back to Date objects after deserialization
       if (state.min && typeof state.min === "string") {
         state.min = new Date(state.min);
-      }
-      if (state.max && typeof state.max === "string") {
-        state.max = new Date(state.max);
       }
 
       const api = await this.getApi(authToken);
@@ -412,6 +570,13 @@ export class GoogleCalendar
         console.log(
           `Google Calendar ${mode} sync completed after ${batchNumber} batches for calendar ${calendarId}`
         );
+
+        // Persist sync token for future incremental syncs
+        if (result.state.state && !result.state.more) {
+          await this.set(`last_sync_token_${calendarId}`, result.state.state);
+          console.log(`Stored sync token for calendar ${calendarId}`);
+        }
+
         if (mode === "full") {
           await this.clear(`sync_state_${calendarId}`);
         }
@@ -599,6 +764,7 @@ export class GoogleCalendar
             tags: tags || undefined,
             notes,
             unread: !initialSync, // false for initial sync, true for incremental updates
+            ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           };
 
           // Send activity - database handles upsert automatically
@@ -736,6 +902,27 @@ export class GoogleCalendar
       return;
     }
 
+    // Reactive expiry check (backup for missed scheduled renewal)
+    const expiration = new Date(watchData.expiry);
+    const now = new Date();
+    const hoursUntilExpiry =
+      (expiration.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    if (hoursUntilExpiry < 24) {
+      console.log(
+        `Watch for ${calendarId} expires in ${hoursUntilExpiry.toFixed(
+          1
+        )} hours, renewing...`
+      );
+      // Don't await - let renewal happen async (don't block webhook)
+      this.renewCalendarWatch(calendarId).catch((error) => {
+        console.error(
+          `Failed to reactively renew watch for ${calendarId}:`,
+          error
+        );
+      });
+    }
+
     // Trigger incremental sync
     await this.startIncrementalSync(calendarId, authToken);
   }
@@ -750,11 +937,19 @@ export class GoogleCalendar
       return;
     }
 
-    const incrementalState: SyncState = {
-      calendarId: watchData.calendarId,
-      state:
-        (await this.get<string>(`last_sync_token_${calendarId}`)) || undefined,
-    };
+    const syncToken = await this.get<string>(`last_sync_token_${calendarId}`);
+
+    const incrementalState: SyncState = syncToken
+      ? {
+          calendarId: watchData.calendarId,
+          state: syncToken,
+        }
+      : {
+          // No stored sync token - fall back to recent time window
+          calendarId: watchData.calendarId,
+          min: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
+          sequence: 1,
+        };
 
     await this.set(`sync_state_${calendarId}`, incrementalState);
     const syncCallback = await this.callback(

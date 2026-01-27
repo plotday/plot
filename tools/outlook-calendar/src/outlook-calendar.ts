@@ -576,6 +576,7 @@ export class OutlookCalendar
           tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
           notes,
           unread: !initialSync, // false for initial sync, true for incremental updates
+          ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
         };
 
         // Call the event callback using hoisted token

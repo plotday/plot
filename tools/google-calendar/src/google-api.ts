@@ -69,7 +69,6 @@ export type SyncState = {
   state?: string;
   more?: boolean;
   min?: Date;
-  max?: Date;
   sequence?: number;
 };
 
@@ -428,8 +427,6 @@ export async function syncGoogleCalendar(
   state: SyncState;
 }> {
   const params: any = {
-    // Remove singleEvents to get recurring events as masters
-    singleEvents: false,
     showDeleted: true,
   };
 
@@ -441,10 +438,18 @@ export async function syncGoogleCalendar(
     params.timeMin = state.min?.toISOString();
   }
 
+  // Filter out undefined/null values to prevent "undefined" in query string
+  const filteredParams: Record<string, string> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) {
+      filteredParams[key] = String(value);
+    }
+  }
+
   const data = (await api.call(
     "GET",
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
-    params
+    filteredParams
   )) as {
     items: GoogleEvent[];
     nextPageToken?: string;
@@ -456,7 +461,6 @@ export async function syncGoogleCalendar(
     const newState = {
       calendarId,
       min: state.min,
-      max: state.max,
       sequence: (state.sequence || 1) + 1,
     };
     return syncGoogleCalendar(api, calendarId, newState);
@@ -467,7 +471,6 @@ export async function syncGoogleCalendar(
     state: data.nextPageToken || data.nextSyncToken,
     more: !!data.nextPageToken,
     min: state.min,
-    max: state.max,
     sequence: state.sequence,
   };
 

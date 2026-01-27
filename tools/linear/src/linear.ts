@@ -392,6 +392,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       },
       notes,
       unread: !initialSync, // false for initial sync, true for incremental updates
+      ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
     };
 
     return activity;

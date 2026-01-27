@@ -473,6 +473,7 @@ async startSync(resourceId: string): Promise<void> {
     nextPageToken: null,
     batchNumber: 1,
     itemsProcessed: 0,
+    initialSync: true,  // Track whether this is the first sync
   });
 
   // Queue first batch using runTask method
@@ -498,6 +499,8 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
         key: "description", // Use key for upsertable notes
         content: item.description,
       }],
+      unread: !state.initialSync, // false for initial sync, true for incremental
+      ...(state.initialSync ? { archived: false } : {}), // unarchive on initial only
     });
   }
 
@@ -507,6 +510,7 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
       nextPageToken: result.nextPageToken,
       batchNumber: state.batchNumber + 1,
       itemsProcessed: state.itemsProcessed + result.items.length,
+      initialSync: state.initialSync, // Preserve initialSync flag across batches
     });
 
     // Queue next batch (runs in new execution context)
@@ -529,6 +533,35 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
   }
 }
 ```
+
+## Activity Sync Best Practices
+
+When syncing activities from external systems, follow these patterns for optimal user experience:
+
+### The `initialSync` Flag
+
+All sync-based tools should distinguish between initial sync (first import) and incremental sync (ongoing updates):
+
+| Field | Initial Sync | Incremental Sync | Reason |
+|-------|--------------|------------------|---------|
+| `unread` | `false` | `true` | Avoid notification overload from historical items |
+| `archived` | `false` | *omit* | Unarchive on install, preserve user choice on updates |
+
+**Example:**
+```typescript
+const activity: NewActivity = {
+  type: ActivityType.Event,
+  source: event.url,
+  title: event.title,
+  unread: !initialSync,                      // false for initial, true for incremental
+  ...(initialSync ? { archived: false } : {}),  // unarchive on initial only
+};
+```
+
+**Why this matters:**
+- **Initial sync**: Activities are unarchived and marked as read, preventing spam from bulk historical imports
+- **Incremental sync**: New activities appear as unread, and archived state is preserved (respects user's archiving decisions)
+- **Reinstall**: Acts as initial sync, so previously archived activities are unarchived (fresh start)
 
 ## Error Handling
 

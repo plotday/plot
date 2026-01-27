@@ -284,6 +284,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       );
       // Set unread based on sync type (false for initial sync to avoid notification overload)
       activityWithNotes.unread = !state.initialSync;
+      // Unarchive on initial sync only (preserve user's archive state on incremental syncs)
+      if (state.initialSync) {
+        activityWithNotes.archived = false;
+      }
       // Execute the callback using the callback token
       await this.tools.callbacks.run(callbackToken, activityWithNotes);
     }
