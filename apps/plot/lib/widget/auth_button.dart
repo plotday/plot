@@ -329,9 +329,11 @@ class _AuthButtonState extends State<AuthButton> {
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
       if (mounted) {
         // Create a user-friendly error message based on the provider
-        final providerName = widget.provider.name[0].toUpperCase() +
-                            widget.provider.name.substring(1);
-        final message = 'Unable to connect with $providerName. Please try again.';
+        final providerName =
+            widget.provider.name[0].toUpperCase() +
+            widget.provider.name.substring(1);
+        final message =
+            'Unable to connect with $providerName. Please try again.';
         if (widget.onError != null) {
           widget.onError!(message);
         } else {
@@ -497,21 +499,28 @@ class _AuthButtonState extends State<AuthButton> {
   }
 
   _ProviderConfig _getProviderConfig(AuthProvider provider) {
+    // Uniform sizing for all buttons
+    const iconSize = 18.0;
+    const spacing = 12.0;
+    const fontSize = 14.0;
+    const fontWeight = FontWeight.w500;
+    const horizontalPadding = 12.0;
+
     switch (provider) {
       case AuthProvider.google:
         return _ProviderConfig(
           backgroundColor: Colors.white,
           textColor: const Color(0xFF3C4043),
           borderColor: const Color(0xFFDADBDD),
-          horizontalPadding: 12,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFFF8F9FA),
           focusColor: const Color(0xFF4285F4),
           loadingColor: const Color(0xFF4285F4),
           disabledTextColor: const Color(0xFF9AA0A6),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'Roboto',
           buttonText: 'Continue with Google',
         );
@@ -519,36 +528,36 @@ class _AuthButtonState extends State<AuthButton> {
       case AuthProvider.microsoft:
         return _ProviderConfig(
           backgroundColor: Colors.white,
-          textColor: const Color(0xFF5E5E5E), // Microsoft's text color
-          borderColor: const Color(0xFF8C8C8C), // Darker border than Google
-          horizontalPadding: 12,
-          hoverColor: const Color(0xFFF3F2F1), // Microsoft's hover color
-          focusColor: const Color(0xFF0078D4), // Microsoft Blue
+          textColor: const Color(0xFF5E5E5E),
+          borderColor: const Color(0xFF8C8C8C),
+          horizontalPadding: horizontalPadding,
+          hoverColor: const Color(0xFFF3F2F1),
+          focusColor: const Color(0xFF0078D4),
           loadingColor: const Color(0xFF0078D4),
           disabledTextColor: const Color(0xFFA19F9D),
-          iconSize: 16, // Smaller icon
-          spacing: 8, // Less spacing
-          fontSize: 13, // Smaller font
-          fontWeight: FontWeight.w400, // Regular weight
-          fontFamily: 'Segoe UI', // Microsoft's font
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          fontFamily: 'Segoe UI',
           buttonText: 'Continue with Microsoft',
         );
 
       case AuthProvider.slack:
         return _ProviderConfig(
-          backgroundColor: const Color(0xFF4A154B), // Slack Purple
+          backgroundColor: const Color(0xFF4A154B),
           textColor: Colors.white,
           borderColor: const Color(0xFF4A154B),
-          horizontalPadding: 16, // More padding
-          hoverColor: const Color(0xFF611F69), // Darker purple on hover
+          horizontalPadding: horizontalPadding,
+          hoverColor: const Color(0xFF611F69),
           focusColor: const Color(0xFF611F69),
           loadingColor: Colors.white,
           disabledTextColor: const Color(0xFFB8A5BA),
-          iconSize: 20, // Larger icon
-          spacing: 12,
-          fontSize: 15, // Slightly larger font
-          fontWeight: FontWeight.w600, // Semi-bold
-          fontFamily: 'Lato', // Slack's font
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          fontFamily: 'Lato',
           buttonText: 'Continue with Slack',
         );
 
@@ -557,51 +566,51 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: Colors.black,
           borderColor: const Color(0xFFDADBDD),
-          horizontalPadding: 16,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFF1D1D1F),
-          focusColor: const Color(0xFF0071E3), // Apple Blue
+          focusColor: const Color(0xFF0071E3),
           loadingColor: Colors.white,
           disabledTextColor: const Color(0xFF86868B),
-          iconSize: 18,
-          spacing: 8,
-          fontSize: 16, // Larger font
-          fontWeight: FontWeight.w600,
-          fontFamily: 'SF Pro Text', // Apple's font
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          fontFamily: 'SF Pro Text',
           buttonText: 'Continue with Apple',
         );
 
       case AuthProvider.github:
         return _ProviderConfig(
-          backgroundColor: const Color(0xFF24292E), // GitHub dark
+          backgroundColor: const Color(0xFF24292E),
           textColor: Colors.white,
           borderColor: const Color(0xFF24292E),
-          horizontalPadding: 16,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFF2F363D),
-          focusColor: const Color(0xFF0366D6), // GitHub Blue
+          focusColor: const Color(0xFF0366D6),
           loadingColor: Colors.white,
           disabledTextColor: const Color(0xFF959DA5),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          fontFamily: 'system-ui', // System font
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          fontFamily: 'system-ui',
           buttonText: 'Continue with GitHub',
         );
 
       case AuthProvider.discord:
         return _ProviderConfig(
-          backgroundColor: const Color(0xFF5865F2), // Discord Blurple
+          backgroundColor: const Color(0xFF5865F2),
           textColor: Colors.white,
           borderColor: const Color(0xFF5865F2),
-          horizontalPadding: 16,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFF4752C4),
           focusColor: const Color(0xFF4752C4),
           loadingColor: Colors.white,
           disabledTextColor: const Color(0xFFB5BAF2),
-          iconSize: 20,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'system-ui',
           buttonText: 'Continue with Discord',
         );
@@ -611,15 +620,15 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: Colors.black,
           borderColor: const Color(0xFFDADBDD),
-          horizontalPadding: 12,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFFF7F6F3),
           focusColor: const Color(0xFF000000),
           loadingColor: const Color(0xFF000000),
           disabledTextColor: const Color(0xFF9AA0A6),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'system-ui',
           buttonText: 'Continue with Notion',
         );
@@ -629,51 +638,51 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: const Color(0xFF172B4D),
           borderColor: const Color(0xFFDFE1E6),
-          horizontalPadding: 12,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFFF4F5F7),
           focusColor: const Color(0xFF0052CC),
           loadingColor: const Color(0xFF0052CC),
           disabledTextColor: const Color(0xFF8993A4),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'system-ui',
           buttonText: 'Continue with Atlassian',
         );
 
       case AuthProvider.linear:
         return _ProviderConfig(
-          backgroundColor: const Color(0xFF5E6AD2), // Linear Purple
+          backgroundColor: const Color(0xFF5E6AD2),
           textColor: Colors.white,
           borderColor: const Color(0xFF5E6AD2),
-          horizontalPadding: 16,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFF505AC0),
           focusColor: const Color(0xFF505AC0),
           loadingColor: Colors.white,
           disabledTextColor: const Color(0xFFB5B9E8),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'system-ui',
           buttonText: 'Continue with Linear',
         );
 
       case AuthProvider.monday:
         return _ProviderConfig(
-          backgroundColor: const Color(0xFFFF3D57), // Monday Red
+          backgroundColor: const Color(0xFFFF3D57),
           textColor: Colors.white,
           borderColor: const Color(0xFFFF3D57),
-          horizontalPadding: 16,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFFE63549),
           focusColor: const Color(0xFFE63549),
           loadingColor: Colors.white,
           disabledTextColor: const Color(0xFFFFB5BF),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'system-ui',
           buttonText: 'Continue with Monday',
         );
@@ -683,15 +692,15 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: const Color(0xFF151B26),
           borderColor: const Color(0xFFE8ECEE),
-          horizontalPadding: 12,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFFFCF1F0),
           focusColor: const Color(0xFFF95353),
           loadingColor: const Color(0xFFF95353),
           disabledTextColor: const Color(0xFF9CA6AF),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'system-ui',
           buttonText: 'Continue with Asana',
         );
@@ -701,15 +710,15 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: const Color(0xFF33475B),
           borderColor: const Color(0xFFCBD6E2),
-          horizontalPadding: 12,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFFF5F8FA),
           focusColor: const Color(0xFFFF7A59),
           loadingColor: const Color(0xFFFF7A59),
           disabledTextColor: const Color(0xFF99ACC2),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'system-ui',
           buttonText: 'Continue with HubSpot',
         );
@@ -719,17 +728,18 @@ class _AuthButtonState extends State<AuthButton> {
           backgroundColor: Colors.white,
           textColor: const Color(0xFF3C4043),
           borderColor: const Color(0xFFDADBDD),
-          horizontalPadding: 12,
+          horizontalPadding: horizontalPadding,
           hoverColor: const Color(0xFFF8F9FA),
           focusColor: const Color(0xFF4285F4),
           loadingColor: const Color(0xFF4285F4),
           disabledTextColor: const Color(0xFF9AA0A6),
-          iconSize: 18,
-          spacing: 12,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
+          iconSize: iconSize,
+          spacing: spacing,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           fontFamily: 'Roboto',
-          buttonText: 'Continue with ${provider.name[0].toUpperCase()}${provider.name.substring(1)}',
+          buttonText:
+              'Continue with ${provider.name[0].toUpperCase()}${provider.name.substring(1)}',
         );
     }
   }
@@ -788,11 +798,7 @@ class _ProviderIcon extends StatelessWidget {
       width: size,
       height: size,
       child: Center(
-        child: SvgPicture.asset(
-          icon,
-          width: size,
-          height: size,
-        ),
+        child: SvgPicture.asset(icon, width: size, height: size),
       ),
     );
   }
