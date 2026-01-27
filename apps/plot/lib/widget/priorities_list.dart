@@ -198,8 +198,8 @@ class _PrioritiesListState extends State<PrioritiesList>
               unread: topSection
                   ? _hasDescendantUnread(priority)
                   : (!priorityExpanded && _hasDescendantUnread(priority)
-                      ? true
-                      : null),
+                        ? true
+                        : null),
             ),
             if (priority.children.isNotEmpty)
               _AnimatedPriorityChildren(
@@ -212,8 +212,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                         indentLevel: indentLevel + 1,
                         topSection: topSection,
                         textStyle: textStyle.copyWith(
-                          color: context.colour.colours
-                              .fromTheme(child.displayColor),
+                          color: context.colour.colours.fromTheme(
+                            child.displayColor,
+                          ),
                         ),
                       ),
                     )
@@ -243,7 +244,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                 selectedBorder: priority.topOrder == null,
                 indentLevel: indentLevel,
                 textStyle: textStyle.copyWith(
-                  color: context.colour.colours.fromTheme(priority.displayColor),
+                  color: context.colour.colours.fromTheme(
+                    priority.displayColor,
+                  ),
                 ),
                 unread: !priorityExpanded && _hasDescendantUnread(priority)
                     ? true
@@ -279,16 +282,20 @@ class _PrioritiesListState extends State<PrioritiesList>
                       selectedBorder: priority.topOrder == null,
                       indentLevel: indentLevel,
                       textStyle: textStyle.copyWith(
-                        color: context.colour.colours
-                            .fromTheme(priority.displayColor),
+                        color: context.colour.colours.fromTheme(
+                          priority.displayColor,
+                        ),
                       ),
-                      unread: !priorityExpanded && _hasDescendantUnread(priority)
+                      unread:
+                          !priorityExpanded && _hasDescendantUnread(priority)
                           ? true
                           : null,
                     ),
                     if (priority.children.isNotEmpty)
                       _AnimatedPriorityChildren(
-                        controller: _getOrCreateController(priority.id.toString()),
+                        controller: _getOrCreateController(
+                          priority.id.toString(),
+                        ),
                         children: buildReorderablePriorityItems(
                           context,
                           priority.children,
@@ -299,148 +306,140 @@ class _PrioritiesListState extends State<PrioritiesList>
                   ],
                 );
               },
-              onReorder: (int oldIndex, int newIndex) => _onReorderPriority(
-                priorities,
-                oldIndex,
-                newIndex,
-              ),
+              onReorder: (int oldIndex, int newIndex) =>
+                  _onReorderPriority(priorities, oldIndex, newIndex),
             ),
           ];
         }
 
         return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // First group: Everything root priority
-          ListTile(
-            title: widget.root.title,
-            command: ChangeCurrentPriority(widget.root),
-            selected: widget.selected?.id == widget.root.id,
-            leadingBuilder: (isHovered, hasFocus) => SizedBox(
-              width: 16,
-              child: UnreadIndicator(
-                color: widget.root.displayColor,
-                unread: widget.root.unread,
-              ),
-            ),
-            textStyle: itemStyle.copyWith(
-              color: context.colour.colours.fromTheme(widget.root.displayColor),
-            ),
-            trailingBuilder: (isHovered, hasFocus) => (isHovered || hasFocus)
-                ? Button.icon(ShowPriorityCommands(widget.root))
-                : null,
-          ),
-
-          // Second group: Top Priorities
-          if (widget.topPriorities.isNotEmpty) ...[
-            SizedBox(height: 16),
-            ListTile(
-              title: 'Top Priorities',
-              style: ListTileStyle.header,
-              textStyle: headerStyle,
-              noHoverHighlight: true,
-            ),
-            ReorderableListView<Priority>(
-              list: widget.topPriorities,
-              shrinkWrap: true,
-              itemBuilder: (context, priority) => Column(
-                key: ValueKey('top-${priority.id}'),
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: buildPriorityItems(
-                  context,
-                  priority,
-                  topSection: true,
-                  textStyle: itemStyle.copyWith(
-                    color: context.colour.colours.fromTheme(
-                      priority.displayColor,
-                    ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // First group: Everything root priority
+              ListTile(
+                title: widget.root.title,
+                command: ChangeCurrentPriority(widget.root),
+                selected: widget.selected?.id == widget.root.id,
+                leadingBuilder: (isHovered, hasFocus) => SizedBox(
+                  width: 16,
+                  child: UnreadIndicator(
+                    color: widget.root.displayColor,
+                    unread: widget.root.unread,
                   ),
                 ),
+                textStyle: itemStyle.copyWith(
+                  color: context.colour.colours.fromTheme(
+                    widget.root.displayColor,
+                  ),
+                ),
+                trailingBuilder: (isHovered, hasFocus) =>
+                    (isHovered || hasFocus)
+                    ? Button.icon(ShowPriorityCommands(widget.root))
+                    : null,
               ),
-              onReorder: (int oldIndex, int newIndex) async {
-                var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-                var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
 
-                final currentPriority = widget.topPriorities[oldIndex];
-                Priority? previous;
-                if (previousIndex >= 0) {
-                  previous = widget.topPriorities[previousIndex];
-                }
-                Priority? next;
-                if (nextIndex < widget.topPriorities.length) {
-                  next = widget.topPriorities[nextIndex];
-                }
-
-                await currentPriority
-                    .copyWith(
-                      topOrder: Value(
-                        Order.between(previous?.topOrder, next?.topOrder),
+              // Second group: Top Priorities
+              if (widget.topPriorities.isNotEmpty) ...[
+                SizedBox(height: 16),
+                ListTile(
+                  title: 'Top Priorities',
+                  style: ListTileStyle.header,
+                  textStyle: headerStyle,
+                  noHoverHighlight: true,
+                ),
+                ReorderableListView<Priority>(
+                  list: widget.topPriorities,
+                  shrinkWrap: true,
+                  itemBuilder: (context, priority) => Column(
+                    key: ValueKey('top-${priority.id}'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: buildPriorityItems(
+                      context,
+                      priority,
+                      topSection: true,
+                      textStyle: itemStyle.copyWith(
+                        color: context.colour.colours.fromTheme(
+                          priority.displayColor,
+                        ),
                       ),
-                    )
-                    .save();
-              },
-            ),
-          ],
+                    ),
+                  ),
+                  onReorder: (int oldIndex, int newIndex) async {
+                    var previousIndex =
+                        newIndex + (newIndex < oldIndex ? -1 : 0);
+                    var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
 
-          // Third group: All Priorities (excluding @plot)
-          // Filter out the @plot priority
-          ...() {
-            // Debug: Print what we're seeing
-            print('=== DEBUG Plot Filtering ===');
-            print('Root children count: ${widget.root.children.length}');
-            for (final p in widget.root.children) {
-              print('  - ${p.title}: key="${p.key}"');
-            }
+                    final currentPriority = widget.topPriorities[oldIndex];
+                    Priority? previous;
+                    if (previousIndex >= 0) {
+                      previous = widget.topPriorities[previousIndex];
+                    }
+                    Priority? next;
+                    if (nextIndex < widget.topPriorities.length) {
+                      next = widget.topPriorities[nextIndex];
+                    }
 
-            final plotPriority = widget.root.children.firstWhereOrNull(
-              (p) => p.key == '@plot',
-            );
-            print('Found plotPriority: ${plotPriority?.title} (key: ${plotPriority?.key})');
-
-            final allPriorities = widget.root.children.where(
-              (p) => p.key != '@plot',
-            ).toList();
-            print('All priorities count after filter: ${allPriorities.length}');
-            print('=== END DEBUG ===');
-
-            return [
-              // Only show header if there are priorities to display
-              if (allPriorities.isNotEmpty) ...[
-                SizedBox(height: 16),
-                ListTile(
-                  title: 'All Priorities',
-                  style: ListTileStyle.header,
-                  textStyle: headerStyle,
-                  noHoverHighlight: true,
-                ),
-                ...buildReorderablePriorityItems(
-                  context,
-                  allPriorities,
-                  textStyle: itemStyle,
+                    await currentPriority
+                        .copyWith(
+                          topOrder: Value(
+                            Order.between(previous?.topOrder, next?.topOrder),
+                          ),
+                        )
+                        .save();
+                  },
                 ),
               ],
 
-              // Fourth group: Plot section (children of @plot priority)
-              if (plotPriority != null && plotPriority.children.isNotEmpty) ...[
-                SizedBox(height: 16),
-                ListTile(
-                  title: 'Plot',
-                  style: ListTileStyle.header,
-                  textStyle: headerStyle,
-                  noHoverHighlight: true,
-                ),
-                ...buildReorderablePriorityItems(
-                  context,
-                  plotPriority.children,
-                  textStyle: itemStyle,
-                ),
-              ],
-            ];
-          }(),
-        ],
-      ),
-    );
+              // Third group: All Priorities (excluding @plot)
+              // Filter out the @plot priority
+              ...() {
+                final plotPriority = widget.root.children.firstWhereOrNull(
+                  (p) => p.key == '@plot',
+                );
+
+                final allPriorities = widget.root.children
+                    .where((p) => p.key != '@plot')
+                    .toList();
+
+                return [
+                  // Only show header if there are priorities to display
+                  if (allPriorities.isNotEmpty) ...[
+                    SizedBox(height: 16),
+                    ListTile(
+                      title: 'All Priorities',
+                      style: ListTileStyle.header,
+                      textStyle: headerStyle,
+                      noHoverHighlight: true,
+                    ),
+                    ...buildReorderablePriorityItems(
+                      context,
+                      allPriorities,
+                      textStyle: itemStyle,
+                    ),
+                  ],
+
+                  // Fourth group: Plot section (children of @plot priority)
+                  if (plotPriority != null &&
+                      plotPriority.children.isNotEmpty) ...[
+                    SizedBox(height: 16),
+                    ListTile(
+                      title: 'Plot',
+                      style: ListTileStyle.header,
+                      textStyle: headerStyle,
+                      noHoverHighlight: true,
+                    ),
+                    ...buildReorderablePriorityItems(
+                      context,
+                      plotPriority.children,
+                      textStyle: itemStyle,
+                    ),
+                  ],
+                ];
+              }(),
+            ],
+          ),
+        );
       },
     );
   }
@@ -492,10 +491,7 @@ class _AnimatedPriorityChildren extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizeTransition(
-      sizeFactor: CurvedAnimation(
-        parent: controller,
-        curve: Curves.easeInOut,
-      ),
+      sizeFactor: CurvedAnimation(parent: controller, curve: Curves.easeInOut),
       axisAlignment: -1.0,
       child: ClipRect(
         child: Column(

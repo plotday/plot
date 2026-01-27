@@ -684,7 +684,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? unreadComputed,
     ThemeColor? displayColor,
   }) : children = children ?? [],
-       _ancestors = ancestors ??
+       _ancestors =
+           ancestors ??
            (ancestry == null
                ? parent == null
                      ? const []
@@ -697,9 +698,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                              ),
                            ]
                : PriorityAncestor.fromStore(ancestry)),
-       minAncestorTopOrder = minAncestorTopOrder ?? ancestry?.minAncestorTopOrder,
+       minAncestorTopOrder =
+           minAncestorTopOrder ?? ancestry?.minAncestorTopOrder,
        _originalPath = originalPath ?? row.path,
-       displayColor = displayColor ?? row.color ??
+       displayColor =
+           displayColor ??
+           row.color ??
            _computeDisplayColor(
              ancestry: ancestry,
              parent: parent,
@@ -718,6 +722,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          order: row.order,
          pomodoro: row.pomodoro,
          color: row.color,
+         key: row.key,
          root: row.root,
          path: row.path,
          createdBy: row.createdBy,
