@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+
+# Cloudflare Tunnel management for development
+# Exposes local API at api.kris.plot.day for webhook testing
+
+set -euo pipefail
+
+WORKSPACE_PATH="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+CONFIG_PATH="$WORKSPACE_PATH/.cloudflared/config.yml"
+
+start() {
+  if [ ! -f "$CONFIG_PATH" ]; then
+    echo "Error: Tunnel config not found at $CONFIG_PATH"
+    echo "Run: pnpm tunnel:setup"
+    exit 1
+  fi
+
+  echo "Starting Cloudflare Tunnel (api.kris.plot.day → localhost:8787)"
+  cloudflared tunnel --config "$CONFIG_PATH" run
+}
+
+start_bg() {
+  if [ -f "$WORKSPACE_PATH/.tunnel.pid" ]; then
+    PID=$(cat "$WORKSPACE_PATH/.tunnel.pid")
+    if ps -p "$PID" > /dev/null 2>&1; then
+      echo "Tunnel already running (PID $PID)"
+      return 0
+    fi
+  fi
+
+  echo "Starting Cloudflare Tunnel in background..."
+  nohup cloudflared tunnel --config "$CONFIG_PATH" run > "$WORKSPACE_PATH/.tunnel.log" 2>&1 &
+  echo $! > "$WORKSPACE_PATH/.tunnel.pid"
+  echo "✓ Tunnel started (PID $(cat "$WORKSPACE_PATH/.tunnel.pid"))"
+  echo "  View logs: tail -f .tunnel.log"
+}
+
+stop() {
+  if [ ! -f "$WORKSPACE_PATH/.tunnel.pid" ]; then
+    echo "No tunnel PID file found"
+    return 0
+  fi
+
+  PID=$(cat "$WORKSPACE_PATH/.tunnel.pid")
+  if ps -p "$PID" > /dev/null 2>&1; then
+    echo "Stopping tunnel (PID $PID)..."
+    kill "$PID"
+    rm "$WORKSPACE_PATH/.tunnel.pid"
+    echo "✓ Tunnel stopped"
+  else
+    echo "Tunnel not running (stale PID file removed)"
+    rm "$WORKSPACE_PATH/.tunnel.pid"
+  fi
+}
+
+status() {
+  if [ ! -f "$WORKSPACE_PATH/.tunnel.pid" ]; then
+    echo "Tunnel: not running"
+    return 1
+  fi
+
+  PID=$(cat "$WORKSPACE_PATH/.tunnel.pid")
+  if ps -p "$PID" > /dev/null 2>&1; then
+    echo "Tunnel: running (PID $PID)"
+    echo "Public URL: https://api.kris.plot.day"
+    echo "Local URL: http://localhost:8787"
+    return 0
+  else
+    echo "Tunnel: not running (stale PID)"
+    rm "$WORKSPACE_PATH/.tunnel.pid"
+    return 1
+  fi
+}
+
+setup() {
+  echo "Setting up Cloudflare Tunnel for Plot development"
+  echo ""
+
+  # Check if tunnel already exists
+  EXISTING=$(cloudflared tunnel list 2>/dev/null | grep "plot-dev" | awk '{print $1}' || true)
+
+  if [ -n "$EXISTING" ]; then
+    echo "Found existing tunnel: $EXISTING"
+    TUNNEL_ID="$EXISTING"
+  else
+    echo "Creating new tunnel..."
+    cloudflared tunnel create plot-dev
+    TUNNEL_ID=$(cloudflared tunnel list | grep "plot-dev" | awk '{print $1}')
+  fi
+
+  echo ""
+  echo "Tunnel ID: $TUNNEL_ID"
+
+  # Create config directory
+  mkdir -p "$WORKSPACE_PATH/.cloudflared"
+
+  # Generate config file
+  cat > "$CONFIG_PATH" <<EOF
+tunnel: $TUNNEL_ID
+credentials-file: $HOME/.cloudflared/$TUNNEL_ID.json
+
+ingress:
+  - hostname: api.kris.plot.day
+    service: http://localhost:8787
+    originRequest:
+      noTLSVerify: true
+      httpHostHeader: api.kris.plot.day
+  - service: http_status:404
+EOF
+
+  echo "✓ Config created at $CONFIG_PATH"
+  echo ""
+  echo "Next steps:"
+  echo "1. Create DNS record (if not exists):"
+  echo "   cloudflared tunnel route dns plot-dev api.kris.plot.day"
+  echo ""
+  echo "2. Start tunnel:"
+  echo "   pnpm tunnel:start"
+}
+
+case "${1:-}" in
+  start) start ;;
+  start-bg) start_bg ;;
+  stop) stop ;;
+  status) status ;;
+  setup) setup ;;
+  *)
+    echo "Usage: $0 <start|start-bg|stop|status|setup>"
+    echo ""
+    echo "  setup     - Create tunnel and generate config"
+    echo "  start     - Start tunnel (foreground)"
+    echo "  start-bg  - Start tunnel (background daemon)"
+    echo "  stop      - Stop background tunnel"
+    echo "  status    - Check tunnel status"
+    exit 1
+    ;;
+esac

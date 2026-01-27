@@ -22,6 +22,9 @@ coverage
 # Cloudflare
 /functions
 .wrangler
+.cloudflared/
+.tunnel.pid
+.tunnel.log
 
 # react-email
 .react-email

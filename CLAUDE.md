@@ -586,6 +586,88 @@ pnpm types
 ❌ **Wrong**: Using `pnpm reset` to fix migration issues
 ✅ **Correct**: Fix the migration file and re-apply with psql
 
+## Development Webhooks with Cloudflare Tunnel
+
+For testing webhooks from external services (Slack, Gmail, etc.) during local development, you can expose your local API worker via a Cloudflare Tunnel.
+
+### Quick Start
+
+**1. One-time setup:**
+
+```bash
+pnpm tunnel:setup
+cloudflared tunnel route dns plot-dev api-kris.plot.day
+```
+
+**2. Start development with webhooks:**
+
+```bash
+# Terminal 1: API worker
+pnpm --filter @plotday/api dev
+
+# Terminal 2: Tunnel
+pnpm tunnel:start
+```
+
+**3. Configure external services:**
+
+Use `https://api-kris.plot.day` as the webhook URL in your external service configuration. Webhooks will route to your local API (localhost:8787).
+
+**4. Stop tunnel when done:**
+
+```bash
+pnpm tunnel:stop
+```
+
+### Webhook URLs
+
+When the tunnel is active, use these public URLs:
+
+- **Slack**: `https://api-kris.plot.day/hook/slack`
+- **Gmail**: `https://api-kris.plot.day/hook/gmail/:topicId`
+- **Generic callbacks**: `https://api-kris.plot.day/hook/:token`
+
+### Available Commands
+
+- `pnpm tunnel:setup` - Create tunnel and generate config (one-time)
+- `pnpm tunnel:start` - Start tunnel in background
+- `pnpm tunnel:stop` - Stop background tunnel
+- `pnpm tunnel:status` - Check if tunnel is running
+- `pnpm tunnel` - Start tunnel in foreground (blocks terminal)
+
+### How It Works
+
+The tunnel configuration (`.cloudflared/config.yml`) preserves the public hostname in request headers, ensuring webhook signature verification (Slack HMAC-SHA256, Gmail JWT) works correctly. The tunnel is authenticated with your Cloudflare account and only exposes the specified hostname.
+
+### Troubleshooting
+
+**Tunnel not connecting:**
+
+```bash
+pnpm tunnel:status
+tail -f .tunnel.log
+```
+
+**Webhooks timing out:**
+
+- Ensure API worker is running: `pnpm --filter @plotday/api dev`
+- Check that localhost:8787 is accessible
+- Verify no firewall is blocking the connection
+
+**Signature verification failing:**
+
+- Verify `.dev.vars` has correct webhook secrets
+- Check that the API worker is receiving requests (check logs)
+- Ensure the tunnel config preserves the Host header (should be automatic)
+
+### Security Considerations
+
+- **Personal dev environment**: `api-kris.plot.day` is for your personal development only
+- **Use test accounts**: Configure test Slack workspaces and Gmail accounts, not production data
+- **Tunnel exposure**: Only run the tunnel when actively testing webhooks
+- **Rate limiting**: All rate limiting middleware still applies to tunnel requests
+- **Callback URLs**: Be aware that webhook URLs may be stored in the database during testing. Use separate test priorities for webhook development to avoid affecting production data.
+
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
