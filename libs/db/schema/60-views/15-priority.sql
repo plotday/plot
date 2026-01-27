@@ -34,11 +34,7 @@ SELECT
     pu.user_id AS user_id,
     c.child_id AS priority_id,
     MIN(pu.created_at) AS joined_at,
-    CASE WHEN bool_or(pu.archived_at IS NULL) THEN
-        NULL
-    ELSE
-        LEAST (MIN(pu.archived_at), MIN(c.archived_at))
-    END AS archived_at
+    LEAST (MIN(pu.archived_at), MIN(c.archived_at)) AS archived_at
 FROM
     priority_user pu
     JOIN priority_child c ON pu.priority_id = c.priority_id

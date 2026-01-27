@@ -1,23 +1,5 @@
--- Upsert activity with smart handling
--- On INSERT: Infers required fields from defaults if provided
--- On UPDATE: Only updates fields whose keys are present in p_activity
---   - Key absent: keep existing value (unless activity is archived)
---   - Key present (even with null): use provided value (allows clearing to NULL)
---   - Archived activities: treated as INSERT, applying p_defaults for missing keys
--- Archived Detection: Activity is considered archived if:
---   - activity.archived_at IS NOT NULL, OR
---   - Priority is not accessible (no user_priority_expanded entry with NULL archived_at)
--- Derivation: Automatically derives source_priority_root, created_by_twist_id, and default assignee
---
--- Parameters:
---   p_activity: activity data as JSONB (explicitly provided values only)
---   p_defaults: default values as JSONB (all fields with defaults - used on INSERT if not in p_activity)
---
--- Assignee Derivation:
---   - If 'assignee_id' key exists in p_activity (even if null): use that value
---   - If 'assignee_id' key is absent AND type is 'action': derive from priority_twist owner
---
--- Returns: The full activity row (not just ID) so caller can process occurrences
+SET check_function_bodies = OFF;
+
 CREATE OR REPLACE FUNCTION public.upsert_activity (p_activity jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
     RETURNS activity
     LANGUAGE plpgsql
@@ -125,7 +107,7 @@ BEGIN
             -- Key present (even with null): use provided value (allows clearing)
             -- If archived: treat as INSERT and apply p_defaults
             title = CASE WHEN v_is_archived THEN
-                COALESCE(p_activity ->> 'title', p_defaults ->> 'title', activity.title)
+                COALESCE(p_activity ->> 'title', p_defaults ->> 'title')
             ELSE
                 CASE WHEN p_activity ? 'title' THEN
                     p_activity ->> 'title'
@@ -134,7 +116,7 @@ BEGIN
                 END
             END,
             preview = CASE WHEN v_is_archived THEN
-                COALESCE(p_activity ->> 'preview', p_defaults ->> 'preview', activity.preview)
+                COALESCE(p_activity ->> 'preview', p_defaults ->> 'preview')
             ELSE
                 CASE WHEN p_activity ? 'preview' THEN
                     p_activity ->> 'preview'
@@ -143,7 +125,7 @@ BEGIN
                 END
             END,
             at = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'at')::tstzrange, (p_defaults ->> 'at')::tstzrange, activity.at)
+                COALESCE((p_activity ->> 'at')::tstzrange, (p_defaults ->> 'at')::tstzrange)
             ELSE
                 CASE WHEN p_activity ? 'at' THEN
                     (p_activity ->> 'at')::tstzrange
@@ -152,7 +134,7 @@ BEGIN
                 END
             END,
             "on" = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'on')::daterange, (p_defaults ->> 'on')::daterange, activity."on")
+                COALESCE((p_activity ->> 'on')::daterange, (p_defaults ->> 'on')::daterange)
             ELSE
                 CASE WHEN p_activity ? 'on' THEN
                     (p_activity ->> 'on')::daterange
@@ -161,7 +143,7 @@ BEGIN
                 END
             END,
             duration = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'duration')::interval, (p_defaults ->> 'duration')::interval, activity.duration)
+                COALESCE((p_activity ->> 'duration')::interval, (p_defaults ->> 'duration')::interval)
             ELSE
                 CASE WHEN p_activity ? 'duration' THEN
                     (p_activity ->> 'duration')::interval
@@ -170,7 +152,7 @@ BEGIN
                 END
             END,
             done_at = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'done_at')::timestamptz, (p_defaults ->> 'done_at')::timestamptz, activity.done_at)
+                COALESCE((p_activity ->> 'done_at')::timestamptz, (p_defaults ->> 'done_at')::timestamptz)
             ELSE
                 CASE WHEN p_activity ? 'done_at' THEN
                     (p_activity ->> 'done_at')::timestamptz
@@ -179,7 +161,7 @@ BEGIN
                 END
             END,
             recurrence_rule = CASE WHEN v_is_archived THEN
-                COALESCE(p_activity ->> 'recurrence_rule', p_defaults ->> 'recurrence_rule', activity.recurrence_rule)
+                COALESCE(p_activity ->> 'recurrence_rule', p_defaults ->> 'recurrence_rule')
             ELSE
                 CASE WHEN p_activity ? 'recurrence_rule' THEN
                     p_activity ->> 'recurrence_rule'
@@ -189,7 +171,7 @@ BEGIN
             END,
             recurrence_exdates = CASE WHEN v_is_archived THEN
                 -- v_recurrence_exdates already has p_activity fallback to p_defaults
-                COALESCE(v_recurrence_exdates, activity.recurrence_exdates)
+                v_recurrence_exdates
             ELSE
                 CASE WHEN p_activity ? 'recurrence_exdates' THEN
                     v_recurrence_exdates
@@ -198,7 +180,7 @@ BEGIN
                 END
             END,
             meta = CASE WHEN v_is_archived THEN
-                COALESCE(p_activity -> 'meta', p_defaults -> 'meta', activity.meta)
+                COALESCE(p_activity -> 'meta', p_defaults -> 'meta')
             ELSE
                 CASE WHEN p_activity ? 'meta' THEN
                     p_activity -> 'meta'
@@ -207,7 +189,7 @@ BEGIN
                 END
             END,
             updated_by = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, activity.updated_by)
+                COALESCE((p_activity ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer)
             ELSE
                 CASE WHEN p_activity ? 'updated_by' THEN
                     (p_activity ->> 'updated_by')::integer
@@ -216,7 +198,7 @@ BEGIN
                 END
             END,
             sync_depth = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint, activity.sync_depth)
+                COALESCE((p_activity ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint)
             ELSE
                 CASE WHEN p_activity ? 'sync_depth' THEN
                     (p_activity ->> 'sync_depth')::smallint
@@ -225,7 +207,7 @@ BEGIN
                 END
             END,
             type = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'type')::activity_type, (p_defaults ->> 'type')::activity_type, activity.type)
+                COALESCE((p_activity ->> 'type')::activity_type, (p_defaults ->> 'type')::activity_type)
             ELSE
                 CASE WHEN p_activity ? 'type' THEN
                     (p_activity ->> 'type')::activity_type
@@ -234,7 +216,7 @@ BEGIN
                 END
             END,
             assignee_id = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'assignee_id')::uuid, (p_defaults ->> 'assignee_id')::uuid, activity.assignee_id)
+                COALESCE((p_activity ->> 'assignee_id')::uuid, (p_defaults ->> 'assignee_id')::uuid)
             ELSE
                 CASE WHEN p_activity ? 'assignee_id' THEN
                     (p_activity ->> 'assignee_id')::uuid
@@ -252,7 +234,7 @@ BEGIN
                 END
             END,
             private = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, activity.private)
+                COALESCE((p_activity ->> 'private')::boolean, (p_defaults ->> 'private')::boolean)
             ELSE
                 CASE WHEN p_activity ? 'private' THEN
                     (p_activity ->> 'private')::boolean
@@ -261,7 +243,7 @@ BEGIN
                 END
             END,
             archived_at = CASE WHEN v_is_archived THEN
-                COALESCE((p_activity ->> 'archived_at')::timestamptz, (p_defaults ->> 'archived_at')::timestamptz, activity.archived_at)
+                COALESCE((p_activity ->> 'archived_at')::timestamptz, (p_defaults ->> 'archived_at')::timestamptz)
             ELSE
                 CASE WHEN p_activity ? 'archived_at' THEN
                     (p_activity ->> 'archived_at')::timestamptz
@@ -277,6 +259,29 @@ BEGIN
 END;
 $function$;
 
--- Restrict access: only service_role can call this function
--- This function can create/update any activity, bypassing RLS
-REVOKE EXECUTE ON FUNCTION public.upsert_activity (jsonb, jsonb) FROM PUBLIC;
+ALTER VIEW "public"."user_note" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_twist" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_update" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_note_create" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_create" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_note_update" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_expanded" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_settings_inherited" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_tag_change" SET ( security_invoker = TRUE);
+ALTER VIEW public.priority_member SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child_twist" SET ( security_invoker = TRUE);

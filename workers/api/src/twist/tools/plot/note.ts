@@ -139,7 +139,8 @@ export async function createNote(
       throw new Error(`Activity author not found`);
     }
 
-    await plot.validatePriorityAccess(activityData.priority_id);
+    // Skip priority access validation for notes - activities may have been moved
+    // after creation and the twist should still be able to add notes
 
     // Convert note content to markdown if needed
     let contentToStore = note.content;
@@ -382,7 +383,8 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       throw new Error(`Activity not found: ${activityError.message}`);
     }
 
-    await plot.validatePriorityAccess(activityData.priority_id);
+    // Skip priority access validation for notes - activities may have been moved
+    // after creation and the twist should still be able to update notes
 
     // Build update object
     const dbUpdate: Database["public"]["Tables"]["note"]["Update"] = {

@@ -3013,7 +3013,9 @@ export type Database = {
           color: number | null
           created_at: string | null
           created_by: string | null
+          global_path: unknown
           id: string | null
+          key: string | null
           order: number | null
           path: unknown
           pomodoro: number | null
@@ -3372,7 +3374,7 @@ export type Database = {
         Returns: undefined
       }
       setup_help_feedback_priority: {
-        Args: { p_user_name?: string }
+        Args: { p_user_id?: string; p_user_name?: string }
         Returns: Json
       }
       share_priority: {
