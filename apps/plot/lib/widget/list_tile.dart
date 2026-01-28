@@ -411,7 +411,7 @@ class _ListTileState extends State<ListTile> {
                                                           null)
                                                         TextSpan(
                                                           text:
-                                                              ' ${widget.subtitle!}',
+                                                              '  ${widget.subtitle!}',
                                                           style: context
                                                               .theme
                                                               .typography
