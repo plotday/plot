@@ -82,6 +82,9 @@ export type Bindings = {
   readonly POSTHOG_API_KEY: string;
   readonly POSTHOG_HOST: string;
 
+  // Supabase authentication keys (new API key format)
+  // ANON_KEY: Client-facing publishable key (sb_publishable_*)
+  // SERVICE_KEY: Server-side secret key (sb_secret_*)
   readonly SUPABASE_URL: string;
   readonly SUPABASE_ANON_KEY: string;
   readonly SUPABASE_SERVICE_KEY: string;
