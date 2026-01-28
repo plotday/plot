@@ -55,16 +55,26 @@ for file in $WORKSPACE_FILES; do
 done
 
 # Function to get a variable's value by name
+# Returns the LAST match to ensure more specific files override less specific ones
 get_var_value() {
   local search="$1"
+  local result=""
+  local found=0
   local i=0
+
+  # Scan all entries and keep the LAST match
   while [ $i -lt ${#NAMES[@]} ]; do
     if [ "${NAMES[$i]}" = "$search" ]; then
-      echo "${VALUES[$i]}"
-      return 0
+      result="${VALUES[$i]}"
+      found=1
     fi
     i=$((i + 1))
   done
+
+  if [ $found -eq 1 ]; then
+    echo "$result"
+    return 0
+  fi
   return 1
 }
 
