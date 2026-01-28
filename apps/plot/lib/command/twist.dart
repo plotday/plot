@@ -56,7 +56,7 @@ class EditTwistCommand extends ShowForm {
   EditTwistCommand(this.priorityTwist, {this.priority})
     : super(
         title: priorityTwist.name,
-        subtitle: priority?.ancestorsLabel(),
+        subtitle: priority?.ancestorsLabel() ?? priority?.title,
         icon: PlotIcon.settings,
         form: (context) => _buildForm(context, priorityTwist, priority),
       );

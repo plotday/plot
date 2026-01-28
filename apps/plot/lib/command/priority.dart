@@ -25,7 +25,9 @@ abstract class PriorityCommand extends Command {
     bool ancestry = true,
   }) : super(
          title: priority?.title ?? 'None',
-         subtitle: ancestry ? priority?.ancestorsLabel() : null,
+         subtitle: ancestry
+             ? (priority?.ancestorsLabel() ?? priority?.title)
+             : null,
        );
 
   final Priority? priority;
@@ -341,7 +343,7 @@ class EditPriorityCommand extends ShowForm {
                           .toList();
                     },
                     titleBuilder: (p) => p.title,
-                    subtitleBuilder: (p) => p.ancestorsLabel(),
+                    subtitleBuilder: (p) => p.ancestorsLabel() ?? p.title,
                   ),
                   FormSelect<ThemeColor?>(
                     key: 'color',
