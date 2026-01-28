@@ -49,9 +49,8 @@ export class TwistTail extends WorkerEntrypoint<
         }
       }
 
-      // Skip events without priorityTwistId (shouldn't happen in normal operation)
-      if (!priorityTwistId) {
-        console.warn("TwistTail: Event missing priorityTwistId context");
+      // Skip deployment operations (permission collection) and malformed events
+      if (!priorityTwistId || priorityTwistId === "__deployment__") {
         continue;
       }
 
