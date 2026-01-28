@@ -263,7 +263,7 @@ export class CallbacksState extends DurableObject<Bindings> {
         .from("priority_twist")
         .select("priority_id, twist_id")
         .eq("id", callback.priorityTwistId)
-        .single(),
+        .maybeSingle(),
       {
         table: "priority_twist",
         operation: "SELECT",
@@ -272,13 +272,23 @@ export class CallbacksState extends DurableObject<Bindings> {
       }
     );
 
+    // If priority_twist was deleted, clean up callback and return
+    if (!priorityTwist) {
+      logger.warn("Priority twist not found for callback, deleting callback", {
+        priorityTwistId: callback.priorityTwistId,
+        token,
+      });
+      this.delete(token);
+      return;
+    }
+
     // Fetch twist metadata including environment
     const twistMeta = safeQuery(
       await this.supabase
         .from("twist")
         .select("environment")
         .eq("id", priorityTwist.twist_id)
-        .single(),
+        .maybeSingle(),
       {
         table: "twist",
         operation: "SELECT",
@@ -286,6 +296,16 @@ export class CallbacksState extends DurableObject<Bindings> {
         identifiers: { twistId: priorityTwist.twist_id },
       }
     );
+
+    // If twist was deleted, clean up callback and return
+    if (!twistMeta) {
+      logger.warn("Twist not found for callback, deleting callback", {
+        twistId: priorityTwist.twist_id,
+        token,
+      });
+      this.delete(token);
+      return;
+    }
 
     const factory = twistFactory({
       env: this.env,
