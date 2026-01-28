@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION public.update_activity_tags (p_activity_id uuid, p_actor_id uuid, p_client_id integer, p_tag_updates jsonb, p_occurrence text DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.update_activity_tags (p_activity_id uuid, p_actor_id uuid, p_client_id integer, p_tag_updates jsonb, p_occurrence text DEFAULT NULL::text)
     RETURNS void
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -36,14 +36,14 @@ BEGIN
             -- Note: RLS policies already enforce this, but we validate explicitly for clarity
             IF current_tag_type = 'count' THEN
                 -- Validate p_actor_id matches current user's contact_id
-                IF p_actor_id != user_contact_id() THEN
+                IF p_actor_id != user_contact_id () THEN
                     RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', tag_id_int;
                 END IF;
             END IF;
             IF is_adding THEN
                 -- RSVP tags (Attend/Skip/Undecided) are mutually exclusive
                 -- If adding an RSVP tag, remove the other two for this actor
-                IF is_rsvp_tag(tag_id_int) THEN
+                IF is_rsvp_tag (tag_id_int) THEN
                     UPDATE
                         activity_tag
                     SET
@@ -53,8 +53,8 @@ BEGIN
                         activity_id = p_activity_id
                         AND actor_id = p_actor_id
                         AND (occurrence IS NOT DISTINCT FROM p_occurrence)
-                        AND tag_id IN (1019, 1020, 1021)  -- All RSVP tags
-                        AND tag_id != tag_id_int           -- Except the one being added
+                        AND tag_id IN (1019, 1020, 1021) -- All RSVP tags
+                        AND tag_id != tag_id_int -- Except the one being added
                         AND archived_at IS NULL;
                 END IF;
                 -- Adding a tag - use upsert to create or reactivate

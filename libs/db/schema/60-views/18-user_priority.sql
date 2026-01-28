@@ -82,7 +82,8 @@ DECLARE
     _aliased_root_actual_path ltree;
     _within_aliased_tree boolean;
     _priority_exists boolean;
-    _old_actual_path ltree;  -- For storing OLD path when OLD.global_path is NULL
+    _old_actual_path ltree;
+    -- For storing OLD path when OLD.global_path is NULL
 BEGIN
     _priority_id := NEW.id;
     _is_creator := (NEW.created_by = COALESCE(auth.uid (), NEW.user_id));
@@ -103,9 +104,13 @@ BEGIN
         -- This happens when using INSERT ... ON CONFLICT (upsert)
         _old_actual_path := OLD.global_path;
         IF _old_actual_path IS NULL THEN
-            SELECT path INTO _old_actual_path FROM priority WHERE id = NEW.id;
+            SELECT
+                path INTO _old_actual_path
+            FROM
+                priority
+            WHERE
+                id = NEW.id;
         END IF;
-
         IF nlevel (NEW.path) > 1 THEN
             -- Extract parent path and label from visual path
             _parent_visual_path := subpath (NEW.path, 0, nlevel (NEW.path) - 1);
@@ -127,39 +132,39 @@ BEGIN
                 END IF;
                 -- Compute what the new actual path would be
                 _actual_path := _parent_actual_path || _label::ltree;
-        ELSE
-            -- Root level priority (nlevel = 1)
-            _actual_path := NEW.path;
-        END IF;
-    END IF;
-    -- Detect if this is a move (actual path changed on existing priority)
-    -- Use computed actual path instead of NEW.global_path (which is NULL)
-    _is_move := (_priority_exists
-        AND _actual_path IS NOT NULL
-        AND _old_actual_path IS DISTINCT FROM _actual_path);
-    IF _is_move THEN
-        -- This is a move operation
-        -- Block moving root priorities
-        IF NEW.root THEN
-            RAISE EXCEPTION 'Cannot move root priority'
-                USING HINT = 'Root priorities define access boundaries and cannot be moved';
+            ELSE
+                -- Root level priority (nlevel = 1)
+                _actual_path := NEW.path;
             END IF;
-            -- Get user's personal root path (actual path)
-            SELECT
-                p.path INTO _user_personal_root_path
-            FROM
-                priority_user pu
-                JOIN priority p ON pu.priority_id = p.id
-            WHERE
-                pu.user_id = COALESCE(auth.uid (), NEW.user_id)
-                AND pu.personal = TRUE
-                AND pu.archived_at IS NULL
-            LIMIT 1;
-            -- Determine if old and new locations are under personal root using global_path
-            _old_is_personal := (_user_personal_root_path @> _old_actual_path);
-            -- Determine if new location is under personal root using computed actual path
-            -- (actual path was already computed before move detection)
-            _new_is_personal := (_user_personal_root_path @> _actual_path);
+        END IF;
+        -- Detect if this is a move (actual path changed on existing priority)
+        -- Use computed actual path instead of NEW.global_path (which is NULL)
+        _is_move := (_priority_exists
+            AND _actual_path IS NOT NULL
+            AND _old_actual_path IS DISTINCT FROM _actual_path);
+        IF _is_move THEN
+            -- This is a move operation
+            -- Block moving root priorities
+            IF NEW.root THEN
+                RAISE EXCEPTION 'Cannot move root priority'
+                    USING HINT = 'Root priorities define access boundaries and cannot be moved';
+                END IF;
+                -- Get user's personal root path (actual path)
+                SELECT
+                    p.path INTO _user_personal_root_path
+                FROM
+                    priority_user pu
+                    JOIN priority p ON pu.priority_id = p.id
+                WHERE
+                    pu.user_id = COALESCE(auth.uid (), NEW.user_id)
+                    AND pu.personal = TRUE
+                    AND pu.archived_at IS NULL
+                LIMIT 1;
+                -- Determine if old and new locations are under personal root using global_path
+                _old_is_personal := (_user_personal_root_path @> _old_actual_path);
+                -- Determine if new location is under personal root using computed actual path
+                -- (actual path was already computed before move detection)
+                _new_is_personal := (_user_personal_root_path @> _actual_path);
                 -- Prevent circular reference
                 IF _actual_path <@ _old_actual_path OR _actual_path = _old_actual_path THEN
                     RAISE EXCEPTION 'Cannot move priority to be a descendant of itself'
