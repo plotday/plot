@@ -20,6 +20,7 @@ class Priorities extends Table
       integer().nullable().map(const ThemeColorConverter())();
   TextColumn get key => text().nullable()();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
+  BoolColumn get personal => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
 }
 
@@ -664,6 +665,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          path: Path.generate(parent: parent.path),
          order: Order(DateTime.now().millisecondsSinceEpoch.toDouble()),
          root: false,
+         personal: parent.personal,
          unread: false,
        ) {
     if (!draft) {
@@ -724,6 +726,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          color: row.color,
          key: row.key,
          root: row.root,
+         personal: row.personal,
          path: row.path,
          createdBy: row.createdBy,
          unread: row.unread,
@@ -874,6 +877,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<ThemeColor?> color = const Value.absent(),
     Value<String?> key = const Value.absent(),
     bool? root,
+    bool? personal,
     Priority? parent,
     Value<int?> pending = const Value.absent(),
     bool? unread,
@@ -906,6 +910,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         pomodoro: pomodoro,
         color: color,
         key: key,
+        root: root,
+        personal: personal,
+        unread: unread,
       ),
       parent: currentParent,
       children: children,

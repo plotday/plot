@@ -99,7 +99,8 @@ enum EventObject {
   navigation('navigation'),
   commandBar('command_bar'),
   modal('modal'),
-  settings('settings');
+  settings('settings'),
+  sync('sync');
 
   const EventObject(this.value);
   final String value;

@@ -226,6 +226,18 @@ class SyncOrchestrator {
         e,
         stackTrace,
       );
+
+      // Report unexpected errors to PostHog
+      if (!_isExpectedError(e)) {
+        Tracker.trackError(
+          entity.debugName,
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+          stackTrace: stackTrace.toString(),
+          context: 'sync_orchestrator_push',
+        );
+      }
+
       completer.completeError(e, stackTrace);
       return false;
     } finally {
@@ -259,6 +271,18 @@ class SyncOrchestrator {
         e,
         stackTrace,
       );
+
+      // Report unexpected errors to PostHog
+      if (!_isExpectedError(e)) {
+        Tracker.trackError(
+          entity.debugName,
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+          stackTrace: stackTrace.toString(),
+          context: 'sync_orchestrator_pull',
+        );
+      }
+
       completer.completeError(e, stackTrace);
     } finally {
       _pullCompleters.remove(entity);
@@ -285,6 +309,29 @@ class SyncOrchestrator {
       entities.map((e) => push(e)),
       eagerError: false, // Continue even if some fail
     );
+  }
+
+  /// Determines if an error is expected/transient and should not be reported to PostHog
+  ///
+  /// Returns true for:
+  /// - Network errors (expected during offline periods)
+  /// - Auth errors (handled by automatic sign-out flow)
+  ///
+  /// Returns false for:
+  /// - API errors (unexpected)
+  /// - RLS violations (app bugs)
+  /// - Unknown exceptions (need investigation)
+  bool _isExpectedError(dynamic error) {
+    // Network errors are expected during offline periods
+    if (error is NetworkException) return true;
+    if (error is SocketException) return true;
+    if (error is HttpException) return true;
+
+    // Auth errors are handled by sign-out flow and tracked elsewhere
+    if (Store._isAuthError(error)) return true;
+
+    // All other errors should be reported
+    return false;
   }
 
   /// Computes pull levels using topological sort (parent → child order)

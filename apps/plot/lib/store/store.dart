@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'dart:convert';
@@ -26,9 +27,11 @@ import 'package:plot/util/async.dart';
 import 'package:plot/util/value.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/broadcast.dart';
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
 import 'package:plot/cli_args.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'enums.dart';
 import 'types.dart';
 import 'logging.dart';
@@ -223,6 +226,15 @@ abstract class BaseTable {
           "RLS policy violation - this indicates an app bug where code is accessing restricted data",
           e,
         );
+
+        // Report RLS violations to PostHog (indicates app bugs)
+        Tracker.trackError(
+          'database',
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+          stackTrace: StackTrace.current.toString(),
+          context: 'sync_rls_violation_read',
+        );
       }
       rethrow;
     }
@@ -331,6 +343,15 @@ abstract class BaseTable {
         log.warning(
           "RLS policy violation during write - this indicates an app bug where code is trying to write restricted data",
           e,
+        );
+
+        // Report RLS violations to PostHog (indicates app bugs)
+        Tracker.trackError(
+          'database',
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+          stackTrace: StackTrace.current.toString(),
+          context: 'sync_rls_violation_write',
         );
       }
       rethrow;
@@ -465,6 +486,78 @@ class Store extends _$Store {
       return error.code == '42501';
     }
     return false;
+  }
+
+  /// Checks if an error is a permanent data error that should not be retried
+  /// These errors indicate invalid data that will never succeed on retry and
+  /// should be reverted to the remote version instead.
+  static bool _isPermanentError(dynamic error) {
+    if (error is PostgrestException) {
+      final code = error.code;
+      if (code == null) return false;
+
+      // PostgreSQL RAISE EXCEPTION (like our personal→shared move error)
+      if (code == 'P0001') return true;
+
+      // Foreign key constraint violation
+      if (code == '23503') return true;
+
+      // Unique constraint violation
+      if (code == '23505') return true;
+
+      // Check constraint violation
+      if (code == '23514') return true;
+
+      // RLS policy violation
+      if (code == '42501') return true;
+
+      return false;
+    }
+    return false;
+  }
+
+  /// Reverts a local row to its remote version after a permanent error
+  /// If the row doesn't exist remotely, it's deleted locally
+  Future<void> _revertToRemote<TABLE extends SyncableTable, DATA extends DataClass>(
+    BaseTable baseTable,
+    TableInfo<TABLE, DATA> table,
+    Map<String, dynamic> localRow,
+  ) async {
+    final id = localRow['id'] as Object;
+
+    try {
+      // Fetch current remote version by ID
+      final response = await baseTable.select().eq('id', id.toString()).maybeSingle();
+
+      if (response == null) {
+        // Row doesn't exist remotely - delete local copy
+        log.warning(
+          "Reverting local-only row by deleting it (ID: $id, table: ${baseTable.table})",
+        );
+
+        await customStatement('DELETE FROM ${table.actualTableName} WHERE id = ?', [id]);
+      } else {
+        // Row exists remotely - revert to remote version
+        log.warning(
+          "Reverting local changes to remote version (ID: $id, table: ${baseTable.table})",
+        );
+
+        // Convert remote row to Insertable and clear pending
+        final remoteData = baseTable.fromBase(response);
+
+        // Update local database to match remote using batch insert
+        await batch((batch) {
+          batch.insertAllOnConflictUpdate(table, [remoteData]);
+        });
+      }
+    } catch (e, trace) {
+      log.severe(
+        "Failed to revert row to remote version (ID: $id, table: ${baseTable.table})",
+        e,
+        trace,
+      );
+      // Don't rethrow - we tried our best
+    }
   }
 
   /// Handles authentication errors by signing out the user
@@ -652,11 +745,32 @@ class Store extends _$Store {
                   updates: {table},
                 );
               } catch (e, stackTrace) {
-                log.warning(
-                  "Error pushing ${baseTable.toBase(data)} to ${baseTable.writeTable ?? baseTable.table}",
-                  e,
-                  stackTrace,
-                );
+                if (Store._isAuthError(e)) {
+                  await Store._handleAuthError();
+                  rethrow;
+                } else if (Store._isPermanentError(e)) {
+                  // Permanent error - revert local change to remote version
+                  final errorMsg = e is PostgrestException
+                      ? (e.hint ?? e.message)
+                      : 'Invalid local change';
+                  log.warning(
+                    "Permanent error during sync (${baseTable.table}): $errorMsg. Reverting row.",
+                    e,
+                    stackTrace,
+                  );
+
+                  // Revert to remote version
+                  await _revertToRemote(baseTable, table, baseTable.toBase(data));
+
+                  // Don't set success = true (this wasn't a successful push)
+                } else {
+                  // Transient error - log and continue
+                  log.warning(
+                    "Error pushing ${baseTable.toBase(data)} to ${baseTable.writeTable ?? baseTable.table}",
+                    e,
+                    stackTrace,
+                  );
+                }
               }
             } catch (e, stackTrace) {
               log.warning(
@@ -1315,6 +1429,15 @@ class Store extends _$Store {
           e,
           stackTrace,
         );
+
+        // Report RLS violations to PostHog (indicates app bugs)
+        Tracker.trackError(
+          'database',
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+          stackTrace: stackTrace.toString(),
+          context: 'sync_rls_violation',
+        );
       }
       // Network errors and other issues are logged but don't stop the app
       log.warning("Error during _syncAll", e, stackTrace);
@@ -1446,12 +1569,33 @@ class Store extends _$Store {
               error,
               stackTrace,
             );
+
+            // Report unexpected errors to PostHog (filter out network errors)
+            if (!SyncOrchestrator.instance._isExpectedError(error)) {
+              Tracker.trackError(
+                'sync',
+                errorType: error.runtimeType.toString(),
+                errorMessage: error.toString(),
+                stackTrace: stackTrace.toString(),
+                context: 'sync_connectivity',
+              );
+            }
+
             return null;
           });
         }
       });
     } catch (e, t) {
       log.warning("Error setting up connectivity listener", e, t);
+
+      // Report connectivity listener setup errors to PostHog
+      Tracker.trackError(
+        'sync',
+        errorType: e.runtimeType.toString(),
+        errorMessage: e.toString(),
+        stackTrace: t.toString(),
+        context: 'sync_connectivity_setup',
+      );
     }
   }
 
@@ -1475,7 +1619,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 236;
+  int get schemaVersion => 237;
 
   @override
   MigrationStrategy get migration {
