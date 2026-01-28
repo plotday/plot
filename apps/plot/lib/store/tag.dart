@@ -238,6 +238,12 @@ enum Tag {
     );
   }
 
+  // Check if this tag is an RSVP tag (mutually exclusive)
+  bool get isRsvp => this == Tag.attend || this == Tag.skip || this == Tag.undecided;
+
+  // Get all RSVP tags (for removal during exclusivity enforcement)
+  static List<Tag> get rsvpTags => [Tag.attend, Tag.skip, Tag.undecided];
+
   @override
   String toString() => name;
 }

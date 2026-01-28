@@ -18,6 +18,8 @@ Supported platforms:
 - Twist: The Plot version of an extension/plugin/app/agent. Users add them to a Priority where they have access to that Priority and its descendants. They tend to implement opinionated workflows (e.g. create tasks from emails).
 - Tool: Provide capabilities to twists. Some are built-in and implemented in the API, while others are available as separate packages. They tend to be unopinionated building blocks (e.g. watch and send Gmail messages).
 - Twist Creator aka Twister: The SDK for building twists and tools. Sometimes represented with 🌪️.
+- RSVP Tags: Special count tags (Attend, Skip, Undecided) that are mutually exclusive per actor. When an actor adds one RSVP tag, any other RSVP tags they have are automatically removed. This exclusivity is enforced at both the database level and in the Flutter app for offline support. The exclusivity respects occurrence boundaries for recurring events.
+- Count Tag Ownership: Count tags can only be added/removed by the user themselves. Users cannot modify count tags for other actors. This is enforced by RLS policies in the database and validated in the Flutter app.
 
 ## Data
 

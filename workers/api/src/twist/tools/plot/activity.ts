@@ -480,6 +480,9 @@ export async function updateActivity(
     }
 
     // Handle twist tags separately using RPC (for adding/removing caller's own tags)
+    // Note: RSVP tags (Attend/Skip/Undecided) are mutually exclusive -
+    // the database function automatically removes conflicting RSVP tags.
+    // Count tags can only be modified for the current user (enforced by RLS).
     if (activity.twistTags) {
       safeQuery(
         await plot.supabase.rpc("update_activity_tags", {

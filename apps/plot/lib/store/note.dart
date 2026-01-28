@@ -637,6 +637,30 @@ class Note extends Equatable implements Comparable<Note> {
   /// Sets or unsets a tag for a specific actor.
   /// Returns a new Note instance with the updated tag - caller must call save().
   Note setTag(Tag tag, ActorId actorId, [bool value = true]) {
+    // Count tags can only be set for the current user
+    if (tag.type == TagType.count && actorId != Base.actorId) {
+      log.warning(
+        'Attempted to set count tag ${tag.name} for actor $actorId, but only current user can modify count tags',
+      );
+      // Return unchanged note - don't allow modifying other users' count tags
+      return this;
+    }
+
+    // RSVP tags are mutually exclusive - handle before modification
+    if (tag.type == TagType.count && tag.isRsvp && value) {
+      // Remove current user from other RSVP tags before adding new one
+      Note updated = this;
+      for (final rsvpTag in Tag.rsvpTags) {
+        if (rsvpTag != tag && hasTag(rsvpTag, actorId)) {
+          updated = updated.setTag(rsvpTag, actorId, false);
+        }
+      }
+      // Continue with adding the requested RSVP tag on the updated note
+      if (updated != this) {
+        return updated.setTag(tag, actorId, value);
+      }
+    }
+
     // Get current tags or create empty map
     Map<Tag, List<ActorId>> currentTags = _tags?.tags != null
         ? Map<Tag, List<ActorId>>.from(_tags!.tags!)

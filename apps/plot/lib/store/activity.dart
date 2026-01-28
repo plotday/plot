@@ -1950,6 +1950,9 @@ class Activity extends Equatable implements Comparable<Activity> {
 
     bool isAdding = false;
 
+    // Initialize tag updates map early since we need it for RSVP exclusivity
+    final currentTagUpdates = Map<int, bool>.from(_tags?.tagsUpdated ?? {});
+
     if (tag.type == TagType.toggle) {
       // Toggle behavior: add if not present, remove if present
       if (currentUsers.isEmpty) {
@@ -1974,6 +1977,26 @@ class Activity extends Equatable implements Comparable<Activity> {
         }
         isAdding = false; // Removing the user's count
       } else {
+        // RSVP tags are mutually exclusive - remove other RSVP tags before adding
+        if (tag.isRsvp) {
+          for (final rsvpTag in Tag.rsvpTags) {
+            if (rsvpTag != tag) {
+              final rsvpUsers = currentTags[rsvpTag];
+              if (rsvpUsers != null && rsvpUsers.contains(currentUser)) {
+                // Remove current user from conflicting RSVP tag
+                rsvpUsers.remove(currentUser);
+                if (rsvpUsers.isEmpty) {
+                  currentTags.remove(rsvpTag);
+                } else {
+                  currentTags[rsvpTag] = rsvpUsers;
+                }
+                // Track removal in tagsUpdated
+                currentTagUpdates[rsvpTag.id] = false;
+              }
+            }
+          }
+        }
+
         // Add current user to tag (increment count)
         currentUsers.add(currentUser);
         currentTags[tag] = currentUsers;
@@ -1982,7 +2005,6 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     // Update the tag updates map
-    final currentTagUpdates = Map<int, bool>.from(_tags?.tagsUpdated ?? {});
     currentTagUpdates[tag.id] = isAdding;
     log.info(
       "Toggling tag ${tag.name} (${tag.type}) to $isAdding ($currentTags, $currentTagUpdates)",

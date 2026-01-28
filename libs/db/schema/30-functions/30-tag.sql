@@ -19,4 +19,17 @@ BEGIN
 END;
 $$;
 
+-- Function to check if a tag_id is an RSVP tag (Attend/Skip/Undecided)
+-- RSVP tags are mutually exclusive - an actor can only have one at a time
+CREATE OR REPLACE FUNCTION is_rsvp_tag (tag_id integer)
+    RETURNS boolean
+    LANGUAGE plpgsql
+    IMMUTABLE
+    AS $$
+BEGIN
+    -- RSVP tags: Attend (1019), Skip (1020), Undecided (1021)
+    RETURN tag_id IN (1019, 1020, 1021);
+END;
+$$;
+
 

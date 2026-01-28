@@ -31,7 +31,32 @@ BEGIN
             IF current_tag_type = 'compute' THEN
                 RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - these tags are calculated from activity state', tag_id_int;
             END IF;
+            -- For count tags, enforce that users can only modify their own tags
+            -- p_actor_id should match the authenticated user's contact_id
+            -- Note: RLS policies already enforce this, but we validate explicitly for clarity
+            IF current_tag_type = 'count' THEN
+                -- Validate p_actor_id matches current user's contact_id
+                IF p_actor_id != user_contact_id() THEN
+                    RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', tag_id_int;
+                END IF;
+            END IF;
             IF is_adding THEN
+                -- RSVP tags (Attend/Skip/Undecided) are mutually exclusive
+                -- If adding an RSVP tag, remove the other two for this actor
+                IF is_rsvp_tag(tag_id_int) THEN
+                    UPDATE
+                        activity_tag
+                    SET
+                        archived_at = now(),
+                        updated_by = p_client_id
+                    WHERE
+                        activity_id = p_activity_id
+                        AND actor_id = p_actor_id
+                        AND (occurrence IS NOT DISTINCT FROM p_occurrence)
+                        AND tag_id IN (1019, 1020, 1021)  -- All RSVP tags
+                        AND tag_id != tag_id_int           -- Except the one being added
+                        AND archived_at IS NULL;
+                END IF;
                 -- Adding a tag - use upsert to create or reactivate
                 INSERT INTO activity_tag (actor_id, activity_id, occurrence, tag_id, updated_at, archived_at, updated_by)
                     VALUES (p_actor_id, p_activity_id, p_occurrence, tag_id_int, now(), NULL, p_client_id)
