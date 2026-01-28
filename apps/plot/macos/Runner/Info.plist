@@ -48,6 +48,14 @@
           <string>com.googleusercontent.apps.535301598151-te9ckilam7u7rh9lvdoi607690idocmd</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>plotapp</string>
+        </array>
+      </dict>
     </array>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>This app needs access to speech recognition to enable voice dictation in notes and activities.</string>

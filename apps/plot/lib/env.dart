@@ -20,7 +20,7 @@ abstract class Env {
 
     apiRoot = _translateUrl('${getEnvOrThrow('API_ROOT')}/app');
     authServerCallbackUrl = getEnvOrThrow('AUTH_GOOGLE_URI');
-    authCallbackUrl = "https://app.plot.day/auth/callback";
+    authCallbackUrl = getEnvOrThrow('AUTH_CALLBACK_URL');
 
     googleClientId = getEnvOrThrow('AUTH_GOOGLE_ID');
     googleIosClientId = getEnvOrThrow('AUTH_GOOGLE_IOS_ID');
