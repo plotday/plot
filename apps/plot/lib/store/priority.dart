@@ -1007,7 +1007,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // Update all descendant paths
     for (final descendant in descendants) {
       final updatedPath = descendant.path.replacePrefix(oldPath, newPath);
-      final updatedDescendant = descendant.copyWith(path: updatedPath);
+      final updatedDescendant = descendant.copyWith(
+        path: updatedPath,
+        pending: const Value(2),
+      );
       await Store.get.save(
         table,
         updatedDescendant.toCompanion(false),
@@ -1016,7 +1019,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     }
 
     // Update this priority's path
-    final updatedPriority = copyWith(path: newPath);
+    final updatedPriority = copyWith(
+      path: newPath,
+      pending: const Value(2),
+    );
     await Store.get.save(
       table,
       updatedPriority.toCompanion(false),
@@ -1039,7 +1045,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       if (_hasParentChanged()) {
         await _updatePathsForMove();
         // Return updated priority with new path
-        return copyWith(path: _computePathFromParent());
+        // Set pending to trigger sync of the path change
+        return copyWith(
+          path: _computePathFromParent(),
+          pending: const Value(2),
+        );
       } else {
         // No parent change, save normally
         await Store.get.save(table, toCompanion(false), PrioritiesBase());

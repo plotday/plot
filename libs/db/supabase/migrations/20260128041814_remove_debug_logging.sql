@@ -1,62 +1,4 @@
--- While priority_user defines the priority roots for a user,
--- user_priority has a row for every priority (including children)
--- the user can access, with unread status.
-CREATE OR REPLACE VIEW "public"."user_priority" WITH ( security_invoker = TRUE)
--- for formatting
-AS
-SELECT
-    pu.user_id,
-    p.id,
-    p.created_at,
-    GREATEST (settings.updated_at, pu.updated_at, p.updated_at, coalesce(upu.updated_at, 'epoch')) AS updated_at,
-    GREATEST (pu.archived_at, p.archived_at) AS archived_at,
-    p.created_by,
-    p.updated_by,
-    pu.personal = TRUE
-    AND p.id = root.id AS root,
-    COALESCE(settings.title, p.title) AS title,
-    CASE
-    -- Priority has explicit inherited settings
-    WHEN inherited_settings.path IS NOT NULL THEN
-        inherited_settings.path
-        -- Priority's actual path is already under user's personal root
-    WHEN user_root.path @> p.path THEN
-        p.path
-        -- Priority's parent has inherited settings - use parent's visual path + this priority's label
-    WHEN parent_inherited_settings.path IS NOT NULL THEN
-        parent_inherited_settings.path || text(subpath (p.path, nlevel (p.path) - 1, 1))::ltree
-        -- Fallback: concatenate user root + actual path
-    ELSE
-        user_root.path || p.path
-    END AS path,
-    p.path AS global_path,
-    settings.top_order,
-    COALESCE(settings."order", extract(epoch FROM p.created_at) * 1000) AS "order",
-    inherited_settings.pomodoro,
-    inherited_settings.color,
-    p.key,
-    COALESCE(upu.unread, FALSE) AS unread
-FROM
-    priority_user pu
-    JOIN priority root ON pu.priority_id = root.id
-    JOIN priority_user pu_root ON pu.user_id = pu_root.user_id
-        AND pu_root.personal = TRUE
-    JOIN priority user_root ON pu_root.priority_id = user_root.id
-    JOIN priority p ON root.path @> p.path
-    -- Join parent priority to get its inherited settings for visual path computation
-    LEFT JOIN priority parent_p ON nlevel (p.path) > 1
-        AND parent_p.path = subpath (p.path, 0, nlevel (p.path) - 1)
-    LEFT JOIN priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = pu.user_id
-        AND parent_p.id = parent_inherited_settings.priority_id
-    LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
-        AND p.id = settings.priority_id
-    LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id
-        AND p.id = inherited_settings.priority_id
-        -- Latest updated_at in descendant activities
-    LEFT JOIN user_priority_unread upu ON upu.user_id = pu.user_id
-        AND upu.priority_id = p.id
-WHERE
-    pu.archived_at IS NULL;
+SET check_function_bodies = OFF;
 
 CREATE OR REPLACE FUNCTION public.handle_user_priority_upsert ()
     RETURNS TRIGGER
@@ -82,7 +24,8 @@ DECLARE
     _aliased_root_actual_path ltree;
     _within_aliased_tree boolean;
     _priority_exists boolean;
-    _old_actual_path ltree;  -- For storing OLD path when OLD.global_path is NULL
+    _old_actual_path ltree;
+    -- For storing OLD path when OLD.global_path is NULL
 BEGIN
     _priority_id := NEW.id;
     _is_creator := (NEW.created_by = COALESCE(auth.uid (), NEW.user_id));
@@ -103,9 +46,13 @@ BEGIN
         -- This happens when using INSERT ... ON CONFLICT (upsert)
         _old_actual_path := OLD.global_path;
         IF _old_actual_path IS NULL THEN
-            SELECT path INTO _old_actual_path FROM priority WHERE id = NEW.id;
+            SELECT
+                path INTO _old_actual_path
+            FROM
+                priority
+            WHERE
+                id = NEW.id;
         END IF;
-
         IF nlevel (NEW.path) > 1 THEN
             -- Extract parent path and label from visual path
             _parent_visual_path := subpath (NEW.path, 0, nlevel (NEW.path) - 1);
@@ -127,39 +74,39 @@ BEGIN
                 END IF;
                 -- Compute what the new actual path would be
                 _actual_path := _parent_actual_path || _label::ltree;
-        ELSE
-            -- Root level priority (nlevel = 1)
-            _actual_path := NEW.path;
-        END IF;
-    END IF;
-    -- Detect if this is a move (actual path changed on existing priority)
-    -- Use computed actual path instead of NEW.global_path (which is NULL)
-    _is_move := (_priority_exists
-        AND _actual_path IS NOT NULL
-        AND _old_actual_path IS DISTINCT FROM _actual_path);
-    IF _is_move THEN
-        -- This is a move operation
-        -- Block moving root priorities
-        IF NEW.root THEN
-            RAISE EXCEPTION 'Cannot move root priority'
-                USING HINT = 'Root priorities define access boundaries and cannot be moved';
+            ELSE
+                -- Root level priority (nlevel = 1)
+                _actual_path := NEW.path;
             END IF;
-            -- Get user's personal root path (actual path)
-            SELECT
-                p.path INTO _user_personal_root_path
-            FROM
-                priority_user pu
-                JOIN priority p ON pu.priority_id = p.id
-            WHERE
-                pu.user_id = COALESCE(auth.uid (), NEW.user_id)
-                AND pu.personal = TRUE
-                AND pu.archived_at IS NULL
-            LIMIT 1;
-            -- Determine if old and new locations are under personal root using global_path
-            _old_is_personal := (_user_personal_root_path @> _old_actual_path);
-            -- Determine if new location is under personal root using computed actual path
-            -- (actual path was already computed before move detection)
-            _new_is_personal := (_user_personal_root_path @> _actual_path);
+        END IF;
+        -- Detect if this is a move (actual path changed on existing priority)
+        -- Use computed actual path instead of NEW.global_path (which is NULL)
+        _is_move := (_priority_exists
+            AND _actual_path IS NOT NULL
+            AND _old_actual_path IS DISTINCT FROM _actual_path);
+        IF _is_move THEN
+            -- This is a move operation
+            -- Block moving root priorities
+            IF NEW.root THEN
+                RAISE EXCEPTION 'Cannot move root priority'
+                    USING HINT = 'Root priorities define access boundaries and cannot be moved';
+                END IF;
+                -- Get user's personal root path (actual path)
+                SELECT
+                    p.path INTO _user_personal_root_path
+                FROM
+                    priority_user pu
+                    JOIN priority p ON pu.priority_id = p.id
+                WHERE
+                    pu.user_id = COALESCE(auth.uid (), NEW.user_id)
+                    AND pu.personal = TRUE
+                    AND pu.archived_at IS NULL
+                LIMIT 1;
+                -- Determine if old and new locations are under personal root using global_path
+                _old_is_personal := (_user_personal_root_path @> _old_actual_path);
+                -- Determine if new location is under personal root using computed actual path
+                -- (actual path was already computed before move detection)
+                _new_is_personal := (_user_personal_root_path @> _actual_path);
                 -- Prevent circular reference
                 IF _actual_path <@ _old_actual_path OR _actual_path = _old_actual_path THEN
                     RAISE EXCEPTION 'Cannot move priority to be a descendant of itself'
@@ -346,8 +293,150 @@ BEGIN
 END;
 $function$;
 
-CREATE TRIGGER upsert_user_priority
-    INSTEAD OF INSERT OR UPDATE ON user_priority
-    FOR EACH ROW
-    EXECUTE FUNCTION handle_user_priority_upsert ();
+CREATE OR REPLACE FUNCTION public.update_activity_tags (p_activity_id uuid, p_actor_id uuid, p_client_id integer, p_tag_updates jsonb, p_occurrence text DEFAULT NULL::text)
+    RETURNS void
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    AS $function$
+DECLARE
+    tag_record record;
+    tag_id_int integer;
+    is_adding boolean;
+    current_tag_type tag_type;
+BEGIN
+    -- Validate that activity_id is provided
+    IF p_activity_id IS NULL THEN
+        RAISE EXCEPTION 'p_activity_id must be provided';
+    END IF;
+    -- Iterate through the tag updates JSON object
+    FOR tag_record IN
+    SELECT
+        key,
+        value
+    FROM
+        jsonb_each(p_tag_updates)
+        LOOP
+            -- Convert key to integer and value to boolean
+            tag_id_int := tag_record.key::integer;
+            is_adding := tag_record.value::boolean;
+            -- Get tag type using the get_tag_type function
+            current_tag_type := get_tag_type (tag_id_int);
+            -- Prevent insertion of computed tags (tag_id 1-99)
+            -- Computed tags should only exist as calculated values
+            IF current_tag_type = 'compute' THEN
+                RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - these tags are calculated from activity state', tag_id_int;
+            END IF;
+            -- For count tags, enforce that users can only modify their own tags
+            -- p_actor_id should match the authenticated user's contact_id
+            -- Note: RLS policies already enforce this, but we validate explicitly for clarity
+            IF current_tag_type = 'count' THEN
+                -- Validate p_actor_id matches current user's contact_id
+                IF p_actor_id != user_contact_id () THEN
+                    RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', tag_id_int;
+                END IF;
+            END IF;
+            IF is_adding THEN
+                -- RSVP tags (Attend/Skip/Undecided) are mutually exclusive
+                -- If adding an RSVP tag, remove the other two for this actor
+                IF is_rsvp_tag (tag_id_int) THEN
+                    UPDATE
+                        activity_tag
+                    SET
+                        archived_at = now(),
+                        updated_by = p_client_id
+                    WHERE
+                        activity_id = p_activity_id
+                        AND actor_id = p_actor_id
+                        AND (occurrence IS NOT DISTINCT FROM p_occurrence)
+                        AND tag_id IN (1019, 1020, 1021) -- All RSVP tags
+                        AND tag_id != tag_id_int -- Except the one being added
+                        AND archived_at IS NULL;
+                END IF;
+                -- Adding a tag - use upsert to create or reactivate
+                INSERT INTO activity_tag (actor_id, activity_id, occurrence, tag_id, updated_at, archived_at, updated_by)
+                    VALUES (p_actor_id, p_activity_id, p_occurrence, tag_id_int, now(), NULL, p_client_id)
+                ON CONFLICT (actor_id, activity_id, occurrence, tag_id)
+                    DO UPDATE SET
+                        archived_at = NULL,
+                        updated_at = now(),
+                        updated_by = p_client_id;
+                -- Ensure priority_contact exists if actor is a contact
+                -- This allows contacts to be visible via RLS when tagged on activities
+                IF EXISTS (
+                    SELECT
+                        1
+                    FROM
+                        contact
+                    WHERE
+                        id = p_actor_id) THEN
+                INSERT INTO priority_contact (priority_id, contact_id)
+                SELECT
+                    a.priority_id,
+                    p_actor_id
+                FROM
+                    activity a
+                WHERE
+                    a.id = p_activity_id
+                ON CONFLICT (priority_id,
+                    contact_id)
+                    DO NOTHING;
+            END IF;
+        ELSE
+            -- Removing a tag - use update to soft delete existing records
+            IF current_tag_type = 'toggle' THEN
+                -- For toggle tags, remove all users' tags
+                UPDATE
+                    activity_tag
+                SET
+                    archived_at = now(),
+                    updated_by = p_client_id
+                WHERE
+                    activity_id = p_activity_id
+                    AND tag_id = tag_id_int
+                    AND (occurrence IS NOT DISTINCT FROM p_occurrence)
+                    AND archived_at IS NULL;
+            ELSE
+                -- For count/compute tags, only remove current actor's tag
+                UPDATE
+                    activity_tag
+                SET
+                    archived_at = now(),
+                    updated_by = p_client_id
+                WHERE
+                    activity_id = p_activity_id
+                    AND tag_id = tag_id_int
+                    AND actor_id = p_actor_id
+                    AND (occurrence IS NOT DISTINCT FROM p_occurrence)
+                    AND archived_at IS NULL;
+            END IF;
+        END IF;
+END LOOP;
+END;
+$function$;
 
+ALTER VIEW "public"."user_note" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_note_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_twist" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_update" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_note_create" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_create" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_note_update" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_expanded" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_settings_inherited" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_twist_activity_tag_change" SET ( security_invoker = TRUE);
+ALTER VIEW public.priority_member SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority_actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child_twist" SET ( security_invoker = TRUE);
