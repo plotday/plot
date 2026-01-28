@@ -233,7 +233,11 @@ class _HeaderState extends State<Header> {
             ),
           ...widget.commands.asMap().entries.map((entry) {
             final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
-            return Button.icon(entry.value, key: key);
+            return Button.icon(
+              entry.value,
+              key: key,
+              selected: entry.value.on == true,
+            );
           }),
           // Left sidebar toggle for left position
           if (position == HeaderPosition.left)

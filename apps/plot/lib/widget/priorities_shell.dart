@@ -23,7 +23,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Subscribe to route changes to rebuild bottom nav when navigating to/from NewActivityPage
-    _observer = RouterScope.of(context).firstObserverOfType<AutoRouteObserver>();
+    _observer = RouterScope.of(
+      context,
+    ).firstObserverOfType<AutoRouteObserver>();
     _observer?.subscribe(this, context.router.current);
   }
 
@@ -89,7 +91,8 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                             // Extract priorityId from the current route path
                             // Path format is "/:priorityId" or "/:priorityId/..."
                             final pathSegments = currentPath.split('/');
-                            if (pathSegments.length > 1 && pathSegments[1].isNotEmpty) {
+                            if (pathSegments.length > 1 &&
+                                pathSegments[1].isNotEmpty) {
                               final priorityIdString = pathSegments[1];
                               context.router.navigate(
                                 PriorityRoute(
@@ -114,7 +117,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                 // Going to Priorities tab - pop first then switch tabs
                                 context.router.back();
                                 // Wait a frame for the pop to complete before switching tabs
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
                                   tabsRouter.setActiveIndex(index);
                                 });
                               }
@@ -144,7 +149,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                             ),
                           ),
                           FBottomNavigationBarItem(
-                            icon: Icon(PlotIcon.add),
+                            icon: Icon(PlotIcon.addNote),
                             label: Builder(
                               builder: (context) => DefaultTextStyle(
                                 style: context.theme.typography.base,

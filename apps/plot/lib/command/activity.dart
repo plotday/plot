@@ -93,7 +93,7 @@ class NewActivity extends Command {
         title: "New Activity",
         eventObject: EventObject.activity,
         eventAction: EventAction.opened,
-        icon: PlotIcon.add,
+        icon: PlotIcon.addNote,
         shortcut: SingleActivator(LogicalKeyboardKey.keyN, meta: true),
       );
 

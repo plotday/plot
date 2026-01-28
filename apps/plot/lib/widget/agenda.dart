@@ -408,7 +408,32 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                     );
                   }
 
-                  // Multiple elements: use 1:2:1 flex ratio
+                  // Multiple elements: use adaptive flex ratio based on header type
+                  // Date headers (1:4:1) - prioritize showing full date
+                  // "Now" headers (2:2:2) - more space overall while keeping "Now" centered
+                  // Other headers (1:2:1) - balanced layout
+                  final int leftFlex;
+                  final int centerFlex;
+                  final int rightFlex;
+
+                  if (widget.date != null) {
+                    // Date headers: give more space to center to prevent date truncation
+                    leftFlex = 1;
+                    centerFlex = 4;
+                    rightFlex = 1;
+                  } else if (widget.now) {
+                    // "Now" headers: increase all sections equally to show more priority path
+                    // while keeping "Now" centered (requires equal left/right flex)
+                    leftFlex = 2;
+                    centerFlex = 2;
+                    rightFlex = 2;
+                  } else {
+                    // Default: balanced layout
+                    leftFlex = 1;
+                    centerFlex = 2;
+                    rightFlex = 1;
+                  }
+
                   return Stack(
                     alignment: Alignment.center,
                     children: [
@@ -434,9 +459,9 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // LEFT: Priority label (1 flex unit)
+                          // LEFT: Priority label
                           Flexible(
-                            flex: 1,
+                            flex: leftFlex,
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: hasLeft
@@ -462,9 +487,9 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                   : SizedBox(height: textHeight),
                             ),
                           ),
-                          // CENTER: Date/time (2 flex units for true centering)
+                          // CENTER: Date/time
                           Expanded(
-                            flex: 2,
+                            flex: centerFlex,
                             child: Center(
                               child: hasCenter
                                   ? Container(
@@ -495,9 +520,9 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                   : SizedBox(height: textHeight),
                             ),
                           ),
-                          // RIGHT: Duration (1 flex unit)
+                          // RIGHT: Duration
                           Flexible(
-                            flex: 1,
+                            flex: rightFlex,
                             child: Align(
                               alignment: Alignment.centerRight,
                               child: hasRight
