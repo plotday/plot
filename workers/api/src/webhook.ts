@@ -6,6 +6,11 @@ import { verifyPubSubToken } from "./utils/pubsub";
 import { createLogger } from "./utils/logger";
 import { extractRequestContext } from "./utils/log-context";
 import { webhookRateLimiter } from "./middleware/rate-limit";
+import {
+  isCallbackError,
+  getCallbackErrorType,
+  type CallbackErrorType,
+} from "./errors";
 
 const webhook = new Hono<{ Bindings: Bindings }>();
 
@@ -300,28 +305,41 @@ webhook.all(Network.PATH, async (c) => {
       return new Response("OK", { status: 200 });
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (isCallbackError(error)) {
+      const statusMap: Record<CallbackErrorType, number> = {
+        INVALID_TOKEN_FORMAT: 400,
+        INVALID_TOKEN: 400,
+        NOT_FOUND: 404,
+        EXPIRED: 410,
+        UNINITIALIZED: 500,
+      };
 
-    // Map error types to appropriate HTTP status codes
-    if (
-      errorMessage.includes("Invalid callback token format") ||
-      errorMessage.includes("Invalid callback token")
-    ) {
-      logger.warn("Invalid webhook token", { error: errorMessage });
-      return new Response("Bad request (invalid token)", { status: 400 });
+      // Extract error type (handles DO serialization)
+      const errorType = getCallbackErrorType(error as Error);
+      if (!errorType) {
+        // Shouldn't happen, but fallback to 500
+        logger.error("CallbackError missing type", error as Error);
+        return new Response("Internal server error", { status: 500 });
+      }
+
+      const status = statusMap[errorType];
+
+      // Log only for actual errors, not expected conditions
+      if (errorType !== "NOT_FOUND" && errorType !== "EXPIRED") {
+        logger.warn("Callback error", {
+          errorType,
+          errorName: (error as Error).name,
+          message: (error as Error).message,
+          ...(error as any).context,
+        });
+      }
+
+      // Return a clean message without the "CallbackError: " prefix
+      const message = (error as Error).message.replace(/^CallbackError: /, "");
+      return new Response(message, { status });
     }
 
-    if (errorMessage.includes("Callback not found")) {
-      logger.warn("Callback not found");
-      return new Response("Not found", { status: 404 });
-    }
-
-    if (errorMessage.includes("Callback has expired")) {
-      logger.warn("Callback expired");
-      return new Response("Callback has expired", { status: 410 });
-    }
-
-    // All other errors are actual server errors
+    // All other errors are server errors
     logger.error("Error processing callback", error as Error);
     return new Response("Internal server error", { status: 500 });
   }

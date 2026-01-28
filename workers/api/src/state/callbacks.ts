@@ -4,6 +4,7 @@ import superjson from "superjson";
 import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 
 import { type Bindings } from "../env";
+import { CallbackError } from "../errors";
 import { twistFactory } from "../twist";
 import { handleTwistOperation } from "../twist/error-handling";
 import { validateSerializable } from "../twist/tools/validation";
@@ -206,18 +207,26 @@ export class CallbacksState extends DurableObject<Bindings> {
     return `${doId}:${token}`;
   }
 
-  async callCallback(token: string, ...args: any[]): Promise<any> {
+  async callCallback(
+    token: string,
+    ...args: any[]
+  ): Promise<any | { __error: true; type: string; context?: any }> {
     const logger = createLogger({
       durable_object: "CallbacksState",
       operation: "callCallback",
     });
 
     if (!token) {
-      throw new Error("Invalid callback token");
+      throw new CallbackError("INVALID_TOKEN", {
+        operation: "callCallback",
+      });
     }
     [, token] = token.split(":");
     if (!token) {
-      throw new Error("Invalid callback token");
+      throw new CallbackError("INVALID_TOKEN", {
+        operation: "callCallback",
+        reason: "Missing colon separator",
+      });
     }
     const result = this.sql
       .exec(
@@ -230,8 +239,15 @@ export class CallbacksState extends DurableObject<Bindings> {
       )
       .next();
     if (result.done) {
-      logger.warn("Callback not found for token", { token });
-      throw new Error("Callback not found");
+      // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
+      return {
+        __error: true,
+        type: "NOT_FOUND",
+        context: {
+          operation: "callCallback",
+          token: token.substring(0, 8) + "...",
+        },
+      };
     }
     const rawCallback = result.value as any;
     const callback: CallbackData = {
@@ -253,7 +269,15 @@ export class CallbacksState extends DurableObject<Bindings> {
     // Check if callback has expired
     if (callback.expires && callback.expires < new Date()) {
       this.delete(token);
-      throw new Error("Callback has expired");
+      // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
+      return {
+        __error: true,
+        type: "EXPIRED",
+        context: {
+          operation: "callCallback",
+          token: token.substring(0, 8) + "...",
+        },
+      };
     }
 
     const { path } = callback;
@@ -261,7 +285,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const priorityTwist = safeQuery(
       await this.supabase
         .from("priority_twist")
-        .select("priority_id, twist_id")
+        .select("priority_id, twist_id, archived_at")
         .eq("id", callback.priorityTwistId)
         .maybeSingle(),
       {
@@ -272,14 +296,35 @@ export class CallbacksState extends DurableObject<Bindings> {
       }
     );
 
-    // If priority_twist was deleted, clean up callback and return
+    // If priority_twist was deleted, clean up callback and return error object
     if (!priorityTwist) {
-      logger.warn("Priority twist not found for callback, deleting callback", {
-        priorityTwistId: callback.priorityTwistId,
-        token,
-      });
       this.delete(token);
-      return;
+      // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
+      return {
+        __error: true,
+        type: "NOT_FOUND",
+        context: {
+          operation: "callCallback",
+          priorityTwistId: callback.priorityTwistId,
+          reason: "Priority twist deleted",
+        },
+      };
+    }
+
+    // If priority_twist is archived, clean up callback and return error object
+    // This is expected behavior when a twist is uninstalled
+    if (priorityTwist.archived_at) {
+      this.delete(token);
+      // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
+      return {
+        __error: true,
+        type: "NOT_FOUND",
+        context: {
+          operation: "callCallback",
+          priorityTwistId: callback.priorityTwistId,
+          reason: "Priority twist archived",
+        },
+      };
     }
 
     // Fetch twist metadata including environment
@@ -391,6 +436,34 @@ export class CallbacksState extends DurableObject<Bindings> {
     );
   }
 
+  /**
+   * Upgrade all callbacks for a priority_twist to a new version.
+   * This is called during twist deployment to ensure webhooks execute with the new version.
+   */
+  upgradeCallbacks(priorityTwistId: string, newVersion: string): void {
+    const logger = createLogger({
+      durable_object: "CallbacksState",
+      operation: "upgradeCallbacks",
+      priority_twist_id: priorityTwistId,
+    });
+
+    // Update version for all callbacks belonging to this priority_twist
+    const result = this.sql.exec(
+      "UPDATE callbacks SET version = ? WHERE priority_twist_id = ?",
+      newVersion,
+      priorityTwistId
+    );
+
+    // Get the number of updated rows
+    const updatedCount = result.rowsWritten || 0;
+
+    logger.info("Upgraded callbacks to new version", {
+      priority_twist_id: priorityTwistId,
+      new_version: newVersion,
+      updated_count: updatedCount,
+    });
+  }
+
   private updateAlarm(): void {
     // Find the next callback that needs to be executed
     const alarmResult = this.sql
@@ -479,20 +552,39 @@ export class CallbacksState extends DurableObject<Bindings> {
     ...args: any[]
   ): Promise<any> {
     if (!token || token.trim() === "") {
-      throw new Error("Missing callback token");
+      throw new CallbackError("INVALID_TOKEN", {
+        operation: "CallCallback",
+      });
     }
 
     const [id] = token.split(":");
 
     // Validate DO ID format before attempting to create stub
     if (!isValidDoId(id)) {
-      throw new Error("Invalid callback token format");
+      throw new CallbackError("INVALID_TOKEN_FORMAT", {
+        operation: "CallCallback",
+        token: token.substring(0, 8) + "...",
+      });
     }
 
     const callbacksId = callbacks.idFromString(id);
     const callbacksStub = callbacks.get(callbacksId);
+
     // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
     // Note: We don't dispose here as the caller (queue/logs.ts) will handle disposal
-    return await callbacksStub.callCallback(token, ...args);
+    const result = await callbacksStub.callCallback(token, ...args);
+
+    // Check if the result is an error object (returned instead of thrown to prevent "Uncaught" logs)
+    if (
+      result &&
+      typeof result === "object" &&
+      "__error" in result &&
+      result.__error === true
+    ) {
+      // Convert error object back to CallbackError and throw
+      throw new CallbackError(result.type as any, result.context);
+    }
+
+    return result;
   }
 }

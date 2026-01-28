@@ -222,6 +222,7 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
             content: `Contact sync has been started for your ${provider} contacts.`,
           },
         ],
+        preview: `Contact sync has been started for your ${provider} contacts.`,
         start: new Date(),
         end: null,
       });

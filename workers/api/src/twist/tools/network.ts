@@ -6,6 +6,7 @@ import { type Network as INetwork } from "@plotday/twister/tools/network";
 import type { Store as IStore } from "@plotday/twister/tools/store";
 
 import { type TwistEnvironment, type Bindings } from "../../env";
+import { CallbackError } from "../../errors";
 import { CallbacksState } from "../../state/callbacks";
 import { createLogger } from "../../utils/logger";
 import {
@@ -448,7 +449,9 @@ export class Network extends Tool implements INetwork {
       !this.baseUrl ||
       !this.path
     ) {
-      throw new Error("Webhook functionality not initialized");
+      throw new CallbackError("UNINITIALIZED", {
+        operation: "createWebhook",
+      });
     }
 
     // Create callback token from the provided function
@@ -510,7 +513,9 @@ export class Network extends Tool implements INetwork {
 
   async deleteWebhook(url: string): Promise<void> {
     if (!this.callbacks) {
-      throw new Error("Webhook functionality not initialized");
+      throw new CallbackError("UNINITIALIZED", {
+        operation: "deleteWebhook",
+      });
     }
 
     // Handle Slack webhooks (format: slack://{teamId}:{callbackToken})

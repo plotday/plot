@@ -90,6 +90,7 @@ To get started:
             content: log.message,
           },
         ],
+        preview: log.message,
         start: log.timestamp,
         parent: { id: parentId },
       }));

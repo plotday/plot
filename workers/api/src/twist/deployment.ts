@@ -283,6 +283,30 @@ export async function deployTwist({
           });
         }
       });
+
+      // Upgrade all callbacks for each priority_twist to use the new version
+      logger.info("Upgrading callbacks for active priority twists");
+      const callbackUpgradeResults = await Promise.allSettled(
+        priorityTwists.map(async (pa) => {
+          // Get the callbacks Durable Object for this priority_twist
+          const callbacksId = env.CALLBACKS.idFromName(pa.id);
+          const callbacksStub = env.CALLBACKS.get(callbacksId);
+          return callbacksStub.upgradeCallbacks(pa.id, version);
+        })
+      );
+
+      // Log any callback upgrade failures
+      callbackUpgradeResults.forEach((result, index) => {
+        if (result.status === "rejected") {
+          logger.error(
+            "Failed to upgrade callbacks for priority_twist",
+            result.reason as Error,
+            {
+              priority_twist_id: priorityTwists[index].id,
+            }
+          );
+        }
+      });
     }
   } catch (upgradeError) {
     // Log upgrade errors but continue with deployment
@@ -301,7 +325,8 @@ export async function deployTwist({
     if (!adminFetchError && twistAdmin?.auto_approve) {
       logger.info("Auto-approving twist to public environment");
 
-      const { error: upsertPublicError } = await supabase.from("twist").upsert(
+      // Get or create the public twist - need to fetch ID for callback upgrade
+      const { data: publicTwist, error: upsertPublicError } = await supabase.from("twist").upsert(
         {
           twist_admin_id: twistAdminId,
           environment: "public",
@@ -313,13 +338,56 @@ export async function deployTwist({
         {
           onConflict: "twist_admin_id,environment",
         }
-      );
+      ).select().single();
 
-      if (upsertPublicError) {
+      if (upsertPublicError || !publicTwist) {
         logger.error("Error auto-deploying to public", upsertPublicError as Error);
       } else {
         logger.info("Successfully auto-deployed twist to public environment");
         autoApproved = true;
+
+        // Upgrade callbacks for PUBLIC priority_twists too
+        // This ensures webhooks execute with the new twist version
+        try {
+          const { data: publicPriorityTwists, error: publicFetchError } = await supabase
+            .from("priority_twist")
+            .select("id, priority_id, twist_id")
+            .eq("twist_id", publicTwist.id)
+            .is("archived_at", null);
+
+          if (publicFetchError) {
+            logger.error("Error fetching public priority twists for upgrade", publicFetchError as Error);
+          } else if (publicPriorityTwists && publicPriorityTwists.length > 0) {
+            logger.info("Upgrading callbacks for public priority twists", {
+              count: publicPriorityTwists.length,
+            });
+
+            // Upgrade callbacks for public installations
+            const publicCallbackUpgradeResults = await Promise.allSettled(
+              publicPriorityTwists.map(async (pa) => {
+                const callbacksId = env.CALLBACKS.idFromName(pa.id);
+                const callbacksStub = env.CALLBACKS.get(callbacksId);
+                return callbacksStub.upgradeCallbacks(pa.id, version);
+              })
+            );
+
+            // Log any failures
+            publicCallbackUpgradeResults.forEach((result, index) => {
+              if (result.status === "rejected") {
+                logger.error(
+                  "Failed to upgrade callbacks for public priority_twist",
+                  result.reason as Error,
+                  {
+                    priority_twist_id: publicPriorityTwists[index].id,
+                  }
+                );
+              }
+            });
+          }
+        } catch (publicUpgradeError) {
+          // Log error but continue with deployment
+          logger.error("Error during public callback upgrade (continuing with deployment)", publicUpgradeError as Error);
+        }
       }
     }
   }

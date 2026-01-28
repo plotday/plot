@@ -684,10 +684,20 @@ export async function prepareActivityForDb(
     activity.recurrenceRule
   );
 
-  // Generate preview from first note with content
+  // Generate preview from explicit preview field or fall back to notes
   let previewText: string | null = null;
-  if ("notes" in activity && activity.notes && activity.notes.length > 0) {
-    // Find first note with content
+
+  // Prefer explicit preview field
+  if ("preview" in activity && activity.preview !== undefined) {
+    if (activity.preview === null) {
+      // Explicitly set to null - no preview
+      previewText = null;
+    } else {
+      // Explicit preview provided - use it
+      previewText = createPreviewFromMarkdown(activity.preview);
+    }
+  } else if ("notes" in activity && activity.notes && activity.notes.length > 0) {
+    // Legacy fallback: generate from first note with content
     const firstNoteWithContent = activity.notes.find((note) => note.content);
     if (firstNoteWithContent && firstNoteWithContent.content) {
       // Convert note to markdown first if needed
@@ -782,7 +792,8 @@ export async function prepareActivityForDb(
       upsertFields.title =
         activity.title && activity.title.trim() !== "" ? activity.title : null;
     }
-    if (previewText !== null) {
+    // Include preview in update if explicitly provided (even if null, to clear it)
+    if ("preview" in activity && activity.preview !== undefined) {
       upsertFields.preview = previewText;
     }
     if (activity.type !== undefined) {

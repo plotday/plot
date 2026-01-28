@@ -55,6 +55,10 @@ class PlotTwist extends Twist<PlotTwist> {
           content: `The goal is to keep everything related to your priorities in one place, so you can focus on taking the next action to move things forward. As you use Plot, you'll build a rich history of progress and context that helps you stay aligned with your goals.`,
         },
       ],
+      preview: `Plot is a workspace for making progress on what matters most to you. **Priorities**, **Activities**, and **Notes** are the core building blocks of Plot:\n\n
+- **Priorities**: These are the roles, goals, and projects in your life; they are the areas you direct you focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.
+- **Activities**: This is what you do to make progress in your priorities. They include what has happened and what's coming next, all laid out on a timeline. More about the types of activities below.
+- **Notes**: All activities can have notes, which include private notes, shared messages, and updates from connected apps. Notes give you context on progress for that activity.`,
       priority: onboardingPriority,
       type: ActivityType.Note,
     });
@@ -76,6 +80,8 @@ class PlotTwist extends Twist<PlotTwist> {
             "**Best practice:** Organize from broad to specific. Example: Work > Marketing Campaign > Content Strategy, or Personal > Home Renovation > Kitchen Planning. Start with top-level contexts (Work, Personal, Family) then add specific projects within each. This allows you to zoom in for focus, and zoom out to make sure you're not missing anything.",
         },
       ],
+      preview:
+        "Priorities are contexts for focus and often correspond to roles (like VP Marketing and Parent) and goals (like Launch New Product and Run a Marathon). **Nesting priorities** creates a hierarchy - for example, Work > Projects > Feature X > Planning - that lets you organize at different levels of detail.",
       priority: onboardingPriority,
       type: ActivityType.Action,
       start: new Date(),
@@ -101,6 +107,8 @@ class PlotTwist extends Twist<PlotTwist> {
           ],
         },
       ],
+      preview:
+        "**Twists** are ways to bring your work from other apps into Plot, automate workflows, and organize your activities. For example, sync your Google Calendar to see events in Plot, or automatically create tasks from emails. Use the **Twists** button to explore available twists and add them to this priority or any of your other priorities.",
       priority: onboardingPriority,
       type: ActivityType.Action,
       start: new Date(),
@@ -115,6 +123,8 @@ class PlotTwist extends Twist<PlotTwist> {
             "When you're done with the onboarding activities and no longer need this Getting Started priority, you can **archive it**. Archived priorities and their activities are always available in Plot - they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
         },
       ],
+      preview:
+        "When you're done with the onboarding activities and no longer need this Getting Started priority, you can **archive it**. Archived priorities and their activities are always available in Plot - they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
       priority: onboardingPriority,
       type: ActivityType.Action,
       start: new Date(),
