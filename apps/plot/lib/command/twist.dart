@@ -36,9 +36,46 @@ class ManageTwists extends ShowCommands {
     });
     final editCommands = await Future.wait(editCommandsFutures);
 
+    // Sort active twists by name, then priority path, then environment
+    editCommands.sort((a, b) {
+      // Primary: alphabetical by name (case-insensitive)
+      final nameComparison = a.priorityTwist.name.toLowerCase().compareTo(
+        b.priorityTwist.name.toLowerCase(),
+      );
+      if (nameComparison != 0) return nameComparison;
+
+      // Secondary: priority path (case-insensitive)
+      final aPath = a.priority?.root == true
+          ? ''
+          : (a.priority?.ancestorsLabel() ?? a.priority?.title ?? '');
+      final bPath = b.priority?.root == true
+          ? ''
+          : (b.priority?.ancestorsLabel() ?? b.priority?.title ?? '');
+      final pathComparison = aPath.toLowerCase().compareTo(bPath.toLowerCase());
+      if (pathComparison != 0) return pathComparison;
+
+      // Tertiary: environment (public, review, private, personal)
+      return _compareEnvironment(
+        a.priorityTwist.twistEnvironment,
+        b.priorityTwist.twistEnvironment,
+      );
+    });
+
     final addCommands = allTwists
         .map((twist) => ShowTwistInfo(twist, defaultPriority: priority))
         .toList();
+
+    // Sort available twists by name, then environment
+    addCommands.sort((a, b) {
+      // Primary: alphabetical by name (case-insensitive)
+      final nameComparison = a.twist.name.toLowerCase().compareTo(
+        b.twist.name.toLowerCase(),
+      );
+      if (nameComparison != 0) return nameComparison;
+
+      // Secondary: environment (public, review, private, personal)
+      return _compareEnvironment(a.twist.environment, b.twist.environment);
+    });
 
     return Commands(
       groups: [
@@ -50,13 +87,28 @@ class ManageTwists extends ShowCommands {
       ],
     );
   }
+
+  /// Compare environments in order: public, review, private, personal
+  static int _compareEnvironment(String a, String b) {
+    const envOrder = ['public', 'review', 'private', 'personal'];
+    final aIndex = envOrder.indexOf(a);
+    final bIndex = envOrder.indexOf(b);
+
+    // If an environment is not in the list, put it at the end
+    final aVal = aIndex == -1 ? envOrder.length : aIndex;
+    final bVal = bIndex == -1 ? envOrder.length : bIndex;
+
+    return aVal.compareTo(bVal);
+  }
 }
 
 class EditTwistCommand extends ShowForm {
   EditTwistCommand(this.priorityTwist, {this.priority})
     : super(
         title: priorityTwist.name,
-        subtitle: priority?.ancestorsLabel() ?? priority?.title,
+        subtitle: priority?.root == true
+            ? null
+            : (priority?.ancestorsLabel() ?? priority?.title),
         icon: PlotIcon.settings,
         form: (context) => _buildForm(context, priorityTwist, priority),
       );
