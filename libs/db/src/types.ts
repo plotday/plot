@@ -3018,6 +3018,7 @@ export type Database = {
           key: string | null
           order: number | null
           path: unknown
+          personal: boolean | null
           pomodoro: number | null
           root: boolean | null
           title: string | null
@@ -3341,6 +3342,7 @@ export type Database = {
       }
       is_finite: { Args: { test: unknown }; Returns: boolean }
       is_lower: { Args: { "": string }; Returns: boolean }
+      is_rsvp_tag: { Args: { tag_id: number }; Returns: boolean }
       move_priority: {
         Args: { p_new_parent_path: unknown; p_priority_id: string }
         Returns: undefined

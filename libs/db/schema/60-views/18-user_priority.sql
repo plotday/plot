@@ -14,6 +14,7 @@ SELECT
     p.updated_by,
     pu.personal = TRUE
     AND p.id = root.id AS root,
+    user_root.path @> p.path AS personal,
     COALESCE(settings.title, p.title) AS title,
     CASE
     -- Priority has explicit inherited settings
