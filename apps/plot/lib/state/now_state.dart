@@ -57,21 +57,40 @@ final class NowLoaded extends NowState {
 
   List<Activity> get previous {
     final events = _day.scheduled;
-    int first = 0;
-    int last = events.length;
+    int last = -1;
+    int first = -1;
+
+    // Iterate backwards to find the most recent group of previous events
     for (int i = events.length - 1; i >= 0; i--) {
       if (events[i].at?.start?.isBefore(now) == true) {
-        final currentStart = events[i].at?.start;
-        final firstStart = events[first].at?.start;
-        if (currentStart != null &&
-            firstStart != null &&
-            !currentStart.isAtSameMomentAs(firstStart)) {
+        if (last == -1) {
+          // Found the most recent previous event
+          last = i + 1;
           first = i;
+        } else {
+          // Check if this event is at the same moment
+          final currentStart = events[i].at?.start;
+          final lastStart = events[last - 1].at?.start;
+          if (currentStart != null &&
+              lastStart != null &&
+              currentStart.isAtSameMomentAs(lastStart)) {
+            // Part of the same group
+            first = i;
+          } else {
+            // Different moment, stop
+            break;
+          }
         }
       } else {
-        last = i;
-        break;
+        // Not a previous event, stop if we've found any
+        if (last != -1) {
+          break;
+        }
       }
+    }
+
+    if (last == -1) {
+      return [];
     }
     return events.sublist(first, last);
   }
