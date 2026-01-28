@@ -26,7 +26,9 @@ abstract class PriorityCommand extends Command {
   }) : super(
          title: priority?.title ?? 'None',
          subtitle: ancestry
-             ? (priority?.ancestorsLabel() ?? priority?.title)
+             ? (priority?.root == true
+                   ? null
+                   : (priority?.ancestorsLabel() ?? priority?.title))
              : null,
        );
 
@@ -333,17 +335,18 @@ class EditPriorityCommand extends ShowForm {
                         search: search,
                       );
                       // Filter out the priority itself, its descendants, and the @plot priority
-                      return priorities
-                          .where(
-                            (p) =>
-                                p.id != priority.id &&
-                                !priority.path.isParent(p.path) &&
-                                p.key != '@plot',
-                          )
-                          .toList();
+                      return priorities.where((p) {
+                        if (p.id == priority.id) return false;
+                        if (priority.path.isParent(p.path)) return false;
+                        if (p.key == '@plot') return false;
+                        // If editing personal priority, only show personal parents
+                        if (priority.personal && !p.personal) return false;
+
+                        return true;
+                      }).toList();
                     },
                     titleBuilder: (p) => p.title,
-                    subtitleBuilder: (p) => p.ancestorsLabel() ?? p.title,
+                    subtitleBuilder: (p) => p.root ? null : p.ancestorsLabel(),
                   ),
                   FormSelect<ThemeColor?>(
                     key: 'color',
