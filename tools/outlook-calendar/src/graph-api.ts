@@ -599,8 +599,15 @@ export async function syncOutlookCalendar(
     const params: string[] = [];
 
     // Add time filter if specified
-    if (state.min) {
+    if (state.min && state.max) {
+      // Both min and max - use combined filter
+      params.push(`$filter=start/dateTime ge '${state.min.toISOString()}' and start/dateTime lt '${state.max.toISOString()}'`);
+    } else if (state.min) {
+      // Only min
       params.push(`$filter=start/dateTime ge '${state.min.toISOString()}'`);
+    } else if (state.max) {
+      // Only max
+      params.push(`$filter=start/dateTime lt '${state.max.toISOString()}'`);
     }
 
     const queryString = params.length > 0 ? `?${params.join("&")}` : "";

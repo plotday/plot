@@ -69,6 +69,7 @@ export type SyncState = {
   state?: string;
   more?: boolean;
   min?: Date;
+  max?: Date;
   sequence?: number;
 };
 
@@ -358,14 +359,12 @@ export function transformGoogleEvent(
   const isCancelled = event.status === "cancelled";
 
   const activity: NewActivity = {
+    source: `google-calendar:${event.id}`,
     type: isCancelled ? ActivityType.Note : (isAllDay ? ActivityType.Note : ActivityType.Event),
-    title: isCancelled
-      ? `Cancelled: ${event.summary || "Event"}`
-      : event.summary || "",
+    title: event.summary || "",
     start: isCancelled ? null : start,
     end: isCancelled ? null : end,
     meta: {
-      source: `google-calendar:${event.id}`,
       id: event.id,
       calendarId: calendarId,
       htmlLink: event.htmlLink || null,
@@ -377,9 +376,7 @@ export function transformGoogleEvent(
       originalEnd: isCancelled
         ? (end instanceof Date ? end.toISOString() : end)
         : null,
-      description: isCancelled
-        ? `This event was cancelled.\n\n${event.description || ""}`
-        : event.description || null,
+      description: event.description || null,
     },
   };
 
@@ -436,6 +433,7 @@ export async function syncGoogleCalendar(
     params.syncToken = state.state;
   } else {
     params.timeMin = state.min?.toISOString();
+    params.timeMax = state.max?.toISOString();
   }
 
   // Filter out undefined/null values to prevent "undefined" in query string
@@ -461,6 +459,7 @@ export async function syncGoogleCalendar(
     const newState = {
       calendarId,
       min: state.min,
+      max: state.max,
       sequence: (state.sequence || 1) + 1,
     };
     return syncGoogleCalendar(api, calendarId, newState);
@@ -471,6 +470,7 @@ export async function syncGoogleCalendar(
     state: data.nextPageToken || data.nextSyncToken,
     more: !!data.nextPageToken,
     min: state.min,
+    max: state.max,
     sequence: state.sequence,
   };
 

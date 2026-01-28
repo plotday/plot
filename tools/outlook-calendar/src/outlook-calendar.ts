@@ -247,7 +247,7 @@ export class OutlookCalendar
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, calendarId } = options;
+    const { authToken, calendarId, timeMin, timeMax } = options;
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
@@ -260,6 +260,34 @@ export class OutlookCalendar
 
     // Setup webhook for this calendar
     await this.setupOutlookWatch(authToken, calendarId, authToken);
+
+    // Determine sync range
+    let min: Date | undefined;
+    if (timeMin === null) {
+      // null means sync all history
+      min = undefined;
+    } else if (timeMin !== undefined) {
+      // User provided a specific minimum date
+      min = timeMin;
+    } else {
+      // Default to 2 years into the past
+      const now = new Date();
+      min = new Date(now.getFullYear() - 2, 0, 1);
+    }
+
+    // Handle timeMax (null means no limit, same as undefined)
+    let max: Date | undefined;
+    if (timeMax !== null && timeMax !== undefined) {
+      max = timeMax;
+    }
+
+    // Initialize sync state with min and max
+    await this.set(`outlook_sync_state_${calendarId}`, {
+      calendarId,
+      min,
+      max,
+      sequence: 1,
+    } as SyncState);
 
     // Start sync batch using runTask for batched processing
     const syncCallback = await this.callback(
@@ -430,8 +458,33 @@ export class OutlookCalendar
   ): Promise<void> {
     for (const outlookEvent of events) {
       try {
-        // Skip deleted events
+        // Handle deleted events
         if (outlookEvent["@removed"]) {
+          // Build source URL using event ID
+          const source = `outlook-calendar:${outlookEvent.id}`;
+
+          // Create cancellation note
+          const cancelNote: NewNote = {
+            activity: { source },
+            key: "cancellation",
+            content: "This event was cancelled.",
+            contentType: "text",
+            created: new Date(),
+          };
+
+          // Convert to Note type with blocked tag and cancellation note
+          const activity: NewActivityWithNotes = {
+            type: ActivityType.Note,
+            source,
+            tags: {
+              [Tag.Blocked]: [], // Toggle tag, empty actor array
+            },
+            notes: [cancelNote],
+            // unread is automatically set by adding a note
+          };
+
+          // Send activity update
+          await this.tools.callbacks.run(callbackToken, activity);
           continue;
         }
 

@@ -246,7 +246,7 @@ export class GoogleCalendar
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, calendarId } = options;
+    const { authToken, calendarId, timeMin, timeMax } = options;
 
     // Check if sync is already in progress for this calendar
     const syncInProgress = await this.get<boolean>(`sync_lock_${calendarId}`);
@@ -271,13 +271,30 @@ export class GoogleCalendar
     // Setup webhook for this calendar
     await this.setupCalendarWatch(authToken, calendarId, authToken);
 
-    // Start initial sync
-    const now = new Date();
-    const min = new Date(now.getFullYear() - 2, 0, 1);
+    // Determine sync range
+    let min: Date | undefined;
+    if (timeMin === null) {
+      // null means sync all history
+      min = undefined;
+    } else if (timeMin !== undefined) {
+      // User provided a specific minimum date
+      min = timeMin;
+    } else {
+      // Default to 2 years into the past
+      const now = new Date();
+      min = new Date(now.getFullYear() - 2, 0, 1);
+    }
+
+    // Handle timeMax (null means no limit, same as undefined)
+    let max: Date | undefined;
+    if (timeMax !== null && timeMax !== undefined) {
+      max = timeMax;
+    }
 
     const initialState: SyncState = {
       calendarId,
       min,
+      max,
       sequence: 1,
     };
 
@@ -608,11 +625,6 @@ export class GoogleCalendar
     // Get user email for RSVP tagging
     for (const event of events) {
       try {
-        if (event.status === "cancelled") {
-          // TODO: Handle event cancellation
-          continue;
-        }
-
         // Extract contacts from organizer and attendees
         let validAttendees: typeof event.attendees = [];
 
@@ -639,6 +651,41 @@ export class GoogleCalendar
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
+
+          // Handle cancelled events
+          if (event.status === "cancelled") {
+            // Canonical URL for this event (required for upsert)
+            const canonicalUrl =
+              event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
+
+            // Create cancellation note
+            const cancelNote: NewNote = {
+              activity: { source: canonicalUrl },
+              key: "cancellation",
+              content: "This event was cancelled.",
+              contentType: "text",
+              created: new Date(),
+            };
+
+            // Convert to Note type with blocked tag and cancellation note
+            const activity: NewActivityWithNotes = {
+              source: canonicalUrl,
+              type: ActivityType.Note,
+              title: activityData.title || "",
+              start: activityData.start || null,
+              end: activityData.end || null,
+              meta: activityData.meta ?? null,
+              tags: {
+                [Tag.Blocked]: [], // Toggle tag, empty actor array
+              },
+              notes: [cancelNote],
+              // unread is automatically set by adding a note
+            };
+
+            // Send activity - database handles upsert automatically
+            await this.tools.callbacks.run(callbackToken, activity);
+            continue;
+          }
 
           // For recurring events, DON'T add tags at series level
           // Tags (RSVPs) should be per-occurrence via the occurrences array
@@ -806,6 +853,24 @@ export class GoogleCalendar
     // Transform the instance data
     const instanceData = transformGoogleEvent(event, calendarId);
 
+    // Handle cancelled recurring instances by archiving the occurrence
+    if (event.status === "cancelled") {
+      const occurrence: Omit<NewActivityOccurrence, "activity"> = {
+        occurrence: new Date(originalStartTime),
+        start: new Date(originalStartTime),
+        archived: true,
+      };
+
+      const occurrenceUpdate = {
+        type: ActivityType.Event,
+        source: masterCanonicalUrl,
+        occurrences: [occurrence],
+      };
+
+      await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
+      return;
+    }
+
     // Determine RSVP status for attendees
     const validAttendees =
       event.attendees?.filter((att) => att.email && !att.resource) || [];
@@ -931,6 +996,13 @@ export class GoogleCalendar
     calendarId: string,
     authToken: string
   ): Promise<void> {
+    // Check if initial sync is still in progress
+    const syncInProgress = await this.get<boolean>(`sync_lock_${calendarId}`);
+    if (syncInProgress) {
+      console.log(`Sync already in progress for calendar ${calendarId}, ignoring webhook-triggered incremental sync`);
+      return;
+    }
+
     const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
     if (!watchData) {
       console.error("No calendar watch data found");

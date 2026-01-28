@@ -37,10 +37,25 @@ export type Calendar = {
  * Used to limit sync scope and optimize performance.
  */
 export type SyncOptions = {
-  /** Earliest date to sync events from (inclusive) */
-  timeMin?: Date;
-  /** Latest date to sync events to (exclusive) */
-  timeMax?: Date;
+  /**
+   * Earliest date to sync events from (inclusive).
+   * - If undefined: defaults to 2 years in the past
+   * - If null: syncs all history from the beginning of time
+   * - If Date: syncs from the specified date
+   */
+  timeMin?: Date | null;
+  /**
+   * Latest date to sync events to (exclusive).
+   * - If undefined: no limit (syncs all future events)
+   * - If null: no limit (syncs all future events)
+   * - If Date: syncs up to but not including the specified date
+   *
+   * Use cases:
+   * - Daily digest: Set to end of today
+   * - Week view: Set to end of current week
+   * - Performance: Limit initial sync range
+   */
+  timeMax?: Date | null;
 };
 
 /**
