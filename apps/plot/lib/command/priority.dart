@@ -330,12 +330,13 @@ class EditPriorityCommand extends ShowForm {
                         order: PriorityOrder.nested,
                         search: search,
                       );
-                      // Filter out the priority itself and its descendants
+                      // Filter out the priority itself, its descendants, and the @plot priority
                       return priorities
                           .where(
                             (p) =>
                                 p.id != priority.id &&
-                                !priority.path.isParent(p.path),
+                                !priority.path.isParent(p.path) &&
+                                p.key != '@plot',
                           )
                           .toList();
                     },
