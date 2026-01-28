@@ -79,7 +79,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     TArgs extends Serializable[],
     TCallback extends (auth: ProjectAuth, ...args: TArgs) => any
   >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    const linearScopes = ["read", "write"];
+    const linearScopes = ["read", "write", "admin"];
 
     // Generate opaque token for authorization
     const authToken = crypto.randomUUID();
@@ -205,8 +205,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         await this.set(`webhook_secret_${projectId}`, webhook.secret);
       }
     } catch (error) {
-      console.warn(
-        "Failed to set up Linear webhook, continuing with sync:",
+      console.error(
+        "Failed to set up Linear webhook - real-time updates will not work:",
         error
       );
     }
