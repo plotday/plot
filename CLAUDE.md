@@ -26,7 +26,7 @@ Supported platforms:
 The app is local-first, so it can function without an internet connection while syncing when one is available.
 Local storage uses the Drift package (which uses SQLite), with entities defined in "apps/plot/libs/store/".
 Data is synchronized to a remote Supabase (PostgreSQL) database for backup, multi-device sync, and collaboration.
-The Supabase database schema is defined in "libs/db/schema/".
+The Supabase database schema is defined in "libs/db/supabase/schemas/".
 
 ## Code Structure
 
@@ -507,7 +507,7 @@ export class GoogleGmail extends Tool<GoogleGmail> {
 
 ### The Correct Schema Change Workflow
 
-1. **Make schema changes in `libs/db/schema/` files ONLY**
+1. **Make schema changes in `libs/db/supabase/schemas/` files ONLY**
 
    - The schema files are the source of truth
    - Organize changes in the appropriate subdirectories (50-tables, 60-views, 70-rls, 80-triggers, etc.)
@@ -528,23 +528,23 @@ export class GoogleGmail extends Tool<GoogleGmail> {
    - Example: UPDATE statements to populate new columns, data transformations, etc.
    - Keep data migrations separate from schema changes when possible
 
-4. **Apply the migration to the LOCAL database**
+4. **Apply migrations to the LOCAL database**
 
    ```bash
-   # Apply the migration file using psql
-   psql postgresql://postgres:postgres@localhost:54322/postgres < libs/db/supabase/migrations/YOUR_MIGRATION.sql
+   pnpm apply-migrations
    ```
 
-   - This targets the LOCAL database only (localhost:54322)
-   - Migrations are automatically wrapped in transactions by PostgreSQL
+   - This applies all pending migrations to the LOCAL database (localhost:54322)
+   - Migrations are automatically wrapped in transactions
    - If a migration fails, the transaction rolls back - no partial changes
-   - You can modify the migration file and try again until it succeeds
+   - Updates the migration history table to track which migrations have been applied
+   - You can modify the migration file and re-run until it succeeds
 
 5. **If migration fails or you need more schema changes**
 
    - Fix the migration file or make additional schema changes
    - Generate another migration: `pnpm gen-migration <another_descriptive_name>`
-   - Apply it with psql: `psql postgresql://postgres:postgres@localhost:54322/postgres < libs/db/supabase/migrations/NEW_MIGRATION.sql`
+   - Apply it: `pnpm apply-migrations`
    - Repeat as needed
 
 6. **Verify the changes**

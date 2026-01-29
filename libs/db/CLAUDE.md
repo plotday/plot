@@ -6,7 +6,7 @@
 
 ### Step-by-Step Process
 
-1. **Modify schema files in `schema/` directory**
+1. **Modify schema files in `supabase/schemas/` directory**
    - Schema files are the single source of truth for database structure
    - Organize by type: `50-tables/`, `60-views/`, `70-rls/`, `80-triggers/`, etc.
    - NEVER modify migration files or the database directly
@@ -27,26 +27,24 @@
 
 4. **Apply migration to LOCAL database**
    ```bash
-   psql postgresql://postgres:postgres@localhost:54322/postgres < supabase/migrations/YOUR_MIGRATION.sql
+   pnpm apply-migrations
    ```
-   - This applies the migration to the LOCAL database only (localhost:54322)
-   - Automatically wrapped in a transaction by PostgreSQL
-   - If migration fails, transaction rolls back - no partial state
-   - Fix the migration file and re-run the psql command
-   - **IMPORTANT**: We apply migrations directly via psql and do NOT update the migrations tracking table
-   - This means the database doesn't "know" which migrations have been applied
-   - Use `pnpm diff-schema-db` to check if schema and database are in sync (see below for caveats)
+   - This applies all pending migrations to the LOCAL database (localhost:54322)
+   - Migrations are automatically wrapped in transactions
+   - If a migration fails, the transaction rolls back - no partial state
+   - Updates the migration history table so the database tracks which migrations have been applied
+   - Use `pnpm diff-schema-migrations` to check if schema changes need new migrations
 
 5. **Handle migration failures**
    - If a migration fails, the database state is unchanged (transaction rollback)
    - Edit the migration file to fix the issue
-   - Re-run: `psql postgresql://postgres:postgres@localhost:54322/postgres < supabase/migrations/YOUR_MIGRATION.sql`
+   - Re-run: `pnpm apply-migrations`
    - Repeat until successful
 
 6. **Make additional schema changes (if needed)**
    - Modify schema files again
    - Generate a new migration: `pnpm gen-migration <another_name>`
-   - Apply it with psql: `psql postgresql://postgres:postgres@localhost:54322/postgres < supabase/migrations/NEW_MIGRATION.sql`
+   - Apply it: `pnpm apply-migrations`
    - This is normal - iterative changes use multiple migrations
 
 7. **Verify schema sync**
@@ -129,14 +127,14 @@ Update the corresponding Zod schema to match the database columns:
 ## Available Commands
 
 ```bash
-# View difference between schema and local database
-pnpm diff-schema-db
+# Check if schema changes need a new migration (compares schema files to migrations)
+pnpm diff-schema-migrations
 
 # Generate new migration from schema changes
 pnpm gen-migration <name>
 
-# Apply a migration to LOCAL database (uses transactions)
-psql postgresql://postgres:postgres@localhost:54322/postgres < supabase/migrations/MIGRATION_FILE.sql
+# Apply pending migrations to LOCAL database (uses transactions, updates migration history)
+pnpm apply-migrations
 
 # Regenerate TypeScript types from local database
 pnpm types
@@ -150,19 +148,7 @@ pnpm lint:pending-types
 
 ## Understanding Diff Commands
 
-### `pnpm diff-schema-db` (Schema vs Database)
-
-- Compares schema files with the running local database
-- **This is the primary way to check if you have unapplied schema changes**
-- Since we don't track migrations in the database, this is more reliable than checking migration status
-- **Known false-positives** (can usually be ignored):
-  - Formatting differences in function definitions (especially `actor(user_activity)`)
-  - Extension versions or metadata
-  - Functions that exist in migrations but show formatting differences
-- If you see substantive differences (new columns, tables, constraints), those need to be applied
-- Use this for general awareness, but understand some formatting diffs are expected
-
-### `pnpm diff-schema-migrations` (Schema vs Migrations)
+### `pnpm diff-schema-migrations` (Schema Files vs Migrations)
 
 - Compares schema files with existing migration files
 - **This is the source of truth** for whether you need to generate migrations
@@ -173,6 +159,71 @@ pnpm lint:pending-types
   - If the diff shows only formatting differences, update the schema file to match
   - Match indentation, spacing, and line breaks from the diff output
   - This ensures the diff returns empty when everything is truly in sync
+
+### Migration from tusker to pg-delta (January 2026)
+
+As of January 2026, this project uses Supabase's `--use-pg-delta` flag instead of tusker/migra for declarative schema management.
+
+**Key improvements:**
+- Native Supabase support (no Python dependency)
+- Uses pg_dump format for declarative schemas
+- Handles view dependencies correctly (uses `CREATE OR REPLACE VIEW`)
+- Better compatibility with PostgreSQL extensions
+
+**Important notes:**
+- UDF-based check constraints were replaced with standard SQL (e.g., `CHECK (email = lower(email))` instead of `CHECK (is_lower(email))`)
+- Schema files moved from `libs/db/schema/` to `libs/db/supabase/schemas/`
+- Same workflow commands (`pnpm gen-migration`, etc.) - implementation changed but usage remains identical
+- When adding columns to tables, add them at the END to avoid view column ordering issues
+
+**Comparison to tusker:**
+- pg-delta diffs may show ~250 lines of function formatting differences (vs ~627 for tusker)
+- These formatting differences are expected and safe to ignore (similar to tusker's false-positives)
+- Migration generation and application work the same way
+
+## Squashing Development Migrations
+
+During development, you may generate multiple migrations while iterating on a solution. Before committing to version control and deploying to production, you should squash them into a single clean migration.
+
+### Recommended: Use Supabase Squash Command
+
+```bash
+# 1. Identify the last production migration (the last one that's been deployed)
+#    Let's say it's 20260129000000
+
+# 2. Squash all migrations after that version into one
+pnpm supabase migration squash --version 20260129000000 --local
+
+# 3. This combines all migrations after 20260129000000 into a single new migration
+#    and deletes the intermediate migration files
+
+# 4. Apply the squashed migration to verify it works
+pnpm apply-migrations
+
+# 5. Test thoroughly, then commit the single squashed migration
+git add supabase/migrations/
+git commit -m "Add feature X"
+```
+
+### Alternative: Reset and Regenerate
+
+If you prefer to regenerate from scratch:
+
+```bash
+# 1. Delete your development migration files (but keep schema changes)
+rm supabase/migrations/20260129*_dev_*.sql
+
+# 2. Mark them as reverted in the migration history
+pnpm supabase migration repair --local --status reverted 20260129123456 20260129123457
+
+# 3. Generate one clean migration from your schema files
+pnpm gen-migration complete_feature_name
+
+# 4. Apply and test
+pnpm apply-migrations
+```
+
+**Important**: Only squash migrations that haven't been deployed to production or shared with other developers. Never squash migrations that others may have already applied.
 
 ## Critical Rules
 

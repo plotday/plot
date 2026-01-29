@@ -18,7 +18,7 @@ max_rows = 1000
 # Port to use for the local database URL.
 port = 54322
 # Port used by db diff command to initialise the shadow database.
-shadow_port = 54320
+shadow_port = 54319
 # The database major version to use. This has to be the same as your remote database's. Run `SHOW
 # server_version;` on the remote database to check.
 major_version = 17
@@ -144,3 +144,20 @@ vector_port = 54328
 # gcp_project_id = ""
 # gcp_project_number = ""
 # gcp_jwt_path = "supabase/gcloud.json"
+
+[db.migrations]
+# Declarative schema files defining desired database state
+# Does not include Supabase-managed schemas (auth, realtime, etc.)
+schema_paths = [
+  "./schemas/10-settings/*.sql",
+  "./schemas/12-extensions/*.sql",
+  "./schemas/20-types/*.sql",
+  "./schemas/30-functions/*.sql",
+  "./schemas/40-functions/*.sql",
+  "./schemas/50-tables/*.sql",
+  "./schemas/60-views/*.sql",
+  "./schemas/65-functions/*.sql",
+  "./schemas/70-rls/*.sql",
+  "./schemas/80-triggers/*.sql",
+  "./schemas/90-data/*.sql"
+]

@@ -1167,6 +1167,13 @@ export type Database = {
             foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
             columns: ["priority_twist_id"]
             isOneToOne: false
+            referencedRelation: "priority_twist_activity_create"
+            referencedColumns: ["priority_twist_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            isOneToOne: false
             referencedRelation: "priority_twist_note_create"
             referencedColumns: ["priority_twist_id"]
           },
@@ -1688,6 +1695,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_twist"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "usage_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_create"
+            referencedColumns: ["priority_twist_id"]
           },
           {
             foreignKeyName: "usage_priority_twist_id_fkey"

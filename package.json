@@ -4,7 +4,7 @@
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.18.3",
   "scripts": {
-    "install": "[ \"$SKIP_PYTHON\" = \"1\" ] || npip install; [ -f Gemfile ] && bundle install --quiet || true",
+    "install": "[ -f Gemfile ] && bundle install --quiet || true",
     "env": "nx run-many -t env --exclude plot --parallel=false",
     "build": "nx run-many -t build --exclude plot",
     "deploy:site": "nx deploy @plotday/site",
@@ -34,9 +34,7 @@
     "update": "pnpm update --latest --recursive",
     "worktree": "./scripts/worktree",
     "prepare": "husky install",
-    "tracker:pull": "pnpm --filter @plotday/tracker tracker:pull",
     "nopy": "nopy",
-    "npip": "npip",
     "tunnel": "bash scripts/tunnel start",
     "tunnel:start": "bash scripts/tunnel start-bg",
     "tunnel:stop": "bash scripts/tunnel stop",
@@ -58,12 +56,6 @@
     "typescript-eslint": "^8.32.1",
     "vitest": "^0.33.0",
     "wrangler": "^4.58.0"
-  },
-  "python": {
-    "dependencies": {
-      "setuptools": "",
-      "tusker": ""
-    }
   },
   "nx": {}
 }
