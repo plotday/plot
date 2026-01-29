@@ -88,18 +88,48 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
 
                           if (index == 2) {
                             // Navigate to New Activity for current priority
-                            // Extract priorityId from the current route path
-                            // Path format is "/:priorityId" or "/:priorityId/..."
                             final pathSegments = currentPath.split('/');
+
+                            // Check if we're on the Priorities tab
                             if (pathSegments.length > 1 &&
+                                pathSegments[1] == 'priorities') {
+                              // On Priorities tab - navigate to the Activities tab's current priority
+                              final activitiesRouter = tabsRouter.stackRouterOfIndex(1);
+
+                              // Switch tabs and navigate in a single frame to avoid flash
+                              tabsRouter.setActiveIndex(1);
+                              final innerRouter = activitiesRouter?.innerRouterOf<StackRouter>(PriorityRoute.name);
+
+                              if (innerRouter != null) {
+                                // Navigate immediately without waiting for frame
+                                innerRouter.push(NewActivityRoute());
+                              } else {
+                                // Fallback: wait one frame if inner router not ready
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  final innerRouter2 = tabsRouter.stackRouterOfIndex(1)?.innerRouterOf<StackRouter>(PriorityRoute.name);
+                                  if (innerRouter2 != null) {
+                                    innerRouter2.push(NewActivityRoute());
+                                  }
+                                });
+                              }
+                            } else if (pathSegments.length > 1 &&
                                 pathSegments[1].isNotEmpty) {
-                              final priorityIdString = pathSegments[1];
-                              context.router.navigate(
-                                PriorityRoute(
-                                  priorityIdString: priorityIdString,
-                                  children: [NewActivityRoute()],
-                                ),
+                              // Already on a priority route - push NewActivityRoute directly
+                              final innerRouter = context.router.innerRouterOf<StackRouter>(
+                                PriorityRoute.name,
                               );
+                              if (innerRouter != null) {
+                                innerRouter.push(NewActivityRoute());
+                              } else {
+                                // Fallback: navigate with full route
+                                final priorityIdString = pathSegments[1];
+                                context.router.push(
+                                  PriorityRoute(
+                                    priorityIdString: priorityIdString,
+                                    children: [NewActivityRoute()],
+                                  ),
+                                );
+                              }
                             }
                           } else if (index == 3) {
                             // Show command palette (same as Cmd-K)
