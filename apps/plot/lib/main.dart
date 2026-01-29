@@ -48,30 +48,33 @@ Future<void> run(List<String> args) async {
       final appLinks = AppLinks();
 
       // Listen to incoming links while app is running
-      appLinks.uriLinkStream.listen((uri) async {
-        log.info('Received deep link: $uri');
+      appLinks.uriLinkStream.listen(
+        (uri) async {
+          log.info('Received deep link: $uri');
 
-        // Focus window first (desktop only)
-        if (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) {
-          try {
-            await windowManager.show();
-            await windowManager.focus();
-            await windowManager.restore();
-          } catch (e) {
-            log.warning('Failed to focus window', e);
+          // Focus window first (desktop only)
+          if (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) {
+            try {
+              await windowManager.show();
+              await windowManager.focus();
+              await windowManager.restore();
+            } catch (e) {
+              log.warning('Failed to focus window', e);
+            }
           }
-        }
 
-        // Navigate to the deep link
-        final context = navigatorKey?.currentContext;
-        if (context != null) {
-          await OpenPageLink(uri.toString()).run(context);
-        } else {
-          log.warning('Navigator context not available for deep link: $uri');
-        }
-      }, onError: (Object err) {
-        log.warning('Deep link error: $err');
-      });
+          // Navigate to the deep link
+          final context = navigatorKey?.currentContext;
+          if (context?.mounted == true) {
+            await OpenPageLink(uri.toString()).run(context!);
+          } else {
+            log.warning('Navigator context not available for deep link: $uri');
+          }
+        },
+        onError: (Object err) {
+          log.warning('Deep link error: $err');
+        },
+      );
 
       // Check for initial link (app was opened via link when not running)
       final initialUri = await appLinks.getInitialLink();
@@ -186,8 +189,8 @@ Future<void> run(List<String> args) async {
         // Navigate to deep link
         if (deepLink.isNotEmpty) {
           final context = navigatorKey?.currentContext;
-          if (context != null) {
-            await OpenPageLink(deepLink).run(context);
+          if (context?.mounted == true) {
+            await OpenPageLink(deepLink).run(context!);
           } else {
             log.warning(
               'Navigator context not available for instance deep link: $deepLink',

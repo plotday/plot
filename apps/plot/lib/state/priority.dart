@@ -9,7 +9,6 @@ import 'package:drift/drift.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/async.dart';
 import 'package:plot/util/list.dart';
-import 'package:plot/util/time_service.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/now.dart';
 import 'logging.dart';
@@ -28,7 +27,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Register callback to reload schedule when time changes (e.g., via TimeTravel)
     Time.setOnTimeChanged(() {
       if (state.range != null) {
-        log.fine('Time changed, reloading schedule to update time-dependent UI');
+        log.fine(
+          'Time changed, reloading schedule to update time-dependent UI',
+        );
         _loadSchedule(state.range!);
       }
     });
@@ -264,10 +265,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       return;
     }
     // Clear reorder mode when opening an activity
-    emit(state.copyWith(
-      activity: Value(activity),
-      isReorderMode: activity != null ? false : null,
-    ));
+    emit(
+      state.copyWith(
+        activity: Value(activity),
+        isReorderMode: activity != null ? false : null,
+      ),
+    );
 
     // Manage activity subscription
     if (activity != null) {
@@ -688,13 +691,18 @@ class PriorityBloc extends Cubit<PriorityState> {
               );
               if (newAgenda.isNotEmpty) {
                 var anchorIndex = 0 - first;
-                final anchorItem = anchorIndex >= 0 && anchorIndex < newAgenda.length
+                final anchorItem =
+                    anchorIndex >= 0 && anchorIndex < newAgenda.length
                     ? newAgenda[anchorIndex]
                     : null;
-                final anchorDescription = anchorItem?.when(
-                  header: (h) => 'Header(date=${h.date}, priority=${h.priority?.title})',
-                  activity: (a) => 'Activity(id=${a.activity.id}, title=${a.activity.title})',
-                ) ?? 'OUT OF BOUNDS';
+                final anchorDescription =
+                    anchorItem?.when(
+                      header: (h) =>
+                          'Header(date=${h.date}, priority=${h.priority?.title})',
+                      activity: (a) =>
+                          'Activity(id=${a.activity.id}, title=${a.activity.title})',
+                    ) ??
+                    'OUT OF BOUNDS';
                 log.info(
                   '[_loadSchedule] Anchor mapping: first=$first, '
                   'anchorIndex=$anchorIndex, agendaItems[$anchorIndex]=$anchorDescription',

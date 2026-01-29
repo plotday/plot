@@ -246,7 +246,10 @@ class FormSelect<T> extends FormItem {
             ),
             child: Row(
               children: [
-                if (leading != null) ...[leading, SizedBox(width: context.theme.spacing.md)],
+                if (leading != null) ...[
+                  leading,
+                  SizedBox(width: context.theme.spacing.md),
+                ],
                 Expanded(child: labelWidget),
               ],
             ),
@@ -264,7 +267,10 @@ class FormSelect<T> extends FormItem {
           ),
           child: Row(
             children: [
-              if (leading != null) ...[leading, SizedBox(width: context.theme.spacing.md)],
+              if (leading != null) ...[
+                leading,
+                SizedBox(width: context.theme.spacing.md),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,7 +405,9 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
               onExit: (_) => setState(() => _isHovered = false),
               child: Center(
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: context.theme.spacing.sm),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: context.theme.spacing.sm,
+                  ),
                   child: Text(
                     widget.label,
                     style: context.theme.typography.sm.copyWith(

@@ -118,7 +118,7 @@ class FormModalState extends State<_FormModal> {
       if (_focusNodes.isNotEmpty &&
           mounted &&
           _highlightedIndex < _focusNodes.length) {
-        log.info('Initial focus request on item (index $_highlightedIndex)');
+        log.fine('Initial focus request on item (index $_highlightedIndex)');
         _focusNodes[_highlightedIndex].requestFocus();
       }
     });
@@ -535,103 +535,116 @@ class FormModalState extends State<_FormModal> {
               ),
             },
             child: LayoutBuilder(
-              builder: (context, constraints) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Title header
-                  Container(
-                    padding: widgetPadding,
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: context.theme.colors.border,
-                          width: 1,
-                        ),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            widget.form.title,
-                            style: context.theme.typography.base.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+              builder: (context, constraints) {
+                // Calculate available height for content (reserve space for header + padding)
+                final headerHeight = 60.0; // Approximate header height
+                final availableContentHeight =
+                    constraints.maxHeight - headerHeight - 16.0;
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Title header
+                    Container(
+                      padding: widgetPadding,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: context.theme.colors.border,
+                            width: 1,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: totalItemCount,
-                      itemBuilder: (context, index) {
-                        final group = _getGroupAtIndex(index);
-                        final item = _getItemAtIndex(index);
-                        Widget? header;
-
-                        if (group.title != null &&
-                            (index == 0 ||
-                                group != _getGroupAtIndex(index - 1))) {
-                          header = Padding(
-                            padding: widgetPaddingSm,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
                             child: Text(
-                              group.title!,
-                              style: TextStyle(
-                                color: context.theme.colors.mutedForeground,
-                                fontSize: context.theme.typography.sm.fontSize,
+                              widget.form.title,
+                              style: context.theme.typography.base.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Content list - constrained to available height
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: availableContentHeight,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: totalItemCount,
+                        itemBuilder: (context, index) {
+                          final group = _getGroupAtIndex(index);
+                          final item = _getItemAtIndex(index);
+                          Widget? header;
+
+                          if (group.title != null &&
+                              (index == 0 ||
+                                  group != _getGroupAtIndex(index - 1))) {
+                            header = Padding(
+                              padding: widgetPaddingSm,
+                              child: Text(
+                                group.title!,
+                                style: TextStyle(
+                                  color: context.theme.colors.mutedForeground,
+                                  fontSize:
+                                      context.theme.typography.sm.fontSize,
+                                ),
+                              ),
+                            );
+                          }
+
+                          return GestureDetector(
+                            onTap: () async {
+                              final item = _getItemAtIndex(index);
+                              if (item is FormButton) {
+                                if (_isFormValid()) {
+                                  await _executeButton(item);
+                                }
+                              } else if (item is FormSelect) {
+                                if (item.enabled) {
+                                  await item.activate(context);
+                                }
+                              }
+                            },
+                            child: MouseRegion(
+                              cursor: item is FormButton || item is FormSelect
+                                  ? SystemMouseCursors.click
+                                  : SystemMouseCursors.basic,
+                              onEnter: (_) => listController.setHovered(index),
+                              onExit: (_) => listController.setHovered(null),
+                              child: Column(
+                                key: ValueKey(index),
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (header != null) header,
+                                  item.build(
+                                    context,
+                                    index == _highlightedIndex &&
+                                        hasPhysicalKeyboard(),
+                                    enabled: item is FormButton
+                                        ? _isFormValid()
+                                        : true,
+                                    focusNode: index < _focusNodes.length
+                                        ? _focusNodes[index]
+                                        : null,
+                                  ),
+                                ],
                               ),
                             ),
                           );
-                        }
-
-                        return GestureDetector(
-                          onTap: () async {
-                            final item = _getItemAtIndex(index);
-                            if (item is FormButton) {
-                              if (_isFormValid()) {
-                                await _executeButton(item);
-                              }
-                            } else if (item is FormSelect) {
-                              if (item.enabled) {
-                                await item.activate(context);
-                              }
-                            }
-                          },
-                          child: MouseRegion(
-                            cursor: item is FormButton || item is FormSelect
-                                ? SystemMouseCursors.click
-                                : SystemMouseCursors.basic,
-                            onEnter: (_) => listController.setHovered(index),
-                            onExit: (_) => listController.setHovered(null),
-                            child: Column(
-                              key: ValueKey(index),
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (header != null) header,
-                                item.build(
-                                  context,
-                                  index == _highlightedIndex &&
-                                      hasPhysicalKeyboard(),
-                                  enabled: item is FormButton
-                                      ? _isFormValid()
-                                      : true,
-                                  focusNode: index < _focusNodes.length
-                                      ? _focusNodes[index]
-                                      : null,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
+                    const SizedBox(height: 8),
+                  ],
+                );
+              },
             ),
           ),
         );

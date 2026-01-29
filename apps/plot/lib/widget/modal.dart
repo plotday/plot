@@ -58,20 +58,29 @@ class Modal extends StatelessWidget {
 
     // Return the content directly - the push() method already handles
     // wrapping in FDialog or FSheet based on multiPanel
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (header != null) header!,
-        Flexible(
-          child: Container(
-            padding: padding,
-            child: ConstrainedBox(
-              constraints: constraints,
-              child: builder(context),
-            ),
+    return LayoutBuilder(
+      builder: (context, parentConstraints) {
+        // Constrain to the minimum of parent constraints and our max constraints
+        final effectiveConstraints = BoxConstraints(
+          maxWidth: constraints.maxWidth,
+          maxHeight: parentConstraints.maxHeight.isFinite
+              ? parentConstraints.maxHeight
+              : constraints.maxHeight,
+        );
+
+        return ConstrainedBox(
+          constraints: effectiveConstraints,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (header != null) header!,
+              Flexible(
+                child: Container(padding: padding, child: builder(context)),
+              ),
+            ],
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -142,65 +151,51 @@ class _ModalProviderState extends State<ModalProvider> {
 
       final Value<T> result;
       if (multiPanel) {
-        // Calculate dialog positioning for desktop/tablet
-        final mediaQuery = MediaQuery.of(modalContext);
-        final screenHeight = mediaQuery.size.height;
-
-        // Get dialog height from constraints
-        double dialogHeight = 640; // default max height
-        if (stackItem.modal is Modal) {
-          final modalWidget = stackItem.modal as Modal;
-          final safeAreaHeight =
-              screenHeight -
-              mediaQuery.viewPadding.top -
-              mediaQuery.viewPadding.bottom -
-              mediaQuery.viewInsets.bottom;
-
-          final constraints = modalWidget.constraints.enforce(
-            BoxConstraints(
-              maxHeight: safeAreaHeight * modalWidget.maxHeightPercentage,
-              maxWidth: max(
-                mediaQuery.size.width * modalWidget.maxWidthPercentage,
-                min(mediaQuery.size.width, modalWidget.constraints.maxWidth),
-              ),
-            ),
-          );
-          dialogHeight = constraints.maxHeight;
-        }
-
-        // Position between 10% and 25% from top, preferring 25% but never below center
-        final centeredY = (screenHeight - dialogHeight) / 2;
-        final preferredY = screenHeight * 0.25;
-        final anchorY = min(preferredY, centeredY);
-
         // Desktop/tablet: Use FDialog with custom styling
         result =
             await showFDialog<Value<T>>(
               context: modalContext,
               builder: (dialogContext, _, _) => FToaster(
-                child: Column(
-                  children: [
-                    SizedBox(height: anchorY),
-                    FDialog.raw(
-                      // ignore: unused_result
-                      style: dialogContext.theme.dialogStyle.copyWith(
-                        decoration: BoxDecoration(
-                          color: dialogContext.theme.colors.background,
-                          border: Border.all(
-                            color: dialogContext.theme.colors.border,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Position at 15% from top with max height of 70%
+                    final screenHeight = constraints.maxHeight;
+                    final topOffset = screenHeight * 0.15;
+                    final maxDialogHeight = screenHeight * 0.7;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Fixed spacing from top (15%)
+                        SizedBox(height: topOffset),
+                        // Constrain dialog to max 70% height
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: maxDialogHeight,
                           ),
-                          borderRadius: BorderRadius.circular(8),
+                          child: FDialog.raw(
+                            // ignore: unused_result
+                            style: dialogContext.theme.dialogStyle.copyWith(
+                              decoration: BoxDecoration(
+                                color: dialogContext.theme.colors.background,
+                                border: Border.all(
+                                  color: dialogContext.theme.colors.border,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            builder: (context, style) => Padding(
+                              padding: EdgeInsets.all(1),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: buildModalContent(dialogContext),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                      builder: (context, style) => Padding(
-                        padding: EdgeInsets.all(1),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: buildModalContent(dialogContext),
-                        ),
-                      ),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ) ??
@@ -246,7 +241,17 @@ class _ModalProviderState extends State<ModalProvider> {
     final shouldCloseDialog = _modalStack.isEmpty;
 
     // Complete the completer - this may synchronously trigger more pops
-    stackItem.completer.complete(result);
+    // For absent values, use completeAbsent() to avoid type mismatches
+    if (!result.present) {
+      stackItem.completeAbsent();
+    } else {
+      // For present values, we need to handle potential type mismatches when
+      // nested modals have different type parameters. This can happen when
+      // a SelectModal<Command> is opened from within a FormModal<CommandReturn>.
+      // We use dynamic casting as a workaround.
+      // ignore: argument_type_not_assignable
+      stackItem.completer.complete(result as dynamic);
+    }
 
     // Only close dialog if WE are the one that emptied the stack,
     // not if a cascaded pop already closed it
@@ -405,13 +410,17 @@ class _ModalStackDisplayState extends State<_ModalStackDisplay> {
     if (widget.modalStack.isEmpty) {
       return const SizedBox.shrink();
     }
-    // Use IndexedStack to keep all modal states alive while only showing the top one.
-    // This prevents state loss when modals are pushed on top and then popped.
-    // Use loose sizing so the stack sizes to the current visible child.
-    return IndexedStack(
-      index: widget.modalStack.length - 1,
-      sizing: StackFit.loose,
-      children: widget.modalStack.map((item) => item.modal).toList(),
+    // Show only the top modal, but keep all modals in the tree using Offstage
+    // to preserve their state. This allows the dialog to resize to fit the visible modal.
+    return Stack(
+      fit: StackFit.loose,
+      children: [
+        for (int i = 0; i < widget.modalStack.length; i++)
+          Offstage(
+            offstage: i != widget.modalStack.length - 1,
+            child: widget.modalStack[i].modal,
+          ),
+      ],
     );
   }
 }
