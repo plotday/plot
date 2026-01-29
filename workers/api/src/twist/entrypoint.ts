@@ -368,14 +368,28 @@ export default class extends WorkerEntrypoint {
                 if (!callback) break;
               }
 
-              // Call the callback if it's a function, binding twist as 'this'
+              // Call the callback if it's a function, binding to the correct context
               if (typeof callback === 'function') {
                 console.log(
                   \`Calling callback at path: \${callbackInfo.optionPath.join('.')}\`
                 );
 
                 try {
-                  await callback.call(twist, ...callbackInfo.args);
+                  // Determine the correct context for the callback
+                  // If path has > 1 element, the parent tool owns the callback
+                  // If path has 1 element, the twist owns the callback
+                  let callbackContext;
+                  if (path.length > 1) {
+                    // Get parent tool (e.g., "GoogleCalendar" from ["GoogleCalendar", "Plot"])
+                    const parentPath = path.slice(0, -1);
+                    const { tool: parentTool } = tools.getByPath(parentPath);
+                    callbackContext = parentTool;
+                  } else {
+                    // Direct twist callback (path like ["Plot"])
+                    callbackContext = twist;
+                  }
+
+                  await callback.call(callbackContext, ...callbackInfo.args);
                 } catch (error) {
                   // Wrap in TwistError to preserve stack across RPC boundary
                   const errorData = {
