@@ -18,6 +18,7 @@ import { deploymentRateLimiter } from "../middleware/rate-limit";
 const twist = new Hono<{ Bindings: Bindings }>();
 
 const MAX_MODULE_SIZE = 10 * 1024 * 1024; // 10 MB in bytes
+const MAX_SOURCEMAP_SIZE = 20 * 1024 * 1024; // 20 MB in bytes
 
 // GET /twist/user - Get current user information
 twist.get("/twist/user", async (c) => {
@@ -48,7 +49,7 @@ const TwistDeploymentSchema = z
       .optional(),
     sourcemap: z
       .string()
-      .max(MAX_MODULE_SIZE, "Sourcemap size exceeds 10 MB limit")
+      .max(MAX_SOURCEMAP_SIZE, "Sourcemap size exceeds 20 MB limit")
       .optional(),
     source: z
       .object({
