@@ -13,6 +13,7 @@ import {
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
 import { createLogger } from "../../../utils/logger";
+import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import {
   convertNoteToMarkdown,
   handleDbOperationError,
@@ -168,6 +169,10 @@ export async function createNote(
     }
 
     // Convert Note to database format
+    // IMPORTANT: For webhook-originated notes (notes with authors), use the author's ID
+    // as updated_by so the activity update appears in priority_twist_activity_update view.
+    // The view filters out updates where updated_by equals the twist to prevent loops,
+    // but webhook notes represent external changes that should trigger sync.
     const dbNote: any = {
       author_id: authorId,
       created_by: plot.priorityTwistId,
@@ -179,7 +184,9 @@ export async function createNote(
       content: contentToStore,
       links: note.links ?? null,
       mentions: mentionIds,
-      updated_by: plot.getUpdatedBy(),
+      updated_by: note.author
+        ? truncateUuidForUpdatedBy(authorId as string)
+        : plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
       // Default to un-archived for upserts unless archived is explicitly specified
       archived_at: note.archived ? new Date().toISOString() : null,
@@ -314,7 +321,7 @@ export async function createNotes(
   );
 
   // Return only successfully created note IDs, log failures (except empty note errors)
-  return results
+  const noteIds = results
     .map((result, _index) => {
       if (result.status === "fulfilled") {
         return result.value;
@@ -327,6 +334,8 @@ export async function createNotes(
       }
     })
     .filter((id): id is Uuid => id !== null);
+
+  return noteIds;
 }
 
 export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {

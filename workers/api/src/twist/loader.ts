@@ -1,6 +1,6 @@
 import { type SupabaseClient } from "@plotday/db";
 
-import { type TwistEnvironment, type Bindings } from "../env";
+import { type Bindings, type TwistEnvironment } from "../env";
 import { type CallbacksState } from "../state/callbacks";
 import { type LogSubscriptions } from "../state/log-subscriptions";
 import { type Storage } from "../state/storage";
@@ -43,11 +43,12 @@ export async function getTwist({
   } else {
     // Runtime mode: look up from priorityTwistId
     // Get twist_id from priority_twist
-    const { data: priorityTwistData, error: priorityTwistError } = await supabase
-      .from("priority_twist")
-      .select("twist_id")
-      .eq("id", priorityTwistId)
-      .single();
+    const { data: priorityTwistData, error: priorityTwistError } =
+      await supabase
+        .from("priority_twist")
+        .select("twist_id")
+        .eq("id", priorityTwistId)
+        .single();
 
     if (priorityTwistError || !priorityTwistData) {
       throw new Error(
@@ -142,32 +143,22 @@ export async function getTwist({
   // priorityTwistId is passed per-invocation via twistInit context
   const moduleId = `${id}-${version}`;
 
-  // TEMPORARY DEBUG: Log what version we're loading
-  console.log("=== LOADER: Loading twist module ===");
-  console.log("Twist Package ID:", id);
-  console.log("Version:", version);
-  console.log("Module ID:", moduleId);
-  console.log("R2 Path:", `twists/${id}/${version}/modules`);
-
   const worker = env.LOADER.get(moduleId, async () => {
-    console.log("=== LOADER FACTORY CALLED (not cached) ===");
-    console.log("Creating new worker for module:", moduleId);
-
     // Use provided module or load from R2
     let module: string;
     if (providedModule) {
-      console.log("Using provided module (test mode)");
       module = providedModule;
     } else {
-      console.log("Loading module from R2...");
       const moduleFromR2 = await (
         await env.TWIST_MODULES_BUCKET.get(`twists/${id}/${version}/modules`)
       )?.text();
       if (!moduleFromR2) {
-        console.error("Module not found in R2:", `twists/${id}/${version}/modules`);
+        console.error(
+          "Module not found in R2:",
+          `twists/${id}/${version}/modules`
+        );
         throw new Error(`Twist module not found: ${id}:${version}`);
       }
-      console.log("Module loaded from R2, size:", moduleFromR2.length, "bytes");
       module = moduleFromR2;
     }
     return {

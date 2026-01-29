@@ -32,6 +32,7 @@ export async function processUpdates(
 
 /**
  * Build tagsAdded/tagsRemoved from tag change events
+ * Now includes occurrence-level changes grouped separately
  */
 function buildTagChanges(
   activityId: string,
@@ -39,23 +40,64 @@ function buildTagChanges(
 ): {
   tagsAdded: Record<number, string[]>;
   tagsRemoved: Record<number, string[]>;
+  occurrenceChanges: Array<{
+    occurrence: string;
+    tagsAdded: Record<number, string[]>;
+    tagsRemoved: Record<number, string[]>;
+  }>;
 } {
   const tagsAdded: Record<number, string[]> = {};
   const tagsRemoved: Record<number, string[]> = {};
+  const occurrenceMap = new Map<
+    string,
+    {
+      tagsAdded: Record<number, string[]>;
+      tagsRemoved: Record<number, string[]>;
+    }
+  >();
 
   for (const change of tagChanges) {
     if (change.activityId !== activityId) continue;
 
-    const target = change.changeType === "added" ? tagsAdded : tagsRemoved;
-    if (!target[change.tagId]) {
-      target[change.tagId] = [];
-    }
-    if (!target[change.tagId].includes(change.actorId)) {
-      target[change.tagId].push(change.actorId);
+    if (change.occurrence === null) {
+      // Series-level change
+      const target = change.changeType === "added" ? tagsAdded : tagsRemoved;
+      if (!target[change.tagId]) {
+        target[change.tagId] = [];
+      }
+      if (!target[change.tagId].includes(change.actorId)) {
+        target[change.tagId].push(change.actorId);
+      }
+    } else {
+      // Occurrence-level change
+      if (!occurrenceMap.has(change.occurrence)) {
+        occurrenceMap.set(change.occurrence, {
+          tagsAdded: {},
+          tagsRemoved: {},
+        });
+      }
+      const occData = occurrenceMap.get(change.occurrence)!;
+      const target =
+        change.changeType === "added" ? occData.tagsAdded : occData.tagsRemoved;
+      if (!target[change.tagId]) {
+        target[change.tagId] = [];
+      }
+      if (!target[change.tagId].includes(change.actorId)) {
+        target[change.tagId].push(change.actorId);
+      }
     }
   }
 
-  return { tagsAdded, tagsRemoved };
+  return {
+    tagsAdded,
+    tagsRemoved,
+    occurrenceChanges: Array.from(occurrenceMap.entries()).map(
+      ([occurrence, changes]) => ({
+        occurrence,
+        ...changes,
+      })
+    ),
+  };
 }
 
 /**
@@ -294,7 +336,7 @@ async function processTwistBatch(
         }
 
         // Build tag changes for this activity
-        const { tagsAdded, tagsRemoved } = buildTagChanges(
+        const { tagsAdded, tagsRemoved, occurrenceChanges } = buildTagChanges(
           activityId,
           activityTagChanges
         );
@@ -310,6 +352,21 @@ async function processTwistBatch(
             tagsRemoved,
           },
         });
+
+        // Dispatch separate callbacks for occurrence-level tag changes
+        for (const occChange of occurrenceChanges) {
+          await twistWrapper.dispatch("Plot", {
+            itemType: "activity",
+            item: activity,
+            isCreate: true,
+            syncDepth,
+            changes: {
+              tagsAdded: occChange.tagsAdded,
+              tagsRemoved: occChange.tagsRemoved,
+              occurrence: { occurrence: occChange.occurrence },
+            },
+          });
+        }
       } catch (error) {
         logger.error(
           "Error processing new activity in twist batch",
@@ -372,7 +429,7 @@ async function processTwistBatch(
         }
 
         // Build tag changes for this activity
-        const { tagsAdded, tagsRemoved } = buildTagChanges(
+        const { tagsAdded, tagsRemoved, occurrenceChanges } = buildTagChanges(
           activityId,
           activityTagChanges
         );
@@ -388,6 +445,21 @@ async function processTwistBatch(
             tagsRemoved,
           },
         });
+
+        // Dispatch separate callbacks for occurrence-level tag changes
+        for (const occChange of occurrenceChanges) {
+          await twistWrapper.dispatch("Plot", {
+            itemType: "activity",
+            item: activity,
+            isCreate: false,
+            syncDepth,
+            changes: {
+              tagsAdded: occChange.tagsAdded,
+              tagsRemoved: occChange.tagsRemoved,
+              occurrence: { occurrence: occChange.occurrence },
+            },
+          });
+        }
       } catch (error) {
         logger.error(
           "Error processing activity in twist batch",

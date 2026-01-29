@@ -46,10 +46,11 @@ FROM
         AND at.occurrence IS NULL
 WHERE
     ax.draft = FALSE
-    AND ax.updated_at > ax.created_at
+    AND pct.id = ax.created_by
+    AND GREATEST (ax.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) > ax.created_at
     AND updated_by_uuid (pct.id) != ax.updated_by
     AND pct.archived_at IS NULL
-    AND ax.updated_at > pct.created_at
+    AND GREATEST (ax.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) > pct.created_at
 ORDER BY
-    ax.updated_at ASC;
+    GREATEST (ax.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) ASC;
 

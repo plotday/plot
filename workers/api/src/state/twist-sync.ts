@@ -270,27 +270,79 @@ export class TwistSync extends DurableObject<Bindings> {
           newActivityTitles: newActivities
             .map((a) => a.title?.substring(0, 30))
             .join(", "),
+          newActivityCreatedAts: newActivities
+            .map((a) => a.created_at)
+            .join(", "),
           updatedActivityIds: updatedActivities.map((a) => a.id).join(", "),
           updatedActivityTitles: updatedActivities
             .map((a) => a.title?.substring(0, 30))
             .join(", "),
+          updatedActivityCreatedAts: updatedActivities
+            .map((a) => a.created_at)
+            .join(", "),
         });
       }
 
-      // Query tag changes for the activity update time range
-      // This provides tagsAdded/tagsRemoved data for the activity.updated callback
-      // Use the greatest last_update_at from the sync info as the sync timestamp
-      // This ensures we use database timestamps consistently rather than local server time
-      const syncTimestamp = syncInfos.reduce((max, info) => {
+      // Helper to get max timestamp from database-fetched items (or keep existing if none)
+      const getMaxTimestamp = (
+        items: any[],
+        timestampField: "created_at" | "updated_at",
+        fallback: string
+      ): string => {
+        if (items.length === 0) return fallback;
+
+        const timestamps = items
+          .map((item) => item[timestampField])
+          .filter((ts): ts is string => ts !== null && ts !== undefined);
+
+        if (timestamps.length === 0) return fallback;
+
+        // All timestamps are from database, already in UTC
+        return timestamps.reduce((max, ts) => (ts > max ? ts : max));
+      };
+
+      // Calculate sync timestamps from database values for each entity/operation
+      const activityCreateSyncAt = getMaxTimestamp(
+        newActivities,
+        "created_at",
+        activityCreateLastSyncAt
+      );
+
+      const activityUpdateSyncAt = getMaxTimestamp(
+        updatedActivities,
+        "updated_at",
+        activityUpdateLastSyncAt
+      );
+
+      const noteCreateSyncAt = getMaxTimestamp(
+        newNotes,
+        "created_at",
+        noteCreateLastSyncAt
+      );
+
+      const noteUpdateSyncAt = getMaxTimestamp(
+        updatedNotes,
+        "updated_at",
+        noteUpdateLastSyncAt
+      );
+
+      // Get the latest timestamp from database (current sync point)
+      // This represents the most recent change detected by database triggers
+      const currentSyncTimestamp = syncInfos.reduce((max, info) => {
         return info.last_update_at > max ? info.last_update_at : max;
       }, syncInfos[0]?.last_update_at ?? new Date(0).toISOString());
+
+      // Query tag changes for the activity update time range
+      // This provides tagsAdded/tagsRemoved data for the activity.updated callback
+      // Use currentSyncTimestamp as upper bound to capture tag changes that occurred
+      // after activity updates (since tag changes update activity_tag.updated_at, not activity.updated_at)
       const tagChanges: TagChangeRow[] = await safeQuery(
         this.supabase
           .from("priority_twist_activity_tag_change")
           .select("activity_id, occurrence, tag_id, actor_id, change_type")
           .eq("priority_twist_id", this.priorityTwistId)
           .gt("updated_at", activityUpdateLastSyncAt)
-          .lte("updated_at", syncTimestamp)
+          .lte("updated_at", currentSyncTimestamp)
       );
 
       // Transform tag changes into the expected format, filtering out any with null required fields
@@ -310,15 +362,43 @@ export class TwistSync extends DurableObject<Bindings> {
           changeType: tc.change_type as "added" | "removed",
         }));
 
-      // Always update last_sync_at to mark we've checked up to this point,
-      // regardless of whether there were results. Not updating causes the time
-      // window to never advance, leading to reprocessing all historical data.
-      await safeQuery(
-        this.supabase
-          .from("priority_twist_sync")
-          .update({ last_sync_at: syncTimestamp })
-          .eq("priority_twist_id", this.priorityTwistId)
-      );
+      // Update each entity/operation pair with its specific timestamp
+      // This ensures each operation advances independently based on items actually processed
+      // Using database timestamps avoids clock skew and timezone issues
+      await Promise.all([
+        safeQuery(
+          this.supabase
+            .from("priority_twist_sync")
+            .update({ last_sync_at: activityCreateSyncAt })
+            .eq("priority_twist_id", this.priorityTwistId)
+            .eq("entity", "activity")
+            .eq("operation", "create")
+        ),
+        safeQuery(
+          this.supabase
+            .from("priority_twist_sync")
+            .update({ last_sync_at: activityUpdateSyncAt })
+            .eq("priority_twist_id", this.priorityTwistId)
+            .eq("entity", "activity")
+            .eq("operation", "update")
+        ),
+        safeQuery(
+          this.supabase
+            .from("priority_twist_sync")
+            .update({ last_sync_at: noteCreateSyncAt })
+            .eq("priority_twist_id", this.priorityTwistId)
+            .eq("entity", "note")
+            .eq("operation", "create")
+        ),
+        safeQuery(
+          this.supabase
+            .from("priority_twist_sync")
+            .update({ last_sync_at: noteUpdateSyncAt })
+            .eq("priority_twist_id", this.priorityTwistId)
+            .eq("entity", "note")
+            .eq("operation", "update")
+        ),
+      ]);
 
       // Calculate the number of batches needed (based on max items across all arrays)
       const maxItems = Math.max(

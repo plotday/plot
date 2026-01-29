@@ -76,6 +76,7 @@ export type DispatchItem =
       changes?: {
         tagsAdded: Record<number, string[]>;
         tagsRemoved: Record<number, string[]>;
+        occurrence?: { occurrence: Date | string };
       };
     }
   | {

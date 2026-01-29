@@ -30,10 +30,7 @@ import {
 import { fromDbActivity } from "./converters";
 import { formatInterval } from "./datetime";
 import type { Plot } from "./index";
-import {
-  createNotes,
-  ensureIncreasingCreatedTimestamps,
-} from "./note";
+import { createNotes, ensureIncreasingCreatedTimestamps } from "./note";
 import { processOccurrences } from "./occurrences";
 
 /**
@@ -75,7 +72,6 @@ export {
   actorTypeToString,
   convertNoteToMarkdown,
   createPreviewFromMarkdown,
-  deriveDefaultAssignee,
   prepareActivityForDb,
   processNewActor,
   processNewActorArray,

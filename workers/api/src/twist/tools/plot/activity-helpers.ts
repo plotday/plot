@@ -447,30 +447,16 @@ export async function processTagsActors(
  *
  * @param plot - The Plot instance
  * @param activityType - The database activity type ('note' | 'action' | 'event')
- * @param explicitAssignee - The explicitly provided assignee (string ID, null, or undefined)
  * @returns The assignee ID, null, or undefined (meaning "not provided")
  */
-export async function deriveDefaultAssignee(
-  plot: Plot,
-  activityType: "note" | "action" | "event",
-  explicitAssignee: string | null | undefined
+export async function getPriorityTwistOwnerContact(
+  plot: Plot
 ): Promise<string | null | undefined> {
-  // If assignee is explicitly provided (including explicit null), return it
-  if (explicitAssignee !== undefined) {
-    return explicitAssignee;
-  }
-
-  // For actions without explicit assignee, derive from priority_twist owner
-  if (activityType === "action") {
-    const result = await plot.supabase.rpc("get_priority_twist_owner_contact", {
-      p_priority_twist_id: plot.priorityTwistId,
-    });
-    // We should always have an owner contact
-    return result.data ?? null;
-  }
-
-  // For notes and events without explicit assignee, no default
-  return undefined;
+  const result = await plot.supabase.rpc("get_priority_twist_owner_contact", {
+    p_priority_twist_id: plot.priorityTwistId,
+  });
+  // We should always have an owner contact
+  return result.data ?? null;
 }
 
 /**
@@ -696,7 +682,11 @@ export async function prepareActivityForDb(
       // Explicit preview provided - use it
       previewText = createPreviewFromMarkdown(activity.preview);
     }
-  } else if ("notes" in activity && activity.notes && activity.notes.length > 0) {
+  } else if (
+    "notes" in activity &&
+    activity.notes &&
+    activity.notes.length > 0
+  ) {
     // Legacy fallback: generate from first note with content
     const firstNoteWithContent = activity.notes.find((note) => note.content);
     if (firstNoteWithContent && firstNoteWithContent.content) {
@@ -729,9 +719,9 @@ export async function prepareActivityForDb(
       activity.assignee,
       targetPriorityId
     );
-  } else if (!hasSource) {
+  } else if (!hasSource && dbActivityType === "action") {
     // Non-source activity without explicit assignee - derive default for actions
-    assigneeId = await deriveDefaultAssignee(plot, dbActivityType, undefined);
+    assigneeId = await getPriorityTwistOwnerContact(plot);
   }
   // For source activities without explicit assignee, leave assigneeId undefined
   // so upsert_activity RPC can derive the default
@@ -746,7 +736,8 @@ export async function prepareActivityForDb(
     source_created_at:
       activity.created?.toISOString() ?? new Date().toISOString(),
     type: dbActivityType,
-    title: (activity.title ?? occurrences[0]?.title)?.trim(),
+    // Always include title with 'Untitled' fallback for constraint satisfaction
+    title: (activity.title ?? occurrences[0]?.title)?.trim() || "Untitled",
     preview: previewText,
     draft: false,
     private: activity.private ?? false,

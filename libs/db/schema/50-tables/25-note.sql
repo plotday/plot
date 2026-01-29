@@ -137,11 +137,13 @@ BEGIN
         -- Update activity's last_note_created_at and last_note_source_created_at when notes are inserted/deleted
         -- Note: note.updated_at changes do NOT trigger this
         -- Uses GREATEST() instead of MAX subquery since we only need to update if the new value exceeds the current
+        -- Also update updated_by to the note's updated_by so webhook-originated notes appear in sync views
         UPDATE
             activity
         SET
             last_note_created_at = GREATEST (last_note_created_at, NEW.created_at),
-            last_note_source_created_at = GREATEST (last_note_source_created_at, NEW.source_created_at)
+            last_note_source_created_at = GREATEST (last_note_source_created_at, NEW.source_created_at),
+            updated_by = NEW.updated_by
         WHERE
             id = NEW.activity_id
             AND (last_note_created_at IS NULL

@@ -4,7 +4,7 @@ CREATE OR REPLACE VIEW "public"."priority_twist_activity_create" WITH ( security
 --
 AS
 SELECT
-    ax.created_by AS priority_twist_id,
+    pct.id AS priority_twist_id,
     ax.id,
     ax.created_at,
     ax.updated_at,
