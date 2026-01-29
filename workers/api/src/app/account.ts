@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { SupabaseClient } from "@plotday/db";
 
 import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
@@ -308,7 +307,7 @@ account.post("/activate", async (c) => {
     });
   }
 
-  let plotPriorityId: string;
+  let _plotPriorityId: string;
 
   if (existingPlotPriority) {
     // Plot priority already exists
@@ -318,7 +317,7 @@ account.post("/activate", async (c) => {
       user_id: user.id,
       plot_priority_id: existingPlotPriority.id,
     });
-    plotPriorityId = existingPlotPriority.id;
+    _plotPriorityId = existingPlotPriority.id;
   } else {
     // Create Plot priority
     // Generate path for Plot priority as child of root
@@ -351,7 +350,7 @@ account.post("/activate", async (c) => {
       });
     }
 
-    plotPriorityId = newPlotPriority.id;
+    _plotPriorityId = newPlotPriority.id;
   }
 
   // Step 8: Install and activate Plot twist on root priority if not already installed

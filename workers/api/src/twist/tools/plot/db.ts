@@ -162,6 +162,7 @@ export function buildActivityFromDbRecord(
       title: activityRecord.priority_title ?? "",
       archived: false,
       key: null,
+      color: null,
     },
     start: parseRangeStart(activityRecord.on as string | null, activityRecord.at as string | null),
     end: parseRangeEnd(activityRecord.on as string | null, activityRecord.at as string | null),
