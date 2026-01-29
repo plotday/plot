@@ -214,14 +214,14 @@ export class TwistSync extends DurableObject<Bindings> {
 
           // Query updated activities (for activity.updated callback)
           // Uses priority_twist_activity_update view which filters by created_by = twist_id
-          // The created_at filter ensures we don't send updates for items that should be creates
+          // Note: No created_at filter needed - twists get updates for activities they created,
+          // even if they haven't been through a "create" sync (they don't get create callbacks for their own activities)
           await safeQuery(
             this.supabase
               .from("priority_twist_activity_update")
               .select("*")
               .eq("priority_twist_id", this.priorityTwistId)
               .gt("updated_at", activityUpdateLastSyncAt)
-              .lte("created_at", activityCreateLastSyncAt) // Only items already "created"
           ),
 
           // Query new notes (for note.created callback and mention handling)
