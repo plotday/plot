@@ -490,7 +490,7 @@ export function transformOutlookEvent(
 
   // Create base activity
   const activity: NewActivity = {
-    source: event.webLink || `outlook-calendar:${event.id}`, // Prefer webLink as canonical URL
+    source: `outlook-calendar:${event.id}`,
     type: isCancelled
       ? ActivityType.Note
       : isAllDay

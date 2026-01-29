@@ -479,7 +479,8 @@ export class OutlookCalendar
               [Tag.Blocked]: [], // Toggle tag, empty actor array
             },
             notes: [cancelNote],
-            // unread is automatically set by adding a note
+            unread: !initialSync, // false for initial sync, true for incremental updates
+            ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           };
 
           // Send activity update
@@ -608,8 +609,7 @@ export class OutlookCalendar
         if (hasDescription || hasLinks) {
           notes.push({
             activity: {
-              source:
-                outlookEvent.webLink || `outlook-calendar:${outlookEvent.id}`,
+              source: `outlook-calendar:${outlookEvent.id}`,
             },
             key: "description",
             content: hasDescription ? outlookEvent.body!.content! : null,

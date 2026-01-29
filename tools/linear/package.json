@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@plotday/twister": "workspace:^",
-    "@linear/sdk": "^27.0.0"
+    "@linear/sdk": "^72.0.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

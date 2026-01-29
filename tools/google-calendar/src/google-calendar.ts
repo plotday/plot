@@ -213,6 +213,28 @@ export class GoogleCalendar
     return email;
   }
 
+  /**
+   * Resolves "primary" calendar ID to the actual calendar ID (user's email).
+   * Returns the calendarId unchanged if it's not "primary".
+   */
+  private async resolveCalendarId(
+    authToken: string,
+    calendarId: string
+  ): Promise<string> {
+    if (calendarId !== "primary") {
+      return calendarId;
+    }
+
+    // Get actual calendar ID from Google
+    const api = await this.getApi(authToken);
+    const calendar = (await api.call(
+      "GET",
+      `https://www.googleapis.com/calendar/v3/calendars/primary`
+    )) as { id: string };
+
+    return calendar.id;
+  }
+
   async getCalendars(authToken: string): Promise<Calendar[]> {
     const api = await this.getApi(authToken);
     const data = (await api.call(
@@ -248,14 +270,22 @@ export class GoogleCalendar
   ): Promise<void> {
     const { authToken, calendarId, timeMin, timeMax } = options;
 
+    // Resolve "primary" to actual calendar ID to ensure consistent storage keys
+    const resolvedCalendarId = await this.resolveCalendarId(
+      authToken,
+      calendarId
+    );
+
     // Check if sync is already in progress for this calendar
-    const syncInProgress = await this.get<boolean>(`sync_lock_${calendarId}`);
+    const syncInProgress = await this.get<boolean>(
+      `sync_lock_${resolvedCalendarId}`
+    );
     if (syncInProgress) {
       return;
     }
 
     // Set sync lock
-    await this.set(`sync_lock_${calendarId}`, true);
+    await this.set(`sync_lock_${resolvedCalendarId}`, true);
 
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
@@ -265,10 +295,10 @@ export class GoogleCalendar
     await this.set("event_callback_token", callbackToken);
 
     // Store auth token for calendar for later RSVP updates
-    await this.set(`auth_token_${calendarId}`, authToken);
+    await this.set(`auth_token_${resolvedCalendarId}`, authToken);
 
     // Setup webhook for this calendar
-    await this.setupCalendarWatch(authToken, calendarId, authToken);
+    await this.setupCalendarWatch(authToken, resolvedCalendarId, authToken);
 
     // Determine sync range
     let min: Date | undefined;
@@ -291,13 +321,13 @@ export class GoogleCalendar
     }
 
     const initialState: SyncState = {
-      calendarId,
+      calendarId: resolvedCalendarId,
       min,
       max,
       sequence: 1,
     };
 
-    await this.set(`sync_state_${calendarId}`, initialState);
+    await this.set(`sync_state_${resolvedCalendarId}`, initialState);
 
     // Start sync batch using run tool for long-running operation
     const syncCallback = await this.callback(
@@ -305,38 +335,50 @@ export class GoogleCalendar
       1,
       "full",
       authToken,
-      calendarId,
+      resolvedCalendarId,
       true // initialSync = true for initial sync
     );
     await this.runTask(syncCallback);
   }
 
   async stopSync(_authToken: string, calendarId: string): Promise<void> {
+    // Get auth token first so we can resolve the calendar ID
+    let authToken = await this.get<string>(`auth_token_${calendarId}`);
+
+    // Resolve calendar ID to handle "primary" alias
+    let resolvedCalendarId = calendarId;
+    if (authToken) {
+      try {
+        resolvedCalendarId = await this.resolveCalendarId(authToken, calendarId);
+      } catch (error) {
+        console.warn("Failed to resolve calendar ID, using provided value", error);
+      }
+    }
+
     // 1. Cancel scheduled renewal task
     const renewalTask = await this.get<string>(
-      `watch_renewal_task_${calendarId}`
+      `watch_renewal_task_${resolvedCalendarId}`
     );
     if (renewalTask) {
       await this.cancelTask(renewalTask);
-      await this.clear(`watch_renewal_task_${calendarId}`);
+      await this.clear(`watch_renewal_task_${resolvedCalendarId}`);
     }
 
     // 2. Stop watch via Google API
-    const authToken = await this.get<string>(`auth_token_${calendarId}`);
     if (authToken) {
       try {
-        await this.stopCalendarWatch(authToken, calendarId);
+        await this.stopCalendarWatch(authToken, resolvedCalendarId);
       } catch (error) {
         console.error("Failed to stop calendar watch:", error);
         // Continue with cleanup even if API call fails
       }
     }
 
-    // 3. Clear all storage
-    await this.clear(`calendar_watch_${calendarId}`);
-    await this.clear(`sync_state_${calendarId}`);
-    await this.clear(`sync_lock_${calendarId}`);
-    await this.clear(`auth_token_${calendarId}`);
+    // 3. Clear sync-related storage
+    await this.clear(`calendar_watch_${resolvedCalendarId}`);
+    await this.clear(`sync_state_${resolvedCalendarId}`);
+    await this.clear(`sync_lock_${resolvedCalendarId}`);
+    // NOTE: We keep auth_token_${resolvedCalendarId} so RSVP callbacks on existing activities continue to work
   }
 
   /**
@@ -388,9 +430,6 @@ export class GoogleCalendar
 
     // Don't schedule if already past renewal time (edge case)
     if (renewalTime <= new Date()) {
-      console.log(
-        `Watch for ${calendarId} expires soon, renewing immediately`
-      );
       await this.renewCalendarWatch(calendarId);
       return;
     }
@@ -410,10 +449,6 @@ export class GoogleCalendar
     if (taskToken) {
       await this.set(`watch_renewal_task_${calendarId}`, taskToken);
     }
-
-    console.log(
-      `Scheduled watch renewal for ${calendarId} at ${renewalTime.toISOString()}`
-    );
   }
 
   /**
@@ -507,10 +542,6 @@ export class GoogleCalendar
 
       // Schedule proactive renewal 24 hours before expiry
       await this.scheduleWatchRenewal(calendarId);
-
-      console.log(
-        `Successfully setup calendar watch for ${calendarId}, expires: ${new Date(parseInt(watchData.expiration)).toISOString()}`
-      );
     } catch (error) {
       console.error(
         `Failed to setup calendar watch for calendar ${calendarId}:`,
@@ -561,9 +592,6 @@ export class GoogleCalendar
           calendarId,
           initialSync
         );
-        console.log(
-          `Synced ${result.events.length} events in batch ${batchNumber} for calendar ${calendarId}`
-        );
       }
 
       await this.set(`sync_state_${calendarId}`, result.state);
@@ -579,10 +607,6 @@ export class GoogleCalendar
         );
         await this.runTask(syncCallback);
       } else {
-        console.log(
-          `Google Calendar ${mode} sync completed after ${batchNumber} batches for calendar ${calendarId}`
-        );
-
         // Persist sync token for future incremental syncs
         if (result.state.state && !result.state.more) {
           await this.set(`last_sync_token_${calendarId}`, result.state.state);
@@ -648,9 +672,8 @@ export class GoogleCalendar
 
           // Handle cancelled events
           if (event.status === "cancelled") {
-            // Canonical URL for this event (required for upsert)
-            const canonicalUrl =
-              event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
+            // Canonical source for this event (required for upsert)
+            const canonicalUrl = `google-calendar:${event.id}`;
 
             // Create cancellation note
             const cancelNote: NewNote = {
@@ -673,7 +696,8 @@ export class GoogleCalendar
                 [Tag.Blocked]: [], // Toggle tag, empty actor array
               },
               notes: [cancelNote],
-              // unread is automatically set by adding a note
+              unread: !initialSync, // false for initial sync, true for incremental updates
+              ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
             };
 
             // Send activity - database handles upsert automatically
@@ -770,9 +794,8 @@ export class GoogleCalendar
             continue;
           }
 
-          // Canonical URL for this event (required for upsert)
-          const canonicalUrl =
-            event.htmlLink || `google-calendar:${calendarId}:${event.id}`;
+          // Canonical source for this event (required for upsert)
+          const canonicalUrl = `google-calendar:${event.id}`;
 
           // Create note with description and/or links
           const notes: NewNote[] = [];
@@ -969,11 +992,6 @@ export class GoogleCalendar
       (expiration.getTime() - now.getTime()) / (1000 * 60 * 60);
 
     if (hoursUntilExpiry < 24) {
-      console.log(
-        `Watch for ${calendarId} expires in ${hoursUntilExpiry.toFixed(
-          1
-        )} hours, renewing...`
-      );
       // Don't await - let renewal happen async (don't block webhook)
       this.renewCalendarWatch(calendarId).catch((error) => {
         console.error(
@@ -1082,6 +1100,35 @@ export class GoogleCalendar
     }
   }
 
+  /**
+   * Constructs a Google Calendar instance ID for a recurring event occurrence.
+   * @param baseEventId - The recurring event ID
+   * @param occurrence - The occurrence date (Date or ISO string)
+   * @returns Instance ID in format: {baseEventId}_{YYYYMMDDTHHMMSSZ}
+   */
+  private constructInstanceId(
+    baseEventId: string,
+    occurrence: Date | string
+  ): string {
+    let occurrenceDate: Date;
+
+    if (occurrence instanceof Date) {
+      occurrenceDate = occurrence;
+    } else if (typeof occurrence === "string") {
+      occurrenceDate = new Date(occurrence);
+    } else {
+      throw new Error(`Invalid occurrence type: ${typeof occurrence}`);
+    }
+
+    // Format as YYYYMMDDTHHMMSSZ (Google Calendar instance ID format)
+    const instanceDateStr = occurrenceDate
+      .toISOString()
+      .replace(/[-:]/g, "") // Remove dashes and colons
+      .replace(/\.\d{3}/, ""); // Remove milliseconds
+
+    return `${baseEventId}_${instanceDateStr}`;
+  }
+
   async onActivityUpdated(
     activity: Activity,
     changes: {
@@ -1090,124 +1137,131 @@ export class GoogleCalendar
       occurrence?: ActivityOccurrence;
     }
   ): Promise<void> {
-    // Only process calendar events
-    const source = activity.source;
-    if (
-      !source ||
-      typeof source !== "string" ||
-      !source.startsWith("google-calendar:")
-    ) {
-      return;
-    }
-
-    // Check if RSVP tags changed
-    const attendChanged =
-      Tag.Attend in changes.tagsAdded || Tag.Attend in changes.tagsRemoved;
-    const skipChanged =
-      Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
-    const undecidedChanged =
-      Tag.Undecided in changes.tagsAdded ||
-      Tag.Undecided in changes.tagsRemoved;
-
-    if (!attendChanged && !skipChanged && !undecidedChanged) {
-      return; // No RSVP-related tag changes
-    }
-
-    // Determine new RSVP status based on current tags
-    const hasAttend =
-      activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
-    const hasSkip =
-      activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
-    const hasUndecided =
-      activity.tags?.[Tag.Undecided] && activity.tags[Tag.Undecided].length > 0;
-
-    let newStatus: "accepted" | "declined" | "tentative" | "needsAction";
-
-    // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
-    if (hasAttend && (hasSkip || hasUndecided)) {
-      // Multiple tags present - use most recent from tagsAdded
-      if (Tag.Attend in changes.tagsAdded) {
-        newStatus = "accepted";
-      } else if (Tag.Skip in changes.tagsAdded) {
-        newStatus = "declined";
-      } else if (Tag.Undecided in changes.tagsAdded) {
-        newStatus = "tentative";
-      } else {
-        // Multiple were already there, no change needed
-        return;
-      }
-    } else if (hasSkip && hasUndecided) {
-      // Skip and Undecided present - use most recent
-      if (Tag.Skip in changes.tagsAdded) {
-        newStatus = "declined";
-      } else if (Tag.Undecided in changes.tagsAdded) {
-        newStatus = "tentative";
-      } else {
-        return;
-      }
-    } else if (hasAttend) {
-      newStatus = "accepted";
-    } else if (hasSkip) {
-      newStatus = "declined";
-    } else if (hasUndecided) {
-      newStatus = "tentative";
-    } else {
-      // No RSVP tags present - reset to needsAction
-      newStatus = "needsAction";
-    }
-
-    // Extract calendar info from metadata
-    if (!activity.meta) {
-      console.warn("Missing activity metadata");
-      return;
-    }
-
-    const baseEventId = activity.meta.id;
-    const calendarId = activity.meta.calendarId;
-
-    if (
-      !baseEventId ||
-      !calendarId ||
-      typeof baseEventId !== "string" ||
-      typeof calendarId !== "string"
-    ) {
-      console.warn(
-        "Missing or invalid event or calendar ID in activity metadata"
-      );
-      return;
-    }
-
-    // Determine the event ID to update
-    // If this is an occurrence-level change, construct the instance ID
-    let eventId = baseEventId;
-    if (changes.occurrence) {
-      // Google Calendar instance IDs are formatted as: {recurringEventId}_{YYYYMMDDTHHMMSSZ}
-      const occurrenceDate =
-        changes.occurrence.occurrence instanceof Date
-          ? changes.occurrence.occurrence
-          : new Date(changes.occurrence.occurrence);
-
-      // Format as YYYYMMDDTHHMMSSZ (e.g., 20250115T140000Z)
-      const instanceDateStr = occurrenceDate
-        .toISOString()
-        .replace(/[-:]/g, "") // Remove dashes and colons
-        .replace(/\.\d{3}/, ""); // Remove milliseconds
-
-      eventId = `${baseEventId}_${instanceDateStr}`;
-    }
-
-    // Get the auth token for this calendar
-    const authToken = await this.get<string>(`auth_token_${calendarId}`);
-
-    if (!authToken) {
-      console.warn("No auth token found for calendar", calendarId);
-      return;
-    }
-
     try {
+      // Only process calendar events
+      const source = activity.source;
+      if (
+        !source ||
+        typeof source !== "string" ||
+        !source.startsWith("google-calendar:")
+      ) {
+        return;
+      }
+
+      // Check if RSVP tags changed
+      const attendChanged =
+        Tag.Attend in changes.tagsAdded || Tag.Attend in changes.tagsRemoved;
+      const skipChanged =
+        Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
+      const undecidedChanged =
+        Tag.Undecided in changes.tagsAdded ||
+        Tag.Undecided in changes.tagsRemoved;
+
+      if (!attendChanged && !skipChanged && !undecidedChanged) {
+        return; // No RSVP-related tag changes
+      }
+
+      // Determine new RSVP status based on current tags
+      const hasAttend =
+        activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
+      const hasSkip =
+        activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
+      const hasUndecided =
+        activity.tags?.[Tag.Undecided] &&
+        activity.tags[Tag.Undecided].length > 0;
+
+      let newStatus: "accepted" | "declined" | "tentative" | "needsAction";
+
+      // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
+      if (hasAttend && (hasSkip || hasUndecided)) {
+        // Multiple tags present - use most recent from tagsAdded
+        if (Tag.Attend in changes.tagsAdded) {
+          newStatus = "accepted";
+        } else if (Tag.Skip in changes.tagsAdded) {
+          newStatus = "declined";
+        } else if (Tag.Undecided in changes.tagsAdded) {
+          newStatus = "tentative";
+        } else {
+          // Multiple were already there, no change needed
+          return;
+        }
+      } else if (hasSkip && hasUndecided) {
+        // Skip and Undecided present - use most recent
+        if (Tag.Skip in changes.tagsAdded) {
+          newStatus = "declined";
+        } else if (Tag.Undecided in changes.tagsAdded) {
+          newStatus = "tentative";
+        } else {
+          return;
+        }
+      } else if (hasAttend) {
+        newStatus = "accepted";
+      } else if (hasSkip) {
+        newStatus = "declined";
+      } else if (hasUndecided) {
+        newStatus = "tentative";
+      } else {
+        // No RSVP tags present - reset to needsAction
+        newStatus = "needsAction";
+      }
+
+      // Extract calendar info from metadata
+      if (!activity.meta) {
+        console.error("[RSVP Sync] Missing activity metadata", {
+          activity_id: activity.id,
+        });
+        return;
+      }
+
+      const baseEventId = activity.meta.id;
+      const calendarId = activity.meta.calendarId;
+
+      if (
+        !baseEventId ||
+        !calendarId ||
+        typeof baseEventId !== "string" ||
+        typeof calendarId !== "string"
+      ) {
+        console.error("[RSVP Sync] Missing or invalid event/calendar ID", {
+          has_event_id: !!baseEventId,
+          has_calendar_id: !!calendarId,
+          event_id_type: typeof baseEventId,
+          calendar_id_type: typeof calendarId,
+        });
+        return;
+      }
+
+      // Determine the event ID to update
+      // If this is an occurrence-level change, construct the instance ID
+      let eventId = baseEventId;
+      if (changes.occurrence) {
+        eventId = this.constructInstanceId(
+          baseEventId,
+          changes.occurrence.occurrence
+        );
+      }
+
+      // Get the auth token for this calendar
+
+      const authToken = await this.get<string>(`auth_token_${calendarId}`);
+
+      if (!authToken) {
+        console.error("[RSVP Sync] No auth token found", {
+          calendar_id: calendarId,
+          storage_key: `auth_token_${calendarId}`,
+          activity_id: activity.id,
+          hint: 'Calendar ID may be "primary" but auth token stored with actual email',
+        });
+        return;
+      }
+
       await this.updateEventRSVP(authToken, calendarId, eventId, newStatus);
     } catch (error) {
-      console.error(`Failed to update RSVP for event ${eventId}:`, error);
+      console.error("[RSVP Sync] Error in callback", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        activity_id: activity.id,
+      });
     }
   }
 

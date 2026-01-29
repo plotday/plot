@@ -92,8 +92,8 @@ importers:
   tools/linear:
     dependencies:
       '@linear/sdk':
-        specifier: ^27.0.0
-        version: 27.0.0
+        specifier: ^72.0.0
+        version: 72.0.0(graphql@15.10.1)
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -715,9 +715,9 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@linear/sdk@27.0.0':
-    resolution: {integrity: sha512-cortZZnC9VyMfDs2YvBxr7LNi5Ab7zw2eHF6XNuU9dqoEn4nok/oSWIdjjo5zXqIFIEeWmaby3d7WDKdHEEi2g==}
-    engines: {node: '>=12.x', yarn: 1.x}
+  '@linear/sdk@72.0.0':
+    resolution: {integrity: sha512-v8NTOTbI/RlUMDSnDalWrJuQY7GHAjZb9sWiqSUid96U2DNLrnm2X+cDP1MPbfcf495U6Soyo3+X3gRZUYJT8g==}
+    engines: {node: '>=18.x'}
 
   '@manypkg/find-root@1.1.0':
     resolution: {integrity: sha512-mki5uBvhHzO8kYYix/WRy2WX8S3B5wdVSc9D6KcU5lQNglP2yt58/VfLuAK49glRXChosY8ap2oJ1qgma3GUVA==}
@@ -1160,9 +1160,6 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
-  isomorphic-unfetch@3.1.0:
-    resolution: {integrity: sha512-geDJjpoZ8N0kWexiwkX8F9NkTsXhetLPVbZFQ+JTW239QNOwvB0gniuR1Wc6f0AMTn7/mFGyXvHTifrCp/GH8Q==}
-
   jira.js@4.1.3:
     resolution: {integrity: sha512-I8Co6pihFhIsauxRVEozbItFruu1EJ35fhHTyDjJTdIixY+qD+sSIXDoXlyKJ/Qx7mnNNsDWP3wWu5H8uKHLkw==}
 
@@ -1521,9 +1518,6 @@ packages:
 
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
-
-  unfetch@4.2.0:
-    resolution: {integrity: sha512-F9p7yYCn6cIW9El1zi0HI6vqpeIvBsr3dSuRO6Xuppb1u5rXpCPmMvLSyECLhybr9isec8Ohl0hPekMVrEinDA==}
 
   universalify@0.1.2:
     resolution: {integrity: sha512-rBJeI5CXAlmy1pV+617WB9J63U6XcazHHF2f2dbJix4XzpUF0RS3Zbj0FGIOCAva5P/d/GBOYaACQ1w+0azUkg==}
@@ -2032,13 +2026,11 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@linear/sdk@27.0.0':
+  '@linear/sdk@72.0.0(graphql@15.10.1)':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@15.10.1)
-      graphql: 15.10.1
-      isomorphic-unfetch: 3.1.0
     transitivePeerDependencies:
-      - encoding
+      - graphql
 
   '@manypkg/find-root@1.1.0':
     dependencies:
@@ -2529,13 +2521,6 @@ snapshots:
 
   isexe@2.0.0: {}
 
-  isomorphic-unfetch@3.1.0:
-    dependencies:
-      node-fetch: 2.7.0
-      unfetch: 4.2.0
-    transitivePeerDependencies:
-      - encoding
-
   jira.js@4.1.3:
     dependencies:
       axios: 1.13.2
@@ -2851,8 +2836,6 @@ snapshots:
   uc.micro@2.1.0: {}
 
   undici-types@7.16.0: {}
-
-  unfetch@4.2.0: {}
 
   universalify@0.1.2: {}
 

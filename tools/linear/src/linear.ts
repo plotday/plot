@@ -1,4 +1,10 @@
 import { type Issue, LinearClient } from "@linear/sdk";
+import type {
+  EntityWebhookPayloadWithCommentData,
+  EntityWebhookPayloadWithIssueData,
+  LinearWebhookPayload,
+} from "@linear/sdk/webhooks";
+import { LinearWebhookClient } from "@linear/sdk/webhooks";
 
 import {
   type ActivityLink,
@@ -28,6 +34,14 @@ import {
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
+
+// Cloudflare Workers provides Buffer global
+declare const Buffer: {
+  from(
+    data: string | ArrayBuffer | Uint8Array,
+    encoding?: string
+  ): Uint8Array & { toString(encoding?: string): string };
+};
 
 type SyncState = {
   after: string | null;
@@ -358,14 +372,14 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       authorContact = {
         email: creator.email,
         name: creator.name,
-        avatar: creator.avatarUrl,
+        avatar: creator.avatarUrl ?? undefined,
       };
     }
     if (assignee?.email) {
       assigneeContact = {
         email: assignee.email,
         name: assignee.name,
-        avatar: assignee.avatarUrl,
+        avatar: assignee.avatarUrl ?? undefined,
       };
     }
 
@@ -404,7 +418,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
           commentAuthor = {
             email: user.email,
             name: user.name,
-            avatar: user.avatarUrl,
+            avatar: user.avatarUrl ?? undefined,
           };
         }
       } catch (error) {
@@ -536,55 +550,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Verify Linear webhook signature
-   * Linear uses HMAC-SHA256 with the webhook secret
-   */
-  private async verifyLinearSignature(
-    signature: string | undefined,
-    rawBody: string,
-    secret: string,
-    webhookTimestamp: number
-  ): Promise<boolean> {
-    if (!signature) {
-      console.warn("Linear webhook missing signature header");
-      return false;
-    }
-
-    // Verify timestamp to prevent replay attacks (within 60 seconds)
-    const currentTime = Date.now();
-    const timeDiff = Math.abs(currentTime - webhookTimestamp);
-    if (timeDiff > 60000) {
-      console.warn(
-        `Linear webhook timestamp too old: ${timeDiff}ms (max 60000ms)`
-      );
-      return false;
-    }
-
-    // Compute HMAC-SHA256 signature
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-    const signatureBytes = await crypto.subtle.sign(
-      "HMAC",
-      key,
-      encoder.encode(rawBody)
-    );
-
-    // Convert to hex string
-    const expectedSignature = Array.from(new Uint8Array(signatureBytes))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    // Constant-time comparison
-    return signature === expectedSignature;
-  }
-
-  /**
    * Handle incoming webhook events from Linear
    */
   private async onWebhook(
@@ -593,53 +558,65 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     authToken: string,
     webhookSecret?: string
   ): Promise<void> {
-    const payload = request.body as any;
-
-    // Verify webhook signature
-    // Linear sends Linear-Signature header (not X-Linear-Signature)
+    // Retrieve secret
     const secret =
       webhookSecret || (await this.get<string>(`webhook_secret_${projectId}`));
-    if (secret && request.rawBody) {
-      const signature = request.headers["linear-signature"];
-      const isValid = await this.verifyLinearSignature(
-        signature,
-        request.rawBody,
-        secret,
-        payload.webhookTimestamp
-      );
 
-      if (!isValid) {
-        console.warn("Linear webhook signature verification failed");
-        return;
-      }
-    } else if (!secret) {
+    if (!secret) {
       console.warn("Linear webhook secret not found, skipping verification");
+      return;
     }
 
-    // Get callback token (needed by both handlers)
+    if (!request.rawBody) {
+      console.warn("Linear webhook missing raw body");
+      return;
+    }
+
+    // Verify and parse using SDK
+    let payload: LinearWebhookPayload;
+    try {
+      const client = new LinearWebhookClient(secret);
+      const rawBodyBuffer = Buffer.from(request.rawBody, "utf8");
+      const signature = request.headers["linear-signature"];
+
+      if (!signature) {
+        console.warn("Linear webhook missing signature header");
+        return;
+      }
+
+      // Verify + parse in one call
+      payload = client.parseData(
+        rawBodyBuffer,
+        signature,
+        request.headers["linear-timestamp"]
+      );
+    } catch (error) {
+      console.warn("Linear webhook signature verification failed:", error);
+      return;
+    }
+
+    // Get callback token
     const callbackToken = await this.get<Callback>(`callback_${projectId}`);
     if (!callbackToken) {
       console.warn("No callback token found for project:", projectId);
       return;
     }
 
-    // Split handling by webhook type for efficiency
+    // Route by webhook type
     if (payload.type === "Issue") {
       await this.handleIssueWebhook(
-        payload,
+        payload as EntityWebhookPayloadWithIssueData,
         projectId,
         authToken,
         callbackToken
       );
     } else if (payload.type === "Comment") {
       await this.handleCommentWebhook(
-        payload,
+        payload as EntityWebhookPayloadWithCommentData,
         projectId,
         authToken,
         callbackToken
       );
-    } else {
-      console.log("Ignoring webhook type:", payload.type);
     }
   }
 
@@ -647,7 +624,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Handle Issue webhook events - only updates issue metadata, not comments
    */
   private async handleIssueWebhook(
-    payload: any,
+    payload: EntityWebhookPayloadWithIssueData,
     projectId: string,
     _authToken: string,
     callbackToken: Callback
@@ -674,18 +651,19 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       authorContact = {
         email: creator.email,
         name: creator.name,
-        avatar: creator.avatarUrl,
+        avatar: creator.avatarUrl ?? undefined,
       };
     }
     if (assignee?.email) {
       assigneeContact = {
         email: assignee.email,
         name: assignee.name,
-        avatar: assignee.avatarUrl,
+        avatar: assignee.avatarUrl ?? undefined,
       };
     }
 
     // Create partial activity update (no notes = doesn't touch existing notes)
+    // Note: webhook payload dates are JSON strings, must convert to Date
     const activity: NewActivity = {
       source: `linear:issue:${issue.id}`,
       type: ActivityType.Action,
@@ -693,7 +671,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       created: new Date(issue.createdAt),
       author: authorContact,
       assignee: assigneeContact ?? null,
-      done: issue.completedAt ?? issue.canceledAt ?? null,
+      done: issue.completedAt
+        ? new Date(issue.completedAt)
+        : issue.canceledAt
+        ? new Date(issue.canceledAt)
+        : null,
       start: assigneeContact ? undefined : null,
       meta: {
         linearId: issue.id,
@@ -709,8 +691,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Handle Comment webhook events - only updates the specific comment
    */
   private async handleCommentWebhook(
-    payload: any,
-    _projectId: string,
+    payload: EntityWebhookPayloadWithCommentData,
+    projectId: string,
     authToken: string,
     callbackToken: Callback
   ): Promise<void> {
@@ -728,46 +710,35 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       return;
     }
 
-    // Get issue URL from webhook payload or fetch if needed
-    let issueUrl: string;
-    if (comment.issue?.url) {
-      issueUrl = comment.issue.url;
-    } else {
-      // Fallback: fetch issue URL if not in payload
-      try {
-        const client = await this.getClient(authToken);
-        const issue = await client.issue(issueId);
-        issueUrl = issue.url;
-      } catch (error) {
-        console.error(`Linear issue ${issueId} not found:`, error);
-        return;
-      }
-    }
-
     // Extract comment author from webhook payload
     let commentAuthor: NewContact | undefined;
     if (comment.user?.email) {
       commentAuthor = {
         email: comment.user.email,
         name: comment.user.name,
-        avatar: comment.user.avatarUrl,
+        avatar: comment.user.avatarUrl ?? undefined,
       };
     }
 
     // Create activity update with single comment note
     // Type is required by NewActivity, but upsert will use existing activity's type
+    const activitySource = `linear:issue:${issueId}`;
+    const note: NewNote = {
+      key: `comment-${comment.id}`,
+      activity: { source: activitySource },
+      content: comment.body,
+      created: new Date(comment.createdAt),
+      author: commentAuthor,
+    };
+
     const activity: NewActivityWithNotes = {
-      source: issueUrl,
+      source: activitySource,
       type: ActivityType.Action, // Required field (will match existing activity)
-      notes: [
-        {
-          key: `comment-${comment.id}`,
-          activity: { source: issueUrl },
-          content: comment.body,
-          created: new Date(comment.createdAt),
-          author: commentAuthor,
-        } as NewNote,
-      ],
+      notes: [note],
+      meta: {
+        linearId: issueId,
+        projectId,
+      },
     };
 
     await this.tools.callbacks.run(callbackToken, activity);

@@ -388,7 +388,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       description = task.notes;
     }
 
-    // Construct Asana task URL
+    // Use stable identifier for source
+    const activitySource = `asana:task:${task.gid}`;
+
+    // Construct Asana task URL for link
     const taskUrl = `https://app.asana.com/0/${projectId}/${task.gid}`;
 
     // Create initial note with description and link to Asana task
@@ -400,7 +403,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     });
 
     notes.push({
-      activity: { source: taskUrl },
+      activity: { source: activitySource },
       key: "description",
       content: description,
       created: task.created_at ? new Date(task.created_at) : undefined,
@@ -408,7 +411,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     });
 
     return {
-      source: taskUrl,
+      source: activitySource,
       type: ActivityType.Action,
       title: task.name,
       created: task.created_at ? new Date(task.created_at) : undefined,
@@ -647,8 +650,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         };
       }
 
-      // Construct task URL
-      const taskUrl = `https://app.asana.com/0/${projectId}/${task.gid}`;
+      // Use stable identifier for source
+      const activitySource = `asana:task:${task.gid}`;
 
       // Extract description
       let description: string | null = null;
@@ -658,7 +661,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
 
       // Create partial activity update (no notes = doesn't touch existing notes)
       const activity: NewActivity = {
-        source: taskUrl,
+        source: activitySource,
         type: ActivityType.Action,
         title: task.name,
         created: task.created_at ? new Date(task.created_at) : undefined,
@@ -695,8 +698,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     const taskGid = event.resource.gid;
 
     try {
-      // Construct task URL
-      const taskUrl = `https://app.asana.com/0/${projectId}/${taskGid}`;
+      // Use stable identifier for source
+      const activitySource = `asana:task:${taskGid}`;
 
       // Fetch stories (comments) for this task
       // We fetch all stories since Asana doesn't provide the specific story GID in the webhook
@@ -733,12 +736,12 @@ export class Asana extends Tool<Asana> implements ProjectTool {
 
       // Create activity update with single story note
       const activity: NewActivityWithNotes = {
-        source: taskUrl,
+        source: activitySource,
         type: ActivityType.Action, // Required field (will match existing activity)
         notes: [
           {
             key: `story-${latestStory.gid}`,
-            activity: { source: taskUrl },
+            activity: { source: activitySource },
             content: latestStory.text || "",
             created: latestStory.created_at
               ? new Date(latestStory.created_at)
@@ -746,6 +749,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
             author: storyAuthor,
           } as NewNote,
         ],
+        meta: {
+          taskGid,
+          projectId,
+        },
       };
 
       await this.tools.callbacks.run(callbackToken, activity);

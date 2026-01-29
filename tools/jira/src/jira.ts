@@ -8,7 +8,6 @@ import {
   type NewActivity,
   type NewActivityWithNotes,
   NewContact,
-  type NewNote,
   Serializable,
 } from "@plotday/twister";
 import type {
@@ -721,14 +720,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       };
     }
 
-    // Get cloud ID for constructing stable source identifier and issue URL
+    // Get cloud ID for constructing stable source identifier
     let cloudId: string | undefined;
-    let issueUrl: string | undefined;
     try {
       cloudId = await this.getCloudId(authToken);
-      issueUrl = `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issue.key}`;
     } catch (error) {
-      console.error("Failed to get cloud ID for issue URL:", error);
+      console.error("Failed to get cloud ID for source identifier:", error);
     }
 
     // Stable source identifier using immutable issue ID (not mutable issue.key)
@@ -785,14 +782,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       return;
     }
 
-    // Get cloud ID for constructing stable source identifier and issue URL
+    // Get cloud ID for constructing stable source identifier
     let cloudId: string | undefined;
-    let issueUrl: string | undefined;
     try {
       cloudId = await this.getCloudId(authToken);
-      issueUrl = `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issue.key}`;
     } catch (error) {
-      console.error("Failed to get cloud ID for issue URL:", error);
+      console.error("Failed to get cloud ID for source identifier:", error);
     }
 
     // Stable source identifier using immutable issue ID (not mutable issue.key)
@@ -824,11 +819,16 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       notes: [
         {
           key: `comment-${comment.id}`,
+          activity: source ? { source } : undefined,
           content: commentText,
           created: comment.created ? new Date(comment.created) : undefined,
           author: commentAuthor,
         } as any,
       ],
+      meta: {
+        issueKey: issue.key,
+        projectId,
+      },
     };
 
     await this.tools.callbacks.run(callbackToken, activity);
