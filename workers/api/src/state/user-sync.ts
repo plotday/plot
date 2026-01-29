@@ -184,16 +184,52 @@ export class UserSync extends DurableObject<Bindings> {
       }
 
       // Update last_sync_at for the entities we just synced using the max timestamp from the query
-      const entities = pendingUpdates.map((u) => u.entity);
-      const { error: updateError } = await this.supabase
-        .from("user_sync")
-        .update({ last_sync_at: syncUpTo })
-        .eq("user_id", this.userId)
-        .in("entity", entities);
+      // Sort entities alphabetically to ensure consistent lock order and prevent deadlocks
+      const entities = pendingUpdates.map((u) => u.entity).sort();
+
+      // Retry logic for deadlock errors (PostgreSQL code 40P01)
+      let retryCount = 0;
+      const maxRetries = 3;
+      let updateError: any = null;
+
+      while (retryCount <= maxRetries) {
+        const { error } = await this.supabase
+          .from("user_sync")
+          .update({ last_sync_at: syncUpTo })
+          .eq("user_id", this.userId)
+          .in("entity", entities);
+
+        if (!error) {
+          updateError = null;
+          break;
+        }
+
+        // Check if this is a deadlock error
+        if (error.code === "40P01" && retryCount < maxRetries) {
+          retryCount++;
+          // Exponential backoff with jitter: 50-100ms, 100-200ms, 200-400ms
+          const baseDelay = 50 * Math.pow(2, retryCount - 1);
+          const jitter = Math.random() * baseDelay;
+          const delayMs = baseDelay + jitter;
+
+          logger.warn(`Deadlock detected, retrying (${retryCount}/${maxRetries})`, {
+            user_id: this.userId,
+            delay_ms: Math.round(delayMs),
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        // Non-deadlock error or max retries exceeded
+        updateError = error;
+        break;
+      }
 
       if (updateError) {
         logger.error("Error updating user_sync last_sync_at", updateError, {
           user_id: this.userId,
+          retry_count: retryCount,
         });
       }
 
