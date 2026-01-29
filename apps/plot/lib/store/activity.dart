@@ -1666,7 +1666,15 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (kindIcon != null) return kindIcon;
 
     // Fall back to type-based icons
-    if (type == ActivityType.event) return PlotIcon.event;
+    if (type == ActivityType.event) {
+      if (currentUserRsvpSkip) {
+        return PlotIcon.calendarXmark;
+      } else if (shouldShowRsvpPlus) {
+        return PlotIcon.calendarPlus;
+      } else {
+        return PlotIcon.event;
+      }
+    }
     return PlotIcon.note;
   }
 
@@ -2191,7 +2199,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   /// Returns true if this event has a different author and user hasn't RSVP'd attend or skip
   bool get shouldShowRsvpPlus {
     if (type != ActivityType.event) return false;
-    if (assigneeId?.isCurrentUser() != false) return false;
+    if (authorId?.isCurrentUser() != false) return false;
     return !currentUserRsvpAttend && !currentUserRsvpSkip;
   }
 

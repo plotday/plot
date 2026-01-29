@@ -740,7 +740,7 @@ class RsvpAttend extends Command {
         title: 'Attend',
         eventObject: EventObject.activity,
         eventAction: EventAction.tagged,
-        icon: stateIcon ? PlotIcon.event : PlotIcon.calendarPlus,
+        icon: stateIcon ? activity.icon : PlotIcon.calendarPlus,
       );
 
   final Activity activity;
