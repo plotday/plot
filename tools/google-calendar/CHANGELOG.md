@@ -1,5 +1,24 @@
 # @plotday/tool-google-calendar
 
+## 0.11.0
+
+### Added
+
+- Provide an activity preview ([`97e4949`](https://github.com/plotday/plot/commit/97e4949664c04b886bdd55c4666ac681bd012065))
+
+### Changed
+
+- BREAKING: Improve immutability of Activity.source and Note.key by using IDs rather than URLs ([`97e4949`](https://github.com/plotday/plot/commit/97e4949664c04b886bdd55c4666ac681bd012065))
+- RSVP tags (attend, skip, undecided) are mutually exclusive per actor ([`b579997`](https://github.com/plotday/plot/commit/b5799978948ffffcffb3afb01ccf90997ee652b4))
+- Explicitly set Activity.archived = false on initial syncs ([`6a0aec1`](https://github.com/plotday/plot/commit/6a0aec11ad1745c3b2500269de0335907b610e58))
+- Updated dependencies:
+- @plotday/twister@0.32.0
+- @plotday/tool-google-contacts@0.4.8
+
+### Fixed
+
+- Multiple calendar sync issues ([`b579997`](https://github.com/plotday/plot/commit/b5799978948ffffcffb3afb01ccf90997ee652b4))
+
 ## 0.10.1
 
 ### Fixed

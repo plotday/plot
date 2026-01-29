@@ -1,5 +1,17 @@
 # @plotday/tool-gmail
 
+## 0.7.0
+
+### Added
+
+- Provide an activity preview ([`97e4949`](https://github.com/plotday/plot/commit/97e4949664c04b886bdd55c4666ac681bd012065))
+
+### Changed
+
+- BREAKING: Improve immutability of Activity.source and Note.key by using IDs rather than URLs ([`97e4949`](https://github.com/plotday/plot/commit/97e4949664c04b886bdd55c4666ac681bd012065))
+- Updated dependencies:
+- @plotday/twister@0.32.0
+
 ## 0.6.3
 
 ### Changed

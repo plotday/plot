@@ -1,5 +1,22 @@
 # @plotday/tool-linear
 
+## 0.5.0
+
+### Added
+
+- Provide an activity preview ([`97e4949`](https://github.com/plotday/plot/commit/97e4949664c04b886bdd55c4666ac681bd012065))
+
+### Changed
+
+- BREAKING: Improve immutability of Activity.source and Note.key by using IDs rather than URLs ([`97e4949`](https://github.com/plotday/plot/commit/97e4949664c04b886bdd55c4666ac681bd012065))
+- Explicitly set Activity.archived = false on initial syncs ([`6a0aec1`](https://github.com/plotday/plot/commit/6a0aec11ad1745c3b2500269de0335907b610e58))
+- Updated dependencies:
+- @plotday/twister@0.32.0
+
+### Fixed
+
+- Scopes for Linear webhook ([`cca290d`](https://github.com/plotday/plot/commit/cca290db258fd31e60100ae34339ed2f00787a0d))
+
 ## 0.4.3
 
 ### Changed
