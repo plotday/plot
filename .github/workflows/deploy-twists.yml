@@ -12,6 +12,12 @@ on:
       - "public/**"
       - ".github/workflows/deploy-twists.yml"
   workflow_dispatch:
+    inputs:
+      twists:
+        description: 'Twists to deploy (comma-separated, or "all" for all twists)'
+        required: false
+        default: 'all'
+        type: string
 
 concurrency:
   group: deploy-twists-${{ github.ref }}
@@ -47,15 +53,43 @@ jobs:
         id: filter
         run: |
           TWIST_LIST=(${TWISTS//,/ })
+          TWISTS_TO_DEPLOY=()
 
-          # Deploy all twists when manually triggered
+          # Check if this is a manual dispatch with specific twists
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TWISTS_JSON=$(printf '%s\n' "${TWIST_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
-            echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
-            echo "Manual trigger detected, deploying all twists: $TWISTS_JSON"
+            MANUAL_INPUT="${{ github.event.inputs.twists }}"
+
+            if [ -z "$MANUAL_INPUT" ] || [ "$MANUAL_INPUT" = "all" ]; then
+              # Deploy all twists
+              echo "Manual trigger: deploying all twists"
+              TWISTS_TO_DEPLOY=("${TWIST_LIST[@]}")
+            else
+              # Deploy specific twists from comma-separated input
+              echo "Manual trigger: deploying specified twists"
+              IFS=',' read -ra INPUT_LIST <<< "$MANUAL_INPUT"
+              for twist in "${INPUT_LIST[@]}"; do
+                # Trim whitespace
+                twist=$(echo "$twist" | xargs)
+                if [ -d "twists/$twist" ]; then
+                  TWISTS_TO_DEPLOY+=("$twist")
+                else
+                  echo "Warning: twist '$twist' not found"
+                fi
+              done
+            fi
+
+            if [ ${#TWISTS_TO_DEPLOY[@]} -eq 0 ]; then
+              echo "twists=[]" >> $GITHUB_OUTPUT
+              echo "No valid twists to deploy"
+            else
+              TWISTS_JSON=$(printf '%s\n' "${TWISTS_TO_DEPLOY[@]}" | jq -R -s -c 'split("\n")[:-1]')
+              echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
+              echo "Twists to deploy: ${TWISTS_TO_DEPLOY[*]}"
+            fi
             exit 0
           fi
 
+          # If workflow file changed, deploy all twists
           if [ "${{ steps.workflow_changed.outputs.changed }}" = "true" ]; then
             TWISTS_JSON=$(printf '%s\n' "${TWIST_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
             echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
@@ -63,21 +97,22 @@ jobs:
             exit 0
           fi
 
-          TWISTS=()
+          # Automatic deployment: only deploy changed twists
+          echo "Automatic trigger: checking for affected twists"
           for twist in "${TWIST_LIST[@]}"; do
             AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=${{ github.event.before }} --head=HEAD --json 2>/dev/null || echo "[]")
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/twist-$twist$"; then
-              TWISTS+=("\"$twist\"")
+              TWISTS_TO_DEPLOY+=("\"$twist\"")
             fi
           done
 
-          if [ ${#TWISTS[@]} -eq 0 ]; then
+          if [ ${#TWISTS_TO_DEPLOY[@]} -eq 0 ]; then
             echo "twists=[]" >> $GITHUB_OUTPUT
             echo "No twists have changes"
           else
-            TWISTS_JSON=$(printf '%s\n' "${TWISTS[@]}" | jq -s . | tr -d '\n')
+            TWISTS_JSON=$(printf '%s\n' "${TWISTS_TO_DEPLOY[@]}" | jq -s . | tr -d '\n')
             echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
-            echo "Changed twists: ${TWISTS[*]}"
+            echo "Changed twists: ${TWISTS_TO_DEPLOY[*]}"
           fi
 
   deploy:
