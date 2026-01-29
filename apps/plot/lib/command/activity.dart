@@ -733,6 +733,62 @@ class RescheduleEvent extends Command {
   }
 }
 
+/// RSVP Attend command - shown when user hasn't RSVP'd or is undecided
+class RsvpAttend extends Command {
+  RsvpAttend(this.activity, {bool stateIcon = false})
+    : super(
+        title: 'Attend',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.tagged,
+        icon: stateIcon ? PlotIcon.event : PlotIcon.calendarPlus,
+      );
+
+  final Activity activity;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return await ToggleActivityTag(activity, Tag.attend).run(context);
+  }
+}
+
+/// RSVP Skip command - shown when user has RSVP'd attend
+class RsvpSkip extends Command {
+  RsvpSkip(this.activity, {bool stateIcon = false})
+    : super(
+        title: 'Skip',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.tagged,
+        icon: PlotIcon.event,
+        hoverIcon: PlotIcon.calendarXmark,
+      );
+
+  final Activity activity;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return await ToggleActivityTag(activity, Tag.skip).run(context);
+  }
+}
+
+/// RSVP Re-attend command - shown when user has RSVP'd skip
+class RsvpReattend extends Command {
+  RsvpReattend(this.activity, {bool stateIcon = false})
+    : super(
+        title: 'Attend',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.tagged,
+        icon: PlotIcon.calendarXmark,
+        hoverIcon: PlotIcon.calendarCheck,
+      );
+
+  final Activity activity;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return await ToggleActivityTag(activity, Tag.attend).run(context);
+  }
+}
+
 class UnscheduleEvent extends _UpdateActivityCommand {
   UnscheduleEvent(super.activity, {super.onUpdate})
     : super(
@@ -1182,6 +1238,9 @@ List<Command> activityCommands(
   return [
     if (open) ChangeCurrentActivity(activity),
     ?primary,
+    // Add reschedule to commands list for events when not the primary command
+    if (activity.type == .event && actualPrimary is! RescheduleEvent)
+      RescheduleEvent(activity),
     if (activity.type != .event &&
         !activity.doNow &&
         actualPrimary is! StartAction)
@@ -1235,6 +1294,15 @@ Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
       activity.done) {
     return StartAction(activity, stateIcon: stateIcon);
   } else if (activity.type == ActivityType.event) {
+    // Check RSVP state for events with different authors
+    if (activity.shouldShowRsvpPlus) {
+      return RsvpAttend(activity, stateIcon: stateIcon);
+    } else if (activity.currentUserRsvpAttend) {
+      return RsvpSkip(activity, stateIcon: stateIcon);
+    } else if (activity.currentUserRsvpSkip) {
+      return RsvpReattend(activity, stateIcon: stateIcon);
+    }
+    // Default to reschedule for self-authored events and other cases
     return RescheduleEvent(activity, stateIcon: stateIcon);
   } else if (activity.assigneeId != null &&
       !activity.assigneeId!.isCurrentUser()) {

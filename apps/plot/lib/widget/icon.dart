@@ -38,6 +38,9 @@ class PlotIcon {
   static const previous = FontAwesomeIcons.arrowUpToLine;
   static const note = FontAwesomeIcons.notes;
   static const reschedule = FontAwesomeIcons.calendarPen;
+  static const calendarPlus = FontAwesomeIcons.calendarPlus;
+  static const calendarXmark = FontAwesomeIcons.calendarXmark;
+  static const calendarCheck = FontAwesomeIcons.calendarCheck;
   static const share = FontAwesomeIcons.userPlus;
   static const users = FontAwesomeIcons.users;
 

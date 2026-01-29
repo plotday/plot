@@ -2167,6 +2167,34 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
   }
 
+  /// Returns true if the current user has RSVP'd attend for this activity
+  bool get currentUserRsvpAttend {
+    final attendActors = tags[Tag.attend];
+    if (attendActors == null) return false;
+    return attendActors.any((actorId) => actorId.isCurrentUser());
+  }
+
+  /// Returns true if the current user has RSVP'd skip for this activity
+  bool get currentUserRsvpSkip {
+    final skipActors = tags[Tag.skip];
+    if (skipActors == null) return false;
+    return skipActors.any((actorId) => actorId.isCurrentUser());
+  }
+
+  /// Returns true if the current user has RSVP'd undecided for this activity
+  bool get currentUserRsvpUndecided {
+    final undecidedActors = tags[Tag.undecided];
+    if (undecidedActors == null) return false;
+    return undecidedActors.any((actorId) => actorId.isCurrentUser());
+  }
+
+  /// Returns true if this event has a different author and user hasn't RSVP'd attend or skip
+  bool get shouldShowRsvpPlus {
+    if (type != ActivityType.event) return false;
+    if (assigneeId?.isCurrentUser() != false) return false;
+    return !currentUserRsvpAttend && !currentUserRsvpSkip;
+  }
+
   List<Activity> generateOccurrences(BoundedDateRange range) {
     // For non-recurring activities, return just this activity
     if (!recurring) {
