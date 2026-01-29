@@ -158,6 +158,12 @@ async postActivate(priority: Priority): Promise<void> {
 
 Called **before** the twist's `upgrade()` method.
 
+**Use for:**
+
+- Preparing data migrations
+- Checking tool version compatibility
+- Handling breaking changes to callback signatures
+
 ```typescript
 async preUpgrade(): Promise<void> {
   // Prepare for upgrade
@@ -165,6 +171,28 @@ async preUpgrade(): Promise<void> {
 
   if (version === "1.0.0") {
     // Migrate data
+  }
+}
+```
+
+**IMPORTANT:** Tool callbacks automatically upgrade to the new version. Callbacks are resolved by function name at execution time, so callbacks created in v1.0 will use v2.0's code after upgrade. Maintain backward compatibility in callback signatures or recreate callbacks in `preUpgrade()`:
+
+```typescript
+async preUpgrade(): Promise<void> {
+  const version = await this.get<string>("tool_version");
+
+  if (version === "1.0.0") {
+    // Handle breaking change: recreate callbacks with new signature
+    const syncs = await this.get<string[]>("active_syncs");
+    for (const syncId of syncs) {
+      // Delete old callback
+      const oldCallback = await this.get<string>(`sync_${syncId}`);
+      if (oldCallback) await this.deleteCallback(oldCallback);
+
+      // Create new callback with updated signature
+      const newCallback = await this.callback("syncBatchV2", syncId);
+      await this.set(`sync_${syncId}`, newCallback);
+    }
   }
 }
 ```

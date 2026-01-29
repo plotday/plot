@@ -550,7 +550,13 @@ if (authorization) {
 
 ## Tasks
 
-Queue background tasks and schedule operations. Tasks methods are available directly on the twist class.
+Queue background tasks and schedule operations. **Critical for staying under request limits**: each execution has ~1000 requests (HTTP requests, tool calls, database operations), and running a task creates a NEW execution with a fresh request limit.
+
+**Key distinction:**
+- **Calling a callback** (via `this.run()`) continues the same execution and shares the request count
+- **Running a task** (via `this.runTask()`) creates a NEW execution with fresh ~1000 request limit
+
+Tasks methods are available directly on the twist class.
 
 ### Setup
 
@@ -603,7 +609,7 @@ await this.cancelAllTasks();
 
 ### Batch Processing Pattern
 
-Use tasks to break long operations into manageable chunks:
+Use tasks to break long operations into chunks that stay under the ~1000 request limit per execution:
 
 ```typescript
 async startSync() {
@@ -615,6 +621,7 @@ async startSync() {
 
   // Start first batch
   const callback = await this.callback("syncBatch");
+  // runTask creates NEW execution with fresh request limit
   await this.runTask(callback);
 }
 
@@ -622,8 +629,10 @@ async syncBatch() {
   const state = await this.get<{ page: number; hasMore: boolean }>("sync_state");
   if (!state || !state.hasMore) return;
 
-  // Process one page
-  const results = await this.fetchPage(state.page);
+  // Process one page (sized to stay under request limit)
+  // If each item makes ~10 requests, fetch ~100 items per page
+  // 100 items × 10 requests = 1000 requests (at limit)
+  const results = await this.fetchPage(state.page, 100);
   await this.processResults(results);
 
   // Check if more work remains
@@ -633,7 +642,7 @@ async syncBatch() {
       hasMore: true
     });
 
-    // Queue next batch
+    // Queue next batch - creates NEW execution with fresh request limit
     const callback = await this.callback("syncBatch");
     await this.runTask(callback);
   } else {
@@ -785,6 +794,94 @@ async handleEvent(
   console.log("Data:", args.data);
 }
 ```
+
+### Callback Versioning and Upgrades
+
+**CRITICAL:** Callbacks automatically upgrade to new twist versions when you deploy an update. This means:
+
+- Callbacks created before an upgrade will execute using the **new version's code**
+- The callback is resolved **by function name** at execution time, not at creation time
+- You can receive calls with arguments from the previous version running on the new version
+
+#### Handling Version Transitions
+
+You have two options when deploying a new version with callback changes:
+
+**Option 1: Maintain Backward Compatibility** (Recommended)
+
+```typescript
+// v1.0 - Original signature
+async syncBatch(batchNumber: number, authToken: string, calendarId: string) {
+  // Process batch
+}
+
+// v1.1 - Add optional parameter at the end
+async syncBatch(
+  batchNumber: number,
+  authToken: string,
+  calendarId: string,
+  initialSync?: boolean  // New optional parameter
+) {
+  const isInitial = initialSync ?? true;  // Safe default for old calls
+  // Process batch with new logic
+}
+```
+
+**Option 2: Maintain Old Function Temporarily**
+
+For breaking changes, keep the old function and create a new one:
+
+```typescript
+// v2.0 - Keep old function for in-flight callbacks
+async syncBatch(batchNumber: number, authToken: string, calendarId: string) {
+  // Old implementation still works for callbacks created in v1.x
+  this.processOldBatch(batchNumber, authToken, calendarId);
+}
+
+// New function with better design
+async syncBatchV2(options: SyncOptions) {
+  // New implementation
+  this.processNewBatch(options);
+}
+
+// Later in v3.0 - Remove old function once all callbacks complete
+// async syncBatch - REMOVED
+```
+
+#### Affected Callback Types
+
+This versioning behavior applies to ALL callbacks:
+
+- **Webhooks** - Long-lived, called by external services
+- **Scheduled tasks** - Created with `runTask()`, may run days later
+- **Batch operations** - Multi-step processes that span upgrades
+- **Activity link callbacks** - Interactive buttons in activities
+- **Auth callbacks** - OAuth completion handlers
+
+#### Migration in upgrade()
+
+For breaking changes, you can recreate callbacks in the `upgrade()` lifecycle method:
+
+```typescript
+async upgrade() {
+  // Get all active syncs that use old callback signature
+  const syncs = await this.get<SyncState[]>("active_syncs");
+
+  for (const sync of syncs) {
+    // Cancel old callback
+    const oldCallback = await this.get<string>(`sync_callback_${sync.id}`);
+    if (oldCallback) {
+      await this.deleteCallback(oldCallback);
+    }
+
+    // Create new callback with updated signature
+    const newCallback = await this.callback("syncBatchV2", sync.id);
+    await this.set(`sync_callback_${sync.id}`, newCallback);
+  }
+}
+```
+
+**Important:** If you don't handle breaking changes, existing callbacks may fail when they execute with incompatible arguments.
 
 ### Deleting Callbacks
 

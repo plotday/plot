@@ -5,11 +5,11 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
+  type NewActivity,
   type NewActivityWithNotes,
   NewContact,
   type NewNote,
   Serializable,
-  Uuid,
 } from "@plotday/twister";
 import type {
   Project,
@@ -181,15 +181,46 @@ export class Jira extends Tool<Jira> implements ProjectTool {
 
   /**
    * Setup Jira webhook for real-time updates
-   * Note: Webhook API varies by Jira version, so we skip for now
+   *
+   * Note: Jira webhooks need to be configured manually in Jira's administration panel.
+   * This method creates the webhook URL that should be used in Jira's webhook settings.
+   *
+   * To configure manually in Jira:
+   * 1. Go to Settings > System > WebHooks
+   * 2. Create a new webhook
+   * 3. Use the webhook URL created by this method
+   * 4. Select events: issue_created, issue_updated, issue_deleted, comment_created, comment_updated, comment_deleted
+   * 5. Set JQL filter: project = {projectId}
    */
   private async setupJiraWebhook(
     authToken: string,
     projectId: string
   ): Promise<void> {
-    // TODO: Implement Jira webhooks once we confirm the correct API
-    // The jira.js library webhook API may vary by Jira version
-    console.log(`Jira webhooks not yet implemented for project ${projectId}`);
+    try {
+      // Create webhook URL - this can be used for manual webhook configuration
+      const webhookUrl = await this.tools.network.createWebhook(
+        {},
+        this.onWebhook,
+        projectId,
+        authToken
+      );
+
+      console.log(
+        `Jira webhook URL created for project ${projectId}: ${webhookUrl}`
+      );
+      console.log(
+        "Please configure this webhook manually in Jira's webhook settings"
+      );
+
+      // Store webhook URL for reference
+      await this.set(`webhook_url_${projectId}`, webhookUrl);
+
+      // TODO: Implement programmatic webhook creation when Jira API access is available
+      // The jira.js library doesn't expose webhook creation methods
+      // Manual configuration is required for now
+    } catch (error) {
+      console.error("Failed to create webhook URL:", error);
+    }
   }
 
   /**
@@ -341,7 +372,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     authToken?: string
   ): Promise<NewActivityWithNotes> {
     const fields = issue.fields || {};
-    const status = fields.status?.name;
     const comments = fields.comment?.comments || [];
     const reporter = fields.reporter || fields.creator;
     const assignee = fields.assignee;
@@ -365,11 +395,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       };
     }
 
-    // Get cloud ID for constructing the issue URL
+    // Get cloud ID for constructing stable source identifier and issue URL
+    let cloudId: string | undefined;
     let issueUrl: string | undefined;
     if (authToken) {
       try {
-        const cloudId = await this.getCloudId(authToken);
+        cloudId = await this.getCloudId(authToken);
         issueUrl = `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issue.key}`;
       } catch (error) {
         console.error("Failed to get cloud ID for issue URL:", error);
@@ -377,20 +408,25 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     }
 
     // Build notes array: always create initial note with description and link
-    const notes: NewNote[] = [];
+    const notes: any[] = [];
 
     // Extract description (if any)
     let description: string | null = null;
     if (fields.description) {
       // Jira uses Atlassian Document Format (ADF), need to convert to plain text
-      description =
+      const extracted =
         typeof fields.description === "string"
           ? fields.description
           : this.extractTextFromADF(fields.description);
+      if (extracted && extracted.trim().length > 0) {
+        description = extracted;
+      }
     }
 
-    // Canonical URL for this issue (required for upsert)
-    const canonicalUrl = issueUrl || `jira:issue:${projectId}:${issue.key}`;
+    // Stable source identifier using immutable issue ID (not mutable issue.key)
+    const source = cloudId && issue.id
+      ? `jira:${cloudId}:issue:${issue.id}`
+      : undefined;
 
     // Create initial note with description and link to Jira issue
     const links: ActivityLink[] = [];
@@ -403,29 +439,40 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     }
 
     notes.push({
-      activity: { source: canonicalUrl },
       key: "description",
       content: description,
       created: fields.created ? new Date(fields.created) : undefined,
       links: links.length > 0 ? links : null,
+      author: authorContact,
     });
 
     // Add comments as additional notes (with unique IDs, not upserted)
     for (const comment of comments) {
+      // Extract comment author
+      let commentAuthor: NewContact | undefined;
+      const author = comment.author;
+      if (author?.emailAddress) {
+        commentAuthor = {
+          email: author.emailAddress,
+          name: author.displayName,
+          avatar: author.avatarUrl,
+        };
+      }
+
       const commentText =
         typeof comment.body === "string"
           ? comment.body
           : this.extractTextFromADF(comment.body);
       notes.push({
-        id: Uuid.Generate(),
-        activity: { source: canonicalUrl },
+        key: `comment-${comment.id}`,
         content: commentText,
         created: comment.created ? new Date(comment.created) : undefined,
+        author: commentAuthor,
       });
     }
 
     return {
-      source: canonicalUrl,
+      ...(source ? { source } : {}),
       type: ActivityType.Action,
       title: fields.summary || issue.key,
       created: fields.created ? new Date(fields.created) : undefined,
@@ -437,6 +484,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
       done: fields.resolutiondate ? new Date(fields.resolutiondate) : null,
       notes,
+      preview: description || null,
     };
   }
 
@@ -614,36 +662,201 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   ): Promise<void> {
     const payload = request.body as any;
 
-    // Jira webhook events have different structure
-    if (
-      payload.webhookEvent?.startsWith("jira:issue_") ||
-      payload.webhookEvent?.startsWith("comment_")
-    ) {
-      const callbackToken = await this.get<Callback>(`callback_${projectId}`);
-      if (!callbackToken) return;
+    console.log("=== Jira Webhook Received ===");
+    console.log("Project ID:", projectId);
+    console.log("Webhook Event:", payload.webhookEvent);
 
-      const issue = payload.issue;
-      if (!issue) return;
-
-      const activityWithNotes = await this.convertIssueToActivity(
-        issue,
-        projectId,
-        authToken
-      );
-
-      // Webhooks are incremental updates - mark as unread
-      activityWithNotes.unread = true;
-
-      // Execute stored callback
-      await this.tools.callbacks.run(callbackToken, activityWithNotes);
+    // Get callback token (needed by both handlers)
+    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    if (!callbackToken) {
+      console.warn("No callback token found for project:", projectId);
+      return;
     }
+
+    // Split handling by webhook event type for efficiency
+    if (payload.webhookEvent?.startsWith("jira:issue_")) {
+      await this.handleIssueWebhook(
+        payload,
+        projectId,
+        authToken,
+        callbackToken
+      );
+    } else if (payload.webhookEvent?.startsWith("comment_")) {
+      await this.handleCommentWebhook(
+        payload,
+        projectId,
+        authToken,
+        callbackToken
+      );
+    } else {
+      console.log("Ignoring webhook event:", payload.webhookEvent);
+    }
+  }
+
+  /**
+   * Handle issue webhook events - only updates issue metadata, not comments
+   */
+  private async handleIssueWebhook(
+    payload: any,
+    projectId: string,
+    authToken: string,
+    callbackToken: Callback
+  ): Promise<void> {
+    console.log("Processing Issue webhook (optimized)");
+
+    const issue = payload.issue;
+    if (!issue) {
+      console.error("No issue in webhook payload");
+      return;
+    }
+
+    const fields = issue.fields || {};
+    const reporter = fields.reporter || fields.creator;
+    const assignee = fields.assignee;
+
+    // Prepare author and assignee contacts
+    let authorContact: NewContact | undefined;
+    let assigneeContact: NewContact | undefined;
+
+    if (reporter?.emailAddress) {
+      authorContact = {
+        email: reporter.emailAddress,
+        name: reporter.displayName,
+        avatar: reporter.avatarUrls?.["48x48"],
+      };
+    }
+    if (assignee?.emailAddress) {
+      assigneeContact = {
+        email: assignee.emailAddress,
+        name: assignee.displayName,
+        avatar: assignee.avatarUrls?.["48x48"],
+      };
+    }
+
+    // Get cloud ID for constructing stable source identifier and issue URL
+    let cloudId: string | undefined;
+    let issueUrl: string | undefined;
+    try {
+      cloudId = await this.getCloudId(authToken);
+      issueUrl = `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issue.key}`;
+    } catch (error) {
+      console.error("Failed to get cloud ID for issue URL:", error);
+    }
+
+    // Stable source identifier using immutable issue ID (not mutable issue.key)
+    const source = cloudId && issue.id
+      ? `jira:${cloudId}:issue:${issue.id}`
+      : undefined;
+
+    // Extract description
+    let description: string | null = null;
+    if (fields.description) {
+      const extracted =
+        typeof fields.description === "string"
+          ? fields.description
+          : this.extractTextFromADF(fields.description);
+      if (extracted && extracted.trim().length > 0) {
+        description = extracted;
+      }
+    }
+
+    // Create partial activity update (no notes = doesn't touch existing notes)
+    const activity: NewActivity = {
+      ...(source ? { source } : {}),
+      type: ActivityType.Action,
+      title: fields.summary || issue.key,
+      created: fields.created ? new Date(fields.created) : undefined,
+      meta: {
+        issueKey: issue.key,
+        projectId,
+      },
+      author: authorContact,
+      assignee: assigneeContact ?? null,
+      done: fields.resolutiondate ? new Date(fields.resolutiondate) : null,
+      preview: description || null,
+    };
+
+    console.log("Executing callback with partial activity (no notes)");
+    await this.tools.callbacks.run(callbackToken, activity);
+    console.log("Issue webhook processed successfully");
+  }
+
+  /**
+   * Handle comment webhook events - only updates the specific comment
+   */
+  private async handleCommentWebhook(
+    payload: any,
+    projectId: string,
+    authToken: string,
+    callbackToken: Callback
+  ): Promise<void> {
+    console.log("Processing Comment webhook (optimized)");
+
+    const comment = payload.comment;
+    const issue = payload.issue;
+
+    if (!comment || !issue) {
+      console.error("Missing comment or issue in webhook payload");
+      return;
+    }
+
+    // Get cloud ID for constructing stable source identifier and issue URL
+    let cloudId: string | undefined;
+    let issueUrl: string | undefined;
+    try {
+      cloudId = await this.getCloudId(authToken);
+      issueUrl = `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issue.key}`;
+    } catch (error) {
+      console.error("Failed to get cloud ID for issue URL:", error);
+    }
+
+    // Stable source identifier using immutable issue ID (not mutable issue.key)
+    const source = cloudId && issue.id
+      ? `jira:${cloudId}:issue:${issue.id}`
+      : undefined;
+
+    // Extract comment author
+    let commentAuthor: NewContact | undefined;
+    const author = comment.author;
+    if (author?.emailAddress) {
+      commentAuthor = {
+        email: author.emailAddress,
+        name: author.displayName,
+        avatar: author.avatarUrls?.["48x48"],
+      };
+    }
+
+    // Extract comment text
+    const commentText =
+      typeof comment.body === "string"
+        ? comment.body
+        : this.extractTextFromADF(comment.body);
+
+    // Create activity update with single comment note
+    const activity: NewActivityWithNotes = {
+      ...(source ? { source } : {}),
+      type: ActivityType.Action, // Required field (will match existing activity)
+      notes: [
+        {
+          key: `comment-${comment.id}`,
+          content: commentText,
+          created: comment.created ? new Date(comment.created) : undefined,
+          author: commentAuthor,
+        } as any,
+      ],
+    };
+
+    console.log("Executing callback with single comment note");
+    await this.tools.callbacks.run(callbackToken, activity);
+    console.log("Comment webhook processed successfully");
   }
 
   /**
    * Stop syncing a Jira project
    */
-  async stopSync(authToken: string, projectId: string): Promise<void> {
-    // TODO: Remove webhook when webhook support is implemented
+  async stopSync(_authToken: string, projectId: string): Promise<void> {
+    // Cleanup webhook URL
+    await this.clear(`webhook_url_${projectId}`);
     await this.clear(`webhook_id_${projectId}`);
 
     // Cleanup callback

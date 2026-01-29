@@ -525,6 +525,7 @@ Called when a new version of your twist is deployed to an existing priority.
 - Migrating data structures
 - Updating webhook configurations
 - Adding new features to existing installations
+- Handling breaking changes to callback signatures
 
 ```typescript
 async upgrade() {
@@ -539,6 +540,71 @@ async upgrade() {
   }
 
   await this.set("version", "2.0.0");
+}
+```
+
+#### Callback Versioning During Upgrades
+
+**IMPORTANT:** All callbacks automatically upgrade to the new twist version. Callbacks are resolved **by function name** at execution time, so callbacks created in v1.0 will execute using v2.0's code after upgrade.
+
+This means:
+
+- **Webhooks** continue working after upgrades using new code
+- **Scheduled tasks** execute with the latest version when they run
+- **In-progress batch operations** use new logic for subsequent batches
+- You can receive callbacks with **old arguments** running on **new code**
+
+**Best Practice:** Maintain backward compatibility in callback method signatures:
+
+```typescript
+// v1.0
+async syncBatch(batchNumber: number, authToken: string) {
+  // Original logic
+}
+
+// v2.0 - Add optional parameter at end
+async syncBatch(batchNumber: number, authToken: string, calendarId?: string) {
+  const calendar = calendarId ?? "primary";  // Safe default
+  // New logic
+}
+```
+
+**For Breaking Changes:** Recreate callbacks in `upgrade()`:
+
+```typescript
+async upgrade() {
+  const version = await this.get<string>("version");
+
+  if (version === "1.0.0") {
+    // Recreate callbacks with new signature
+    const syncs = await this.get<SyncState[]>("active_syncs");
+    for (const sync of syncs) {
+      // Delete old callback
+      const oldCallback = await this.get<string>(`sync_${sync.id}`);
+      if (oldCallback) await this.deleteCallback(oldCallback);
+
+      // Create new callback with updated signature
+      const newCallback = await this.callback("syncBatchV2", sync.id);
+      await this.set(`sync_${sync.id}`, newCallback);
+    }
+  }
+
+  await this.set("version", "2.0.0");
+}
+```
+
+Alternatively, keep the old function temporarily while callbacks complete:
+
+```typescript
+// Keep old signature for in-flight callbacks
+async syncBatch(batchNumber: number, authToken: string) {
+  // Delegate to new implementation
+  return this.syncBatchV2({ batchNumber, authToken });
+}
+
+// New signature for new callbacks
+async syncBatchV2(options: SyncOptions) {
+  // New implementation
 }
 ```
 

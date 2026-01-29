@@ -508,6 +508,9 @@ If a task is needed, create a clear, actionable title that describes what the us
               content: `From #${channelName}`,
             },
           ],
+      preview: analysis.taskNote
+        ? `${analysis.taskNote}\n\n---\nFrom #${channelName}`
+        : `From #${channelName}`,
       meta: {
         originalThreadId: threadId,
         provider,

@@ -39,13 +39,15 @@ Twists respond to events:
 - **Webhook events** - External service notifications
 - **Scheduled events** - Tasks queued with runTask()
 
+**Note on Callbacks:** All callbacks (webhooks, tasks, scheduled operations) automatically upgrade to the new twist version when deployed. Callbacks are resolved by function name at execution time, meaning callbacks created before an upgrade will execute using the new version's code. See the [Callbacks section in the Tools Guide](TOOLS_GUIDE.md#callback-versioning-and-upgrades) for details on maintaining backward compatibility.
+
 ### Resource Limits
 
 Each execution has:
 
-- **CPU time limit** - Limited execution time
-- **Memory limit** - Limited memory allocation
-- **Network limit** - Rate-limited external requests
+- **Request limit** - Maximum of ~1000 requests per execution (HTTP requests, tool calls, database operations)
+- **CPU time limit** - Limited execution time (typically ~60 seconds)
+- **Memory limit** - Limited memory allocation (typically 128MB)
 
 ---
 
@@ -82,23 +84,30 @@ class MyTwist extends Twist<MyTwist> {
 }
 ```
 
-### 2. Limited Execution Time
+### 2. Limited Requests Per Execution
 
-Long-running operations must be broken into batches:
+**The primary constraint**: Each execution has a limit of ~1000 requests (HTTP requests, tool calls, database operations). Long-running operations must be broken into batches, with each batch running as a separate task to get a fresh request limit.
+
+**Key distinction**:
+- **Calling a callback** (via `this.run()`) continues the same execution and shares the request count
+- **Running a task** (via `this.runTask()`) creates a NEW execution with a fresh set of ~1000 requests
 
 ```typescript
-// ❌ WRONG - May timeout!
+// ❌ WRONG - May exceed request limit!
 async syncAllEvents() {
   const events = await fetchAllEvents();  // Could be thousands
   for (const event of events) {
-    await this.processEvent(event);  // Too slow!
+    // Each iteration makes multiple requests (fetch event details, create activity, etc.)
+    // With 500 events × 3 requests each = 1500 requests total - exceeds limit!
+    await this.processEvent(event);
   }
 }
 
-// ✅ CORRECT - Batch processing
+// ✅ CORRECT - Batch processing with fresh request limits
 async startSync() {
   await this.set("sync_state", { page: 1, total: 0 });
   const callback = await this.callback("syncBatch");
+  // runTask creates a NEW execution with fresh request limit
   await this.runTask(callback);
 }
 
@@ -106,8 +115,9 @@ async syncBatch() {
   const state = await this.get<{ page: number; total: number }>("sync_state");
   if (!state) return;
 
-  // Process one page
-  const events = await fetchEventsPage(state.page);
+  // Process one page (e.g., 50 events)
+  // Keep batch size small enough to stay under ~1000 request limit
+  const events = await fetchEventsPage(state.page, 50);
   await this.processEvents(events);
 
   // Queue next batch if needed
@@ -118,6 +128,7 @@ async syncBatch() {
     });
 
     const callback = await this.callback("syncBatch");
+    // Each runTask creates a NEW execution with fresh request limit
     await this.runTask(callback);
   }
 }
@@ -211,11 +222,11 @@ async deactivate() {
 
 ## Batching Long Operations
 
-Break long operations into smaller batches to avoid timeouts.
+Break long operations into smaller batches to stay under the request limit (~1000 requests per execution). Each task creates a new execution with a fresh request count.
 
 ### Pattern 1: Page-Based Batching
 
-For paginated APIs:
+For paginated APIs. Each page is processed in a separate task with its own request limit.
 
 ```typescript
 async startSync() {
@@ -226,6 +237,7 @@ async startSync() {
   });
 
   const callback = await this.callback("syncPage");
+  // Creates new execution with fresh ~1000 request limit
   await this.runTask(callback);
 }
 
@@ -234,13 +246,14 @@ async syncPage() {
   if (!state) return;
 
   try {
-    // Fetch one page
+    // Fetch one page (keep page size reasonable to stay under request limit)
+    // Example: 50 items × ~10 requests per item = ~500 requests (well under limit)
     const response = await fetch(
       `https://api.example.com/items?page=${state.page}&per_page=50`
     );
     const data = await response.json();
 
-    // Process items
+    // Process items in this execution
     for (const item of data.items) {
       await this.processItem(item);
     }
@@ -256,6 +269,7 @@ async syncPage() {
     if (data.hasMore) {
       await this.set("sync_state", newState);
       const callback = await this.callback("syncPage");
+      // Each runTask creates NEW execution with fresh request limit
       await this.runTask(callback);
     } else {
       // Sync complete
@@ -271,7 +285,7 @@ async syncPage() {
 
 ### Pattern 2: Token-Based Batching
 
-For APIs using continuation tokens:
+For APIs using continuation tokens. Each batch gets its own execution and request limit.
 
 ```typescript
 interface SyncState {
@@ -286,6 +300,7 @@ async startSync() {
   });
 
   const callback = await this.callback("syncBatch");
+  // Creates new execution with fresh request limit
   await this.runTask(callback);
 }
 
@@ -293,12 +308,14 @@ async syncBatch() {
   const state = await this.get<SyncState>("sync_state");
   if (!state) return;
 
+  // Fetch batch from API (1 request)
   const response = await fetch(
     `https://api.example.com/items${state.nextToken ? `?token=${state.nextToken}` : ""}`
   );
   const data = await response.json();
 
-  // Process batch
+  // Process batch (each item may make multiple requests)
+  // Keep batch small enough to stay under ~1000 request limit
   for (const item of data.items) {
     await this.processItem(item);
   }
@@ -311,6 +328,7 @@ async syncBatch() {
     });
 
     const callback = await this.callback("syncBatch");
+    // New execution = fresh request limit for next batch
     await this.runTask(callback);
   } else {
     console.log(`Complete: ${state.totalProcessed + data.items.length} items`);
@@ -321,7 +339,7 @@ async syncBatch() {
 
 ### Pattern 3: Item-Based Batching
 
-For processing arrays of items:
+For processing arrays of items. Size batches to stay under the request limit.
 
 ```typescript
 async processLargeArray(items: Item[]) {
@@ -330,6 +348,7 @@ async processLargeArray(items: Item[]) {
   await this.set("process_index", 0);
 
   const callback = await this.callback("processBatch");
+  // Creates new execution with fresh request limit
   await this.runTask(callback);
 }
 
@@ -343,7 +362,9 @@ async processBatch() {
     return;
   }
 
-  // Process batch of 10 items
+  // Choose batch size based on requests per item
+  // Example: If each item needs ~20 requests, use batch size of 50
+  // 50 items × 20 requests = 1000 requests (at limit)
   const batchSize = 10;
   const batch = items.slice(index, index + batchSize);
 
@@ -356,6 +377,7 @@ async processBatch() {
   if (newIndex < items.length) {
     await this.set("process_index", newIndex);
     const callback = await this.callback("processBatch");
+    // Each runTask gets fresh request limit
     await this.runTask(callback);
   } else {
     // Complete
@@ -504,34 +526,55 @@ async onWebhook(request: WebhookRequest) {
 
 ---
 
-## Timeout Handling
+## Request Limits and Timeouts
 
-### Detecting Timeouts
+### Understanding Execution Limits
 
-Timeouts manifest as execution termination - your code simply stops running.
+Each execution has two main constraints:
+
+1. **Request limit (~1000 requests)** - The primary constraint you'll hit most often
+2. **CPU time limit (~60 seconds)** - Secondary constraint for very long-running operations
+
+**Most operations hit the request limit before the timeout.** Focus on batching to stay under request limits.
 
 ### Prevention Strategies
 
-1. **Batch Operations** - Break work into smaller chunks
-2. **Async Processing** - Use runTask() for background work
-3. **Monitor Duration** - Track execution time
+1. **Batch Operations** - Break work into chunks that stay under ~1000 requests per batch
+2. **Use runTask()** - Each task gets a fresh execution with new request limit
+3. **Size batches appropriately** - Calculate requests per item to determine safe batch size
 
 ```typescript
 async longOperation() {
-  const start = Date.now();
   const items = await fetchItems();
 
-  for (const item of items) {
-    // Check if approaching timeout
-    if (Date.now() - start > 55000) {  // 55 seconds
-      // Save progress and reschedule
-      await this.set("remaining_items", items.slice(items.indexOf(item)));
-      const callback = await this.callback("continueOperation");
-      await this.runTask(callback);
-      return;
-    }
+  // Calculate safe batch size based on requests per item
+  // If each item makes ~10 requests, batch size = 1000 / 10 = 100 items
+  const requestsPerItem = 10;
+  const safeItemsPerBatch = Math.floor(1000 / requestsPerItem);
 
+  // Process in batches to stay under request limit
+  for (let i = 0; i < items.length; i += safeItemsPerBatch) {
+    const batch = items.slice(i, i + safeItemsPerBatch);
+
+    await this.set("remaining_items", items.slice(i + safeItemsPerBatch));
+    await this.set("processed_count", i);
+
+    const callback = await this.callback("processBatch", batch);
+    // New execution = fresh request limit
+    await this.runTask(callback);
+  }
+}
+
+async processBatch(args: any, batch: Item[]) {
+  // Process items within this execution's request limit
+  for (const item of batch) {
     await this.processItem(item);
+  }
+
+  const remaining = await this.get<Item[]>("remaining_items");
+  if (remaining && remaining.length > 0) {
+    // Continue with next batch in new execution
+    await this.longOperation();
   }
 }
 ```
@@ -540,13 +583,15 @@ async longOperation() {
 
 ## Best Practices Summary
 
-1. **Never use instance variables** for persistent state - use Store
-2. **Break long operations** into batches using runTask()
-3. **Minimize memory usage** - don't load large datasets
-4. **Cache wisely** - balance performance and memory
-5. **Process in parallel** when operations are independent
-6. **Track progress** for resumable operations
-7. **Clean up state** in deactivate()
+1. **Stay under request limits** - Each execution has ~1000 requests; batch operations with runTask() to get fresh limits
+2. **Never use instance variables** for persistent state - use Store
+3. **Break long loops** into batches - use runTask() to create new executions with fresh request counts
+4. **Size batches appropriately** - Calculate requests per item to determine safe batch size
+5. **Minimize memory usage** - don't load large datasets
+6. **Cache wisely** - balance performance and memory
+7. **Process in parallel** when operations are independent
+8. **Track progress** for resumable operations
+9. **Clean up state** in deactivate()
 
 ---
 

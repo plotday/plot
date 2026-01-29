@@ -9,6 +9,7 @@ This guide explains good ways to build tools that sync other services with Plot.
 - [Strategy 2: Upsert via Source and Key (Recommended)](#strategy-2-upsert-via-source-and-key-recommended)
 - [Strategy 3: Generate and Store IDs (Advanced)](#strategy-3-generate-and-store-ids-advanced)
 - [Tag Management](#tag-management)
+- [Initial vs Incremental Sync](#initial-vs-incremental-sync)
 - [Choosing the Right Strategy](#choosing-the-right-strategy)
 
 ## Overview
@@ -496,6 +497,123 @@ for (const removedLabel of removedLabels) {
     `jira:${removedLabel}`
   );
 }
+```
+
+## Initial vs Incremental Sync
+
+When syncing activities from external systems, it's critical to distinguish between initial sync (first import) and incremental sync (ongoing updates). This prevents notification spam and properly handles archived state.
+
+### The `initialSync` Flag Pattern
+
+All sync-based tools should track whether they're performing an initial sync or incremental sync:
+
+| Field | Initial Sync | Incremental Sync | Reason |
+|-------|--------------|------------------|---------|
+| `unread` | `false` | `true` | Avoid notification overload from historical items |
+| `archived` | `false` | *omit* | Unarchive on install, preserve user choice on updates |
+
+### Example Implementation
+
+```typescript
+async startSync(authToken: string, resourceId: string): Promise<void> {
+  // Store initial sync state
+  await this.set(`sync_state_${resourceId}`, {
+    resourceId,
+    sequence: 1,
+  });
+
+  // Start first batch with initialSync = true
+  const callback = await this.callback("syncBatch", {
+    authToken,
+    resourceId,
+    initialSync: true
+  });
+  // runTask creates NEW execution with fresh ~1000 request limit
+  await this.runTask(callback);
+}
+
+async syncBatch(
+  args: any,
+  context: { authToken: string; resourceId: string; initialSync: boolean }
+): Promise<void> {
+  const { authToken, resourceId, initialSync } = context;
+
+  // Fetch events from external API (keep batch size reasonable to stay under request limit)
+  // If each event makes ~10 requests, fetch ~100 events per batch
+  // 100 events × 10 requests = 1000 requests (at limit)
+  const events = await this.fetchEvents(authToken, resourceId);
+
+  // Create activities with proper flags
+  for (const event of events) {
+    const activity: NewActivity = {
+      type: ActivityType.Event,
+      source: event.url,
+      title: event.title,
+      unread: !initialSync,                      // false for initial, true for incremental
+      ...(initialSync ? { archived: false } : {}),  // unarchive on initial only
+      notes: [
+        {
+          activity: { source: event.url },
+          key: "description",
+          content: event.description,
+        },
+      ],
+    };
+
+    await this.tools.plot.createActivity(activity);
+  }
+
+  // Queue next batch or switch to incremental mode
+  if (hasMorePages) {
+    const callback = await this.callback("syncBatch", {
+      authToken,
+      resourceId,
+      initialSync,  // Keep same mode for remaining pages
+    });
+    // Each runTask creates NEW execution with fresh request limit
+    await this.runTask(callback);
+  } else if (initialSync) {
+    // Initial sync complete, switch to incremental mode
+    await this.set(`sync_state_${resourceId}`, {
+      resourceId,
+      initialSync: false,
+      lastSync: new Date().toISOString(),
+    });
+  }
+}
+```
+
+### Why This Matters
+
+**Initial sync (first import):**
+- Activities are **unarchived** (`archived: false`) - gives user a fresh start
+- Activities are marked as **read** (`unread: false`) - prevents notification spam from bulk historical imports
+- Use case: When user first installs the tool or reconnects after disconnection
+
+**Incremental sync (ongoing updates):**
+- New activities appear as **unread** (`unread: true`) - user gets notified of new items
+- Archived state is **preserved** (field omitted) - respects user's archiving decisions
+- Use case: Regular syncs after initial setup is complete
+
+**Reinstall behavior:**
+- Acts as initial sync - previously archived activities are unarchived for fresh start
+- User gets a clean slate without notification overload
+
+### Tracking Sync State
+
+Store the `initialSync` flag in your sync state:
+
+```typescript
+interface SyncState {
+  resourceId: string;
+  initialSync: boolean;
+  lastSync: string | null;
+  sequence: number;
+}
+
+// Check sync mode before each batch
+const state = await this.get<SyncState>(`sync_state_${resourceId}`);
+const initialSync = state?.initialSync ?? true;  // Default to initial if not set
 ```
 
 ## Choosing the Right Strategy

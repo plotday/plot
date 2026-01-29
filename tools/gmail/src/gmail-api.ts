@@ -362,6 +362,10 @@ export function transformGmailThread(thread: GmailThread): NewActivityWithNotes 
   // Canonical URL for the thread
   const canonicalUrl = `https://mail.google.com/mail/u/0/#inbox/${thread.id}`;
 
+  // Extract preview from first message
+  const firstMessageBody = extractBody(parentMessage.payload);
+  const preview = firstMessageBody || parentMessage.snippet || null;
+
   // Create Activity
   const activity: NewActivityWithNotes = {
     source: canonicalUrl,
@@ -373,6 +377,7 @@ export function transformGmailThread(thread: GmailThread): NewActivityWithNotes 
       historyId: thread.historyId,
     },
     notes: [],
+    preview,
   };
 
   // Create Notes for all messages (including first)

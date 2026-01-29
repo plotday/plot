@@ -11,9 +11,11 @@ Plot Twists are TypeScript classes that extend the `Twist` base class. Twists in
 **Critical**: All Twists and tool functions are executed in a sandboxed, ephemeral environment with limited resources:
 
 - **Memory is temporary**: Anything stored in memory (e.g. as a variable in the twist/tool object) is lost after the function completes. Use the Store tool instead. Only use memory for temporary caching.
-- **Limited CPU time**: Each execution has limited CPU time (typically 10 seconds) and memory (128MB)
-- **Use the Run tool**: Queue separate chunks of work with `run.now(functionName, context)`
-- **Break long operations**: Split large operations into smaller batches that can be processed independently
+- **Limited requests per execution**: Each execution has ~1000 requests (HTTP requests, tool calls, database operations)
+- **Limited CPU time**: Each execution has limited CPU time (typically ~60 seconds) and memory (128MB)
+- **Use tasks to get fresh request limits**: `this.runTask()` creates a NEW execution with a fresh ~1000 request limit
+- **Calling callbacks continues same execution**: `this.run()` continues the same execution and shares the request count
+- **Break long loops**: Split large operations into batches that each stay under the ~1000 request limit
 - **Store intermediate state**: Use the Store tool to persist state between batches
 - **Examples**: Syncing large datasets, processing many API calls, or performing batch operations
 
@@ -455,14 +457,16 @@ async onCalendarSelected(
 
 ## Batch Processing Pattern
 
-**Important**: Because Twists run in an ephemeral environment with limited execution time, you must break long operations into batches. Each batch runs independently in a new execution context.
+**Important**: Because Twists run in an ephemeral environment with limited requests per execution (~1000 requests), you must break long operations into batches. Each batch runs independently in a new execution context with its own fresh request limit.
 
 ### Key Principles
 
-1. **Store state between batches**: Use the Store tool to persist progress
-2. **Queue next batch**: Use the Run tool to schedule the next chunk
-3. **Clean up when done**: Delete stored state after completion
-4. **Handle failures**: Store enough state to resume if a batch fails
+1. **Stay under request limits**: Each execution has ~1000 requests. Size batches accordingly.
+2. **Use runTask() for fresh limits**: Each call to `this.runTask()` creates a NEW execution with fresh ~1000 requests
+3. **Store state between batches**: Use the Store tool to persist progress
+4. **Calculate safe batch sizes**: Determine requests per item to size batches (e.g., ~10 requests per item = ~100 items per batch)
+5. **Clean up when done**: Delete stored state after completion
+6. **Handle failures**: Store enough state to resume if a batch fails
 
 ### Example Implementation
 
@@ -478,6 +482,7 @@ async startSync(resourceId: string): Promise<void> {
 
   // Queue first batch using runTask method
   const callback = await this.callback(this.syncBatch, resourceId);
+  // runTask creates NEW execution with fresh ~1000 request limit
   await this.runTask(callback);
 }
 
@@ -485,11 +490,13 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
   // Load state from Store (set by previous execution)
   const state = await this.get(`sync_state_${resourceId}`);
 
-  // Process one batch (keep under time limit)
+  // Process one batch (size to stay under ~1000 request limit)
   const result = await this.fetchBatch(state.nextPageToken);
 
   // Process results using source/key pattern (automatic upserts, no manual tracking)
+  // If each item makes ~10 requests, keep batch size ≤ 100 items to stay under limit
   for (const item of result.items) {
+    // Each createActivity may make ~5-10 requests depending on notes/links
     await this.tools.plot.createActivity({
       source: item.url, // Use item's canonical URL for automatic deduplication
       type: ActivityType.Note,
@@ -513,7 +520,7 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
       initialSync: state.initialSync, // Preserve initialSync flag across batches
     });
 
-    // Queue next batch (runs in new execution context)
+    // Queue next batch - creates NEW execution with fresh request limit
     const nextCallback = await this.callback(this.syncBatch, resourceId);
     await this.runTask(nextCallback);
   } else {
@@ -594,11 +601,12 @@ try {
 - **Use Activity.source and Note.key for automatic upserts (Recommended)** - Set Activity.source to the external item's URL for automatic deduplication. Only use UUID generation and storage for advanced cases (see SYNC_STRATEGIES.md).
 - **Add Notes to existing Activities** - For source/key pattern, reference activities by source. For UUID pattern, look up stored mappings before creating new Activities. Think thread replies, not new threads.
 - Tools are declared in the `build` method and accessed via `this.tools.toolName` in twist methods.
-- **Don't forget runtime limits** - Each execution has ~10 seconds. Break long operations into batches with the Tasks tool. Process enough items per batch to be efficient, but few enough to stay under time limits.
+- **Don't forget request limits** - Each execution has ~1000 requests (HTTP requests, tool calls). Break long loops into batches with `this.runTask()` to get fresh request limits. Calculate requests per item to determine safe batch size (e.g., if each item needs ~10 requests, batch size = ~100 items).
 - **Always use Callbacks tool for persistent references** - Direct function references don't survive worker restarts.
 - **Store auth tokens** - Don't re-request authentication unnecessarily.
 - **Clean up callbacks and stored state** - Delete callbacks and Store entries when no longer needed.
 - **Handle missing auth gracefully** - Check for stored auth before operations.
+- **CRITICAL: Maintain callback backward compatibility** - All callbacks (webhooks, tasks, batch operations) automatically upgrade to new twist versions. You **must** maintain backward compatibility in callback method signatures. Only add optional parameters at the end, never remove or reorder parameters. For breaking changes, implement migration logic in the `upgrade()` lifecycle method to recreate affected callbacks.
 
 ## Testing
 

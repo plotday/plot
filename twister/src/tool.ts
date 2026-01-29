@@ -219,12 +219,26 @@ export abstract class Tool<TSelf> implements ITool {
   }
 
   /**
-   * Queues a callback to execute in a separate worker context.
+   * Queues a callback to execute in a separate worker context with a fresh request limit.
+   *
+   * **Creates a NEW execution** with its own request limit of ~1000 requests (HTTP requests,
+   * tool calls, database operations). This is the primary way to stay under request limits
+   * when processing large datasets or making many API calls.
+   *
+   * Use this to break long loops into chunks that each stay under the ~1000 request limit.
+   * Each task runs in an isolated execution environment with ~1000 requests and ~60 seconds CPU time.
    *
    * @param callback - The callback token created with `this.callback()`
    * @param options - Optional configuration for the execution
    * @param options.runAt - If provided, schedules execution at this time; otherwise runs immediately
    * @returns Promise resolving to a cancellation token (only for scheduled executions)
+   *
+   * @example
+   * ```typescript
+   * // Break large loop into batches
+   * const callback = await this.callback("processBatch", { page: 1 });
+   * await this.runTask(callback); // New execution with fresh request limit
+   * ```
    */
   protected async runTask(
     callback: Callback,

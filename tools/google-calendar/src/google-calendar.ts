@@ -810,6 +810,7 @@ export class GoogleCalendar
             meta: activityData.meta ?? null,
             tags: tags || undefined,
             notes,
+            preview: hasDescription ? description : null,
             unread: !initialSync, // false for initial sync, true for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           };

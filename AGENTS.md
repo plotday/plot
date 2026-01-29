@@ -33,7 +33,7 @@ All type definitions are in `twister/src/` with full JSDoc:
 ## Common Pitfalls
 
 1. **❌ Using instance variables for state** - Use `this.set()`/`this.get()` instead (state doesn't persist between executions)
-2. **❌ Long-running operations without batching** - Break into chunks with `runTask()` (execution time limits)
+2. **❌ Long-running operations without batching** - Break into chunks with `runTask()` (request limits: ~1000 per execution)
 3. **❌ Forgetting to clean up** - Delete callbacks and stored state when done
 4. **❌ Not handling missing auth** - Always check for stored tokens before operations
 5. **❌ Passing functions to `this.callback()`** - See `tools/AGENTS.md` for critical callback serialization pattern

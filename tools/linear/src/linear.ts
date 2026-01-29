@@ -5,6 +5,7 @@ import {
   ActivityLinkType,
   ActivityMeta,
   ActivityType,
+  type NewActivity,
   type NewActivityWithNotes,
   type NewNote,
   Serializable,
@@ -27,7 +28,6 @@ import {
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
-import { Uuid } from "@plotday/twister/utils/uuid";
 
 type SyncState = {
   after: string | null;
@@ -319,9 +319,54 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     projectId: string,
     initialSync: boolean
   ): Promise<NewActivityWithNotes | null> {
-    const creator = await issue.creator;
-    const assignee = await issue.assignee;
-    const comments = await issue.comments();
+    console.log("=== Converting Issue to Activity ===");
+    console.log("Issue ID:", issue.id);
+    console.log("Issue Title:", issue.title);
+    console.log("Initial Sync:", initialSync);
+
+    let creator, assignee, comments;
+
+    try {
+      console.log("Fetching issue creator...");
+      creator = await issue.creator;
+      console.log(
+        "Creator:",
+        creator ? { email: creator.email, name: creator.name } : null
+      );
+    } catch (error) {
+      console.error(
+        "Error fetching creator:",
+        error instanceof Error ? error.message : String(error)
+      );
+      creator = null;
+    }
+
+    try {
+      console.log("Fetching issue assignee...");
+      assignee = await issue.assignee;
+      console.log(
+        "Assignee:",
+        assignee ? { email: assignee.email, name: assignee.name } : null
+      );
+    } catch (error) {
+      console.error(
+        "Error fetching assignee:",
+        error instanceof Error ? error.message : String(error)
+      );
+      assignee = null;
+    }
+
+    try {
+      console.log("Fetching issue comments...");
+      comments = await issue.comments();
+      console.log("Comments count:", comments.nodes.length);
+    } catch (error) {
+      console.error(
+        "Error fetching comments:",
+        error instanceof Error ? error.message : String(error)
+      );
+      comments = { nodes: [] };
+    }
 
     // Prepare author and assignee contacts - will be passed directly as NewContact
     let authorContact: NewContact | undefined;
@@ -347,7 +392,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     const hasDescription = description.trim().length > 0;
 
     // Build notes array: description note with link + comment notes
-    const notes: NewNote[] = [];
+    const notes: any[] = [];
 
     // Create description note with link to Linear issue
     const links: ActivityLink[] = [];
@@ -360,25 +405,43 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     notes.push({
-      activity: { source: issue.url },
       key: "description",
       content: hasDescription ? description : null,
       created: issue.createdAt,
       links: links.length > 0 ? links : null,
+      author: authorContact,
     });
 
     // Add comments as notes (with unique IDs, not upserted)
     for (const comment of comments.nodes) {
+      // Fetch comment author
+      let commentAuthor: NewContact | undefined;
+      try {
+        const user = await comment.user;
+        if (user?.email) {
+          commentAuthor = {
+            email: user.email,
+            name: user.name,
+            avatar: user.avatarUrl,
+          };
+        }
+      } catch (error) {
+        console.error(
+          "Error fetching comment user:",
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+
       notes.push({
-        id: Uuid.Generate(),
-        activity: { source: issue.url },
+        key: `comment-${comment.id}`,
         content: comment.body,
         created: comment.createdAt,
+        author: commentAuthor,
       });
     }
 
     const activity: NewActivityWithNotes = {
-      source: issue.url,
+      source: `linear:issue:${issue.id}`,
       type: ActivityType.Action,
       title: issue.title,
       created: issue.createdAt,
@@ -391,6 +454,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         projectId,
       },
       notes,
+      preview: hasDescription ? description : null,
       unread: !initialSync, // false for initial sync, true for incremental updates
       ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
     };
@@ -450,9 +514,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         // Backlog/Todo (no start date, not done)
         targetState = states.nodes.find(
           (s) =>
-            s.name === "Todo" ||
-            s.name === "Backlog" ||
-            s.type === "unstarted"
+            s.name === "Todo" || s.name === "Backlog" || s.type === "unstarted"
         );
       }
 
@@ -551,6 +613,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   ): Promise<void> {
     const payload = request.body as any;
 
+    console.log("=== Linear Webhook Received ===");
+    console.log("Project ID:", projectId);
+    console.log("Webhook Type:", payload.type);
+    console.log("Webhook Action:", payload.action);
+    console.log("Full Payload:", JSON.stringify(payload, null, 2));
+
     // Verify webhook signature
     // Linear sends Linear-Signature header (not X-Linear-Signature)
     const secret =
@@ -572,24 +640,169 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       console.warn("Linear webhook secret not found, skipping verification");
     }
 
-    if (payload.type === "Issue" || payload.type === "Comment") {
-      const callbackToken = await this.get<Callback>(`callback_${projectId}`);
-      if (!callbackToken) return;
-
-      const client = await this.getClient(authToken);
-      const issue = await client.issue(payload.data.id);
-
-      const activity = await this.convertIssueToActivity(
-        issue,
-        projectId,
-        false // incremental update, not initial sync
-      );
-
-      if (!activity) return;
-
-      // Execute stored callback (unread flag already set by convertIssueToActivity)
-      await this.tools.callbacks.run(callbackToken, activity);
+    // Get callback token (needed by both handlers)
+    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    if (!callbackToken) {
+      console.warn("No callback token found for project:", projectId);
+      return;
     }
+
+    // Split handling by webhook type for efficiency
+    if (payload.type === "Issue") {
+      await this.handleIssueWebhook(
+        payload,
+        projectId,
+        authToken,
+        callbackToken
+      );
+    } else if (payload.type === "Comment") {
+      await this.handleCommentWebhook(
+        payload,
+        projectId,
+        authToken,
+        callbackToken
+      );
+    } else {
+      console.log("Ignoring webhook type:", payload.type);
+    }
+  }
+
+  /**
+   * Handle Issue webhook events - only updates issue metadata, not comments
+   */
+  private async handleIssueWebhook(
+    payload: any,
+    projectId: string,
+    _authToken: string,
+    callbackToken: Callback
+  ): Promise<void> {
+    console.log("Processing Issue webhook (optimized)");
+
+    const issue = payload.data;
+    const issueId = issue.id;
+
+    if (!issueId) {
+      console.error("Failed to extract issue ID from Issue webhook:", {
+        dataKeys: Object.keys(payload.data || {}),
+      });
+      return;
+    }
+
+    // Use issue data directly from webhook payload
+    const creator = issue.creator || null;
+    const assignee = issue.assignee || null;
+
+    // Build activity update with only issue fields (no notes)
+    let authorContact: NewContact | undefined;
+    let assigneeContact: NewContact | undefined;
+
+    if (creator?.email) {
+      authorContact = {
+        email: creator.email,
+        name: creator.name,
+        avatar: creator.avatarUrl,
+      };
+    }
+    if (assignee?.email) {
+      assigneeContact = {
+        email: assignee.email,
+        name: assignee.name,
+        avatar: assignee.avatarUrl,
+      };
+    }
+
+    // Create partial activity update (no notes = doesn't touch existing notes)
+    const activity: NewActivity = {
+      source: `linear:issue:${issue.id}`,
+      type: ActivityType.Action,
+      title: issue.title,
+      created: issue.createdAt,
+      author: authorContact,
+      assignee: assigneeContact ?? null,
+      done: issue.completedAt ?? issue.canceledAt ?? null,
+      start: assigneeContact ? undefined : null,
+      meta: {
+        linearId: issue.id,
+        projectId,
+      },
+      preview: issue.description || null,
+    };
+
+    console.log("Executing callback with partial activity (no notes)");
+    await this.tools.callbacks.run(callbackToken, activity);
+    console.log("Issue webhook processed successfully");
+  }
+
+  /**
+   * Handle Comment webhook events - only updates the specific comment
+   */
+  private async handleCommentWebhook(
+    payload: any,
+    _projectId: string,
+    authToken: string,
+    callbackToken: Callback
+  ): Promise<void> {
+    console.log("Processing Comment webhook (optimized)");
+
+    const comment = payload.data;
+    const commentId = comment.id;
+    const issueId = comment.issueId;
+
+    if (!commentId || !issueId) {
+      console.error(
+        "Failed to extract comment/issue ID from Comment webhook:",
+        {
+          dataKeys: Object.keys(payload.data || {}),
+        }
+      );
+      return;
+    }
+
+    // Get issue URL from webhook payload or fetch if needed
+    let issueUrl: string;
+    if (comment.issue?.url) {
+      issueUrl = comment.issue.url;
+    } else {
+      // Fallback: fetch issue URL if not in payload
+      try {
+        const client = await this.getClient(authToken);
+        const issue = await client.issue(issueId);
+        issueUrl = issue.url;
+      } catch (error) {
+        console.error(`Linear issue ${issueId} not found:`, error);
+        return;
+      }
+    }
+
+    // Extract comment author from webhook payload
+    let commentAuthor: NewContact | undefined;
+    if (comment.user?.email) {
+      commentAuthor = {
+        email: comment.user.email,
+        name: comment.user.name,
+        avatar: comment.user.avatarUrl,
+      };
+    }
+
+    // Create activity update with single comment note
+    // Type is required by NewActivity, but upsert will use existing activity's type
+    const activity: NewActivityWithNotes = {
+      source: issueUrl,
+      type: ActivityType.Action, // Required field (will match existing activity)
+      notes: [
+        {
+          key: `comment-${comment.id}`,
+          activity: { source: issueUrl },
+          content: comment.body,
+          created: comment.createdAt,
+          author: commentAuthor,
+        } as NewNote,
+      ],
+    };
+
+    console.log("Executing callback with single comment note");
+    await this.tools.callbacks.run(callbackToken, activity);
+    console.log("Comment webhook processed successfully");
   }
 
   /**

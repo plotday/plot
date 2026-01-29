@@ -269,6 +269,7 @@ export function transformSlackThread(
       threadTs: threadTs,
     },
     notes: [],
+    preview: firstText || null,
   };
 
   // Create Notes for all messages (including first)

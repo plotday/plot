@@ -628,6 +628,7 @@ export class OutlookCalendar
           meta: activity.meta,
           tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
           notes,
+          preview: hasDescription ? outlookEvent.body!.content! : null,
           unread: !initialSync, // false for initial sync, true for incremental updates
           ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
         };

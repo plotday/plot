@@ -395,9 +395,21 @@ export type ActivityCommon = {
 
 export type Activity = ActivityCommon & {
   /**
-   * Canonical URL for the item in an external system.
-   * For example, https://acme.atlassian.net/browse/PROJ-42 could represent a Jira issue.
-   * When set, it uniquely identifies the activity within a priority tree.
+   * Globally unique, stable identifier for the item in an external system.
+   * MUST use immutable system-generated IDs, not human-readable slugs or titles.
+   *
+   * Recommended format: `${domain}:${type}:${id}`
+   *
+   * Examples:
+   *   - `linear:issue:549dd8bd-2bc9-43d1-95d5-4b4af0c5af1b` (Linear issue by UUID)
+   *   - `jira:10001:issue:12345` (Jira issue by numeric ID with cloud ID)
+   *   - `gmail:thread:18d4e5f2a3b1c9d7` (Gmail thread by system ID)
+   *
+   * ⚠️ AVOID: URLs with mutable components like team names or issue keys
+   *   - Bad: `https://linear.app/team/issue/TEAM-123/title` (team and title can change)
+   *   - Bad: `jira:issue:PROJECT-42` (issue key can change)
+   *
+   * When set, uniquely identifies the activity within a priority tree for upsert operations.
    */
   source: string | null;
   /** The display title/summary of the activity */
@@ -610,8 +622,12 @@ export type NewActivityOccurrence = Pick<
 
     /**
      * Whether this occurrence should be marked as unread for users.
-     * - true: Occurrence is unread for users
+     * - true (default): Occurrence is unread for users
      * - false: Occurrence is marked as read
+     * - undefined/omitted: Same as true (default behavior)
+     *
+     * Only set this field explicitly when you want to mark the occurrence as read (false).
+     * For the default unread behavior, omit this field entirely - do NOT set it to true.
      */
     unread?: boolean;
   };
@@ -795,6 +811,10 @@ export type NewActivity = Pick<Activity, "type"> &
      * Whether the activity should be marked as unread for users.
      * - true (default): Activity is unread for all users in the priority
      * - false: Activity is marked as read for all users in the priority at creation time
+     * - undefined/omitted: Same as true (default behavior)
+     *
+     * Only set this field explicitly when you want to mark activities as read (false).
+     * For the default unread behavior, omit this field entirely - do NOT set it to true.
      *
      * Use false for historical imports to avoid marking old items as unread.
      */
@@ -810,6 +830,18 @@ export type NewActivity = Pick<Activity, "type"> &
      * are unarchived. Omit during incremental syncs to preserve user's choice.
      */
     archived?: boolean;
+
+    /**
+     * Optional preview content for the activity. Can be Markdown formatted.
+     * The preview will be automatically generated from this content (truncated to 100 chars).
+     *
+     * - string: Use this content for preview generation
+     * - null: Explicitly disable preview (no preview will be shown)
+     * - undefined (default): Fall back to legacy behavior (generate from first note with content)
+     *
+     * This field is write-only and won't be returned when reading activities.
+     */
+    preview?: string | null;
 
     /**
      * Create or update specific occurrences of a recurring activity.
@@ -892,6 +924,18 @@ export type ActivityUpdate = (
     twistTags?: Partial<Record<Tag, boolean>>;
 
     /**
+     * Optional preview content for the activity. Can be Markdown formatted.
+     * The preview will be automatically generated from this content (truncated to 100 chars).
+     *
+     * - string: Use this content for preview generation
+     * - null: Explicitly disable preview (no preview will be shown)
+     * - undefined (omitted): Preserve current preview value
+     *
+     * This field is write-only and won't be returned when reading activities.
+     */
+    preview?: string | null;
+
+    /**
      * Create or update specific occurrences of this recurring activity.
      * Each entry specifies overrides for a specific occurrence.
      *
@@ -931,9 +975,19 @@ export type ActivityUpdate = (
  */
 export type Note = ActivityCommon & {
   /**
-   * Unique identifier for the note within its activity.
+   * Globally unique, stable identifier for the note within its activity.
    * Can be used to upsert without knowing the id.
-   * For example, "description" could identify the description note for a Jira issue.
+   *
+   * Use one of these patterns:
+   *   - Hardcoded semantic keys for fixed note types: "description", "cancellation"
+   *   - External service IDs for dynamic collections: `comment:${immutableId}`
+   *
+   * Examples:
+   *   - `"description"` (for a Jira issue's description note)
+   *   - `"comment:12345"` (for a specific comment by ID)
+   *   - `"gmail:msg:18d4e5f2a3b1c9d7"` (for a Gmail message within a thread)
+   *
+   * ⚠️ Ensure IDs are immutable - avoid human-readable slugs or titles.
    */
   key: string | null;
   /** The parent activity this note belongs to */
@@ -992,6 +1046,10 @@ export type NewNote = Partial<
      * Whether the note should mark the parent activity as unread for users.
      * - true (default): Activity becomes unread for users who haven't authored the note
      * - false: Activity is marked as read for all users in the priority at note creation time
+     * - undefined/omitted: Same as true (default behavior)
+     *
+     * Only set this field explicitly when you want to mark the activity as read (false).
+     * For the default unread behavior, omit this field entirely - do NOT set it to true.
      *
      * Use false for historical imports to avoid marking old items as unread.
      */

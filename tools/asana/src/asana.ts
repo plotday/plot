@@ -6,6 +6,7 @@ import {
   ActivityLinkType,
   ActivityMeta,
   ActivityType,
+  type NewActivity,
   type NewActivityWithNotes,
   type NewNote,
   type Serializable,
@@ -179,15 +180,52 @@ export class Asana extends Tool<Asana> implements ProjectTool {
 
   /**
    * Setup Asana webhook for real-time updates
-   * Note: Asana webhook API requires special permissions, so we skip for now
    */
   private async setupAsanaWebhook(
     authToken: string,
     projectId: string
   ): Promise<void> {
-    // TODO: Implement Asana webhooks once we confirm the correct API
-    // The asana SDK webhook API may require special app permissions
-    console.log(`Asana webhooks not yet implemented for project ${projectId}`);
+    try {
+      const client = await this.getClient(authToken);
+
+      // Create webhook URL first
+      const webhookUrl = await this.tools.network.createWebhook(
+        {},
+        this.onWebhook,
+        projectId,
+        authToken
+      );
+
+      // Skip webhook setup for localhost (development mode)
+      if (
+        webhookUrl.includes("localhost") ||
+        webhookUrl.includes("127.0.0.1")
+      ) {
+        console.log("Skipping webhook setup for localhost URL:", webhookUrl);
+        return;
+      }
+
+      // Create webhook in Asana
+      // @ts-ignore - Asana SDK webhook types are incomplete
+      const webhook = await client.webhooks.create({
+        resource: projectId,
+        target: webhookUrl,
+      });
+
+      // Store webhook GID for cleanup
+      if (webhook.gid) {
+        await this.set(`webhook_id_${projectId}`, webhook.gid);
+      }
+
+      console.log(
+        `Asana webhook created successfully for project ${projectId}`
+      );
+    } catch (error) {
+      console.error(
+        "Failed to set up Asana webhook - real-time updates will not work:",
+        error
+      );
+    }
   }
 
   /**
@@ -351,7 +389,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
 
     // Extract description (if any)
     let description: string | null = null;
-    if (task.notes) {
+    if (task.notes && task.notes.trim().length > 0) {
       description = task.notes;
     }
 
@@ -390,6 +428,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
           ? new Date(task.completed_at)
           : null,
       notes,
+      preview: description || null,
     };
   }
 
@@ -498,6 +537,9 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   ): Promise<void> {
     const payload = request.body as any;
 
+    console.log("=== Asana Webhook Received ===");
+    console.log("Project ID:", projectId);
+
     // Asana webhook handshake
     if (request.headers["x-hook-secret"]) {
       // This is the initial handshake, respond with the secret
@@ -522,48 +564,36 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       }
     }
 
+    // Get callback token (needed by both handlers)
+    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    if (!callbackToken) {
+      console.warn("No callback token found for project:", projectId);
+      return;
+    }
+
     // Process events
     if (payload.events && Array.isArray(payload.events)) {
-      const callbackToken = await this.get<Callback>(`callback_${projectId}`);
-      if (!callbackToken) return;
-
-      const client = await this.getClient(authToken);
-
       for (const event of payload.events) {
         if (event.resource?.resource_type === "task") {
-          try {
-            // Fetch full task details
-            const task = await client.tasks.getTask(event.resource.gid, {
-              opt_fields: [
-                "name",
-                "notes",
-                "completed",
-                "completed_at",
-                "created_at",
-                "modified_at",
-                "assignee",
-                "assignee.email",
-                "assignee.name",
-                "assignee.photo",
-                "created_by",
-                "created_by.email",
-                "created_by.name",
-                "created_by.photo",
-              ].join(","),
-            });
+          // Check what field changed to optimize the update
+          const changedField = event.change?.field;
 
-            const activityWithNotes = await this.convertTaskToActivity(
-              task,
-              projectId
+          if (changedField === "stories") {
+            // Story/comment event - handle separately
+            await this.handleStoryWebhook(
+              event,
+              projectId,
+              authToken,
+              callbackToken
             );
-
-            // Webhooks are incremental updates - mark as unread
-            activityWithNotes.unread = true;
-
-            // Execute stored callback
-            await this.tools.callbacks.run(callbackToken, activityWithNotes);
-          } catch (error) {
-            console.warn("Failed to process Asana task webhook:", error);
+          } else {
+            // Task property changed - update metadata only
+            await this.handleTaskWebhook(
+              event,
+              projectId,
+              authToken,
+              callbackToken
+            );
           }
         }
       }
@@ -571,11 +601,190 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   }
 
   /**
+   * Handle task property webhook events - only updates task metadata, not stories
+   */
+  private async handleTaskWebhook(
+    event: any,
+    projectId: string,
+    authToken: string,
+    callbackToken: Callback
+  ): Promise<void> {
+    console.log("Processing Task property webhook (optimized)");
+    console.log("Changed field:", event.change?.field);
+
+    const client = await this.getClient(authToken);
+
+    try {
+      // Fetch only task metadata (no stories)
+      const task = await client.tasks.getTask(event.resource.gid, {
+        opt_fields: [
+          "name",
+          "notes",
+          "completed",
+          "completed_at",
+          "created_at",
+          "modified_at",
+          "assignee",
+          "assignee.email",
+          "assignee.name",
+          "assignee.photo",
+          "created_by",
+          "created_by.email",
+          "created_by.name",
+          "created_by.photo",
+        ].join(","),
+      });
+
+      const createdBy = (task as any).created_by;
+      const assignee = (task as any).assignee;
+
+      // Prepare author and assignee contacts
+      let authorContact: NewContact | undefined;
+      let assigneeContact: NewContact | undefined;
+
+      if (createdBy?.email) {
+        authorContact = {
+          email: createdBy.email,
+          name: createdBy.name,
+          avatar: createdBy.photo?.image_128x128,
+        };
+      }
+      if (assignee?.email) {
+        assigneeContact = {
+          email: assignee.email,
+          name: assignee.name,
+          avatar: assignee.photo?.image_128x128,
+        };
+      }
+
+      // Construct task URL
+      const taskUrl = `https://app.asana.com/0/${projectId}/${task.gid}`;
+
+      // Extract description
+      let description: string | null = null;
+      if (task.notes && task.notes.trim().length > 0) {
+        description = task.notes;
+      }
+
+      // Create partial activity update (no notes = doesn't touch existing notes)
+      const activity: NewActivity = {
+        source: taskUrl,
+        type: ActivityType.Action,
+        title: task.name,
+        created: task.created_at ? new Date(task.created_at) : undefined,
+        meta: {
+          taskGid: task.gid,
+          projectId,
+        },
+        author: authorContact,
+        assignee: assigneeContact ?? null,
+        done:
+          task.completed && task.completed_at
+            ? new Date(task.completed_at)
+            : null,
+        preview: description || null,
+      };
+
+      console.log("Executing callback with partial activity (no notes)");
+      await this.tools.callbacks.run(callbackToken, activity);
+      console.log("Task webhook processed successfully");
+    } catch (error) {
+      console.warn("Failed to process Asana task webhook:", error);
+    }
+  }
+
+  /**
+   * Handle story webhook events - only updates the specific story
+   */
+  private async handleStoryWebhook(
+    event: any,
+    projectId: string,
+    authToken: string,
+    callbackToken: Callback
+  ): Promise<void> {
+    console.log("Processing Story webhook (optimized)");
+
+    const client = await this.getClient(authToken);
+    const taskGid = event.resource.gid;
+
+    try {
+      // Construct task URL
+      const taskUrl = `https://app.asana.com/0/${projectId}/${taskGid}`;
+
+      // Fetch stories (comments) for this task
+      // We fetch all stories since Asana doesn't provide the specific story GID in the webhook
+      // In practice, this is still more efficient than fetching the full task with all fields
+      const storiesResult = await client.stories.findByTask(taskGid, {
+        opt_fields: [
+          "created_at",
+          "text",
+          "created_by",
+          "created_by.email",
+          "created_by.name",
+          "created_by.photo",
+        ].join(","),
+      });
+
+      // Get the most recent story (last in the array)
+      const stories = storiesResult.data || [];
+      if (stories.length === 0) {
+        console.log("No stories found for task");
+        return;
+      }
+
+      const latestStory: any = stories[stories.length - 1];
+
+      // Extract story author
+      let storyAuthor: NewContact | undefined;
+      const author: any = latestStory.created_by;
+      if (author?.email) {
+        storyAuthor = {
+          email: author.email,
+          name: author.name,
+          avatar: author.photo?.image_128x128,
+        };
+      }
+
+      // Create activity update with single story note
+      const activity: NewActivityWithNotes = {
+        source: taskUrl,
+        type: ActivityType.Action, // Required field (will match existing activity)
+        notes: [
+          {
+            key: `story-${latestStory.gid}`,
+            activity: { source: taskUrl },
+            content: latestStory.text || "",
+            created: latestStory.created_at
+              ? new Date(latestStory.created_at)
+              : undefined,
+            author: storyAuthor,
+          } as NewNote,
+        ],
+      };
+
+      console.log("Executing callback with single story note");
+      await this.tools.callbacks.run(callbackToken, activity);
+      console.log("Story webhook processed successfully");
+    } catch (error) {
+      console.warn("Failed to process Asana story webhook:", error);
+    }
+  }
+
+  /**
    * Stop syncing an Asana project
    */
   async stopSync(authToken: string, projectId: string): Promise<void> {
-    // TODO: Remove webhook when webhook support is implemented
-    await this.clear(`webhook_id_${projectId}`);
+    // Delete webhook
+    const webhookId = await this.get<string>(`webhook_id_${projectId}`);
+    if (webhookId) {
+      try {
+        const client = await this.getClient(authToken);
+        await client.webhooks.deleteById(webhookId);
+      } catch (error) {
+        console.warn("Failed to delete Asana webhook:", error);
+      }
+      await this.clear(`webhook_id_${projectId}`);
+    }
 
     // Cleanup callback
     const callbackToken = await this.get<Callback>(`callback_${projectId}`);
