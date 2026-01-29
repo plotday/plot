@@ -65,7 +65,7 @@ jobs:
 
           TWISTS=()
           for twist in "${TWIST_LIST[@]}"; do
-            AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
+            AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=${{ github.event.before }} --head=HEAD --json 2>/dev/null || echo "[]")
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/twist-$twist$"; then
               TWISTS+=("\"$twist\"")
             fi

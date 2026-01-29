@@ -54,7 +54,7 @@ jobs:
             worker=$(basename "$worker_dir")
 
             # Check if worker has changes by looking at affected projects
-            AFFECTED_OUTPUT=$(pnpm exec nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
+            AFFECTED_OUTPUT=$(pnpm exec nx show projects --affected --base=${{ github.event.before }} --head=HEAD --json 2>/dev/null || echo "[]")
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/$worker$"; then
               WORKERS+=("\"$worker\"")
             fi
