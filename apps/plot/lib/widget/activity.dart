@@ -105,7 +105,7 @@ class ActivityWidget extends StatelessWidget {
               TextSpan(
                 children: [
                   if (activity.assigneeId != null &&
-                      !activity.assigneeId!.isCurrentUser())
+                      !activity.assigneeId!.isCurrentUser)
                     WidgetSpan(
                       alignment: PlaceholderAlignment.baseline,
                       baseline: TextBaseline.alphabetic,

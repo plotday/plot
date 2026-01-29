@@ -163,12 +163,14 @@ class Actor extends ActorRow {
   static Future<Actor?> getByUserId(Uuid userId) async {
     try {
       // Query the contact table to find the contact for this user_id
-      final result = await Base.client
-          .from('contact')
-          .select('id')
-          .eq('user_id', userId.toString())
-          .isFilter('archived_at', null)
-          .limit(1) as List<dynamic>;
+      final result =
+          await Base.client
+                  .from('contact')
+                  .select('id')
+                  .eq('user_id', userId.toString())
+                  .isFilter('archived_at', null)
+                  .limit(1)
+              as List<dynamic>;
 
       if (result.isEmpty) return null;
 
@@ -357,7 +359,7 @@ extension ActorIdHelpers on ActorId {
   /// Synchronous version - checks if this ActorId belongs to the current user.
   /// Only use when Actor data is guaranteed to be cached (after startup sync).
   /// Falls back to checking against the primary contact if Actor not cached.
-  bool isCurrentUser() {
+  bool get isCurrentUser {
     final actor = Actor._cache[this];
     if (actor == null) {
       // Fallback to primary contact check if not in cache

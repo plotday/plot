@@ -1597,7 +1597,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     // For activities assigned to others, use creation time (treat like notes)
-    if (assigneeId != null && !assigneeId!.isCurrentUser()) {
+    if (assigneeId != null && !assigneeId!.isCurrentUser) {
       final times = [
         sourceCreatedAt,
         ?doneAt,
@@ -1625,19 +1625,19 @@ class Activity extends Equatable implements Comparable<Activity> {
   }
 
   bool get doNow =>
-      (assigneeId == null || assigneeId?.isCurrentUser() == true) &&
+      (assigneeId == null || assigneeId?.isCurrentUser == true) &&
       todo &&
       at?.includes(Time.now()) == true;
   bool get doLater =>
-      (assigneeId == null || assigneeId?.isCurrentUser() == true) &&
+      (assigneeId == null || assigneeId?.isCurrentUser == true) &&
       todo &&
       at?.start?.isAfter(Time.now()) == true;
   bool get doSomeday =>
       type == .action &&
       (on == null && at == null ||
-          (assigneeId != null && assigneeId?.isCurrentUser() != true));
+          (assigneeId != null && assigneeId?.isCurrentUser != true));
   bool get todo =>
-      (assigneeId == null || assigneeId?.isCurrentUser() == true) &&
+      (assigneeId == null || assigneeId?.isCurrentUser == true) &&
       type == ActivityType.action &&
       (on ?? at) != null &&
       !done;
@@ -1648,7 +1648,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   bool get isFuture =>
       at?.start?.isAfter(Time.now()) == true ||
       on?.start?.isAfter(Date.today()) == true;
-  bool get assignedToOther => assigneeId?.isCurrentUser() == false;
+  bool get assignedToOther => assigneeId?.isCurrentUser == false;
 
   String? get occurrence => _exception?.occurrence;
 
@@ -2179,27 +2179,27 @@ class Activity extends Equatable implements Comparable<Activity> {
   bool get currentUserRsvpAttend {
     final attendActors = tags[Tag.attend];
     if (attendActors == null) return false;
-    return attendActors.any((actorId) => actorId.isCurrentUser());
+    return attendActors.any((actorId) => actorId.isCurrentUser);
   }
 
   /// Returns true if the current user has RSVP'd skip for this activity
   bool get currentUserRsvpSkip {
     final skipActors = tags[Tag.skip];
     if (skipActors == null) return false;
-    return skipActors.any((actorId) => actorId.isCurrentUser());
+    return skipActors.any((actorId) => actorId.isCurrentUser);
   }
 
   /// Returns true if the current user has RSVP'd undecided for this activity
   bool get currentUserRsvpUndecided {
     final undecidedActors = tags[Tag.undecided];
     if (undecidedActors == null) return false;
-    return undecidedActors.any((actorId) => actorId.isCurrentUser());
+    return undecidedActors.any((actorId) => actorId.isCurrentUser);
   }
 
   /// Returns true if this event has a different author and user hasn't RSVP'd attend or skip
   bool get shouldShowRsvpPlus {
     if (type != ActivityType.event) return false;
-    if (authorId?.isCurrentUser() != false) return false;
+    if (authorId?.isCurrentUser == true) return false;
     return !currentUserRsvpAttend && !currentUserRsvpSkip;
   }
 
@@ -2371,7 +2371,7 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   DateTime _getSortTime() {
     // Activities assigned to others sort like notes (use creation time)
-    if (assigneeId != null && !assigneeId!.isCurrentUser()) {
+    if (assigneeId != null && !assigneeId!.isCurrentUser) {
       return [
         sourceCreatedAt,
         ?doneAt,

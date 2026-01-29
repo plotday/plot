@@ -589,7 +589,7 @@ class Note extends Equatable implements Comparable<Note> {
     final displayNames = <String>[];
 
     for (final actorId in actorIds) {
-      if (actorId.isCurrentUser()) {
+      if (actorId.isCurrentUser) {
         displayNames.insert(0, 'You'); // Put "You" first
       } else {
         final name = actorMap[actorId] ?? 'Unknown';
@@ -834,6 +834,23 @@ class Note extends Equatable implements Comparable<Note> {
     archivedAt,
     _tags,
   ];
+
+  @override
+  String toString() {
+    String? contentPreview = content;
+    if (contentPreview != null) {
+      // Truncate at first newline or 50 characters, whichever comes first
+      final newlineIndex = contentPreview.indexOf('\n');
+      final truncateAt = newlineIndex >= 0 && newlineIndex < 50
+          ? newlineIndex
+          : 50;
+
+      if (contentPreview.length > truncateAt) {
+        contentPreview = '${contentPreview.substring(0, truncateAt)}...';
+      }
+    }
+    return 'Note(id: $id, draft: $draft, content: $contentPreview, tags: ${tags.length})';
+  }
 
   @override
   int compareTo(Note other) {

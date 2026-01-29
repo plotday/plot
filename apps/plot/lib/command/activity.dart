@@ -1305,7 +1305,7 @@ Command primaryActivityCommand(Activity activity, {bool stateIcon = true}) {
     // Default to reschedule for self-authored events and other cases
     return RescheduleEvent(activity, stateIcon: stateIcon);
   } else if (activity.assigneeId != null &&
-      !activity.assigneeId!.isCurrentUser()) {
+      !activity.assigneeId!.isCurrentUser) {
     return PickActionAssignee(activity, stateIcon: stateIcon);
   } else if (activity.doNow) {
     return FinishAction(activity, stateIcon: stateIcon);

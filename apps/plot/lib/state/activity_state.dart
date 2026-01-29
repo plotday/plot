@@ -18,7 +18,7 @@ class ActivityState extends Equatable {
            ? List.unmodifiable(tagSuggestions)
            : tagSuggestions,
        hasOtherAuthors =
-           notes.firstWhereOrNull((note) => !note.authorId.isCurrentUser()) !=
+           notes.firstWhereOrNull((note) => !note.authorId.isCurrentUser) !=
            null,
        draft = draft ?? Note.draft(activityId: activity.id);
 

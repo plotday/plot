@@ -4,14 +4,13 @@
 
 1. [Install asdf](https://asdf-vm.com/)
    1. `brew install asdf`
-   1. For each plugin listed in `.tool-versions`, run `asdf plugin add PLUGIN_NAME` (e.g. `asdf plugin add python`)
+   1. For each plugin listed in `.tool-versions`, run `asdf plugin add PLUGIN_NAME` (e.g. `asdf plugin add pnpm`)
    1. `asdf install`
 1. [Install the 1Password CLI](https://developer.1password.com/docs/cli/get-started/): `brew install 1password-cli`
 1. [Install pgFormatter](https://github.com/darold/pgFormatter): `brew install pgformatter`
 1. `brew install postgresql`
 1. `brew install cocoapods`
 1. Get the public repo submodule: `git submodule update --init --recursive`
-1. Set git to always fetch the right submodule in the future: `git config --show-origin submodule.recurse`
 1. `pnpm install`
 1. `pnpm run env`
 1. `pnpm run start`
