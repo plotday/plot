@@ -271,8 +271,6 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     channelName: string,
     authToken: string
   ): Promise<void> {
-    console.log("Channel selected:", { provider, channelId, channelName });
-
     try {
       // Store channel config
       await this.addChannelConfig({
@@ -296,7 +294,6 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
         channelId
       );
 
-      console.log(`Started monitoring ${provider} channel: ${channelName}`);
 
       const activity = await this.getOnboardingActivity();
       if (activity) {
@@ -337,9 +334,6 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       return;
     }
 
-    console.log(
-      `Processing thread: ${threadId} with ${thread.notes.length} messages`
-    );
 
     // Check if we already have a task for this thread
     const existingTask = await this.getThreadTask(threadId);
@@ -354,13 +348,9 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     // Analyze thread with AI to see if it needs a task
     const analysis = await this.analyzeThread(thread);
 
-    console.log(`Analysis for ${threadId}:`, analysis);
 
     if (!analysis.needsTask || analysis.confidence < 0.6) {
       // No task needed or low confidence
-      console.log(
-        `No task needed for thread ${threadId} (confidence: ${analysis.confidence})`
-      );
       return;
     }
 
@@ -521,7 +511,6 @@ If a task is needed, create a clear, actionable title that describes what the us
       pickPriority: { content: 50, mentions: 50 },
     });
 
-    console.log(`Created task ${taskId} for thread ${threadId}`);
 
     // Store mapping
     await this.storeThreadTask(threadId, taskId);
@@ -579,9 +568,6 @@ Return true only if there's clear evidence the task is done.`,
       };
 
       if (result.isCompleted && result.confidence >= 0.7) {
-        console.log(
-          `Marking task ${taskInfo.taskId} as complete (confidence: ${result.confidence})`
-        );
         await this.tools.plot.updateActivity({
           id: taskInfo.taskId,
           done: new Date(),

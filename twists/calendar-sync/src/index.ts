@@ -288,12 +288,6 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
     calendarName: string,
     authToken: string
   ): Promise<void> {
-    console.log("Calendar selected with context:", {
-      provider,
-      calendarId,
-      calendarName,
-    });
-
     try {
       // Start sync for the selected calendar
       const tool = this.getProviderTool(provider);
@@ -309,7 +303,6 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
         calendarId
       );
 
-      console.log(`Started syncing ${provider} calendar: ${calendarName}`);
       const activity = await this.getParentActivity();
       if (!activity) {
         console.warn("No parent activity found for calendar sync note");

@@ -201,7 +201,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         webhookUrl.includes("localhost") ||
         webhookUrl.includes("127.0.0.1")
       ) {
-        console.log("Skipping webhook setup for localhost URL:", webhookUrl);
         return;
       }
 
@@ -216,10 +215,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       if (webhook.gid) {
         await this.set(`webhook_id_${projectId}`, webhook.gid);
       }
-
-      console.log(
-        `Asana webhook created successfully for project ${projectId}`
-      );
     } catch (error) {
       console.error(
         "Failed to set up Asana webhook - real-time updates will not work:",
@@ -537,9 +532,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   ): Promise<void> {
     const payload = request.body as any;
 
-    console.log("=== Asana Webhook Received ===");
-    console.log("Project ID:", projectId);
-
     // Asana webhook handshake
     if (request.headers["x-hook-secret"]) {
       // This is the initial handshake, respond with the secret
@@ -609,8 +601,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    console.log("Processing Task property webhook (optimized)");
-    console.log("Changed field:", event.change?.field);
 
     const client = await this.getClient(authToken);
 
@@ -685,9 +675,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         preview: description || null,
       };
 
-      console.log("Executing callback with partial activity (no notes)");
       await this.tools.callbacks.run(callbackToken, activity);
-      console.log("Task webhook processed successfully");
     } catch (error) {
       console.warn("Failed to process Asana task webhook:", error);
     }
@@ -702,7 +690,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    console.log("Processing Story webhook (optimized)");
 
     const client = await this.getClient(authToken);
     const taskGid = event.resource.gid;
@@ -728,7 +715,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       // Get the most recent story (last in the array)
       const stories = storiesResult.data || [];
       if (stories.length === 0) {
-        console.log("No stories found for task");
         return;
       }
 
@@ -762,9 +748,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         ],
       };
 
-      console.log("Executing callback with single story note");
       await this.tools.callbacks.run(callbackToken, activity);
-      console.log("Story webhook processed successfully");
     } catch (error) {
       console.warn("Failed to process Asana story webhook:", error);
     }

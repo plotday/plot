@@ -334,7 +334,6 @@ export class OutlookCalendar
 
     // Skip webhook setup for localhost (development mode)
     if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) {
-      console.log("Skipping webhook setup for localhost URL:", webhookUrl);
       return;
     }
 
@@ -779,7 +778,6 @@ export class OutlookCalendar
     calendarId: string,
     authToken: string
   ): Promise<void> {
-    console.log("Starting incremental Outlook Calendar sync for", calendarId);
 
     try {
       await this.getApi(authToken);

@@ -205,13 +205,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         authToken
       );
 
-      console.log(
-        `Jira webhook URL created for project ${projectId}: ${webhookUrl}`
-      );
-      console.log(
-        "Please configure this webhook manually in Jira's webhook settings"
-      );
-
       // Store webhook URL for reference
       await this.set(`webhook_url_${projectId}`, webhookUrl);
 
@@ -662,10 +655,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   ): Promise<void> {
     const payload = request.body as any;
 
-    console.log("=== Jira Webhook Received ===");
-    console.log("Project ID:", projectId);
-    console.log("Webhook Event:", payload.webhookEvent);
-
     // Get callback token (needed by both handlers)
     const callbackToken = await this.get<Callback>(`callback_${projectId}`);
     if (!callbackToken) {
@@ -702,7 +691,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    console.log("Processing Issue webhook (optimized)");
 
     const issue = payload.issue;
     if (!issue) {
@@ -776,9 +764,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       preview: description || null,
     };
 
-    console.log("Executing callback with partial activity (no notes)");
     await this.tools.callbacks.run(callbackToken, activity);
-    console.log("Issue webhook processed successfully");
   }
 
   /**
@@ -790,7 +776,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    console.log("Processing Comment webhook (optimized)");
 
     const comment = payload.comment;
     const issue = payload.issue;
@@ -846,9 +831,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       ],
     };
 
-    console.log("Executing callback with single comment note");
     await this.tools.callbacks.run(callbackToken, activity);
-    console.log("Comment webhook processed successfully");
   }
 
   /**

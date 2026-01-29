@@ -296,7 +296,6 @@ export default class ProjectSync extends Twist<ProjectSync> {
       // Tool reads its own IDs from activity.meta (e.g., linearId, taskGid, issueKey)
       if (tool.updateIssue) {
         await tool.updateIssue(authToken, activity);
-        console.log(`Synced activity update to ${provider}`);
       }
     } catch (error) {
       console.error(`Failed to sync activity update to ${provider}:`, error);

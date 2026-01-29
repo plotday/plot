@@ -185,7 +185,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         webhookUrl.includes("localhost") ||
         webhookUrl.includes("127.0.0.1")
       ) {
-        console.log("Skipping webhook setup for localhost URL:", webhookUrl);
         return;
       }
 
@@ -319,20 +318,10 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     projectId: string,
     initialSync: boolean
   ): Promise<NewActivityWithNotes | null> {
-    console.log("=== Converting Issue to Activity ===");
-    console.log("Issue ID:", issue.id);
-    console.log("Issue Title:", issue.title);
-    console.log("Initial Sync:", initialSync);
-
     let creator, assignee, comments;
 
     try {
-      console.log("Fetching issue creator...");
       creator = await issue.creator;
-      console.log(
-        "Creator:",
-        creator ? { email: creator.email, name: creator.name } : null
-      );
     } catch (error) {
       console.error(
         "Error fetching creator:",
@@ -342,12 +331,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     try {
-      console.log("Fetching issue assignee...");
       assignee = await issue.assignee;
-      console.log(
-        "Assignee:",
-        assignee ? { email: assignee.email, name: assignee.name } : null
-      );
     } catch (error) {
       console.error(
         "Error fetching assignee:",
@@ -357,9 +341,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     try {
-      console.log("Fetching issue comments...");
       comments = await issue.comments();
-      console.log("Comments count:", comments.nodes.length);
     } catch (error) {
       console.error(
         "Error fetching comments:",
@@ -613,12 +595,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   ): Promise<void> {
     const payload = request.body as any;
 
-    console.log("=== Linear Webhook Received ===");
-    console.log("Project ID:", projectId);
-    console.log("Webhook Type:", payload.type);
-    console.log("Webhook Action:", payload.action);
-    console.log("Full Payload:", JSON.stringify(payload, null, 2));
-
     // Verify webhook signature
     // Linear sends Linear-Signature header (not X-Linear-Signature)
     const secret =
@@ -676,8 +652,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     _authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    console.log("Processing Issue webhook (optimized)");
-
     const issue = payload.data;
     const issueId = issue.id;
 
@@ -716,7 +690,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       source: `linear:issue:${issue.id}`,
       type: ActivityType.Action,
       title: issue.title,
-      created: issue.createdAt,
+      created: new Date(issue.createdAt),
       author: authorContact,
       assignee: assigneeContact ?? null,
       done: issue.completedAt ?? issue.canceledAt ?? null,
@@ -728,9 +702,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       preview: issue.description || null,
     };
 
-    console.log("Executing callback with partial activity (no notes)");
     await this.tools.callbacks.run(callbackToken, activity);
-    console.log("Issue webhook processed successfully");
   }
 
   /**
@@ -742,8 +714,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    console.log("Processing Comment webhook (optimized)");
-
     const comment = payload.data;
     const commentId = comment.id;
     const issueId = comment.issueId;
@@ -794,15 +764,13 @@ export class Linear extends Tool<Linear> implements ProjectTool {
           key: `comment-${comment.id}`,
           activity: { source: issueUrl },
           content: comment.body,
-          created: comment.createdAt,
+          created: new Date(comment.createdAt),
           author: commentAuthor,
         } as NewNote,
       ],
     };
 
-    console.log("Executing callback with single comment note");
     await this.tools.callbacks.run(callbackToken, activity);
-    console.log("Comment webhook processed successfully");
   }
 
   /**

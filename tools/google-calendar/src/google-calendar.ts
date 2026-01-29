@@ -251,7 +251,6 @@ export class GoogleCalendar
     // Check if sync is already in progress for this calendar
     const syncInProgress = await this.get<boolean>(`sync_lock_${calendarId}`);
     if (syncInProgress) {
-      console.log(`Sync already in progress for calendar ${calendarId}, skipping`);
       return;
     }
 
@@ -426,7 +425,6 @@ export class GoogleCalendar
    */
   private async renewCalendarWatch(calendarId: string): Promise<void> {
     try {
-      console.log(`Renewing watch for calendar ${calendarId}`);
 
       // Get auth token
       const authToken = await this.get<string>(`auth_token_${calendarId}`);
@@ -457,7 +455,6 @@ export class GoogleCalendar
       // Create new watch (reuses existing webhook URL and callback)
       await this.setupCalendarWatch(authToken, calendarId, authToken);
 
-      console.log(`Successfully renewed watch for calendar ${calendarId}`);
     } catch (error) {
       console.error(`Failed to renew watch for calendar ${calendarId}:`, error);
       // Don't throw - let reactive checking handle it as fallback
@@ -478,7 +475,6 @@ export class GoogleCalendar
 
     // Check if webhook URL is localhost
     if (URL.parse(webhookUrl)?.hostname === "localhost") {
-      console.log("Skipping webhook setup for localhost URL");
       return;
     }
 
@@ -543,8 +539,7 @@ export class GoogleCalendar
         const syncLock = await this.get<boolean>(`sync_lock_${calendarId}`);
         if (!syncLock) {
           // Both state and lock are cleared - sync completed normally, this is a stale callback
-          console.log(`Sync already completed for calendar ${calendarId}, skipping duplicate batch callback`);
-        } else {
+            } else {
           // State missing but lock still set - sync may have been superseded
           console.warn(`No sync state found for calendar ${calendarId}, sync may have been superseded`);
           await this.clear(`sync_lock_${calendarId}`);
@@ -591,7 +586,6 @@ export class GoogleCalendar
         // Persist sync token for future incremental syncs
         if (result.state.state && !result.state.more) {
           await this.set(`last_sync_token_${calendarId}`, result.state.state);
-          console.log(`Stored sync token for calendar ${calendarId}`);
         }
 
         if (mode === "full") {
@@ -1000,7 +994,6 @@ export class GoogleCalendar
     // Check if initial sync is still in progress
     const syncInProgress = await this.get<boolean>(`sync_lock_${calendarId}`);
     if (syncInProgress) {
-      console.log(`Sync already in progress for calendar ${calendarId}, ignoring webhook-triggered incremental sync`);
       return;
     }
 
@@ -1084,7 +1077,6 @@ export class GoogleCalendar
 
     try {
       await this.tools.plot.addContacts(contacts);
-      console.log(`Successfully added ${contacts.length} contacts`);
     } catch (error) {
       console.error("Failed to add contacts to Plot:", error);
     }

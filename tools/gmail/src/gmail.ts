@@ -160,10 +160,8 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   }
 
   async getChannels(authToken: string): Promise<MessageChannel[]> {
-    console.log("Fetching Gmail labels");
     const api = await this.getApi(authToken);
     const labels = await api.getLabels();
-    console.log("Got Gmail labels", labels);
 
     const channels: MessageChannel[] = [];
 
@@ -210,7 +208,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, channelId, timeMin } = options;
-    console.log("Starting Gmail sync for channel", channelId);
 
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
@@ -248,8 +245,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   }
 
   async stopSync(authToken: string, channelId: string): Promise<void> {
-    console.log("Stopping Gmail sync for channel", channelId);
-
     // Stop watching for push notifications
     const api = await this.getApi(authToken);
     try {
@@ -310,17 +305,8 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
         expiration: new Date(parseInt(watchResult.expiration)),
         created: new Date().toISOString(),
       });
-
-      console.log("Gmail webhook setup complete", {
-        channelId,
-        topicName,
-        expiration: watchResult.expiration,
-      });
     } catch (error) {
       console.error("Failed to setup Gmail webhook:", error);
-      console.log(
-        "Continuing without webhooks - only manual/scheduled syncs will work"
-      );
     }
   }
 
@@ -330,10 +316,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     authToken: string,
     channelId: string
   ): Promise<void> {
-    console.log(
-      `Starting Gmail sync batch ${batchNumber} (${mode}) for channel ${channelId}`
-    );
-
     try {
       const state = await this.get<SyncState>(`sync_state_${channelId}`);
       if (!state) {
@@ -347,9 +329,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
       if (result.threads.length > 0) {
         await this.processEmailThreads(result.threads, channelId, authToken);
-        console.log(
-          `Synced ${result.threads.length} threads in batch ${batchNumber} for channel ${channelId}`
-        );
       }
 
       await this.set(`sync_state_${channelId}`, result.state);
@@ -364,9 +343,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
         );
         await this.run(syncCallback);
       } else {
-        console.log(
-          `Gmail ${mode} sync completed after ${batchNumber} batches for channel ${channelId}`
-        );
         if (mode === "full") {
           await this.clear(`sync_state_${channelId}`);
         }
@@ -416,11 +392,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     channelId: string,
     authToken: string
   ): Promise<void> {
-    console.log("Received Gmail webhook notification", {
-      body: request.body,
-      channelId,
-    });
-
     // Gmail sends push notifications via Cloud Pub/Sub
     // The message body is base64-encoded
     const body = request.body as { message?: { data: string } };
@@ -439,8 +410,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
       console.error("Failed to decode Gmail webhook message:", error);
       return;
     }
-
-    console.log("Decoded Gmail notification:", data);
 
     // Gmail notifications contain historyId for incremental sync
     if (data.historyId) {
@@ -462,7 +431,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     // Check if watch has expired and renew if needed
     const expiration = new Date(webhookData.expiration);
     if (expiration < new Date()) {
-      console.log("Gmail watch expired, renewing...");
       await this.setupChannelWebhook(authToken, channelId);
     }
 

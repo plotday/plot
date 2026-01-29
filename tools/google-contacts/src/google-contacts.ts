@@ -410,8 +410,6 @@ export default class GoogleContacts
   }
 
   async syncBatch(batchNumber: number, authToken: string): Promise<void> {
-    console.log(`Starting Google Contacts sync batch ${batchNumber}`);
-
     try {
       const storedAuthToken = await this.get<AuthToken>(
         `auth_token:${authToken}`
@@ -436,9 +434,6 @@ export default class GoogleContacts
 
       if (result.contacts.length > 0) {
         await this.processContacts(result.contacts, authToken);
-        console.log(
-          `Synced ${result.contacts.length} contacts in batch ${batchNumber}`
-        );
       }
 
       await this.set(`sync_state:${authToken}`, result.state);
@@ -451,9 +446,6 @@ export default class GoogleContacts
         );
         await this.run(nextCallback);
       } else {
-        console.log(
-          `Google Contacts sync completed after ${batchNumber} batches`
-        );
         await this.clear(`sync_state:${authToken}`);
       }
     } catch (error) {
@@ -480,8 +472,6 @@ export default class GoogleContacts
     opaqueToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    console.log("Google Contacts authentication successful", authResult);
-
     // Store the actual auth token using opaque token as key
     await this.set(`auth_token:${opaqueToken}`, authResult);
 

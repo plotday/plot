@@ -129,7 +129,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     TArgs extends Serializable[],
     TCallback extends (auth: MessagingAuth, ...args: TArgs) => any
   >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    console.log("Requesting Slack auth");
     // Bot scopes for workspace-level "Add to Slack" installation
     // These are the scopes the bot token will have
     const slackScopes = [
@@ -183,10 +182,8 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   }
 
   async getChannels(authToken: string): Promise<MessageChannel[]> {
-    console.log("Fetching Slack channels");
     const api = await this.getApi(authToken);
     const channels = await api.getChannels();
-    console.log("Got Slack channels", channels);
 
     return channels
       .filter(
@@ -212,7 +209,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     ...extraArgs: TArgs
   ): Promise<void> {
     const { authToken, channelId } = options;
-    console.log("Starting Slack sync for channel", channelId);
 
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
@@ -244,7 +240,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
     await this.set(`sync_state_${channelId}`, initialState);
 
-    console.log("Starting initial sync");
     // Start sync batch using run tool for long-running operation
     const syncCallback = await this.callback(
       this.syncBatch,
@@ -257,8 +252,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   }
 
   async stopSync(authToken: string, channelId: string): Promise<void> {
-    console.log("Stopping Slack sync for channel", channelId);
-
     // Clear webhook
     await this.clear(`channel_webhook_${channelId}`);
 
@@ -285,7 +278,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
     // Check if webhook URL is localhost
     if (URL.parse(webhookUrl)?.hostname === "localhost") {
-      console.log("Skipping webhook setup for localhost URL");
       return;
     }
 
@@ -298,7 +290,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       created: new Date().toISOString(),
     });
 
-    console.log("Channel webhook setup complete", { channelId, webhookUrl });
   }
 
   async syncBatch(
@@ -307,10 +298,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     authToken: string,
     channelId: string
   ): Promise<void> {
-    console.log(
-      `Starting Slack sync batch ${batchNumber} (${mode}) for channel ${channelId}`
-    );
-
     try {
       const state = await this.get<SyncState>(`sync_state_${channelId}`);
       if (!state) {
@@ -322,9 +309,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
       if (result.threads.length > 0) {
         await this.processMessageThreads(result.threads, channelId, authToken);
-        console.log(
-          `Synced ${result.threads.length} threads in batch ${batchNumber} for channel ${channelId}`
-        );
       }
 
       await this.set(`sync_state_${channelId}`, result.state);
@@ -339,9 +323,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
         );
         await this.run(syncCallback);
       } else {
-        console.log(
-          `Slack ${mode} sync completed after ${batchNumber} batches for channel ${channelId}`
-        );
         if (mode === "full") {
           await this.clear(`sync_state_${channelId}`);
         }
@@ -392,11 +373,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     channelId: string,
     authToken: string
   ): Promise<void> {
-    console.log("Received Slack webhook notification", {
-      body: request.body,
-      channelId,
-    });
-
     const body = request.body;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       console.warn("Invalid webhook body format");
@@ -406,7 +382,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     // Slack sends a challenge parameter for URL verification
     const bodyObj = body as { challenge?: string; event?: any };
     if (bodyObj.challenge) {
-      console.log("Responding to Slack challenge:", bodyObj.challenge);
       // Note: The webhook infrastructure should handle responding with the challenge
       return;
     }
