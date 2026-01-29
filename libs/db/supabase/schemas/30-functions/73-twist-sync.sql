@@ -38,9 +38,7 @@ END;
 
 $function$;
 
--- Twist sync trigger function for activity changes
--- Handles both INSERT (create) and UPDATE operations
--- For UPDATE, treats draft=true→false transitions as 'create' operations
+
 CREATE OR REPLACE FUNCTION public.sync_twist_for_activity ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -116,34 +114,34 @@ BEGIN
                 AND pct.archived_at IS NULL
                 -- Track sync for the twist that created this activity
                 AND n.created_by = pct.id LOOP
-                        SELECT
-                            last_update_at,
-                            last_sync_at INTO v_prev_update_at,
-                            v_prev_sync_at
-                        FROM
-                            priority_twist_sync
-                        WHERE
-                            priority_twist_id = v_priority_twist_id
-                            AND entity = 'activity'
-                            AND operation = 'create';
-                        INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                            VALUES (v_priority_twist_id, 'activity', 'create', v_create_timestamp)
-                        ON CONFLICT (priority_twist_id, entity, operation)
-                            DO UPDATE SET
-                                last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
-                        SELECT
-                            last_sync_at INTO v_current_sync_at
-                        FROM
-                            priority_twist_sync
-                        WHERE
-                            priority_twist_id = v_priority_twist_id
-                            AND entity = 'activity'
-                            AND operation = 'create';
-                        -- Only notify if not updated by this twist (avoid echo)
-                        IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_create_timestamp > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_create_timestamp > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_create_timestamp > v_current_sync_at + interval '60 seconds'))) THEN
-                            v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
-                        END IF;
-                    END LOOP;
+                    SELECT
+                        last_update_at,
+                        last_sync_at INTO v_prev_update_at,
+                        v_prev_sync_at
+                    FROM
+                        priority_twist_sync
+                    WHERE
+                        priority_twist_id = v_priority_twist_id
+                        AND entity = 'activity'
+                        AND operation = 'create';
+                    INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
+                        VALUES (v_priority_twist_id, 'activity', 'create', v_create_timestamp)
+                    ON CONFLICT (priority_twist_id, entity, operation)
+                        DO UPDATE SET
+                            last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
+                    SELECT
+                        last_sync_at INTO v_current_sync_at
+                    FROM
+                        priority_twist_sync
+                    WHERE
+                        priority_twist_id = v_priority_twist_id
+                        AND entity = 'activity'
+                        AND operation = 'create';
+                    -- Only notify if not updated by this twist (avoid echo)
+                    IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_create_timestamp > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_create_timestamp > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_create_timestamp > v_current_sync_at + interval '60 seconds'))) THEN
+                        v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
+                    END IF;
+                END LOOP;
         ELSE
             -- UPDATE (publishing draft): can reference old_table for draft true→false check
             -- IMPORTANT: Update sync state for ALL activity creators, not just those we notify
@@ -159,34 +157,34 @@ BEGIN
                 AND pct.archived_at IS NULL
                 -- Track sync for the twist that created this activity
                 AND n.created_by = pct.id LOOP
-                        SELECT
-                            last_update_at,
-                            last_sync_at INTO v_prev_update_at,
-                            v_prev_sync_at
-                        FROM
-                            priority_twist_sync
-                        WHERE
-                            priority_twist_id = v_priority_twist_id
-                            AND entity = 'activity'
-                            AND operation = 'create';
-                        INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                            VALUES (v_priority_twist_id, 'activity', 'create', v_create_timestamp)
-                        ON CONFLICT (priority_twist_id, entity, operation)
-                            DO UPDATE SET
-                                last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
-                        SELECT
-                            last_sync_at INTO v_current_sync_at
-                        FROM
-                            priority_twist_sync
-                        WHERE
-                            priority_twist_id = v_priority_twist_id
-                            AND entity = 'activity'
-                            AND operation = 'create';
-                        -- Only notify if not updated by this twist (avoid echo)
-                        IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_create_timestamp > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_create_timestamp > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_create_timestamp > v_current_sync_at + interval '60 seconds'))) THEN
-                            v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
-                        END IF;
-                    END LOOP;
+                    SELECT
+                        last_update_at,
+                        last_sync_at INTO v_prev_update_at,
+                        v_prev_sync_at
+                    FROM
+                        priority_twist_sync
+                    WHERE
+                        priority_twist_id = v_priority_twist_id
+                        AND entity = 'activity'
+                        AND operation = 'create';
+                    INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
+                        VALUES (v_priority_twist_id, 'activity', 'create', v_create_timestamp)
+                    ON CONFLICT (priority_twist_id, entity, operation)
+                        DO UPDATE SET
+                            last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
+                    SELECT
+                        last_sync_at INTO v_current_sync_at
+                    FROM
+                        priority_twist_sync
+                    WHERE
+                        priority_twist_id = v_priority_twist_id
+                        AND entity = 'activity'
+                        AND operation = 'create';
+                    -- Only notify if not updated by this twist (avoid echo)
+                    IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_create_timestamp > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_create_timestamp > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_create_timestamp > v_current_sync_at + interval '60 seconds'))) THEN
+                        v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
+                    END IF;
+                END LOOP;
         END IF;
     END IF;
     -- Process UPDATE operations (regular updates to already-published activities)
@@ -203,36 +201,35 @@ BEGIN
             AND o.draft = FALSE
             AND pct.archived_at IS NULL
             -- Track sync for the twist that created this activity
-            AND n.created_by = pct.id
-                LOOP
-                    SELECT
-                        last_update_at,
-                        last_sync_at INTO v_prev_update_at,
-                        v_prev_sync_at
-                    FROM
-                        priority_twist_sync
-                    WHERE
-                        priority_twist_id = v_priority_twist_id
-                        AND entity = 'activity'
-                        AND operation = 'update';
-                    INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                        VALUES (v_priority_twist_id, 'activity', 'update', v_update_timestamp)
-                    ON CONFLICT (priority_twist_id, entity, operation)
-                        DO UPDATE SET
-                            last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
-                    SELECT
-                        last_sync_at INTO v_current_sync_at
-                    FROM
-                        priority_twist_sync
-                    WHERE
-                        priority_twist_id = v_priority_twist_id
-                        AND entity = 'activity'
-                        AND operation = 'update';
-                    -- Only notify if not updated by this twist (avoid echo)
-                    IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_update_timestamp > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_update_timestamp > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_update_timestamp > v_current_sync_at + interval '60 seconds'))) THEN
-                        v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
-                    END IF;
-                END LOOP;
+            AND n.created_by = pct.id LOOP
+                SELECT
+                    last_update_at,
+                    last_sync_at INTO v_prev_update_at,
+                    v_prev_sync_at
+                FROM
+                    priority_twist_sync
+                WHERE
+                    priority_twist_id = v_priority_twist_id
+                    AND entity = 'activity'
+                    AND operation = 'update';
+                INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
+                    VALUES (v_priority_twist_id, 'activity', 'update', v_update_timestamp)
+                ON CONFLICT (priority_twist_id, entity, operation)
+                    DO UPDATE SET
+                        last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
+                SELECT
+                    last_sync_at INTO v_current_sync_at
+                FROM
+                    priority_twist_sync
+                WHERE
+                    priority_twist_id = v_priority_twist_id
+                    AND entity = 'activity'
+                    AND operation = 'update';
+                -- Only notify if not updated by this twist (avoid echo)
+                IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_update_timestamp > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_update_timestamp > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_update_timestamp > v_current_sync_at + interval '60 seconds'))) THEN
+                    v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
+                END IF;
+            END LOOP;
     END IF;
     -- Batch notify all twists that need it
     IF array_length(v_twists_to_notify, 1) > 0 THEN
@@ -243,8 +240,93 @@ BEGIN
 END;
 $function$;
 
--- Twist sync trigger function for note changes
--- For UPDATE, treats draft=true→false transitions as 'create' operations
+CREATE OR REPLACE FUNCTION public.sync_twist_for_activity_tag ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_max_updated_at timestamptz;
+    v_updated_by integer;
+    v_twists_to_notify uuid[] := '{}';
+    v_priority_twist_id uuid;
+    v_prev_update_at timestamptz;
+    v_prev_sync_at timestamptz;
+    v_current_sync_at timestamptz;
+BEGIN
+    -- Only consider tags on non-draft activities
+    SELECT
+        MAX(n.updated_at) INTO v_max_updated_at
+    FROM
+        new_table n
+        JOIN activity a ON a.id = n.activity_id
+    WHERE
+        a.draft = FALSE;
+    -- Exit early if all changes were to tags on draft activities
+    IF v_max_updated_at IS NULL THEN
+        RETURN NULL;
+    END IF;
+    -- Get the updated_by value (if any) to exclude that twist from notifications
+    SELECT DISTINCT
+        n.updated_by INTO v_updated_by
+    FROM
+        new_table n
+        JOIN activity a ON a.id = n.activity_id
+    WHERE
+        n.updated_by IS NOT NULL
+        AND a.draft = FALSE
+    LIMIT 1;
+    -- Track sync state for twists that created the affected activities
+    -- IMPORTANT: Update sync state for ALL activity creators, not just those we notify
+    -- Only consider tags on non-draft activities
+    FOR v_priority_twist_id IN SELECT DISTINCT
+        pct.id
+    FROM
+        new_table n
+        JOIN activity a ON a.id = n.activity_id
+        JOIN priority_child_twist pct ON pct.priority_child_id = a.priority_id
+    WHERE
+        a.draft = FALSE
+        AND pct.archived_at IS NULL
+        -- Track sync for the twist that created this activity
+        AND a.created_by = pct.id LOOP
+            SELECT
+                last_update_at,
+                last_sync_at INTO v_prev_update_at,
+                v_prev_sync_at
+            FROM
+                priority_twist_sync
+            WHERE
+                priority_twist_id = v_priority_twist_id
+                AND entity = 'activity'
+                AND operation = 'update';
+            INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
+                VALUES (v_priority_twist_id, 'activity', 'update', v_max_updated_at)
+            ON CONFLICT (priority_twist_id, entity, operation)
+                DO UPDATE SET
+                    last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
+            SELECT
+                last_sync_at INTO v_current_sync_at
+            FROM
+                priority_twist_sync
+            WHERE
+                priority_twist_id = v_priority_twist_id
+                AND entity = 'activity'
+                AND operation = 'update';
+            -- Only notify if not updated by this twist (avoid echo)
+            IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_max_updated_at > v_current_sync_at + interval '60 seconds'))) THEN
+                v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
+            END IF;
+        END LOOP;
+    IF array_length(v_twists_to_notify, 1) > 0 THEN
+        PERFORM
+            call_twist_sync_api (v_twists_to_notify);
+    END IF;
+    RETURN NULL;
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.sync_twist_for_note ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -341,7 +423,8 @@ BEGIN
                             note.activity_id = a.id
                             AND note.id != n.id
                             AND pct.id = ANY (note.mentions)
-                            AND note.archived_at IS NULL)) LOOP
+                            AND note.archived_at IS NULL))
+                    LOOP
                         SELECT
                             last_update_at,
                             last_sync_at INTO v_prev_update_at,
@@ -397,7 +480,8 @@ BEGIN
                             note.activity_id = a.id
                             AND note.id != n.id
                             AND pct.id = ANY (note.mentions)
-                            AND note.archived_at IS NULL)) LOOP
+                            AND note.archived_at IS NULL))
+                    LOOP
                         SELECT
                             last_update_at,
                             last_sync_at INTO v_prev_update_at,
@@ -446,95 +530,6 @@ BEGIN
             AND pct.archived_at IS NULL
             -- Track sync for note creator
             AND n.created_by = pct.id LOOP
-                    SELECT
-                        last_update_at,
-                        last_sync_at INTO v_prev_update_at,
-                        v_prev_sync_at
-                    FROM
-                        priority_twist_sync
-                    WHERE
-                        priority_twist_id = v_priority_twist_id
-                        AND entity = 'note'
-                        AND operation = 'update';
-                    INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                        VALUES (v_priority_twist_id, 'note', 'update', v_update_timestamp)
-                    ON CONFLICT (priority_twist_id, entity, operation)
-                        DO UPDATE SET
-                            last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
-                    SELECT
-                        last_sync_at INTO v_current_sync_at
-                    FROM
-                        priority_twist_sync
-                    WHERE
-                        priority_twist_id = v_priority_twist_id
-                        AND entity = 'note'
-                        AND operation = 'update';
-                    -- Only notify if not updated by this twist (avoid echo)
-                    IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_update_timestamp > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_update_timestamp > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_update_timestamp > v_current_sync_at + interval '60 seconds'))) THEN
-                        v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
-                    END IF;
-                END LOOP;
-    END IF;
-    IF array_length(v_twists_to_notify, 1) > 0 THEN
-        PERFORM
-            call_twist_sync_api (v_twists_to_notify);
-    END IF;
-    RETURN NULL;
-END;
-$function$;
-
--- Twist sync trigger function for activity_tag changes
-CREATE OR REPLACE FUNCTION public.sync_twist_for_activity_tag ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $function$
-DECLARE
-    v_max_updated_at timestamptz;
-    v_updated_by integer;
-    v_twists_to_notify uuid[] := '{}';
-    v_priority_twist_id uuid;
-    v_prev_update_at timestamptz;
-    v_prev_sync_at timestamptz;
-    v_current_sync_at timestamptz;
-BEGIN
-    -- Only consider tags on non-draft activities
-    SELECT
-        MAX(n.updated_at) INTO v_max_updated_at
-    FROM
-        new_table n
-        JOIN activity a ON a.id = n.activity_id
-    WHERE
-        a.draft = FALSE;
-    -- Exit early if all changes were to tags on draft activities
-    IF v_max_updated_at IS NULL THEN
-        RETURN NULL;
-    END IF;
-    -- Get the updated_by value (if any) to exclude that twist from notifications
-    SELECT DISTINCT
-        n.updated_by INTO v_updated_by
-    FROM
-        new_table n
-        JOIN activity a ON a.id = n.activity_id
-    WHERE
-        n.updated_by IS NOT NULL
-        AND a.draft = FALSE
-    LIMIT 1;
-    -- Track sync state for twists that created the affected activities
-    -- IMPORTANT: Update sync state for ALL activity creators, not just those we notify
-    -- Only consider tags on non-draft activities
-    FOR v_priority_twist_id IN SELECT DISTINCT
-        pct.id
-    FROM
-        new_table n
-        JOIN activity a ON a.id = n.activity_id
-        JOIN priority_child_twist pct ON pct.priority_child_id = a.priority_id
-    WHERE
-        a.draft = FALSE
-        AND pct.archived_at IS NULL
-        -- Track sync for the twist that created this activity
-        AND a.created_by = pct.id LOOP
                 SELECT
                     last_update_at,
                     last_sync_at INTO v_prev_update_at,
@@ -543,10 +538,10 @@ BEGIN
                     priority_twist_sync
                 WHERE
                     priority_twist_id = v_priority_twist_id
-                    AND entity = 'activity'
+                    AND entity = 'note'
                     AND operation = 'update';
                 INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                    VALUES (v_priority_twist_id, 'activity', 'update', v_max_updated_at)
+                    VALUES (v_priority_twist_id, 'note', 'update', v_update_timestamp)
                 ON CONFLICT (priority_twist_id, entity, operation)
                     DO UPDATE SET
                         last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
@@ -556,13 +551,14 @@ BEGIN
                     priority_twist_sync
                 WHERE
                     priority_twist_id = v_priority_twist_id
-                    AND entity = 'activity'
+                    AND entity = 'note'
                     AND operation = 'update';
                 -- Only notify if not updated by this twist (avoid echo)
-                IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_max_updated_at > v_current_sync_at + interval '60 seconds'))) THEN
+                IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_update_timestamp > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_update_timestamp > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_update_timestamp > v_current_sync_at + interval '60 seconds'))) THEN
                     v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
                 END IF;
             END LOOP;
+    END IF;
     IF array_length(v_twists_to_notify, 1) > 0 THEN
         PERFORM
             call_twist_sync_api (v_twists_to_notify);
@@ -571,7 +567,6 @@ BEGIN
 END;
 $function$;
 
--- Twist sync trigger function for note_tag changes
 CREATE OR REPLACE FUNCTION public.sync_twist_for_note_tag ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -629,34 +624,34 @@ BEGIN
         AND pct.archived_at IS NULL
         -- Track sync for the twist that created this note
         AND nt.created_by = pct.id LOOP
-                SELECT
-                    last_update_at,
-                    last_sync_at INTO v_prev_update_at,
-                    v_prev_sync_at
-                FROM
-                    priority_twist_sync
-                WHERE
-                    priority_twist_id = v_priority_twist_id
-                    AND entity = 'note'
-                    AND operation = 'update';
-                INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                    VALUES (v_priority_twist_id, 'note', 'update', v_max_updated_at)
-                ON CONFLICT (priority_twist_id, entity, operation)
-                    DO UPDATE SET
-                        last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
-                SELECT
-                    last_sync_at INTO v_current_sync_at
-                FROM
-                    priority_twist_sync
-                WHERE
-                    priority_twist_id = v_priority_twist_id
-                    AND entity = 'note'
-                    AND operation = 'update';
-                -- Only notify if not updated by this twist (avoid echo)
-                IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_max_updated_at > v_current_sync_at + interval '60 seconds'))) THEN
-                    v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
-                END IF;
-            END LOOP;
+            SELECT
+                last_update_at,
+                last_sync_at INTO v_prev_update_at,
+                v_prev_sync_at
+            FROM
+                priority_twist_sync
+            WHERE
+                priority_twist_id = v_priority_twist_id
+                AND entity = 'note'
+                AND operation = 'update';
+            INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
+                VALUES (v_priority_twist_id, 'note', 'update', v_max_updated_at)
+            ON CONFLICT (priority_twist_id, entity, operation)
+                DO UPDATE SET
+                    last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
+            SELECT
+                last_sync_at INTO v_current_sync_at
+            FROM
+                priority_twist_sync
+            WHERE
+                priority_twist_id = v_priority_twist_id
+                AND entity = 'note'
+                AND operation = 'update';
+            -- Only notify if not updated by this twist (avoid echo)
+            IF ((v_updated_by IS NULL OR v_updated_by = 0 OR updated_by_uuid (v_priority_twist_id) != v_updated_by) AND ((v_prev_update_at IS NULL) OR (v_prev_update_at <= v_prev_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_prev_update_at > v_prev_sync_at AND v_prev_sync_at IS DISTINCT FROM v_current_sync_at AND v_max_updated_at > v_current_sync_at) OR (v_current_sync_at IS NOT NULL AND v_max_updated_at > v_current_sync_at + interval '60 seconds'))) THEN
+                v_twists_to_notify := array_append(v_twists_to_notify, v_priority_twist_id);
+            END IF;
+        END LOOP;
     IF array_length(v_twists_to_notify, 1) > 0 THEN
         PERFORM
             call_twist_sync_api (v_twists_to_notify);
@@ -664,6 +659,7 @@ BEGIN
     RETURN NULL;
 END;
 $function$;
+
 
 -- Restrict access: only service_role can call these functions
 -- call_twist_sync_api calls external API with internal credentials
