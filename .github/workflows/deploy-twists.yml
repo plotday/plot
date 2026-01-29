@@ -9,7 +9,7 @@ on:
     paths:
       - "twists/**"
       - "libs/**"
-      - "public/twister/**"
+      - "public/**"
       - ".github/workflows/deploy-twists.yml"
   workflow_dispatch:
 
