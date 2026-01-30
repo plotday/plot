@@ -161,25 +161,54 @@ share.post("/priority/:id/share", async (c) => {
             contactId,
             priorityId,
             inviterUserId: user.id,
-            resendApiKey: c.env.RESEND_API_KEY,
+            mailQueue: c.env.MAIL_QUEUE,
             siteRoot: c.env.SITE_ROOT,
           })
         )
       )
         .then((results) => {
-          // Log all results
+          // Log all results and capture failures in PostHog
           results.forEach((result, index) => {
             const contactId = nonUserContactIds[index];
             if (result.status === "rejected") {
+              const error = result.reason instanceof Error
+                ? result.reason
+                : new Error(String(result.reason));
               console.error(
                 `[Contact ${contactId}] Email send rejected:`,
                 result.reason
               );
+              c.var.postHog.captureException(error, undefined, {
+                contact_id: contactId,
+                priority_id: priorityId,
+                inviter_user_id: user.id,
+                error_context: "invitation_email_queue_failed",
+              });
+            } else if (result.status === "fulfilled" && !result.value.success) {
+              // sendInvitation returned success: false
+              const error = new Error(result.value.error || "Unknown error");
+              console.error(
+                `[Contact ${contactId}] Email send failed:`,
+                result.value.error
+              );
+              c.var.postHog.captureException(error, undefined, {
+                contact_id: contactId,
+                priority_id: priorityId,
+                inviter_user_id: user.id,
+                error_context: "invitation_email_send_failed",
+                skipped: result.value.skipped,
+              });
             }
           });
         })
         .catch((error) => {
+          const err = error instanceof Error ? error : new Error(String(error));
           console.error("Unexpected error sending invitation emails:", error);
+          c.var.postHog.captureException(err, undefined, {
+            priority_id: priorityId,
+            inviter_user_id: user.id,
+            error_context: "invitation_email_unexpected_error",
+          });
         })
     );
   }

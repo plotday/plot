@@ -1,10 +1,8 @@
 import * as crypto from "crypto";
 
-import { type EmailType, render } from "@plotday/email";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Hono } from "hono";
 
-import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
 import {
   createFreeSubscription,
@@ -23,7 +21,12 @@ interface SendInvitationParams {
   contactId: string;
   priorityId: string;
   inviterUserId: string;
-  resendApiKey?: string; // Optional, only needed in production
+  mailQueue: Queue<{
+    to: string[];
+    subject: string;
+    email: string;
+    props?: Record<string, unknown>;
+  }>;
   siteRoot: string;
 }
 
@@ -52,7 +55,7 @@ export async function sendInvitation(
   supabaseAdmin: SupabaseClient,
   params: SendInvitationParams
 ): Promise<SendInvitationResult> {
-  const { contactId, priorityId, inviterUserId, resendApiKey, siteRoot } = params;
+  const { contactId, priorityId, inviterUserId, mailQueue, siteRoot } = params;
 
   // 1. Get contact info
   const { data: contact, error: contactError } = await supabaseAdmin
@@ -108,30 +111,27 @@ export async function sendInvitation(
     inviterResult.data?.name || inviterResult.data?.email || "Someone";
   const priorityName = priorityResult.data?.title || "a priority";
 
-  // 5. Render and send email via Resend
+  // 5. Queue invitation email to mail worker
   const inviteUrl = `${siteRoot}/join?invite=${token}`;
-  const { html, text } = await render("priority-invitation" as EmailType, {
-    inviterName,
-    priorityName,
-    inviteUrl,
-    recipientName: contact.name || undefined,
-  });
 
-  const emailResult = await sendEmail(
-    {
-      from: "Plot <info@updates.plot.day>",
+  try {
+    await mailQueue.send({
       to: [contact.email],
       subject: `${inviterName} invited you to collaborate on Plot`,
-      html,
-      text,
-      replyTo: "Plot <team@plot.day>",
-    },
-    resendApiKey
-  );
-
-  if (!emailResult.success) {
-    console.error("Failed to send invitation email:", emailResult.error);
-    return { success: false, error: emailResult.error || "email_send_failed" };
+      email: "priority-invitation",
+      props: {
+        inviterName,
+        priorityName,
+        inviteUrl,
+        recipientName: contact.name || undefined,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to queue invitation email:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "email_queue_failed"
+    };
   }
 
   // 6. Update sent_at timestamp (for existing tokens)

@@ -146,6 +146,12 @@ export type Bindings = {
   readonly RUN_QUEUE: Queue<RunMessage>;
   readonly UPDATES_QUEUE: Queue<TwistBatchMessage>;
   readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
+  readonly MAIL_QUEUE: Queue<{
+    to: string[];
+    subject: string;
+    email: string;
+    props?: Record<string, unknown>;
+  }>;
   readonly AI: Ai;
   readonly STORAGE: DurableObjectNamespace<Storage>;
   readonly CALLBACKS: DurableObjectNamespace<CallbacksState>;

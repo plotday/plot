@@ -132,6 +132,10 @@
           {
             "queue": "twist-logs-development",
             "binding": "TWIST_LOGS_QUEUE"
+          },
+          {
+            "queue": "mail-development",
+            "binding": "MAIL_QUEUE"
           }
         ],
         "consumers": [
@@ -290,6 +294,10 @@
           {
             "queue": "twist-logs-production",
             "binding": "TWIST_LOGS_QUEUE"
+          },
+          {
+            "queue": "mail-production",
+            "binding": "MAIL_QUEUE"
           }
         ],
         "consumers": [
