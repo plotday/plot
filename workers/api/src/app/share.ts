@@ -155,7 +155,7 @@ share.post("/priority/:id/share", async (c) => {
   if (shareError) {
     logger.error("share_priority failed", new Error(shareError.message));
   } else {
-    logger.info("share_priority completed", { non_user_contacts: nonUserContactIds.length });
+    logger.info("share_priority completed", { added_contacts: allAddIds.length });
   }
 
   if (shareError) {
@@ -177,17 +177,40 @@ share.post("/priority/:id/share", async (c) => {
     );
   }
 
+  // Check which of the newly added contacts need invitation emails
+  // This handles both contacts from emails AND contacts passed as UUIDs
+  let finalNonUserContactIds: string[] = [];
+  if (allAddIds.length > 0) {
+    const { data: addedContacts, error: contactCheckError } = await c.var.supabaseAdmin
+      .from("contact")
+      .select("id, user_id")
+      .in("id", allAddIds);
+
+    if (contactCheckError) {
+      logger.error("Failed to check added contacts", new Error(contactCheckError.message));
+    } else if (addedContacts) {
+      finalNonUserContactIds = addedContacts
+        .filter((c) => c.user_id === null)
+        .map((c) => c.id);
+
+      logger.info("Checked added contacts for invitations", {
+        total_added: allAddIds.length,
+        non_user_contacts: finalNonUserContactIds.length
+      });
+    }
+  }
+
   // Send invitation emails to non-user contacts (fire-and-forget with waitUntil)
-  if (nonUserContactIds.length > 0) {
+  if (finalNonUserContactIds.length > 0) {
     const logger = createLogger({ component: "share" });
     logger.info("Queuing invitation emails", {
-      count: nonUserContactIds.length,
+      count: finalNonUserContactIds.length,
       priority_id: priorityId
     });
     // Use waitUntil to ensure emails complete even after response is sent
     c.executionCtx.waitUntil(
       Promise.allSettled(
-        nonUserContactIds.map((contactId) =>
+        finalNonUserContactIds.map((contactId) =>
           sendInvitation(c.var.supabaseAdmin, {
             contactId,
             priorityId,
@@ -202,7 +225,7 @@ share.post("/priority/:id/share", async (c) => {
           logger.info("Invitation sending complete", { results_count: results.length });
           // Log all results and capture failures in PostHog
           results.forEach((result, index) => {
-            const contactId = nonUserContactIds[index];
+            const contactId = finalNonUserContactIds[index];
             if (result.status === "rejected") {
               const error = result.reason instanceof Error
                 ? result.reason
