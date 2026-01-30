@@ -44,8 +44,22 @@ class Actor extends ActorRow {
     await Store.get.pull(table, ActorsBase(), initial: true);
     // Subsequent pulls: fetch changes since last pull
     await Store.get.pull(table, ActorsBase());
-    // Clear cache to ensure fresh data is served
-    clearCache();
+    // Repopulate cache with critical actors (self + twists)
+    await pullCritical();
+  }
+
+  /// Loads only critical actors into cache: self actors and priority twists.
+  /// Other actors are cached lazily when accessed via get() or getOne().
+  static Future<void> pullCritical() async {
+    // Query 1: Fetch only actors with self = true (user's own actors)
+    // Typically 1-10 actors (user's email addresses across different contacts)
+    await get(self: true, archived: null);
+
+    // Query 2: Fetch only priority twist actors
+    // Typically < 50 actors (one per active twist)
+    await get(types: [ActorType.priorityTwist], archived: null);
+
+    // Both queries automatically populate the cache via get() (lines 84-87)
   }
 
   static Future<List<Actor>> get({
@@ -56,6 +70,7 @@ class Actor extends ActorRow {
     String? search,
     int? limit,
     bool? archived = false,
+    bool? self,
   }) async {
     // Trigger archived sync if needed
     if (archived == true) {
@@ -79,6 +94,7 @@ class Actor extends ActorRow {
       search: search,
       limit: limit,
       archived: archived,
+      self: self,
     ).get();
 
     // Cache all fetched actors for synchronous lookups
@@ -97,6 +113,7 @@ class Actor extends ActorRow {
     String? search,
     int? limit,
     bool? archived = false,
+    bool? self,
   }) {
     // Trigger archived sync if needed
     if (archived == true) {
@@ -117,6 +134,7 @@ class Actor extends ActorRow {
           search: search,
           limit: limit,
           archived: archived,
+          self: self,
         ).watch(),
       );
     }
@@ -128,6 +146,7 @@ class Actor extends ActorRow {
       search: search,
       limit: limit,
       archived: archived,
+      self: self,
     ).watch();
   }
 
@@ -207,6 +226,7 @@ class Actor extends ActorRow {
     String? search,
     int? limit,
     bool? archived = false,
+    bool? self,
   }) {
     final a = Store.get.actors;
     final pa = Store.get.priorityActors;
@@ -249,6 +269,11 @@ class Actor extends ActorRow {
           .map((t) => (t as Enum).name.toSnakeCase())
           .toList();
       query.where(a.type.isIn(typeStrings));
+    }
+
+    // Filter by self flag
+    if (self != null) {
+      query.where(a.self.equals(self));
     }
 
     // Search by name or email (case-insensitive with LIKE)

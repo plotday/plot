@@ -36,6 +36,8 @@ class UserBloc extends Cubit<UserState> {
 
       log.info('User signed in: ${user.primaryEmail}');
       await Store.start(user);
+      // Ensure Actor cache is populated before app becomes interactive
+      await Actor.pullCritical();
       emit(UserReady(user));
     });
   }
@@ -64,6 +66,8 @@ class UserBloc extends Cubit<UserState> {
         emit(UserPasswordRequired(currentUser));
       } else if (state is! UserReady) {
         await Store.start(currentUser);
+        // Ensure Actor cache is populated before app becomes interactive
+        await Actor.pullCritical();
         emit(UserReady(currentUser));
       }
     }
