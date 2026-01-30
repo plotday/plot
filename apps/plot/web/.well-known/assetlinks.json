@@ -1,11 +1,15 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "day.plot.app",
       "sha256_cert_fingerprints": [
-        "B816ACDBD02FDD7737308702C9ABEA42C831F414F007055FEC70C4FF4BDB2098"
+        "B816ACDBD02FDD7737308702C9ABEA42C831F414F007055FEC70C4FF4BDB2098",
+        "5A:4A:F8:94:C4:7E:E0:C0:4F:A5:7A:F9:7E:D3:34:21:3A:72:BD:58:50:BE:92:26:8C:9C:05:DA:F6:39:9F:E2"
       ]
     }
   }
