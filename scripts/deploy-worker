@@ -20,7 +20,27 @@ wrangler deploy --dry-run --outdir build --define $definitions --env $ENV
 if [[ -v POSTHOG_CLI_KEY ]]; then
   posthog-cli sourcemap inject --directory build --project $PACKAGE
 fi
-wrangler deploy --no-bundle build/index.js --define $definitions $VARS --env $ENV
+
+# Deploy with retry logic for transient Cloudflare API errors
+MAX_RETRIES=3
+RETRY_COUNT=0
+RETRY_DELAY=10
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  if wrangler deploy --no-bundle build/index.js --define $definitions $VARS --env $ENV; then
+    break
+  else
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+      echo "Deploy failed, retrying in ${RETRY_DELAY}s (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+      sleep $RETRY_DELAY
+    else
+      echo "Deploy failed after $MAX_RETRIES attempts"
+      exit 1
+    fi
+  fi
+done
+
 if [[ -v POSTHOG_CLI_KEY ]]; then
   posthog-cli sourcemap upload --directory build
 fi
