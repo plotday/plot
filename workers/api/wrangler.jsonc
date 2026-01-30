@@ -288,7 +288,7 @@
             "binding": "RUN_QUEUE"
           },
           {
-            "queue": "updates-production",
+            "queue": "updates-production-v2",
             "binding": "UPDATES_QUEUE"
           },
           {
@@ -307,7 +307,7 @@
             "max_batch_timeout": 30
           },
           {
-            "queue": "updates-production",
+            "queue": "updates-production-v2",
             "max_batch_size": 50,
             "max_batch_timeout": 0
           },

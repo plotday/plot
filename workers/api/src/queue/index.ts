@@ -49,6 +49,7 @@ export async function queue(
 
       case "updates-development":
       case "updates-production":
+      case "updates-production-v2":
         await processUpdates(
           batch as MessageBatch<TwistBatchMessage>,
           env,
