@@ -1,5 +1,11 @@
 # @plotday/tool-google-contacts
 
+## 0.4.9
+
+### Changed
+
+- Removed debugging logging ([`d8f07cd`](https://github.com/plotday/plot/commit/d8f07cd82d7db91fbb99c3e6b6b751980566e9b7))
+
 ## 0.4.8
 
 ### Changed

@@ -1,5 +1,18 @@
 # @plotday/tool-google-calendar
 
+## 0.11.1
+
+### Changed
+
+- Removed debugging logging ([`d8f07cd`](https://github.com/plotday/plot/commit/d8f07cd82d7db91fbb99c3e6b6b751980566e9b7))
+- Updated dependencies:
+- @plotday/tool-google-contacts@0.4.9
+
+### Fixed
+
+- Backdate cancellation notes for the date the event was cancelled ([`a38fa1c`](https://github.com/plotday/plot/commit/a38fa1c7b4c2de524a140b5d73e1acac3ff077a4))
+- Always use event IDs rather than URL for source ([`b438aa3`](https://github.com/plotday/plot/commit/b438aa30240875c731d038df92e94f9435601637))
+
 ## 0.11.0
 
 ### Added
