@@ -128,10 +128,10 @@ export class Logger {
   }
 
   /**
-   * Internal log method that uses native console methods with message + context.
+   * Internal log method that outputs structured JSON logs.
    *
-   * Cloudflare Workers automatically adds timestamps and formats log levels,
-   * so we rely on native console methods instead of custom formatting.
+   * Cloudflare Workers always JSON-stringifies console output, so we structure
+   * the log entry to be readable with the message prominently displayed.
    */
   private log(level: LogLevel, message: string, error?: Error, context?: LogContext): void {
     const mergedContext = { ...this.baseContext, ...context };
@@ -144,48 +144,33 @@ export class Logger {
       }
     }
 
-    const hasContext = Object.keys(filteredContext).length > 0;
+    // Build structured log entry with message first, then context
+    const logEntry: any = {
+      message,
+      ...filteredContext,
+    };
 
-    // Use native console methods with message + context/error format
+    // Add error details if present
+    if (error) {
+      logEntry.error = {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      };
+    }
+
+    // Use appropriate console method for the level
     switch (level) {
       case LogLevel.DEBUG:
       case LogLevel.INFO:
-        if (hasContext) {
-          console.log(message, filteredContext);
-        } else {
-          console.log(message);
-        }
+        console.log(logEntry);
         break;
       case LogLevel.WARN:
-        if (error) {
-          if (hasContext) {
-            console.warn(message, error, filteredContext);
-          } else {
-            console.warn(message, error);
-          }
-        } else {
-          if (hasContext) {
-            console.warn(message, filteredContext);
-          } else {
-            console.warn(message);
-          }
-        }
+        console.warn(logEntry);
         break;
       case LogLevel.ERROR:
       case LogLevel.FATAL:
-        if (error) {
-          if (hasContext) {
-            console.error(message, error, filteredContext);
-          } else {
-            console.error(message, error);
-          }
-        } else {
-          if (hasContext) {
-            console.error(message, filteredContext);
-          } else {
-            console.error(message);
-          }
-        }
+        console.error(logEntry);
         break;
     }
   }
