@@ -1,5 +1,4 @@
 export 'base.dart';
-export 'event.dart';
 export 'filter.dart';
 export 'global.dart';
 export 'navigation.dart';
