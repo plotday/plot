@@ -6,7 +6,7 @@ import { Callbacks } from "../twist/tools/callbacks";
 import { addLogsNote } from "../twist/dev-activities";
 import { type Bindings, type LogMessage } from "../env";
 import { extractLogQueueContext } from "../utils/log-context";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
 
 export async function processLogs(

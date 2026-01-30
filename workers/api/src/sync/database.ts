@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { Bindings } from "../env";
 import { extractRequestContext } from "../utils/log-context";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
 import { handleValidationError } from "../utils/validation";
 

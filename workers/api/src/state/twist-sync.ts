@@ -4,7 +4,7 @@ import { PostHog } from "posthog-node";
 import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 
 import type { ActivityTagChange, Bindings } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 // Debouncing configuration (compile-time constants)
 const MIN_WAIT_MS = 100; // Minimum time to wait before processing

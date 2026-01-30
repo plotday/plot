@@ -1,3 +1,5 @@
+import { createLogger } from "@plotday/worker-util";
+
 // Extend CacheStorage to include the default cache
 declare const caches: CacheStorage & { default: Cache };
 
@@ -23,7 +25,8 @@ async function handleRequest(
       return await forwardRequest(request, pathWithParams, env);
     }
   } catch (error) {
-    console.error("[handleRequest]", error);
+    const logger = createLogger({ component: "beat" });
+    logger.error("Error in handleRequest", error as Error);
     return new Response("Internal Server Error", { status: 500 });
   }
 }
@@ -43,7 +46,8 @@ async function retrieveStatic(
     }
     return response;
   } catch (error) {
-    console.error("[retrieveStatic]", error);
+    const logger = createLogger({ component: "beat" });
+    logger.error("Error retrieving static asset", error as Error, { pathname });
     return new Response("Static asset fetch error", { status: 500 });
   }
 }
@@ -61,7 +65,8 @@ async function forwardRequest(
 
     return await fetch(proxyRequest);
   } catch (error) {
-    console.error("[forwardRequest]", error);
+    const logger = createLogger({ component: "beat" });
+    logger.error("Error forwarding request", error as Error, { path: pathWithSearch });
     return new Response("Proxy error", { status: 500 });
   }
 }
@@ -71,7 +76,8 @@ export default {
     try {
       return await handleRequest(request, ctx, env);
     } catch (error) {
-      console.error("[fetch]", error);
+      const logger = createLogger({ component: "beat" });
+      logger.error("Error in fetch handler", error as Error);
       return new Response("Internal Server Error", { status: 500 });
     }
   },

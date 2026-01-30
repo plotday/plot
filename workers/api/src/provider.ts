@@ -1,4 +1,5 @@
 import { type AuthProvider } from "@plotday/twister/tools/integrations";
+import { createLogger } from "@plotday/worker-util";
 
 // Base OAuth token data (common to all providers)
 export type BaseTokenData = {
@@ -63,7 +64,8 @@ function parseJwtEmail(idToken: string): string | null {
 
     return data.email || null;
   } catch (error) {
-    console.error("Error parsing JWT:", error);
+    const logger = createLogger({ component: "provider" });
+    logger.error("Error parsing JWT", error as Error);
     return null;
   }
 }
@@ -85,7 +87,8 @@ async function fetchGitHubEmail(accessToken: string): Promise<string | null> {
     const data = await response.json() as { email?: string };
     return data.email || null;
   } catch (error) {
-    console.error("Error fetching GitHub email:", error);
+    const logger = createLogger({ component: "provider" });
+    logger.error("Error fetching GitHub email", error as Error);
     return null;
   }
 }

@@ -1,6 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 /**
  * HttpProxy acts as an outbound filter for twist workers, controlling which

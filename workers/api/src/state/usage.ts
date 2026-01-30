@@ -3,7 +3,7 @@ import { DurableObject } from "cloudflare:workers";
 import { type SupabaseClient, createClient } from "@plotday/db";
 
 import { type Bindings } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
 
 const FLUSH_INTERVAL_MS = 60_000; // 1 minute

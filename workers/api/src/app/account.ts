@@ -14,7 +14,7 @@ import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 
 const account = new Hono<{ Bindings: Bindings }>();

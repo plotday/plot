@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@plotday/db";
 
 import { type TwistEnvironment, type Bindings } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { buildTwist } from "./builder";
 import { addReleaseNote } from "./dev-activities";
 import { type TwistPermissions, storeTwistModule } from "./index";

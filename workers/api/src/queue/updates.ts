@@ -4,7 +4,7 @@ import { type SupabaseClient, createClient } from "@plotday/db";
 
 import { type Bindings, type TwistBatchMessage } from "../env";
 import { twistFactory } from "../twist";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 /**
  * Process a batch of twist update messages from the queue.

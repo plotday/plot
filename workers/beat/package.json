@@ -12,6 +12,9 @@
     "types": "wrangler types",
     "lint": "tsc && eslint ."
   },
+  "dependencies": {
+    "@plotday/worker-util": "workspace:^"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
     "@plotday/eslint-config-custom": "workspace:*",

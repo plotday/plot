@@ -1,6 +1,6 @@
 import type { Note } from "@plotday/twister/plot";
 
-import { createLogger } from "../../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { createNote } from "./activity";
 import type { Plot } from "./index";
 

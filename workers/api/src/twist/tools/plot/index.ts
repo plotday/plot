@@ -23,7 +23,7 @@ import {
 } from "@plotday/twister/tools/plot";
 
 import type { Bindings } from "../../../env";
-import { createLogger } from "../../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
 import type { EnrichedActivity, EnrichedNote } from "../../view-types";

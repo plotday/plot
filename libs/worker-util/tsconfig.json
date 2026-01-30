@@ -1,0 +1,7 @@
+{
+  "extends": "@plotday/tsconfig/lib.json",
+  "compilerOptions": {
+    "lib": ["ES2021", "ES2022.error", "WebWorker"]
+  },
+  "include": ["src/*.ts"]
+}

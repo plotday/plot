@@ -12,7 +12,7 @@ import type {
 } from "@plotday/twister/plot";
 import { ActivityType } from "@plotday/twister/plot";
 
-import { createLogger } from "../../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { addContacts } from "./contacts";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";

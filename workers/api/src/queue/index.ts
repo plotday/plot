@@ -7,7 +7,7 @@ import {
   type QueueMessage,
   type TwistBatchMessage,
 } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { processLogs } from "./logs";
 import { processUpdates } from "./updates";
 

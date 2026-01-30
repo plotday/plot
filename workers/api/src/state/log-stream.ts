@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import type { Bindings, LogMessage } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 /**
  * Durable Object for streaming twist logs via SSE.

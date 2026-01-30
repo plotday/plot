@@ -9,7 +9,7 @@ import type { Bindings } from "../env";
 import { Integrations } from "../twist/tools/integrations";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 import { authRateLimiter } from "../middleware/rate-limit";
 

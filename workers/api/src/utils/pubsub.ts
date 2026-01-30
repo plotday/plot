@@ -5,7 +5,7 @@
  * for Gmail webhook support. Each webhook gets its own dedicated topic and subscription.
  */
 
-import { createLogger } from "./logger";
+import { createLogger } from "@plotday/worker-util";
 
 interface PubSubConfig {
   projectId: string;

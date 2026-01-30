@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@plotday/db";
 
 import type { Bindings, LogMessage, TwistEnvironment } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 const PLOT_TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
 

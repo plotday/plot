@@ -5,6 +5,7 @@ import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
 import { handleValidationError } from "../utils/validation";
 import { sendInvitation } from "./invitation";
+import { createLogger } from "@plotday/worker-util";
 
 const share = new Hono<{ Bindings: Bindings }>();
 
@@ -34,6 +35,9 @@ share.post("/priority/:id/share", async (c) => {
   const priorityId = c.req.param("id");
   const user = c.var.user;
 
+  const logger = createLogger({ component: "share" });
+  logger.info("Request to share priority", { priority_id: priorityId, user_id: user?.id });
+
   if (!user) {
     return c.json({ message: "Unauthorized" }, 401);
   }
@@ -55,8 +59,11 @@ share.post("/priority/:id/share", async (c) => {
 
   const { add, remove } = parseResult.data;
 
+  logger.info("Parsed share request", { add, remove });
+
   // Check if there's anything to do
   if (add.length === 0 && remove.length === 0) {
+    logger.info("No changes to make, returning 400");
     return c.json({ message: "No changes to make" }, 400);
   }
 
@@ -78,6 +85,8 @@ share.post("/priority/:id/share", async (c) => {
       );
     }
   }
+
+  logger.info("Partitioned identifiers", { uuid_count: addUuids.length, email_count: addEmails.length });
 
   // If there are emails, upsert contacts first
   let contactIdsFromEmails: string[] = [];
@@ -115,11 +124,20 @@ share.post("/priority/:id/share", async (c) => {
       .filter((c) => c.user_id === null)
       .map((c) => c.id);
 
-    console.log(`[Share] Upserted ${contacts.length} contacts, ${nonUserContactIds.length} are non-users (need invitations)`);
+    const logger = createLogger({ component: "share" });
+    logger.info("Upserted contacts for sharing", {
+      total_contacts: contacts.length,
+      non_user_contacts: nonUserContactIds.length
+    });
   }
 
   // Combine UUIDs with contact IDs from emails
   const allAddIds = [...addUuids, ...contactIdsFromEmails];
+
+  logger.info("Calling share_priority", {
+    add_count: allAddIds.length,
+    remove_count: remove.length
+  });
 
   // Call the share_priority function
   // Using supabaseAdmin since the function is revoked from authenticated
@@ -133,6 +151,12 @@ share.post("/priority/:id/share", async (c) => {
     }
   );
   const shareResult = data as SharePriorityResult | null;
+
+  if (shareError) {
+    logger.error("share_priority failed", new Error(shareError.message));
+  } else {
+    logger.info("share_priority completed", { non_user_contacts: nonUserContactIds.length });
+  }
 
   if (shareError) {
     // Check for access denied error
@@ -155,7 +179,11 @@ share.post("/priority/:id/share", async (c) => {
 
   // Send invitation emails to non-user contacts (fire-and-forget with waitUntil)
   if (nonUserContactIds.length > 0) {
-    console.log(`[Share] Queuing ${nonUserContactIds.length} invitation emails for priority ${priorityId}`);
+    const logger = createLogger({ component: "share" });
+    logger.info("Queuing invitation emails", {
+      count: nonUserContactIds.length,
+      priority_id: priorityId
+    });
     // Use waitUntil to ensure emails complete even after response is sent
     c.executionCtx.waitUntil(
       Promise.allSettled(
@@ -170,7 +198,8 @@ share.post("/priority/:id/share", async (c) => {
         )
       )
         .then((results) => {
-          console.log(`[Share] Invitation sending complete: ${results.length} results`);
+          const logger = createLogger({ component: "share" });
+          logger.info("Invitation sending complete", { results_count: results.length });
           // Log all results and capture failures in PostHog
           results.forEach((result, index) => {
             const contactId = nonUserContactIds[index];
@@ -178,10 +207,7 @@ share.post("/priority/:id/share", async (c) => {
               const error = result.reason instanceof Error
                 ? result.reason
                 : new Error(String(result.reason));
-              console.error(
-                `[Contact ${contactId}] Email send rejected:`,
-                result.reason
-              );
+              logger.error("Email send rejected", error, { contact_id: contactId });
               c.var.postHog.captureException(error, undefined, {
                 contact_id: contactId,
                 priority_id: priorityId,
@@ -191,10 +217,10 @@ share.post("/priority/:id/share", async (c) => {
             } else if (result.status === "fulfilled" && !result.value.success) {
               // sendInvitation returned success: false
               const error = new Error(result.value.error || "Unknown error");
-              console.error(
-                `[Contact ${contactId}] Email send failed:`,
-                result.value.error
-              );
+              logger.error("Email send failed", error, {
+                contact_id: contactId,
+                error_message: result.value.error
+              });
               c.var.postHog.captureException(error, undefined, {
                 contact_id: contactId,
                 priority_id: priorityId,
@@ -206,8 +232,9 @@ share.post("/priority/:id/share", async (c) => {
           });
         })
         .catch((error) => {
+          const logger = createLogger({ component: "share" });
           const err = error instanceof Error ? error : new Error(String(error));
-          console.error("Unexpected error sending invitation emails:", error);
+          logger.error("Unexpected error sending invitation emails", err);
           c.var.postHog.captureException(err, undefined, {
             priority_id: priorityId,
             inviter_user_id: user.id,

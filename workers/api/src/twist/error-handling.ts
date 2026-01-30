@@ -1,5 +1,5 @@
 import { type TwistEnvironment, type Bindings } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { processStackTrace } from "../utils/stacktrace";
 
 /**

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createClient } from "@plotday/db";
 
 import type { Bindings } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 
 const priority = new Hono<{ Bindings: Bindings }>();

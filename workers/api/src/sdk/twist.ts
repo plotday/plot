@@ -12,7 +12,7 @@ import {
 } from "../twist/priority-management";
 import { SSEStream, acceptsSSE } from "../utils/sse";
 import { handleValidationError } from "../utils/validation";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { deploymentRateLimiter } from "../middleware/rate-limit";
 
 const twist = new Hono<{ Bindings: Bindings }>();

@@ -20,7 +20,7 @@ import {
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
-import { createLogger } from "../../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import {
   handleDbOperationError,
   prepareActivityForDb,
@@ -108,10 +108,10 @@ export async function createActivity(
           })
         );
       } catch (error) {
-        console.log("upsert_activity failed", {
-          error,
-          upsert: prep.upsert,
-          defaults: prep.defaults,
+        const logger = createLogger({ component: "plot_tool" });
+        logger.error("upsert_activity failed", error as Error, {
+          upsert: JSON.stringify(prep.upsert),
+          defaults: JSON.stringify(prep.defaults),
         });
         throw error;
       }

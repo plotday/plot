@@ -3,7 +3,7 @@ import type { MiddlewareHandler } from "hono";
 
 import type { Bindings } from "../env";
 import { extractRequestContext } from "../utils/log-context";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 /**
  * Rate limiting middleware using Cloudflare's native Rate Limiting API

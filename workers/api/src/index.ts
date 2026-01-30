@@ -28,7 +28,7 @@ import stripe from "./stripe/stripe";
 // Import sync routes and middleware
 import { authMiddleware as syncAuthMiddleware } from "./sync/auth";
 import database from "./sync/database";
-import { createLogger } from "./utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
 import { disposeRpc } from "./utils/rpc";
 // Import webhook routes

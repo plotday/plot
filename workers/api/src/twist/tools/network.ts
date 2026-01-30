@@ -8,7 +8,7 @@ import type { Store as IStore } from "@plotday/twister/tools/store";
 import { type TwistEnvironment, type Bindings } from "../../env";
 import { CallbackError } from "../../errors";
 import { CallbacksState } from "../../state/callbacks";
-import { createLogger } from "../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import {
   createPushSubscription,
   createTopic,

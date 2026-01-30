@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@plotday/email": "workspace:^",
+    "@plotday/worker-util": "workspace:^",
     "posthog-node": "^5.18.1",
     "worker-mailer": "^1.2.1"
   },

@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { Network } from "./twist/tools/network";
 import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
-import { createLogger } from "./utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "./utils/log-context";
 import { webhookRateLimiter } from "./middleware/rate-limit";
 import {

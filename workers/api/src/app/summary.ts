@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 
 const summary = new Hono<{ Bindings: Bindings }>();

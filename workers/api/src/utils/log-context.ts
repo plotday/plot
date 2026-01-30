@@ -6,7 +6,7 @@
  */
 
 import type { Context } from "hono";
-import type { LogContext } from "./logger";
+import type { LogContext } from "@plotday/worker-util";
 import type { Bindings, LogMessage } from "../env";
 import type { RunMessage } from "../twist/tools/tasks";
 import { DbError } from "@plotday/db";

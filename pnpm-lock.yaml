@@ -237,6 +237,15 @@ importers:
         specifier: workspace:*
         version: link:../tsconfig
 
+  libs/worker-util:
+    devDependencies:
+      '@plotday/eslint-config-custom':
+        specifier: workspace:*
+        version: link:../eslint-config-custom
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+
   public/tools/asana:
     dependencies:
       '@plotday/twister':
@@ -502,6 +511,9 @@ importers:
       '@plotday/twister':
         specifier: workspace:*
         version: link:../../public/twister
+      '@plotday/worker-util':
+        specifier: workspace:^
+        version: link:../../libs/worker-util
       '@supabase/supabase-js':
         specifier: ^2.79.0
         version: 2.79.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)
@@ -565,6 +577,10 @@ importers:
         version: 2.1.9(@types/node@20.14.2)(sugarss@5.0.1(postcss@8.5.6))(terser@5.37.0)
 
   workers/beat:
+    dependencies:
+      '@plotday/worker-util':
+        specifier: workspace:^
+        version: link:../../libs/worker-util
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.0.0
@@ -593,6 +609,9 @@ importers:
       '@plotday/email':
         specifier: workspace:^
         version: link:../../libs/email
+      '@plotday/worker-util':
+        specifier: workspace:^
+        version: link:../../libs/worker-util
       posthog-node:
         specifier: ^5.18.1
         version: 5.18.1

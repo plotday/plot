@@ -13,7 +13,7 @@ import {
   update as updateTwist,
 } from "../twist/management";
 import { extractRequestContext } from "../utils/log-context";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
 import { handleValidationError } from "../utils/validation";
 

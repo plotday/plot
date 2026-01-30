@@ -8,7 +8,7 @@ import { CallbackError } from "../errors";
 import { twistFactory } from "../twist";
 import { handleTwistOperation } from "../twist/error-handling";
 import { validateSerializable } from "../twist/tools/validation";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 export type CallbackData = {
   token: string;

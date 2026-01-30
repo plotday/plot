@@ -15,7 +15,7 @@ import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 interface SendInvitationParams {
   contactId: string;
@@ -57,7 +57,8 @@ export async function sendInvitation(
 ): Promise<SendInvitationResult> {
   const { contactId, priorityId, inviterUserId, mailQueue, siteRoot } = params;
 
-  console.log(`[Invitation] Starting for contact ${contactId}, priority ${priorityId}`);
+  const logger = createLogger({ component: "invitation" });
+  logger.info("Starting invitation process", { contact_id: contactId, priority_id: priorityId });
 
   // 1. Get contact info
   const { data: contact, error: contactError } = await supabaseAdmin
@@ -67,11 +68,11 @@ export async function sendInvitation(
     .single();
 
   if (contactError || !contact) {
-    console.error(`[Invitation] Contact not found: ${contactId}`, contactError);
+    logger.error("Contact not found", new Error(contactError?.message || "Contact not found"), { contact_id: contactId });
     return { success: false, error: "contact_not_found" };
   }
 
-  console.log(`[Invitation] Found contact: ${contact.email}`);
+  logger.info("Found contact", { contact_email: contact.email });
 
   // 2. Get or create invitation token
   const newToken = crypto.randomBytes(32).toString("hex");
@@ -98,7 +99,10 @@ export async function sendInvitation(
     const sentAt = new Date(sent_at);
     const hoursSince = (Date.now() - sentAt.getTime()) / (1000 * 60 * 60);
     if (hoursSince < 24) {
-      console.log(`[Invitation] Skipping - already sent ${hoursSince.toFixed(1)}h ago to ${contact.email}`);
+      logger.info("Skipping invitation - already sent recently", {
+        hours_since: hoursSince.toFixed(1),
+        contact_email: contact.email
+      });
       return { success: true, skipped: true };
     }
   }
@@ -120,7 +124,11 @@ export async function sendInvitation(
   // 5. Queue invitation email to mail worker
   const inviteUrl = `${siteRoot}/join?invite=${token}`;
 
-  console.log(`[Invitation] Queuing email to ${contact.email} for ${priorityName} from ${inviterName}`);
+  logger.info("Queuing invitation email", {
+    contact_email: contact.email,
+    priority_name: priorityName,
+    inviter_name: inviterName
+  });
 
   try {
     await mailQueue.send({
@@ -134,9 +142,9 @@ export async function sendInvitation(
         recipientName: contact.name || undefined,
       },
     });
-    console.log(`[Invitation] Successfully queued email to ${contact.email}`);
+    logger.info("Successfully queued invitation email", { contact_email: contact.email });
   } catch (error) {
-    console.error(`[Invitation] Failed to queue email to ${contact.email}:`, error);
+    logger.error("Failed to queue invitation email", error as Error, { contact_email: contact.email });
     return {
       success: false,
       error: error instanceof Error ? error.message : "email_queue_failed"

@@ -12,7 +12,7 @@ import {
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
-import { createLogger } from "../../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import {
   convertNoteToMarkdown,
@@ -328,7 +328,8 @@ export async function createNotes(
       } else {
         // Only log non-empty-note errors
         if (!result.reason?.message?.includes("fully empty note")) {
-          console.error("[Plot] Failed to create note:", result.reason);
+          const logger = createLogger({ component: "plot_tool" });
+          logger.error("Failed to create note", result.reason);
         }
         return null;
       }

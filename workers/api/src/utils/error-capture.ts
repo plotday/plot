@@ -10,7 +10,7 @@
 import type { Context } from "hono";
 import type { Bindings } from "../env";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./log-context";
-import { createLogger } from "./logger";
+import { createLogger } from "@plotday/worker-util";
 
 /**
  * Capture a server error, log it to console and PostHog, and return a 500 response.

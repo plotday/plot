@@ -6,7 +6,7 @@
  */
 
 import { TraceMap, originalPositionFor } from "@jridgewell/trace-mapping";
-import { createLogger } from "./logger";
+import { createLogger } from "@plotday/worker-util";
 
 /**
  * Represents a single frame in a stack trace

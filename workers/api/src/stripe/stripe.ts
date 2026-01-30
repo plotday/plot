@@ -9,7 +9,7 @@ import {
   mapStripeStatus,
   verifyWebhookSignature,
 } from "./utils";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 
 const stripe = new Hono<{ Bindings: Bindings }>();

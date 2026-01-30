@@ -6,7 +6,7 @@ import type {
 
 import { type TwistEnvironment } from "../../env";
 import { CallbacksState } from "../../state/callbacks";
-import { createLogger } from "../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { Tool } from "./tool";
 

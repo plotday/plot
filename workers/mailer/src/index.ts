@@ -1,6 +1,7 @@
 import { PostHog } from "posthog-node";
 
 import { type EmailType, render } from "@plotday/email";
+import { createLogger } from "@plotday/worker-util";
 
 // ENV is defined as a global string literal in wrangler.jsonc
 declare const ENV: string;
@@ -68,11 +69,14 @@ async function sendMail(apiKey: string, request: MailRequest) {
         }
       );
 
-      console.log(
-        `[DEV] Email sent to Inbucket: ${request.subject} -> ${request.to.join(", ")}`
-      );
+      const logger = createLogger({ component: "mailer", environment: "development" });
+      logger.info("Email sent to Inbucket", {
+        subject: request.subject,
+        recipients: request.to.join(", ")
+      });
     } catch (error) {
-      console.error("[DEV] Failed to send email via Inbucket:", error);
+      const logger = createLogger({ component: "mailer", environment: "development" });
+      logger.error("Failed to send email via Inbucket", error as Error);
       throw error;
     }
   } else {
@@ -94,9 +98,13 @@ async function sendMail(apiKey: string, request: MailRequest) {
     });
 
     if (response.status >= 400) {
-      const error = JSON.stringify(await response.json());
-      console.error(error);
-      throw new Error(error);
+      const errorData = await response.json();
+      const logger = createLogger({ component: "mailer" });
+      logger.error("Email send failed", new Error(JSON.stringify(errorData)), {
+        status: response.status,
+        error_data: errorData
+      });
+      throw new Error(JSON.stringify(errorData));
     }
   }
 }
@@ -140,14 +148,20 @@ export default {
     });
     const batch = unknownBatch as MessageBatch<MailRequest>;
     try {
+      const logger = createLogger({ component: "mailer", queue: "mail" });
       let messageNum = 1;
       for (let message of batch.messages) {
         try {
-          console.log(`Processing ${messageNum} of ${batch.messages.length}`);
+          logger.info("Processing email", {
+            message_num: messageNum,
+            total_messages: batch.messages.length
+          });
           await sendMail(env.RESEND_API_KEY, message.body);
           message.ack();
         } catch (e) {
-          console.error(e);
+          logger.error("Failed to send email", e as Error, {
+            to: message.body.to,
+          });
           posthog.captureException(e as Error, undefined, {
             to: message.body.to,
           });
@@ -156,7 +170,8 @@ export default {
         messageNum += 1;
       }
     } catch (e) {
-      console.error(e);
+      const logger = createLogger({ component: "mailer" });
+      logger.error("Error processing email batch", e as Error);
       posthog.captureException(e as Error);
     } finally {
       ctx.waitUntil(posthog.shutdown());

@@ -1,5 +1,5 @@
 import { type z } from "zod";
-import { createLogger } from "./logger";
+import { createLogger } from "@plotday/worker-util";
 
 /**
  * Helper function for handling validation errors from Zod schemas.

@@ -4,7 +4,7 @@ import type { Uuid } from "@plotday/twister/plot";
 import type { twistFactory } from ".";
 import { type TwistEnvironment } from "../env";
 import { getUser } from "../utils/auth";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 /**
  * Cleans up a failed twist installation by:

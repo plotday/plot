@@ -6,7 +6,7 @@ import type { Tasks as IRun } from "@plotday/twister/tools/tasks";
 import { type Bindings, type TwistEnvironment } from "../../env";
 import { type CallbacksState } from "../../state/callbacks";
 import { extractRunQueueContext } from "../../utils/log-context";
-import { createLogger } from "../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { Tool } from "./tool";
 
 export type RunMessage = {

@@ -6,7 +6,7 @@ import { getBuilderDocumentation } from "@plotday/twister/creator-docs";
 import { TWIST_GUIDE } from "@plotday/twister/twist-guide";
 
 import type { Bindings } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { buildTwist } from "./builder";
 import type { TwistSource } from "./types";
 

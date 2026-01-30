@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import type { Bindings } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 
 export class TwistModules extends DurableObject<Bindings> {
   private sql: SqlStorage;

@@ -7,7 +7,7 @@ import { createClient } from "@plotday/db";
 import type { Bindings } from "../env";
 import { getUser } from "../utils/auth";
 import { handleValidationError } from "../utils/validation";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { tokenCreationRateLimiter } from "../middleware/rate-limit";
 import { disposeRpc } from "../utils/rpc";
 

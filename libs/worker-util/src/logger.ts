@@ -1,11 +1,14 @@
 /**
- * Structured logging utility for the API worker.
+ * Structured logging utility for Cloudflare Workers.
  *
- * Provides automatic context injection, request ID tracking, and environment-aware
- * output formatting (JSON in production, human-readable in development).
+ * Provides automatic context injection, request ID tracking, and uses native
+ * console methods with message + context format for better log formatting.
  *
  * All logs are exported to PostHog via OpenTelemetry with automatic trace correlation.
  */
+
+// ENV is defined as a global string literal in wrangler.jsonc
+declare const ENV: string;
 
 export enum LogLevel {
   DEBUG = "debug",
@@ -55,22 +58,10 @@ export interface LogContext {
 }
 
 /**
- * Log entry structure for JSON output.
- */
-interface LogEntry {
-  timestamp: string;
-  level: LogLevel;
-  message: string;
-  error?: {
-    message: string;
-    stack?: string;
-    name?: string;
-  };
-  context: LogContext;
-}
-
-/**
- * Structured logger with automatic context injection and environment-aware formatting.
+ * Structured logger with automatic context injection.
+ *
+ * Uses native console methods (console.log, console.warn, console.error) with
+ * message + context format for better automatic formatting by Cloudflare Workers.
  */
 export class Logger {
   private baseContext: LogContext;
@@ -137,140 +128,66 @@ export class Logger {
   }
 
   /**
-   * Internal log method that formats and outputs the log entry.
+   * Internal log method that uses native console methods with message + context.
+   *
+   * Cloudflare Workers automatically adds timestamps and formats log levels,
+   * so we rely on native console methods instead of custom formatting.
    */
   private log(level: LogLevel, message: string, error?: Error, context?: LogContext): void {
     const mergedContext = { ...this.baseContext, ...context };
-    const timestamp = new Date().toISOString();
 
-    const entry: LogEntry = {
-      timestamp,
-      level,
-      message,
-      context: mergedContext,
-    };
-
-    // Add error details if present
-    if (error) {
-      entry.error = {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      };
-    }
-
-    // Output based on environment
-    if (this.env === "production") {
-      this.outputJson(entry);
-    } else {
-      this.outputHumanReadable(entry);
-    }
-  }
-
-  /**
-   * Output log entry as JSON (production).
-   */
-  private outputJson(entry: LogEntry): void {
-    const output = JSON.stringify(entry);
-
-    switch (entry.level) {
-      case LogLevel.DEBUG:
-      case LogLevel.INFO:
-        console.log(output);
-        break;
-      case LogLevel.WARN:
-        console.warn(output);
-        break;
-      case LogLevel.ERROR:
-      case LogLevel.FATAL:
-        console.error(output);
-        break;
-    }
-  }
-
-  /**
-   * Output log entry in human-readable format (development).
-   */
-  private outputHumanReadable(entry: LogEntry): void {
-    const levelColor = this.getLevelColor(entry.level);
-    const levelStr = entry.level.toUpperCase().padEnd(5);
-    const requestId = entry.context.request_id
-      ? ` [req:${entry.context.request_id.substring(0, 8)}]`
-      : '';
-
-    // Main log line
-    const mainLine = `[${entry.timestamp}] ${levelColor}${levelStr}\x1b[0m${requestId} ${entry.message}`;
-
-    // Context lines (exclude request_id since it's in the header)
-    const contextLines: string[] = [];
-    for (const [key, value] of Object.entries(entry.context)) {
-      if (key === 'request_id') continue; // Already shown in header
+    // Filter out undefined/null values to keep logs clean
+    const filteredContext: LogContext = {};
+    for (const [key, value] of Object.entries(mergedContext)) {
       if (value !== undefined && value !== null) {
-        contextLines.push(`  ${key}: ${this.formatValue(value)}`);
+        filteredContext[key] = value;
       }
     }
 
-    // Error details
-    if (entry.error) {
-      contextLines.push(`  error: ${entry.error.message}`);
-      if (entry.error.stack) {
-        // Indent stack trace
-        const stackLines = entry.error.stack.split('\n').slice(1); // Skip first line (message)
-        contextLines.push(...stackLines.map(line => `    ${line.trim()}`));
-      }
-    }
+    const hasContext = Object.keys(filteredContext).length > 0;
 
-    // Output
-    const fullMessage = contextLines.length > 0
-      ? `${mainLine}\n${contextLines.join('\n')}`
-      : mainLine;
-
-    switch (entry.level) {
-      case LogLevel.DEBUG:
-      case LogLevel.INFO:
-        console.log(fullMessage);
-        break;
-      case LogLevel.WARN:
-        console.warn(fullMessage);
-        break;
-      case LogLevel.ERROR:
-      case LogLevel.FATAL:
-        console.error(fullMessage);
-        break;
-    }
-  }
-
-  /**
-   * Get ANSI color code for log level.
-   */
-  private getLevelColor(level: LogLevel): string {
+    // Use native console methods with message + context/error format
     switch (level) {
       case LogLevel.DEBUG:
-        return '\x1b[36m'; // Cyan
       case LogLevel.INFO:
-        return '\x1b[32m'; // Green
+        if (hasContext) {
+          console.log(message, filteredContext);
+        } else {
+          console.log(message);
+        }
+        break;
       case LogLevel.WARN:
-        return '\x1b[33m'; // Yellow
+        if (error) {
+          if (hasContext) {
+            console.warn(message, error, filteredContext);
+          } else {
+            console.warn(message, error);
+          }
+        } else {
+          if (hasContext) {
+            console.warn(message, filteredContext);
+          } else {
+            console.warn(message);
+          }
+        }
+        break;
       case LogLevel.ERROR:
-        return '\x1b[31m'; // Red
       case LogLevel.FATAL:
-        return '\x1b[35m'; // Magenta
+        if (error) {
+          if (hasContext) {
+            console.error(message, error, filteredContext);
+          } else {
+            console.error(message, error);
+          }
+        } else {
+          if (hasContext) {
+            console.error(message, filteredContext);
+          } else {
+            console.error(message);
+          }
+        }
+        break;
     }
-  }
-
-  /**
-   * Format value for human-readable output.
-   */
-  private formatValue(value: unknown): string {
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number') return String(value);
-    if (typeof value === 'boolean') return String(value);
-    if (value === null) return 'null';
-    if (value === undefined) return 'undefined';
-    if (value instanceof Date) return value.toISOString();
-    if (Array.isArray(value)) return `[${value.length} items]`;
-    if (typeof value === 'object') return JSON.stringify(value);
-    return String(value);
   }
 
   /**

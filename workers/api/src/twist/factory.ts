@@ -2,7 +2,7 @@ import { type SupabaseClient } from "@plotday/db";
 import { type Priority } from "@plotday/twister/plot";
 
 import { type Bindings, type TwistEnvironment } from "../env";
-import { createLogger } from "../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { handleTwistOperation } from "./error-handling";
 import { getTwist } from "./loader";
 import {

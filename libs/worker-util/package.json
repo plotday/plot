@@ -1,0 +1,20 @@
+{
+  "name": "@plotday/worker-util",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "tsc && eslint ."
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./logger": "./src/logger.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@plotday/eslint-config-custom": "workspace:*",
+    "@plotday/tsconfig": "workspace:*"
+  }
+}

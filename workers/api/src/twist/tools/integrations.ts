@@ -20,7 +20,7 @@ import { CallbacksState } from "../../state/callbacks";
 import superjson from "superjson";
 
 import type { Storage } from "../../state/storage";
-import { createLogger } from "../../utils/logger";
+import { createLogger } from "@plotday/worker-util";
 import { getRpcFunctionName } from "../../utils/rpc";
 import { Tool } from "./tool";
 
