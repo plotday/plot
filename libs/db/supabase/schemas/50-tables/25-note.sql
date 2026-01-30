@@ -85,6 +85,11 @@ BEGIN
     -- Keep the activity read for the note creator if no one else has added notes
     -- since they last marked it read
     IF NEW.draft = FALSE AND NEW.archived_at IS NULL THEN
+        -- Acquire advisory lock on this activity to serialize concurrent updates
+        -- This prevents deadlocks when multiple notes are created simultaneously
+        -- Lock is automatically released at transaction end
+        PERFORM pg_advisory_xact_lock(hashtext(NEW.activity_id::text));
+
         -- Upsert activity_read for the note creator
         -- Only update if no other users have created notes since their last read_at
         -- Only track read status for actual users (not twists or contacts)
