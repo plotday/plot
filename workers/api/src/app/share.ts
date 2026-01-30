@@ -114,6 +114,8 @@ share.post("/priority/:id/share", async (c) => {
     nonUserContactIds = contacts
       .filter((c) => c.user_id === null)
       .map((c) => c.id);
+
+    console.log(`[Share] Upserted ${contacts.length} contacts, ${nonUserContactIds.length} are non-users (need invitations)`);
   }
 
   // Combine UUIDs with contact IDs from emails
@@ -153,6 +155,7 @@ share.post("/priority/:id/share", async (c) => {
 
   // Send invitation emails to non-user contacts (fire-and-forget with waitUntil)
   if (nonUserContactIds.length > 0) {
+    console.log(`[Share] Queuing ${nonUserContactIds.length} invitation emails for priority ${priorityId}`);
     // Use waitUntil to ensure emails complete even after response is sent
     c.executionCtx.waitUntil(
       Promise.allSettled(
@@ -167,6 +170,7 @@ share.post("/priority/:id/share", async (c) => {
         )
       )
         .then((results) => {
+          console.log(`[Share] Invitation sending complete: ${results.length} results`);
           // Log all results and capture failures in PostHog
           results.forEach((result, index) => {
             const contactId = nonUserContactIds[index];

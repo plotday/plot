@@ -57,6 +57,8 @@ export async function sendInvitation(
 ): Promise<SendInvitationResult> {
   const { contactId, priorityId, inviterUserId, mailQueue, siteRoot } = params;
 
+  console.log(`[Invitation] Starting for contact ${contactId}, priority ${priorityId}`);
+
   // 1. Get contact info
   const { data: contact, error: contactError } = await supabaseAdmin
     .from("contact")
@@ -65,8 +67,11 @@ export async function sendInvitation(
     .single();
 
   if (contactError || !contact) {
+    console.error(`[Invitation] Contact not found: ${contactId}`, contactError);
     return { success: false, error: "contact_not_found" };
   }
+
+  console.log(`[Invitation] Found contact: ${contact.email}`);
 
   // 2. Get or create invitation token
   const newToken = crypto.randomBytes(32).toString("hex");
@@ -93,6 +98,7 @@ export async function sendInvitation(
     const sentAt = new Date(sent_at);
     const hoursSince = (Date.now() - sentAt.getTime()) / (1000 * 60 * 60);
     if (hoursSince < 24) {
+      console.log(`[Invitation] Skipping - already sent ${hoursSince.toFixed(1)}h ago to ${contact.email}`);
       return { success: true, skipped: true };
     }
   }
@@ -114,6 +120,8 @@ export async function sendInvitation(
   // 5. Queue invitation email to mail worker
   const inviteUrl = `${siteRoot}/join?invite=${token}`;
 
+  console.log(`[Invitation] Queuing email to ${contact.email} for ${priorityName} from ${inviterName}`);
+
   try {
     await mailQueue.send({
       to: [contact.email],
@@ -126,8 +134,9 @@ export async function sendInvitation(
         recipientName: contact.name || undefined,
       },
     });
+    console.log(`[Invitation] Successfully queued email to ${contact.email}`);
   } catch (error) {
-    console.error("Failed to queue invitation email:", error);
+    console.error(`[Invitation] Failed to queue email to ${contact.email}:`, error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "email_queue_failed"
