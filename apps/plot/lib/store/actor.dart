@@ -158,6 +158,23 @@ class Actor extends ActorRow {
     });
   }
 
+  /// Returns all actor IDs that belong to the current user.
+  /// Uses the Actor cache for synchronous lookup.
+  /// Returns a list containing at least Base.actorId if cache is empty.
+  static List<ActorId> getCurrentUserActorIds() {
+    final userActorIds = _cache.values
+        .where((actor) => actor.self)
+        .map((actor) => actor.id)
+        .toList();
+
+    // Fallback to Base.actorId if cache is empty
+    if (userActorIds.isEmpty) {
+      return [Base.actorId];
+    }
+
+    return userActorIds;
+  }
+
   /// Get Actor by auth user ID (via contact.user_id lookup).
   /// Returns null if no contact is found for the given user ID.
   static Future<Actor?> getByUserId(Uuid userId) async {

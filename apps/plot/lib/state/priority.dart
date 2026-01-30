@@ -1,16 +1,17 @@
 import 'dart:async';
 
 import 'package:rxdart/rxdart.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide Column;
 
 import 'package:plot/store/store.dart';
 import 'package:plot/util/async.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/router.dart';
+import 'package:plot/widget/widget.dart';
 import 'logging.dart';
 
 part 'priority_state.dart';
@@ -793,33 +794,91 @@ class PriorityBlocProvider extends StatefulWidget {
   PriorityBlocProviderState createState() => PriorityBlocProviderState();
 }
 
+/// Result of priority loading (success or error)
+class _LoadResult {
+  final PriorityBloc? bloc;
+  final String? error;
+  final bool isFallback;
+
+  _LoadResult.success(this.bloc, {this.isFallback = false}) : error = null;
+  _LoadResult.error(this.error) : bloc = null, isFallback = false;
+}
+
 class PriorityBlocProviderState extends State<PriorityBlocProvider> {
-  late Future<PriorityBloc> _bloc;
+  late Future<_LoadResult> _bloc;
 
   @override
   void initState() {
     super.initState();
-    _bloc =
-        (widget.priority != null
-                ? Future.value(widget.priority!)
-                : widget.priorityId != null
-                ? Priority.getOne(widget.priorityId!)
-                : widget.activityId != null
-                ? Activity.getOne(
-                    widget.activityId!,
-                  ).then((activity) => activity.priority)
-                : Future<Priority>.error(
-                    'Either priorityId or activityId must be provided',
-                  ))
-            .then((priority) {
-              // Update theme hue when priority is first loaded
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  context.read<NowBloc>().setContext(priority);
-                }
-              });
-              return PriorityBloc(priority: priority);
-            });
+    _bloc = _loadPriorityWithFallback();
+  }
+
+  Future<_LoadResult> _loadPriorityWithFallback() async {
+    try {
+      // Level 1: Try to load requested priority
+      final priority = await (widget.priority != null
+              ? Future.value(widget.priority!)
+              : widget.priorityId != null
+              ? Priority.getOne(widget.priorityId!)
+              : widget.activityId != null
+              ? Activity.getOne(widget.activityId!)
+                  .then((activity) => activity.priority)
+              : Future<Priority>.error(
+                  'Either priorityId or activityId must be provided',
+                ));
+
+      // Success - update theme and create bloc
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.read<NowBloc>().setContext(priority);
+        }
+      });
+
+      return _LoadResult.success(PriorityBloc(priority: priority));
+
+    } catch (e, stackTrace) {
+      // Level 1 failed - log and try fallback
+      log.warning(
+        'Failed to load requested priority (${widget.priorityId ?? widget.activityId}): $e',
+        e,
+        stackTrace,
+      );
+
+      try {
+        // Level 2: Fallback to default priority
+        log.info('Attempting to load default priority as fallback');
+        final hasDefault = await Priority.hasDefault();
+
+        if (!hasDefault) {
+          return _LoadResult.error('No priorities exist in the database');
+        }
+
+        final defaultPriority = await Priority.getDefault();
+
+        // Update theme with fallback priority
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.read<NowBloc>().setContext(defaultPriority);
+          }
+        });
+
+        return _LoadResult.success(
+          PriorityBloc(priority: defaultPriority),
+          isFallback: true,
+        );
+
+      } catch (fallbackError, fallbackStack) {
+        // Level 2 also failed - return error
+        log.severe(
+          'Failed to load fallback priority: $fallbackError',
+          fallbackError,
+          fallbackStack,
+        );
+        return _LoadResult.error(
+          'Could not load priority: ${fallbackError.toString()}',
+        );
+      }
+    }
   }
 
   @override
@@ -827,17 +886,18 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     super.didUpdateWidget(oldWidget);
 
     if (widget.priority != null && widget.priority != oldWidget.priority) {
-      _bloc.then((bloc) {
+      _bloc.then((result) {
         final priority = widget.priority;
-        if (priority == null) return;
-        bloc.setPriority(priority);
+        if (priority == null || result.bloc == null) return;
+        result.bloc!.setPriority(priority);
         // Theme will be updated when new agenda loads (in _loadSchedule)
       });
     } else if (widget.priorityId != null &&
         widget.priorityId != oldWidget.priorityId) {
-      _bloc.then((bloc) async {
+      _bloc.then((result) async {
+        if (result.bloc == null) return;
         final priority = await Priority.getOne(widget.priorityId!);
-        bloc.setPriority(priority);
+        result.bloc!.setPriority(priority);
         // Theme will be updated when new agenda loads (in _loadSchedule)
       });
     }
@@ -845,20 +905,107 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
 
   @override
   void dispose() {
-    _bloc.then((bloc) => bloc.close());
+    _bloc.then((result) => result.bloc?.close());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder(
+    return FutureBuilder<_LoadResult>(
       future: _bloc,
       builder: (context, snapshot) {
+        // Loading state
         if (!snapshot.hasData) {
           return const LoadingPage();
         }
-        return BlocProvider.value(value: snapshot.data!, child: widget.child);
+
+        final result = snapshot.data!;
+
+        // Error state - show error page
+        if (result.error != null) {
+          return _ErrorPage(
+            message: result.error!,
+            onRetry: () {
+              setState(() {
+                _bloc = _loadPriorityWithFallback();
+              });
+            },
+            onViewPriorities: () {
+              context.router.navigate(PrioritiesRoute());
+            },
+          );
+        }
+
+        // Success - provide bloc
+        return BlocProvider.value(
+          value: result.bloc!,
+          child: widget.child,
+        );
       },
+    );
+  }
+}
+
+/// Error page shown when priority loading fails completely
+class _ErrorPage extends StatelessWidget {
+  const _ErrorPage({
+    required this.message,
+    required this.onRetry,
+    required this.onViewPriorities,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+  final VoidCallback onViewPriorities;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      center: true,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          spacing: 16,
+          children: [
+            Icon(
+              PlotIcon.warning,
+              size: 48,
+              color: context.theme.colors.destructive,
+            ),
+            Text(
+              'Error Loading Priority',
+              style: context.theme.typography.lg.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              message,
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              spacing: 8,
+              children: [
+                FButton(
+                  onPress: onViewPriorities,
+                  style: FButtonStyle.secondary(),
+                  child: const Text('View Priorities'),
+                ),
+                FButton(
+                  onPress: onRetry,
+                  style: FButtonStyle.primary(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

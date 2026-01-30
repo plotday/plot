@@ -1949,7 +1949,9 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     final currentTags = Map<Tag, List<ActorId>>.from(tags);
-    final currentUser = Base.actorId;
+    // For RSVP tags, select the most appropriate actor
+    // For other tags, use the primary actor
+    final currentUser = tag.isRsvp ? selectRsvpActorId() : Base.actorId;
 
     // Get current users for this tag
     final List<ActorId> currentUsers = List<ActorId>.from(
@@ -2201,6 +2203,37 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (type != ActivityType.event) return false;
     if (authorId?.isCurrentUser == true) return false;
     return !currentUserRsvpAttend && !currentUserRsvpSkip;
+  }
+
+  /// Selects the most appropriate actor ID for RSVP operations.
+  ///
+  /// Priority:
+  /// 1. If any of the user's actors already has an RSVP tag, use that actor
+  /// 2. If the event author is one of the user's actors, use the author
+  /// 3. Fall back to the primary actor (Base.actorId)
+  ActorId selectRsvpActorId() {
+    final userActorIds = Actor.getCurrentUserActorIds();
+
+    // Priority 1: Check if any user actor already has an RSVP tag
+    for (final rsvpTag in Tag.rsvpTags) {
+      final rsvpActors = tags[rsvpTag];
+      if (rsvpActors != null) {
+        for (final actorId in rsvpActors) {
+          if (userActorIds.contains(actorId)) {
+            // This user actor already has an RSVP - use it
+            return actorId;
+          }
+        }
+      }
+    }
+
+    // Priority 2: Check if the author is one of the user's actors
+    if (userActorIds.contains(authorId)) {
+      return authorId;
+    }
+
+    // Priority 3: Fall back to primary actor
+    return Base.actorId;
   }
 
   List<Activity> generateOccurrences(BoundedDateRange range) {
