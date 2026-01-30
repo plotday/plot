@@ -1,5 +1,11 @@
 # @plotday/tool-gmail
 
+## 0.7.1
+
+### Changed
+
+- Removed debugging logging ([`d8f07cd`](https://github.com/plotday/plot/commit/d8f07cd82d7db91fbb99c3e6b6b751980566e9b7))
+
 ## 0.7.0
 
 ### Added

@@ -1,5 +1,15 @@
 # @plotday/tool-asana
 
+## 0.5.1
+
+### Changed
+
+- Removed debugging logging ([`d8f07cd`](https://github.com/plotday/plot/commit/d8f07cd82d7db91fbb99c3e6b6b751980566e9b7))
+
+### Fixed
+
+- Always use event IDs rather than URL for source ([`b438aa3`](https://github.com/plotday/plot/commit/b438aa30240875c731d038df92e94f9435601637))
+
 ## 0.5.0
 
 ### Added

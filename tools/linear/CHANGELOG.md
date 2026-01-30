@@ -1,5 +1,12 @@
 # @plotday/tool-linear
 
+## 0.5.1
+
+### Changed
+
+- Updated Linear SDK ([`b438aa3`](https://github.com/plotday/plot/commit/b438aa30240875c731d038df92e94f9435601637))
+- Removed debugging logging ([`d8f07cd`](https://github.com/plotday/plot/commit/d8f07cd82d7db91fbb99c3e6b6b751980566e9b7))
+
 ## 0.5.0
 
 ### Added
