@@ -681,7 +681,7 @@ export class GoogleCalendar
               key: "cancellation",
               content: "This event was cancelled.",
               contentType: "text",
-              created: new Date(),
+              created: event.updated ? new Date(event.updated) : new Date(),
             };
 
             // Convert to Note type with blocked tag and cancellation note
@@ -873,15 +873,32 @@ export class GoogleCalendar
 
     // Handle cancelled recurring instances by archiving the occurrence
     if (event.status === "cancelled") {
+      // Extract start/end from the event (they're present even for cancelled events)
+      const start = event.start?.dateTime
+        ? new Date(event.start.dateTime)
+        : event.start?.date
+        ? event.start.date
+        : new Date(originalStartTime);
+
+      const end = event.end?.dateTime
+        ? new Date(event.end.dateTime)
+        : event.end?.date
+        ? event.end.date
+        : null;
+
       const occurrence: Omit<NewActivityOccurrence, "activity"> = {
         occurrence: new Date(originalStartTime),
-        start: new Date(originalStartTime),
+        start: start instanceof Date ? start : new Date(originalStartTime),
         archived: true,
       };
 
+      // Include start/end at activity level to allow master activity creation
+      // during initial sync (upsert_activity needs these to infer scheduling)
       const occurrenceUpdate = {
         type: ActivityType.Event,
         source: masterCanonicalUrl,
+        start: start,
+        end: end,
         occurrences: [occurrence],
       };
 

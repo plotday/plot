@@ -468,7 +468,9 @@ export class OutlookCalendar
             key: "cancellation",
             content: "This event was cancelled.",
             contentType: "text",
-            created: new Date(),
+            created: outlookEvent.lastModifiedDateTime
+              ? new Date(outlookEvent.lastModifiedDateTime)
+              : new Date(),
           };
 
           // Convert to Note type with blocked tag and cancellation note
