@@ -606,6 +606,9 @@ importers:
 
   workers/mailer:
     dependencies:
+      '@plotday/db':
+        specifier: workspace:^
+        version: link:../../libs/db
       '@plotday/email':
         specifier: workspace:^
         version: link:../../libs/email
