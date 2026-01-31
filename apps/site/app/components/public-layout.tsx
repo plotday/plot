@@ -18,6 +18,7 @@ import classes from "./public-layout.module.css";
 
 function AppHeader({ menu }: { menu?: ReactNode }) {
   const location = useLocation();
+  const hideGetStartedPaths = ["/start", "/builder", "/join"];
 
   return (
     <AppShell.Header p="xs" className={classes.header}>
@@ -38,12 +39,13 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           )}
         </Group>
         <Group>
-          {!location.pathname.startsWith("/start") &&
-            !location.pathname.startsWith("/builder") && (
-              <Button variant="outline" component={Link} to="/start">
-                Get Started
-              </Button>
-            )}
+          {!hideGetStartedPaths.some((path) =>
+            location.pathname.startsWith(path)
+          ) && (
+            <Button variant="outline" component={Link} to="/start">
+              Get Started
+            </Button>
+          )}
         </Group>
       </Group>
     </AppShell.Header>
