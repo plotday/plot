@@ -78,14 +78,21 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> fetchMoreAgendaItems(int first, int count) async {
     if (state.range == null) return;
 
-    // Check if requested range is already within current loaded range
+    // Check if requested range is already within current loaded range with tolerance
+    // Only fetch if we're missing significant buffer (> 20% of a page)
     final currentFirst = state.first;
     final currentLast = state.first + state.agendaItems.length;
     final requestedLast = first + count;
 
-    if (first >= currentFirst && requestedLast <= currentLast) {
+    final missingBefore = currentFirst - first;
+    final missingAfter = requestedLast - currentLast;
+    final pageSize = count / 3; // Rough estimate of page size
+    final significantMissing = pageSize * 0.2; // 20% of page threshold
+
+    if (missingBefore <= significantMissing && missingAfter <= significantMissing) {
       log.fine(
-        'Requested range [$first, $requestedLast) already within current range [$currentFirst, $currentLast). Skipping fetch.',
+        'Requested range [$first, $requestedLast) close enough to current range [$currentFirst, $currentLast). '
+        'Skipping fetch (missingBefore=$missingBefore, missingAfter=$missingAfter, threshold=$significantMissing).',
       );
       return;
     }
@@ -116,31 +123,40 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
 
     final currentRange = state.range!;
-    final rangeDays = currentRange.duration.inDays;
 
-    // Calculate new start: use previous boundary if available,
-    // otherwise calculate based on movement when moving backward
-    Date newStart = moveStart < 0 && state.previous != null
-        ? state.previous!
-        : (moveStart < 0
-              ? currentRange.start.addDays(
-                  (rangeDays * (moveStart / state.agendaItems.length)).floor(),
-                )
-              : currentRange.start);
-    Date newEnd = moveEnd > 0 && state.next != null
-        ? state.next!
-        : currentRange.end;
+    // Calculate new start and end dates
+    // Strategy: Use previous/next boundaries when available, otherwise keep current boundary
+    // This prevents oscillation from proportion-based calculations
 
-    if (moveStart > 0 || !state.doneStart) {
-      final moveDays = (rangeDays * (moveStart / state.agendaItems.length))
-          .floor();
-      newStart = newStart.addDays(moveDays);
+    Date newStart = currentRange.start;
+    Date newEnd = currentRange.end;
+
+    // Expand backward if needed
+    if (moveStart < 0 && !state.doneStart) {
+      if (state.previous != null && state.previous! < currentRange.start) {
+        // Use the previous boundary from Schedule (stable reference point)
+        newStart = state.previous!;
+        log.fine('Expanding start to previous boundary: $newStart');
+      } else {
+        // Estimate: move back by a fixed amount (e.g., 7 days) to avoid proportion calculation
+        final daysToAdd = -7; // Move back one week at a time
+        newStart = currentRange.start.addDays(daysToAdd);
+        log.fine('Expanding start by $daysToAdd days: $newStart');
+      }
     }
 
-    if (moveEnd > 0 || !state.doneEnd) {
-      final moveDays = (rangeDays * (moveEnd / state.agendaItems.length))
-          .ceil();
-      newEnd = newEnd.addDays(moveDays);
+    // Expand forward if needed
+    if (moveEnd > 0 && !state.doneEnd) {
+      if (state.next != null && state.next! > currentRange.end) {
+        // Use the next boundary from Schedule (stable reference point)
+        newEnd = state.next!;
+        log.fine('Expanding end to next boundary: $newEnd');
+      } else {
+        // Estimate: move forward by a fixed amount
+        final daysToAdd = 7;
+        newEnd = currentRange.end.addDays(daysToAdd);
+        log.fine('Expanding end by $daysToAdd days: $newEnd');
+      }
     }
 
     final newRange = CustomBoundedDateRange(newStart, newEnd);
@@ -665,19 +681,24 @@ class PriorityBloc extends Cubit<PriorityState> {
                   ),
                 );
                 if (newIndex != -1) {
-                  // The anchor should be at position (0 - first) in the list.
-                  // If overlappingDate is now at newIndex, set first so that
-                  // (0 - first) == newIndex, i.e., first = -newIndex.
                   final newFirst = -newIndex;
-                  if (first != newFirst) {
+                  final firstDelta = (first - newFirst).abs();
+
+                  // Only adjust if the change is significant (> 3 items)
+                  // This prevents thrashing from small position changes
+                  if (firstDelta > 3) {
                     log.fine(
-                      'Adjusting first from $first to $newFirst to keep anchor at $overlappingDate (now at index $newIndex)',
+                      'Adjusting first from $first to $newFirst to keep anchor at $overlappingDate '
+                      '(delta=$firstDelta, now at index $newIndex)',
                     );
                     first = newFirst;
+                  } else {
+                    log.fine(
+                      'Anchor shift small (delta=$firstDelta), keeping first=$first stable',
+                    );
                   }
                 } else {
                   // overlappingDate not found in new agenda - reset to 0 (start of list)
-                  // This can happen when the date range changes significantly
                   log.fine(
                     'overlappingDate $overlappingDate not found in new agenda, resetting first to 0',
                   );
