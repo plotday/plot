@@ -182,9 +182,12 @@ export default function Join({ loaderData }: Route.ComponentProps) {
           <Alert color="red" title="Unable to accept invitation">
             {loaderData.redeemError === "invalid_token" &&
               "This invitation link is invalid or has already been used."}
+            {loaderData.redeemError === "already_redeemed_by_different_user" &&
+              "This invitation has already been accepted by another account. Please sign in with the account that originally accepted this invitation."}
             {loaderData.redeemError === "contact_linked_to_other_user" &&
               "This invitation was sent to a different account."}
             {loaderData.redeemError !== "invalid_token" &&
+              loaderData.redeemError !== "already_redeemed_by_different_user" &&
               loaderData.redeemError !== "contact_linked_to_other_user" &&
               loaderData.redeemError}
           </Alert>

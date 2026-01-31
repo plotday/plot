@@ -41,6 +41,7 @@ interface RedeemInvitationResult {
   success: boolean;
   error?: string;
   contactId?: string;
+  already_redeemed?: boolean;
 }
 
 /**
@@ -258,6 +259,9 @@ invitation.post("/invitation/redeem", async (c) => {
     // Return appropriate status based on error
     if (result.error === "invalid_token") {
       return c.json({ success: false, error: "invalid_token" }, 404);
+    }
+    if (result.error === "already_redeemed_by_different_user") {
+      return c.json({ success: false, error: "already_redeemed_by_different_user" }, 409);
     }
     if (result.error === "contact_linked_to_other_user") {
       return c.json({ success: false, error: "contact_linked_to_other_user" }, 409);

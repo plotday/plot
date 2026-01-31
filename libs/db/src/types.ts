@@ -510,6 +510,8 @@ export type Database = {
           contact_id: string
           created_at: string
           id: number
+          redeemed_at: string | null
+          redeemed_by: string | null
           sent_at: string
           token: string
         }
@@ -517,6 +519,8 @@ export type Database = {
           contact_id: string
           created_at?: string
           id?: never
+          redeemed_at?: string | null
+          redeemed_by?: string | null
           sent_at?: string
           token: string
         }
@@ -524,6 +528,8 @@ export type Database = {
           contact_id?: string
           created_at?: string
           id?: never
+          redeemed_at?: string | null
+          redeemed_by?: string | null
           sent_at?: string
           token?: string
         }

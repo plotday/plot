@@ -74,11 +74,14 @@ CREATE OR REPLACE FUNCTION public.redeem_invitation_token (
 DECLARE
     v_contact_id uuid;
     v_contact_user_id uuid;
+    v_redeemed_by uuid;
 BEGIN
     -- Find contact_invitation with this token
     SELECT
         ci.contact_id,
+        ci.redeemed_by,
         c.user_id INTO v_contact_id,
+        v_redeemed_by,
         v_contact_user_id
     FROM
         public.contact_invitation ci
@@ -87,6 +90,16 @@ BEGIN
         ci.token = p_token;
     IF v_contact_id IS NULL THEN
         RETURN jsonb_build_object('success', FALSE, 'error', 'invalid_token');
+    END IF;
+    -- Check if already redeemed
+    IF v_redeemed_by IS NOT NULL THEN
+        IF v_redeemed_by = p_user_id THEN
+            -- Same user re-clicking - return success (idempotent)
+            RETURN jsonb_build_object('success', TRUE, 'already_redeemed', TRUE, 'contact_id', v_contact_id);
+        ELSE
+            -- Different user attempting to use redeemed token
+            RETURN jsonb_build_object('success', FALSE, 'error', 'already_redeemed_by_different_user');
+        END IF;
     END IF;
     -- Check if contact already linked to a DIFFERENT user
     IF v_contact_user_id IS NOT NULL AND v_contact_user_id != p_user_id THEN
@@ -101,9 +114,14 @@ BEGIN
         id = v_contact_id
         AND (user_id IS NULL
             OR user_id = p_user_id);
-    -- Delete the invitation token (one-time use)
-    DELETE FROM public.contact_invitation
-    WHERE contact_id = v_contact_id;
+    -- Mark invitation as redeemed instead of deleting
+    UPDATE
+        public.contact_invitation
+    SET
+        redeemed_at = now(),
+        redeemed_by = p_user_id
+    WHERE
+        contact_id = v_contact_id;
     -- Accept any pending invitations for this contact (from priority_contact)
     INSERT INTO public.priority_user (user_id, priority_id)
     SELECT
@@ -121,7 +139,7 @@ BEGIN
     -- This is idempotent and safe to call multiple times
     PERFORM
         public.activate_invited_user (p_user_id);
-    RETURN jsonb_build_object('success', TRUE, 'contact_id', v_contact_id);
+    RETURN jsonb_build_object('success', TRUE, 'already_redeemed', FALSE, 'contact_id', v_contact_id);
 END;
 $function$;
 
