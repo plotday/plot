@@ -1,7 +1,9 @@
-import * as crypto from "crypto";
-
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+import * as crypto from "crypto";
 import { Hono } from "hono";
+
+import { createLogger } from "@plotday/worker-util";
 
 import type { Bindings } from "../env";
 import {
@@ -15,7 +17,6 @@ import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
-import { createLogger } from "@plotday/worker-util";
 
 interface SendInvitationParams {
   contactId: string;
@@ -60,7 +61,10 @@ export async function sendInvitation(
   const { contactId, priorityId, inviterUserId, mailQueue, siteRoot } = params;
 
   const logger = createLogger({ component: "invitation" });
-  logger.info("Starting invitation process", { contact_id: contactId, priority_id: priorityId });
+  logger.info("Starting invitation process", {
+    contact_id: contactId,
+    priority_id: priorityId,
+  });
 
   // 1. Get contact info
   const { data: contact, error: contactError } = await supabaseAdmin
@@ -70,7 +74,11 @@ export async function sendInvitation(
     .single();
 
   if (contactError || !contact) {
-    logger.error("Contact not found", new Error(contactError?.message || "Contact not found"), { contact_id: contactId });
+    logger.error(
+      "Contact not found",
+      new Error(contactError?.message || "Contact not found"),
+      { contact_id: contactId }
+    );
     return { success: false, error: "contact_not_found" };
   }
 
@@ -103,7 +111,7 @@ export async function sendInvitation(
     if (hoursSince < 24) {
       logger.info("Skipping invitation - already sent recently", {
         hours_since: hoursSince.toFixed(1),
-        contact_email: contact.email
+        contact_email: contact.email,
       });
       return { success: true, skipped: true };
     }
@@ -111,16 +119,20 @@ export async function sendInvitation(
 
   // 4. Get inviter and priority info for email
   const [inviterResult, priorityResult] = await Promise.all([
+    supabaseAdmin.auth.admin.getUserById(inviterUserId),
     supabaseAdmin
-      .from("contact")
-      .select("name, email")
-      .eq("user_id", inviterUserId)
+      .from("priority")
+      .select("title")
+      .eq("id", priorityId)
       .single(),
-    supabaseAdmin.from("priority").select("title").eq("id", priorityId).single(),
   ]);
 
+  const inviter = inviterResult.data?.user;
   const inviterName =
-    inviterResult.data?.name || inviterResult.data?.email || "Someone";
+    inviter?.user_metadata?.name ||
+    inviter?.user_metadata?.full_name ||
+    inviter?.email?.split("@")[0] ||
+    "Someone";
   const priorityName = priorityResult.data?.title || "a priority";
 
   // 5. Generate idempotency key and create email delivery record
@@ -131,7 +143,7 @@ export async function sendInvitation(
     contact_email: contact.email,
     priority_name: priorityName,
     inviter_name: inviterName,
-    idempotency_key: idempotencyKey
+    idempotency_key: idempotencyKey,
   });
 
   const { data: emailRecord, error: emailError } = await supabaseAdmin.rpc(
@@ -140,23 +152,27 @@ export async function sendInvitation(
       p_idempotency_key: idempotencyKey,
       p_template: "priority-invitation",
       p_to_addresses: [contact.email],
-      p_subject: `${inviterName} invited you to collaborate on Plot`,
+      p_subject: `${inviterName} is inviting you to Plot`,
       p_template_props: {
         inviterName,
         priorityName,
         inviteUrl,
         recipientName: contact.name || undefined,
-        contactId,  // For updating sent_at after successful send
+        contactId, // For updating sent_at after successful send
       },
       p_max_retries: 10,
     }
   );
 
   if (emailError) {
-    logger.error("Failed to create email delivery record", new Error(emailError.message), {
-      contact_email: contact.email,
-      idempotency_key: idempotencyKey
-    });
+    logger.error(
+      "Failed to create email delivery record",
+      new Error(emailError.message),
+      {
+        contact_email: contact.email,
+        idempotency_key: idempotencyKey,
+      }
+    );
     return { success: false, error: "email_delivery_failed" };
   }
 
@@ -164,7 +180,7 @@ export async function sendInvitation(
   if (emailRecord && emailRecord[0]?.already_sent) {
     logger.info("Email already sent, skipping", {
       contact_email: contact.email,
-      idempotency_key: idempotencyKey
+      idempotency_key: idempotencyKey,
     });
     return { success: true, skipped: true };
   }
@@ -174,35 +190,35 @@ export async function sendInvitation(
     contact_email: contact.email,
     priority_name: priorityName,
     inviter_name: inviterName,
-    idempotency_key: idempotencyKey
+    idempotency_key: idempotencyKey,
   });
 
   try {
     await mailQueue.send({
       idempotencyKey,
       to: [contact.email],
-      subject: `${inviterName} invited you to collaborate on Plot`,
+      subject: `${inviterName} is inviting you to Plot`,
       email: "priority-invitation",
       props: {
         inviterName,
         priorityName,
         inviteUrl,
         recipientName: contact.name || undefined,
-        contactId,  // For updating sent_at after successful send
+        contactId, // For updating sent_at after successful send
       },
     });
     logger.info("Successfully queued invitation email", {
       contact_email: contact.email,
-      idempotency_key: idempotencyKey
+      idempotency_key: idempotencyKey,
     });
   } catch (error) {
     logger.error("Failed to queue invitation email", error as Error, {
       contact_email: contact.email,
-      idempotency_key: idempotencyKey
+      idempotency_key: idempotencyKey,
     });
     return {
       success: false,
-      error: error instanceof Error ? error.message : "email_queue_failed"
+      error: error instanceof Error ? error.message : "email_queue_failed",
     };
   }
 
@@ -261,10 +277,16 @@ invitation.post("/invitation/redeem", async (c) => {
       return c.json({ success: false, error: "invalid_token" }, 404);
     }
     if (result.error === "already_redeemed_by_different_user") {
-      return c.json({ success: false, error: "already_redeemed_by_different_user" }, 409);
+      return c.json(
+        { success: false, error: "already_redeemed_by_different_user" },
+        409
+      );
     }
     if (result.error === "contact_linked_to_other_user") {
-      return c.json({ success: false, error: "contact_linked_to_other_user" }, 409);
+      return c.json(
+        { success: false, error: "contact_linked_to_other_user" },
+        409
+      );
     }
     return c.json({ success: false, error: result.error }, 500);
   }
@@ -280,9 +302,14 @@ invitation.post("/invitation/redeem", async (c) => {
       .maybeSingle();
 
   if (rootPriorityError) {
-    return captureServerError(c, new Error(rootPriorityError.message), `Failed to check for root priority: ${rootPriorityError.message}`, {
-      user_id: user.id,
-    });
+    return captureServerError(
+      c,
+      new Error(rootPriorityError.message),
+      `Failed to check for root priority: ${rootPriorityError.message}`,
+      {
+        user_id: user.id,
+      }
+    );
   }
 
   // If a root priority exists, perform Stripe and Plot twist setup
@@ -298,9 +325,14 @@ invitation.post("/invitation/redeem", async (c) => {
         .maybeSingle();
 
     if (subscriptionCheckError) {
-      return captureServerError(c, new Error(subscriptionCheckError.message), `Failed to check for existing subscription: ${subscriptionCheckError.message}`, {
-        user_id: user.id,
-      });
+      return captureServerError(
+        c,
+        new Error(subscriptionCheckError.message),
+        `Failed to check for existing subscription: ${subscriptionCheckError.message}`,
+        {
+          user_id: user.id,
+        }
+      );
     }
 
     // Only set up Stripe if subscription doesn't exist
@@ -347,10 +379,14 @@ invitation.post("/invitation/redeem", async (c) => {
         } catch (subscriptionError) {
           const context3 = extractRequestContext(c);
           const logger3 = createLogger(context3);
-          logger3.error("Failed to create Stripe subscription, using local billing cycle", subscriptionError as Error, {
-            customer_id: customer.id,
-            user_id: user.id,
-          });
+          logger3.error(
+            "Failed to create Stripe subscription, using local billing cycle",
+            subscriptionError as Error,
+            {
+              customer_id: customer.id,
+              user_id: user.id,
+            }
+          );
           // Partial success: customer created but subscription failed
           // Use local billing cycle
           const localDates = createFreeTierBillingCycle();
@@ -360,9 +396,13 @@ invitation.post("/invitation/redeem", async (c) => {
       } catch (customerError) {
         const context4 = extractRequestContext(c);
         const logger4 = createLogger(context4);
-        logger4.error("Failed to create Stripe customer, proceeding without Stripe", customerError as Error, {
-          user_id: user.id,
-        });
+        logger4.error(
+          "Failed to create Stripe customer, proceeding without Stripe",
+          customerError as Error,
+          {
+            user_id: user.id,
+          }
+        );
 
         // Complete failure: no Stripe integration
         // Use local billing cycle
@@ -387,9 +427,13 @@ invitation.post("/invitation/redeem", async (c) => {
       if (subscriptionError) {
         const context5 = extractRequestContext(c);
         const logger5 = createLogger(context5);
-        logger5.error("Failed to create user_subscription for invited user", new Error(subscriptionError.message), {
-          user_id: user.id,
-        });
+        logger5.error(
+          "Failed to create user_subscription for invited user",
+          new Error(subscriptionError.message),
+          {
+            user_id: user.id,
+          }
+        );
         // Don't fail the request - log the error but continue
       }
     } else {
@@ -468,10 +512,14 @@ invitation.post("/invitation/redeem", async (c) => {
     } catch (error) {
       const context10 = extractRequestContext(c);
       const logger10 = createLogger(context10);
-      logger10.error("Failed to add Plot twist for invited user", error as Error, {
-        priority_id: rootPriorityId,
-        user_id: user.id,
-      });
+      logger10.error(
+        "Failed to add Plot twist for invited user",
+        error as Error,
+        {
+          priority_id: rootPriorityId,
+          user_id: user.id,
+        }
+      );
       // Don't fail the request - log the error but continue
     }
   }

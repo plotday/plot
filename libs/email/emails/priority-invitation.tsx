@@ -12,23 +12,21 @@ interface PriorityInvitationProps {
 
 export default function PriorityInvitation({
   inviterName,
-  priorityName,
   inviteUrl,
   recipientName,
 }: PriorityInvitationProps) {
   const greeting = recipientName ? `Hi ${recipientName},` : "Hi,";
 
   return (
-    <EmailLayout preview={`${inviterName} invited you to collaborate on Plot`}>
-      <Heading style={h1}>You're invited!</Heading>
+    <EmailLayout preview={`Join to make progress together`}>
+      <Heading style={h1}>Join Plot to make progress on what matters!</Heading>
       <Text style={text}>{greeting}</Text>
       <Text style={text}>
-        <strong>{inviterName}</strong> has invited you to collaborate on{" "}
-        <strong>{priorityName}</strong> in Plot.
+        <strong>{inviterName}</strong> has invited you to collaborate on Plot,
+        where you can share plans and take action.
       </Text>
       <Text style={text}>
-        Plot helps teams stay focused on what matters most. Accept this
-        invitation to start collaborating.
+        Plot is completely free to use, and getting started only takes a moment.
       </Text>
       <EmailButton href={inviteUrl}>Accept Invitation</EmailButton>
       <Text style={hint}>
