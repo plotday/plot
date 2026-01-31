@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -12,6 +14,50 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'logging.dart';
 import 'spinner.dart';
 
+/// Controller for programmatically triggering ListTile command execution
+class ListTileController {
+  Future<CommandReturn> Function()? _run;
+  final Completer<void> _initCompleter = Completer<void>();
+
+  /// Check if the controller is initialized (attached to a ListTile)
+  bool get isInitialized => _initCompleter.isCompleted;
+
+  /// Check if the controller is currently attached to a ListTile
+  bool get isAttached => _run != null;
+
+  Future<void> _waitForInit() async {
+    if (!_initCompleter.isCompleted) {
+      log.info("ListTileController: Waiting for initialization...");
+      await _initCompleter.future;
+      log.info("ListTileController: Initialization complete");
+    }
+  }
+
+  Future<CommandReturn> run() async {
+    log.info("ListTileController.run() called");
+    await _waitForInit();
+    if (!isAttached) {
+      log.warning("ListTileController.run() called but controller is detached");
+      return const CommandSkipped();
+    }
+    return _run!();
+  }
+
+  void _attach(Future<CommandReturn> Function() run) {
+    log.info("ListTileController._attach() called");
+    _run = run;
+    if (!_initCompleter.isCompleted) {
+      _initCompleter.complete();
+      log.info("ListTileController: Initialization completer completed");
+    }
+  }
+
+  void _detach() {
+    _run = null;
+    // Note: completer stays completed - prevents issues with post-detach calls
+  }
+}
+
 enum ListTileStyle { item, header }
 
 class ListTile extends StatefulWidget {
@@ -21,9 +67,6 @@ class ListTile extends StatefulWidget {
 
     /// The action to run when the tile is long-pressed.
     this.longPressCommand,
-
-    /// Whether to disable running the command on tap (just display the tile).
-    this.noRun = false,
 
     /// Builder for optional widget displayed on the left, after the leading indicator.
     /// Receives hover and focus state to conditionally display content.
@@ -64,6 +107,14 @@ class ListTile extends StatefulWidget {
     /// If null, an internal FocusNode will be created.
     this.focusNode,
 
+    /// Optional controller for programmatic command execution.
+    /// Allows external code to trigger the run() method.
+    this.controller,
+
+    /// Optional callback when command completes with the result.
+    /// Parent should handle the result and return true if handled.
+    this.onRun,
+
     /// Override the action title
     this.title,
 
@@ -97,9 +148,6 @@ class ListTile extends StatefulWidget {
     /// Whether to show a drag handle in the leading area (for reorder mode).
     this.showLeadingDragHandle = false,
 
-    /// Whether to show a spinner instead of the icon (for running commands).
-    this.isRunning = false,
-
     super.key,
   }) : subtitle = subtitle ?? command?.subtitle;
 
@@ -113,7 +161,6 @@ class ListTile extends StatefulWidget {
   final Widget? details;
   final Command? command;
   final Command? longPressCommand;
-  final bool noRun;
   final Widget? Function(bool isHovered, bool hasFocus)? leadingBuilder;
   final Widget? Function(bool isHovered, bool hasFocus)? trailingBuilder;
   final String? title;
@@ -129,10 +176,12 @@ class ListTile extends StatefulWidget {
 
   final void Function(bool hovered)? onHover;
   final FocusNode? focusNode;
+  final ListTileController? controller;
+  final Future<bool> Function(BuildContext context, CommandReturn result)?
+  onRun;
   final int? reorderableIndex;
   final bool showShortcut;
   final bool showLeadingDragHandle;
-  final bool isRunning;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -143,7 +192,60 @@ class _ListTileState extends State<ListTile> {
   Offset? lastMousePosition;
   bool _isHovered = false;
 
+  // Running state management
+  bool _isRunning = false;
+  Timer? _spinnerDelayTimer;
+  bool _showSpinner = false;
+
   FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
+
+  /// Expose run method for external triggers (e.g., Enter key in forms)
+  Future<CommandReturn> run() async {
+    if (_isRunning || widget.command == null) {
+      return const CommandSkipped();
+    }
+
+    if (!mounted) {
+      return const CommandSkipped();
+    }
+
+    setState(() {
+      _isRunning = true;
+      // Start 100ms delay before showing spinner
+      _spinnerDelayTimer = Timer(const Duration(milliseconds: 100), () {
+        if (mounted && _isRunning) {
+          setState(() => _showSpinner = true);
+        }
+      });
+    });
+
+    try {
+      log.info("Running command: ${widget.command?.title}");
+
+      // Call onRun callback if provided
+      if (widget.onRun != null) {
+        final result = await widget.command!.run(context);
+        log.info("Command completed with result: ${result.runtimeType}");
+        if (mounted) {
+          await widget.onRun!(context, result);
+        }
+        return result;
+      } else {
+        return await context.run(widget.command!);
+      }
+    } catch (e, t) {
+      log.warning("Action ${widget.command?.title} failed", e, t);
+      rethrow;
+    } finally {
+      _spinnerDelayTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _isRunning = false;
+          _showSpinner = false;
+        });
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -154,6 +256,8 @@ class _ListTileState extends State<ListTile> {
     }
     // Add listener to rebuild when focus changes
     _focusNode.addListener(_onFocusChange);
+    // Attach controller if provided
+    widget.controller?._attach(run);
   }
 
   void _onFocusChange() {
@@ -162,7 +266,10 @@ class _ListTileState extends State<ListTile> {
 
   @override
   void dispose() {
+    _spinnerDelayTimer?.cancel();
     _focusNode.removeListener(_onFocusChange);
+    // Detach controller if provided
+    widget.controller?._detach();
     // Only dispose internal focus node
     _internalFocusNode?.dispose();
     super.dispose();
@@ -245,22 +352,7 @@ class _ListTileState extends State<ListTile> {
                   ].whereType<Widget>(),
                 Expanded(
                   child: GestureDetector(
-                    onTap: !widget.noRun && widget.command != null
-                        ? () {
-                            log.info(
-                              "Running command: ${widget.command?.title}",
-                            );
-                            try {
-                              context.run(widget.command!);
-                            } catch (e, t) {
-                              log.warning(
-                                "Action ${widget.command?.title} failed",
-                                e,
-                                t,
-                              );
-                            }
-                          }
-                        : null,
+                    onTap: widget.command != null ? () => run() : null,
                     onLongPress: widget.longPressCommand != null
                         ? () {
                             try {
@@ -280,8 +372,8 @@ class _ListTileState extends State<ListTile> {
                         builder: (context) {
                           // Build the icon widget
                           final iconWidget = () {
-                            // If running, show spinner instead of icon
-                            if (widget.isRunning) {
+                            // If running with delay passed, show spinner
+                            if (_showSpinner) {
                               return Spinner(
                                 size: widget.style == ListTileStyle.header
                                     ? context.theme.iconSizes.sm

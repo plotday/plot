@@ -3,9 +3,10 @@ import 'dart:math';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/widget/logging.dart';
+import 'package:plot/widget/toast.dart';
 
 class Modal extends StatelessWidget {
   const Modal({
@@ -35,6 +36,74 @@ class Modal extends StatelessWidget {
 
   static Future<void> popAll(BuildContext context) {
     return ModalProvider.of(context).popAll(context);
+  }
+
+  /// Handle command result in modal context
+  /// Returns true if modal should be closed
+  static Future<bool> handleCommandResult(
+    BuildContext modalContext,
+    CommandReturn result,
+    Command command, {
+    required BuildContext rootContext,
+    Future<void> Function()? onRefresh,
+  }) async {
+    if (!modalContext.mounted) return false;
+
+    // Keep modal open if command was skipped or returned error
+    if (result is CommandSkipped) {
+      return false;
+    }
+
+    if (result is CommandMessage && result.isError) {
+      modalContext.showToast(
+        title: result.title,
+        message: result.message,
+        isError: true,
+      );
+      return false;
+    }
+
+    // Handle CommandRefresh - show message, refresh, keep modal open
+    if (result is CommandRefresh) {
+      if (result.message != null && modalContext.mounted) {
+        modalContext.showOverlayToast(
+          title: result.title,
+          message: result.message!,
+        );
+      }
+      if (onRefresh != null) {
+        await onRefresh();
+      }
+      return false;
+    }
+
+    // Show success message if provided
+    if (result is CommandMessage && !result.isError) {
+      if (modalContext.mounted) {
+        modalContext.showOverlayToast(
+          title: result.title,
+          message: result.message,
+        );
+      }
+    }
+
+    // Handle CommandRoute - close all modals and navigate
+    if (result is CommandRoute) {
+      Modal.popAll(modalContext);
+      if (modalContext.mounted) {
+        final routeContext = rootContext.mounted ? rootContext : modalContext;
+        await result.go(routeContext);
+      }
+      return false; // Already closed
+    }
+
+    // Check if command opens its own modal - keep parent modal open
+    if (command is ShowCommands || command is ShowForm || command is ShowPage) {
+      return false;
+    }
+
+    // Close modal for successful commands
+    return true;
   }
 
   @override

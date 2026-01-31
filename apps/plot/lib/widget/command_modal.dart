@@ -1,15 +1,11 @@
-import 'dart:async';
 import 'package:flutter/widgets.dart';
 
-import 'package:plot/api/api_exception.dart';
-import 'package:plot/api/network_exception.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
 import 'list_tile.dart';
 import 'modal.dart';
-import 'toast.dart';
-import 'logging.dart';
 import 'select_modal.dart';
+import 'logging.dart';
 
 class CommandModal {
   factory CommandModal(Commands commands, {required BuildContext rootContext}) {
@@ -21,13 +17,12 @@ class CommandModal {
   final Commands commands;
   final BuildContext rootContext;
   Future<void> Function()? _refreshCallback;
-
-  // Track which command is running (for showing spinner)
-  final ValueNotifier<Command?> _runningCommand = ValueNotifier(null);
-  Timer? _spinnerDelayTimer;
+  final Map<Command, ListTileController> _controllers = {};
 
   Future<CommandReturn> run(BuildContext context) async {
     if (!context.mounted) return CommandSkipped();
+    // Clear previous controllers
+    _controllers.clear();
     final result = await SelectModal.open<Command>(
       context,
       items: (search) async {
@@ -45,146 +40,105 @@ class CommandModal {
             .toList();
       },
       itemBuilder: (command) {
-        // Wrap with ValueListenableBuilder to show spinner for running command
-        return ValueListenableBuilder<Command?>(
-          valueListenable: _runningCommand,
-          builder: (context, runningCommand, child) {
-            return ListTile(
-              command: command,
-              noRun: true,
-              showShortcut: true,
-              isRunning: runningCommand == command,
+        // Get or create controller for this command (reuse if it exists)
+        final isNew = !_controllers.containsKey(command);
+        final controller = _controllers.putIfAbsent(
+          command,
+          () => ListTileController(),
+        );
+        if (isNew) {
+          log.info("Created NEW controller for command: ${command.title}");
+        } else {
+          log.info("Reusing existing controller for command: ${command.title}");
+        }
+
+        return ListTile(
+          controller: controller,
+          command: command,
+          showShortcut: true,
+          onRun: (context, result) async {
+            log.info("ListTile.onRun called for ${command.title}");
+            // Handle the command result using shared Modal handler
+            final shouldClose = await Modal.handleCommandResult(
+              context,
+              result,
+              command,
+              rootContext: rootContext,
+              onRefresh: _refreshCallback,
             );
+
+            // Close modal if handler indicates we should
+            if (shouldClose && context.mounted) {
+              Modal.pop(context, Value(command));
+            }
+
+            return shouldClose;
           },
         );
       },
       prompt: commands.prompt,
-      onSelect: _handleCommandSelection,
       emptyMessage: commands.emptyMessage,
+      onSelect: (modalContext, command, searchText) async {
+        log.info("CommandModal.onSelect called for command: ${command.title}");
+
+        // Get the controller for this command and call run()
+        // This ensures spinner state management for Enter key path
+        final controller = _controllers[command];
+        log.info(
+          "Controller exists: ${controller != null}, isAttached: ${controller?.isAttached}",
+        );
+
+        // Only use controller path if it's attached (ListTile rendered and not disposed)
+        if (controller != null && controller.isAttached) {
+          log.info("Using controller path for ${command.title}");
+          // The controller calls ListTile's _runAndGetModalResult() which:
+          // 1. Shows spinner
+          // 2. Executes command
+          // 3. Calls onRun callback (which calls Modal.handleCommandResult() AND Modal.pop())
+          // 4. Returns the bool from onRun indicating whether modal was closed
+          await controller.run();
+          log.info("Controller.run() completed for ${command.title}");
+          // Return false because onRun already closed the modal if needed
+          // This prevents _selectItem from calling Navigator.pop() again
+          return false;
+        }
+
+        // Controller doesn't exist or not attached (item not yet rendered or already disposed)
+        // Run the command directly without spinner
+        log.info(
+          "Using direct path for ${command.title} (controller null or not attached)",
+        );
+        final result = await command.run(modalContext);
+        log.info("Command.run() completed with result: ${result.runtimeType}");
+
+        if (!modalContext.mounted) {
+          log.info("Context not mounted, returning false");
+          return false;
+        }
+
+        final shouldClose = await Modal.handleCommandResult(
+          modalContext,
+          result,
+          command,
+          rootContext: rootContext,
+          onRefresh: _refreshCallback,
+        );
+        log.info(
+          "Modal.handleCommandResult returned shouldClose: $shouldClose",
+        );
+
+        if (shouldClose && modalContext.mounted) {
+          log.info("Closing modal for ${command.title}");
+          Modal.pop(modalContext, Value(command));
+        }
+
+        return false;
+      },
       onRefreshNeeded: (refresh) {
         _refreshCallback = refresh;
       },
     );
 
-    // Clean up on modal close
-    _spinnerDelayTimer?.cancel();
-    _runningCommand.value = null;
-
     return result.present ? const CommandDone() : const CommandSkipped();
-  }
-
-  Future<bool> _handleCommandSelection(
-    BuildContext modalContext,
-    Command command,
-    String searchText,
-  ) async {
-    final result = await _executeCommand(command, modalContext);
-
-    // Keep SelectModal open if command was skipped or if there was an error
-    if (result is CommandSkipped ||
-        (result is CommandMessage && result.isError)) {
-      return false;
-    }
-
-    // Handle CommandRefresh - show message, refresh commands, keep modal open
-    if (result is CommandRefresh) {
-      // Show success message if provided
-      if (result.message != null && modalContext.mounted) {
-        // Use overlay toast to ensure it appears above modal barriers
-        modalContext.showOverlayToast(
-          title: result.title,
-          message: result.message!,
-        );
-      }
-
-      // Trigger refresh
-      await _refreshCallback?.call();
-
-      return false; // Keep modal open
-    }
-
-    // If command returned CommandRoute, modals are already closed by _executeCommand
-    if (result is CommandRoute) {
-      return false;
-    }
-
-    // Close SelectModal if command completed successfully
-    return true;
-  }
-
-  Future<CommandReturn> _executeCommand(
-    Command command,
-    BuildContext modalContext,
-  ) async {
-    // Start timer to show spinner after 100ms
-    _spinnerDelayTimer = Timer(const Duration(milliseconds: 100), () {
-      if (modalContext.mounted) {
-        _runningCommand.value = command;
-      }
-    });
-
-    try {
-      // Use rootContext if mounted, otherwise fall back to modal context
-      final commandContext = rootContext.mounted ? rootContext : modalContext;
-      final result = await command.run(commandContext);
-
-      if (!modalContext.mounted) return const CommandSkipped();
-
-      if (result is CommandSkipped) {
-        return result;
-      } else if (result is CommandRefresh) {
-        // Return CommandRefresh as-is so it can be handled by _handleCommandSelection
-        return result;
-      } else if (result is CommandMessage) {
-        if (result.isError) {
-          // Show error toast
-          modalContext.showToast(
-            title: result.title,
-            message: result.message,
-            isError: true,
-          );
-          return result;
-        } else {
-          // Show success toast using overlay (survives modal closure and appears above barriers)
-          if (modalContext.mounted) {
-            modalContext.showOverlayToast(
-              title: result.title,
-              message: result.message,
-            );
-          }
-        }
-      }
-
-      // Close the modal before navigating
-      if (result is CommandRoute) {
-        Modal.popAll(modalContext);
-        if (modalContext.mounted) {
-          final routeContext = rootContext.mounted ? rootContext : modalContext;
-          result.go(routeContext);
-        }
-      }
-    } catch (e, stackTrace) {
-      log.warning('Error executing command', e, stackTrace);
-
-      final (title, message) = switch (e) {
-        ApiException() => (e.title, e.description),
-        NetworkException() => ('Network Error', e.message),
-        _ => ('Error', 'Something went wrong'),
-      };
-
-      modalContext.showToast(title: title, message: message, isError: true);
-      return CommandMessage(message, title: title, isError: true);
-    } finally {
-      // Always clean up timer and running state
-      _spinnerDelayTimer?.cancel();
-      _runningCommand.value = null;
-    }
-    return const CommandDone();
-  }
-
-  /// Clean up resources when CommandModal is no longer needed
-  void dispose() {
-    _spinnerDelayTimer?.cancel();
-    _runningCommand.dispose();
   }
 }

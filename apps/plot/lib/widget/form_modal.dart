@@ -1,15 +1,12 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/api/api_exception.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
 import 'modal.dart';
-import 'toast.dart';
 import 'logging.dart';
 
 class FormModal extends Modal {
@@ -60,6 +57,7 @@ class FormModalState extends State<_FormModal> {
   List<StaticFormGroup> _formGroups = [];
   List<FocusNode> _focusNodes = [];
   int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
+  final Map<FormButton, FormButtonController> _buttonControllers = {};
 
   @override
   void initState() {
@@ -305,142 +303,18 @@ class FormModalState extends State<_FormModal> {
     return null;
   }
 
-  /// Execute form submission (triggered by Enter key or button click)
+  /// Execute form submission (triggered by Enter key from text inputs)
   Future<void> _submitForm() async {
-    if (!_isFormValid()) {
-      context.showToast(
-        message: 'Please fill in all required fields',
-        isError: true,
-      );
-      return;
-    }
-
+    // Find and run the primary (first) button's controller
     final primaryButton = _getPrimaryButton();
-    if (primaryButton == null) {
-      return;
-    }
-
-    try {
-      final values = _collectFormValues();
-      final command = primaryButton.onSubmit(values);
-
-      final result = await command.run(widget.rootContext);
-
-      if (!mounted) return;
-
-      if (result is CommandMessage && result.isError) {
-        context.showToast(
-          title: result.title,
-          message: result.message,
-          isError: true,
-        );
-        return;
-      }
-
-      // Handle CommandRefresh by popping this modal with the value
-      // so the parent CommandModal can handle the refresh and show the toast
-      if (result is CommandRefresh) {
-        Modal.pop<CommandReturn>(context, Value(result));
-        return;
-      }
-
-      // Capture route info before closing modal to avoid accessing deactivated widget
-      if (result is CommandRoute) {
-        final routeToNavigate = result.route;
-        final shouldReplace = result.replace;
-
-        Modal.popAll(context);
-
-        // Navigate using captured router reference
-        if (widget.rootContext.mounted) {
-          if (shouldReplace) {
-            await widget.rootContext.router.root.replace(routeToNavigate);
-          } else {
-            await widget.rootContext.router.root.navigate(routeToNavigate);
-          }
-        }
-      } else if (result is! CommandSkipped) {
-        // Don't popAll if command was skipped - the modal already popped itself
-        Modal.popAll(context);
-      }
-    } catch (e, stackTrace) {
-      log.warning('Error submitting form', e, stackTrace);
-      if (mounted) {
-        final (title, message) = e is ApiException
-            ? (e.title, e.description)
-            : ('Error', e.toString());
-
-        context.showToast(title: title, message: message, isError: true);
+    if (primaryButton != null) {
+      final controller = _buttonControllers[primaryButton];
+      if (controller != null) {
+        await controller.run();
       }
     }
   }
 
-  /// Execute a specific button action
-  Future<CommandReturn> _executeButton(FormButton button) async {
-    if (!_isFormValid()) {
-      context.showToast(
-        message: 'Please fill in all required fields',
-        isError: true,
-      );
-      return const CommandDone();
-    }
-
-    try {
-      final values = _collectFormValues();
-      final command = button.onSubmit(values);
-
-      final result = await command.run(widget.rootContext);
-
-      if (!mounted) return const CommandSkipped();
-
-      if (result is CommandMessage && result.isError) {
-        context.showToast(
-          title: result.title,
-          message: result.message,
-          isError: true,
-        );
-        return const CommandDone();
-      }
-
-      // Handle CommandRefresh by popping this modal with the value
-      // so the parent CommandModal can handle the refresh and show the toast
-      if (result is CommandRefresh) {
-        Modal.pop<CommandReturn>(context, Value(result));
-        return result;
-      }
-
-      // Capture route info before closing modal to avoid accessing deactivated widget
-      if (result is CommandRoute) {
-        final routeToNavigate = result.route;
-        final shouldReplace = result.replace;
-
-        Modal.popAll(context);
-
-        // Navigate using captured router reference
-        if (widget.rootContext.mounted) {
-          if (shouldReplace) {
-            await widget.rootContext.router.root.replace(routeToNavigate);
-          } else {
-            await widget.rootContext.router.root.navigate(routeToNavigate);
-          }
-        }
-      } else if (result is! CommandSkipped) {
-        // Don't popAll if command was skipped - the modal already popped itself
-        Modal.popAll(context);
-      }
-      return result;
-    } catch (e, stackTrace) {
-      log.warning('Error executing button', e, stackTrace);
-      if (mounted) {
-        final (title, message) = e is ApiException
-            ? (e.title, e.description)
-            : ('Error', e.toString());
-
-        context.showToast(title: title, message: message, isError: true);
-      }
-    }
-    return const CommandDone();
-  }
 
   void _cancel() {
     Modal.pop<CommandReturn>(context, Value.absent());
@@ -454,10 +328,8 @@ class FormModalState extends State<_FormModal> {
       key: ValueKey(totalItemCount),
       onActivate: (index) async {
         final item = _getItemAtIndex(index);
-        if (item is FormButton) {
-          await _executeButton(item);
-        } else if (item is FormTextInput) {
-          // Enter key in text input triggers form submission
+        if (item is FormButton || item is FormTextInput) {
+          // Enter key triggers form submission (primary button)
           await _submitForm();
         }
       },
@@ -465,20 +337,47 @@ class FormModalState extends State<_FormModal> {
         // Set bounds for the controller
         listController.clamp(0, totalItemCount - 1);
 
-        return Shortcuts(
-          shortcuts: const {
-            SingleActivator(LogicalKeyboardKey.arrowUp):
-                MoveListSelectionIntent(-1),
-            SingleActivator(LogicalKeyboardKey.arrowDown):
-                MoveListSelectionIntent(1),
-            SingleActivator(LogicalKeyboardKey.tab): MoveListSelectionIntent(1),
-            SingleActivator(LogicalKeyboardKey.tab, shift: true):
-                MoveListSelectionIntent(-1),
-            SingleActivator(LogicalKeyboardKey.enter):
-                ActivateListSelectionIntent(),
-            SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+        return Focus(
+          skipTraversal: true,
+          canRequestFocus: false,
+          onKeyEvent: (node, event) {
+            // Intercept Tab/Shift-Tab to handle custom navigation
+            if (event is KeyDownEvent) {
+              if (event.logicalKey == LogicalKeyboardKey.tab) {
+                final isShiftPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftLeft) ||
+                    HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftRight);
+                if (isShiftPressed) {
+                  _moveHighlight(-1);
+                } else {
+                  _moveHighlight(1);
+                }
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                _moveHighlight(-1);
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                _moveHighlight(1);
+                return KeyEventResult.handled;
+              }
+            }
+            return KeyEventResult.ignored;
           },
-          child: Actions(
+          child: Shortcuts(
+            shortcuts: const {
+              SingleActivator(LogicalKeyboardKey.arrowUp):
+                  MoveListSelectionIntent(-1),
+              SingleActivator(LogicalKeyboardKey.arrowDown):
+                  MoveListSelectionIntent(1),
+              SingleActivator(LogicalKeyboardKey.tab): MoveListSelectionIntent(1),
+              SingleActivator(LogicalKeyboardKey.tab, shift: true):
+                  MoveListSelectionIntent(-1),
+              SingleActivator(LogicalKeyboardKey.enter):
+                  ActivateListSelectionIntent(),
+              SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+            },
+            child: Actions(
             actions: {
               MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
                 onInvoke: (intent) {
@@ -491,10 +390,13 @@ class FormModalState extends State<_FormModal> {
                   if (_allItemsCount() > 0) {
                     final item = _getItemAtIndex(_highlightedIndex);
                     if (item is FormButton) {
-                      if (_isFormValid()) {
-                        _executeButton(item);
+                      // Run the specific button that's focused
+                      final controller = _buttonControllers[item];
+                      if (controller != null) {
+                        controller.run();
                       }
                     } else if (item is FormTextInput) {
+                      // For text inputs, trigger primary button (first button)
                       _submitForm();
                     } else if (item is FormSelect) {
                       final indexToRestore = _highlightedIndex;
@@ -541,7 +443,10 @@ class FormModalState extends State<_FormModal> {
                 final availableContentHeight =
                     constraints.maxHeight - headerHeight - 16.0;
 
-                return Column(
+                return FormScope(
+                  values: _collectFormValues(),
+                  validate: _isFormValid,
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -602,11 +507,8 @@ class FormModalState extends State<_FormModal> {
                           return GestureDetector(
                             onTap: () async {
                               final item = _getItemAtIndex(index);
-                              if (item is FormButton) {
-                                if (_isFormValid()) {
-                                  await _executeButton(item);
-                                }
-                              } else if (item is FormSelect) {
+                              // FormButton handles its own taps via ListTile
+                              if (item is FormSelect) {
                                 if (item.enabled) {
                                   await item.activate(context);
                                 }
@@ -633,6 +535,12 @@ class FormModalState extends State<_FormModal> {
                                     focusNode: index < _focusNodes.length
                                         ? _focusNodes[index]
                                         : null,
+                                    controller: item is FormButton
+                                        ? _buttonControllers.putIfAbsent(
+                                            item,
+                                            () => FormButtonController(),
+                                          )
+                                        : null,
                                   ),
                                 ],
                               ),
@@ -643,9 +551,11 @@ class FormModalState extends State<_FormModal> {
                     ),
                     const SizedBox(height: 8),
                   ],
-                );
+                ),
+              );
               },
             ),
+          ),
           ),
         );
       },

@@ -6,6 +6,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
+import 'list_tile.dart';
 import 'text_field.dart';
 import 'modal.dart';
 import 'logging.dart';
@@ -568,6 +569,19 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           }
                         }
 
+                        // Build the item widget
+                        final itemWidget = widget.itemBuilder(item);
+                        final isListTile = itemWidget is ListTile;
+
+                        // For ListTiles, don't wrap in GestureDetector - they handle their own taps
+                        // and have spinner logic. For other widgets, wrap in GestureDetector.
+                        final Widget child = isListTile
+                            ? itemWidget
+                            : GestureDetector(
+                                onTap: () => _selectItem(item),
+                                child: itemWidget,
+                              );
+
                         return Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -577,18 +591,15 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             MouseRegion(
                               onEnter: (_) => listController.setHovered(index),
                               onExit: (_) => listController.setHovered(null),
-                              child: GestureDetector(
-                                onTap: () => _selectItem(item),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color:
-                                        (index == _highlightedIndex &&
-                                            hasPhysicalKeyboard())
-                                        ? context.theme.colors.secondary
-                                        : null,
-                                  ),
-                                  child: widget.itemBuilder(item),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color:
+                                      (index == _highlightedIndex &&
+                                          hasPhysicalKeyboard())
+                                      ? context.theme.colors.secondary
+                                      : null,
                                 ),
+                                child: child,
                               ),
                             ),
                           ],

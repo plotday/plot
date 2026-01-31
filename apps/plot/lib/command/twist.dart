@@ -155,8 +155,7 @@ class EditTwistCommand extends ShowForm {
               ),
               FormButton(
                 key: 'save',
-                label: 'Save',
-                onSubmit: (values) {
+                buildCommand: (values) {
                   final name = values['name'] as String;
                   return EditTwistName(priorityTwist, name: name);
                 },
@@ -164,8 +163,7 @@ class EditTwistCommand extends ShowForm {
               FormDivider(key: 'divider'),
               FormButton(
                 key: 'archive',
-                label: 'Archive',
-                onSubmit: (_) => PromptToArchiveTwist(priorityTwist),
+                buildCommand: (_) => PromptToArchiveTwist(priorityTwist),
               ),
             ],
           ),
@@ -187,8 +185,7 @@ class EditTwistCommand extends ShowForm {
               ),
               FormButton(
                 key: 'save',
-                label: 'Save',
-                onSubmit: (values) {
+                buildCommand: (values) {
                   final name = values['name'] as String;
                   return EditTwistName(priorityTwist, name: name);
                 },
@@ -196,8 +193,7 @@ class EditTwistCommand extends ShowForm {
               FormDivider(key: 'divider'),
               FormButton(
                 key: 'archive',
-                label: 'Archive',
-                onSubmit: (_) => PromptToArchiveTwist(priorityTwist),
+                buildCommand: (_) => PromptToArchiveTwist(priorityTwist),
               ),
             ],
           ),
@@ -260,8 +256,7 @@ class ShowTwistInfo extends ShowForm {
             ),
             FormButton(
               key: 'add',
-              label: 'Add',
-              onSubmit: (values) {
+              buildCommand: (values) {
                 final selectedPriority = values['priority'] as Priority;
                 final name = values['name'] as String;
                 return AddTwist(selectedPriority, twist, name: name);
@@ -287,6 +282,7 @@ class AddTwist extends Command {
   AddTwist(this.priority, this.twist, {required this.name})
     : super(
         title: 'Add Twist',
+        icon: PlotIcon.add,
         eventObject: EventObject.twist,
         eventAction: EventAction.added,
       );
@@ -320,6 +316,7 @@ class EditTwistName extends Command {
   EditTwistName(this.priorityTwist, {this.name})
     : super(
         title: 'Save',
+        icon: FontAwesomeIcons.floppyDisk,
         eventObject: EventObject.twist,
         eventAction: EventAction.updated,
       );
@@ -399,8 +396,7 @@ class PromptToArchiveTwist extends ShowForm {
             FormDivider(key: 'divider'),
             FormButton(
               key: 'archive',
-              label: 'Archive Twist',
-              onSubmit: (_) => _ArchiveTwistCommand(twist),
+              buildCommand: (_) => _ArchiveTwistCommand(twist),
             ),
           ],
         ),
@@ -413,6 +409,7 @@ class _ArchiveTwistCommand extends Command {
   _ArchiveTwistCommand(this.twist)
     : super(
         title: 'Archive Twist',
+        icon: PlotIcon.archived,
         eventObject: EventObject.twist,
         eventAction: EventAction.archived,
       );
@@ -477,8 +474,7 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
             if (count > 0)
               FormButton(
                 key: 'archive',
-                label: 'Archive Activities',
-                onSubmit: (_) => _ArchiveActivitiesCommand(twist, count),
+                buildCommand: (_) => _ArchiveActivitiesCommand(twist, count),
               ),
           ],
         ),
@@ -508,6 +504,7 @@ class _ArchiveActivitiesCommand extends Command {
   _ArchiveActivitiesCommand(this.twist, this.count)
     : super(
         title: 'Archive Activities',
+        icon: PlotIcon.archived,
         eventObject: EventObject.activity,
         eventAction: EventAction.archived,
       );

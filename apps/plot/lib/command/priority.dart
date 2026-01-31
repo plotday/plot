@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/api/api.dart' as api;
@@ -88,10 +89,13 @@ class PriorityGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final all = (await Priority.get(
+    final priorities = await Priority.get(
       order: PriorityOrder.recent,
       search: search,
-    )).map((priority) => builder(priority)).toList();
+    );
+    // Filter out the @plot priority
+    final filtered = priorities.where((p) => p.key != '@plot').toList();
+    final all = filtered.map((priority) => builder(priority)).toList();
     return CommandGroup.filter(all, search);
   }
 }
@@ -153,6 +157,7 @@ class AddPriority extends Command {
   AddPriority(this._priority)
     : super(
         title: 'Add',
+        icon: PlotIcon.add,
         eventObject: EventObject.priority,
         eventAction: EventAction.added,
       );
@@ -174,6 +179,7 @@ class EditPriority extends Command {
   EditPriority(this._priority)
     : super(
         title: 'Save',
+        icon: FontAwesomeIcons.floppyDisk,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
       );
@@ -274,8 +280,7 @@ class NewPriority extends ShowForm {
                   ),
                   FormButton(
                     key: 'create',
-                    label: 'Create',
-                    onSubmit: (values) {
+                    buildCommand: (values) {
                       final title = values['title'] as String;
                       final selectedParent = values['parent'] as Priority;
                       final color = values['color'] as ThemeColor?;
@@ -376,8 +381,7 @@ class EditPriorityCommand extends ShowForm {
                   ),
                   FormButton(
                     key: 'save',
-                    label: 'Save',
-                    onSubmit: (values) {
+                    buildCommand: (values) {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
@@ -736,8 +740,7 @@ class EditSharingCommand extends ShowForm {
             FormDivider(key: 'divider'),
             FormButton(
               key: 'remove',
-              label: 'Remove Access',
-              onSubmit: (_) => _RemoveSharingCommand(priority, actor),
+              buildCommand: (_) => _RemoveSharingCommand(priority, actor),
             ),
           ],
         ),
@@ -750,6 +753,7 @@ class _RemoveSharingCommand extends Command {
   _RemoveSharingCommand(this.priority, this.actor)
     : super(
         title: 'Remove Access',
+        icon: FontAwesomeIcons.trash,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
       );
@@ -878,8 +882,7 @@ class EditInvitationCommand extends ShowForm {
             FormDivider(key: 'divider'),
             FormButton(
               key: 'cancel',
-              label: 'Cancel Invitation',
-              onSubmit: (_) => _CancelInvitationCommand(priority, actor),
+              buildCommand: (_) => _CancelInvitationCommand(priority, actor),
             ),
           ],
         ),
@@ -892,6 +895,7 @@ class _CancelInvitationCommand extends Command {
   _CancelInvitationCommand(this.priority, this.actor)
     : super(
         title: 'Cancel Invitation',
+        icon: FontAwesomeIcons.trash,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
       );

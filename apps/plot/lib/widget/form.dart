@@ -1,9 +1,59 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/select_tile.dart';
 import 'package:plot/command/base.dart';
 import 'package:plot/command/logging.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/style/spacing.dart';
+
+/// Simple command for form submission when display command cannot be built
+class _FormSubmitCommand extends Command {
+  _FormSubmitCommand()
+    : super(
+        title: 'Submit',
+        eventObject: EventObject.modal,
+        eventAction: EventAction.updated,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return const CommandSkipped();
+  }
+}
+
+/// Controller for programmatically triggering FormButton submission
+/// (e.g., when Enter is pressed in form fields)
+class FormButtonController {
+  final ListTileController _controller = ListTileController();
+
+  /// Run the form button command (triggers spinner and validation)
+  Future<CommandReturn> run() {
+    return _controller.run();
+  }
+
+  /// Internal: Get the ListTileController for passing to ListTile
+  ListTileController get _listTileController => _controller;
+}
+
+/// Provides form values and validation to descendants
+class FormScope extends InheritedWidget {
+  const FormScope({
+    required this.values,
+    required this.validate,
+    required super.child,
+    super.key,
+  });
+
+  final Map<String, dynamic> values;
+  final bool Function() validate;
+
+  static FormScope? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<FormScope>();
+  }
+
+  @override
+  bool updateShouldNotify(FormScope old) => values != old.values;
+}
 
 /// A action for showing a form
 class ShowForm extends Command {
@@ -74,6 +124,7 @@ abstract class FormItem {
     bool highlighted, {
     bool enabled = true,
     FocusNode? focusNode,
+    FormButtonController? controller,
   });
 }
 
@@ -116,10 +167,11 @@ class FormTextInput extends FormItem {
     bool highlighted, {
     bool enabled = true,
     FocusNode? focusNode,
+    FormButtonController? controller,
   }) {
     return InputTile(
       label: label ?? key,
-      controller: controller,
+      controller: this.controller,
       placeholder: placeholder,
       highlighted: highlighted,
       focusNode: focusNode,
@@ -310,6 +362,7 @@ class FormSelect<T> extends FormItem {
     bool highlighted, {
     bool enabled = true,
     FocusNode? focusNode,
+    FormButtonController? controller,
   }) {
     final isEnabled = this.enabled && enabled;
     return SelectTile(
@@ -329,13 +382,10 @@ class FormSelect<T> extends FormItem {
 
 /// Button form item
 class FormButton extends FormItem {
-  FormButton({
-    required super.key,
-    required String label,
-    required this.onSubmit,
-  }) : super(required: false, label: label);
+  FormButton({required super.key, required this.buildCommand})
+    : super(required: false, label: '');
 
-  final Command Function(Map<String, dynamic> values) onSubmit;
+  final Command Function(Map<String, dynamic> values) buildCommand;
 
   @override
   dynamic getValue() => null;
@@ -354,9 +404,11 @@ class FormButton extends FormItem {
     bool highlighted, {
     bool enabled = true,
     FocusNode? focusNode,
+    FormButtonController? controller,
   }) {
     return _FormButtonWidget(
-      label: label!,
+      buildCommand: buildCommand,
+      controller: controller,
       highlighted: highlighted,
       enabled: enabled,
       focusNode: focusNode,
@@ -366,13 +418,15 @@ class FormButton extends FormItem {
 
 class _FormButtonWidget extends StatefulWidget {
   const _FormButtonWidget({
-    required this.label,
+    required this.buildCommand,
+    required this.controller,
     required this.highlighted,
     required this.enabled,
     this.focusNode,
   });
 
-  final String label;
+  final Command Function(Map<String, dynamic> values) buildCommand;
+  final FormButtonController? controller;
   final bool highlighted;
   final bool enabled;
   final FocusNode? focusNode;
@@ -382,46 +436,105 @@ class _FormButtonWidget extends StatefulWidget {
 }
 
 class _FormButtonWidgetState extends State<_FormButtonWidget> {
-  bool _isHovered = false;
+  @override
+  void initState() {
+    super.initState();
+    // No manual attachment needed - ListTile handles this via controller
+  }
+
+  @override
+  void dispose() {
+    // No manual detachment needed
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isHighlighted = widget.highlighted || _isHovered;
+    // Get form values from FormScope
+    final formValues = FormScope.of(context)?.values ?? {};
+    final formValidate = FormScope.of(context)?.validate;
+
+    // Build display command for icon/text (with current form values)
+    Command displayCommand;
+    try {
+      displayCommand = widget.buildCommand(formValues);
+    } catch (e) {
+      // If command requires values, use fallback command with no icon
+      log.warning('Could not build command for display: $e');
+      displayCommand = _FormSubmitCommand();
+    }
+
+    // Create the run function that validates, executes, and handles result
+    Future<CommandReturn> runWrappedCommand() async {
+      // Validate form before executing
+      if (formValidate != null && !formValidate()) {
+        context.showToast(
+          message: 'Please fill in all required fields',
+          isError: true,
+        );
+        return const CommandDone();
+      }
+
+      // Get latest form values
+      final latestValues = FormScope.of(context)?.values ?? formValues;
+
+      // Build fresh command with latest values
+      final command = widget.buildCommand(latestValues);
+
+      // Execute command
+      final result = await command.run(context);
+
+      // Handle result
+      if (context.mounted) {
+        _handleCommandResult(context, result);
+      }
+
+      return result;
+    }
+
+    // Create CommandWrapper that uses the run function
+    final wrappedCommand = CommandWrapper(
+      displayCommand,
+      run: (_, context) => runWrappedCommand(),
+    );
 
     return Opacity(
       opacity: widget.enabled ? 1.0 : 0.5,
       child: IgnorePointer(
         ignoring: !widget.enabled,
-        child: FocusableActionDetector(
-          focusNode: widget.enabled ? widget.focusNode : null,
-          child: FormTileLayout(
-            label: '', // FormButton doesn't have a separate label
-            rightBackgroundColor: isHighlighted
-                ? context.theme.colors.secondary
-                : null,
-            isActive: isHighlighted,
-            content: MouseRegion(
-              onEnter: (_) => setState(() => _isHovered = true),
-              onExit: (_) => setState(() => _isHovered = false),
-              child: Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: context.theme.spacing.sm,
-                  ),
-                  child: Text(
-                    widget.label,
-                    style: context.theme.typography.sm.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+        child: ListTile(
+          command: wrappedCommand,
+          style: ListTileStyle.item,
+          focusNode: widget.focusNode,
+          controller: widget.controller?._listTileController,
         ),
       ),
     );
+  }
+
+  void _handleCommandResult(BuildContext context, CommandReturn result) {
+    // Move result handling logic from FormModal._executeButton here
+    if (result is CommandMessage && result.isError) {
+      context.showToast(
+        title: result.title,
+        message: result.message,
+        isError: true,
+      );
+      return;
+    }
+
+    if (result is CommandRefresh) {
+      Modal.pop<CommandReturn>(context, Value(result));
+      return;
+    }
+
+    if (result is CommandRoute) {
+      Modal.popAll(context);
+      // Navigate using result.route
+      result.go(context);
+    } else if (result is! CommandSkipped) {
+      Modal.popAll(context);
+    }
   }
 }
 
@@ -454,6 +567,7 @@ class FormInfo extends FormItem {
     bool highlighted, {
     bool enabled = true,
     FocusNode? focusNode,
+    FormButtonController? controller,
   }) {
     return Padding(
       padding: EdgeInsets.only(bottom: divider ? context.theme.spacing.md : 0),
@@ -503,6 +617,7 @@ class FormDivider extends FormItem {
     bool highlighted, {
     bool enabled = true,
     FocusNode? focusNode,
+    FormButtonController? controller,
   }) {
     return Container(
       margin: EdgeInsets.symmetric(vertical: context.theme.spacing.md),
