@@ -147,6 +147,7 @@ export type Bindings = {
   readonly UPDATES_QUEUE: Queue<TwistBatchMessage>;
   readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
   readonly MAIL_QUEUE: Queue<{
+    idempotencyKey: string;
     to: string[];
     subject: string;
     email: string;

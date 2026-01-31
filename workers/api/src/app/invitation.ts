@@ -22,6 +22,7 @@ interface SendInvitationParams {
   priorityId: string;
   inviterUserId: string;
   mailQueue: Queue<{
+    idempotencyKey: string;
     to: string[];
     subject: string;
     email: string;
@@ -121,17 +122,63 @@ export async function sendInvitation(
     inviterResult.data?.name || inviterResult.data?.email || "Someone";
   const priorityName = priorityResult.data?.title || "a priority";
 
-  // 5. Queue invitation email to mail worker
+  // 5. Generate idempotency key and create email delivery record
+  const idempotencyKey = `invitation:${contact.id}:${token}`;
   const inviteUrl = `${siteRoot}/join?invite=${token}`;
 
+  logger.info("Creating email delivery record", {
+    contact_email: contact.email,
+    priority_name: priorityName,
+    inviter_name: inviterName,
+    idempotency_key: idempotencyKey
+  });
+
+  const { data: emailRecord, error: emailError } = await supabaseAdmin.rpc(
+    "create_email_delivery",
+    {
+      p_idempotency_key: idempotencyKey,
+      p_template: "priority-invitation",
+      p_to_addresses: [contact.email],
+      p_subject: `${inviterName} invited you to collaborate on Plot`,
+      p_template_props: {
+        inviterName,
+        priorityName,
+        inviteUrl,
+        recipientName: contact.name || undefined,
+        contactId,  // For updating sent_at after successful send
+      },
+      p_max_retries: 10,
+    }
+  );
+
+  if (emailError) {
+    logger.error("Failed to create email delivery record", new Error(emailError.message), {
+      contact_email: contact.email,
+      idempotency_key: idempotencyKey
+    });
+    return { success: false, error: "email_delivery_failed" };
+  }
+
+  // Skip if already sent
+  if (emailRecord && emailRecord[0]?.already_sent) {
+    logger.info("Email already sent, skipping", {
+      contact_email: contact.email,
+      idempotency_key: idempotencyKey
+    });
+    return { success: true, skipped: true };
+  }
+
+  // 6. Queue invitation email to mail worker
   logger.info("Queuing invitation email", {
     contact_email: contact.email,
     priority_name: priorityName,
-    inviter_name: inviterName
+    inviter_name: inviterName,
+    idempotency_key: idempotencyKey
   });
 
   try {
     await mailQueue.send({
+      idempotencyKey,
       to: [contact.email],
       subject: `${inviterName} invited you to collaborate on Plot`,
       email: "priority-invitation",
@@ -140,23 +187,25 @@ export async function sendInvitation(
         priorityName,
         inviteUrl,
         recipientName: contact.name || undefined,
+        contactId,  // For updating sent_at after successful send
       },
     });
-    logger.info("Successfully queued invitation email", { contact_email: contact.email });
+    logger.info("Successfully queued invitation email", {
+      contact_email: contact.email,
+      idempotency_key: idempotencyKey
+    });
   } catch (error) {
-    logger.error("Failed to queue invitation email", error as Error, { contact_email: contact.email });
+    logger.error("Failed to queue invitation email", error as Error, {
+      contact_email: contact.email,
+      idempotency_key: idempotencyKey
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : "email_queue_failed"
     };
   }
 
-  // 6. Update sent_at timestamp (for existing tokens)
-  if (!is_new) {
-    await supabaseAdmin.rpc("update_invitation_sent_at", {
-      p_contact_id: contactId,
-    });
-  }
+  // Note: sent_at timestamp is now updated by the mailer worker after successful delivery
 
   return { success: true };
 }
