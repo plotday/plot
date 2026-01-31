@@ -12,6 +12,12 @@ export function createSupabaseBrowserClient(
 
   return createBrowserClient(supabaseUrl, supabaseAnonKey, {
     // Set cookies on root domain for cross-subdomain auth (plot.day <-> app.plot.day)
-    cookieOptions: isProduction ? { domain: '.plot.day', path: '/' } : undefined,
+    cookieOptions: isProduction ? {
+      domain: '.plot.day',
+      path: '/',
+      // CRITICAL: Secure flag required for HTTPS cookies with domain attribute
+      secure: true,
+      sameSite: 'lax',
+    } : undefined,
   });
 }

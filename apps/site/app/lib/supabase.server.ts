@@ -11,7 +11,7 @@ export interface SupabaseEnv {
  */
 export function createSupabaseServerClient(request: Request, env: SupabaseEnv) {
   const headers = new Headers();
-  const isProduction = request.url.includes('plot.day');
+  const isProduction = new URL(request.url).hostname.endsWith('plot.day');
 
   const supabase = createServerClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
     cookies: {
@@ -25,6 +25,9 @@ export function createSupabaseServerClient(request: Request, env: SupabaseEnv) {
             ...options,
             // Set cookies on root domain for cross-subdomain auth (plot.day <-> app.plot.day)
             domain: isProduction ? '.plot.day' : undefined,
+            // CRITICAL: Secure flag required for HTTPS cookies with domain attribute
+            secure: isProduction,
+            sameSite: options?.sameSite || 'lax',
           }))
         );
       },
