@@ -74,6 +74,17 @@
   - Functions that reference tables must be in `50-functions/` or later (e.g., `65-functions/`)
   - If you get "relation does not exist" errors during migration generation, move the function to a later directory
 
+## Supabase Configuration
+
+The Supabase configuration is defined in `supabase/config.toml`. Key settings:
+
+- **Local database port** (`db.port`): 54322 - This is where the local development database runs
+- **Shadow database port** (`db.shadow_port`): 54420 - Used by `supabase db diff` to compare schemas
+  - The shadow database is a temporary database created during migration generation and schema comparisons
+  - If you encounter "port is already allocated" errors, this port may need to be changed
+  - Use a high port number (54400+) to avoid conflicts with other services
+  - The local database should keep running; only the shadow database port needs to change
+
 ## CRITICAL: When Modifying Synced Tables
 
 **When you modify columns in `activity`, `note`, `priority`, `session`, `priority_twist`, or `activity_read` tables, you MUST update TWO additional locations:**
