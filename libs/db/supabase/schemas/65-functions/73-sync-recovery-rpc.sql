@@ -34,9 +34,11 @@ CREATE OR REPLACE FUNCTION public.get_stale_twist_syncs (p_stale_threshold times
         pts.priority_twist_id
     FROM
         priority_twist_sync pts
+        JOIN priority_twist pt ON pt.id = pts.priority_twist_id
     WHERE
         pts.last_update_at > pts.last_sync_at -- Has pending updates
         AND pts.last_sync_at < p_stale_threshold -- Hasn't synced recently
+        AND pt.archived_at IS NULL -- Skip archived twists
     ORDER BY
         pts.priority_twist_id -- Deterministic ordering after DISTINCT
     LIMIT p_limit;
