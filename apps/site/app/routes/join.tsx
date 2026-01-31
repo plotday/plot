@@ -78,6 +78,20 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         );
 
         if (result.success) {
+          // Refresh session to update JWT with new status='active'
+          try {
+            const { error: refreshError } = await supabase.auth.refreshSession();
+            if (refreshError) {
+              console.error('Failed to refresh session after redemption:', refreshError);
+              // Continue anyway - user can manually refresh if needed
+            } else {
+              console.log('Session refreshed after invitation redemption');
+            }
+          } catch (err) {
+            console.error('Exception refreshing session:', err);
+            // Continue anyway - activation succeeded, redirect to app
+          }
+
           // Redirect to app on success
           return redirect(appRoot, { headers });
         }
