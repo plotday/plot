@@ -232,6 +232,9 @@ class EditableAreaState extends State<EditableArea> {
 
   @override
   Widget build(BuildContext context) {
+    // Read viewInsets to establish dependency - causes rebuild when keyboard state changes
+    final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
+
     return GestureDetector(
       onTap: () {
         _focusNode.requestFocus();
