@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:forui/forui.dart';
+import 'package:flutter_debouncer/flutter_debouncer.dart';
 
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
@@ -9,6 +10,7 @@ import 'package:plot/style/layout.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
 import 'modal.dart';
+import 'spinner.dart';
 import 'logging.dart';
 
 /// A group of items to display in a SelectModal.
@@ -157,10 +159,13 @@ class _SelectModal<T> extends StatefulWidget {
 class _SelectModalState<T> extends State<_SelectModal<T>> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final Debouncer _debouncer = Debouncer();
   List<SelectGroup<T>> _groups = [];
   List<SelectGroup<T>>? _emptySearchCache;
   String? _error;
   bool _isDisposed = false;
+  bool _isLoading = false;
+  int _requestId = 0; // For canceling stale requests
   int _highlightedIndex = 0;
 
   @override
@@ -192,6 +197,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   void dispose() {
     _isDisposed = true;
+    _debouncer.cancel();
     _scrollController.dispose();
     _controller.dispose();
     super.dispose();
@@ -223,16 +229,25 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     }
   }
 
-  void _initItems() async {
+  void _initItems() {
+    _debouncer.cancel();
+    _debouncer.debounce(
+      duration: const Duration(milliseconds: 300),
+      onDebounce: _fetchItems,
+    );
+  }
+
+  void _fetchItems() async {
     try {
       // Trim whitespace and treat empty trimmed string as null
       final trimmedText = _controller.text.trim();
       final searchText = trimmedText.isEmpty ? null : trimmedText;
 
-      // Use cached results for empty search if available
+      // Use cached results for empty search if available (no debounce needed)
       if (searchText == null && _emptySearchCache != null) {
         setState(() {
           _error = null;
+          _isLoading = false;
           _groups = _emptySearchCache!;
           final totalItems = _groups.fold<int>(
             0,
@@ -246,12 +261,23 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         return;
       }
 
+      // Set loading state and increment request ID
+      setState(() {
+        _isLoading = true;
+      });
+
+      final currentRequestId = ++_requestId;
+
       final groupsList = await widget.items(searchText);
 
       if (_isDisposed) return;
 
+      // Discard stale results
+      if (currentRequestId != _requestId) return;
+
       setState(() {
         _error = null;
+        _isLoading = false;
         // Filter out groups with empty items
         _groups = groupsList.where((group) => group.items.isNotEmpty).toList();
 
@@ -278,6 +304,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       if (!_isDisposed) {
         setState(() {
           _error = 'Loading failed.';
+          _isLoading = false;
         });
       }
     }
@@ -399,6 +426,29 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
   @override
   Widget build(BuildContext context) {
+    Widget? loadingIndicator;
+    if (_isLoading) {
+      loadingIndicator = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Spinner(
+              size: 12,
+              color: context.theme.colors.mutedForeground,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Searching...',
+              style: TextStyle(
+                color: context.theme.colors.mutedForeground,
+                fontSize: context.theme.typography.sm.fontSize,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     Widget? errorBox;
     if (_error != null) {
       errorBox = Container(
@@ -478,6 +528,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         onChanged: (text) => _initItems(),
                       ),
                     ),
+                  if (loadingIndicator != null) loadingIndicator,
                   if (errorBox != null) errorBox,
                   Flexible(
                     child: ListView.builder(
