@@ -27,28 +27,24 @@ class ListTileController {
 
   Future<void> _waitForInit() async {
     if (!_initCompleter.isCompleted) {
-      log.info("ListTileController: Waiting for initialization...");
       await _initCompleter.future;
-      log.info("ListTileController: Initialization complete");
     }
   }
 
   Future<CommandReturn> run() async {
-    log.info("ListTileController.run() called");
     await _waitForInit();
-    if (!isAttached) {
-      log.warning("ListTileController.run() called but controller is detached");
+    // Capture _run in local variable to avoid race condition
+    final run = _run;
+    if (run == null) {
       return const CommandSkipped();
     }
-    return _run!();
+    return run();
   }
 
   void _attach(Future<CommandReturn> Function() run) {
-    log.info("ListTileController._attach() called");
     _run = run;
     if (!_initCompleter.isCompleted) {
       _initCompleter.complete();
-      log.info("ListTileController: Initialization completer completed");
     }
   }
 
@@ -58,7 +54,7 @@ class ListTileController {
   }
 }
 
-enum ListTileStyle { item, header }
+enum ListTileStyle { item, header, button }
 
 class ListTile extends StatefulWidget {
   ListTile({
@@ -220,12 +216,9 @@ class _ListTileState extends State<ListTile> {
     });
 
     try {
-      log.info("Running command: ${widget.command?.title}");
-
       // Call onRun callback if provided
       if (widget.onRun != null) {
         final result = await widget.command!.run(context);
-        log.info("Command completed with result: ${result.runtimeType}");
         if (mounted) {
           await widget.onRun!(context, result);
         }
@@ -496,6 +489,11 @@ class _ListTileState extends State<ListTile> {
                                                                             .theme
                                                                             .plotColors
                                                                             .muted
+                                                                      : null,
+                                                                  fontWeight:
+                                                                      widget.style ==
+                                                                            ListTileStyle.button
+                                                                      ? FontWeight.bold
                                                                       : null,
                                                                 ),
                                                       ),

@@ -179,7 +179,7 @@ class EditPriority extends Command {
   EditPriority(this._priority)
     : super(
         title: 'Save',
-        icon: FontAwesomeIcons.floppyDisk,
+        icon: FontAwesomeIcons.check,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
       );

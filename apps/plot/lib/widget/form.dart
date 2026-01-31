@@ -484,9 +484,23 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
       // Execute command
       final result = await command.run(context);
 
-      // Handle result
+      // Handle result inline (FormButton-specific behavior)
       if (context.mounted) {
-        _handleCommandResult(context, result);
+        if (result is CommandMessage && result.isError) {
+          context.showToast(
+            title: result.title,
+            message: result.message,
+            isError: true,
+          );
+        } else if (result is CommandRefresh) {
+          // Pop modal with refresh result so parent can handle it
+          Modal.pop<CommandReturn>(context, Value(result));
+        } else if (result is CommandRoute) {
+          Modal.popAll(context);
+          result.go(context);
+        } else if (result is! CommandSkipped) {
+          Modal.popAll(context);
+        }
       }
 
       return result;
@@ -504,37 +518,12 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
         ignoring: !widget.enabled,
         child: ListTile(
           command: wrappedCommand,
-          style: ListTileStyle.item,
+          style: ListTileStyle.button,
           focusNode: widget.focusNode,
           controller: widget.controller?._listTileController,
         ),
       ),
     );
-  }
-
-  void _handleCommandResult(BuildContext context, CommandReturn result) {
-    // Move result handling logic from FormModal._executeButton here
-    if (result is CommandMessage && result.isError) {
-      context.showToast(
-        title: result.title,
-        message: result.message,
-        isError: true,
-      );
-      return;
-    }
-
-    if (result is CommandRefresh) {
-      Modal.pop<CommandReturn>(context, Value(result));
-      return;
-    }
-
-    if (result is CommandRoute) {
-      Modal.popAll(context);
-      // Navigate using result.route
-      result.go(context);
-    } else if (result is! CommandSkipped) {
-      Modal.popAll(context);
-    }
   }
 }
 

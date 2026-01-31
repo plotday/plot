@@ -155,7 +155,6 @@ class ShowCommands extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      log.info('ShowCommands "$title" - building commands');
       final commandsInstance = await commands(context);
       if (!context.mounted) {
         log.info(
@@ -163,15 +162,10 @@ class ShowCommands extends Command {
         );
         return const CommandSkipped();
       }
-      log.info('ShowCommands "$title" - opening nested CommandModal');
-      final result = await CommandModal(
+      return await CommandModal(
         commandsInstance,
         rootContext: context,
       ).run(context);
-      log.info(
-        'ShowCommands "$title" - nested CommandModal returned: ${result.runtimeType}',
-      );
-      return result;
     } on Error catch (e, t) {
       log.warning('Command "$title" failed', e, t);
       rethrow;

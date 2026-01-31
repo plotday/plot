@@ -316,7 +316,7 @@ class EditTwistName extends Command {
   EditTwistName(this.priorityTwist, {this.name})
     : super(
         title: 'Save',
-        icon: FontAwesomeIcons.floppyDisk,
+        icon: FontAwesomeIcons.check,
         eventObject: EventObject.twist,
         eventAction: EventAction.updated,
       );
@@ -336,7 +336,7 @@ class EditTwistName extends Command {
         name: name!,
       );
 
-      return CommandMessage('Twist name updated to "${name!}"');
+      return CommandMessage('Twist name changed to "${name!}"');
     } catch (e, t) {
       log.warning('Failed to update twist name', e, t);
       return CommandMessage('Failed to update twist name', isError: true);

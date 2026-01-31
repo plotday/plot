@@ -49,6 +49,7 @@ class InputTile extends StatefulWidget {
 
 class _InputTileState extends State<InputTile> {
   FocusNode? _internalFocusNode;
+  bool _isHovered = false;
 
   FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
 
@@ -81,21 +82,34 @@ class _InputTileState extends State<InputTile> {
 
     return FormTileLayout(
       label: widget.label,
-      rightBackgroundColor: isActive
+      rightBackgroundColor: isActive || _isHovered
           ? context.theme.plotColors.editableBackground
           : null,
       isActive: isActive,
-      content: Transform.translate(
-        offset: const Offset(-4, 0),
-        child: TextField(
-          controller: widget.controller,
-          label: widget.placeholder ?? '',
-          style: TextFieldStyle.ghost,
-          maxLines: 1,
-          onChanged: widget.onChanged,
-          onSubmitted: widget.onSubmitted,
-          autofocus: widget.autofocus,
-          focusNode: _focusNode,
+      content: MouseRegion(
+        cursor: SystemMouseCursors.text,
+        onEnter: (_) {
+          setState(() {
+            _isHovered = true;
+          });
+        },
+        onExit: (_) {
+          setState(() {
+            _isHovered = false;
+          });
+        },
+        child: Transform.translate(
+          offset: const Offset(-4, 0),
+          child: TextField(
+            controller: widget.controller,
+            label: widget.placeholder ?? '',
+            style: TextFieldStyle.ghost,
+            maxLines: 1,
+            onChanged: widget.onChanged,
+            onSubmitted: widget.onSubmitted,
+            autofocus: widget.autofocus,
+            focusNode: _focusNode,
+          ),
         ),
       ),
     );
