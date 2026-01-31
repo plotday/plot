@@ -17,7 +17,6 @@
     "types": "nx run-many -t types --exclude plot",
     "diff-db-schema": "pnpm --filter @plotday/db run diff-db-schema",
     "diff-schema-migrations": "pnpm --filter @plotday/db run diff-schema-migrations",
-    "diff-schema-db": "pnpm --filter @plotday/db run diff-schema-db",
     "gen-migration": "pnpm --filter @plotday/db run gen-migration",
     "gen-seed": "pnpm --filter @plotday/db run gen-seed",
     "new-migration": "pnpm --filter @plotday/db run new-migration",

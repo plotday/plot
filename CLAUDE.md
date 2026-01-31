@@ -550,23 +550,23 @@ export class GoogleGmail extends Tool<GoogleGmail> {
 6. **Verify the changes**
 
    ```bash
-   # Check that schema and database are in sync
-   pnpm diff-schema-db
+   # Check that schema files match existing migrations
+   pnpm diff-schema-migrations
 
-   # Should return no differences if everything is applied correctly
+   # Should return no differences if everything is generated correctly
    ```
 
 ### Available Database Commands
 
 ```bash
-# View differences between schema and local database
-pnpm diff-schema-db
-
 # Generate a new migration from schema changes
 pnpm gen-migration <name>
 
-# Apply a migration to LOCAL database
-psql postgresql://postgres:postgres@localhost:54322/postgres < libs/db/supabase/migrations/MIGRATION_FILE.sql
+# Apply all pending migrations to LOCAL database
+pnpm apply-migrations
+
+# Check that schema files match existing migrations
+pnpm diff-schema-migrations
 
 # Check for pending migrations (used in CI)
 pnpm --filter @plotday/db lint:pending-migrations
@@ -575,21 +575,13 @@ pnpm --filter @plotday/db lint:pending-migrations
 pnpm types
 ```
 
-### Understanding Diff Commands
+### Verifying Schema and Migrations Are In Sync
 
-**`pnpm diff-schema-db` (Schema vs Database)**
-
-- Compares schema files with the running local database
-- **Often shows false-positive function changes** that have already been applied
-- If a function/extension already exists in migrations, ignore it in the diff output
-- Use this to get a general sense of what changed, but don't trust it completely
-- The migration generator (`pnpm gen-migration`) is smarter about what needs to be migrated
-
-**`pnpm diff-schema-migrations` (Schema vs Migrations)**
+**`pnpm diff-schema-migrations`**
 
 - Compares schema files with existing migration files
 - **Should return no changes** once all migrations have been generated
-- If it shows differences, you have unapplied schema changes
+- If it shows differences, you have unapplied schema changes that need a new migration
 - **Formatting matters**: Function definitions must match the diff output formatting exactly
   - If the diff shows formatting differences, update the schema file to match the diff
   - This ensures the diff returns empty once everything is in sync
