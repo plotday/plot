@@ -37,7 +37,7 @@ BEGIN
     SET
         remaining = remaining - 1
     WHERE
-        code = invitation_code
+        LOWER(code) = LOWER(invitation_code)
         AND remaining > 0
     RETURNING
         remaining INTO _remaining;

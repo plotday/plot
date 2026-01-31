@@ -46,7 +46,7 @@ account.post("/activate", async (c) => {
   const { data: redeemResult, error: redeemError } = await c.var.supabaseAdmin.rpc(
     "redeem_invitation_code",
     {
-      invitation_code: code,
+      invitation_code: code.toLowerCase(),
       user_id: user.id,
     }
   );
