@@ -43,7 +43,8 @@ SELECT
     json_group_array (a.title) AS titles,
     json_group_array (lower(substr(hex (a.id), 1, 8) || '-' || substr(hex (a.id), 9, 4) || '-' || substr(hex (a.id), 13, 4) || '-' || substr(hex (a.id), 17, 4) || '-' || substr(hex (a.id), 21, 12))) AS ancestors,
     json_group_array (a.color) AS colors,
-    MIN(a.top_order) AS min_ancestor_top_order
+    MIN(a.top_order) AS min_ancestor_top_order,
+    MAX(CASE WHEN a.archived_at IS NOT NULL THEN 1 ELSE 0 END) AS has_archived_ancestor
 FROM
     ancestors an
     LEFT JOIN priorities a ON a.path = an.ancestor_path

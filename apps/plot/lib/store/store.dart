@@ -518,7 +518,8 @@ class Store extends _$Store {
 
   /// Reverts a local row to its remote version after a permanent error
   /// If the row doesn't exist remotely, it's deleted locally
-  Future<void> _revertToRemote<TABLE extends SyncableTable, DATA extends DataClass>(
+  Future<void>
+  _revertToRemote<TABLE extends SyncableTable, DATA extends DataClass>(
     BaseTable baseTable,
     TableInfo<TABLE, DATA> table,
     Map<String, dynamic> localRow,
@@ -527,15 +528,21 @@ class Store extends _$Store {
 
     try {
       // Fetch current remote version by ID
-      final response = await baseTable.select().eq('id', id.toString()).maybeSingle();
+      final response = await baseTable
+          .select()
+          .eq('id', id.toString())
+          .maybeSingle();
 
       if (response == null) {
         // Row doesn't exist remotely - delete local copy
         log.warning(
-          "Reverting local-only row by deleting it (ID: $id, table: ${baseTable.table})",
+          "Reverting local-only ${baseTable.table} row by deleting it: $localRow",
         );
 
-        await customStatement('DELETE FROM ${table.actualTableName} WHERE id = ?', [id]);
+        await customStatement(
+          'DELETE FROM ${table.actualTableName} WHERE id = ?',
+          [id],
+        );
       } else {
         // Row exists remotely - revert to remote version
         log.warning(
@@ -760,7 +767,11 @@ class Store extends _$Store {
                   );
 
                   // Revert to remote version
-                  await _revertToRemote(baseTable, table, baseTable.toBase(data));
+                  await _revertToRemote(
+                    baseTable,
+                    table,
+                    baseTable.toBase(data),
+                  );
 
                   // Don't set success = true (this wasn't a successful push)
                 } else {
@@ -1619,7 +1630,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 237;
+  int get schemaVersion => 238;
 
   @override
   MigrationStrategy get migration {

@@ -518,8 +518,23 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     ]);
 
     if (archived != null) {
-      query.where(archived ? p.archivedAt.isNotNull() : p.archivedAt.isNull());
+      if (archived) {
+        // Show only archived priorities
+        query.where(p.archivedAt.isNotNull());
+      } else {
+        // Show only active priorities: not archived AND no archived ancestors
+        query.where(p.archivedAt.isNull());
+
+        // Join ancestry to check for archived ancestors
+        final paForFilter = Store.get.alias(Store.get.priorityAncestry, 'pa_filter');
+        query = query.join([leftOuterJoin(paForFilter, paForFilter.priorityId.equalsExp(p.id))]);
+        query.where(
+          paForFilter.hasArchivedAncestor.isNull() |
+          paForFilter.hasArchivedAncestor.equals(0)
+        );
+      }
     }
+
     if (search?.isNotEmpty == true) {
       query.where(p.title.like('%$search%'));
     }
