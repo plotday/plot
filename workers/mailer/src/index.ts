@@ -1,5 +1,5 @@
 import { PostHog } from "posthog-node";
-import { getSupabase } from "@plotday/db";
+import { createClient } from "@plotday/db";
 
 import { type EmailType, render } from "@plotday/email";
 import { createLogger } from "@plotday/worker-util";
@@ -168,7 +168,7 @@ export default {
       flushInterval: 10,
     });
     const batch = unknownBatch as MessageBatch<MailRequest>;
-    const supabase = getSupabase(env);
+    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
     const logger = createLogger({ component: "mailer", queue: "mail" });
 
     try {
