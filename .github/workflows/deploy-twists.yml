@@ -1,7 +1,7 @@
 name: Deploy Twists
 
 env:
-  TWISTS: "plot"
+  TWISTS: "plot,calendar-sync,chat,project-sync"
 
 on:
   push:
@@ -16,7 +16,7 @@ on:
       twists:
         description: 'Twists to deploy (comma-separated, or "all" for all twists)'
         required: false
-        default: 'all'
+        default: "all"
         type: string
 
 concurrency:
@@ -49,6 +49,27 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Check for submodule changes
+        id: submodule_check
+        run: |
+          if git diff --name-only HEAD~1 | grep -q "^public$"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            # Get old and new submodule commits for logging
+            OLD_COMMIT=$(git diff HEAD~1 -- public | grep "^-Subproject" | cut -d' ' -f3 || echo "unknown")
+            NEW_COMMIT=$(git diff HEAD~1 -- public | grep "^+Subproject" | cut -d' ' -f3 || echo "unknown")
+            echo "Submodule changed from $OLD_COMMIT to $NEW_COMMIT"
+
+            # Show what changed inside the submodule (first 20 files for logging)
+            if [ "$OLD_COMMIT" != "unknown" ] && [ "$NEW_COMMIT" != "unknown" ]; then
+              cd public
+              echo "Changed files in submodule:"
+              git diff --name-only $OLD_COMMIT..$NEW_COMMIT | head -20 || true
+              cd ..
+            fi
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Check for affected twists
         id: filter
         run: |
@@ -70,10 +91,11 @@ jobs:
               for twist in "${INPUT_LIST[@]}"; do
                 # Trim whitespace
                 twist=$(echo "$twist" | xargs)
-                if [ -d "twists/$twist" ]; then
+                # Check both private and public twist locations
+                if [ -d "twists/$twist" ] || [ -d "public/twists/$twist" ]; then
                   TWISTS_TO_DEPLOY+=("$twist")
                 else
-                  echo "Warning: twist '$twist' not found"
+                  echo "Warning: twist '$twist' not found in twists/ or public/twists/"
                 fi
               done
             fi
@@ -147,12 +169,26 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
+      - name: Locate twist directory
+        id: locate
+        run: |
+          if [ -d "twists/${{ matrix.twist }}" ]; then
+            echo "dir=twists/${{ matrix.twist }}" >> $GITHUB_OUTPUT
+            echo "Found twist in private repo: twists/${{ matrix.twist }}"
+          elif [ -d "public/twists/${{ matrix.twist }}" ]; then
+            echo "dir=public/twists/${{ matrix.twist }}" >> $GITHUB_OUTPUT
+            echo "Found twist in public repo: public/twists/${{ matrix.twist }}"
+          else
+            echo "ERROR: Twist ${{ matrix.twist }} not found in twists/ or public/twists/"
+            exit 1
+          fi
+
       - name: Install dependencies for ${{ matrix.twist }}
         run: |
-          cd twists/${{ matrix.twist }}
+          cd ${{ steps.locate.outputs.dir }}
           pnpm install --frozen-lockfile --filter="."
 
       - name: Deploy ${{ matrix.twist }} twist
         run: |
-          cd twists/${{ matrix.twist }}
+          cd ${{ steps.locate.outputs.dir }}
           pnpm plot deploy -e review
