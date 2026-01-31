@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
+import 'form.dart';
 import 'list_tile.dart';
 import 'modal.dart';
 import 'select_modal.dart';
@@ -45,12 +46,20 @@ class CommandModal {
           () => ListTileController(),
         );
 
+        // Commands that show modals need modalContext to display UI
+        // All other commands get rootContext for provider access
+        final wrappedCommand = command is ShowCommands ||
+                command is ShowForm ||
+                command is ShowPage
+            ? command
+            : CommandWrapper(
+                command,
+                run: (cmd, _) => cmd.run(rootContext),
+              );
+
         return ListTile(
           controller: controller,
-          command: CommandWrapper(
-            command,
-            run: (cmd, _) => cmd.run(rootContext),
-          ),
+          command: wrappedCommand,
           showShortcut: true,
           onRun: (context, result) async {
             // Handle the command result using shared Modal handler
@@ -93,7 +102,13 @@ class CommandModal {
 
         // Controller doesn't exist or not attached (item not yet rendered or already disposed)
         // Run the command directly without spinner
-        final result = await command.run(rootContext);
+        // Commands that show modals need modalContext, others need rootContext for provider access
+        final context = command is ShowCommands ||
+                command is ShowForm ||
+                command is ShowPage
+            ? modalContext
+            : rootContext;
+        final result = await command.run(context);
 
         if (!modalContext.mounted) {
           return false;
