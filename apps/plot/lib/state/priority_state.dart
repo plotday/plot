@@ -27,7 +27,7 @@ class PriorityState extends Equatable {
 
     // Calculate range from agenda items if not provided
     BoundedDateRange? calculatedRange = range;
-    if (calculatedRange == null && agenda.isNotEmpty) {
+    if (calculatedRange == null && schedule.isNotEmpty && agenda.isNotEmpty) {
       final dates = agenda
           .whereType<AgendaHeaderItem>()
           .where((header) => header.date != null)
@@ -115,8 +115,12 @@ class PriorityState extends Equatable {
   final Priority? targetPriority;
   final bool isReorderMode;
 
-  bool get doneStart => range != null && previous == null;
-  bool get doneEnd => range != null && next == null;
+  bool get doneStart =>
+      range != null && (previous == null || range!.includes(previous!));
+  bool get doneEnd =>
+      range != null &&
+      (next == null ||
+          (range!.end != null && next != null && next! < range!.end!));
 
   /// Finds the first gap of at least 1 hour in a day's schedule.
   ///
