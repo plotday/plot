@@ -265,8 +265,11 @@ class NewActivityPageState extends State<NewActivityPage> {
             return PopScope(
               canPop: false,
               onPopInvokedWithResult: (didPop, result) {
-                if (!didPop && !layoutState.multiPanel) {
-                  context.run(ChangeCurrentActivity(null));
+                if (!didPop) {
+                  if (ModalProvider.tryDismissTopModal(context)) return;
+                  if (!layoutState.multiPanel) {
+                    context.run(ChangeCurrentActivity(null));
+                  }
                 }
               },
               child: Scaffold(

@@ -150,8 +150,11 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
         return PopScope(
           canPop: false,
           onPopInvokedWithResult: (didPop, result) {
-            if (!didPop && !layoutStateForPanels.multiPanel) {
-              context.run(ChangeCurrentActivity(null));
+            if (!didPop) {
+              if (ModalProvider.tryDismissTopModal(context)) return;
+              if (!layoutStateForPanels.multiPanel) {
+                context.run(ChangeCurrentActivity(null));
+              }
             }
           },
           child: BidirectionalListSelector(

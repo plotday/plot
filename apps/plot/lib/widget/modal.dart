@@ -159,6 +159,14 @@ class ModalProvider extends StatefulWidget {
 
   final Widget child;
 
+  /// Whether any ModalProvider currently has open modals.
+  static bool get hasOpenModals => _ModalProviderState.hasOpenModals;
+
+  /// Dismisses the top modal of the first provider with open modals.
+  /// Returns true if a modal was dismissed.
+  static bool tryDismissTopModal(BuildContext context) =>
+      _ModalProviderState.tryDismissTopModal(context);
+
   @override
   State<ModalProvider> createState() => _ModalProviderState();
 
@@ -175,10 +183,36 @@ class ModalProvider extends StatefulWidget {
 }
 
 class _ModalProviderState extends State<ModalProvider> {
+  static final Set<_ModalProviderState> _activeProviders = {};
+
+  /// Whether any ModalProvider currently has open modals.
+  static bool get hasOpenModals =>
+      _activeProviders.any((p) => p._modalStack.isNotEmpty);
+
+  /// Dismisses the top modal of the first provider with open modals.
+  /// Returns true if a modal was dismissed.
+  static bool tryDismissTopModal(BuildContext context) {
+    for (final provider in _activeProviders) {
+      if (provider._modalStack.isNotEmpty) {
+        final modalContext =
+            provider._rootContextKey.currentContext ?? context;
+        provider.dismiss(modalContext, Value<dynamic>.absent());
+        return true;
+      }
+    }
+    return false;
+  }
+
   final List<_ModalStackItem<dynamic>> _modalStack = [];
   final ValueNotifier<int> _modalStackNotifier = ValueNotifier<int>(0);
   final GlobalKey _rootContextKey = GlobalKey();
   bool _usedRootNavigator = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeProviders.add(this);
+  }
 
   Future<Value<T>> push<T>(BuildContext context, Widget modal) async {
     final stackItem = _ModalStackItem<T>(modal);
@@ -398,6 +432,7 @@ class _ModalProviderState extends State<ModalProvider> {
 
   @override
   void dispose() {
+    _activeProviders.remove(this);
     _modalStackNotifier.dispose();
     super.dispose();
   }
