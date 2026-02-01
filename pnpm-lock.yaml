@@ -544,9 +544,6 @@ importers:
       typebox:
         specifier: ^1.0.35
         version: 1.0.35
-      worker-mailer:
-        specifier: ^1.2.1
-        version: 1.2.1
       workers-ai-provider:
         specifier: ^2.0.0
         version: 2.0.0(zod@4.0.10)
@@ -606,9 +603,6 @@ importers:
 
   workers/mailer:
     dependencies:
-      '@plotday/db':
-        specifier: workspace:^
-        version: link:../../libs/db
       '@plotday/email':
         specifier: workspace:^
         version: link:../../libs/email
@@ -618,9 +612,6 @@ importers:
       posthog-node:
         specifier: ^5.18.1
         version: 5.18.1
-      worker-mailer:
-        specifier: ^1.2.1
-        version: 1.2.1
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.0.0
@@ -7895,9 +7886,6 @@ packages:
   word-wrap@1.2.3:
     resolution: {integrity: sha512-Hz/mrNwitNRh/HUAtM/VT/5VH+ygD6DV7mYKZAtHOrbs8U7lvPS6xf7EJKMF0uW1KJCl0H701g3ZGus+muE5vQ==}
     engines: {node: '>=0.10.0'}
-
-  worker-mailer@1.2.1:
-    resolution: {integrity: sha512-gS2ei/mrpRqNs+AHmqxhT6vFPwCLw2qnz5ShmyGD0ULaU0Q9hxnFAcx9jhAip/MnD6+MjgnQu6hQQgA8mlOkVA==}
 
   workerd@1.20250310.0:
     resolution: {integrity: sha512-bAaZ9Bmts3mArbIrXYAtr+ZRsAJAAUEsCtvwfBavIYXaZ5sgdEOJBEiBbvsHp6CsVObegOM85tIWpYLpbTxQrQ==}
@@ -15906,8 +15894,6 @@ snapshots:
       stackback: 0.0.2
 
   word-wrap@1.2.3: {}
-
-  worker-mailer@1.2.1: {}
 
   workerd@1.20250310.0:
     optionalDependencies:

@@ -1,6 +1,6 @@
 /**
  * Email service abstraction that routes emails based on environment:
- * - Development: SMTP via Inbucket (localhost:54325)
+ * - Development: Mailpit HTTP API (localhost:54324)
  * - Production: Resend HTTP API
  */
 
@@ -9,7 +9,7 @@ declare const ENV: string;
 
 /**
  * Parse email address in format "Name <email@example.com>" or "email@example.com"
- * into { name?: string, email: string } format for worker-mailer
+ * into { name?: string, email: string } format
  */
 function parseEmailAddress(address: string): { name?: string; email: string } {
   const match = address.match(/^(.+?)\s*<(.+?)>$/);
@@ -39,10 +39,8 @@ export interface EmailResult {
 /**
  * Send an email using the appropriate transport for the environment.
  *
- * In development (ENV === "development"), uses SMTP to Inbucket.
+ * In development (ENV === "development"), uses Mailpit HTTP API.
  * In production, uses Resend HTTP API.
- *
- * Dynamic import of worker-mailer helps with tree-shaking in production.
  */
 export async function sendEmail(
   params: EmailParams,
@@ -54,44 +52,40 @@ export async function sendEmail(
   const isDevelopment = typeof ENV !== "undefined" && ENV === "development";
 
   if (isDevelopment) {
-    // Development: Use SMTP via Inbucket
+    // Development: Use Mailpit HTTP API
     try {
-      // Dynamic import to help with tree-shaking
-      const { WorkerMailer } = await import("worker-mailer");
-
-      // Parse email addresses for worker-mailer format
       const parsedFrom = parseEmailAddress(from);
       const parsedReplyTo = replyTo ? parseEmailAddress(replyTo) : undefined;
 
-      // Send email via SMTP
-      await WorkerMailer.send(
-        {
-          host: "localhost",
-          port: 54325,
-          secure: false,
-          // No credentials needed for Inbucket
-        },
-        {
-          from: parsedFrom,
-          to,
-          subject,
-          text,
-          html,
-          ...(parsedReplyTo ? { reply: parsedReplyTo } : {}),
-        }
-      );
+      const response = await fetch("http://127.0.0.1:54324/api/v1/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          From: { Name: parsedFrom.name, Email: parsedFrom.email },
+          To: to.map((email) => ({ Email: email })),
+          Subject: subject,
+          HTML: html,
+          Text: text,
+          ...(parsedReplyTo
+            ? { ReplyTo: [{ Name: parsedReplyTo.name, Email: parsedReplyTo.email }] }
+            : {}),
+        }),
+      });
 
-      console.log(
-        `[DEV] Email sent to Inbucket: ${subject} -> ${to.join(", ")}`
-      );
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[DEV] Failed to send email via Mailpit:", errorText);
+        return { success: false, error: `mailpit_send_failed: ${errorText}` };
+      }
+
+      console.log(`[DEV] Email sent to Mailpit: ${subject} -> ${to.join(", ")}`);
       console.log(`[DEV] View at: http://localhost:54324`);
-
       return { success: true };
     } catch (error) {
-      console.error("[DEV] Failed to send email via Inbucket:", error);
+      console.error("[DEV] Failed to send email via Mailpit:", error);
       return {
         success: false,
-        error: `smtp_send_failed: ${error instanceof Error ? error.message : String(error)}`,
+        error: `mailpit_send_failed: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   } else {

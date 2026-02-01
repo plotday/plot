@@ -4,6 +4,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/env.dart';
+import 'package:plot/page/invite.dart';
 import 'package:plot/router.dart';
 import 'command.dart';
 import 'logging.dart';
@@ -56,6 +57,13 @@ class OpenPageLink extends Command {
 
       if (segments.isEmpty) {
         return CommandMessage('Invalid link: $url', isError: true);
+      }
+
+      // Handle invitation deep links
+      if (segments.first == 'invite' && segments.length >= 2) {
+        PendingInvite.token = segments[1];
+        context.router.push(InviteRoute(token: segments[1]));
+        return const CommandDone();
       }
 
       // Navigate based on path structure

@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/cli_args.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/command/page_link.dart';
+import 'package:plot/page/invite.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
@@ -114,8 +115,14 @@ class RootProviderState extends State<RootProvider> {
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
 
+                // Navigate to pending invite if present
+                if (context.mounted && PendingInvite.token != null) {
+                  await router.replaceAll([
+                    InviteRoute(token: PendingInvite.token!),
+                  ]);
+                }
                 // Navigate to CLI URL if provided (only once)
-                if (context.mounted &&
+                else if (context.mounted &&
                     !_hasNavigatedToCliUrl &&
                     CliArgs.url != null) {
                   _hasNavigatedToCliUrl = true;
@@ -146,7 +153,13 @@ class RootProviderState extends State<RootProvider> {
               Base.clearActorId();
               break;
             case UserWaitlisted _:
-              await router.replaceAll([InvitationRoute()]);
+              if (PendingInvite.token != null) {
+                await router.replaceAll([
+                  InviteRoute(token: PendingInvite.token!),
+                ]);
+              } else {
+                await router.replaceAll([InvitationRoute()]);
+              }
               break;
             case UserPasswordRequired _:
               await router.replaceAll([PasswordSetupRoute()]);

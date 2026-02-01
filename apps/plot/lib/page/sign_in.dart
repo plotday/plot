@@ -9,6 +9,7 @@ import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/router.dart' show EmailSignInRoute;
+import 'package:plot/page/invite.dart';
 import 'package:plot/page/loading.dart';
 import 'logging.dart';
 
@@ -51,7 +52,9 @@ class _SignInPageState extends State<SignInPage> {
                 ),
               ),
               Text(
-                'Sign in to make progress on your priorities',
+                PendingInvite.token != null
+                    ? "You've been invited to collaborate on Plot. Sign up or sign in to continue."
+                    : 'Sign in to make progress on your priorities',
                 textAlign: TextAlign.center,
                 style: context.theme.typography.base,
               ),

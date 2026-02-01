@@ -1,5 +1,4 @@
 import { PostHog } from "posthog-node";
-import { createClient } from "@plotday/db";
 
 import { type EmailType, render } from "@plotday/email";
 import { createLogger } from "@plotday/worker-util";
@@ -7,34 +6,20 @@ import { createLogger } from "@plotday/worker-util";
 // ENV is defined as a global string literal in wrangler.jsonc
 declare const ENV: string;
 
-/**
- * Calculate exponential backoff delay for email retries.
- * Formula: min(2^retryCount * 60, 3600) seconds
- * Results in: 1min, 2min, 4min, 8min, 16min, 32min, 60min (capped)
- */
-function calculateBackoffDelay(retryCount: number): number {
-  return Math.min(Math.pow(2, retryCount) * 60, 3600);
-}
+const MAX_ATTEMPTS = 10;
 
 /**
- * Parse email address in format "Name <email@example.com>" or "email@example.com"
- * into { name?: string, email: string } format for worker-mailer
+ * Calculate exponential backoff delay for email retries.
+ * Formula: min(2^attempts * 60, 3600) seconds
+ * Results in: 1min, 2min, 4min, 8min, 16min, 32min, 60min (capped)
  */
-function parseEmailAddress(address: string): { name?: string; email: string } {
-  const match = address.match(/^(.+?)\s*<(.+?)>$/);
-  if (match) {
-    return {
-      name: match[1].trim(),
-      email: match[2].trim(),
-    };
-  }
-  return { email: address.trim() };
+function calculateBackoffDelay(attempts: number): number {
+  return Math.min(Math.pow(2, attempts) * 60, 3600);
 }
 
 export { type EmailType } from "@plotday/email";
 
 export type MailRequest = {
-  idempotencyKey: string;
   to: string[];
   subject: string;
   email: EmailType;
@@ -46,57 +31,44 @@ export interface Env {
   readonly POSTHOG_HOST: string;
   readonly RESEND_API_KEY: string;
 
-  // Supabase bindings for email delivery tracking
-  readonly SUPABASE_URL: string;
-  readonly SUPABASE_SERVICE_KEY: string;
-
   readonly QUEUE: Queue<MailRequest>;
 }
 
 async function sendMail(apiKey: string, request: MailRequest): Promise<{ id: string }> {
-  // Fix: Use request.email and request.props instead of hardcoded values
   const { html, text } = await render(request.email, request.props as any);
 
   const isDevelopment = typeof ENV !== "undefined" && ENV === "development";
 
   if (isDevelopment) {
-    // Development: Use SMTP via Inbucket
-    try {
-      const { WorkerMailer } = await import("worker-mailer");
+    // Development: Use Mailpit HTTP API
+    const response = await fetch("http://127.0.0.1:54324/api/v1/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        From: { Name: "Plot", Email: "info@updates.plot.day" },
+        To: request.to.map((email) => ({ Email: email })),
+        Subject: request.subject,
+        HTML: html,
+        Text: text,
+        ReplyTo: [{ Name: "Plot", Email: "team@plot.day" }],
+      }),
+    });
 
-      // Parse email addresses for worker-mailer format
-      const parsedFrom = parseEmailAddress("Plot <info@updates.plot.day>");
-      const parsedReply = parseEmailAddress("Plot <team@plot.day>");
-
-      await WorkerMailer.send(
-        {
-          host: "localhost",
-          port: 54325,
-          secure: false,
-        },
-        {
-          from: parsedFrom,
-          to: request.to,
-          subject: request.subject,
-          text,
-          html,
-          reply: parsedReply,
-        }
-      );
-
+    if (!response.ok) {
+      const errorText = await response.text();
       const logger = createLogger({ component: "mailer", environment: "development" });
-      logger.info("Email sent to Inbucket", {
-        subject: request.subject,
-        recipients: request.to.join(", ")
-      });
-
-      // Return a mock ID for development
-      return { id: `dev-${Date.now()}` };
-    } catch (error) {
-      const logger = createLogger({ component: "mailer", environment: "development" });
-      logger.error("Failed to send email via Inbucket", error as Error);
-      throw error;
+      logger.error("Failed to send email via Mailpit", new Error(errorText));
+      throw new Error(`Mailpit send failed: ${errorText}`);
     }
+
+    const result = await response.json() as { ID: string };
+    const logger = createLogger({ component: "mailer", environment: "development" });
+    logger.info("Email sent to Mailpit", {
+      subject: request.subject,
+      recipients: request.to.join(", "),
+    });
+
+    return { id: result.ID || `dev-${Date.now()}` };
   } else {
     // Production: Use Resend HTTP API
     const response = await fetch("https://api.resend.com/emails", {
@@ -168,95 +140,14 @@ export default {
       flushInterval: 10,
     });
     const batch = unknownBatch as MessageBatch<MailRequest>;
-    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
     const logger = createLogger({ component: "mailer", queue: "mail" });
 
     try {
-      let messageNum = 1;
       for (const message of batch.messages) {
-        const { idempotencyKey, to, subject, email: template, props } = message.body;
+        const { to, email: template } = message.body;
 
         try {
-          logger.info("Processing email", {
-            message_num: messageNum,
-            total_messages: batch.messages.length,
-            idempotency_key: idempotencyKey,
-            attempt: message.attempts
-          });
-
-          // Check idempotency - skip if already sent
-          const { data: emailStatus, error: statusError } = await supabase
-            .from("email_delivery")
-            .select("status, retry_count, max_retries")
-            .eq("idempotency_key", idempotencyKey)
-            .single();
-
-          if (statusError) {
-            logger.error("Failed to check email status", statusError, {
-              idempotency_key: idempotencyKey
-            });
-            // Continue anyway - better to try sending than to fail silently
-          }
-
-          if (emailStatus?.status === "sent") {
-            logger.info("Email already sent, skipping", { idempotency_key: idempotencyKey });
-            message.ack();
-            messageNum += 1;
-            continue;
-          }
-
-          // Check if we've exceeded max retries
-          if (emailStatus && emailStatus.retry_count >= emailStatus.max_retries) {
-            logger.warn("Email exceeded max retries, marking as expired", {
-              idempotency_key: idempotencyKey,
-              retry_count: emailStatus.retry_count,
-              max_retries: emailStatus.max_retries
-            });
-
-            await supabase.rpc("mark_email_expired", {
-              p_idempotency_key: idempotencyKey
-            });
-
-            posthog.capture({
-              distinctId: "mailer-worker",
-              event: "email.expired",
-              properties: {
-                template,
-                retry_count: emailStatus.retry_count,
-                last_error: emailStatus.retry_count,
-                idempotency_key: idempotencyKey
-              }
-            });
-
-            message.ack(); // Remove from queue
-            messageNum += 1;
-            continue;
-          }
-
-          // Send email via Resend
           const result = await sendMail(env.RESEND_API_KEY, message.body);
-
-          // Mark as sent in database
-          await supabase.rpc("mark_email_sent", {
-            p_idempotency_key: idempotencyKey,
-            p_resend_id: result.id,
-          });
-
-          // Update contact_invitation.sent_at if applicable
-          if (template === "priority-invitation") {
-            const contactId = props?.contactId;
-            if (contactId) {
-              await supabase.rpc("update_invitation_sent_at", {
-                p_contact_id: contactId,
-              });
-            }
-          }
-
-          logger.info("Email sent successfully", {
-            idempotency_key: idempotencyKey,
-            resend_id: result.id,
-            attempt: message.attempts
-          });
 
           posthog.capture({
             distinctId: "mailer-worker",
@@ -264,109 +155,49 @@ export default {
             properties: {
               template,
               resend_id: result.id,
-              retry_count: emailStatus?.retry_count || 0,
-              attempt_number: message.attempts,
-              idempotency_key: idempotencyKey
-            }
+              attempt: message.attempts,
+            },
           });
 
-          message.ack(); // Remove from queue
-
+          message.ack();
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
 
           logger.error("Email send failed", error as Error, {
-            idempotency_key: idempotencyKey,
-            to: to,
-            attempt: message.attempts
+            to,
+            attempt: message.attempts,
           });
 
-          // Increment retry count and get current state
-          const { data: retryState, error: retryError } = await supabase.rpc(
-            "increment_email_retry",
-            {
-              p_idempotency_key: idempotencyKey,
-              p_error: errorMessage,
-            }
-          );
-
-          if (retryError) {
-            logger.error("Failed to increment retry count", retryError, {
-              idempotency_key: idempotencyKey
-            });
-            // Retry with default delay anyway
-            message.retry({ delaySeconds: 60 });
-            messageNum += 1;
-            continue;
-          }
-
-          const { retry_count, max_retries, should_expire } = retryState[0];
-
-          if (should_expire) {
-            // Mark as expired and remove from queue
-            await supabase.rpc("mark_email_expired", {
-              p_idempotency_key: idempotencyKey
-            });
-
-            logger.warn("Email expired after max retries", {
-              idempotency_key: idempotencyKey,
-              retry_count: retry_count,
-              max_retries: max_retries
-            });
-
-            posthog.capture({
-              distinctId: "mailer-worker",
-              event: "email.expired",
-              properties: {
-                template,
-                retry_count: retry_count,
-                last_error: errorMessage,
-                idempotency_key: idempotencyKey
-              }
-            });
-            posthog.captureException(error as Error, undefined, {
-              idempotency_key: idempotencyKey,
-              retry_count: retry_count,
-              to: to
-            });
-
-            message.ack(); // Remove from queue
-          } else {
-            // Calculate exponential backoff delay
-            const delaySeconds = calculateBackoffDelay(retry_count);
-            const nextAttemptAt = new Date(Date.now() + delaySeconds * 1000);
-
-            logger.info("Scheduling email retry", {
-              idempotency_key: idempotencyKey,
-              retry_count: retry_count,
-              delay_seconds: delaySeconds,
-              next_attempt_at: nextAttemptAt.toISOString()
-            });
+          if (message.attempts < MAX_ATTEMPTS) {
+            const delaySeconds = calculateBackoffDelay(message.attempts);
 
             posthog.capture({
               distinctId: "mailer-worker",
               event: "email.retry_scheduled",
               properties: {
                 template,
-                retry_count: retry_count,
+                attempt: message.attempts,
                 delay_seconds: delaySeconds,
-                next_attempt_at: nextAttemptAt.toISOString(),
                 error: errorMessage,
-                idempotency_key: idempotencyKey
-              }
-            });
-            posthog.captureException(error as Error, undefined, {
-              idempotency_key: idempotencyKey,
-              retry_count: retry_count,
-              to: to
+              },
             });
 
-            // Retry with exponential backoff
             message.retry({ delaySeconds });
+          } else {
+            posthog.capture({
+              distinctId: "mailer-worker",
+              event: "email.expired",
+              properties: {
+                template,
+                attempts: message.attempts,
+                error: errorMessage,
+              },
+            });
+            posthog.captureException(error as Error);
+
+            message.ack(); // give up
           }
         }
-
-        messageNum += 1;
       }
     } catch (e) {
       logger.error("Error processing email batch", e as Error);

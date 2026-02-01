@@ -86,6 +86,11 @@ class AppRouter extends RootStackRouter {
           guards: [PlatformPickerGuard(), AuthGuard()],
         ),
         AutoRoute(
+          page: InviteRoute.page,
+          path: 'invite/:token',
+          guards: [PlatformPickerGuard(), AuthGuard()],
+        ),
+        AutoRoute(
           page: EmptyShellRoute("Now"),
           path: '',
           guards: [
@@ -242,11 +247,13 @@ class AuthGuard extends AutoRouteGuard {
           router.replaceAll([EmptyShellRoute("Now")()]);
         } else {
           // User is authenticated and active, proceed with navigation
+          // (includes InviteRoute for token redemption)
           resolver.next();
         }
         break;
       case UserPasswordRequired():
-        if (resolver.route.name == PasswordSetupRoute.page.name) {
+        if (resolver.route.name == PasswordSetupRoute.page.name ||
+            resolver.route.name == InviteRoute.page.name) {
           resolver.next();
         } else {
           _logger.info('AuthGuard: Redirecting to PasswordSetupRoute');
@@ -254,7 +261,8 @@ class AuthGuard extends AutoRouteGuard {
         }
         break;
       case UserWaitlisted():
-        if (resolver.route.name == InvitationRoute.page.name) {
+        if (resolver.route.name == InvitationRoute.page.name ||
+            resolver.route.name == InviteRoute.page.name) {
           resolver.next();
         } else {
           _logger.info('AuthGuard: Redirecting to InvitationRoute');

@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
+import { createLogger } from "@plotday/worker-util";
+
 import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
 import { handleValidationError } from "../utils/validation";
 import { sendInvitation } from "./invitation";
-import { createLogger } from "@plotday/worker-util";
 
 const share = new Hono<{ Bindings: Bindings }>();
 
@@ -36,7 +37,10 @@ share.post("/priority/:id/share", async (c) => {
   const user = c.var.user;
 
   const logger = createLogger({ component: "share" });
-  logger.info("Request to share priority", { priority_id: priorityId, user_id: user?.id });
+  logger.info("Request to share priority", {
+    priority_id: priorityId,
+    user_id: user?.id,
+  });
 
   if (!user) {
     return c.json({ message: "Unauthorized" }, 401);
@@ -58,8 +62,6 @@ share.post("/priority/:id/share", async (c) => {
   }
 
   const { add, remove } = parseResult.data;
-
-  logger.info("Parsed share request", { add, remove });
 
   // Check if there's anything to do
   if (add.length === 0 && remove.length === 0) {
@@ -86,11 +88,8 @@ share.post("/priority/:id/share", async (c) => {
     }
   }
 
-  logger.info("Partitioned identifiers", { uuid_count: addUuids.length, email_count: addEmails.length });
-
   // If there are emails, upsert contacts first
   let contactIdsFromEmails: string[] = [];
-  let nonUserContactIds: string[] = [];
   if (addEmails.length > 0) {
     const contactsToUpsert = addEmails.map((email) => ({ email }));
 
@@ -118,26 +117,10 @@ share.post("/priority/:id/share", async (c) => {
       user_id: string | null;
     }>;
     contactIdsFromEmails = contacts.map((c) => c.id);
-
-    // Track non-user contacts (user_id is null)
-    nonUserContactIds = contacts
-      .filter((c) => c.user_id === null)
-      .map((c) => c.id);
-
-    const logger = createLogger({ component: "share" });
-    logger.info("Upserted contacts for sharing", {
-      total_contacts: contacts.length,
-      non_user_contacts: nonUserContactIds.length
-    });
   }
 
   // Combine UUIDs with contact IDs from emails
   const allAddIds = [...addUuids, ...contactIdsFromEmails];
-
-  logger.info("Calling share_priority", {
-    add_count: allAddIds.length,
-    remove_count: remove.length
-  });
 
   // Call the share_priority function
   // Using supabaseAdmin since the function is revoked from authenticated
@@ -155,7 +138,9 @@ share.post("/priority/:id/share", async (c) => {
   if (shareError) {
     logger.error("share_priority failed", new Error(shareError.message));
   } else {
-    logger.info("share_priority completed", { added_contacts: allAddIds.length });
+    logger.info("share_priority completed", {
+      added_contacts: allAddIds.length,
+    });
   }
 
   if (shareError) {
@@ -181,32 +166,26 @@ share.post("/priority/:id/share", async (c) => {
   // This handles both contacts from emails AND contacts passed as UUIDs
   let finalNonUserContactIds: string[] = [];
   if (allAddIds.length > 0) {
-    const { data: addedContacts, error: contactCheckError } = await c.var.supabaseAdmin
-      .from("contact")
-      .select("id, user_id")
-      .in("id", allAddIds);
+    const { data: addedContacts, error: contactCheckError } =
+      await c.var.supabaseAdmin
+        .from("contact")
+        .select("id, user_id")
+        .in("id", allAddIds);
 
     if (contactCheckError) {
-      logger.error("Failed to check added contacts", new Error(contactCheckError.message));
+      logger.error(
+        "Failed to check added contacts",
+        new Error(contactCheckError.message)
+      );
     } else if (addedContacts) {
       finalNonUserContactIds = addedContacts
         .filter((c) => c.user_id === null)
         .map((c) => c.id);
-
-      logger.info("Checked added contacts for invitations", {
-        total_added: allAddIds.length,
-        non_user_contacts: finalNonUserContactIds.length
-      });
     }
   }
 
   // Send invitation emails to non-user contacts (fire-and-forget with waitUntil)
   if (finalNonUserContactIds.length > 0) {
-    const logger = createLogger({ component: "share" });
-    logger.info("Queuing invitation emails", {
-      count: finalNonUserContactIds.length,
-      priority_id: priorityId
-    });
     // Use waitUntil to ensure emails complete even after response is sent
     c.executionCtx.waitUntil(
       Promise.allSettled(
@@ -216,21 +195,22 @@ share.post("/priority/:id/share", async (c) => {
             priorityId,
             inviterUserId: user.id,
             mailQueue: c.env.MAIL_QUEUE,
-            siteRoot: c.env.SITE_ROOT,
+            appRoot: c.env.APP_ROOT,
           })
         )
       )
         .then((results) => {
-          const logger = createLogger({ component: "share" });
-          logger.info("Invitation sending complete", { results_count: results.length });
           // Log all results and capture failures in PostHog
           results.forEach((result, index) => {
             const contactId = finalNonUserContactIds[index];
             if (result.status === "rejected") {
-              const error = result.reason instanceof Error
-                ? result.reason
-                : new Error(String(result.reason));
-              logger.error("Email send rejected", error, { contact_id: contactId });
+              const error =
+                result.reason instanceof Error
+                  ? result.reason
+                  : new Error(String(result.reason));
+              logger.error("Email send rejected", error, {
+                contact_id: contactId,
+              });
               c.var.postHog.captureException(error, undefined, {
                 contact_id: contactId,
                 priority_id: priorityId,
@@ -242,7 +222,7 @@ share.post("/priority/:id/share", async (c) => {
               const error = new Error(result.value.error || "Unknown error");
               logger.error("Email send failed", error, {
                 contact_id: contactId,
-                error_message: result.value.error
+                error_message: result.value.error,
               });
               c.var.postHog.captureException(error, undefined, {
                 contact_id: contactId,
@@ -312,7 +292,9 @@ share.post("/priority/:id/share", async (c) => {
   // Separate contacts into users (has user_id) and invitations (no user_id)
   const allContacts = contacts ?? [];
   const users = allContacts.filter((c: any) => c.contact?.user_id != null);
-  const invitations = allContacts.filter((c: any) => c.contact?.user_id == null);
+  const invitations = allContacts.filter(
+    (c: any) => c.contact?.user_id == null
+  );
 
   return c.json({
     id: priority.id,

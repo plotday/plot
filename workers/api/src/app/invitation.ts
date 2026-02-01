@@ -23,13 +23,12 @@ interface SendInvitationParams {
   priorityId: string;
   inviterUserId: string;
   mailQueue: Queue<{
-    idempotencyKey: string;
     to: string[];
     subject: string;
     email: string;
     props?: Record<string, unknown>;
   }>;
-  siteRoot: string;
+  appRoot: string;
 }
 
 interface SendInvitationResult {
@@ -58,7 +57,7 @@ export async function sendInvitation(
   supabaseAdmin: SupabaseClient,
   params: SendInvitationParams
 ): Promise<SendInvitationResult> {
-  const { contactId, priorityId, inviterUserId, mailQueue, siteRoot } = params;
+  const { contactId, priorityId, inviterUserId, mailQueue, appRoot } = params;
 
   const logger = createLogger({ component: "invitation" });
   logger.info("Starting invitation process", {
@@ -135,67 +134,17 @@ export async function sendInvitation(
     "Someone";
   const priorityName = priorityResult.data?.title || "a priority";
 
-  // 5. Generate idempotency key and create email delivery record
-  const idempotencyKey = `invitation:${contact.id}:${token}`;
-  const inviteUrl = `${siteRoot}/join?invite=${token}`;
+  // 5. Queue invitation email to mail worker
+  const inviteUrl = `${appRoot}/invite/${token}`;
 
-  logger.info("Creating email delivery record", {
-    contact_email: contact.email,
-    priority_name: priorityName,
-    inviter_name: inviterName,
-    idempotency_key: idempotencyKey,
-  });
-
-  const { data: emailRecord, error: emailError } = await supabaseAdmin.rpc(
-    "create_email_delivery",
-    {
-      p_idempotency_key: idempotencyKey,
-      p_template: "priority-invitation",
-      p_to_addresses: [contact.email],
-      p_subject: `${inviterName} is inviting you to Plot`,
-      p_template_props: {
-        inviterName,
-        priorityName,
-        inviteUrl,
-        recipientName: contact.name || undefined,
-        contactId, // For updating sent_at after successful send
-      },
-      p_max_retries: 10,
-    }
-  );
-
-  if (emailError) {
-    logger.error(
-      "Failed to create email delivery record",
-      new Error(emailError.message),
-      {
-        contact_email: contact.email,
-        idempotency_key: idempotencyKey,
-      }
-    );
-    return { success: false, error: "email_delivery_failed" };
-  }
-
-  // Skip if already sent
-  if (emailRecord && emailRecord[0]?.already_sent) {
-    logger.info("Email already sent, skipping", {
-      contact_email: contact.email,
-      idempotency_key: idempotencyKey,
-    });
-    return { success: true, skipped: true };
-  }
-
-  // 6. Queue invitation email to mail worker
   logger.info("Queuing invitation email", {
     contact_email: contact.email,
     priority_name: priorityName,
     inviter_name: inviterName,
-    idempotency_key: idempotencyKey,
   });
 
   try {
     await mailQueue.send({
-      idempotencyKey,
       to: [contact.email],
       subject: `${inviterName} is inviting you to Plot`,
       email: "priority-invitation",
@@ -204,17 +153,14 @@ export async function sendInvitation(
         priorityName,
         inviteUrl,
         recipientName: contact.name || undefined,
-        contactId, // For updating sent_at after successful send
       },
     });
     logger.info("Successfully queued invitation email", {
       contact_email: contact.email,
-      idempotency_key: idempotencyKey,
     });
   } catch (error) {
     logger.error("Failed to queue invitation email", error as Error, {
       contact_email: contact.email,
-      idempotency_key: idempotencyKey,
     });
     return {
       success: false,
@@ -222,7 +168,10 @@ export async function sendInvitation(
     };
   }
 
-  // Note: sent_at timestamp is now updated by the mailer worker after successful delivery
+  // Update sent_at so the 24-hour cooldown starts at queue-time
+  await supabaseAdmin.rpc("update_invitation_sent_at", {
+    p_contact_id: contactId,
+  });
 
   return { success: true };
 }
@@ -254,6 +203,38 @@ export async function redeemInvitation(
 
 // Hono router for invitation endpoints
 const invitation = new Hono<{ Bindings: Bindings }>();
+
+// GET /invitation/:token - Look up invitation details by token
+invitation.get("/invitation/:token", async (c) => {
+  const token = c.req.param("token");
+
+  if (!token || typeof token !== "string") {
+    return c.json({ message: "Token required" }, 400);
+  }
+
+  const { data, error } = await c.var.supabaseAdmin
+    .from("contact_invitation")
+    .select("contact:contact!inner(email)")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (error) {
+    const logger = createLogger({ component: "invitation" });
+    logger.error(
+      "Failed to look up invitation token",
+      new Error(error.message),
+      { token }
+    );
+    return c.json({ message: "Internal error" }, 500);
+  }
+
+  if (!data) {
+    return c.json({ message: "Invalid or expired invitation" }, 404);
+  }
+
+  const contact = data.contact as unknown as { email: string };
+  return c.json({ email: contact.email });
+});
 
 // POST /invitation/redeem - Redeem an invitation token after auth
 invitation.post("/invitation/redeem", async (c) => {

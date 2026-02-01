@@ -123,6 +123,7 @@ export type Bindings = {
   readonly RESEND_API_KEY: string;
 
   readonly API_ROOT: string;
+  readonly APP_ROOT: string;
   readonly SITE_ROOT: string;
 
   readonly AI_GATEWAY_ACCOUNT_ID: string;
@@ -147,7 +148,6 @@ export type Bindings = {
   readonly UPDATES_QUEUE: Queue<TwistBatchMessage>;
   readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
   readonly MAIL_QUEUE: Queue<{
-    idempotencyKey: string;
     to: string[];
     subject: string;
     email: string;

@@ -14,11 +14,9 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
-    "@plotday/db": "workspace:^",
     "@plotday/email": "workspace:^",
     "@plotday/worker-util": "workspace:^",
-    "posthog-node": "^5.18.1",
-    "worker-mailer": "^1.2.1"
+    "posthog-node": "^5.18.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

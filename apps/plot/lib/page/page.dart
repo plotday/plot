@@ -1,6 +1,7 @@
 export 'activity.dart';
 export 'email_sign_in.dart';
 export 'invitation.dart';
+export 'invite.dart';
 export 'loading.dart';
 export 'new_activity.dart';
 export 'password_setup.dart';

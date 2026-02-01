@@ -18,7 +18,7 @@ import classes from "./public-layout.module.css";
 
 function AppHeader({ menu }: { menu?: ReactNode }) {
   const location = useLocation();
-  const hideGetStartedPaths = ["/start", "/builder", "/join"];
+  const hideGetStartedPaths = ["/start", "/builder"];
 
   return (
     <AppShell.Header p="xs" className={classes.header}>

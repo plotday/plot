@@ -599,57 +599,6 @@ export type Database = {
           },
         ]
       }
-      email_delivery: {
-        Row: {
-          created_at: string
-          id: string
-          idempotency_key: string
-          last_attempt_at: string | null
-          last_error: string | null
-          max_retries: number
-          resend_id: string | null
-          retry_count: number
-          sent_at: string | null
-          status: string
-          subject: string
-          template: string
-          template_props: Json | null
-          to_addresses: string[]
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          idempotency_key: string
-          last_attempt_at?: string | null
-          last_error?: string | null
-          max_retries?: number
-          resend_id?: string | null
-          retry_count?: number
-          sent_at?: string | null
-          status: string
-          subject: string
-          template: string
-          template_props?: Json | null
-          to_addresses: string[]
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          idempotency_key?: string
-          last_attempt_at?: string | null
-          last_error?: string | null
-          max_retries?: number
-          resend_id?: string | null
-          retry_count?: number
-          sent_at?: string | null
-          status?: string
-          subject?: string
-          template?: string
-          template_props?: Json | null
-          to_addresses?: string[]
-        }
-        Relationships: []
-      }
       invitation: {
         Row: {
           code: string
@@ -3314,21 +3263,6 @@ export type Database = {
         | { Args: { _priority_id: string }; Returns: boolean }
         | { Args: { _priority_path: unknown }; Returns: boolean }
       count_not_null: { Args: { val: unknown }; Returns: number }
-      create_email_delivery: {
-        Args: {
-          p_idempotency_key: string
-          p_max_retries?: number
-          p_subject: string
-          p_template: string
-          p_template_props?: Json
-          p_to_addresses: string[]
-        }
-        Returns: {
-          already_sent: boolean
-          id: string
-          status: string
-        }[]
-      }
       find_matching_activities_scored: {
         Args: {
           activity_data?: Json
@@ -3421,14 +3355,6 @@ export type Database = {
           user_id: string
         }[]
       }
-      increment_email_retry: {
-        Args: { p_error: string; p_idempotency_key: string }
-        Returns: {
-          max_retries: number
-          retry_count: number
-          should_expire: boolean
-        }[]
-      }
       insert_domain: { Args: { email: string }; Returns: number }
       is_accessible_twist: {
         Args: { p_priority_id: string; p_twist_id: number; p_user_id: string }
@@ -3437,14 +3363,6 @@ export type Database = {
       is_finite: { Args: { test: unknown }; Returns: boolean }
       is_lower: { Args: { "": string }; Returns: boolean }
       is_rsvp_tag: { Args: { tag_id: number }; Returns: boolean }
-      mark_email_expired: {
-        Args: { p_idempotency_key: string }
-        Returns: undefined
-      }
-      mark_email_sent: {
-        Args: { p_idempotency_key: string; p_resend_id: string }
-        Returns: undefined
-      }
       move_priority: {
         Args: { p_new_parent_path: unknown; p_priority_id: string }
         Returns: undefined
