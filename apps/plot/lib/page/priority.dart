@@ -29,30 +29,39 @@ class PriorityWrapper implements AutoRouteWrapper {
   Widget wrappedRoute(BuildContext context) {
     return PriorityBlocProvider(
       priorityId: priorityId,
-      child: BlocBuilder<PriorityBloc, PriorityState>(
-        builder: (context, state) {
-          return CommandScope(
-            commands: [
-              StaticCommandGroup(
-                title: state.context.title,
-                commands: currentPriorityCommands(state.context),
-              ),
-            ],
-            child: _PriorityShortcutsProvider(
-              priorityId: priorityId,
-              child: ResizablePanelLayout(
-                left: PrioritiesPage(),
-                middle: PriorityPage(priorityId: priorityId),
-                child: AutoRouter(
-                  key: _routerKey,
-                  placeholder: (context) => const LoadingPage(),
-                  clipBehavior: Clip.none,
-                ),
-              ),
+      child: _PriorityCommandScope(
+        child: _PriorityShortcutsProvider(
+          priorityId: priorityId,
+          child: ResizablePanelLayout(
+            left: PrioritiesPage(),
+            middle: PriorityPage(priorityId: priorityId),
+            child: AutoRouter(
+              key: _routerKey,
+              placeholder: (context) => const LoadingPage(),
+              clipBehavior: Clip.none,
             ),
-          );
-        },
+          ),
+        ),
       ),
+    );
+  }
+}
+
+class _PriorityCommandScope extends StatelessWidget {
+  const _PriorityCommandScope({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final bloc = context.watch<PriorityBloc>();
+    return CommandScope(
+      commands: [
+        StaticCommandGroup(
+          title: bloc.state.context.title,
+          commands: currentPriorityCommands(bloc.state.context),
+        ),
+      ],
+      child: child,
     );
   }
 }
@@ -458,8 +467,13 @@ class PriorityPage extends StatelessWidget {
                                     },
                                   ),
                             },
-                            child: SelectionCommandScope(
-                              actionBuilder: (index) {
+                            child: CommandScope(
+                              commandsBuilder: () {
+                                final index =
+                                    listController.lastFocusedIndex;
+                                if (index == null) {
+                                  return <StaticCommandGroup>[];
+                                }
                                 final item =
                                     index >= state.first &&
                                         index - state.first <
@@ -490,7 +504,7 @@ class PriorityPage extends StatelessWidget {
                                     ) ??
                                     <StaticCommandGroup>[];
                               },
-                              listController: listController,
+                              listenable: listController,
                               child: Scaffold(
                                 scrollable: false,
                                 translucent: true,

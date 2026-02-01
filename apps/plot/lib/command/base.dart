@@ -395,10 +395,28 @@ class Commands {
 
 /// Activate new commands in the given widget scope. This adds a new scope for the CommandModal,
 /// along with activating shortcuts for the commands.
+///
+/// Provide either [commands] (static list) or [commandsBuilder] (lazy builder), not both.
+/// When using [commandsBuilder], optionally provide a [listenable] to trigger rebuilds.
+///
+/// Route-aware: automatically unregisters when the enclosing [ModalRoute] is no
+/// longer current and re-registers when it becomes current again. This prevents
+/// command accumulation when route pages are kept alive by the router.
 class CommandScope extends StatefulWidget {
-  const CommandScope({required this.commands, required this.child, super.key});
+  const CommandScope({
+    this.commands,
+    this.commandsBuilder,
+    this.listenable,
+    required this.child,
+    super.key,
+  }) : assert(
+         (commands != null) != (commandsBuilder != null),
+         'Provide either commands or commandsBuilder, not both',
+       );
 
-  final List<StaticCommandGroup> commands;
+  final List<StaticCommandGroup>? commands;
+  final List<StaticCommandGroup> Function()? commandsBuilder;
+  final Listenable? listenable;
   final Widget child;
 
   @override
@@ -406,12 +424,105 @@ class CommandScope extends StatefulWidget {
 }
 
 class CommandScopeState extends State<CommandScope> {
-  RegisterCommandGroups? register;
+  RegisterCommandGroups? _register;
+  List<StaticCommandGroup> _resolvedCommands = [];
+  bool _routeActive = true;
+
+  List<StaticCommandGroup> _resolveCommands() {
+    return widget.commands ?? widget.commandsBuilder!();
+  }
+
+  /// Identity-based comparison: checks group titles and command titles/types.
+  static bool _commandsEqual(
+    List<StaticCommandGroup> a,
+    List<StaticCommandGroup> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i])) {
+        if (a[i].title != b[i].title) return false;
+        if (a[i].commands.length != b[i].commands.length) return false;
+        for (int j = 0; j < a[i].commands.length; j++) {
+          if (!identical(a[i].commands[j], b[i].commands[j])) {
+            if (a[i].commands[j].title != b[i].commands[j].title ||
+                a[i].commands[j].runtimeType != b[i].commands[j].runtimeType) {
+              return false;
+            }
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  void _doRegister() {
+    if (!_routeActive) return;
+    _register ??= CommandRegistry.of(context).register();
+    _register!(_resolvedCommands);
+  }
+
+  void _unregister() {
+    _register?.call(null);
+    _register = null;
+  }
+
+  void _onListenableChanged() {
+    final newCommands = _resolveCommands();
+    if (!_commandsEqual(_resolvedCommands, newCommands)) {
+      setState(() {
+        _resolvedCommands = newCommands;
+        _doRegister();
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _resolvedCommands = _resolveCommands();
+    widget.listenable?.addListener(_onListenableChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _doRegister();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ModalRoute.of(context) subscribes via _ModalScopeStatus, so this fires
+    // when route currentness changes — preventing command accumulation from
+    // route pages kept alive by the router.
+    final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+
+    if (isCurrent && !_routeActive) {
+      _routeActive = true;
+      _doRegister();
+    } else if (!isCurrent && _routeActive) {
+      _routeActive = false;
+      _unregister();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant CommandScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.listenable != widget.listenable) {
+      oldWidget.listenable?.removeListener(_onListenableChanged);
+      widget.listenable?.addListener(_onListenableChanged);
+    }
+
+    final newCommands = _resolveCommands();
+    if (!_commandsEqual(_resolvedCommands, newCommands)) {
+      _resolvedCommands = newCommands;
+      _doRegister();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Collect shortcuts from individual commands
-    final commandBindings = widget.commands
+    final commandBindings = _resolvedCommands
         .expand((group) => group.commands)
         .fold<Map<ShortcutActivator, VoidCallback>>(
           {},
@@ -430,8 +541,7 @@ class CommandScopeState extends State<CommandScope> {
                 },
         );
 
-    // Collect shortcuts from command groups
-    final groupBindings = widget.commands
+    final groupBindings = _resolvedCommands
         .fold<Map<ShortcutActivator, VoidCallback>>(
           {},
           (bindings, group) => group.shortcut == null
@@ -440,7 +550,6 @@ class CommandScopeState extends State<CommandScope> {
                   ...bindings,
                   group.shortcut!: () {
                     try {
-                      // Open CommandModal with only this group's commands
                       Commands(
                         prompt: group.title ?? 'Run a command',
                         groups: [group],
@@ -455,13 +564,11 @@ class CommandScopeState extends State<CommandScope> {
 
     return CallbackShortcuts(
       bindings: {
-        // Global Cmd+K to open all commands
         const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
             Commands(
               prompt: 'Run a command',
               groups: CommandRegistry.of(context).commands,
             ).show(context),
-        // Merge command shortcuts and group shortcuts
         ...commandBindings,
         ...groupBindings,
       },
@@ -470,30 +577,9 @@ class CommandScopeState extends State<CommandScope> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _register();
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant CommandScope oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _register();
-  }
-
-  void _register() {
-    if (register == null) {
-      CommandRegistry registry = CommandRegistry.of(context);
-      register = registry.register();
-    }
-    register!(widget.commands);
-  }
-
-  @override
   void dispose() {
-    register?.call(null);
+    widget.listenable?.removeListener(_onListenableChanged);
+    _register?.call(null);
     super.dispose();
   }
 }
