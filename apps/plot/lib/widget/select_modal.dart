@@ -264,6 +264,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       // Set loading state and increment request ID
       setState(() {
         _isLoading = true;
+        _error = null;
       });
 
       final currentRequestId = ++_requestId;
@@ -427,7 +428,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   Widget build(BuildContext context) {
     Widget? loadingIndicator;
-    if (_isLoading) {
+    if (_isLoading && _emptySearchCache == null) {
       loadingIndicator = Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
