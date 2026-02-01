@@ -14,7 +14,6 @@ import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
 import 'analytics/tracker.dart';
-import 'web/web_utils_stub.dart' if (dart.library.html) 'web/web_utils.dart';
 
 export 'package:auto_route/auto_route.dart';
 
@@ -263,26 +262,6 @@ class AuthGuard extends AutoRouteGuard {
         }
         break;
       case UserSignedOut():
-        // On web, redirect to plot.day for sign-in (centralized auth)
-        if (kIsWeb) {
-          // Don't redirect if already on sign-in pages (to handle return flow)
-          if (resolver.route.name == SignInRoute.page.name ||
-              resolver.route.name == EmailSignInRoute.page.name) {
-            resolver.next();
-            return;
-          }
-
-          // Redirect to plot.day/signin with returnTo pointing back here
-          final currentPath = Uri.base.path;
-          final returnTo = Uri.encodeComponent(
-            'https://app.plot.day$currentPath',
-          );
-          _logger.info('AuthGuard: Redirecting to plot.day/signin (web)');
-          redirectToUrl('https://plot.day/signin?returnTo=$returnTo');
-          return;
-        }
-
-        // Native platforms: use in-app sign-in
         if (resolver.route.name == SignInRoute.page.name ||
             resolver.route.name == EmailSignInRoute.page.name) {
           resolver.next();
