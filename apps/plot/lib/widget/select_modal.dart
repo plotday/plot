@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:forui/forui.dart';
-import 'package:flutter_debouncer/flutter_debouncer.dart';
 
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
@@ -159,7 +158,6 @@ class _SelectModal<T> extends StatefulWidget {
 class _SelectModalState<T> extends State<_SelectModal<T>> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final Debouncer _debouncer = Debouncer();
   List<SelectGroup<T>> _groups = [];
   List<SelectGroup<T>>? _emptySearchCache;
   String? _error;
@@ -197,7 +195,6 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   void dispose() {
     _isDisposed = true;
-    _debouncer.cancel();
     _scrollController.dispose();
     _controller.dispose();
     super.dispose();
@@ -230,11 +227,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   }
 
   void _initItems() {
-    _debouncer.cancel();
-    _debouncer.debounce(
-      duration: const Duration(milliseconds: 300),
-      onDebounce: _fetchItems,
-    );
+    _fetchItems();
   }
 
   void _fetchItems() async {
@@ -261,11 +254,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         return;
       }
 
-      // Set loading state and increment request ID
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
+      // Only show loading indicator when there are no existing results to display
+      if (_groups.isEmpty) {
+        setState(() {
+          _isLoading = true;
+          _error = null;
+        });
+      }
 
       final currentRequestId = ++_requestId;
 
