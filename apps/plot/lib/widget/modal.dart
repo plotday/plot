@@ -194,8 +194,7 @@ class _ModalProviderState extends State<ModalProvider> {
   static bool tryDismissTopModal(BuildContext context) {
     for (final provider in _activeProviders) {
       if (provider._modalStack.isNotEmpty) {
-        final modalContext =
-            provider._rootContextKey.currentContext ?? context;
+        final modalContext = provider._rootContextKey.currentContext ?? context;
         provider.dismiss(modalContext, Value<dynamic>.absent());
         return true;
       }
@@ -261,42 +260,31 @@ class _ModalProviderState extends State<ModalProvider> {
               builder: (dialogContext, _, _) => FToaster(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    // Position at 15% from top with max height of 70%
+                    // Position at 15% from top with max height of 80%
                     final screenHeight = constraints.maxHeight;
-                    final topOffset = screenHeight * 0.15;
-                    final maxDialogHeight = screenHeight * 0.7;
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Fixed spacing from top (15%)
-                        SizedBox(height: topOffset),
-                        // Constrain dialog to max 70% height
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: maxDialogHeight,
+                    final maxDialogHeight = screenHeight * 0.8;
+                    return FDialog.raw(
+                      // ignore: unused_result
+                      style: dialogContext.theme.dialogStyle.copyWith(
+                        decoration: BoxDecoration(
+                          color: dialogContext.theme.colors.background,
+                          border: Border.all(
+                            color: dialogContext.theme.colors.border,
                           ),
-                          child: FDialog.raw(
-                            // ignore: unused_result
-                            style: dialogContext.theme.dialogStyle.copyWith(
-                              decoration: BoxDecoration(
-                                color: dialogContext.theme.colors.background,
-                                border: Border.all(
-                                  color: dialogContext.theme.colors.border,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            builder: (context, style) => Padding(
-                              padding: EdgeInsets.all(1),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: buildModalContent(dialogContext),
-                              ),
-                            ),
-                          ),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ],
+                      ),
+                      constraints: BoxConstraints(
+                        maxHeight: maxDialogHeight,
+                        maxWidth: 560,
+                      ),
+                      builder: (context, style) => Padding(
+                        padding: EdgeInsets.all(1),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: buildModalContent(dialogContext),
+                        ),
+                      ),
                     );
                   },
                 ),
