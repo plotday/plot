@@ -58,6 +58,7 @@ class FormModalState extends State<_FormModal> {
   List<FocusNode> _focusNodes = [];
   int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
   final Map<FormButton, FormButtonController> _buttonControllers = {};
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -84,6 +85,7 @@ class FormModalState extends State<_FormModal> {
     for (var node in _focusNodes) {
       node.dispose();
     }
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -238,6 +240,55 @@ class FormModalState extends State<_FormModal> {
     if (_highlightedIndex < _focusNodes.length) {
       _focusNodes[_highlightedIndex].requestFocus();
     }
+    _scrollToIndex(_highlightedIndex);
+  }
+
+  /// Scrolls to ensure the item at the given index is visible.
+  /// Only scrolls if the item is outside or near the viewport edges.
+  void _scrollToIndex(int index) {
+    if (!_scrollController.hasClients) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+
+      const estimatedItemHeight = 50.0;
+
+      // Special case: scroll to top for first item to show headers/info
+      if (index == 0) {
+        _scrollController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+        return;
+      }
+
+      final estimatedOffset = index * estimatedItemHeight;
+      final viewportHeight = _scrollController.position.viewportDimension;
+      final currentScroll = _scrollController.offset;
+      final maxScroll = _scrollController.position.maxScrollExtent;
+
+      // Check if item is above visible area
+      if (estimatedOffset < currentScroll) {
+        _scrollController.animateTo(
+          estimatedOffset,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+      // Check if item (+ next item for look-ahead) is below visible area
+      else if (estimatedOffset + (estimatedItemHeight * 2) >
+          currentScroll + viewportHeight) {
+        final targetScroll =
+            (estimatedOffset + (estimatedItemHeight * 2) - viewportHeight)
+                .clamp(0.0, maxScroll);
+        _scrollController.animateTo(
+          targetScroll,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   FormItem _getItemAtIndex(int index) {
@@ -481,6 +532,7 @@ class FormModalState extends State<_FormModal> {
                         maxHeight: availableContentHeight,
                       ),
                       child: ListView.builder(
+                        controller: _scrollController,
                         shrinkWrap: true,
                         itemCount: totalItemCount,
                         itemBuilder: (context, index) {
