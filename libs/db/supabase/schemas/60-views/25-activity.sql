@@ -104,6 +104,7 @@ SELECT
     a.priority_id,
     a.priority_path,
     a.type,
+    a.kind,
     a."order",
     a.draft,
     a.private,
