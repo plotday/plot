@@ -42,7 +42,10 @@ CREATE INDEX idx_note_activity_id ON "public"."note" ("activity_id");
 -- Index for ordering by created_at within an activity
 CREATE INDEX idx_note_created_at ON "public"."note" ("activity_id", "created_at");
 
--- Composite index for common join + filter pattern in user_activity_unread and other views
+-- Support incremental sync queries filtering on updated_at
+CREATE INDEX idx_note_updated_at ON "public"."note" ("updated_at");
+
+-- Composite index for common join + filter pattern in user_activity and other views
 CREATE INDEX idx_note_activity_archived ON "public"."note" ("activity_id", "archived_at");
 
 -- Support unread calculation filters (n.author_id <> c.id with date comparisons)

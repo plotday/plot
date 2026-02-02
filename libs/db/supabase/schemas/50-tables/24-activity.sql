@@ -78,7 +78,7 @@ COMMENT ON COLUMN "public"."activity"."source_priority_root" IS 'Root element of
 
 COMMENT ON COLUMN "public"."activity"."pick_priority" IS 'The PickPriorityConfig used to automatically select this activity''s priority. Null if priority was explicitly specified. Used when moving activities to find similar activities to move. Not exposed to app or API.';
 
-COMMENT ON COLUMN "public"."activity"."last_note_created_at" IS 'Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for unread status in user_activity_unread and user_priority_unread views.';
+COMMENT ON COLUMN "public"."activity"."last_note_created_at" IS 'Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for unread status in user_activity and user_priority_unread views.';
 
 COMMENT ON COLUMN "public"."activity"."last_note_source_created_at" IS 'Cached MAX(note.source_created_at) for non-draft, non-archived notes. Maintained by trigger. Used for display, sorting, and range_at computation in user_activity view.';
 
@@ -132,6 +132,9 @@ WHERE
 -- No WHERE clause needed: NULL != NULL allows multiple rows when source is null
 CREATE UNIQUE INDEX activity_source_priority_unique ON "public"."activity" ("source", "source_priority_root");
 
+-- Support incremental sync queries filtering on updated_at
+CREATE INDEX idx_activity_updated_at ON "public"."activity" ("updated_at");
+
 -- Index for created_at sorting (critical for pagination queries)
 -- Includes priority_id to support common WHERE clauses
 -- Only indexes non-archived activities (most common case)
@@ -139,7 +142,7 @@ CREATE INDEX idx_activity_created_at_priority ON "public"."activity" ("created_a
 WHERE
     archived_at IS NULL;
 
--- Optimized for user_activity_unread and user_priority_unread views
+-- Optimized for user_activity and user_priority_unread views
 -- Supports efficient filtering and aggregation on last_note_created_at
 CREATE INDEX idx_activity_priority_archived_last_note ON "public"."activity" ("priority_id", "last_note_created_at", "created_at")
 WHERE

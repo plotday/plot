@@ -301,13 +301,6 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
-          },
         ]
       }
       activity_read: {
@@ -371,13 +364,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_read_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
           },
         ]
       }
@@ -457,13 +443,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
           },
         ]
       }
@@ -727,13 +706,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
           },
         ]
       }
@@ -1856,13 +1828,6 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
-          },
         ]
       }
       activity_x: {
@@ -2387,13 +2352,6 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
-          },
         ]
       }
       priority_twist_activity_update: {
@@ -2603,13 +2561,6 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
-          },
         ]
       }
       priority_twist_note_update: {
@@ -2732,13 +2683,6 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
-          },
         ]
       }
       user_activity: {
@@ -2753,6 +2697,7 @@ export type Database = {
           draft: boolean | null
           duration: string | null
           id: string | null
+          kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           mentions: string[] | null
@@ -2897,13 +2842,6 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
-          },
         ]
       }
       user_activity_tags: {
@@ -2915,15 +2853,6 @@ export type Database = {
           range_at: unknown
           range_on: unknown
           tags: Json | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_activity_unread: {
-        Row: {
-          activity_id: string | null
-          unread: boolean | null
           updated_at: string | null
           user_id: string | null
         }
@@ -3004,13 +2933,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_unread"
-            referencedColumns: ["activity_id"]
           },
         ]
       }

@@ -26,41 +26,8 @@ GROUP BY
     sq.activity_id,
     sq.occurrence;
 
-CREATE OR REPLACE VIEW "public"."user_activity_unread" WITH ( security_invoker = TRUE)
---
-AS
-SELECT
-    upe.user_id,
-    a.id AS activity_id,
-    ar.read_at IS NULL AS unread,
-    GREATEST (COALESCE(ar.updated_at, 'epoch'), CASE WHEN a.created_by = upe.user_id THEN
-            COALESCE(a.last_note_created_at, 'epoch')
-        ELSE
-            COALESCE(a.last_note_created_at, a.created_at)
-        END) AS updated_at
-FROM
-    -- All the user's priorities
-    user_priority_expanded upe
-    -- All non-archived activities in those priorities created after user joined
-    JOIN activity a ON a.priority_id = upe.priority_id
-        AND a.archived_at IS NULL
-        -- For self-created activities: only include if there are notes
-        -- For others: use standard logic
-        AND ((a.created_by = upe.user_id
-                AND a.last_note_created_at IS NOT NULL
-                AND a.last_note_created_at > upe.joined_at)
-            OR ((a.created_by IS NULL
-                    OR a.created_by != upe.user_id)
-                AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
-    LEFT JOIN activity_read ar ON ar.user_id = upe.user_id
-        AND ar.activity_id = a.id
-        AND ar.read_at >= CASE WHEN a.created_by = upe.user_id THEN
-            a.last_note_created_at
-        ELSE
-            COALESCE(a.last_note_created_at, a.created_at)
-        END;
-
 -- Add priority_path and mentions to activity view
+-- Uses LATERAL subquery so mentions are computed per-activity (efficient for incremental sync)
 CREATE OR REPLACE VIEW "public"."activity_x" WITH ( security_invoker = TRUE)
 --
 AS
@@ -71,22 +38,27 @@ SELECT
 FROM
     activity a
     JOIN priority p ON p.id = a.priority_id
-    LEFT JOIN (
+    LEFT JOIN LATERAL (
         SELECT
-            n.activity_id,
             ARRAY_AGG(DISTINCT mention) AS mentions
         FROM
             note n,
             LATERAL unnest(n.mentions) AS mention
         WHERE
-            n.archived_at IS NULL
-            AND n.mentions IS NOT NULL
-        GROUP BY
-            n.activity_id) m ON m.activity_id = a.id;
+            n.activity_id = a.id
+            AND n.archived_at IS NULL
+            AND n.mentions IS NOT NULL) m ON TRUE;
 
 -- To filter on a date range, use both the `range_at` and `range_on` columns.
 -- They're separate because combining timestamps and dates requires knowing
 -- the user's timezone, which is client-specific.
+--
+-- Unread calculation is inlined from the former user_activity_unread view to avoid
+-- a redundant evaluation of user_priority_expanded. activity_read is joined directly
+-- with the read threshold applied conditionally in the SELECT expressions.
+--
+-- Contact lookup for assignee uses a scalar subquery instead of LEFT JOIN to avoid
+-- probing the full contact table for every row (most activities have no assignee).
 CREATE OR REPLACE VIEW "public"."user_activity" WITH ( security_invoker = TRUE)
 --
 AS
@@ -94,8 +66,32 @@ SELECT
     upe.user_id,
     a.id,
     a.created_at,
-    -- updated_at includes last_note_created_at for unread status
-    GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz), COALESCE(uau.updated_at, 'epoch'::timestamptz)) AS updated_at,
+    -- updated_at includes last_note_created_at and activity_read contributions
+    -- activity_read updated_at only contributes when read_at >= unread threshold
+    -- (matching the former user_activity_unread semantics)
+    GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz),
+        CASE WHEN a.archived_at IS NULL
+            AND ((a.created_by = upe.user_id
+                    AND a.last_note_created_at IS NOT NULL
+                    AND a.last_note_created_at > upe.joined_at)
+                OR ((a.created_by IS NULL
+                        OR a.created_by != upe.user_id)
+                    AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
+        THEN
+            GREATEST (COALESCE(CASE WHEN ar.read_at >= (CASE WHEN a.created_by = upe.user_id THEN
+                                a.last_note_created_at
+                            ELSE
+                                COALESCE(a.last_note_created_at, a.created_at)
+                            END) THEN
+                        ar.updated_at
+                    END, 'epoch'::timestamptz), CASE WHEN a.created_by = upe.user_id THEN
+                    COALESCE(a.last_note_created_at, 'epoch'::timestamptz)
+                ELSE
+                    COALESCE(a.last_note_created_at, a.created_at)
+                END)
+        ELSE
+            'epoch'::timestamptz
+        END) AS updated_at,
     a.source_created_at,
     a.author_id,
     a.assignee_id,
@@ -126,7 +122,13 @@ SELECT
         tstzrange(a.done_at, a.done_at, '[]')
         -- Skip scheduled time cases if assigned to someone other than current user
     WHEN (a.assignee_id IS NOT NULL
-        AND ac.user_id != upe.user_id)
+        AND (
+            SELECT
+                c.user_id
+            FROM
+                contact c
+            WHERE
+                c.id = a.assignee_id) != upe.user_id)
         OR a."on" IS NULL THEN
         CASE WHEN LOWER(a.at) >= GREATEST (a.source_created_at, COALESCE(a.last_note_source_created_at, 'epoch'::timestamptz)) THEN
             a.at
@@ -140,7 +142,13 @@ SELECT
         NULL::daterange
         -- Set to NULL if assigned to someone other than current user
     WHEN a.assignee_id IS NOT NULL
-        AND ac.user_id != upe.user_id THEN
+        AND (
+            SELECT
+                c.user_id
+            FROM
+                contact c
+            WHERE
+                c.id = a.assignee_id) != upe.user_id THEN
         NULL::daterange
     WHEN a.at IS NOT NULL THEN
         NULL::daterange
@@ -149,13 +157,29 @@ SELECT
     ELSE
         NULL::daterange
     END AS range_on,
-    COALESCE(uau.unread, FALSE) AS unread
+    -- Unread: TRUE only for non-archived activities where read is missing or stale
+    COALESCE(CASE WHEN a.archived_at IS NULL
+            AND ((a.created_by = upe.user_id
+                    AND a.last_note_created_at IS NOT NULL
+                    AND a.last_note_created_at > upe.joined_at)
+                OR ((a.created_by IS NULL
+                        OR a.created_by != upe.user_id)
+                    AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
+        THEN
+            ar.read_at IS NULL
+            OR ar.read_at < (CASE WHEN a.created_by = upe.user_id THEN
+                    a.last_note_created_at
+                ELSE
+                    COALESCE(a.last_note_created_at, a.created_at)
+                END)
+        ELSE
+            FALSE
+        END, FALSE) AS unread
 FROM
     activity_x a
     JOIN user_priority_expanded upe ON a.priority_id = upe.priority_id
-    LEFT JOIN contact ac ON ac.id = a.assignee_id
-    LEFT JOIN user_activity_unread uau ON uau.user_id = upe.user_id
-        AND uau.activity_id = a.id;
+    LEFT JOIN activity_read ar ON ar.user_id = upe.user_id
+        AND ar.activity_id = a.id;
 
 CREATE OR REPLACE VIEW "public"."user_activity_exception" WITH ( security_invoker = TRUE)
 --
@@ -195,4 +219,3 @@ SELECT
 FROM
     activity_tags at
     JOIN user_activity ua ON ua.id = at.activity_id;
-
