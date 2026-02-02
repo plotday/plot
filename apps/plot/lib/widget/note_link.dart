@@ -59,7 +59,13 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
       style: FButtonStyle.secondary(),
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
-      child: Text(widget.link.title),
+      child: Flexible(
+        child: Text(
+          widget.link.title,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+      ),
     );
   }
 
@@ -121,7 +127,13 @@ class ExternalLinkButton extends StatelessWidget {
       // ),
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
-      child: Text(link.title),
+      child: Flexible(
+        child: Text(
+          link.title,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+      ),
     );
   }
 
@@ -148,7 +160,13 @@ class ConferencingLinkButton extends StatelessWidget {
       style: FButtonStyle.secondary(),
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
-      child: Text(_getTitle()),
+      child: Flexible(
+        child: Text(
+          _getTitle(),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+      ),
     );
   }
 
