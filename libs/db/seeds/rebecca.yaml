@@ -1,5 +1,5 @@
 config:
-  baseDate: "2025-02-08"
+  baseDate: "2025-02-07"
   email: "rebecca.welton@afcrichmond.com"
   userName: "Rebecca Welton"
 
@@ -41,12 +41,14 @@ priorities:
     root: true
     children:
       - ref: operations
-        title: AFC Richmond operations
+        title: AFC Richmond
         settings:
-          color: 1
+          color: 7
         children:
           - ref: mens_team
             title: Men's team
+            settings:
+              color: 1
             children:
               - ref: coaching_staff
                 title: Coaching staff
@@ -56,15 +58,19 @@ priorities:
                 title: Match preparation
           - ref: womens_team
             title: Women's team development
+            settings:
+              color: 6
             children:
               - ref: business_case
                 title: Business case
               - ref: board_process
-                title: Board approval process
+                title: Board approval
               - ref: facility_planning
                 title: Facility planning
           - ref: business_ops
             title: Business operations
+            settings:
+              color: 0
             children:
               - ref: financial_mgmt
                 title: Financial management
@@ -80,7 +86,7 @@ priorities:
       - ref: community
         title: Community & supporters
         settings:
-          color: 4
+          color: 5
         children:
           - ref: supporter_relations
             title: Supporter relations
@@ -96,7 +102,7 @@ priorities:
       - ref: personal
         title: Personal
         settings:
-          color: 6
+          color: 2
         children:
           - ref: social_life
             title: Social life
@@ -223,8 +229,8 @@ activities:
   - type: event
     kind: meeting
     priority_ref: coaching_staff
-    title: "Meeting with Roy - coaching check-in"
-    at: "-1d 14:00 / -1d 14:45"
+    title: "Roy 1:1"
+    at: "0d 10:30 / 0d 11:00"
     tags:
       pinned: [user]
     notes:
@@ -248,8 +254,8 @@ activities:
   - type: event
     kind: meeting
     priority_ref: coaching_staff
-    title: "Meeting with Nate - separate check-in"
-    at: "-1d 15:30 / -1d 16:15"
+    title: "Nate 1:1"
+    at: "0d 10:00 / 0d 10:30"
     notes:
       - created: "-1d 16:30"
         content: |
@@ -308,29 +314,6 @@ activities:
           This isn't impulse. This is... vision.
 
           But it needs to be more than vision. It needs to be sustainable.
-
-  - type: note
-    kind: messages
-    priority_ref: social_life
-    title: "Rupert being Rupert (ignore)"
-    created: "-1d"
-    notes:
-      - created: "-1d 18:30"
-        content: |
-          **Text from Rupert Mannion**
-
-          "Saw the Bournemouth result. Shame about the form. If you need advice on running a football club properly, happy to help. - R"
-
-          ---
-
-          Deleted without responding.
-
-          Some things aren't worth the energy.
-        source:
-          type: text_message
-          title: Rupert
-        mentions:
-          - rupert
 
   # Day 0 (Base date): Building the future
   - type: note
@@ -537,7 +520,7 @@ activities:
 
   - type: event
     priority_ref: business_ops
-    title: "Morning office time - quiet work"
+    title: "The important stuff"
     at: "+0d 08:00 / +0d 09:30"
     notes:
       - created: "-1d 09:45"
@@ -566,66 +549,210 @@ activities:
         mentions:
           - higgins
 
-  - type: note
-    kind: messages
-    priority_ref: richmond_trust
-    title: "Supporter feedback - women's team interest"
-    created: "-1d"
-    notes:
-      - created: "-1d 11:00"
-        content: |
-          **From: Richmond Supporters Trust**
-          **Subject: Women's Football - Survey Results**
-
-          Rebecca,
-
-          We ran an informal survey asking supporters about interest in a Richmond women's team.
-
-          **Results (1,247 responses):**
-          - 78% "Very interested" or "Interested"
-          - 15% "Neutral"
-          - 7% "Not interested"
-
-          **Comments themes:**
-          - "This is what Richmond should do"
-          - "Would buy season tickets for both teams"
-          - "Make sure they're treated as equals, not an afterthought"
-          - "Do it right or don't do it"
-
-          The supporters are ready. They want this. They want it done well.
-
-          - Richmond Trust
-        source:
-          type: email
-          title: Women's Team Survey Results
-          href: mailto:contact@richmondtrust.org
-        mentions:
-          - supporters_trust
-    tags:
-      star: [user]
-
   - type: event
     kind: meal
     priority_ref: social_life
-    title: "Lunch with Keeley - catch up"
-    at: "+0d 12:30 / +0d 13:45"
-    notes:
-      - author_ref: keeley
-        created: "+0d 14:00"
-        content: |
-          Lunch with Becca. She told me about the women's team proposal - it's brilliant! The fans are already asking about it. The culture's perfect.
-
-          Told her: Richmond isn't about playing it safe. It's about belief. Ted fucking Lasso proved that.
-
-          I'll help with the PR strategy when we launch. Already have ideas.
-      - author_ref: user
-        created: "+0d 14:05"
-        content: |
-          Good lunch with Keeley. She's excited about the women's team proposal. Says the fans are ready, the culture's right.
-
-          She's very good at this. She'll help with PR when we launch.
+    title: "Drinks with Keeley"
+    at: "-1d 21:30 / -1d 23:00"
     tags:
       star: [user]
+
+  # Day 0: Early morning messages
+  - type: note
+    kind: messages
+    priority_ref: match_prep
+    title: "Pre-match travel logistics - Chelsea"
+    created: "+0d"
+    notes:
+      - author_ref: beard
+        created: "+0d 06:45"
+        content: |
+          Rebecca — travel sorted for Saturday.
+
+          **Logistics:**
+          - Coach departs training ground at 08:30 Saturday
+          - Arrive Stamford Bridge by 10:15 (allowing for traffic)
+          - Pre-match meal at the hotel: 10:45
+          - Stadium walk-through: 11:30
+
+          Roy wants the lads on the bus together — no separate cars this time. Says it's good for team bonding before a big away match.
+
+          Kit and equipment already dispatched. Everything's in order.
+
+          Let me know if you need anything changed on your end.
+
+          — Beard
+
+  - type: note
+    kind: messages
+    priority_ref: media_pr
+    title: "Sky Sports interview request - Friday"
+    created: "+0d"
+    notes:
+      - author_ref: keeley
+        created: "+0d 07:15"
+        content: |
+          Becs — Sky Sports want a pre-match interview today. They're framing it around the team's recent run and what the club is doing about it.
+
+          My recommendation: do it. Show visible leadership. You don't have to say anything groundbreaking — just be present, calm, confident. The fans need to see the owner believes in the team, not just the manager saying it.
+
+          They're offering a 10-minute slot this afternoon at the training ground. I can prep talking points if you want.
+
+          Let me know and I'll confirm with their producer. 💛
+
+  # Day 0: Completed morning actions
+  - type: action
+    created: "+0d"
+    priority_ref: training_ground
+    title: "Training ground spring maintenance plan"
+    assignee_ref: user
+    on: "+0d"
+    done_at: "+0d 08:10"
+    notes:
+      - created: "+0d 08:10"
+        content: |
+          Reviewed contractor proposals for spring maintenance during the international break.
+
+          **Approved:**
+          - Pitch resurfacing (pitches 2 and 3)
+          - Drainage upgrades on the east side
+          - New LED floodlights for the indoor facility
+
+          Signed off and sent to facilities. Work starts March 24th.
+
+  - type: action
+    created: "+0d"
+    priority_ref: community_programs
+    title: "Community outreach budget for Q2"
+    assignee_ref: user
+    on: "+0d"
+    done_at: "+0d 08:20"
+    notes:
+      - created: "+0d 08:20"
+        content: |
+          Approved the quarterly community budget. Increased youth coaching allocation by 15% — the Saturday programme has waiting lists now.
+
+          Also greenlit the schools partnership expansion. Four new schools in the borough want to participate.
+
+          This is the part of the job that never feels like work.
+
+  - type: action
+    created: "+0d"
+    priority_ref: media_pr
+    title: "Media narrative around current form"
+    assignee_ref: user
+    on: "+0d"
+    done_at: "+0d 08:30"
+    notes:
+      - created: "+0d 08:30"
+        content: |
+          Aligned with Keeley and Trent on messaging around the team's form.
+
+          **Key themes:**
+          - Patience. Process. Belief.
+          - Results will come — the underlying performance metrics are strong
+          - Club is stable, invested, and building for the long term
+
+          Told Trent the women's team story isn't ready yet but will be soon. He understands. He's not the type to push before we're ready.
+
+          Keeley will handle social channels. Consistent tone: honest, forward-looking, no panic.
+        mentions:
+          - keeley
+          - trent
+
+  # Day 0: Remaining actions and events
+  - type: action
+    created: "+0d"
+    priority_ref: fan_comm
+    title: "Supporter communication strategy"
+    assignee_ref: user
+    on: "+0d"
+    tags:
+      todo: [user]
+    notes:
+      - created: "+0d 09:15"
+        content: |
+          Need to craft the right message to supporters. Acknowledge the slump without panic. Share the club's forward-looking vision without making promises we can't keep.
+
+          **Tone:** Honest, not defensive. Confident, not arrogant. We see what they see. We're working on it.
+
+          **Channels:** Open letter on club website, Keeley to amplify on socials, Supporters Trust briefing.
+
+          The worst thing would be silence. The second worst thing would be empty platitudes.
+
+          Find the middle. Say something real.
+
+  - type: event
+    created: "+0d"
+    kind: meal
+    priority_ref: commercial
+    title: "Lunch with Aegon sponsorship rep"
+    at: "+0d 12:30 / +0d 13:30"
+    notes:
+      - created: "+0d 09:20"
+        content: |
+          Lunch with Sarah from Aegon. Ostensibly a routine check-in on the shirt sponsorship, but I want to gauge their appetite for women's team partnership.
+
+          Not pitching yet. Just listening. If they're interested in expanding their football portfolio, Richmond could offer something unique.
+
+          Also need to reassure them the men's team form is temporary. Sponsors get nervous when results dip.
+
+  - type: event
+    created: "+0d"
+    kind: phone
+    priority_ref: board_process
+    title: "Call with FA Women's Championship liaison"
+    at: "+0d 14:00 / +0d 14:30"
+    notes:
+      - created: "+0d 09:25"
+        content: |
+          Preliminary call about league application timeline and entry requirements.
+
+          **Questions to ask:**
+          - Application window for 2025-26 season
+          - Infrastructure requirements (facilities, staffing minimums)
+          - Financial guarantees needed
+          - Timeline from application to decision
+
+          This is just intelligence-gathering. Not committing to anything yet. But need to understand the process before the board presentation.
+
+  - type: action
+    created: "+0d"
+    priority_ref: match_prep
+    title: "Chelsea away-day preparation"
+    assignee_ref: user
+    on: "+0d"
+    tags:
+      todo: [user]
+    notes:
+      - created: "+0d 09:30"
+        content: |
+          Saturday checklist:
+          - Confirm my own travel arrangements (driving separately, arriving by 11:00)
+          - Review analytics pack one final time
+          - Brief call with Roy tonight after his final training session
+          - Prepare my own mental framing: trust the process, trust the team, be present
+
+          Chelsea away is always a big atmosphere. The supporters who make the trip deserve to see the owner there, composed, believing.
+
+          Not rescuing. Not fixing. Just... present.
+
+  - type: event
+    created: "+0d"
+    kind: focus
+    priority_ref: match_prep
+    title: "Match-day prep review"
+    at: "+0d 19:00 / +0d 20:00"
+    notes:
+      - created: "+0d 09:35"
+        content: |
+          Evening block to review the analytics pack one final time and mentally prepare for Saturday.
+
+          Final review of Chelsea's recent form, our matchups, set-piece analysis.
+
+          Then close the laptop. Trust Roy. Trust the process.
+
+          The result matters. But how we handle it — win, lose, or draw — matters more right now.
 
   # Day +1: Building support
   - type: event
@@ -876,6 +1003,45 @@ activities:
           - Facility cost details
 
           Make it bulletproof. Make it clear this is strategic, sustainable, and right.
+      - created: "+0d 08:35"
+        content: |
+          @Higgins — can you pull comparable revenue data from other Championship clubs that launched women's teams in the last 3 years? Need actual numbers, not projections.
+
+          Specifically interested in:
+          - Year 1 vs Year 3 revenue comparison
+          - Attendance trajectories
+          - Sponsorship uplift (if any)
+
+          Want to benchmark our model against reality before the board sees it.
+        mentions:
+          - higgins
+      - author_ref: higgins
+        created: "+0d 09:00"
+        content: |
+          Rebecca — here you are! I've compiled data from three Championship clubs that launched women's teams between 2022-2024.
+
+          **Summary:**
+          - **Club A** (launched 2022): Year 1 revenue £620K, Year 3 revenue £1.4M. Broke even mid-Year 2.
+          - **Club B** (launched 2023): Year 1 revenue £480K, still growing. Attendance up 340% from launch.
+          - **Club C** (launched 2024): Early but promising. Sponsorship deals exceeded projections by 25%.
+
+          **Key insight:** Clubs that integrated the women's team into their main brand (shared badge, shared comms) consistently outperformed those that treated it as a separate entity.
+
+          Full spreadsheet attached with detailed breakdowns.
+        mentions:
+          - higgins
+        links:
+          - url: "https://docs.google.com/spreadsheets/d/1a2b3c4d5e/edit"
+            title: "Women's Team Benchmarking - Championship Clubs 2022-2024"
+      - created: "+0d 09:10"
+        content: |
+          This is exactly what I needed. The numbers support our projections — and Club A breaking even in Year 2 is better than our conservative model assumes.
+
+          The brand integration point is critical. That's already in our proposal — shared badge, shared identity, "Richmond completes its club."
+
+          Going to update the financial model with these benchmarks before the board presentation. Real data beats projections every time.
+        mentions:
+          - higgins
 
   - type: note
     kind: messages
