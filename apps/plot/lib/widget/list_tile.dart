@@ -492,8 +492,10 @@ class _ListTileState extends State<ListTile> {
                                                                       : null,
                                                                   fontWeight:
                                                                       widget.style ==
-                                                                            ListTileStyle.button
-                                                                      ? FontWeight.bold
+                                                                          ListTileStyle
+                                                                              .button
+                                                                      ? FontWeight
+                                                                            .bold
                                                                       : null,
                                                                 ),
                                                       ),
@@ -502,16 +504,18 @@ class _ListTileState extends State<ListTile> {
                                                         TextSpan(
                                                           text:
                                                               '  ${widget.subtitle!}',
-                                                          style: context
-                                                              .theme
-                                                              .typography
-                                                              .base
-                                                              .copyWith(
-                                                                color: context
-                                                                    .theme
-                                                                    .plotColors
-                                                                    .muted,
-                                                              ),
+                                                          style:
+                                                              (widget.textStyle ??
+                                                                      context
+                                                                          .theme
+                                                                          .typography
+                                                                          .base)
+                                                                  .copyWith(
+                                                                    color: context
+                                                                        .theme
+                                                                        .plotColors
+                                                                        .muted,
+                                                                  ),
                                                         ),
                                                     ],
                                                   ),
