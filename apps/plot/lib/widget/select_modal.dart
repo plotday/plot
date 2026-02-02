@@ -165,6 +165,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   bool _isLoading = false;
   int _requestId = 0; // For canceling stale requests
   int _highlightedIndex = 0;
+  bool _enterHandled = false; // Prevents double-fire between Shortcuts and onSubmit
 
   @override
   void initState() {
@@ -400,14 +401,33 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     });
   }
 
+  void _handleEnter() {
+    if (_enterHandled) return;
+    _enterHandled = true;
+    // Reset flag after microtask to allow future Enter presses
+    Future.microtask(() => _enterHandled = false);
+
+    final totalItems = _getTotalItemCount();
+    if (totalItems > 0 &&
+        _highlightedIndex >= 0 &&
+        _highlightedIndex < totalItems) {
+      _selectItem(_getItemAtIndexUnsafe(_highlightedIndex));
+    }
+  }
+
   Future<void> _selectItem(T item) async {
     if (widget.onSelect != null) {
-      final shouldClose = await widget.onSelect!(
-        context,
-        item,
-        _controller.text,
-      );
-      if (!shouldClose) {
+      try {
+        final shouldClose = await widget.onSelect!(
+          context,
+          item,
+          _controller.text,
+        );
+        if (!shouldClose) {
+          return;
+        }
+      } catch (e, t) {
+        log.warning('onSelect threw', e, t);
         return;
       }
     }
@@ -488,14 +508,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
               ActivateListSelectionIntent:
                   CallbackAction<ActivateListSelectionIntent>(
                     onInvoke: (intent) {
-                      final totalItems = _getTotalItemCount();
-                      if (totalItems > 0 &&
-                          _highlightedIndex >= 0 &&
-                          _highlightedIndex < totalItems) {
-                        _selectItem(_getItemAtIndexUnsafe(_highlightedIndex));
-                        return KeyEventResult.handled;
-                      }
-                      return KeyEventResult.ignored;
+                      _handleEnter();
+                      return KeyEventResult.handled;
                     },
                   ),
               DismissIntent: CallbackAction<DismissIntent>(
@@ -522,6 +536,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         label: "${widget.prompt}...",
                         focusNode: focusNode,
                         onChanged: (text) => _initItems(),
+                        onSubmitted: (_) => _handleEnter(),
                       ),
                     ),
                   if (loadingIndicator != null) loadingIndicator,

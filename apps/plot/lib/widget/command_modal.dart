@@ -17,7 +17,11 @@ class CommandModal {
   final Commands commands;
   final BuildContext rootContext;
   Future<void> Function()? _refreshCallback;
-  final Map<Command, ListTileController> _controllers = {};
+  final Map<String, ListTileController> _controllers = {};
+
+  /// Stable key for controller lookup that survives commands.list() returning new instances.
+  static String _controllerKey(Command command) =>
+      '${command.runtimeType}:${command.title}:${command.eventObject}:${command.eventAction}';
 
   Future<CommandReturn> run(BuildContext context) async {
     if (!context.mounted) return CommandSkipped();
@@ -42,7 +46,7 @@ class CommandModal {
       itemBuilder: (command) {
         // Get or create controller for this command (reuse if it exists)
         final controller = _controllers.putIfAbsent(
-          command,
+          _controllerKey(command),
           () => ListTileController(),
         );
 
@@ -85,24 +89,17 @@ class CommandModal {
       onSelect: (modalContext, command, searchText) async {
         // Get the controller for this command and call run()
         // This ensures spinner state management for Enter key path
-        final controller = _controllers[command];
+        final key = _controllerKey(command);
+        final controller = _controllers[key];
 
         // Only use controller path if it's attached (ListTile rendered and not disposed)
         if (controller != null && controller.isAttached) {
-          // The controller calls ListTile's run() which:
-          // 1. Shows spinner
-          // 2. Executes command
-          // 3. Calls onRun callback (which calls Modal.handleCommandResult() AND Modal.pop())
-          // 4. Returns the bool from onRun indicating whether modal was closed
-          await controller.run();
+          final result = await controller.run();
           // Return false because onRun already closed the modal if needed
-          // This prevents _selectItem from calling Navigator.pop() again
           return false;
         }
 
-        // Controller doesn't exist or not attached (item not yet rendered or already disposed)
-        // Run the command directly without spinner
-        // Commands that show modals need modalContext, others need rootContext for provider access
+        // Controller doesn't exist or not attached — run command directly without spinner
         final context = command is ShowCommands ||
                 command is ShowForm ||
                 command is ShowPage
@@ -110,9 +107,7 @@ class CommandModal {
             : rootContext;
         final result = await command.run(context);
 
-        if (!modalContext.mounted) {
-          return false;
-        }
+        if (!modalContext.mounted) return false;
 
         final shouldClose = await Modal.handleCommandResult(
           modalContext,

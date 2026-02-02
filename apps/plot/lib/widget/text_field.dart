@@ -45,13 +45,11 @@ class TextField extends StatefulWidget {
 
 class TextFieldState extends State<TextField> {
   late final TextEditingController _controller;
-  late final FocusNode _keyboardListenerFocusNode;
   VoidCallback? _listener;
 
   @override
   void initState() {
     super.initState();
-    _keyboardListenerFocusNode = FocusNode();
     _controller =
         widget.controller ?? TextEditingController(text: widget.value);
     if (widget.onChanged != null) {
@@ -78,7 +76,6 @@ class TextFieldState extends State<TextField> {
     if (widget.controller == null) {
       _controller.dispose();
     }
-    _keyboardListenerFocusNode.dispose();
     super.dispose();
   }
 
@@ -98,33 +95,28 @@ class TextFieldState extends State<TextField> {
       //   inputFormatters: widget.inputFormatters,
       //   autofocus: widget.autofocus,
       // ),
-      builder: (_) => KeyboardListener(
-        focusNode: _keyboardListenerFocusNode,
-        onKeyEvent: (KeyEvent event) {
-          if (event is KeyDownEvent &&
-              event.logicalKey == LogicalKeyboardKey.enter) {
-            widget.onSubmitted?.call(_controller.text);
-          }
-        },
-        child: FTextField(
-          control: .managed(controller: _controller), style: widget.style == TextFieldStyle.outline
-              ? null
-              : (style) => style.copyWith(
-                  contentPadding: .all(0),
-                  border: style.border.map(
-                    (borderStyle) => borderStyle.copyWith(
-                      borderSide: BorderSide(width: 0, style: BorderStyle.none),
-                    ),
+      builder: (_) => FTextField(
+        control: .managed(controller: _controller),
+        style: widget.style == TextFieldStyle.outline
+            ? null
+            : (style) => style.copyWith(
+                contentPadding: .all(0),
+                border: style.border.map(
+                  (borderStyle) => borderStyle.copyWith(
+                    borderSide: BorderSide(width: 0, style: BorderStyle.none),
                   ),
                 ),
-          hint: widget.label,
-          autocorrect: widget.autocorrect,
-          maxLines: widget.maxLines,
-          textAlign: widget.textAlign,
-          focusNode: widget.focusNode,
-          inputFormatters: widget.inputFormatters,
-          autofocus: widget.autofocus,
-        ),
+              ),
+        hint: widget.label,
+        autocorrect: widget.autocorrect,
+        maxLines: widget.maxLines,
+        textAlign: widget.textAlign,
+        focusNode: widget.focusNode,
+        inputFormatters: widget.inputFormatters,
+        autofocus: widget.autofocus,
+        onSubmit: widget.onSubmitted != null
+            ? (_) => widget.onSubmitted!(_controller.text)
+            : null,
       ),
     );
   }

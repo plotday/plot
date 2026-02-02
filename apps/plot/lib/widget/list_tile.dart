@@ -18,6 +18,7 @@ import 'spinner.dart';
 /// Controller for programmatically triggering ListTile command execution
 class ListTileController {
   Future<CommandReturn> Function()? _run;
+  Object? _owner;
   final Completer<void> _initCompleter = Completer<void>();
 
   /// Check if the controller is initialized (attached to a ListTile)
@@ -42,16 +43,23 @@ class ListTileController {
     return run();
   }
 
-  void _attach(Future<CommandReturn> Function() run) {
+  void _attach(Future<CommandReturn> Function() run, Object owner) {
     _run = run;
+    _owner = owner;
     if (!_initCompleter.isCompleted) {
       _initCompleter.complete();
     }
   }
 
-  void _detach() {
-    _run = null;
-    // Note: completer stays completed - prevents issues with post-detach calls
+  /// Only detach if the caller is the current owner. This prevents a stale
+  /// element's dispose from clearing a controller that was already re-attached
+  /// to a different element (e.g. when ListView.builder reuses elements and the
+  /// same controller moves from position N to position 0).
+  void _detach(Object owner) {
+    if (_owner == owner) {
+      _run = null;
+      _owner = null;
+    }
   }
 }
 
@@ -212,11 +220,7 @@ class _ListTileState extends State<ListTile> {
 
   /// Expose run method for external triggers (e.g., Enter key in forms)
   Future<CommandReturn> run() async {
-    if (_isRunning || widget.command == null) {
-      return const CommandSkipped();
-    }
-
-    if (!mounted) {
+    if (_isRunning || widget.command == null || !mounted) {
       return const CommandSkipped();
     }
 
@@ -265,7 +269,7 @@ class _ListTileState extends State<ListTile> {
     // Add listener to rebuild when focus changes
     _focusNode.addListener(_onFocusChange);
     // Attach controller if provided
-    widget.controller?._attach(run);
+    widget.controller?._attach(run, this);
   }
 
   void _onFocusChange() {
@@ -273,11 +277,22 @@ class _ListTileState extends State<ListTile> {
   }
 
   @override
+  void didUpdateWidget(covariant ListTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Re-attach controller when widget is updated with a new controller
+    // (e.g., ListView.builder reuses the element with a new Command instance)
+    if (widget.controller != oldWidget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(run, this);
+    }
+  }
+
+  @override
   void dispose() {
     _spinnerDelayTimer?.cancel();
     _focusNode.removeListener(_onFocusChange);
     // Detach controller if provided
-    widget.controller?._detach();
+    widget.controller?._detach(this);
     // Only dispose internal focus node
     _internalFocusNode?.dispose();
     super.dispose();
