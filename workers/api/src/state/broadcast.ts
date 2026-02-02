@@ -168,8 +168,12 @@ export class Broadcast extends DurableObject<Bindings> {
       this.connections.delete(clientId);
     });
 
-    server.addEventListener("message", (_event) => {
-      // Handle incoming messages if needed
+    server.addEventListener("message", (event) => {
+      // Respond to keepalive pings silently
+      if (event.data === "ping") {
+        server.send("pong");
+        return;
+      }
       logger.info("Received message from client", { client_id: clientId });
     });
 

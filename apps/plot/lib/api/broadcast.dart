@@ -25,11 +25,13 @@ class BroadcastClient with WidgetsBindingObserver {
 
   WebSocketChannel? _channel;
   Timer? _reconnectTimer;
+  Timer? _pingTimer;
   StreamSubscription<dynamic>? _messageSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   static const Duration _baseReconnectDelay = Duration(seconds: 1);
   static const Duration _maxReconnectDelay = Duration(seconds: 30);
+  static const Duration _pingInterval = Duration(seconds: 30);
 
   bool _isConnected = false;
   bool _shouldReconnect = false;
@@ -156,6 +158,8 @@ class BroadcastClient with WidgetsBindingObserver {
       _authFailureCount = 0; // Reset auth failure count on successful connection
       _reconnectTimer?.cancel();
 
+      _startPingTimer();
+
       if (_wasEverConnected) {
         log.info("WebSocket connection restored");
       } else {
@@ -192,8 +196,30 @@ class BroadcastClient with WidgetsBindingObserver {
         errorString.contains('no internet');
   }
 
+  /// Start sending periodic ping frames to keep the connection alive
+  void _startPingTimer() {
+    _pingTimer?.cancel();
+    _pingTimer = Timer.periodic(_pingInterval, (_) {
+      if (_isConnected && _channel != null) {
+        try {
+          _channel!.sink.add('ping');
+        } catch (_) {
+          // Connection is broken; will be handled by error/disconnection handlers
+        }
+      }
+    });
+  }
+
+  /// Cancel the ping timer
+  void _cancelPingTimer() {
+    _pingTimer?.cancel();
+    _pingTimer = null;
+  }
+
   /// Disconnect from the WebSocket
   void disconnect() {
+    _cancelPingTimer();
+
     _messageSubscription?.cancel();
     _messageSubscription = null;
 
@@ -220,6 +246,9 @@ class BroadcastClient with WidgetsBindingObserver {
 
   /// Handle incoming WebSocket messages
   void _handleMessage(dynamic data) async {
+    // Filter out keepalive pong responses
+    if (data == 'pong') return;
+
     try {
       final message = jsonDecode(data as String) as Map<String, dynamic>;
 
@@ -332,6 +361,7 @@ class BroadcastClient with WidgetsBindingObserver {
   Future<void> _handleError(Object error) async {
     final wasConnected = _isConnected;
     _isConnected = false;
+    _cancelPingTimer();
 
     if (_channel != null) {
       _messageSubscription?.cancel();
@@ -365,6 +395,7 @@ class BroadcastClient with WidgetsBindingObserver {
     final closeCode = _channel?.closeCode;
     final wasConnected = _isConnected;
     _isConnected = false;
+    _cancelPingTimer();
 
     // Check for authentication-related close codes
     // 4401: Custom auth failure code (private use range 3000-4999)
