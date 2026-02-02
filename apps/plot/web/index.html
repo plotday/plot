@@ -89,7 +89,10 @@
       function removeSplashFromWeb() {
         document.getElementById("splash")?.remove();
         document.getElementById("splash-branding")?.remove();
-        document.body.style.background = "transparent";
+        document.getElementById("splash-screen-style")?.remove();
+        document.getElementById("splash-screen-script")?.remove();
+        var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.body.style.background = dark ? "#1f2221" : "#f2f5f3";
       }
     </script>
   </head>
