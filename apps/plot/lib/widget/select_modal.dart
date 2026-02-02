@@ -256,7 +256,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       }
 
       // Only show loading indicator when there are no existing results to display
-      if (_groups.isEmpty) {
+      if (_groups.isEmpty && _error == null) {
         setState(() {
           _isLoading = true;
           _error = null;

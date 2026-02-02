@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
-import 'form.dart';
 import 'list_tile.dart';
 import 'modal.dart';
 import 'select_modal.dart';
@@ -94,7 +93,7 @@ class CommandModal {
 
         // Only use controller path if it's attached (ListTile rendered and not disposed)
         if (controller != null && controller.isAttached) {
-          final result = await controller.run();
+          await controller.run();
           // Return false because onRun already closed the modal if needed
           return false;
         }

@@ -117,10 +117,13 @@ class PriorityState extends Equatable {
 
   bool get doneStart =>
       range != null && (previous == null || range!.includes(previous!));
-  bool get doneEnd =>
-      range != null &&
-      (next == null ||
-          (range!.end != null && next != null && next! < range!.end!));
+  bool get doneEnd {
+    final range = this.range;
+    final next = this.next;
+    return range != null &&
+        (next == null ||
+            next < range.end);
+  }
 
   /// Finds the first gap of at least 1 hour in a day's schedule.
   ///

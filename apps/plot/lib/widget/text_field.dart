@@ -53,8 +53,12 @@ class TextFieldState extends State<TextField> {
     _controller =
         widget.controller ?? TextEditingController(text: widget.value);
     if (widget.onChanged != null) {
+      var previousText = _controller.text;
       _listener = () {
-        widget.onChanged?.call(_controller.text);
+        if (_controller.text != previousText) {
+          previousText = _controller.text;
+          widget.onChanged?.call(_controller.text);
+        }
       };
       _controller.addListener(_listener!);
     }
@@ -225,7 +229,7 @@ class EditableAreaState extends State<EditableArea> {
   @override
   Widget build(BuildContext context) {
     // Read viewInsets to establish dependency - causes rebuild when keyboard state changes
-    final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
+    MediaQuery.of(context).viewInsets.bottom;
 
     return GestureDetector(
       onTap: () {
