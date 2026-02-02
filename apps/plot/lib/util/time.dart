@@ -699,7 +699,7 @@ extension PlotDateTimeExtension on DateTime {
   DateTime previousMidnight() => toDate().subDays(1).toDateTime();
   DateTime nextMidnight() => toDate().addDays(1).toDateTime();
 
-  String toTimeAgo() => timeago.format(this);
+  String toTimeAgo() => timeago.format(this, clock: Time.now());
 }
 
 Duration durationFromString(String durationString) {
