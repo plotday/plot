@@ -15,7 +15,7 @@ export default function EmailButton({ href, children }: EmailButtonProps) {
 }
 
 const button = {
-  backgroundColor: "#10B981",
+  backgroundColor: "#23986f",
   borderRadius: "6px",
   color: "#fff",
   fontSize: "16px",
@@ -24,5 +24,5 @@ const button = {
   textAlign: "center" as const,
   display: "block",
   padding: "12px 24px",
-  width: "100%",
+  margin: "0 auto",
 };

@@ -15,12 +15,10 @@ export default function PriorityInvitation({
   inviteUrl,
   recipientName,
 }: PriorityInvitationProps) {
-  const greeting = recipientName ? `Hi ${recipientName},` : "Hi,";
-
   return (
     <EmailLayout preview={`Join to make progress together`}>
-      <Heading style={h1}>Join Plot to make progress on what matters!</Heading>
-      <Text style={text}>{greeting}</Text>
+      <Heading style={h1}>You've been invited to Plot!</Heading>
+      {recipientName && <Text style={text}>Hi {recipientName},</Text>}
       <Text style={text}>
         <strong>{inviterName}</strong> has invited you to collaborate on Plot,
         where you can share plans and take action.
