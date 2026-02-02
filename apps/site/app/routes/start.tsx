@@ -7,7 +7,7 @@ import type { Route } from "./+types/home";
 export function meta(_: Route.MetaArgs) {
   return [
     {
-      title: "Get Started | Plot",
+      title: "Try Plot",
     },
   ];
 }
@@ -51,14 +51,17 @@ export default function GetStarted() {
 
   return (
     <Stack m={24} mt={0}>
+      <Text fw={700}>We'd love to have you!</Text>
       <Text>
-        We're committed to seeing you make meaningful change to your days,
-        weeks, and years!
+        Plot is in private trial with select teams, working closely with early
+        users. If you want hands-on access now, let us know and we'll reach out
+        when a spot opens.
       </Text>
       <Text>
-        While in the future 🤖 we expect Plot to guide you to that impact on
-        your own, for now we're personally onboarding everyone to get it right.
+        Not ready to dive in yet? You can also just sign up to be notified when
+        Plot is available to everyone.
       </Text>
+      <Text fw={700}>Either way, we're glad you're here.</Text>
       <iframe
         data-tally-src="https://tally.so/embed/3EvdlA?alignLeft=1&hideTitle=1&dynamicHeight=1"
         loading="lazy"
@@ -67,7 +70,7 @@ export default function GetStarted() {
         frameBorder={0}
         marginHeight={0}
         marginWidth={0}
-        title="Get Started | Plot"
+        title="Try Plot"
       ></iframe>
     </Stack>
   );

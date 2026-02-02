@@ -35,7 +35,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
             <Logo />
           </UnstyledButton>
           {location.pathname.startsWith("/start") && (
-            <Title order={2}>Get Started</Title>
+            <Title order={2}>Try Plot</Title>
           )}
         </Group>
         <Group>
@@ -43,7 +43,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
             location.pathname.startsWith(path)
           ) && (
             <Button variant="outline" component={Link} to="/start">
-              Get Started
+              Try Plot
             </Button>
           )}
         </Group>

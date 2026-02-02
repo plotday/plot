@@ -1,45 +1,175 @@
-.title {
-  font-family: "Greycliff CF", var(--mantine-font-family);
-  line-height: 1.2;
-  font-weight: 900;
-  font-size: rem(28px);
-
-  @media (min-width: $mantine-breakpoint-xs) {
-    font-size: rem(60px);
-  }
-}
-
-.copy {
-  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-2));
-}
-
-.control {
-  @media (width < $mantine-breakpoint-xs) {
-    flex: 1;
-  }
-}
-
-.image {
-  flex: 1;
-}
-
 .heroSection {
+  min-height: 65vh;
+  display: flex;
+  align-items: center;
   background-color: light-dark(
     var(--mantine-color-white),
     var(--mantine-color-dark-7)
   );
 }
 
+.heroTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  line-height: 1.1;
+  font-weight: 900;
+  font-size: rem(36px);
+
+  @media (min-width: $mantine-breakpoint-sm) {
+    font-size: rem(56px);
+  }
+}
+
+.heroSubtext {
+  font-size: rem(18px);
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  max-width: 540px;
+}
+
+.heroScreenshot {
+  width: 100%;
+  border-radius: var(--mantine-radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
 .graySection {
   background-color: light-dark(
-    var(--mantine-color-gray-1),
+    var(--mantine-color-gray-0),
     var(--mantine-color-dark-6)
   );
 }
 
-.punchSection {
+.whiteSection {
   background-color: light-dark(
-    var(--mantine-color-gray-0),
+    var(--mantine-color-white),
     var(--mantine-color-dark-7)
   );
+}
+
+.twoCol {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-xl);
+  align-items: center;
+
+  @media (min-width: $mantine-breakpoint-md) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.sectionTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sectionBody {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  line-height: 1.7;
+}
+
+.card {
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-lg);
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+  height: 100%;
+}
+
+.plotCard {
+  composes: card;
+  border-color: var(--mantine-color-brand-4);
+  background-color: light-dark(
+    var(--mantine-color-brand-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.plotCardBadge {
+  background-color: light-dark(
+    var(--mantine-color-brand-1),
+    var(--mantine-color-brand-9)
+  );
+  color: light-dark(var(--mantine-color-brand-8), var(--mantine-color-brand-1));
+  border-radius: var(--mantine-radius-sm);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  font-size: rem(13px);
+  font-weight: 600;
+  margin-top: var(--mantine-spacing-sm);
+  display: inline-block;
+}
+
+.integrationGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--mantine-spacing-md);
+  width: 100%;
+
+  @media (min-width: $mantine-breakpoint-sm) {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.integrationTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-xs);
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-md);
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.integrationIcon {
+  width: 40px;
+  height: 40px;
+}
+
+.illustrationImage {
+  width: 50%;
+  border-radius: var(--mantine-radius-md);
+}
+
+.ctaSection {
+  background: var(--mantine-color-brand-filled);
+  color: var(--mantine-color-white);
+}
+
+.ctaTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--mantine-color-white);
+}
+
+.ctaBody {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.trustItem {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: rem(14px);
+}
+
+.checkList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.checkItem {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  font-size: rem(16px);
+  line-height: 1.8;
 }
