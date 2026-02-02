@@ -1,5 +1,5 @@
 -- User-accessible notes filtered by priority access
-CREATE OR REPLACE VIEW "public"."user_note" WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW "public"."user_note"
 --
 AS
 SELECT
@@ -21,7 +21,24 @@ SELECT
 FROM
     note n
     JOIN activity a ON a.id = n.activity_id
-    JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id;
+    JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id
+WHERE
+    (auth.uid() IS NULL OR upe.user_id = auth.uid())
+    -- Note-level filtering
+    AND (n.draft = FALSE OR auth.uid() IS NULL OR n.created_by = auth.uid())
+    AND (n.private = FALSE OR auth.uid() IS NULL
+        OR n.created_by = auth.uid()
+        OR auth.uid() = ANY(n.mentions))
+    -- Activity-level filtering (activity draft/private affects note visibility)
+    AND (a.draft = FALSE OR auth.uid() IS NULL OR a.created_by = auth.uid())
+    AND (CASE WHEN a.private = FALSE THEN TRUE
+        WHEN auth.uid() IS NULL THEN TRUE
+        WHEN a.created_by = auth.uid() THEN TRUE
+        ELSE public.user_mentioned_in_activity(auth.uid(), a.id)
+    END);
+
+ALTER VIEW "public"."user_note" OWNER TO postgres;
+REVOKE SELECT ON "public"."user_note" FROM anon;
 
 -- Aggregate note tags by note_id
 CREATE OR REPLACE VIEW "public"."note_tags" WITH ( security_invoker = TRUE)
@@ -49,7 +66,7 @@ GROUP BY
     sq.note_id;
 
 -- User-accessible note tags
-CREATE OR REPLACE VIEW "public"."user_note_tags" WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW "public"."user_note_tags"
 --
 AS
 SELECT
@@ -64,5 +81,13 @@ SELECT
 FROM
     note_tags nt
     JOIN note n ON n.id = nt.note_id
-    JOIN user_activity ua ON ua.id = n.activity_id;
+    JOIN user_activity ua ON ua.id = n.activity_id
+WHERE
+    (n.draft = FALSE OR auth.uid() IS NULL OR n.created_by = auth.uid())
+    AND (n.private = FALSE OR auth.uid() IS NULL
+        OR n.created_by = auth.uid()
+        OR auth.uid() = ANY(n.mentions));
+
+ALTER VIEW "public"."user_note_tags" OWNER TO postgres;
+REVOKE SELECT ON "public"."user_note_tags" FROM anon;
 

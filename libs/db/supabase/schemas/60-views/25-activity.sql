@@ -49,7 +49,7 @@ FROM
 --
 -- Contact lookup for assignee uses a scalar subquery instead of LEFT JOIN to avoid
 -- probing the full contact table for every row (most activities have no assignee).
-CREATE OR REPLACE VIEW "public"."user_activity" WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW "public"."user_activity"
 --
 AS
 SELECT
@@ -169,9 +169,20 @@ FROM
     activity_x a
     JOIN user_priority_expanded upe ON a.priority_id = upe.priority_id
     LEFT JOIN activity_read ar ON ar.user_id = upe.user_id
-        AND ar.activity_id = a.id;
+        AND ar.activity_id = a.id
+WHERE
+    (auth.uid() IS NULL OR upe.user_id = auth.uid())
+    AND (a.draft = FALSE OR auth.uid() IS NULL OR a.created_by = auth.uid())
+    AND (CASE WHEN a.private = FALSE THEN TRUE
+        WHEN auth.uid() IS NULL THEN TRUE
+        WHEN a.created_by = auth.uid() THEN TRUE
+        ELSE public.user_mentioned_in_activity(auth.uid(), a.id)
+    END);
 
-CREATE OR REPLACE VIEW "public"."user_activity_exception" WITH ( security_invoker = TRUE)
+ALTER VIEW "public"."user_activity" OWNER TO postgres;
+REVOKE SELECT ON "public"."user_activity" FROM anon;
+
+CREATE OR REPLACE VIEW "public"."user_activity_exception"
 --
 AS
 SELECT
@@ -193,7 +204,10 @@ FROM
     activity_exception ae
     JOIN user_activity ua ON ua.id = ae.activity_id;
 
-CREATE OR REPLACE VIEW "public"."user_activity_tags" WITH ( security_invoker = TRUE)
+ALTER VIEW "public"."user_activity_exception" OWNER TO postgres;
+REVOKE SELECT ON "public"."user_activity_exception" FROM anon;
+
+CREATE OR REPLACE VIEW "public"."user_activity_tags"
 --
 AS
 SELECT
@@ -209,3 +223,6 @@ SELECT
 FROM
     activity_tags at
     JOIN user_activity ua ON ua.id = at.activity_id;
+
+ALTER VIEW "public"."user_activity_tags" OWNER TO postgres;
+REVOKE SELECT ON "public"."user_activity_tags" FROM anon;

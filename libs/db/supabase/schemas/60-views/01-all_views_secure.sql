@@ -13,6 +13,13 @@ BEGIN
     WHERE
         n.nspname = 'public'
         AND relname NOT LIKE '%_admin'
+        AND relname NOT IN (
+            'user_activity',
+            'user_note',
+            'user_activity_exception',
+            'user_activity_tags',
+            'user_note_tags'
+        )
         AND relkind = 'v'
         AND (lower(reloptions::text)::text[] && ARRAY['security_invoker=1', 'security_invoker=true', 'security_invoker=on']) IS NULL;
     IF FOUND THEN
