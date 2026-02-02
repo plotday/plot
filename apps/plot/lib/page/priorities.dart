@@ -70,13 +70,15 @@ class PrioritiesPage extends StatelessWidget {
                     ),
                   ),
                   if (layoutState.multiPanel) ...[
+                    Container(height: 1, color: context.theme.colors.border),
                     ListTile(
                       title: 'Twists',
+                      textStyle: context.theme.typography.sm,
                       trailingBuilder: (isHovered, hasFocus) => Padding(
                         padding: const .only(left: 4, right: 16),
                         child: Icon(
                           PlotIcon.twist,
-                          size: context.theme.iconSizes.base,
+                          size: context.theme.iconSizes.sm,
                           color: context.theme.colors.mutedForeground,
                         ),
                       ),
@@ -95,11 +97,12 @@ class PrioritiesPage extends StatelessWidget {
                           return ListTile(
                             title: userName,
                             subtitle: userState.user.primaryEmail,
+                            textStyle: context.theme.typography.sm,
                             trailingBuilder: (isHovered, hasFocus) => Padding(
                               padding: const .only(left: 4, right: 16),
                               child: Icon(
                                 PlotIcon.settings,
-                                size: context.theme.iconSizes.base,
+                                size: context.theme.iconSizes.sm,
                                 color: context.theme.colors.mutedForeground,
                               ),
                             ),

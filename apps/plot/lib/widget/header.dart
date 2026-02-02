@@ -253,20 +253,30 @@ class _HeaderState extends State<Header> {
             ),
         ];
 
-        return FHeader(
-          style: (style) {
-            final resolvedPadding = style.padding.resolve(TextDirection.ltr);
-            return style.copyWith(
-              padding: EdgeInsets.fromLTRB(
-                resolvedPadding.left,
-                resolvedPadding.top,
-                resolvedPadding.right,
-                8,
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: context.theme.colors.border,
+                width: 1,
               ),
-            );
-          },
-          title: Row(spacing: 8, children: titleChildren),
-          suffixes: suffixes,
+            ),
+          ),
+          child: FHeader(
+            style: (style) {
+              final resolvedPadding = style.padding.resolve(TextDirection.ltr);
+              return style.copyWith(
+                padding: EdgeInsets.fromLTRB(
+                  resolvedPadding.left,
+                  resolvedPadding.top,
+                  resolvedPadding.right,
+                  8,
+                ),
+              );
+            },
+            title: Row(spacing: 8, children: titleChildren),
+            suffixes: suffixes,
+          ),
         );
       },
     );
