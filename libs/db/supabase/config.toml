@@ -155,6 +155,7 @@ schema_paths = [
   "./schemas/30-functions/*.sql",
   "./schemas/40-functions/*.sql",
   "./schemas/50-tables/*.sql",
+  "./schemas/55-functions/*.sql",
   "./schemas/60-views/*.sql",
   "./schemas/65-functions/*.sql",
   "./schemas/70-rls/*.sql",

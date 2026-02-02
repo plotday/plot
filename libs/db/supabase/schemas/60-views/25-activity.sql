@@ -27,27 +27,17 @@ GROUP BY
     sq.occurrence;
 
 -- Add priority_path and mentions to activity view
--- Uses LATERAL subquery so mentions are computed per-activity (efficient for incremental sync)
+-- Uses SECURITY DEFINER function for mentions to bypass redundant note RLS checks
 CREATE OR REPLACE VIEW "public"."activity_x" WITH ( security_invoker = TRUE)
 --
 AS
 SELECT
     a.*,
     p.path AS priority_path,
-    m.mentions
+    public.get_activity_mentions (a.id) AS mentions
 FROM
     activity a
-    JOIN priority p ON p.id = a.priority_id
-    LEFT JOIN LATERAL (
-        SELECT
-            ARRAY_AGG(DISTINCT mention) AS mentions
-        FROM
-            note n,
-            LATERAL unnest(n.mentions) AS mention
-        WHERE
-            n.activity_id = a.id
-            AND n.archived_at IS NULL
-            AND n.mentions IS NOT NULL) m ON TRUE;
+    JOIN priority p ON p.id = a.priority_id;
 
 -- To filter on a date range, use both the `range_at` and `range_on` columns.
 -- They're separate because combining timestamps and dates requires knowing

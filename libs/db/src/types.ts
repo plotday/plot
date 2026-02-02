@@ -3238,6 +3238,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      get_activity_mentions: {
+        Args: { p_activity_id: string }
+        Returns: string[]
+      }
       get_domain: { Args: { email: string }; Returns: string }
       get_invitation_token: {
         Args: { p_contact_id: string; p_new_token: string }

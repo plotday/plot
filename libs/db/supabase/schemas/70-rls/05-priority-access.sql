@@ -66,6 +66,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_id uuid)
     RETURNS boolean
     LANGUAGE sql
+    STABLE
     SECURITY DEFINER
     AS $function$
     SELECT
@@ -84,6 +85,7 @@ $function$;
 CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path ltree)
     RETURNS boolean
     LANGUAGE sql
+    STABLE
     SECURITY DEFINER
     AS $function$
     SELECT

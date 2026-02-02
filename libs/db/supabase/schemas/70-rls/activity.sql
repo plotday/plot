@@ -24,8 +24,12 @@ CREATE POLICY "Users can view activities in their accessible priorities" ON "pub
         USING (public.user_has_priority_access ((select auth.uid ()), activity.priority_id)
         -- Draft filtering: only creator can see drafts
             AND (activity.draft = FALSE OR activity.created_by = (select auth.uid ()))
-            -- Private filtering: creator or mentioned users can see private items
-            AND (activity.private = FALSE OR activity.created_by = (select auth.uid ()) OR public.user_mentioned_in_activity ((select auth.uid ()), activity.id)));
+            -- Private filtering: CASE guarantees short-circuit so user_mentioned_in_activity
+            -- only runs when private = TRUE and the user is not the creator
+            AND (CASE WHEN activity.private = FALSE THEN TRUE
+                WHEN activity.created_by = (select auth.uid ()) THEN TRUE
+                ELSE public.user_mentioned_in_activity ((select auth.uid ()), activity.id)
+            END));
 
 CREATE POLICY "Users can insert activities in their accessible priorities" ON "public"."activity"
     FOR INSERT
@@ -37,13 +41,19 @@ CREATE POLICY "Users can update activities in their accessible priorities" ON "p
         USING (public.user_has_priority_access ((select auth.uid ()), activity.priority_id)
         -- Draft filtering: only creator can update drafts
             AND (activity.draft = FALSE OR activity.created_by = (select auth.uid ()))
-            -- Private filtering: creator or mentioned users can update private items
-            AND (activity.private = FALSE OR activity.created_by = (select auth.uid ()) OR public.user_mentioned_in_activity ((select auth.uid ()), activity.id)))
+            -- Private filtering: CASE guarantees short-circuit evaluation
+            AND (CASE WHEN activity.private = FALSE THEN TRUE
+                WHEN activity.created_by = (select auth.uid ()) THEN TRUE
+                ELSE public.user_mentioned_in_activity ((select auth.uid ()), activity.id)
+            END))
             WITH CHECK (public.user_has_priority_access ((select auth.uid ()), activity.priority_id)
             -- Draft filtering: only creator can update drafts
             AND (activity.draft = FALSE OR activity.created_by = (select auth.uid ()))
-            -- Private filtering: creator or mentioned users can update private items
-            AND (activity.private = FALSE OR activity.created_by = (select auth.uid ()) OR public.user_mentioned_in_activity ((select auth.uid ()), activity.id)));
+            -- Private filtering: CASE guarantees short-circuit evaluation
+            AND (CASE WHEN activity.private = FALSE THEN TRUE
+                WHEN activity.created_by = (select auth.uid ()) THEN TRUE
+                ELSE public.user_mentioned_in_activity ((select auth.uid ()), activity.id)
+            END));
 
 -- Activity Exception RLS policies
 CREATE POLICY "Users can view activity exceptions for accessible activities" ON "public"."activity_exception"
