@@ -71,6 +71,10 @@ CREATE INDEX idx_priority_user_user_priority_archived ON "public"."priority_user
 WHERE
     archived_at IS NULL;
 
+-- Index for joins on priority_id alone (PK is user_id, priority_id which doesn't help)
+-- Used in user_priority view: pu.priority_id = root.id
+CREATE INDEX idx_priority_user_priority_id ON "public"."priority_user" ("priority_id");
+
 ALTER TABLE "public"."priority_user" ENABLE ROW LEVEL SECURITY;
 
 CREATE TRIGGER set_priority_user_updated_at

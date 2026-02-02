@@ -17,3 +17,7 @@ CREATE TRIGGER set_activity_read_updated_at
 -- Enhanced composite index supporting read_at comparisons in unread queries
 CREATE INDEX idx_activity_read_user_read ON "public"."activity_read" ("user_id", "activity_id", "read_at");
 
+-- Index for joins on activity_id alone (PK is user_id, activity_id which doesn't help)
+-- Used in user_activity_unread and user_priority_unread views
+CREATE INDEX idx_activity_read_activity_id ON "public"."activity_read" ("activity_id");
+
