@@ -9,6 +9,7 @@ import {
 } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { processLogs } from "./logs";
+import { processMail } from "./mail";
 import { processUpdates } from "./updates";
 
 /**
@@ -61,6 +62,13 @@ export async function queue(
       case "twist-logs-development":
       case "twist-logs-production":
         await processLogs(batch as MessageBatch<LogMessage>, env, postHog);
+        break;
+
+      case "mail-development":
+        // In development, the API worker consumes the mail queue directly
+        // because wrangler dev doesn't reliably route queues between workers.
+        // In production, the separate mailer worker handles this.
+        await processMail(batch as MessageBatch<any>, env, ctx);
         break;
 
       default:

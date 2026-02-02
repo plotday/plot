@@ -153,6 +153,11 @@
             "queue": "twist-logs-development",
             "max_batch_size": 100,
             "max_batch_timeout": 1
+          },
+          {
+            "queue": "mail-development",
+            "max_batch_size": 20,
+            "max_batch_timeout": 3
           }
         ]
       },

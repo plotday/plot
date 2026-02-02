@@ -12,14 +12,7 @@
         "PACKAGE": "\"mailer\""
       },
       "queues": {
-        "consumers": [
-          {
-            "queue": "mail-development",
-            "max_batch_size": 20,
-            "max_batch_timeout": 3,
-            "max_retries": 10
-          }
-        ]
+        "consumers": []
       }
     },
     "production": {
