@@ -4,8 +4,10 @@ import 'package:equatable/equatable.dart';
 import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
+import 'package:plot/util/idb_local_storage.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'env.dart';
@@ -54,6 +56,14 @@ class Base {
       await supa.Supabase.initialize(
         url: Env.supabaseUrl,
         anonKey: Env.supabaseAnonKey,
+        authOptions: kIsWeb
+            ? supa.FlutterAuthClientOptions(
+                localStorage: IdbLocalStorage(
+                  persistSessionKey:
+                      "sb-${Uri.parse(Env.supabaseUrl).host.split(".").first}-auth-token",
+                ),
+              )
+            : const supa.FlutterAuthClientOptions(),
       );
       Injector.appInstance.registerSingleton<Base>(() => Base());
 
