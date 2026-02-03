@@ -74,6 +74,11 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                 if (currentPath.endsWith('/new')) {
                   return 2;
                 }
+                // If on ActivityPage (/priorityId/activityId), no tab highlighted
+                final pathSegments = currentPath.split('/').where((s) => s.isNotEmpty).toList();
+                if (pathSegments.length >= 2) {
+                  return -1;
+                }
                 // Otherwise use the tab router's active index
                 return tabsRouter.activeIndex;
               }
@@ -138,15 +143,14 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               groups: CommandRegistry.of(context).commands,
                             ).show(context);
                           } else {
-                            // If currently on NewActivityPage and switching to another tab
+                            // If currently on NewActivityPage or ActivityPage
                             if (currentPath.endsWith('/new')) {
-                              // Going back to Activities tab - just pop the NewActivityRoute
+                              // On NewActivityPage - pop back
                               if (index == 1) {
                                 context.router.back();
                               } else {
                                 // Going to Priorities tab - pop first then switch tabs
                                 context.router.back();
-                                // Wait a frame for the pop to complete before switching tabs
                                 WidgetsBinding.instance.addPostFrameCallback((
                                   _,
                                 ) {
@@ -154,8 +158,14 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                 });
                               }
                             } else {
-                              // Normal tab switching
-                              tabsRouter.setActiveIndex(index);
+                              final pathSegments = currentPath.split('/').where((s) => s.isNotEmpty).toList();
+                              if (pathSegments.length >= 2 && index == 1) {
+                                // On ActivityPage, tapping Activities tab - pop back to PriorityPage
+                                context.router.back();
+                              } else {
+                                // Normal tab switching
+                                tabsRouter.setActiveIndex(index);
+                              }
                             }
                           }
                         },
