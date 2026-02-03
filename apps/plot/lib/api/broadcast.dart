@@ -42,8 +42,6 @@ class BroadcastClient with WidgetsBindingObserver {
   MessageHandler? _messageHandler;
   int? _clientId;
   bool _isRefreshingToken = false; // Prevent concurrent refresh attempts
-  int _authFailureCount = 0; // Track consecutive auth failures
-  static const int _maxAuthRetries = 2; // Max refresh attempts before sign-out
 
   bool get isConnected => _isConnected;
 
@@ -155,7 +153,6 @@ class BroadcastClient with WidgetsBindingObserver {
 
       _isConnected = true;
       _resetBackoff();
-      _authFailureCount = 0; // Reset auth failure count on successful connection
       _reconnectTimer?.cancel();
 
       _startPingTimer();
@@ -238,7 +235,6 @@ class BroadcastClient with WidgetsBindingObserver {
     _isConnected = false;
     _wasEverConnected = false;
     _isRefreshingToken = false;
-    _authFailureCount = 0;
     _messageHandler = null;
     _clientId = null;
     _instance = null;
@@ -295,40 +291,29 @@ class BroadcastClient with WidgetsBindingObserver {
       return;
     }
 
-    log.info(
-      "WebSocket auth failed - attempting token refresh",
-    );
+    log.info("WebSocket auth failed - attempting token refresh");
 
     _isRefreshingToken = true;
     try {
       await Base.refreshSession();
       log.info("Token refresh successful - reconnecting WebSocket");
 
-      // Session is valid: reset failure count and reconnect with backoff
-      _authFailureCount = 0;
       _shouldReconnect = true;
       _isRefreshingToken = false;
 
       _scheduleReconnect();
     } on supa.AuthException catch (e) {
-      // Refresh token is invalid - must sign out
-      log.warning("Token refresh failed (AuthException: ${e.message}) - signing out user");
-      _isRefreshingToken = false;
-      _shouldReconnect = false;
-      try {
-        await Base.signOut();
-      } catch (signOutError, stackTrace) {
-        log.warning("Error during sign-out", signOutError, stackTrace);
-      }
-    } catch (e) {
       _isRefreshingToken = false;
 
-      // Token refresh failed for non-auth reason (network error, server down, etc.)
-      // Count these failures — if repeated, the session may actually be invalid
-      _authFailureCount++;
-      if (_authFailureCount > _maxAuthRetries) {
+      if (e is supa.AuthRetryableFetchException) {
+        // Network error or server down — don't sign out, just retry
+        log.info("Token refresh failed due to network error ($e) - will retry");
+        _shouldReconnect = true;
+        _scheduleReconnect();
+      } else {
+        // Definitive auth failure (invalid/expired refresh token) — sign out
         log.warning(
-          "Token refresh failed $_authFailureCount times ($e) - signing out user",
+          "Token refresh failed (AuthException: ${e.message}) - signing out user",
         );
         _shouldReconnect = false;
         try {
@@ -336,13 +321,13 @@ class BroadcastClient with WidgetsBindingObserver {
         } catch (signOutError, stackTrace) {
           log.warning("Error during sign-out", signOutError, stackTrace);
         }
-      } else {
-        log.info(
-          "Token refresh failed (attempt $_authFailureCount/$_maxAuthRetries: $e) - will retry",
-        );
-        _shouldReconnect = true;
-        _scheduleReconnect();
       }
+    } catch (e) {
+      _isRefreshingToken = false;
+      // Unexpected error during refresh — retry, don't sign out
+      log.warning("Unexpected error during token refresh ($e) - will retry");
+      _shouldReconnect = true;
+      _scheduleReconnect();
     }
   }
 
