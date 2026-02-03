@@ -89,7 +89,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     final pageSize = count / 3; // Rough estimate of page size
     final significantMissing = pageSize * 0.2; // 20% of page threshold
 
-    if (missingBefore <= significantMissing && missingAfter <= significantMissing) {
+    if (missingBefore <= significantMissing &&
+        missingAfter <= significantMissing) {
       log.fine(
         'Requested range [$first, $requestedLast) close enough to current range [$currentFirst, $currentLast). '
         'Skipping fetch (missingBefore=$missingBefore, missingAfter=$missingAfter, threshold=$significantMissing).',
@@ -131,32 +132,41 @@ class PriorityBloc extends Cubit<PriorityState> {
     Date newStart = currentRange.start;
     Date newEnd = currentRange.end;
 
+    // Calculate density-based expansion to satisfy BidirectionalList in fewer rounds
+    final rangeDays = currentRange.end
+        .toDateTime()
+        .difference(currentRange.start.toDateTime())
+        .inDays;
+    final itemsPerDay = rangeDays > 0
+        ? state.agendaItems.length / rangeDays
+        : 1.0;
+
     // Expand backward if needed
     if (moveStart < 0 && !state.doneStart) {
-      if (state.previous != null && state.previous! < currentRange.start) {
-        // Use the previous boundary from Schedule (stable reference point)
-        newStart = state.previous!;
-        log.fine('Expanding start to previous boundary: $newStart');
-      } else {
-        // Estimate: move back by a fixed amount (e.g., 7 days) to avoid proportion calculation
-        final daysToAdd = -7; // Move back one week at a time
-        newStart = currentRange.start.addDays(daysToAdd);
-        log.fine('Expanding start by $daysToAdd days: $newStart');
-      }
+      final itemsNeeded = -moveStart;
+      final daysNeeded = itemsPerDay > 0
+          ? (itemsNeeded / itemsPerDay).ceil()
+          : 7;
+      final daysToExpand = daysNeeded.clamp(7, 90);
+      newStart = currentRange.start.addDays(-daysToExpand);
+      log.fine(
+        'Expanding start by $daysToExpand days (need ~$itemsNeeded items, '
+        'density=${itemsPerDay.toStringAsFixed(1)}/day): $newStart',
+      );
     }
 
     // Expand forward if needed
     if (moveEnd > 0 && !state.doneEnd) {
-      if (state.next != null && state.next! > currentRange.end) {
-        // Use the next boundary from Schedule (stable reference point)
-        newEnd = state.next!;
-        log.fine('Expanding end to next boundary: $newEnd');
-      } else {
-        // Estimate: move forward by a fixed amount
-        final daysToAdd = 7;
-        newEnd = currentRange.end.addDays(daysToAdd);
-        log.fine('Expanding end by $daysToAdd days: $newEnd');
-      }
+      final itemsNeeded = moveEnd;
+      final daysNeeded = itemsPerDay > 0
+          ? (itemsNeeded / itemsPerDay).ceil()
+          : 7;
+      final daysToExpand = daysNeeded.clamp(7, 90);
+      newEnd = currentRange.end.addDays(daysToExpand);
+      log.fine(
+        'Expanding end by $daysToExpand days (need ~$itemsNeeded items, '
+        'density=${itemsPerDay.toStringAsFixed(1)}/day): $newEnd',
+      );
     }
 
     final newRange = CustomBoundedDateRange(newStart, newEnd);
@@ -488,7 +498,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           CustomBoundedDateRange(
             Date.today()
                 .toDateTime()
-                .subtract(const Duration(days: 14))
+                .subtract(const Duration(days: 45))
                 .toDate(),
             Date.today().toDateTime().add(const Duration(days: 14)).toDate(),
           ),
@@ -838,15 +848,16 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     try {
       // Level 1: Try to load requested priority
       final priority = await (widget.priority != null
-              ? Future.value(widget.priority!)
-              : widget.priorityId != null
-              ? Priority.getOne(widget.priorityId!)
-              : widget.activityId != null
-              ? Activity.getOne(widget.activityId!)
-                  .then((activity) => activity.priority)
-              : Future<Priority>.error(
-                  'Either priorityId or activityId must be provided',
-                ));
+          ? Future.value(widget.priority!)
+          : widget.priorityId != null
+          ? Priority.getOne(widget.priorityId!)
+          : widget.activityId != null
+          ? Activity.getOne(
+              widget.activityId!,
+            ).then((activity) => activity.priority)
+          : Future<Priority>.error(
+              'Either priorityId or activityId must be provided',
+            ));
 
       // Success - update theme and create bloc
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -856,7 +867,6 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
       });
 
       return _LoadResult.success(PriorityBloc(priority: priority));
-
     } catch (e, stackTrace) {
       // Level 1 failed - log and try fallback
       log.warning(
@@ -887,7 +897,6 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
           PriorityBloc(priority: defaultPriority),
           isFallback: true,
         );
-
       } catch (fallbackError, fallbackStack) {
         // Level 2 also failed - return error
         log.severe(
@@ -958,10 +967,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         }
 
         // Success - provide bloc
-        return BlocProvider.value(
-          value: result.bloc!,
-          child: widget.child,
-        );
+        return BlocProvider.value(value: result.bloc!, child: widget.child);
       },
     );
   }
