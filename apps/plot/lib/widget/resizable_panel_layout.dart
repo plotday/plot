@@ -256,6 +256,7 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   int? _hoveredDividerIndex;
   late final FResizableController _controller;
   static const double _hitRegionExtent = 10.0; // Desktop hit region size
+  BoxConstraints? _previousConstraints;
 
   @override
   void initState() {
@@ -322,6 +323,14 @@ class _HoverableResizableState extends State<_HoverableResizable> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        if (_previousConstraints != null &&
+            _previousConstraints != constraints) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
+        _previousConstraints = constraints;
+
         return ListenableBuilder(
           listenable: _controller,
           builder: (context, child) {
