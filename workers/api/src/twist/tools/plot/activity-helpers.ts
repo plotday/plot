@@ -476,9 +476,87 @@ export type PreparedActivity = (
 ) & {
   priorityId: string;
 
+  /** The resolved author contact ID (or priorityTwistId if no author specified) */
+  authorId: string;
+
   /** The original occurrences array (SDK format, for processOccurrences after insert/upsert) */
   occurrences: NewActivityOccurrence[];
 };
+
+/**
+ * Marks an activity as read for the author if the author is the twist owner (user).
+ * This implements the "auto-mark as read for author" behavior when unread is omitted.
+ *
+ * Early returns (no-op) when:
+ * - authorId is the priorityTwistId (no real author, just the twist default)
+ * - author contact has no linked user_id
+ * - author's user_id doesn't match the twist owner
+ *
+ * @param plot - The Plot instance
+ * @param authorId - The resolved author contact ID
+ * @param activityId - The activity to mark as read
+ * @param timestamp - The read_at timestamp to use
+ */
+export async function markActivityReadForAuthorIfOwner(
+  plot: Plot,
+  authorId: string,
+  activityId: string,
+  timestamp: string
+): Promise<void> {
+  // No real author — just the twist itself
+  if (authorId === plot.priorityTwistId) {
+    return;
+  }
+
+  try {
+    // Look up whether this contact is linked to a user
+    const contactResult = await plot.supabase
+      .from("contact")
+      .select("user_id")
+      .eq("id", authorId)
+      .maybeSingle();
+
+    const userId = contactResult.data?.user_id;
+    if (!userId) {
+      return;
+    }
+
+    // Check if the author is the twist owner
+    const twistOwnerId = await plot.getUserId();
+    if (userId !== twistOwnerId) {
+      return;
+    }
+
+    // Upsert a single activity_read entry for the author
+    const upsertResult = await plot.supabase
+      .from("activity_read")
+      .upsert(
+        { activity_id: activityId, user_id: userId, read_at: timestamp },
+        { onConflict: "user_id,activity_id" }
+      );
+
+    if (upsertResult.error) {
+      const logger = createLogger({
+        priority_twist_id: plot.priorityTwistId,
+      });
+      logger.error(
+        "Failed to auto-mark activity as read for author",
+        upsertResult.error as Error,
+        { activity_id: activityId, user_id: userId }
+      );
+    }
+  } catch (error) {
+    // Log but don't throw — read status is non-critical
+    const logger = createLogger({
+      priority_twist_id: plot.priorityTwistId,
+    });
+    logger.error(
+      "Error in markActivityReadForAuthorIfOwner",
+      error as Error,
+      { activity_id: activityId, author_id: authorId }
+    );
+  }
+}
 
 /**
  * Prepares a NewActivity for database insertion, handling all common preparation logic:
@@ -837,12 +915,14 @@ export async function prepareActivityForDb(
       upsert: upsertFields,
       defaults,
       priorityId: targetPriorityId,
+      authorId,
       occurrences,
     };
   } else {
     return {
       insert: defaults,
       priorityId: targetPriorityId,
+      authorId,
       occurrences,
     };
   }

@@ -291,7 +291,7 @@ async syncBatch(
   const activity: NewActivity = {
     type: ActivityType.Event,
     title: event.title,
-    unread: !initialSync,                      // false for initial, true for incremental
+    ...(initialSync ? { unread: false } : {}),   // false for initial, omit for incremental
     ...(initialSync ? { archived: false } : {}),  // unarchive on initial only
     // ... other fields
   };
@@ -302,13 +302,13 @@ async syncBatch(
 
 | Field | Initial Sync | Incremental Sync | Reason |
 |-------|--------------|------------------|---------|
-| `unread` | `false` | `true` | Avoid notification overload from historical items |
+| `unread` | `false` | *omit* | Initial: mark read for all. Incremental: auto-mark read for author if they are the twist owner |
 | `archived` | `false` | *omit* | Unarchive on install, preserve user choice on updates |
 
 **Why this matters**:
 
-- **Initial sync**: Activities are unarchived and marked as read, avoiding spam from bulk historical imports
-- **Incremental sync**: New activities appear as unread, and archived state is preserved (respects user's archiving decisions)
+- **Initial sync**: Activities are unarchived and marked as read for all users, avoiding spam from bulk historical imports
+- **Incremental sync**: Activities are auto-marked as read for the author if they are the twist owner (user), unread for everyone else. Archived state is preserved (respects user's archiving decisions)
 - **Reinstall**: Acts as initial sync, so archived activities are unarchived (fresh start)
 
 ### Google Tool Integration Pattern

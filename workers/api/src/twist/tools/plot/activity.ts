@@ -23,6 +23,7 @@ import { ContactAccess } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 import {
   handleDbOperationError,
+  markActivityReadForAuthorIfOwner,
   prepareActivityForDb,
   processTagsActors,
   toDbRange,
@@ -72,6 +73,7 @@ export {
   actorTypeToString,
   convertNoteToMarkdown,
   createPreviewFromMarkdown,
+  markActivityReadForAuthorIfOwner,
   prepareActivityForDb,
   processNewActor,
   processNewActorArray,
@@ -85,10 +87,8 @@ export async function createActivity(
 ): Promise<Uuid> {
   try {
     // Use shared helper for all preparation logic
-    const { priorityId, occurrences, ...prep } = await prepareActivityForDb(
-      plot,
-      activity
-    );
+    const { priorityId, authorId, occurrences, ...prep } =
+      await prepareActivityForDb(plot, activity);
 
     // Insert or upsert activity based on whether it has a source.
     let dbResult: {
@@ -181,16 +181,18 @@ export async function createActivity(
       );
     }
 
-    // Mark as read for all priority users if unread is false
+    // Mark as read based on unread flag:
+    // - false: mark read for ALL priority users (initial sync)
+    // - undefined/omitted: mark read for author only if they are the twist owner
+    // - true: explicitly unread for all (do nothing)
     // This happens AFTER notes are created to ensure read_at timestamp is later than note timestamps
-    // Check both activity-level and occurrence-level unread flags
     const occurrencesHaveUnreadFalse =
       occurrences && occurrences.some((occ) => occ.unread === false);
-    const shouldMarkAsRead =
+    const shouldMarkAllAsRead =
       activity?.unread === false || occurrencesHaveUnreadFalse;
 
-    if (shouldMarkAsRead) {
-      // Get all users with access to this priority (including inherited access from parent priorities)
+    if (shouldMarkAllAsRead) {
+      // Mark read for ALL priority users
       const usersResult = await plot.supabase.rpc(
         "get_users_with_priority_access",
         {
@@ -199,7 +201,6 @@ export async function createActivity(
       );
 
       if (usersResult.data && usersResult.data.length > 0) {
-        // Find the latest note timestamp for this activity, or use activity's created_at
         const latestNoteResult = await plot.supabase
           .from("note")
           .select("created_at")
@@ -211,7 +212,6 @@ export async function createActivity(
         const latestTimestamp =
           latestNoteResult.data?.created_at ?? dbResult.created_at;
 
-        // Create activity_read entries for all users with the latest timestamp
         const activityReadEntries = usersResult.data.map(
           (pu: { user_id: string }) => ({
             activity_id: dbResult.id,
@@ -224,9 +224,6 @@ export async function createActivity(
           .from("activity_read")
           .upsert(activityReadEntries, { onConflict: "user_id,activity_id" });
         if (insertResult.error) {
-          // Intentionally log but don't throw: activity_read is a non-critical feature that tracks
-          // read status for notifications. Failing to mark as read should not prevent activity creation.
-          // The activity was created successfully; the user will just see it as unread.
           const logger = createLogger({
             priority_twist_id: plot.priorityTwistId,
           });
@@ -240,7 +237,27 @@ export async function createActivity(
           );
         }
       }
+    } else if (activity?.unread === undefined) {
+      // Default: mark read for just the author if they are the twist owner
+      const latestNoteResult = await plot.supabase
+        .from("note")
+        .select("created_at")
+        .eq("activity_id", dbResult.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const readTimestamp =
+        latestNoteResult.data?.created_at ?? dbResult.created_at;
+
+      await markActivityReadForAuthorIfOwner(
+        plot,
+        authorId,
+        dbResult.id,
+        readTimestamp
+      );
     }
+    // unread === true: do nothing (explicitly unread for all)
 
     // Return just the ID for efficiency
     return dbResult.id as Uuid;
@@ -999,11 +1016,18 @@ export async function createActivities(
       await createNotes(plot, allNotes);
     }
 
-    // Mark activities as read for all priority users if unread === false
+    // Mark activities as read based on unread flag:
+    // - false: mark read for ALL priority users (initial sync)
+    // - undefined/omitted: mark read for author only if they are the twist owner
+    // - true: explicitly unread for all (do nothing)
     // This happens AFTER notes are created to ensure read_at timestamp is later than note timestamps
-    const activitiesToMarkAsRead: Array<{
+    const activitiesToMarkAllAsRead: Array<{
       dbActivity: DbActivity;
       originalActivity: NewActivity | NewActivityWithNotes;
+    }> = [];
+    const activitiesToMarkAuthorAsRead: Array<{
+      dbActivity: DbActivity;
+      authorId: string;
     }> = [];
 
     for (let i = 0; i < activities.length; i++) {
@@ -1012,20 +1036,25 @@ export async function createActivities(
       const occurrencesHaveUnreadFalse =
         occurrences &&
         occurrences.some((occ) => "unread" in occ && occ.unread === false);
-      const shouldMarkAsRead =
+      const shouldMarkAllAsRead =
         originalActivity?.unread === false || occurrencesHaveUnreadFalse;
 
-      if (shouldMarkAsRead) {
-        activitiesToMarkAsRead.push({
+      if (shouldMarkAllAsRead) {
+        activitiesToMarkAllAsRead.push({
           dbActivity: dbActivities[i],
           originalActivity,
+        });
+      } else if (originalActivity?.unread === undefined) {
+        activitiesToMarkAuthorAsRead.push({
+          dbActivity: dbActivities[i],
+          authorId: preparedActivities[i].authorId,
         });
       }
     }
 
-    if (activitiesToMarkAsRead.length > 0) {
-      // Get all activity IDs that need unread marking
-      const activityIdsForUnread = activitiesToMarkAsRead.map(
+    if (activitiesToMarkAllAsRead.length > 0) {
+      // Get all activity IDs that need unread marking for all users
+      const activityIdsForUnread = activitiesToMarkAllAsRead.map(
         (a) => a.dbActivity.id
       );
 
@@ -1047,9 +1076,9 @@ export async function createActivities(
       // Group activities by priority_id to minimize database queries
       const activitiesByPriority = new Map<
         string,
-        typeof activitiesToMarkAsRead
+        typeof activitiesToMarkAllAsRead
       >();
-      for (const item of activitiesToMarkAsRead) {
+      for (const item of activitiesToMarkAllAsRead) {
         const priorityId = item.dbActivity.priority_id;
         if (!activitiesByPriority.has(priorityId)) {
           activitiesByPriority.set(priorityId, []);
@@ -1077,7 +1106,6 @@ export async function createActivities(
                 usersResult.data!.map((pu: { user_id: string }) => ({
                   activity_id: item.dbActivity.id,
                   user_id: pu.user_id,
-                  // Use latest note timestamp if available, otherwise fall back to activity's created_at
                   read_at:
                     latestNoteTimestamps.get(item.dbActivity.id) ??
                     item.dbActivity.created_at,
@@ -1094,9 +1122,6 @@ export async function createActivities(
                   onConflict: "user_id,activity_id",
                 });
               if (insertResult.error) {
-                // Intentionally log but don't throw: activity_read is a non-critical feature that tracks
-                // read status for notifications. Failing to mark as read should not prevent activity creation.
-                // The activities were created successfully; users will just see them as unread.
                 const logger = createLogger({
                   priority_twist_id: plot.priorityTwistId,
                 });
@@ -1109,6 +1134,43 @@ export async function createActivities(
                 );
               }
             })
+        )
+      );
+    }
+
+    // Mark read for author only (when unread is omitted/undefined)
+    if (activitiesToMarkAuthorAsRead.length > 0) {
+      const authorActivityIds = activitiesToMarkAuthorAsRead.map(
+        (a) => a.dbActivity.id
+      );
+
+      // Query latest note timestamps for these activities
+      const latestNotesResult = await plot.supabase
+        .from("note")
+        .select("activity_id, created_at")
+        .in("activity_id", authorActivityIds)
+        .order("created_at", { ascending: false });
+
+      const latestNoteTimestamps = new Map<string, string>();
+      for (const note of latestNotesResult.data ?? []) {
+        if (!latestNoteTimestamps.has(note.activity_id)) {
+          latestNoteTimestamps.set(note.activity_id, note.created_at);
+        }
+      }
+
+      await Promise.all(
+        activitiesToMarkAuthorAsRead.map((item) =>
+          limit(async () => {
+            const readTimestamp =
+              latestNoteTimestamps.get(item.dbActivity.id) ??
+              item.dbActivity.created_at;
+            await markActivityReadForAuthorIfOwner(
+              plot,
+              item.authorId,
+              item.dbActivity.id,
+              readTimestamp
+            );
+          })
         )
       );
     }

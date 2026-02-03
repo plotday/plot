@@ -13,10 +13,10 @@ import {
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
 import { createLogger } from "@plotday/worker-util";
-import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import {
   convertNoteToMarkdown,
   handleDbOperationError,
+  markActivityReadForAuthorIfOwner,
   processNewActor,
   processNewActorArray,
 } from "./activity-helpers";
@@ -169,10 +169,6 @@ export async function createNote(
     }
 
     // Convert Note to database format
-    // IMPORTANT: For webhook-originated notes (notes with authors), use the author's ID
-    // as updated_by so the activity update appears in priority_twist_activity_update view.
-    // The view filters out updates where updated_by equals the twist to prevent loops,
-    // but webhook notes represent external changes that should trigger sync.
     const dbNote: any = {
       author_id: authorId,
       created_by: plot.priorityTwistId,
@@ -184,9 +180,7 @@ export async function createNote(
       content: contentToStore,
       links: note.links ?? null,
       mentions: mentionIds,
-      updated_by: note.author
-        ? truncateUuidForUpdatedBy(authorId as string)
-        : plot.getUpdatedBy(),
+      updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
       // Default to un-archived for upserts unless archived is explicitly specified
       archived_at: note.archived ? new Date().toISOString() : null,
@@ -214,10 +208,13 @@ export async function createNote(
         : await plot.supabase.from("note").insert(dbNote).select().single()
     );
 
-    // Mark activity as read for all priority users if unread is false
+    // Mark activity as read based on unread flag:
+    // - false: mark read for ALL priority users (initial sync)
+    // - undefined/omitted: mark read for author only if they are the twist owner
+    // - true: explicitly unread for all (do nothing)
     // Skip if called from batch operations to avoid deadlock from parallel upserts
     if (!skipActivityRead && note?.unread === false) {
-      // Get all users with access to this priority (including inherited access from parent priorities)
+      // Mark read for ALL priority users
       const usersResult = await plot.supabase.rpc(
         "get_users_with_priority_access",
         {
@@ -226,16 +223,14 @@ export async function createNote(
       );
 
       if (usersResult.data && usersResult.data.length > 0) {
-        // Create or update activity_read entries for all users
         const activityReadEntries = usersResult.data.map(
           (pu: { user_id: string }) => ({
             activity_id: activityId,
             user_id: pu.user_id,
-            read_at: dbResult.created_at, // Use note's created_at timestamp
+            read_at: dbResult.created_at,
           })
         );
 
-        // Use upsert to handle cases where some users may have already read the activity
         const upsertResult = await plot.supabase
           .from("activity_read")
           .upsert(activityReadEntries, {
@@ -255,6 +250,14 @@ export async function createNote(
           );
         }
       }
+    } else if (!skipActivityRead && note?.unread === undefined) {
+      // Default: mark read for just the author if they are the twist owner
+      await markActivityReadForAuthorIfOwner(
+        plot,
+        authorId as string,
+        activityId,
+        dbResult.created_at
+      );
     }
 
     // Process tags if provided - convert NewActor[] to ActorId[] for each tag
