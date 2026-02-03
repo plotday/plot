@@ -267,7 +267,7 @@ class NewActivityPageState extends State<NewActivityPage> {
               onPopInvokedWithResult: (didPop, result) {
                 if (!didPop) {
                   if (ModalProvider.tryDismissTopModal(context)) return;
-                  if (!layoutState.multiPanel) {
+                  if (!context.isMultiPanel) {
                     context.run(ChangeCurrentActivity(null));
                   }
                 }
@@ -276,7 +276,7 @@ class NewActivityPageState extends State<NewActivityPage> {
                 translucent: true,
                 scrollable: false,
                 childPad: layoutState.multiPanel,
-                header: !layoutState.multiPanel
+                header: !context.isMultiPanel
                     ? null
                     : layoutState.middlePanelVisible
                     ? const Header()

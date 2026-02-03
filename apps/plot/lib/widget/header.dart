@@ -21,7 +21,7 @@ class PanelPositionProvider extends InheritedWidget {
     required super.child,
   });
 
-  final HeaderPosition position;
+  final HeaderPosition? position;
 
   static HeaderPosition? of(BuildContext context) {
     return context
