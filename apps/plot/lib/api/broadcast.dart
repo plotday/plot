@@ -295,23 +295,8 @@ class BroadcastClient with WidgetsBindingObserver {
       return;
     }
 
-    // Check if we've exceeded max retries
-    _authFailureCount++;
-    if (_authFailureCount > _maxAuthRetries) {
-      log.warning(
-        "WebSocket auth failed $_authFailureCount times - signing out user",
-      );
-      _shouldReconnect = false;
-      try {
-        await Base.signOut();
-      } catch (e, stackTrace) {
-        log.warning("Error during auth failure sign-out", e, stackTrace);
-      }
-      return;
-    }
-
     log.info(
-      "WebSocket auth failed (attempt $_authFailureCount/$_maxAuthRetries) - attempting token refresh",
+      "WebSocket auth failed - attempting token refresh",
     );
 
     _isRefreshingToken = true;
@@ -319,12 +304,11 @@ class BroadcastClient with WidgetsBindingObserver {
       await Base.refreshSession();
       log.info("Token refresh successful - reconnecting WebSocket");
 
-      // Reset backoff and enable reconnect
-      _resetBackoff();
+      // Session is valid: reset failure count and reconnect with backoff
+      _authFailureCount = 0;
       _shouldReconnect = true;
       _isRefreshingToken = false;
 
-      // Schedule reconnect with new token
       _scheduleReconnect();
     } on supa.AuthException catch (e) {
       // Refresh token is invalid - must sign out
@@ -339,20 +323,25 @@ class BroadcastClient with WidgetsBindingObserver {
     } catch (e) {
       _isRefreshingToken = false;
 
-      // Check if this is a network error - retry when online
-      if (_isNetworkError(e)) {
-        log.info("Token refresh failed (network error) - will retry when online");
-        _shouldReconnect = true;
-        _scheduleReconnect();
-      } else {
-        // Unknown error - sign out to be safe
-        log.warning("Token refresh failed (unknown error: $e) - signing out user");
+      // Token refresh failed for non-auth reason (network error, server down, etc.)
+      // Count these failures — if repeated, the session may actually be invalid
+      _authFailureCount++;
+      if (_authFailureCount > _maxAuthRetries) {
+        log.warning(
+          "Token refresh failed $_authFailureCount times ($e) - signing out user",
+        );
         _shouldReconnect = false;
         try {
           await Base.signOut();
         } catch (signOutError, stackTrace) {
           log.warning("Error during sign-out", signOutError, stackTrace);
         }
+      } else {
+        log.info(
+          "Token refresh failed (attempt $_authFailureCount/$_maxAuthRetries: $e) - will retry",
+        );
+        _shouldReconnect = true;
+        _scheduleReconnect();
       }
     }
   }
