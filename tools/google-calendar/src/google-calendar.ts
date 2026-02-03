@@ -696,7 +696,7 @@ export class GoogleCalendar
                 [Tag.Blocked]: [], // Toggle tag, empty actor array
               },
               notes: [cancelNote],
-              unread: !initialSync, // false for initial sync, true for incremental updates
+              ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
               ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
             };
 
@@ -828,7 +828,7 @@ export class GoogleCalendar
             tags: tags || undefined,
             notes,
             preview: hasDescription ? description : null,
-            unread: !initialSync, // false for initial sync, true for incremental updates
+            ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           };
 
@@ -949,7 +949,7 @@ export class GoogleCalendar
       occurrence: new Date(originalStartTime),
       start: occurrenceStart,
       tags: Object.keys(tags).length > 0 ? tags : undefined,
-      unread: !initialSync,
+      ...(initialSync ? { unread: false } : {}),
     };
 
     // Add additional field overrides if present

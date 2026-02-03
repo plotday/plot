@@ -622,12 +622,13 @@ export type NewActivityOccurrence = Pick<
 
     /**
      * Whether this occurrence should be marked as unread for users.
-     * - true (default): Occurrence is unread for users
-     * - false: Occurrence is marked as read
-     * - undefined/omitted: Same as true (default behavior)
+     * - undefined/omitted (default): Occurrence is unread for users, except auto-marked
+     *   as read for the author if they are the twist owner (user)
+     * - true: Occurrence is explicitly unread for ALL users (use sparingly)
+     * - false: Occurrence is marked as read for all users
      *
-     * Only set this field explicitly when you want to mark the occurrence as read (false).
-     * For the default unread behavior, omit this field entirely - do NOT set it to true.
+     * For the default behavior, omit this field entirely.
+     * Use false for initial sync to avoid marking historical items as unread.
      */
     unread?: boolean;
   };
@@ -809,14 +810,13 @@ export type NewActivity = Pick<Activity, "type"> &
 
     /**
      * Whether the activity should be marked as unread for users.
-     * - true (default): Activity is unread for all users in the priority
+     * - undefined/omitted (default): Activity is unread for users, except auto-marked
+     *   as read for the author if they are the twist owner (user)
+     * - true: Activity is explicitly unread for ALL users (use sparingly)
      * - false: Activity is marked as read for all users in the priority at creation time
-     * - undefined/omitted: Same as true (default behavior)
      *
-     * Only set this field explicitly when you want to mark activities as read (false).
-     * For the default unread behavior, omit this field entirely - do NOT set it to true.
-     *
-     * Use false for historical imports to avoid marking old items as unread.
+     * For the default behavior, omit this field entirely.
+     * Use false for initial sync to avoid marking historical items as unread.
      */
     unread?: boolean;
 
@@ -1044,14 +1044,13 @@ export type NewNote = Partial<
 
     /**
      * Whether the note should mark the parent activity as unread for users.
-     * - true (default): Activity becomes unread for users who haven't authored the note
+     * - undefined/omitted (default): Activity is unread for users, except auto-marked
+     *   as read for the author if they are the twist owner (user)
+     * - true: Activity is explicitly unread for ALL users (use sparingly)
      * - false: Activity is marked as read for all users in the priority at note creation time
-     * - undefined/omitted: Same as true (default behavior)
      *
-     * Only set this field explicitly when you want to mark the activity as read (false).
-     * For the default unread behavior, omit this field entirely - do NOT set it to true.
-     *
-     * Use false for historical imports to avoid marking old items as unread.
+     * For the default behavior, omit this field entirely.
+     * Use false for initial sync to avoid marking historical items as unread.
      */
     unread?: boolean;
   };

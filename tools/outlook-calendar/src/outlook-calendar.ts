@@ -481,7 +481,7 @@ export class OutlookCalendar
               [Tag.Blocked]: [], // Toggle tag, empty actor array
             },
             notes: [cancelNote],
-            unread: !initialSync, // false for initial sync, true for incremental updates
+            ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           };
 
@@ -630,7 +630,7 @@ export class OutlookCalendar
           tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
           notes,
           preview: hasDescription ? outlookEvent.body!.content! : null,
-          unread: !initialSync, // false for initial sync, true for incremental updates
+          ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
           ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
         };
 
@@ -722,7 +722,7 @@ export class OutlookCalendar
       occurrence: new Date(originalStart),
       start: occurrenceStart,
       tags: Object.keys(tags).length > 0 ? tags : undefined,
-      unread: !initialSync,
+      ...(initialSync ? { unread: false } : {}),
     };
 
     // Add additional field overrides if present

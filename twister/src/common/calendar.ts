@@ -181,7 +181,7 @@ export type CalendarTool = {
    * - Use Note.key for event details (description, attendees, etc.) to enable upserts
    * - No manual ID tracking needed - Plot handles deduplication automatically
    * - Send NewActivityWithNotes for all events (creates new or updates existing)
-   * - Set activity.unread = false for initial sync, true for incremental updates
+   * - Set activity.unread = false for initial sync, omit for incremental updates
    *
    * **Alternative** (Strategy 3 - Advanced cases):
    * - Use Uuid.Generate() and store ID mappings when creating multiple activities per event

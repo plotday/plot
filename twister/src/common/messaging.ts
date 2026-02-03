@@ -85,7 +85,7 @@ export type MessagingTool = {
    * - Each message becomes a separate note with unique key for upserts
    * - No manual ID tracking needed - Plot handles deduplication automatically
    * - Send NewActivityWithNotes for all threads (creates new or updates existing)
-   * - Set activity.unread = false for initial sync, true for incremental updates
+   * - Set activity.unread = false for initial sync, omit for incremental updates
    *
    * **Alternative** (Strategy 3 - Advanced cases):
    * - Use Uuid.Generate() and store ID mappings when creating multiple activities per thread
