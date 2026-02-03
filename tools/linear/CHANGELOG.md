@@ -1,5 +1,16 @@
 # @plotday/tool-linear
 
+## 0.5.2
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.32.1
+
+### Fixed
+
+- Update Linear assignee ([`3533c44`](https://github.com/plotday/plot/commit/3533c44f82cf69c591acff8c095390d13ce600ab))
+
 ## 0.5.1
 
 ### Changed

@@ -1,5 +1,16 @@
 # @plotday/tool-google-calendar
 
+## 0.11.2
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.32.1
+
+### Fixed
+
+- Mark new items read for the author ([`aac9e42`](https://github.com/plotday/plot/commit/aac9e428c6dc07dfad8c284c4761eaba4088a310))
+
 ## 0.11.1
 
 ### Changed
