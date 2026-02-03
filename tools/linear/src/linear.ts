@@ -451,7 +451,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       },
       notes,
       preview: hasDescription ? description : null,
-      unread: !initialSync, // false for initial sync, true for incremental updates
+      ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
       ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
     };
 
@@ -483,8 +483,50 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       updateFields.title = activity.title;
     }
 
-    // Handle assignee
-    updateFields.assigneeId = activity.assignee?.id || null;
+    // Handle assignee - map Plot actor to Linear user via email lookup
+    const currentAssigneeActorId = activity.assignee?.id || null;
+
+    if (!currentAssigneeActorId) {
+      updateFields.assigneeId = null;
+    } else {
+      const actors = await this.tools.plot.getActors([
+        currentAssigneeActorId,
+      ]);
+      const actor = actors[0];
+      const email = actor?.email;
+
+      if (email) {
+        // Check cache first
+        let linearUserId = await this.get<string>(
+          `linear_user:${email}`
+        );
+
+        if (!linearUserId) {
+          // Query Linear for user by email
+          const users = await client.users({
+            filter: { email: { eq: email } },
+          });
+          const linearUser = users.nodes[0];
+
+          if (linearUser) {
+            linearUserId = linearUser.id;
+            await this.set(`linear_user:${email}`, linearUserId);
+          }
+        }
+
+        if (linearUserId) {
+          updateFields.assigneeId = linearUserId;
+        } else {
+          console.warn(
+            `No Linear user found for email ${email}, skipping assignee update`
+          );
+        }
+      } else {
+        console.warn(
+          `No email found for actor ${currentAssigneeActorId}, skipping assignee update`
+        );
+      }
+    }
 
     // Handle state based on start + done combination
     const team = await issue.team;
