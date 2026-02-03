@@ -301,6 +301,12 @@ class _HeaderState extends State<Header> {
               builder: (context) => DecoratedBox(
                 decoration: BoxDecoration(
                   color: context.theme.colors.background,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: context.theme.colors.border,
+                      width: 0.5,
+                    ),
+                  ),
                 ),
                 child: FHeader(
                   style: (style) {

@@ -80,8 +80,16 @@ class PrioritiesPage extends StatelessWidget {
                         steps: 2,
                       ),
                       child: Builder(
-                        builder: (context) => ColoredBox(
-                          color: context.theme.colors.background,
+                        builder: (context) => DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: context.theme.colors.background,
+                            border: Border(
+                              top: BorderSide(
+                                color: context.theme.colors.border,
+                                width: 0.5,
+                              ),
+                            ),
+                          ),
                           child: Column(
                             children: [
                               SizedBox(height: 8),
