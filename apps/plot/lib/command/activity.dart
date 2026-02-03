@@ -540,6 +540,7 @@ class FinishAction extends _UpdateActivityCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doneAt: Value(DateTime.now())));
+    HapticFeedback.mediumImpact();
     return const CommandDone();
   }
 }
