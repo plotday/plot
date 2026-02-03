@@ -5,7 +5,7 @@ FROM node:20-alpine
 RUN apk add --no-cache git
 
 # Install Plot SDK globally
-RUN npm install -g @plotday/sdk@latest
+RUN npm install -g @plotday/twister@latest
 
 # Set working directory for the server
 WORKDIR /app
