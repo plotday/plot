@@ -372,7 +372,9 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 150),
                                     curve: Curves.easeInOut,
-                                    width: 0.5,
+                                    width: _hoveredDividerIndex == i
+                                        ? 2.0
+                                        : 0.5,
                                     height: overlayHeight,
                                     color: _hoveredDividerIndex == i
                                         ? colorScheme.accent
