@@ -167,9 +167,11 @@ class _PrioritiesListState extends State<PrioritiesList>
         final headerStyle = isLeftPanel
             ? context.theme.typography.xs
             : context.theme.typography.sm;
-        final itemStyle = isLeftPanel
+        final itemStyle = (isLeftPanel
             ? context.theme.typography.sm
-            : context.theme.typography.base;
+            : context.theme.typography.base).copyWith(
+          fontWeight: FontWeight.w500,
+        );
 
         // Automatic expansion logic
         bool shouldExpand(Priority priority) {
