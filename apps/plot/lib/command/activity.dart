@@ -307,6 +307,7 @@ class AddActivity extends Command {
           ActivityRoute(activityIdString: activity.id.toShortString()),
         ],
       ),
+      replace: true,
     );
   }
 }
@@ -353,6 +354,7 @@ class AddActivityWithNote extends Command {
           ActivityRoute(activityIdString: savedActivity.id.toShortString()),
         ],
       ),
+      replace: true,
     );
   }
 }
@@ -397,6 +399,7 @@ class AddEvent extends Command {
           ActivityRoute(activityIdString: savedActivity.id.toShortString()),
         ],
       ),
+      replace: true,
     );
   }
 }
