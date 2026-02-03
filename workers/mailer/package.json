@@ -7,7 +7,8 @@
     "deploy_vars": "POSTHOG_API_KEY POSTHOG_HOST RESEND_API_KEY"
   },
   "scripts": {
-    "env": "bash ../../scripts/gen-env development > .dev.vars",
+    "get-env": "bash ../../scripts/get-env",
+    "set-env": "bash ../../scripts/set-env",
     "deploy": "bash ../../scripts/deploy-worker",
     "deploy:vars": "bash ../../scripts/deploy-worker-vars",
     "types": "wrangler types",

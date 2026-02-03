@@ -37,7 +37,10 @@
     "stop": {
       "cache": false
     },
-    "env": {
+    "get-env": {
+      "cache": false
+    },
+    "set-env": {
       "cache": false
     }
   },

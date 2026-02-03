@@ -5,10 +5,11 @@
   "sideEffects": false,
   "type": "module",
   "config": {
-    "deploy_vars": "API_ROOT APP_ROOT SUPABASE_URL SUPABASE_ANON_KEY POSTHOG_API_KEY POSTHOG_PROXY"
+    "deploy_vars": "API_ROOT APP_ROOT SUPABASE_URL SUPABASE_ANON_KEY POSTHOG_API_KEY POSTHOG_PROXY",
+    "env_file": ".env"
   },
   "scripts": {
-    "env": "bash ../../scripts/gen-env development > .env",
+    "get-env": "bash ../../scripts/get-env",
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "wrangler dev",

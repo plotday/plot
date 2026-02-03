@@ -112,7 +112,7 @@ jobs:
 
       - name: Write .env file
         run: |
-          cd apps/plot && pnpm run env:prod
+          cd apps/plot && pnpm get-env && pnpm set-env prod
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4

@@ -9,7 +9,8 @@
   },
   "private": true,
   "scripts": {
-    "env": "bash ../../scripts/gen-env development $npm_package_config_env_vars > .env",
+    "get-env": "bash ../../scripts/get-env",
+    "set-env": "bash ../../scripts/set-env",
     "fake-env": "for name in $npm_package_config_env_vars; do echo $name=foo; done",
     "start": "export $(cat .env) && export OPENAI_API_KEY=$(cat ~/.config/openai.token) && supabase start && tsx scripts/update-supabase-env.ts",
     "start:db": "export $(pnpm --silent fake-env) && supabase start db",

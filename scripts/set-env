@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# Switches the active env by updating the symlink.
+#
+# Usage: set-env <dev|prod>
+#
+# Override the native filename via config.env_file in package.json.
+# Otherwise auto-detects: .dev.vars for wrangler projects, .env for others.
+
+case "$1" in
+  dev) ENV=development ;;
+  prod) ENV=production ;;
+  *)
+    echo "Usage: set-env <dev|prod>" >&2
+    exit 1
+    ;;
+esac
+
+# Detect native filename: explicit config > auto-detect
+if [ -n "$npm_package_config_env_file" ]; then
+  NATIVE="$npm_package_config_env_file"
+elif [ -f wrangler.toml ] || [ -f wrangler.jsonc ]; then
+  NATIVE=".dev.vars"
+else
+  NATIVE=".env"
+fi
+
+SOURCE="${NATIVE}.${ENV}"
+if [ ! -f "$SOURCE" ]; then
+  echo "Error: $SOURCE not found. Run 'pnpm get-env' first." >&2
+  exit 1
+fi
+
+rm -f "$NATIVE"
+ln -s "$SOURCE" "$NATIVE"
+
+# Validation for production Flutter builds
+if [ "$ENV" = "production" ] && [ -f pubspec.yaml ]; then
+  if grep -q 'localhost' "$SOURCE"; then
+    echo "WARNING: Production env contains 'localhost' URLs!" >&2
+    exit 1
+  fi
+fi

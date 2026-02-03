@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Generates both .env.development and .env.production (or .dev.vars.*)
+# for the current package. Creates a symlink to the development file
+# if no symlink exists yet.
+#
+# Usage: get-env (run from package directory via pnpm)
+#
+# Override the native filename via config.env_file in package.json.
+# Otherwise auto-detects: .dev.vars for wrangler projects, .env for others.
+
+SCRIPTS_DIR="$(dirname "${BASH_SOURCE[0]}")"
+VARS="$npm_package_config_deploy_vars $npm_package_config_env_vars"
+
+# Detect native filename: explicit config > auto-detect
+if [ -n "$npm_package_config_env_file" ]; then
+  NATIVE="$npm_package_config_env_file"
+elif [ -f wrangler.toml ] || [ -f wrangler.jsonc ]; then
+  NATIVE=".dev.vars"
+else
+  NATIVE=".env"
+fi
+
+# Generate both env files
+bash "$SCRIPTS_DIR/gen-env" development $VARS > "${NATIVE}.development"
+bash "$SCRIPTS_DIR/gen-env" production $VARS > "${NATIVE}.production"
+
+# Create symlink if none exists (default to development)
+if [ ! -L "$NATIVE" ]; then
+  rm -f "$NATIVE"
+  ln -s "${NATIVE}.development" "$NATIVE"
+fi

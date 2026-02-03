@@ -12,7 +12,7 @@
 1. `brew install cocoapods`
 1. Get the public repo submodule: `git submodule update --init --recursive`
 1. `pnpm install`
-1. `pnpm run env`
+1. `pnpm get-env`
 1. `pnpm run start`
 
 Note: The public repo is included as a git submodule in `public/` and linked as a workspace dependency in `pnpm-workspace.yaml`, allowing local development of Twister types before publishing.
