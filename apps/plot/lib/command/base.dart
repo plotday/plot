@@ -305,7 +305,7 @@ abstract class CommandGroup {
       // All search words must prefix match at least one word in the field
       return searchWords.every((searchWord) {
         // Split field into words and check if any word starts with searchWord
-        return fieldLower.split(RegExp(r'\s+')).any((fieldWord) {
+        return fieldLower.split(RegExp(r'[\s/]+')).any((fieldWord) {
           return fieldWord.startsWith(searchWord);
         });
       });

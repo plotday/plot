@@ -514,7 +514,12 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                   ),
               DismissIntent: CallbackAction<DismissIntent>(
                 onInvoke: (intent) {
-                  _cancel();
+                  if (_controller.text.isNotEmpty) {
+                    _controller.clear();
+                    _initItems();
+                  } else {
+                    _cancel();
+                  }
                   return KeyEventResult.handled;
                 },
               ),
