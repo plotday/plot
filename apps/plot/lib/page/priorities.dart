@@ -16,6 +16,8 @@ import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/header.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/style/colors.dart';
+import 'package:plot/style/theme.dart';
 
 @RoutePage(name: 'PrioritiesRoute')
 class PrioritiesPage extends StatelessWidget {
@@ -69,54 +71,84 @@ class PrioritiesPage extends StatelessWidget {
                       },
                     ),
                   ),
-                  if (layoutState.multiPanel) ...[
-                    Container(height: 1, color: context.theme.colors.border),
-                    ListTile(
-                      title: 'Twists',
-                      textStyle: context.theme.typography.sm,
-                      trailingBuilder: (isHovered, hasFocus) => Padding(
-                        padding: const .only(left: 4, right: 16),
-                        child: Icon(
-                          PlotIcon.twist,
-                          size: context.theme.iconSizes.sm,
-                          color: context.theme.colors.mutedForeground,
+                  if (layoutState.multiPanel)
+                    FAnimatedTheme(
+                      data: darkenTheme(
+                        context,
+                        context.theme,
+                        context.colour,
+                        steps: 2,
+                      ),
+                      child: Builder(
+                        builder: (context) => ColoredBox(
+                          color: context.theme.colors.background,
+                          child: Column(
+                            children: [
+                              SizedBox(height: 8),
+                              ListTile(
+                                title: 'Twists',
+                                textStyle: context.theme.typography.sm,
+                                trailingBuilder: (isHovered, hasFocus) =>
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 4,
+                                        right: 16,
+                                      ),
+                                      child: Icon(
+                                        PlotIcon.twist,
+                                        size: context.theme.iconSizes.sm,
+                                        color: context
+                                            .theme
+                                            .colors
+                                            .mutedForeground,
+                                      ),
+                                    ),
+                                command: CommandWrapper(
+                                  ManageTwists(),
+                                  icon: Value(null),
+                                ),
+                              ),
+                              BlocBuilder<UserBloc, UserState>(
+                                builder: (context, userState) {
+                                  if (userState is UserReady) {
+                                    final userName =
+                                        userState.user.name ??
+                                        userState.user.primaryEmail ??
+                                        'User';
+                                    return ListTile(
+                                      title: userName,
+                                      subtitle: userState.user.primaryEmail,
+                                      textStyle: context.theme.typography.sm,
+                                      trailingBuilder: (isHovered, hasFocus) =>
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              left: 4,
+                                              right: 16,
+                                            ),
+                                            child: Icon(
+                                              PlotIcon.settings,
+                                              size: context.theme.iconSizes.sm,
+                                              color: context
+                                                  .theme
+                                                  .colors
+                                                  .mutedForeground,
+                                            ),
+                                          ),
+                                      command: CommandWrapper(
+                                        ShowSettings(),
+                                        icon: Value(null),
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                              SizedBox(height: 12),
+                            ],
+                          ),
                         ),
                       ),
-                      command: CommandWrapper(
-                        ManageTwists(),
-                        icon: Value(null),
-                      ),
                     ),
-                    BlocBuilder<UserBloc, UserState>(
-                      builder: (context, userState) {
-                        if (userState is UserReady) {
-                          final userName =
-                              userState.user.name ??
-                              userState.user.primaryEmail ??
-                              'User';
-                          return ListTile(
-                            title: userName,
-                            subtitle: userState.user.primaryEmail,
-                            textStyle: context.theme.typography.sm,
-                            trailingBuilder: (isHovered, hasFocus) => Padding(
-                              padding: const .only(left: 4, right: 16),
-                              child: Icon(
-                                PlotIcon.settings,
-                                size: context.theme.iconSizes.sm,
-                                color: context.theme.colors.mutedForeground,
-                              ),
-                            ),
-                            command: CommandWrapper(
-                              ShowSettings(),
-                              icon: Value(null),
-                            ),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
-                    SizedBox(height: 12),
-                  ],
                 ],
               );
             },

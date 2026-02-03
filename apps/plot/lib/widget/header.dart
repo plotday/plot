@@ -6,6 +6,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/style/colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/theme.dart';
 import 'button.dart';
 import 'window.dart';
 
@@ -29,6 +32,29 @@ class PanelPositionProvider extends InheritedWidget {
   @override
   bool updateShouldNotify(PanelPositionProvider oldWidget) {
     return position != oldWidget.position;
+  }
+}
+
+/// Provides a [ValueNotifier] for header height to descendants.
+/// Used to offset the resize hover overlay below the header area.
+class HeaderHeightProvider extends InheritedWidget {
+  const HeaderHeightProvider({
+    super.key,
+    required this.notifier,
+    required super.child,
+  });
+
+  final ValueNotifier<double> notifier;
+
+  static ValueNotifier<double>? of(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<HeaderHeightProvider>()
+        ?.notifier;
+  }
+
+  @override
+  bool updateShouldNotify(HeaderHeightProvider oldWidget) {
+    return notifier != oldWidget.notifier;
   }
 }
 
@@ -211,6 +237,21 @@ class _HeaderState extends State<Header> {
                     style: context.theme.typography.base,
                   ),
             ),
+          // Invisible button-height spacer for blank headers to match height
+          if (!_searchExpanded && widget.main == null && widget.title == null)
+            Expanded(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0,
+                  child: FButton.icon(
+                    onPress: null,
+                    child: SizedBox.square(
+                      dimension: context.theme.iconSizes.base,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ];
 
         // Build suffixes with position-specific right buttons
@@ -253,32 +294,67 @@ class _HeaderState extends State<Header> {
             ),
         ];
 
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: context.theme.colors.border,
-                width: 1,
+        return _HeaderHeightReporter(
+          child: FAnimatedTheme(
+            data: darkenTheme(context, context.theme, context.colour, steps: 2),
+            child: Builder(
+              builder: (context) => DecoratedBox(
+                decoration: BoxDecoration(
+                  color: context.theme.colors.background,
+                ),
+                child: FHeader(
+                  style: (style) {
+                    final resolvedPadding = style.padding.resolve(
+                      TextDirection.ltr,
+                    );
+                    return style.copyWith(
+                      padding: EdgeInsets.fromLTRB(
+                        resolvedPadding.left,
+                        resolvedPadding.top,
+                        resolvedPadding.right,
+                        8,
+                      ),
+                    );
+                  },
+                  title: Row(spacing: 8, children: titleChildren),
+                  suffixes: suffixes,
+                ),
               ),
             ),
-          ),
-          child: FHeader(
-            style: (style) {
-              final resolvedPadding = style.padding.resolve(TextDirection.ltr);
-              return style.copyWith(
-                padding: EdgeInsets.fromLTRB(
-                  resolvedPadding.left,
-                  resolvedPadding.top,
-                  resolvedPadding.right,
-                  8,
-                ),
-              );
-            },
-            title: Row(spacing: 8, children: titleChildren),
-            suffixes: suffixes,
           ),
         );
       },
     );
+  }
+}
+
+/// Reports its measured height to the nearest [HeaderHeightProvider].
+class _HeaderHeightReporter extends StatefulWidget {
+  const _HeaderHeightReporter({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_HeaderHeightReporter> createState() => _HeaderHeightReporterState();
+}
+
+class _HeaderHeightReporterState extends State<_HeaderHeightReporter> {
+  void _reportHeight() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final renderObject = context.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.hasSize) return;
+      final height = context.size?.height;
+      final notifier = HeaderHeightProvider.of(context);
+      if (height != null && notifier != null && notifier.value != height) {
+        notifier.value = height;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _reportHeight();
+    return widget.child;
   }
 }

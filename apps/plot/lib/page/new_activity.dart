@@ -276,9 +276,10 @@ class NewActivityPageState extends State<NewActivityPage> {
                 translucent: true,
                 scrollable: false,
                 childPad: layoutState.multiPanel,
-                header:
-                    layoutState.middlePanelVisible || !layoutState.multiPanel
+                header: !layoutState.multiPanel
                     ? null
+                    : layoutState.middlePanelVisible
+                    ? const Header()
                     : Header(
                         title: 'New Activity',
                         prefixCommands: [
@@ -300,7 +301,7 @@ class NewActivityPageState extends State<NewActivityPage> {
 
                           // PriorityLabel and Scheduler with horizontal padding
                           Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            padding: EdgeInsets.symmetric(horizontal: 20),
                             child: Column(
                               children: [
                                 // PriorityLabel (centered, clickable, directly above editor)

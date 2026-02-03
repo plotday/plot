@@ -346,7 +346,7 @@ class _ListTileState extends State<ListTile> {
               children: [
                 SizedBox(
                   width: widget.leadingBuilder == null
-                      ? widget.padding?.resolve(null).left ?? 16
+                      ? widget.padding?.resolve(null).left ?? 20
                       : 0,
                 ),
 
@@ -421,7 +421,7 @@ class _ListTileState extends State<ListTile> {
                 ].whereType<Widget>(),
                 SizedBox(
                   width: widget.trailingBuilder == null
-                      ? widget.padding?.resolve(null).right ?? 16
+                      ? widget.padding?.resolve(null).right ?? 20
                       : 0,
                 ),
               ],

@@ -332,7 +332,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                 command: ChangeCurrentPriority(widget.root),
                 selected: widget.selected?.id == widget.root.id,
                 leadingBuilder: (isHovered, hasFocus) => SizedBox(
-                  width: 16,
+                  width: 20,
                   child: UnreadIndicator(
                     color: widget.root.displayColor,
                     unread: widget.root.unread,

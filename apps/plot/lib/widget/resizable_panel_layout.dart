@@ -35,6 +35,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   double _leftPanelWidth = 280.0;
   double _middlePanelRatio = 0.5;
   late final Future<void> _loadPreferencesFuture;
+  final ValueNotifier<double> _headerHeight = ValueNotifier<double>(0.0);
 
   @override
   void initState() {
@@ -49,6 +50,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
 
   @override
   void dispose() {
+    _headerHeight.dispose();
     super.dispose();
   }
 
@@ -193,23 +195,27 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                   ),
                 ];
 
-                return Column(
-                  mainAxisSize: MainAxisSize.max,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: _HoverableResizable(
-                        regions: regions,
-                        layoutState: layoutState,
-                        onLeftWidthChanged: (width) {
-                          setState(() => _leftPanelWidth = width);
-                        },
-                        onMiddleRatioChanged: (ratio) {
-                          setState(() => _middlePanelRatio = ratio);
-                        },
+                return HeaderHeightProvider(
+                  notifier: _headerHeight,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.max,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _HoverableResizable(
+                          regions: regions,
+                          layoutState: layoutState,
+                          headerHeight: _headerHeight,
+                          onLeftWidthChanged: (width) {
+                            setState(() => _leftPanelWidth = width);
+                          },
+                          onMiddleRatioChanged: (ratio) {
+                            setState(() => _middlePanelRatio = ratio);
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             );
@@ -224,12 +230,14 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
 class _HoverableResizable extends StatefulWidget {
   final List<FResizableRegion> regions;
   final LayoutState layoutState;
+  final ValueNotifier<double> headerHeight;
   final ValueChanged<double> onLeftWidthChanged;
   final ValueChanged<double> onMiddleRatioChanged;
 
   const _HoverableResizable({
     required this.regions,
     required this.layoutState,
+    required this.headerHeight,
     required this.onLeftWidthChanged,
     required this.onMiddleRatioChanged,
   });
@@ -248,6 +256,20 @@ class _HoverableResizableState extends State<_HoverableResizable> {
     super.initState();
     _controller = FResizableController.cascade();
     _controller.addListener(_handleResize);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HoverableResizable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.regions.length != oldWidget.regions.length) {
+      _hoveredDividerIndex = null;
+      // The controller's region offsets update during FResizable's layout phase,
+      // after this build. Force a post-frame rebuild so the overlay dividers
+      // pick up the correct positions.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   void _handleResize() async {
@@ -297,51 +319,58 @@ class _HoverableResizableState extends State<_HoverableResizable> {
         return ListenableBuilder(
           listenable: _controller,
           builder: (context, child) {
-            return Stack(
-              children: [
-                // The actual resizable widget with default styling
-                FResizable(
-                  control: .managedCascade(controller: _controller),
-                  axis: Axis.horizontal,
-                  divider: FResizableDivider.divider,
-                  children: widget.regions,
-                ),
-                // Overlay hover detection and colored dividers
-                if (_controller.regions.isNotEmpty)
-                  for (var i = 0; i < _controller.regions.length - 1; i++)
-                    Positioned(
-                      left:
-                          _controller.regions[i].offset.max -
-                          (_hitRegionExtent / 2),
-                      top: 0,
-                      child: MouseRegion(
-                        opaque: false,
-                        cursor: SystemMouseCursors.resizeLeftRight,
-                        onEnter: (_) =>
-                            setState(() => _hoveredDividerIndex = i),
-                        onExit: (_) =>
-                            setState(() => _hoveredDividerIndex = null),
-                        child: IgnorePointer(
-                          child: SizedBox(
-                            width: _hitRegionExtent,
-                            height: constraints.maxHeight,
-                            child: Center(
-                              child: AnimatedOpacity(
-                                opacity: _hoveredDividerIndex == i ? 1.0 : 0.0,
-                                duration: const Duration(milliseconds: 150),
-                                curve: Curves.easeInOut,
-                                child: Container(
-                                  width: 1,
-                                  height: constraints.maxHeight,
-                                  color: colorScheme.accent,
+            return ValueListenableBuilder<double>(
+              valueListenable: widget.headerHeight,
+              builder: (context, headerHeight, _) {
+                final overlayTop = headerHeight;
+                final overlayHeight = constraints.maxHeight - headerHeight;
+
+                return Stack(
+                  children: [
+                    // The actual resizable widget with no divider
+                    FResizable(
+                      control: .managedCascade(controller: _controller),
+                      axis: Axis.horizontal,
+                      divider: FResizableDivider.none,
+                      children: widget.regions,
+                    ),
+                    // Overlay hover detection and colored dividers
+                    if (_controller.regions.isNotEmpty)
+                      for (var i = 0; i < _controller.regions.length - 1; i++)
+                        Positioned(
+                          left:
+                              _controller.regions[i].offset.max -
+                              (_hitRegionExtent / 2),
+                          top: overlayTop,
+                          child: MouseRegion(
+                            opaque: false,
+                            cursor: SystemMouseCursors.resizeLeftRight,
+                            onEnter: (_) =>
+                                setState(() => _hoveredDividerIndex = i),
+                            onExit: (_) =>
+                                setState(() => _hoveredDividerIndex = null),
+                            child: IgnorePointer(
+                              child: SizedBox(
+                                width: _hitRegionExtent,
+                                height: overlayHeight,
+                                child: Center(
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    curve: Curves.easeInOut,
+                                    width: 0.5,
+                                    height: overlayHeight,
+                                    color: _hoveredDividerIndex == i
+                                        ? colorScheme.accent
+                                        : context.theme.colors.border,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-              ],
+                  ],
+                );
+              },
             );
           },
         );

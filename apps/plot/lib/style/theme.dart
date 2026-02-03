@@ -1,3 +1,5 @@
+import 'dart:math' show pow;
+
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
@@ -100,12 +102,12 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
 FThemeData darkenTheme(
   BuildContext context,
   FThemeData theme,
-  ColourSchemeData colourScheme,
-) {
+  ColourSchemeData colourScheme, {
+  int steps = 1,
+}) {
+  final factor = colourScheme.brightness == Brightness.light ? 1.03 : 1.1;
   return buildTheme(
     context,
-    colourScheme.copyWith(
-      darken: colourScheme.brightness == .light ? 1.02 : 1.1,
-    ),
+    colourScheme.copyWith(darken: pow(factor, steps).toDouble()),
   );
 }

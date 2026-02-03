@@ -75,7 +75,7 @@ class PriorityWidget extends StatelessWidget {
       indentLevel: indentLevel,
       textStyle: textStyle,
       leadingBuilder: (isHovered, hasFocus) => SizedBox(
-        width: 16,
+        width: 20,
         child: UnreadIndicator(
           color: priority.displayColor,
           unread: unread ?? priority.unread,

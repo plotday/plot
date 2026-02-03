@@ -38,6 +38,9 @@ class _LoadingPageState extends State<LoadingPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       center: true,
+      header: PanelPositionProvider.of(context) != null
+          ? const Header()
+          : null,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

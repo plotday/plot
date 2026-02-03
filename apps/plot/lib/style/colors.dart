@@ -66,7 +66,10 @@ class OklchColours {
     RayOklch lch(double l, double c, [double? h, double? o]) {
       return RayOklch.fromComponents(
         (l / darken).clamp(0.0, 1.0),
-        c * saturate * chromaFactor,
+        c *
+            saturate *
+            chromaFactor *
+            (brightness == Brightness.light ? darken : 1 / darken),
         h ?? hue,
         o ?? 1.0,
       );
