@@ -13,6 +13,7 @@ export type RunMessage = {
   priorityTwistId: string;
   path: string[];
   token: string;
+  queuedAt?: number;
 };
 
 export class Tasks extends Tool implements IRun {
@@ -84,6 +85,7 @@ export class Tasks extends Tool implements IRun {
       priorityTwistId: this.priorityTwistId,
       path: this.path,
       token,
+      queuedAt: Date.now(),
     });
   }
 
@@ -98,6 +100,13 @@ export class Tasks extends Tool implements IRun {
   ) {
     for (const message of batch.messages) {
       try {
+        if (env.SYNC_TIMING_ENABLED === "true" && message.body.queuedAt) {
+          const queueWaitMs = Date.now() - message.body.queuedAt;
+          const context = extractRunQueueContext(message.body, batch.queue);
+          const logger = createLogger(context);
+          logger.info("Queue wait time", { queue_wait_ms: queueWaitMs });
+        }
+
         const callbacks = Tasks.GetStub(
           env.CALLBACKS,
           message.body.priorityTwistId

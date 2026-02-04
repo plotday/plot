@@ -132,6 +132,8 @@ export type Bindings = {
   // Can hopefully remove this once we can use the Vercel AI SDK with Cloudflare AI Gateway without requiring an API key.
   readonly ANTHROPIC_API_KEY: string;
 
+  readonly SYNC_TIMING_ENABLED?: string;
+
   readonly TWIST_CONFIG: KVNamespace;
 
   // Rate Limiting Bindings

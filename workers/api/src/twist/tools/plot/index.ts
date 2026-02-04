@@ -24,6 +24,7 @@ import {
 import { createLogger } from "@plotday/worker-util";
 
 import type { Bindings } from "../../../env";
+import { disposeRpc } from "../../../utils/rpc";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
 import type { EnrichedActivity, EnrichedNote } from "../../view-types";
@@ -459,6 +460,69 @@ export class Plot extends Tool implements IPlot {
     }
 
     return callbacks;
+  }
+
+  /**
+   * Notifies UserSync and TwistSync DOs for all users and twists with access
+   * to the given priorities. Called after twist batch operations since triggers
+   * skip HTTP calls for twist-originated writes (negative updated_by).
+   *
+   * Safe to fail — the recovery system detects stale sync state within 30s.
+   */
+  async notifySyncDOs(priorityIds: Set<string>): Promise<void> {
+    try {
+      // 1. Get all users with access to affected priorities
+      const userIds = new Set<string>();
+      for (const priorityId of priorityIds) {
+        const { data } = await this.supabase.rpc(
+          "get_users_with_priority_access",
+          { target_priority_id: priorityId }
+        );
+        if (data) for (const row of data) userIds.add(row.user_id);
+      }
+
+      // 2. Notify UserSync DOs (they debounce internally)
+      for (const userId of userIds) {
+        const doId = this.env.USER_SYNC.idFromName(userId);
+        const userSync = this.env.USER_SYNC.get(doId);
+        const result = await userSync.fetch(
+          new Request("http://do/notify", {
+            method: "POST",
+            body: JSON.stringify({ id: userId }),
+          })
+        );
+        disposeRpc(result);
+      }
+
+      // 3. Notify TwistSync DOs for other twists on these priorities
+      //    (skip self — same echo prevention as triggers)
+      const { data: twists } = await this.supabase
+        .from("priority_twist")
+        .select("id")
+        .in("priority_id", Array.from(priorityIds))
+        .is("archived_at", null)
+        .neq("id", this.priorityTwistId);
+
+      if (twists) {
+        for (const twist of twists) {
+          const doId = this.env.TWIST_SYNC.idFromName(twist.id);
+          const twistSync = this.env.TWIST_SYNC.get(doId);
+          const result = await twistSync.fetch(
+            new Request("http://do/notify", {
+              method: "POST",
+              body: JSON.stringify({ id: twist.id }),
+            })
+          );
+          disposeRpc(result);
+        }
+      }
+    } catch (error) {
+      // Log but don't fail — recovery system catches stale sync state within 30s
+      const logger = createLogger({
+        priority_twist_id: this.priorityTwistId,
+      });
+      logger.error("Failed to notify sync DOs", error as Error);
+    }
   }
 
   /**

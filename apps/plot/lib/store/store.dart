@@ -208,7 +208,15 @@ abstract class BaseTable {
       }
     }
 
-    PostgrestTransformBuilder<PostgrestList> query2 = sort(query);
+    // When pulling updates, sort by updated_at ASC, id ASC to align with
+    // the composite cursor filter (updated_at > X OR (updated_at = X AND id > lastId)).
+    // Using DESC order would cause the cursor to skip items sharing the same updated_at.
+    PostgrestTransformBuilder<PostgrestList> query2;
+    if (updatedSince != null) {
+      query2 = query.order('updated_at', ascending: true).order(cursorColumn, ascending: true);
+    } else {
+      query2 = sort(query);
+    }
     if (limit != null) {
       query2 = query2.limit(limit!);
     }
@@ -254,11 +262,16 @@ abstract class BaseTable {
     DateTime? lastUpdated;
     String? returnLastId;
     if (rows.isNotEmpty) {
-      lastUpdated = rows
-          .map((row) {
-            return DateTime.parse(row['updated_at'] as String);
-          })
-          .reduce((value, last) => value.isAfter(last) ? value : last);
+      if (updatedSince != null) {
+        // With ASC sort, last row has the max updated_at
+        lastUpdated = DateTime.parse(rows.last['updated_at'] as String);
+      } else {
+        lastUpdated = rows
+            .map((row) {
+              return DateTime.parse(row['updated_at'] as String);
+            })
+            .reduce((value, last) => value.isAfter(last) ? value : last);
+      }
       // Extract last cursor value for composite cursor pagination
       returnLastId = rows.last[cursorColumn] as String?;
     }
@@ -386,11 +399,13 @@ class Store extends _$Store {
   // Track ongoing push operations per table to prevent concurrent pushes
   static final Map<String, Completer<bool>> _pushCompleters = {};
 
-  // Client ID for tracking updates to prevent sync loops
+  // Client ID for tracking updates to prevent sync loops.
+  // Positive values indicate app client updates.
+  // Negative values indicate twist/API updates (set by truncateUuidForUpdatedBy).
   static int? _clientId;
   static int get clientId {
     final Random random = Random();
-    _clientId ??= random.nextInt(2147483647); // Max int value
+    _clientId ??= random.nextInt(2147483647); // Max int value (always positive)
     return _clientId!;
   }
 
@@ -1630,7 +1645,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 238;
+  int get schemaVersion => 239;
 
   @override
   MigrationStrategy get migration {

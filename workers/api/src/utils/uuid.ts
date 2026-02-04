@@ -43,11 +43,13 @@ export function truncateUuidForUpdatedBy(uuid: string): number {
     const bigIntValue = BigInt("0x" + last64Bits);
 
     // Convert to 31-bit signed integer (PostgreSQL integer range: -2^31 to 2^31-1)
-    // We use modulo 2^31-1 to ensure positive values and avoid overflow
+    // We use modulo 2^31-1 and negate to produce negative values for twist writes.
+    // Negative updated_by = twist/API origin, positive = app client origin.
     const maxValue = BigInt(2147483647); // 2^31 - 1
     const result = Number(bigIntValue % maxValue);
 
-    return result;
+    // Always return negative for twists; avoid 0 (which means "default/unknown")
+    return result === 0 ? -1 : -result;
   } catch (error) {
     throw new Error(
       `Failed to convert UUID to integer: ${

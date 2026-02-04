@@ -31,7 +31,10 @@ import {
 import { fromDbActivity } from "./converters";
 import { formatInterval } from "./datetime";
 import type { Plot } from "./index";
-import { createNotes, ensureIncreasingCreatedTimestamps } from "./note";
+import {
+  createNotes,
+  ensureIncreasingCreatedTimestamps,
+} from "./note";
 import { processOccurrences } from "./occurrences";
 
 /**
@@ -177,7 +180,8 @@ export async function createActivity(
           // dbResult.id is a string from the database, but NewNote.activity.id expects a branded Uuid type.
           // The cast is safe because database IDs are valid UUIDs.
           activity: { id: dbResult.id as Uuid },
-        }))
+        })),
+        { priority_id: priorityId }
       );
     }
 
@@ -258,6 +262,9 @@ export async function createActivity(
       );
     }
     // unread === true: do nothing (explicitly unread for all)
+
+    // Notify sync DOs since triggers skip HTTP calls for twist writes
+    await plot.notifySyncDOs(new Set([priorityId]));
 
     // Return just the ID for efficiency
     return dbResult.id as Uuid;
@@ -520,6 +527,9 @@ export async function updateActivity(
         plot.priorityId
       );
     }
+
+    // Notify sync DOs since triggers skip HTTP calls for twist writes
+    await plot.notifySyncDOs(new Set([plot.priorityId]));
   } catch (error) {
     handleDbOperationError(error, "updateActivity", plot.priorityTwistId, {
       has_activity_id: "id" in activity && !!activity.id,
@@ -984,36 +994,45 @@ export async function createActivities(
       }
     }
 
-    // Create notes for all activities
-    const allNotes: NewNote[] = processedActivities.flatMap(
-      (activity, index) => {
-        if (
-          !("notes" in activity) ||
-          !activity.notes ||
-          activity.notes.length === 0
-        ) {
-          return [];
-        }
-
-        // Preprocess timestamps for this activity's notes before flattening
-        // Cast is safe: helper only examines 'created' field, not 'activity'
-        const processedActivityNotes = ensureIncreasingCreatedTimestamps(
-          activity.notes as NewNote[]
-        );
-
-        return processedActivityNotes.map(
-          (note): NewNote => ({
-            ...note,
-            activity: { id: dbActivities[index].id as Uuid },
-          })
-        );
+    // Create notes for all activities, grouped by priority to pass context
+    // and avoid redundant activity fetches inside createNote.
+    const notesByPriority = new Map<string, NewNote[]>();
+    for (let index = 0; index < processedActivities.length; index++) {
+      const activity = processedActivities[index];
+      if (
+        !("notes" in activity) ||
+        !activity.notes ||
+        activity.notes.length === 0
+      ) {
+        continue;
       }
-    );
 
-    if (allNotes.length > 0) {
-      // Notes already have timestamps assigned, but call createNotes which will
-      // apply the function again (idempotent since notes now have created field)
-      await createNotes(plot, allNotes);
+      // Preprocess timestamps for this activity's notes
+      // Cast is safe: helper only examines 'created' field, not 'activity'
+      const processedActivityNotes = ensureIncreasingCreatedTimestamps(
+        activity.notes as NewNote[]
+      );
+
+      const priorityId = dbActivities[index].priority_id;
+      const mapped = processedActivityNotes.map(
+        (note): NewNote => ({
+          ...note,
+          activity: { id: dbActivities[index].id as Uuid },
+        })
+      );
+
+      const existing = notesByPriority.get(priorityId);
+      if (existing) {
+        existing.push(...mapped);
+      } else {
+        notesByPriority.set(priorityId, mapped);
+      }
+    }
+
+    // Create notes for each priority group, passing context to skip
+    // redundant activity fetches inside createNote.
+    for (const [priorityId, notes] of notesByPriority) {
+      await createNotes(plot, notes, { priority_id: priorityId });
     }
 
     // Mark activities as read based on unread flag:
@@ -1174,6 +1193,12 @@ export async function createActivities(
         )
       );
     }
+
+    // Notify sync DOs since triggers skip HTTP calls for twist writes
+    const affectedPriorityIds = new Set(
+      dbActivities.map((a) => a.priority_id)
+    );
+    await plot.notifySyncDOs(affectedPriorityIds);
 
     // Return just the IDs for efficiency
     return dbActivities.map((dbActivity) => dbActivity.id as Uuid);

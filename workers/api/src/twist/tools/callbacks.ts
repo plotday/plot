@@ -5,7 +5,7 @@ import type {
 } from "@plotday/twister/tools/callbacks";
 
 import { type TwistEnvironment } from "../../env";
-import { CallbacksState } from "../../state/callbacks";
+import { CallbacksState, type ResolvedCallback } from "../../state/callbacks";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { Tool } from "./tool";
@@ -95,6 +95,39 @@ export class Callbacks extends Tool implements ICallbackTool {
     return await CallbacksState.CallCallback(callbacks, callback, args);
   }
 
+  /**
+   * Resolves callback metadata without executing it.
+   *
+   * This is the fast path used by the twist worker's MODULE code to avoid
+   * the expensive full-reconstruction path in callCallback(). Instead of
+   * constructing a new twist (Supabase queries, module loading, permission
+   * checks, tool tree rebuild), the twist worker calls resolve() to get
+   * the callback metadata, then executes the function directly on its
+   * already-constructed tool tree.
+   *
+   * The interception happens in entrypoint.ts MODULE: ToolShed.waitForReady()
+   * wraps callbacks.run() to call resolve() + local execution instead.
+   *
+   * @see {@link CallbacksState.resolve} for the DO implementation
+   * @see entrypoint.ts MODULE ToolShed.waitForReady() for the interception
+   */
+  async resolve(callback: Callback): Promise<ResolvedCallback | null> {
+    const result = await this.callbacks.resolve(callback);
+    disposeRpc(result);
+    return result;
+  }
+
+  /**
+   * Executes a callback by its token.
+   *
+   * NOTE: When called from within a twist worker, this method is intercepted
+   * by the MODULE code in entrypoint.ts. The interceptor calls resolve()
+   * instead, then executes the callback locally on the already-constructed
+   * tool tree — avoiding the full twist reconstruction that callCallback()
+   * performs. This method only runs as a fallback if local resolution fails.
+   *
+   * @see entrypoint.ts MODULE ToolShed.waitForReady() for the interception
+   */
   async run(callback: Callback, ...args: any[]): Promise<any> {
     const result = await this.callbacks.callCallback(callback, ...(args ?? []));
     disposeRpc(result);

@@ -109,10 +109,10 @@ export class UserSync extends DurableObject<Bindings> {
       }
     }
 
+    const timingEnabled = this.env.SYNC_TIMING_ENABLED === "true";
+
     try {
       const now = Date.now();
-
-      // Check if more notifications arrived while we were waiting
       if (now - this.state.lastNotifyTime < MIN_WAIT_MS) {
         // More notifications came in recently, reschedule
         const delayMs = MIN_WAIT_MS - (now - this.state.lastNotifyTime);
@@ -234,6 +234,17 @@ export class UserSync extends DurableObject<Bindings> {
       }
 
       this.state.lastSyncTime = now;
+
+      const syncDispatchMs = Date.now() - now;
+
+      if (timingEnabled) {
+        logger.info("User sync dispatch timing", {
+          user_id: this.userId,
+          sync_dispatch_ms: syncDispatchMs,
+          pending_entity_count: pendingUpdates.length,
+          entities: pendingUpdates.map((u) => u.entity),
+        });
+      }
 
       logger.info("User sync completed", {
         user_id: this.userId,

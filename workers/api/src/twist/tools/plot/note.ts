@@ -52,10 +52,20 @@ export function ensureIncreasingCreatedTimestamps(notes: NewNote[]): NewNote[] {
   });
 }
 
+/**
+ * Context from a caller that already has the activity data,
+ * avoiding a redundant SELECT in createNote.
+ */
+export type ActivityContext = {
+  priority_id: string;
+};
+
 export async function createNote(
   plot: Plot,
   note: NewNote,
-  skipActivityRead = false
+  skipActivityRead = false,
+  activityContext?: ActivityContext,
+  skipNotify = false
 ): Promise<Uuid> {
   try {
     // Skip fully empty notes (no content, no links, no mentions)
@@ -101,43 +111,24 @@ export async function createNote(
       throw new Error("Note activity must provide either id or source");
     }
 
-    // Fetch activity with author for validation and later use
-    const { data: activityData, error: activityError } = await plot.supabase
-      .from("activity")
-      .select(
-        `
-        *,
-        author:actor!author_id(
-          id,
-          name,
-          type,
-          email,
-          archived_at,
-          avatar_url,
-          created_at,
-          updated_at
-        ),
-        assignee:actor!assignee_id(
-          id,
-          name,
-          type,
-          email,
-          archived_at,
-          avatar_url,
-          created_at,
-          updated_at
-        )
-      `
-      )
-      .eq("id", activityId)
-      .single();
+    // Use provided context or fetch activity data from the database.
+    // When called from createActivity/createActivities, the caller already has
+    // priority_id, so we skip this query to avoid a redundant round-trip.
+    let priorityId: string;
+    if (activityContext) {
+      priorityId = activityContext.priority_id;
+    } else {
+      const { data: activityData, error: activityError } = await plot.supabase
+        .from("activity")
+        .select("priority_id")
+        .eq("id", activityId)
+        .single();
 
-    if (activityError) {
-      throw new Error(`Activity not found: ${activityError.message}`);
-    }
+      if (activityError) {
+        throw new Error(`Activity not found: ${activityError.message}`);
+      }
 
-    if (!activityData.author) {
-      throw new Error(`Activity author not found`);
+      priorityId = activityData.priority_id;
     }
 
     // Skip priority access validation for notes - activities may have been moved
@@ -155,7 +146,7 @@ export async function createNote(
 
     // Process author - use provided author or default to twist
     const authorId = note.author
-      ? await processNewActor(plot, note.author, activityData.priority_id)
+      ? await processNewActor(plot, note.author, priorityId)
       : plot.priorityTwistId;
 
     // Process mentions if provided - convert NewActor[] to ActorId[]
@@ -164,7 +155,7 @@ export async function createNote(
       mentionIds = await processNewActorArray(
         plot,
         note.mentions,
-        activityData.priority_id
+        priorityId
       );
     }
 
@@ -218,7 +209,7 @@ export async function createNote(
       const usersResult = await plot.supabase.rpc(
         "get_users_with_priority_access",
         {
-          target_priority_id: activityData.priority_id,
+          target_priority_id: priorityId,
         }
       );
 
@@ -269,7 +260,7 @@ export async function createNote(
           const actorIds = await processNewActorArray(
             plot,
             newActors,
-            activityData.priority_id
+            priorityId
           );
           if (actorIds.length > 0) {
             processedTags[parseInt(tagId)] = actorIds;
@@ -298,6 +289,11 @@ export async function createNote(
       }
     }
 
+    // Notify sync DOs since triggers skip HTTP calls for twist writes
+    if (!skipNotify) {
+      await plot.notifySyncDOs(new Set([priorityId]));
+    }
+
     // Return just the ID for efficiency
     return dbResult.id as Uuid;
   } catch (error) {
@@ -312,15 +308,19 @@ export async function createNote(
 
 export async function createNotes(
   plot: Plot,
-  notes: NewNote[]
+  notes: NewNote[],
+  activityContext?: ActivityContext
 ): Promise<Uuid[]> {
   // Ensure notes without created timestamps get strictly increasing values
   const processedNotes = ensureIncreasingCreatedTimestamps(notes);
 
   // Create all notes in parallel, filtering out empty notes
   // Pass skipActivityRead: true to avoid deadlock from parallel activity_read upserts
+  // Pass skipNotify: true to batch-notify once after all notes are created
   const results = await Promise.allSettled(
-    processedNotes.map((note) => createNote(plot, note, true))
+    processedNotes.map((note) =>
+      createNote(plot, note, true, activityContext, true)
+    )
   );
 
   // Return only successfully created note IDs, log failures (except empty note errors)
@@ -338,6 +338,11 @@ export async function createNotes(
       }
     })
     .filter((id): id is Uuid => id !== null);
+
+  // Notify sync DOs once for the batch (unless called from createActivities which notifies itself)
+  if (!activityContext) {
+    await plot.notifySyncDOs(new Set([plot.priorityId]));
+  }
 
   return noteIds;
 }
@@ -396,6 +401,8 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       throw new Error(`Activity not found: ${activityError.message}`);
     }
 
+    const priorityId = activityData.priority_id;
+
     // Skip priority access validation for notes - activities may have been moved
     // after creation and the twist should still be able to update notes
 
@@ -435,10 +442,15 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
         const mentionIds = await processNewActorArray(
           plot,
           note.mentions,
-          activityData.priority_id
+          priorityId
         );
         dbUpdate.mentions = mentionIds.length > 0 ? mentionIds : null;
       }
+    }
+
+    // When identified by id, key is an updatable field (sets the note's key for future upsert matching)
+    if ("id" in note && (note as { id: string; key?: string }).key !== undefined) {
+      dbUpdate.key = (note as { id: string; key?: string }).key!;
     }
 
     // Check if there are meaningful updates (beyond updated_by, sync_depth)
@@ -486,7 +498,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
           const actorIds = await processNewActorArray(
             plot,
             newActors,
-            activityData.priority_id
+            priorityId
           );
           if (actorIds.length > 0) {
             processedTags[parseInt(tagId)] = actorIds;
@@ -517,6 +529,9 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
         }
       }
     }
+
+    // Notify sync DOs since triggers skip HTTP calls for twist writes
+    await plot.notifySyncDOs(new Set([priorityId]));
   } catch (error) {
     handleDbOperationError(error, "updateNote", plot.priorityTwistId, {
       has_note_id: "id" in note && !!note.id,

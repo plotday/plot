@@ -25,6 +25,19 @@ export type CallbackData = {
 };
 
 /**
+ * Subset of CallbackData returned by resolve() for local execution.
+ * Contains only what's needed to invoke the callback directly on an
+ * already-constructed tool tree, avoiding full twist reconstruction.
+ */
+export type ResolvedCallback = {
+  priorityTwistId: string;
+  path: string[];
+  functionName: string;
+  extraArgs?: any[];
+  callOnce: boolean;
+};
+
+/**
  * Validates if a string is a valid Durable Object ID (64 hex characters)
  */
 function isValidDoId(id: string): boolean {
@@ -281,6 +294,11 @@ export class CallbacksState extends DurableObject<Bindings> {
     }
 
     const { path } = callback;
+    const timingEnabled = this.env.SYNC_TIMING_ENABLED === "true";
+    let dbLookupStart: number | undefined;
+    if (timingEnabled) {
+      dbLookupStart = Date.now();
+    }
 
     const priorityTwist = safeQuery(
       await this.supabase
@@ -352,6 +370,13 @@ export class CallbacksState extends DurableObject<Bindings> {
       return;
     }
 
+    let dbLookupMs: number | undefined;
+    let factoryInitStart: number | undefined;
+    if (timingEnabled) {
+      dbLookupMs = Date.now() - dbLookupStart!;
+      factoryInitStart = Date.now();
+    }
+
     const factory = twistFactory({
       env: this.env,
       ctx: this.ctx,
@@ -362,6 +387,13 @@ export class CallbacksState extends DurableObject<Bindings> {
       priorityId: priorityTwist.priority_id,
       priorityTwistId: callback.priorityTwistId,
     });
+
+    let factoryInitMs: number | undefined;
+    let callbackExecStart: number | undefined;
+    if (timingEnabled) {
+      factoryInitMs = Date.now() - factoryInitStart!;
+      callbackExecStart = Date.now();
+    }
 
     // Call the callback with error handling (works for both twists and tools via path parameter)
     const callResult = await handleTwistOperation(
@@ -382,11 +414,75 @@ export class CallbacksState extends DurableObject<Bindings> {
       }
     );
 
+    if (timingEnabled) {
+      const callbackExecMs = Date.now() - callbackExecStart!;
+      logger.info("Callback execution timing", {
+        token: token.substring(0, 8) + "...",
+        function_name: callback.functionName,
+        priority_twist_id: callback.priorityTwistId,
+        db_lookup_ms: dbLookupMs,
+        factory_init_ms: factoryInitMs,
+        callback_exec_ms: callbackExecMs,
+        total_ms: (dbLookupMs ?? 0) + (factoryInitMs ?? 0) + callbackExecMs,
+      });
+    }
+
     if (callback.callOnce) {
       this.delete(token);
     }
 
     return callResult;
+  }
+
+  /**
+   * Resolves callback metadata without executing it.
+   *
+   * Used by the twist worker to execute callbacks locally on its
+   * already-constructed tool tree, avoiding the expensive path of
+   * constructing a new twist via twistFactory (which involves
+   * Supabase queries, module loading, permission checks, and a
+   * full tool tree rebuild).
+   *
+   * Only performs a local SQLite lookup — no Supabase queries.
+   * Does NOT handle callOnce deletion; the caller is responsible
+   * for calling delete() after successful execution.
+   */
+  resolve(
+    token: string
+  ): ResolvedCallback | null {
+    if (!token) return null;
+    [, token] = token.split(":");
+    if (!token) return null;
+
+    const result = this.sql
+      .exec(
+        `
+          SELECT token, priority_twist_id, path, function_name, extra_args, call_once, expires
+          FROM callbacks
+          WHERE token = ?
+          `,
+        [token]
+      )
+      .next();
+    if (result.done) return null;
+
+    const row = result.value as any;
+
+    // Check expiration
+    if (row.expires && row.expires < Date.now()) {
+      this.delete(`_:${token}`);
+      return null;
+    }
+
+    return {
+      priorityTwistId: row.priority_twist_id,
+      path: this.parseWithFallback(row.path),
+      functionName: row.function_name,
+      extraArgs: row.extra_args
+        ? this.parseWithFallback(row.extra_args)
+        : undefined,
+      callOnce: Boolean(row.call_once),
+    };
   }
 
   get(key: string): Array<{ callback: string; meta?: Record<string, any> }> {

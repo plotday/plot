@@ -9,10 +9,12 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import TwistConstructor from "twist.js";
 
 class ToolShed {
-  constructor(path, priorityTwistId, builtInToolFactory) {
+  constructor(path, priorityTwistId, builtInToolFactory, rootToolShed) {
     this.path = path || [];
     this.priorityTwistId = priorityTwistId;
     this.builtInToolFactory = builtInToolFactory;
+    this.rootToolShed = rootToolShed || this;
+    this.twist = null; // Set by buildTwist() on the root ToolShed only
     this.requested = new Set();
     this.built = new Map();
     this.options = new Map();
@@ -78,7 +80,8 @@ class ToolShed {
     const toolShed = new ToolShed(
       toolPath,
       this.priorityTwistId,
-      this.builtInToolFactory
+      this.builtInToolFactory,
+      this.rootToolShed
     );
 
     // Check if this is a built-in tool (empty object after construction)
@@ -132,6 +135,64 @@ class ToolShed {
       tasks: await this._buildBuiltIn("Tasks", {}),
     };
 
+    // Intercept callbacks.run() for local execution optimization.
+    //
+    // Without this, callbacks.run() goes through the full reconstruction path:
+    //   twist worker → RPC → Callbacks built-in → CallbacksState DO →
+    //   2 Supabase queries → twistFactory → new worker → rebuild tool tree → execute
+    //
+    // With this intercept, we short-circuit to:
+    //   twist worker → RPC → CallbacksState.resolve() (SQLite only) →
+    //   execute directly on the already-constructed local tool tree
+    //
+    // The resolve() method returns just the callback metadata (path, functionName,
+    // extraArgs) without executing. We then navigate the local tool tree to find
+    // the target and call the function directly.
+    //
+    // Falls back to the original run() (full reconstruction) if:
+    //   - The callback can't be resolved (not found, expired)
+    //   - The target tool isn't found in the local tree
+    //
+    // See also:
+    //   - CallbacksState.resolve() in state/callbacks.ts
+    //   - Callbacks.resolve() in twist/tools/callbacks.ts
+    const callbacksRpc = builtInTools.callbacks;
+    const rootTools = this.rootToolShed;
+    builtInTools.callbacks = new Proxy(callbacksRpc, {
+      get(target, prop) {
+        if (prop === 'run') {
+          return async (token, ...args) => {
+            const resolved = await target.resolve(token);
+            if (!resolved) return target.run(token, ...args);
+
+            // Find target in the local tool tree
+            let execTarget;
+            if (resolved.path.length === 0) {
+              // Twist-level callback
+              execTarget = rootTools.twist;
+            } else {
+              const { tool } = rootTools.getByPath(resolved.path);
+              execTarget = tool;
+            }
+
+            if (!execTarget) return target.run(token, ...args);
+
+            const allArgs = [...(args ?? []), ...(resolved.extraArgs ?? [])];
+            const result = await callCallback(execTarget, resolved.functionName, ...allArgs);
+
+            if (resolved.callOnce) {
+              await target.delete(token);
+            }
+
+            return result;
+          };
+        }
+        // Do NOT pass receiver - RPC stubs need their original context.
+        // Passing the Proxy as receiver causes "Illegal invocation" errors.
+        return Reflect.get(target, prop);
+      }
+    });
+
     this.resolvedTools = {
       ...Object.fromEntries(resolved),
       ...builtInTools,
@@ -154,6 +215,10 @@ async function buildTwist(priorityTwistId, builtInToolFactory) {
 
   // Construct twist with toolShed
   const twist = new TwistConstructor(priorityTwistId, toolShed);
+
+  // Store twist on root ToolShed so the callbacks.run() intercept
+  // can execute twist-level callbacks locally (path=[])
+  toolShed.twist = twist;
 
   // Call twist's build method to get dependencies
   const buildResult = twist.build(toolShed.build);

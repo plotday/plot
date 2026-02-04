@@ -304,10 +304,10 @@ class AddTwist extends Command {
       return CommandMessage('Twist "$name" added successfully');
     } catch (e, t) {
       log.warning('Failed to add twist', e, t);
-      if (e is ApiException) {
-        return CommandMessage(e.description, title: e.title, isError: true);
-      }
-      return CommandMessage(e.toString(), isError: true);
+      return CommandMessage(
+        'Failed to add twist. Please try again.',
+        isError: true,
+      );
     }
   }
 }

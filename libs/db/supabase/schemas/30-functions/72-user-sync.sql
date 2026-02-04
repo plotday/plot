@@ -65,7 +65,9 @@ BEGIN
         new_table n
         JOIN user_priority_expanded upe ON upe.priority_id = n.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             -- Get previous state
             SELECT
                 last_update_at,
@@ -101,9 +103,13 @@ BEGIN
             END IF;
         END LOOP;
     -- Batch notify all users that need it
+    -- Skip API call for twist-originated writes (negative updated_by);
+    -- the Plot tool notifies sync DOs directly after batch operations.
     IF array_length(v_users_to_notify, 1) > 0 THEN
-        PERFORM
-            call_user_sync_api (v_users_to_notify);
+        IF EXISTS (SELECT 1 FROM new_table WHERE updated_by >= 0) THEN
+            PERFORM
+                call_user_sync_api (v_users_to_notify);
+        END IF;
     END IF;
     RETURN NULL;
 END;
@@ -136,7 +142,9 @@ BEGIN
         JOIN activity a ON a.id = n.activity_id
         JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -162,9 +170,12 @@ BEGIN
                 v_users_to_notify := array_append(v_users_to_notify, v_user_id);
             END IF;
         END LOOP;
+    -- Skip API call for twist-originated writes (negative updated_by)
     IF array_length(v_users_to_notify, 1) > 0 THEN
-        PERFORM
-            call_user_sync_api (v_users_to_notify);
+        IF EXISTS (SELECT 1 FROM new_table WHERE updated_by >= 0) THEN
+            PERFORM
+                call_user_sync_api (v_users_to_notify);
+        END IF;
     END IF;
     RETURN NULL;
 END;
@@ -196,7 +207,9 @@ BEGIN
         new_table n
         JOIN user_priority_expanded upe ON upe.priority_id = n.id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -253,7 +266,9 @@ BEGIN
     FOR v_user_id IN SELECT DISTINCT
         user_id
     FROM
-        new_table LOOP
+        new_table
+    ORDER BY
+        user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -313,7 +328,9 @@ BEGIN
         new_table n
         JOIN user_priority_expanded upe ON upe.priority_id = n.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -370,7 +387,9 @@ BEGIN
     FOR v_user_id IN SELECT DISTINCT
         user_id
     FROM
-        new_table LOOP
+        new_table
+    ORDER BY
+        user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -433,7 +452,9 @@ BEGIN
         new_table n
         JOIN user_priority_expanded upe ON upe.priority_id = n.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             -- Handle actor entity (priority_contact contributes to actor view)
             SELECT
                 last_update_at,
@@ -532,7 +553,9 @@ BEGIN
         JOIN activity a ON a.id = n.activity_id
         JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -558,9 +581,12 @@ BEGIN
                 v_users_to_notify := array_append(v_users_to_notify, v_user_id);
             END IF;
         END LOOP;
+    -- Skip API call for twist-originated writes (negative updated_by)
     IF array_length(v_users_to_notify, 1) > 0 THEN
-        PERFORM
-            call_user_sync_api (v_users_to_notify);
+        IF EXISTS (SELECT 1 FROM new_table WHERE updated_by >= 0) THEN
+            PERFORM
+                call_user_sync_api (v_users_to_notify);
+        END IF;
     END IF;
     RETURN NULL;
 END;
@@ -594,7 +620,9 @@ BEGIN
         JOIN activity a ON a.id = nt.activity_id
         JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -620,9 +648,12 @@ BEGIN
                 v_users_to_notify := array_append(v_users_to_notify, v_user_id);
             END IF;
         END LOOP;
+    -- Skip API call for twist-originated writes (negative updated_by)
     IF array_length(v_users_to_notify, 1) > 0 THEN
-        PERFORM
-            call_user_sync_api (v_users_to_notify);
+        IF EXISTS (SELECT 1 FROM new_table WHERE updated_by >= 0) THEN
+            PERFORM
+                call_user_sync_api (v_users_to_notify);
+        END IF;
     END IF;
     RETURN NULL;
 END;
@@ -655,7 +686,9 @@ BEGIN
         JOIN priority_contact pc ON pc.contact_id = n.id
         JOIN user_priority_expanded upe ON upe.priority_id = pc.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -740,7 +773,9 @@ BEGIN
         new_table n
         JOIN user_priority_expanded upe ON upe.priority_id = n.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
@@ -773,7 +808,9 @@ BEGIN
         new_table n
         JOIN user_priority_expanded upe ON upe.priority_id = n.priority_id
     WHERE
-        upe.archived_at IS NULL LOOP
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
             SELECT
                 last_update_at,
                 last_sync_at INTO v_prev_update_at,
