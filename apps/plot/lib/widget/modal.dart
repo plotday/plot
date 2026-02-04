@@ -235,18 +235,30 @@ class _ModalProviderState extends State<ModalProvider> {
       );
 
       Widget buildModalContent(BuildContext dialogContext) {
-        return Actions(
-          actions: {
-            DismissIntent: CallbackAction<DismissIntent>(
-              onInvoke: (intent) {
+        return ValueListenableBuilder<int>(
+          valueListenable: _modalStackNotifier,
+          builder: (context, stackLength, child) => PopScope(
+            canPop: stackLength <= 1,
+            onPopInvokedWithResult: (didPop, result) {
+              if (!didPop) {
                 dismiss(dialogContext, Value<T>.absent());
-                return null;
-              },
+              }
+            },
+            child: child!,
+          ),
+          child: Actions(
+            actions: {
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (intent) {
+                  dismiss(dialogContext, Value<T>.absent());
+                  return null;
+                },
+              ),
+            },
+            child: Focus(
+              autofocus: true,
+              child: _InnerModalProvider(provider, child: provider),
             ),
-          },
-          child: Focus(
-            autofocus: true,
-            child: _InnerModalProvider(provider, child: provider),
           ),
         );
       }
