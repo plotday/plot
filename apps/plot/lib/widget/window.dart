@@ -7,6 +7,7 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 
+import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/main.dart' show instanceLock;
@@ -20,6 +21,7 @@ class Window extends StatefulWidget {
     // Initialize cross-platform window manager on desktop platforms
     if (Platform.instance.isMacOS || Platform.instance.isWindows) {
       await windowManager.ensureInitialized();
+      await windowManager.setPreventClose(true);
       await _restoreWindowState();
     }
 
@@ -181,10 +183,16 @@ class WindowState extends State<Window> with WindowListener {
   void onWindowClose() async {
     await Window._saveWindowState();
 
+    // Close the database before the process exits to prevent FFI crashes
+    // in the Drift isolate worker during VM shutdown
+    await Store.stop();
+
     // Release instance lock on window close
     if (instanceLock != null) {
       await instanceLock!.release();
     }
+
+    await windowManager.destroy();
   }
 
   @override
