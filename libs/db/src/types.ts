@@ -287,20 +287,6 @@ export type Database = {
             referencedRelation: "priority_twist_activity_update"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
-            referencedColumns: ["id"]
-          },
         ]
       }
       activity_read: {
@@ -349,20 +335,6 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_activity_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_read_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_read_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -430,20 +402,6 @@ export type Database = {
             referencedRelation: "priority_twist_activity_update"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
-            referencedColumns: ["id"]
-          },
         ]
       }
       contact: {
@@ -454,6 +412,7 @@ export type Database = {
           email: string
           id: string
           name: string | null
+          primary: boolean
           updated_at: string
           user_id: string | null
           organization: {
@@ -469,6 +428,7 @@ export type Database = {
           email: string
           id?: string
           name?: string | null
+          primary?: boolean
           updated_at?: string
           user_id?: string | null
         }
@@ -479,6 +439,7 @@ export type Database = {
           email?: string
           id?: string
           name?: string | null
+          primary?: boolean
           updated_at?: string
           user_id?: string | null
         }
@@ -693,20 +654,6 @@ export type Database = {
             referencedRelation: "priority_twist_activity_update"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
-            referencedColumns: ["id"]
-          },
         ]
       }
       note_tag: {
@@ -760,13 +707,6 @@ export type Database = {
             columns: ["note_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_note_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_tag_note_id_fkey"
-            columns: ["note_id"]
-            isOneToOne: false
-            referencedRelation: "user_note"
             referencedColumns: ["id"]
           },
           {
@@ -1814,20 +1754,6 @@ export type Database = {
             referencedRelation: "priority_twist_activity_update"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
-            referencedColumns: ["id"]
-          },
         ]
       }
       activity_x: {
@@ -1969,13 +1895,6 @@ export type Database = {
             columns: ["note_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_note_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_tag_note_id_fkey"
-            columns: ["note_id"]
-            isOneToOne: false
-            referencedRelation: "user_note"
             referencedColumns: ["id"]
           },
           {
@@ -2338,20 +2257,6 @@ export type Database = {
             referencedRelation: "priority_twist_activity_update"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_tag_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
-            referencedColumns: ["id"]
-          },
         ]
       }
       priority_twist_activity_update: {
@@ -2547,20 +2452,6 @@ export type Database = {
             referencedRelation: "priority_twist_activity_update"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
-            referencedColumns: ["id"]
-          },
         ]
       }
       priority_twist_note_update: {
@@ -2669,20 +2560,6 @@ export type Database = {
             referencedRelation: "priority_twist_activity_update"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
-            referencedColumns: ["id"]
-          },
         ]
       }
       user_activity: {
@@ -2731,57 +2608,7 @@ export type Database = {
             updated_at: string | null
           } | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child_twist"
-            referencedColumns: ["priority_child_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-        ]
+        Relationships: []
       }
       user_activity_exception: {
         Row: {
@@ -2826,20 +2653,6 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_activity_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -2891,50 +2704,7 @@ export type Database = {
           updated_by: number | null
           user_id: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "priority_twist_activity_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "priority_twist_activity_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "user_activity_tags"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       user_note_tags: {
         Row: {

@@ -1,5 +1,5 @@
 -- Get the primary contact ID for a user
--- Priority: 1) app_metadata contact_id preference, 2) email match with auth.users
+-- Priority: 1) primary column, 2) app_metadata contact_id preference, 3) email match with auth.users
 CREATE OR REPLACE FUNCTION public.get_primary_contact_id (p_user_id uuid)
     RETURNS uuid
     AS $$
@@ -8,6 +8,17 @@ DECLARE
     v_contact_id uuid;
     v_user_email text;
 BEGIN
+    -- Check for contact marked as primary
+    SELECT
+        id INTO v_contact_id
+    FROM
+        contact
+    WHERE
+        user_id = p_user_id
+        AND "primary" = true;
+    IF v_contact_id IS NOT NULL THEN
+        RETURN v_contact_id;
+    END IF;
     -- Get user's email and preferred contact_id from app_metadata
     SELECT
         LOWER(email),

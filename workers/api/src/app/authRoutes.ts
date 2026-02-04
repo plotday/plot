@@ -21,7 +21,6 @@ authRoutes.use("*", authRateLimiter);
 // Schemas
 const AuthUrlRequestSchema = z.object({
   provider: z.string(),
-  level: z.string(),
   scopes: z.array(z.string()),
   callback: z.string().optional(),
   redirectUri: z.url(),
@@ -67,7 +66,6 @@ authRoutes.get("/auth", async (c) => {
 
     const {
       provider,
-      level,
       scopes: requestScopes,
       callback,
       redirectUri,
@@ -79,7 +77,6 @@ authRoutes.get("/auth", async (c) => {
 
     const result = await Integrations.GenerateAuthUrl({
       provider: provider as AuthProvider,
-      level: level as any, // AuthLevel type
       scopes: scopesToUse,
       callback: callback as Callback | undefined,
       redirectUri,
@@ -158,6 +155,25 @@ authRoutes.post("/auth/send-code", async (c) => {
         });
       }
     } else {
+      // Check if this email is already linked to another user via OAuth/integration
+      const { data: linkedContact } = await supabaseAdmin
+        .from("contact")
+        .select("user_id")
+        .eq("email", email)
+        .not("user_id", "is", null)
+        .maybeSingle();
+
+      if (linkedContact) {
+        return c.json(
+          {
+            error: "email_linked",
+            message:
+              "This email is already associated with another account",
+          },
+          409
+        );
+      }
+
       // New user - send signup OTP email (confirmation template)
       const { error: signupError } = await supabaseAdmin.auth.signInWithOtp({
         email: email,

@@ -499,7 +499,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
           Modal.popAll(context);
           result.go(context);
         } else if (result is! CommandSkipped) {
-          Modal.popAll(context);
+          Modal.pop<CommandReturn>(context, Value(result));
         }
       }
 

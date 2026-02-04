@@ -294,19 +294,19 @@ export default class extends WorkerEntrypoint {
     const { twist } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
   }
 
-  async activate(twistInit, priority) {
+  async activate(twistInit, priority, context) {
     console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
     try {
       const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
 
       // Pre-phase: deepest tools first
-      await callPreLifecycle(tools, 'preActivate', priority);
+      await callPreLifecycle(tools, 'preActivate', priority, context);
 
       // Twist method
-      await twist.activate(priority);
+      await twist.activate(priority, context);
 
       // Post-phase: top-level tools first
-      await callPostLifecycle(tools, 'postActivate', priority);
+      await callPostLifecycle(tools, 'postActivate', priority, context);
     } catch (error) {
       // Wrap in TwistError to preserve stack across RPC boundary
       // Encode all error data in the message since custom properties don't survive RPC
@@ -524,7 +524,8 @@ export abstract class TwistEntrypoint extends WorkerEntrypoint {
 
   abstract activate(
     _twistInit: TwistInit,
-    _priority: Pick<Priority, "id">
+    _priority: Pick<Priority, "id">,
+    _context?: { actor: { id: string; type: number } }
   ): Promise<void>;
 
   abstract upgrade(_twistInit: TwistInit): Promise<void>;

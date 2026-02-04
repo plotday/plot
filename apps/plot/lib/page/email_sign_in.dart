@@ -118,6 +118,17 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         body: jsonEncode({'email': email}),
       );
 
+      if (response.statusCode == 409) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        setState(() {
+          _errorMessage =
+              body['message'] as String? ??
+              'This email is already associated with another account';
+          _isLoading = false;
+        });
+        return;
+      }
+
       if (response.statusCode != 200) {
         throw Exception('Failed to send verification code');
       }
@@ -158,6 +169,18 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email}),
       );
+
+      if (response.statusCode == 409) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        if (!mounted) return;
+        setState(() {
+          _errorMessage =
+              body['message'] as String? ??
+              'This email is already associated with another account';
+          _isLoading = false;
+        });
+        return;
+      }
 
       if (response.statusCode != 200) {
         throw Exception('Failed to send verification code');
@@ -248,6 +271,18 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email}),
       );
+
+      if (response.statusCode == 409) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        if (!mounted) return;
+        setState(() {
+          _errorMessage =
+              body['message'] as String? ??
+              'This email is already associated with another account';
+          _isLoading = false;
+        });
+        return;
+      }
 
       if (response.statusCode != 200) {
         throw Exception('Failed to resend verification code');
@@ -392,9 +427,10 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                                       _passwordController.clear();
                                       _errorMessage = null;
                                     });
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      _emailFocusNode.requestFocus();
-                                    });
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                          _emailFocusNode.requestFocus();
+                                        });
                                   },
                             style: FButtonStyle.ghost(),
                             child: const Text('Sign up instead'),

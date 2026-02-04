@@ -204,7 +204,7 @@ export async function add(
           priorityId: priority_id,
           priorityTwistId: priorityTwist.id,
         });
-        await twistWrapper.activate({ id: priority_id as Uuid });
+        await twistWrapper.activate({ id: priority_id as Uuid }, { actor: { id: user.id, type: 0 /* ActorType.User */ } });
       } catch (activationError) {
         // Activation failed - rollback the installation
         const logger = createLogger({ priority_twist_id: String(priorityTwist.id), twist_id: String(twist_id), environment: twist_environment });

@@ -1,8 +1,13 @@
 import { type SupabaseClient } from "@plotday/db";
-import { type ActivityLink, ActivityLinkType } from "@plotday/twister/plot";
+import {
+  type Actor,
+  type ActorId,
+  ActorType,
+  type ActivityLink,
+  ActivityLinkType,
+} from "@plotday/twister/plot";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
-  type AuthLevel,
   type AuthProvider,
   type AuthToken,
   type Authorization,
@@ -24,6 +29,8 @@ import { createLogger } from "@plotday/worker-util";
 import { getRpcFunctionName } from "../../utils/rpc";
 import { Tool } from "./tool";
 
+const AUTH_EMAIL_CONFLICT_ERROR = "AuthEmailConflictError";
+
 /**
  * Utility type to filter out function types from a tuple.
  * Used to ensure callback extra arguments are serializable.
@@ -34,7 +41,6 @@ type NoFunctions<T extends unknown[]> = {
 
 type AuthState = {
   provider: AuthProvider;
-  level: AuthLevel;
   scopes: string[];
   codeVerifier?: string; // Optional for Google Sign-In flows
   timestamp?: number; // Optional for Google Sign-In flows
@@ -86,11 +92,9 @@ export class Integrations extends Tool implements IAuth {
   async request<TCallback extends (auth: Authorization, ...args: any[]) => any>(
     {
       provider,
-      level,
       scopes,
     }: {
       provider: AuthProvider;
-      level: AuthLevel;
       scopes: string[];
     },
     callback: TCallback,
@@ -131,7 +135,6 @@ export class Integrations extends Tool implements IAuth {
       title: `Continue with ${PROVIDER_CONFIGS[provider].name}`,
       type: ActivityLinkType.auth,
       provider,
-      level,
       scopes,
       callback: onAuthCallback,
     };
@@ -145,7 +148,6 @@ export class Integrations extends Tool implements IAuth {
       refresh_token?: string;
       expires_in?: number;
       provider: AuthProvider;
-      level: AuthLevel;
       scopes: string[];
       client_id: string;
       // Raw provider response data (will be parsed)
@@ -153,16 +155,23 @@ export class Integrations extends Tool implements IAuth {
     },
     callbackToken: Callback
   ): Promise<void> {
-    // Generate unique ID for this authorization
-    const authorizationId = crypto.randomUUID();
-
     const config = PROVIDER_CONFIGS[tokenInfo.provider];
 
     // Parse provider-specific data if handler exists (may be async)
     const providerData =
       (await config?.parseTokenResponse?.(tokenInfo)) ?? null;
 
-    const tokenKey = `auth_token:${authorizationId}`;
+    // Extract email from providerData and link to contact, building actor
+    const email = this.extractEmail(providerData);
+    let actor: Actor;
+    try {
+      actor = await this.buildActor(email);
+    } catch (error) {
+      throw error;
+    }
+
+    // Store token keyed by provider + actor ID
+    const tokenKey = `auth_token:${tokenInfo.provider}:${actor.id}`;
     const token: StoredTokenData = {
       client_id: tokenInfo.client_id,
       access_token: tokenInfo.access_token,
@@ -175,17 +184,11 @@ export class Integrations extends Tool implements IAuth {
     };
     await this.store.set(tokenKey, token);
 
-    // Extract email from providerData and link to contact
-    const email = this.extractEmail(providerData);
-    if (email) {
-      await this.linkContactByEmail(email);
-    }
-
     // Create Authorization object to pass to callback
     const authorization: Authorization = {
-      id: authorizationId,
       provider: tokenInfo.provider,
       scopes: tokenInfo.scopes,
+      actor,
     };
 
     // Call original user callback with Authorization
@@ -194,8 +197,8 @@ export class Integrations extends Tool implements IAuth {
     } catch (error) {
       const logger = createLogger({ priority_twist_id: this.priorityTwistId });
       logger.error("Error executing original auth callback", error as Error, {
-        authorization_id: authorizationId,
         provider: tokenInfo.provider,
+        actor_id: actor.id,
       });
     }
   }
@@ -213,7 +216,19 @@ export class Integrations extends Tool implements IAuth {
     return null;
   }
 
-  private async linkContactByEmail(email: string): Promise<void> {
+  /**
+   * Build an Actor for the authorized account. Links the email to a contact
+   * and determines whether the actor is the owner (User) or a Contact.
+   */
+  private async buildActor(email: string | null): Promise<Actor> {
+    if (!email) {
+      // No email available - create a minimal actor
+      return {
+        id: crypto.randomUUID() as ActorId,
+        type: ActorType.Contact,
+      };
+    }
+
     try {
       // Get the user_id from the priority_twist owner
       const { data: priorityTwist, error: ptError } = await this.supabase
@@ -228,7 +243,11 @@ export class Integrations extends Tool implements IAuth {
           email,
           error: ptError?.message,
         });
-        return;
+        return {
+          id: crypto.randomUUID() as ActorId,
+          type: ActorType.Contact,
+          email,
+        };
       }
 
       const userId = priorityTwist.owner_id;
@@ -236,24 +255,36 @@ export class Integrations extends Tool implements IAuth {
       // Check if contact exists with this email
       const { data: existingContact } = await this.supabase
         .from("contact")
-        .select("id, user_id")
+        .select("id, user_id, name")
         .eq("email", email)
         .single();
 
       if (!existingContact) {
         // Create new contact linked to current user
-        await this.supabase
+        const { data: newContact } = await this.supabase
           .from("contact")
           .insert({
             email,
             user_id: userId,
             name: null,
             avatar_url: null,
-          });
+          })
+          .select("id, name")
+          .single();
 
         const logger = createLogger({ priority_twist_id: this.priorityTwistId });
         logger.info("Created new contact from OAuth", { email, user_id: userId });
-      } else if (existingContact.user_id === null) {
+
+        // If the new contact is linked to the owner, it's a User actor
+        return {
+          id: (newContact?.id ?? crypto.randomUUID()) as ActorId,
+          type: ActorType.Contact,
+          email,
+          name: newContact?.name ?? null,
+        };
+      }
+
+      if (existingContact.user_id === null) {
         // Unclaimed contact - link to current user
         await this.supabase
           .from("contact")
@@ -266,36 +297,72 @@ export class Integrations extends Tool implements IAuth {
           user_id: userId,
         });
       } else if (existingContact.user_id !== userId) {
-        // Contact belongs to another user - skip silently
-        // We can't easily check if the other user is still active via Supabase client
-        // and this is a non-critical feature, so we just leave it as-is
-        const logger = createLogger({
-          priority_twist_id: this.priorityTwistId,
-        });
-        logger.debug("Contact email already claimed by another user", {
-          email,
-          current_user_id: userId,
-          contact_user_id: existingContact.user_id,
-        });
+        const error = new Error("auth_email_conflict");
+        error.name = AUTH_EMAIL_CONFLICT_ERROR;
+        throw error;
       }
-      // else: Contact already linked to current user, nothing to do
+
+      // If the contact is linked to the owner user, treat as User actor
+      const isOwner = existingContact.user_id === userId ||
+        (existingContact.user_id === null); // just linked above
+      return {
+        id: existingContact.id as ActorId,
+        type: isOwner ? ActorType.User : ActorType.Contact,
+        email,
+        name: existingContact.name ?? null,
+      };
     } catch (error) {
+      if (error instanceof Error && error.name === AUTH_EMAIL_CONFLICT_ERROR) {
+        throw error;
+      }
       const logger = createLogger({ priority_twist_id: this.priorityTwistId });
-      logger.error("Error linking contact by email", error as Error, { email });
-      // Don't throw - we don't want to fail the OAuth flow if contact linking fails
+      logger.error("Error building actor from email", error as Error, { email });
+      // Don't throw - return a minimal actor
+      return {
+        id: crypto.randomUUID() as ActorId,
+        type: ActorType.Contact,
+        email,
+      };
     }
   }
 
-  async get(authorization: Authorization): Promise<AuthToken | null> {
-    // Get stored token from the store using authorization ID
-    const tokenKey = `auth_token:${authorization.id}`;
-    const tokenData = await this.store.get<StoredTokenData>(tokenKey);
+  async get(provider: AuthProvider, actorId: ActorId): Promise<AuthToken | null> {
+    // Direct lookup by provider + actor ID
+    const tokenKey = `auth_token:${provider}:${actorId}`;
+    let tokenData = await this.store.get<StoredTokenData>(tokenKey);
+    let foundTokenKey = tokenKey;
+
+    // Fallback: find a linked contact (same user_id) that has authed
+    if (!tokenData) {
+      const { data: contact } = await this.supabase
+        .from("contact")
+        .select("user_id")
+        .eq("id", actorId)
+        .single();
+
+      if (contact?.user_id) {
+        const { data: linkedContacts } = await this.supabase
+          .from("contact")
+          .select("id")
+          .eq("user_id", contact.user_id)
+          .neq("id", actorId);
+
+        for (const linked of linkedContacts ?? []) {
+          const linkedKey = `auth_token:${provider}:${linked.id}`;
+          tokenData = await this.store.get<StoredTokenData>(linkedKey);
+          if (tokenData) {
+            foundTokenKey = linkedKey;
+            break;
+          }
+        }
+      }
+    }
 
     if (!tokenData) {
       return null;
     }
 
-    const config = PROVIDER_CONFIGS[authorization.provider];
+    const config = PROVIDER_CONFIGS[provider];
 
     // Check if token is expired
     if (tokenData.expires_at && Date.now() > tokenData.expires_at) {
@@ -305,7 +372,7 @@ export class Integrations extends Tool implements IAuth {
           const refreshedToken = await this.refreshToken({
             clientId: tokenData.client_id,
             refreshToken: tokenData.refresh_token,
-            provider: authorization.provider,
+            provider,
           });
 
           // Update stored token - preserve providerData automatically
@@ -320,7 +387,7 @@ export class Integrations extends Tool implements IAuth {
               : null,
             providerData: tokenData.providerData, // Preserved automatically
           };
-          await this.store.set(tokenKey, updatedToken);
+          await this.store.set(foundTokenKey, updatedToken);
 
           return {
             token: refreshedToken.access_token,
@@ -332,17 +399,17 @@ export class Integrations extends Tool implements IAuth {
         } catch (error) {
           const logger = createLogger({ priority_twist_id: this.priorityTwistId });
           logger.error("Failed to refresh token", error as Error, {
-            authorization_id: authorization.id,
-            provider: authorization.provider,
+            provider,
+            actor_id: actorId,
           });
           // Clear expired token
-          await this.store.clear(tokenKey);
+          await this.store.clear(foundTokenKey);
           return null;
         }
       }
 
       // No refresh token or refresh failed, clear expired token
-      await this.store.clear(tokenKey);
+      await this.store.clear(foundTokenKey);
       return null;
     }
 
@@ -362,7 +429,7 @@ export class Integrations extends Tool implements IAuth {
     env: Bindings
   ): Promise<Response> {
     try {
-      const { state, error, provider, level, scopes, callback } = params;
+      const { state, error, provider, scopes, callback } = params;
 
       if (error) {
         const logger = createLogger();
@@ -382,13 +449,11 @@ export class Integrations extends Tool implements IAuth {
       if (!state && provider) {
         // Google Sign-In flow: validate direct parameters
         if (!provider) throw new Error("Missing provider parameter");
-        if (!level) throw new Error("Missing level parameter");
 
         const scopeArray = scopes ? scopes.split(",").map((s) => s.trim()) : [];
 
         authState = {
           provider: provider as AuthProvider,
-          level: level as AuthLevel,
           scopes: scopeArray,
           callback: callback as Callback | undefined,
           // No codeVerifier or timestamp for Google Sign-In
@@ -475,15 +540,27 @@ export class Integrations extends Tool implements IAuth {
             ...tokenResponse,
             // Add our metadata
             provider: authState.provider,
-            level: authState.level,
             scopes: authState.scopes,
             client_id: clientId,
           });
         } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          if (errorMessage.includes(AUTH_EMAIL_CONFLICT_ERROR)) {
+            return new Response(
+              JSON.stringify({
+                error:
+                  "The email address for this service is already associated with a different Plot account. You'll need to close that account if you want to associate it with this account.",
+              }),
+              {
+                status: 409,
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+          }
           const logger = createLogger();
           logger.error("Error executing auth callback", error as Error, {
             provider: authState.provider,
-            level: authState.level,
           });
           // Don't fail the auth flow even if callback fails
         }
@@ -653,7 +730,6 @@ export class Integrations extends Tool implements IAuth {
 
   static async GenerateAuthUrl({
     provider,
-    level,
     scopes,
     callback,
     redirectUri,
@@ -662,7 +738,6 @@ export class Integrations extends Tool implements IAuth {
     storage,
   }: {
     provider: AuthProvider;
-    level: AuthLevel;
     scopes: string[];
     callback?: Callback;
     redirectUri: string;
@@ -695,7 +770,6 @@ export class Integrations extends Tool implements IAuth {
     const state = crypto.randomUUID();
     const authState: AuthState = {
       provider,
-      level,
       scopes: allScopes,
       codeVerifier,
       timestamp: Date.now(),

@@ -311,6 +311,56 @@ async syncBatch(
 - **Incremental sync**: Activities are auto-marked as read for the author if they are the twist owner (user), unread for everyone else. Archived state is preserved (respects user's archiving decisions)
 - **Reinstall**: Acts as initial sync, so archived activities are unarchived (fresh start)
 
+### Multi-User Priority Auth
+
+Twists and tools that require authentication must handle multi-user priorities correctly. There are three auth models:
+
+#### Auth Models
+
+1. **No auth**: The twist/tool doesn't need external credentials (e.g. a text-only twist).
+2. **Read-only single auth**: One user connects (installer), and all synced data is visible to priority members. No per-user write-back needed.
+3. **Two-way per-user auth**: Write-backs (comments, RSVP, issue updates) should use the acting user's credentials when available, falling back to the installer's.
+
+#### Private Auth Activities
+
+When a twist creates an auth activity in `activate()`, it should be `private: true` with `mentions` on the note targeting `context.actor` so only the installing user sees the auth prompt:
+
+```typescript
+async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
+  await this.tools.plot.createActivity({
+    type: ActivityType.Action,
+    title: "Connect your account",
+    private: true,
+    notes: [{
+      links: [authLink],
+      ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
+    }],
+  });
+}
+```
+
+#### Per-User Auth for Write-Backs
+
+For two-way sync, try the acting user's credentials first, then fall back to the installer's. The simplest pattern passes the actor's ID as `authToken` — the tool's `getClient()` will look it up via `integrations.get(provider, actorId)`:
+
+```typescript
+// In onNoteCreated (note.author.id is available):
+const actorId = note.author.id as string;
+const installerAuthToken = await this.getAuthToken(provider);
+
+// Try actor first, fall back to installer
+for (const authToken of [actorId, installerAuthToken]) {
+  try {
+    await tool.addIssueComment(authToken, activity.meta, note.content, note.id);
+    return; // Success
+  } catch {
+    continue; // Try next
+  }
+}
+```
+
+For `onActivityUpdated` where the acting user is not available in the callback signature, continue using the installer's auth token.
+
 ### Google Tool Integration Pattern
 
 When building Google-based tools (calendar, contacts, gmail, etc.), use this pattern to enable cross-tool integration with a single OAuth flow and automatic data syncing.
@@ -339,7 +389,6 @@ export default class GoogleCalendar extends Tool<GoogleCalendar> {
   async requestAuth(...) {
     return await this.tools.integrations.request({
       provider: AuthProvider.Google,
-      level: AuthLevel.User,
       scopes: GoogleCalendar.SCOPES, // Use static constant
     }, ...);
   }

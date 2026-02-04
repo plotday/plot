@@ -33,12 +33,17 @@ export type GitHubProviderData = {
   email: string;
 };
 
+export type LinearProviderData = {
+  email: string;
+};
+
 // Union of all provider-specific data types
 export type ProviderData =
   | SlackProviderData
   | GoogleProviderData
   | MicrosoftProviderData
-  | GitHubProviderData;
+  | GitHubProviderData
+  | LinearProviderData;
 
 // Combined storage type
 export type StoredTokenData = BaseTokenData & {
@@ -142,6 +147,48 @@ const parseGitHubTokenResponse = async (
   return { email };
 };
 
+// Helper function to fetch email from Linear API
+async function fetchLinearEmail(accessToken: string): Promise<string | null> {
+  try {
+    const response = await fetch("https://api.linear.app/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: accessToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: "{ viewer { email } }" }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      data?: { viewer?: { email?: string } };
+    };
+    return data.data?.viewer?.email || null;
+  } catch (error) {
+    const logger = createLogger({ component: "provider" });
+    logger.error("Error fetching Linear email", error as Error);
+    return null;
+  }
+}
+
+const parseLinearTokenResponse = async (
+  response: any
+): Promise<LinearProviderData | undefined> => {
+  if (!response.access_token) {
+    return undefined;
+  }
+
+  const email = await fetchLinearEmail(response.access_token);
+  if (!email) {
+    return undefined;
+  }
+
+  return { email };
+};
+
 type ProviderConfig = {
   name: string;
   authUrl: string;
@@ -236,6 +283,7 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "Linear",
     authUrl: "https://linear.app/oauth/authorize",
     tokenUrl: "https://api.linear.app/oauth/token",
+    parseTokenResponse: parseLinearTokenResponse,
   },
   monday: {
     name: "Monday.com",

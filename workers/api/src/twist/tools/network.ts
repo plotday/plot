@@ -282,7 +282,7 @@ export class Network extends Tool implements INetwork {
     }
 
     // Retrieve integration data from store
-    const tokenKey = `auth_token:${authorization.id}`;
+    const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
     const tokenData = await this.store.get<{
       access_token: string;
       refresh_token?: string;
@@ -295,7 +295,7 @@ export class Network extends Tool implements INetwork {
 
     if (!tokenData) {
       throw new Error(
-        `No integration found for authorization ${authorization.id}`
+        `No integration found for authorization ${authorization.provider}:${authorization.actor.id}`
       );
     }
 
@@ -322,7 +322,8 @@ export class Network extends Tool implements INetwork {
       key: teamId,
       meta: {
         scopes,
-        authorization: authorization.id,
+        provider: authorization.provider,
+        actorId: authorization.actor.id,
         priorityTwistId: this.priorityTwistId, // Store for reference
       },
     });
@@ -350,7 +351,7 @@ export class Network extends Tool implements INetwork {
     }
 
     // Retrieve integration data from store
-    const tokenKey = `auth_token:${authorization.id}`;
+    const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
     const tokenData = await this.store.get<{
       access_token: string;
       refresh_token?: string;
@@ -359,7 +360,7 @@ export class Network extends Tool implements INetwork {
 
     if (!tokenData) {
       throw new Error(
-        `No integration found for authorization ${authorization.id}`
+        `No integration found for authorization ${authorization.provider}:${authorization.actor.id}`
       );
     }
 
@@ -369,7 +370,7 @@ export class Network extends Tool implements INetwork {
     const hasGmailScope = scopes.some((scope) => GMAIL_SCOPES.includes(scope));
     if (!hasGmailScope) {
       throw new Error(
-        `Authorization ${authorization.id} does not have Gmail scopes. ` +
+        `Authorization ${authorization.provider}:${authorization.actor.id} does not have Gmail scopes. ` +
           `Required: ${GMAIL_SCOPES.join(", ")}`
       );
     }
@@ -401,7 +402,8 @@ export class Network extends Tool implements INetwork {
         extraArgs,
         meta: {
           scopes,
-          authorization: authorization.id,
+          provider: authorization.provider,
+          actorId: authorization.actor.id,
         },
       });
 
@@ -480,7 +482,7 @@ export class Network extends Tool implements INetwork {
     // Handle Gmail webhooks (Google provider with Gmail scopes)
     if (provider === AuthProvider.Google && authorization) {
       // Check if authorization has Gmail scopes
-      const tokenKey = `auth_token:${authorization.id}`;
+      const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
       const tokenData = await this.store?.get<{
         scopes: string[];
       }>(tokenKey);

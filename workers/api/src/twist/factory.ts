@@ -244,7 +244,7 @@ export function twistFactory({
     return {
       permissions,
       toolPermissions: toolPermissionsMap,
-      activate: async (priority: Pick<Priority, "id">) => {
+      activate: async (priority: Pick<Priority, "id">, context?: { actor: { id: string; type: number } }) => {
         await env.TWIST_LOGS_QUEUE.send({
           twistRootId: id,
           environment,
@@ -255,7 +255,7 @@ export function twistFactory({
 
         await handleTwistOperation(
           "activate",
-          () => twist.activate(twistInit, priority),
+          () => twist.activate(twistInit, priority, context),
           { env, id, version, environment }
         );
       },

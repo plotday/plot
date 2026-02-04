@@ -89,8 +89,15 @@ class _SignInPageState extends State<SignInPage> {
                   } on AuthException catch (e, t) {
                     log.warning('Error signing into Google', e, t);
                     if (!mounted) return;
+                    String message = e.message;
+                    if (message.contains('email_already_linked') ||
+                        message.contains('already associated')) {
+                      message =
+                          'This email is already associated with another account. '
+                          'Please sign in with the email you originally registered with.';
+                    }
                     setState(() {
-                      _errorMessage = e.message;
+                      _errorMessage = message;
                       _isLoading = false;
                     });
                   }
@@ -132,8 +139,15 @@ class _SignInPageState extends State<SignInPage> {
                   } on AuthException catch (e, t) {
                     log.warning('Error signing into Apple', e, t);
                     if (!mounted) return;
+                    String message = e.message;
+                    if (message.contains('email_already_linked') ||
+                        message.contains('already associated')) {
+                      message =
+                          'This email is already associated with another account. '
+                          'Please sign in with the email you originally registered with.';
+                    }
                     setState(() {
-                      _errorMessage = e.message;
+                      _errorMessage = message;
                       _isLoading = false;
                     });
                   }

@@ -109,7 +109,6 @@ class AuthButton extends StatefulWidget {
           if (state != null) 'state': state,
           if (state == null) ...{
             'provider': _link.provider.name,
-            'level': _link.level,
             'scopes': _link.scopes.join(','),
             'callback': _link.callback,
           },
@@ -366,7 +365,6 @@ class _AuthButtonState extends State<AuthButton> {
       path: '/auth',
       queryParameters: {
         'provider': link.provider.name,
-        'level': link.level,
         'scopes': link.scopes,
         'callback': link.callback,
         'redirectUri': Env.authCallbackUrl,
@@ -376,7 +374,6 @@ class _AuthButtonState extends State<AuthButton> {
 
     log.info('Requesting auth URL from API', {
       'provider': link.provider.name,
-      'level': link.level,
       'scopes': link.scopes.join(', '),
       'platform': platform,
       'uri': uri.toString(),

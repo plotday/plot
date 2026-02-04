@@ -7,8 +7,12 @@ CREATE TABLE "public"."contact" (
     "name" text,
     "avatar_url" text,
     "user_id" uuid REFERENCES "auth"."users" ("id") ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
-    CONSTRAINT contact_email_unique UNIQUE (email)
+    "primary" boolean NOT NULL DEFAULT false,
+    CONSTRAINT contact_email_unique UNIQUE (email),
+    CONSTRAINT contact_primary_requires_user CHECK (NOT "primary" OR user_id IS NOT NULL)
 );
+
+CREATE UNIQUE INDEX contact_user_primary_unique ON contact (user_id) WHERE "primary" = true;
 
 ALTER TABLE "public"."contact" ENABLE ROW LEVEL SECURITY;
 

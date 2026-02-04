@@ -57,14 +57,12 @@ class AuthLink extends Link {
   const AuthLink({
     required this.title,
     required this.provider,
-    required this.level,
     required this.scopes,
     required this.callback,
   }) : super(type: LinkType.auth);
 
   final String title;
   final AuthProvider provider;
-  final String level;
   final List<String> scopes;
   final String callback;
 
@@ -75,7 +73,6 @@ class AuthLink extends Link {
         (v) => v.name == json['provider'],
         orElse: () => AuthProvider.other,
       ),
-      level: json['level'] as String,
       scopes: (json['scopes'] as List).cast<String>(),
       callback: json['callback'] as String,
     );
@@ -87,14 +84,13 @@ class AuthLink extends Link {
       'type': type.name,
       'title': title,
       'provider': provider.name,
-      'level': level,
       'scopes': scopes,
       'callback': callback,
     };
   }
 
   @override
-  List<Object?> get props => [type, title, provider, level, scopes, callback];
+  List<Object?> get props => [type, title, provider, scopes, callback];
 }
 
 class CallbackLink extends Link {

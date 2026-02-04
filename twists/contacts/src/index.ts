@@ -4,6 +4,7 @@ import type {
   GoogleContacts,
 } from "@plotday/tool-google-contacts";
 import {
+  type Actor,
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
@@ -69,22 +70,24 @@ export default class ContactsTwist extends Twist<ContactsTwist> {
     return auth?.authToken || null;
   }
 
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
     // Get auth links from contacts tools
     const googleAuthLink = await this.tools.googleContacts.requestAuth(
       this.onAuthComplete,
       "google"
     );
 
-    // Create activity with auth link
+    // Create activity with auth link — private so only the installing user sees it
     await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect your contacts",
+      private: true,
       start: new Date(),
       end: null,
       notes: [
         {
           links: [googleAuthLink],
+          ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
         },
       ],
     });

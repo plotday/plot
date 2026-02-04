@@ -359,9 +359,29 @@ export async function processNewActorArray(
     }
   });
 
-  // Batch upsert all priority_contact links at once
-  if (actorIds.length > 0) {
-    const priorityContacts = actorIds.map((actorId) => ({
+  // Batch upsert priority_contact links for contacts only (not priority_twists)
+  // New contacts from addContacts are always valid, but existing actor IDs
+  // may reference priority_twists which aren't in the contact table.
+  const newContactIds = new Set(createdActors.map((a) => a.id));
+  let contactIds = actorIds.filter((id) => newContactIds.has(id));
+
+  // For existing actor IDs, check which ones are actually contacts
+  const existingIdsToCheck = actorIds.filter((id) => !newContactIds.has(id));
+  if (existingIdsToCheck.length > 0) {
+    const { data: validContacts } = await plot.supabase
+      .from("contact")
+      .select("id")
+      .in("id", existingIdsToCheck);
+    if (validContacts) {
+      const validIds = new Set(validContacts.map((c) => c.id));
+      contactIds = contactIds.concat(
+        existingIdsToCheck.filter((id) => validIds.has(id))
+      );
+    }
+  }
+
+  if (contactIds.length > 0) {
+    const priorityContacts = contactIds.map((actorId) => ({
       priority_id: priorityId,
       contact_id: actorId,
     }));
