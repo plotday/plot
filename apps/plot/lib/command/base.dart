@@ -462,17 +462,14 @@ class CommandScopeState extends State<CommandScope> {
     _register!(_resolvedCommands);
   }
 
-  void _unregister() {
-    _register?.call(null);
-    _register = null;
-  }
-
   void _onListenableChanged() {
     final newCommands = _resolveCommands();
     if (!_commandsEqual(_resolvedCommands, newCommands)) {
       setState(() {
         _resolvedCommands = newCommands;
-        _doRegister();
+        if (_register != null) {
+          _doRegister();
+        }
       });
     }
   }
@@ -483,7 +480,7 @@ class CommandScopeState extends State<CommandScope> {
     _resolvedCommands = _resolveCommands();
     widget.listenable?.addListener(_onListenableChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _doRegister();
+      if (mounted) _doRegister();
     });
   }
 
@@ -500,7 +497,7 @@ class CommandScopeState extends State<CommandScope> {
       _doRegister();
     } else if (!isCurrent && _routeActive) {
       _routeActive = false;
-      _unregister();
+      _register?.call([]); // Clear commands but preserve position in _commands
     }
   }
 
@@ -516,7 +513,9 @@ class CommandScopeState extends State<CommandScope> {
     final newCommands = _resolveCommands();
     if (!_commandsEqual(_resolvedCommands, newCommands)) {
       _resolvedCommands = newCommands;
-      _doRegister();
+      if (_register != null) {
+        _doRegister();
+      }
     }
   }
 
