@@ -27,10 +27,10 @@ import 'logging.dart';
 
 /// Information about a mention extracted from markdown
 class _MentionInfo {
-  const _MentionInfo({required this.name, required this.priorityTwistId});
+  const _MentionInfo({required this.name, required this.actorId});
 
   final String name;
-  final String priorityTwistId;
+  final String actorId;
 }
 
 /// Extract mention info from markdown before preprocessing
@@ -44,7 +44,7 @@ List<_MentionInfo> _extractMentions(String markdown) {
     mentions.add(
       _MentionInfo(
         name: match.group(1) ?? '',
-        priorityTwistId: match.group(2) ?? '',
+        actorId: match.group(2) ?? '',
       ),
     );
   }
@@ -88,7 +88,7 @@ void _addMentionAttributions(MutableDocument document, _MentionInfo mention) {
 
       // Add attribution for this occurrence
       final attribution = CommittedEditorMentionAttribution(
-        priorityTwistId: mention.priorityTwistId,
+        actorId: mention.actorId,
         username: mention.name,
       );
 
@@ -174,6 +174,32 @@ MutableDocument _deserializeMarkdownWithMentions(String markdown) {
   return document;
 }
 
+/// A unified item for the mention popover, representing either a twist or a contact.
+class MentionItem {
+  const MentionItem({
+    required this.id,
+    required this.name,
+    this.isTwist = false,
+  });
+
+  /// Create from a PriorityTwist
+  factory MentionItem.fromTwist(PriorityTwist twist) => MentionItem(
+    id: twist.id.toString(),
+    name: twist.name,
+    isTwist: true,
+  );
+
+  /// Create from an Actor
+  factory MentionItem.fromActor(Actor actor) => MentionItem(
+    id: actor.id.toString(),
+    name: actor.nameOrEmail,
+  );
+
+  final String id;
+  final String name;
+  final bool isTwist;
+}
+
 class Editor extends StatefulWidget {
   const Editor({
     this.hint,
@@ -183,6 +209,7 @@ class Editor extends StatefulWidget {
     this.onIsEmptyChanged,
     this.focusNode,
     this.twists = const [],
+    this.actors = const [],
     this.shrinkWrap = true,
     this.initialContent,
     super.key,
@@ -195,6 +222,7 @@ class Editor extends StatefulWidget {
   final ValueChanged<bool>? onIsEmptyChanged;
   final FocusNode? focusNode;
   final List<PriorityTwist> twists;
+  final List<Actor> actors;
   final bool shrinkWrap;
   final String? initialContent;
 
@@ -360,7 +388,7 @@ class EditorState extends State<Editor> {
 
         // Replace name with [Name](#@ID)
         final name = attribution.username;
-        final replacement = '[$name](#@${attribution.priorityTwistId})';
+        final replacement = '[$name](#@${attribution.actorId})';
         markdown = markdown.replaceFirst(mentionText, replacement);
       }
     }
@@ -765,15 +793,27 @@ class EditorState extends State<Editor> {
     _mentionDetector.addListener(_updateMentionOverlay);
   }
 
+  /// Build the combined mention items list from twists and actors
+  List<MentionItem> _buildMentionItems() {
+    // Twists first, then actors (excluding actors that are already represented by twists)
+    final twistActorIds = widget.twists.map((t) => t.id.toString()).toSet();
+    return [
+      ...widget.twists.map(MentionItem.fromTwist),
+      ...widget.actors
+          .where((actor) => !twistActorIds.contains(actor.id.toString()))
+          .map(MentionItem.fromActor),
+    ];
+  }
+
   void _updateMentionOverlay() {
     final mention = _mentionDetector.composingMention;
 
-    // Filter twists based on composing text
+    // Filter mention items based on composing text
     final hasMatches =
         mention != null &&
-        widget.twists.any(
-          (twist) =>
-              twist.name.toLowerCase().contains(mention.text.toLowerCase()),
+        _buildMentionItems().any(
+          (item) =>
+              item.name.toLowerCase().contains(mention.text.toLowerCase()),
         );
 
     if (hasMatches && !_mentionOverlayController.isShowing) {
@@ -796,31 +836,32 @@ class EditorState extends State<Editor> {
   /// Builds the user mention popover in the overlay
   Widget _buildEditorMentionPopover(BuildContext context) {
     final mentionBeingComposed = _mentionDetector.composingMention;
-    if (mentionBeingComposed == null || widget.twists.isEmpty) {
+    final mentionItems = _buildMentionItems();
+    if (mentionBeingComposed == null || mentionItems.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    // Sort twists by most-recently-used
+    // Sort items by most-recently-used
     final localPrefs = context.read<LocalPreferencesBloc>();
-    final sortedTwists = localPrefs.sortByMentionMru(
-      widget.twists,
-      (twist) => twist.id.toString(),
+    final sortedItems = localPrefs.sortByMentionMru(
+      mentionItems,
+      (item) => item.id,
     );
 
     return EditorMentionPopover(
       key: _mentionPopoverKey,
       editorFocusNode: _editorFocusNode,
       leaderLink: _mentionLeaderLink,
-      twists: sortedTwists,
+      items: sortedItems,
       composingText: mentionBeingComposed.text,
       showAbove: _showMentionPopoverAbove,
-      onAgentSelected: (twist) {
+      onItemSelected: (item) {
         // Record mention usage for MRU sorting
-        localPrefs.recordMentionUsage(twist.id.toString());
+        localPrefs.recordMentionUsage(item.id);
 
         _mentionDetector.completeMention(
-          priorityTwistId: twist.id.toString(),
-          username: twist.name,
+          actorId: item.id,
+          username: item.name,
         );
         _editorFocusNode.requestFocus();
       },

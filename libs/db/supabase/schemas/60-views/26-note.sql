@@ -35,7 +35,46 @@ WHERE
         WHEN auth.uid() IS NULL THEN TRUE
         WHEN a.created_by = auth.uid() THEN TRUE
         ELSE public.user_mentioned_in_activity(auth.uid(), a.id)
-    END);
+    END)
+UNION ALL
+-- Redacted rows for private notes the user cannot see
+SELECT
+    upe.user_id,
+    n.id,
+    n.created_at,
+    n.updated_at,
+    n.source_created_at,
+    n.author_id,
+    n.created_by,
+    n.updated_by,
+    COALESCE(n.archived_at, n.updated_at) AS archived_at,
+    n.activity_id,
+    n.draft,
+    n.private,
+    NULL::text AS content,
+    NULL::jsonb AS links,
+    CAST(NULL AS uuid[]) AS mentions
+FROM
+    note n
+    JOIN activity a ON a.id = n.activity_id
+    JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id
+WHERE
+    auth.uid() IS NOT NULL
+    AND upe.user_id = auth.uid()
+    AND (n.draft = FALSE OR n.created_by = auth.uid())
+    AND (a.draft = FALSE OR a.created_by = auth.uid())
+    -- Hidden by note-level OR activity-level privacy
+    AND (
+        -- Note is private and user can't see it
+        (n.private = TRUE
+            AND n.created_by != auth.uid()
+            AND NOT (auth.uid() = ANY(COALESCE(n.mentions, CAST('{}' AS uuid[])))))
+        OR
+        -- Activity is private and user can't see it
+        (a.private = TRUE
+            AND a.created_by != auth.uid()
+            AND NOT public.user_mentioned_in_activity(auth.uid(), a.id))
+    );
 
 ALTER VIEW "public"."user_note" OWNER TO postgres;
 REVOKE SELECT ON "public"."user_note" FROM anon;

@@ -4,20 +4,20 @@ import 'package:forui/forui.dart';
 import 'package:super_editor/super_editor.dart';
 import 'package:follow_the_leader/follow_the_leader.dart';
 
-import 'package:plot/store/store.dart';
+import 'editor.dart';
 
-/// A popover that displays a list of twists for editor mentions.
+/// A popover that displays a list of mentionable items (twists and contacts).
 ///
 /// This widget appears when a user types "@" and shows a filtered list
-/// of twists that can be selected for mentioning.
+/// of items that can be selected for mentioning.
 class EditorMentionPopover extends StatefulWidget {
   const EditorMentionPopover({
     super.key,
     required this.editorFocusNode,
     required this.leaderLink,
-    required this.twists,
+    required this.items,
     required this.composingText,
-    required this.onAgentSelected,
+    required this.onItemSelected,
     required this.onCancelRequested,
     this.showAbove = false,
   });
@@ -28,8 +28,8 @@ class EditorMentionPopover extends StatefulWidget {
   /// Link to the widget that this popover follows
   final LeaderLink leaderLink;
 
-  /// The list of all available twists
-  final List<PriorityTwist> twists;
+  /// The list of all available mention items
+  final List<MentionItem> items;
 
   /// The current text being composed (after "@")
   final String composingText;
@@ -37,8 +37,8 @@ class EditorMentionPopover extends StatefulWidget {
   /// Whether to show the popover above the trigger (true) or below (false)
   final bool showAbove;
 
-  /// Callback when an twist is selected
-  final void Function(PriorityTwist twist) onAgentSelected;
+  /// Callback when an item is selected
+  final void Function(MentionItem item) onItemSelected;
 
   /// Callback when the user cancels the mention (e.g., presses ESC)
   final VoidCallback onCancelRequested;
@@ -51,7 +51,7 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
   late final FocusNode _focusNode;
   late final ScrollController _scrollController;
 
-  List<PriorityTwist> _filteredAgents = [];
+  List<MentionItem> _filteredItems = [];
   int _selectedIndex = 0;
 
   @override
@@ -59,15 +59,15 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
     super.initState();
     _focusNode = FocusNode();
     _scrollController = ScrollController();
-    _updateFilteredAgents();
+    _updateFilteredItems();
   }
 
   @override
   void didUpdateWidget(EditorMentionPopover oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.composingText != widget.composingText ||
-        oldWidget.twists != widget.twists) {
-      _updateFilteredAgents();
+        oldWidget.items != widget.items) {
+      _updateFilteredItems();
     }
   }
 
@@ -78,26 +78,26 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
     super.dispose();
   }
 
-  void _updateFilteredAgents() {
+  void _updateFilteredItems() {
     setState(() {
-      _filteredAgents = widget.twists
+      _filteredItems = widget.items
           .where(
-            (twist) => twist.name.toLowerCase().contains(
+            (item) => item.name.toLowerCase().contains(
               widget.composingText.toLowerCase(),
             ),
           )
           .toList();
 
       // Reset selection if it's out of bounds
-      if (_selectedIndex >= _filteredAgents.length) {
+      if (_selectedIndex >= _filteredItems.length) {
         _selectedIndex = 0;
       }
     });
   }
 
   void _selectCurrent() {
-    if (_filteredAgents.isNotEmpty) {
-      widget.onAgentSelected(_filteredAgents[_selectedIndex]);
+    if (_filteredItems.isNotEmpty) {
+      widget.onItemSelected(_filteredItems[_selectedIndex]);
     }
   }
 
@@ -108,23 +108,23 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
 
     switch (event.logicalKey) {
       case LogicalKeyboardKey.arrowUp:
-        if (_filteredAgents.isEmpty) {
+        if (_filteredItems.isEmpty) {
           return KeyEventResult.handled;
         }
         setState(() {
           _selectedIndex =
-              (_selectedIndex - 1 + _filteredAgents.length) %
-              _filteredAgents.length;
+              (_selectedIndex - 1 + _filteredItems.length) %
+              _filteredItems.length;
         });
         _scrollToSelected();
         return KeyEventResult.handled;
 
       case LogicalKeyboardKey.arrowDown:
-        if (_filteredAgents.isEmpty) {
+        if (_filteredItems.isEmpty) {
           return KeyEventResult.handled;
         }
         setState(() {
-          _selectedIndex = (_selectedIndex + 1) % _filteredAgents.length;
+          _selectedIndex = (_selectedIndex + 1) % _filteredItems.length;
         });
         _scrollToSelected();
         return KeyEventResult.handled;
@@ -182,20 +182,20 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
 
   /// Navigate to the previous item in the list
   void navigateUp() {
-    if (_filteredAgents.isEmpty) return;
+    if (_filteredItems.isEmpty) return;
     setState(() {
       _selectedIndex =
-          (_selectedIndex - 1 + _filteredAgents.length) %
-          _filteredAgents.length;
+          (_selectedIndex - 1 + _filteredItems.length) %
+          _filteredItems.length;
     });
     _scrollToSelected();
   }
 
   /// Navigate to the next item in the list
   void navigateDown() {
-    if (_filteredAgents.isEmpty) return;
+    if (_filteredItems.isEmpty) return;
     setState(() {
-      _selectedIndex = (_selectedIndex + 1) % _filteredAgents.length;
+      _selectedIndex = (_selectedIndex + 1) % _filteredItems.length;
     });
     _scrollToSelected();
   }
@@ -252,23 +252,23 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: _buildUserList(context),
+        child: _buildItemList(context),
       ),
     );
   }
 
-  Widget _buildUserList(BuildContext context) {
+  Widget _buildItemList(BuildContext context) {
     return FTileGroup.builder(
       scrollController: _scrollController,
       divider: FItemDivider.none,
-      count: _filteredAgents.length,
+      count: _filteredItems.length,
       tileBuilder: (context, index) {
-        final twist = _filteredAgents[index];
+        final item = _filteredItems[index];
         final isSelected = index == _selectedIndex;
         return FTile(
-          title: Text(twist.name),
+          title: Text(item.name),
           selected: isSelected,
-          onPress: () => widget.onAgentSelected(twist),
+          onPress: () => widget.onItemSelected(item),
           // ignore: unused_result
           style: context.theme.tileStyle.copyWith(
             // ignore: unused_result

@@ -208,6 +208,28 @@ class ToggleNoteTag extends NoteCommand {
   }
 }
 
+class ToggleNotePrivate extends NoteCommand {
+  ToggleNotePrivate(super.note)
+    : super(
+        title: note.private ? 'Make Public' : 'Make Private',
+        eventObject: EventObject.note,
+        eventAction: note.private ? EventAction.untagged : EventAction.tagged,
+        icon: PlotIcon.private,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final updatedNote = note.copyWith(private: !note.private);
+      await updatedNote.save();
+      return const CommandDone();
+    } catch (e, stackTrace) {
+      log.severe('Error in ToggleNotePrivate: $e', e, stackTrace);
+      return CommandMessage('Failed to toggle private', isError: true);
+    }
+  }
+}
+
 class ArchiveNote extends NoteCommand {
   ArchiveNote(super.note)
     : super(
@@ -265,6 +287,8 @@ List<Command> noteCommands(Note note) {
   return [
     if (!isAssigned) StartTask(note),
     if (isAssigned) FinishTask(note),
+    if (!note.private || note.authorId == Base.actorId)
+      ToggleNotePrivate(note),
     ArchiveNote(note),
   ];
 }

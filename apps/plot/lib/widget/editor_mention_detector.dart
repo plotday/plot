@@ -145,9 +145,9 @@ class EditorMentionDetector extends ChangeNotifier {
   }
 
   /// Completes the current mention by replacing the composing text with the selected twist
-  /// Displays name in the editor, but serializes to [Name](#@{priorityTwistId}] in markdown
+  /// Displays name in the editor, but serializes to [Name](#@{actorId}] in markdown
   void completeMention({
-    required String priorityTwistId,
+    required String actorId,
     required String username,
   }) {
     final mention = _composingMention;
@@ -164,7 +164,7 @@ class EditorMentionDetector extends ChangeNotifier {
     final replaceToOffset = mention.triggerOffset + 1 + mention.text.length;
 
     final attribution = CommittedEditorMentionAttribution(
-      priorityTwistId: priorityTwistId,
+      actorId: actorId,
       username: username,
     );
     // Display as username in the editor (will convert to [Name](#@ID) when serializing)

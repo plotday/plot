@@ -18,6 +18,7 @@ class PriorityState extends Equatable {
     List<Tag> filter = const [],
     String search = '',
     List<PriorityTwist> twists = const [],
+    List<Actor> actors = const [],
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
     Priority? targetPriority,
@@ -66,6 +67,7 @@ class PriorityState extends Equatable {
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
       search: search,
       twists: twists.isNotEmpty ? List.unmodifiable(twists) : twists,
+      actors: actors.isNotEmpty ? List.unmodifiable(actors) : actors,
       tags: tags.isNotEmpty ? List.unmodifiable(tags) : tags,
       tagSuggestions: tagSuggestions.isNotEmpty
           ? List.unmodifiable(tagSuggestions)
@@ -90,6 +92,7 @@ class PriorityState extends Equatable {
     this.filter = const [],
     this.search = '',
     this.twists = const [],
+    this.actors = const [],
     this.tags = const [],
     this.tagSuggestions = const [],
     this.targetPriority,
@@ -110,6 +113,7 @@ class PriorityState extends Equatable {
   final List<Tag> filter;
   final String search;
   final List<PriorityTwist> twists;
+  final List<Actor> actors;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
   final Priority? targetPriority;
@@ -811,6 +815,7 @@ class PriorityState extends Equatable {
     List<Tag>? filter,
     String? search,
     List<PriorityTwist>? twists,
+    List<Actor>? actors,
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
     Value<Priority?> targetPriority = const Value.absent(),
@@ -842,6 +847,9 @@ class PriorityState extends Equatable {
       twists: twists != null
           ? (twists.isNotEmpty ? List.unmodifiable(twists) : twists)
           : this.twists,
+      actors: actors != null
+          ? (actors.isNotEmpty ? List.unmodifiable(actors) : actors)
+          : this.actors,
       tags: tags != null
           ? (tags.isNotEmpty ? List.unmodifiable(tags) : tags)
           : this.tags,
@@ -871,6 +879,7 @@ class PriorityState extends Equatable {
     filter,
     search,
     twists,
+    actors,
     tags,
     tagSuggestions,
     targetPriority,

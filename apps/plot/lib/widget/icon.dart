@@ -43,6 +43,7 @@ class PlotIcon {
   static const calendarCheck = FontAwesomeIcons.calendarCheck;
   static const share = FontAwesomeIcons.userPlus;
   static const users = FontAwesomeIcons.users;
+  static const private = FontAwesomeIcons.lock;
 
   // Activity kind icons
   static const document = FontAwesomeIcons.fileLines;

@@ -52,6 +52,13 @@ enum Tag {
     addable: false,
   ),
   link(6, PlotIcon.link, 'Link', type: TagType.compute, addable: false),
+  private(
+    8,
+    PlotIcon.private,
+    'Private',
+    type: TagType.compute,
+    shortcodes: ['private', 'lock'],
+  ),
 
   // Toggle tags
   pinned(100, PlotIcon.pinned, 'Pinned', shortcodes: ['pushpin']),

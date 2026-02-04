@@ -121,6 +121,7 @@ class NoteEditorState extends State<NoteEditor> {
               autofocus: true,
               focusNode: focusNode,
               twists: state.twists,
+              actors: state.actors,
               shrinkWrap: true,
               initialContent: widget.draft.content,
               onIsEmptyChanged: (isEmpty) {
@@ -185,6 +186,12 @@ class NoteEditorState extends State<NoteEditor> {
                         ToggleNoteTag(widget.draft, Tag.now, Base.actorId),
                         selected: widget.draft.isAssignedTo(Base.actorId),
                       ),
+                      // Private toggle
+                      if (!widget.draft.private || widget.draft.authorId == Base.actorId)
+                        Button.icon(
+                          ToggleNoteTag(widget.draft, Tag.private, Base.actorId),
+                          selected: widget.draft.private,
+                        ),
                       const Spacer(),
                       // Right side: Save button (always visible)
                       Button.icon(

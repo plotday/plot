@@ -367,32 +367,42 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Returns the agenda item at the offset position. Boundary behavior:
   /// - If offset would go out of bounds but items exist in that direction, returns the furthest item
   /// - If already at the furthest item and trying to move further, returns null
-  /// - Returns null if no current activity is set
+  /// - If no current activity is set, navigates relative to the "now" header position
   AgendaItem? getAgendaItem(
     int offset, {
     bool includeActivity = true,
     bool includePriority = false,
     bool includeDate = false,
   }) {
-    if (state.activity == null) {
-      return null;
-    }
-
-    // Find current activity index in agendaItems
     int currentIndex = -1;
-    for (int i = 0; i < state.agendaItems.length; i++) {
-      final activity = state.agendaItems[i].when<Activity?>(
-        header: (header) => null,
-        activity: (agendaActivity) => agendaActivity.activity,
-      );
-      if (activity?.id == state.activity!.id) {
-        currentIndex = i;
-        break;
-      }
-    }
 
-    if (currentIndex == -1) {
-      return null;
+    if (state.activity == null) {
+      // No activity selected: start from the "now" header.
+      // There can be two now headers; use the last one (labeled "Now").
+      for (int i = 0; i < state.agendaItems.length; i++) {
+        final item = state.agendaItems[i];
+        if (item is AgendaHeaderItem && item.now) {
+          currentIndex = i;
+        }
+      }
+      if (currentIndex == -1) {
+        currentIndex = 0;
+      }
+    } else {
+      // Activity selected: find its index
+      for (int i = 0; i < state.agendaItems.length; i++) {
+        final activity = state.agendaItems[i].when<Activity?>(
+          header: (header) => null,
+          activity: (agendaActivity) => agendaActivity.activity,
+        );
+        if (activity?.id == state.activity!.id) {
+          currentIndex = i;
+          break;
+        }
+      }
+      if (currentIndex == -1) {
+        return null;
+      }
     }
 
     // Helper to check if an item matches the filter criteria
@@ -490,6 +500,17 @@ class PriorityBloc extends Cubit<PriorityState> {
       PriorityTwist.watch(priority: priorityToLoad).listen((twists) {
         log.fine('Priority twists updated: ${twists.length} twists');
         emit(state.copyWith(twists: twists));
+      }),
+    );
+
+    // Watch actors for the priority (users and contacts for mentions)
+    _subscriptions.add(
+      Actor.watch(
+        priorityId: priorityToLoad.id,
+        types: [ActorType.user, ActorType.contact],
+      ).listen((actors) {
+        log.fine('Priority actors updated: ${actors.length} actors');
+        emit(state.copyWith(actors: actors));
       }),
     );
 

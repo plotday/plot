@@ -952,6 +952,24 @@ class ToggleActivityTag extends _UpdateActivityCommand {
   }
 }
 
+class ToggleActivityPrivate extends _UpdateActivityCommand {
+  ToggleActivityPrivate(super.activity, {super.onUpdate})
+    : super(
+        title: activity.private ? 'Make Public' : 'Make Private',
+        eventObject: EventObject.activity,
+        eventAction: activity.private
+            ? EventAction.untagged
+            : EventAction.tagged,
+        icon: PlotIcon.private,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await onUpdate(activity.copyWith(private: !activity.private));
+    return const CommandDone();
+  }
+}
+
 class MoveToPriority extends PriorityCommand {
   MoveToPriority(this.activity, Priority priority)
     : super(
@@ -1264,6 +1282,9 @@ List<Command> activityCommands(
     MoveActivityToPriority(activity),
     if (isTouchDevice) EnterReorderMode(),
     if (activity.type != .note && !skipInfrequent) ActivityToNote(activity),
+    if (!skipInfrequent &&
+        (!activity.private || activity.authorId == Base.actorId))
+      ToggleActivityPrivate(activity),
     if (!skipInfrequent) ArchiveActivity(activity),
   ];
 }

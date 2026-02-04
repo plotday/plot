@@ -17,6 +17,7 @@ class ActivityEditor extends StatefulWidget {
     required this.draft,
     required this.draftNote,
     required this.twists,
+    this.actors = const [],
     required this.onDraftChanged,
     this.flushToBottom = false,
     super.key,
@@ -25,6 +26,7 @@ class ActivityEditor extends StatefulWidget {
   final Activity draft;
   final Note draftNote;
   final List<PriorityTwist> twists;
+  final List<Actor> actors;
   final Future<void> Function(Activity activity, {Note? note}) onDraftChanged;
   final bool flushToBottom;
 
@@ -183,6 +185,7 @@ class ActivityEditorState extends State<ActivityEditor> {
           autofocus: true,
           focusNode: focusNode,
           twists: widget.twists,
+          actors: widget.actors,
           shrinkWrap: true,
           initialContent: initialContent,
           onIsEmptyChanged: (isEmpty) {
@@ -282,6 +285,15 @@ class ActivityEditorState extends State<ActivityEditor> {
                           ),
                     selected: widget.draft.type == .event,
                   ),
+                  if (!widget.draft.private || widget.draft.authorId == Base.actorId)
+                    Button.icon(
+                      ToggleActivityPrivate(
+                        widget.draft,
+                        onUpdate: (activity) =>
+                            widget.onDraftChanged(activity),
+                      ),
+                      selected: widget.draft.private,
+                    ),
                   const Spacer(),
                   // Right side: Save button (always visible)
                   Button.icon(

@@ -1534,6 +1534,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         Tag.later,
         Tag.done,
         Tag.archived,
+        Tag.private,
       ].where((tag) => hasTag(tag)).map((tag) => MapEntry(tag, [authorId])),
     ),
     ...(_tags?.tags ?? const {}),
@@ -1901,6 +1902,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         return copyWith(
           archivedAt: Value(archivedAt == null ? DateTime.now() : null),
         );
+      case Tag.private:
+        return copyWith(private: !private);
       case Tag.now:
         if (doNow) {
           // Removing doNow - clear scheduling
@@ -2113,6 +2116,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         return done;
       case Tag.archived:
         return archivedAt != null;
+      case Tag.private:
+        return private;
       default:
         final currentTags = tags;
         final users = currentTags[tag];

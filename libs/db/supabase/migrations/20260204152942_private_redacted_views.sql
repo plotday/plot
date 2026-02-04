@@ -1,54 +1,3 @@
-CREATE OR REPLACE VIEW "public"."activity_tags" WITH ( security_invoker = TRUE)
---
-AS
-SELECT
-    sq.activity_id,
-    sq.occurrence,
-    jsonb_object_agg(sq.tag_id, sq.actor_ids) FILTER (WHERE sq.actor_ids IS NOT NULL
-        AND jsonb_array_length(sq.actor_ids) > 0) AS tags,
-    MAX(sq.updated_at) AS updated_at,
-    (array_agg(sq.updated_by ORDER BY sq.updated_at DESC))[1] AS updated_by
-FROM (
-    SELECT
-        at.activity_id,
-        at.occurrence,
-        at.tag_id,
-        jsonb_agg(at.actor_id) FILTER (WHERE at.archived_at IS NULL) AS actor_ids,
-        MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at,
-        (array_agg(at.updated_by ORDER BY at.updated_at DESC))[1] AS updated_by
-    FROM
-        "public"."activity_tag" at
-    GROUP BY
-        at.activity_id,
-        at.occurrence,
-        at.tag_id) sq
-GROUP BY
-    sq.activity_id,
-    sq.occurrence;
-
--- Add priority_path and mentions to activity view
--- Uses SECURITY DEFINER function for mentions to bypass redundant note RLS checks
-CREATE OR REPLACE VIEW "public"."activity_x" WITH ( security_invoker = TRUE)
---
-AS
-SELECT
-    a.*,
-    p.path AS priority_path,
-    public.get_activity_mentions (a.id) AS mentions
-FROM
-    activity a
-    JOIN priority p ON p.id = a.priority_id;
-
--- To filter on a date range, use both the `range_at` and `range_on` columns.
--- They're separate because combining timestamps and dates requires knowing
--- the user's timezone, which is client-specific.
---
--- Unread calculation is inlined from the former user_activity_unread view to avoid
--- a redundant evaluation of user_priority_expanded. activity_read is joined directly
--- with the read threshold applied conditionally in the SELECT expressions.
---
--- Contact lookup for assignee uses a scalar subquery instead of LEFT JOIN to avoid
--- probing the full contact table for every row (most activities have no assignee).
 CREATE OR REPLACE VIEW "public"."user_activity"
 --
 AS
@@ -56,9 +5,6 @@ SELECT
     upe.user_id,
     a.id,
     a.created_at,
-    -- updated_at includes last_note_created_at and activity_read contributions
-    -- activity_read updated_at only contributes when read_at >= unread threshold
-    -- (matching the former user_activity_unread semantics)
     GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz),
         CASE WHEN a.archived_at IS NULL
             AND ((a.created_by = upe.user_id
@@ -110,7 +56,6 @@ SELECT
     a.mentions,
     CASE WHEN a.done_at IS NOT NULL THEN
         tstzrange(a.done_at, a.done_at, '[]')
-        -- Skip scheduled time cases if assigned to someone other than current user
     WHEN (a.assignee_id IS NOT NULL
         AND (
             SELECT
@@ -130,7 +75,6 @@ SELECT
     END AS range_at,
     CASE WHEN a.done_at IS NOT NULL THEN
         NULL::daterange
-        -- Set to NULL if assigned to someone other than current user
     WHEN a.assignee_id IS NOT NULL
         AND (
             SELECT
@@ -147,7 +91,6 @@ SELECT
     ELSE
         NULL::daterange
     END AS range_on,
-    -- Unread: TRUE only for non-archived activities where read is missing or stale
     COALESCE(CASE WHEN a.archived_at IS NULL
             AND ((a.created_by = upe.user_id
                     AND a.last_note_created_at IS NOT NULL
@@ -179,7 +122,6 @@ WHERE
         ELSE public.user_mentioned_in_activity(auth.uid(), a.id)
     END)
 UNION ALL
--- Redacted rows for private activities the user cannot see
 SELECT
     upe.user_id,
     a.id,
@@ -225,50 +167,73 @@ WHERE
     AND a.created_by != auth.uid()
     AND NOT public.user_mentioned_in_activity(auth.uid(), a.id);
 
-ALTER VIEW "public"."user_activity" OWNER TO postgres;
-REVOKE SELECT ON "public"."user_activity" FROM anon;
-
-CREATE OR REPLACE VIEW "public"."user_activity_exception"
+CREATE OR REPLACE VIEW "public"."user_note"
 --
 AS
 SELECT
-    ua.user_id,
-    ae.id,
-    ae.activity_id,
-    COALESCE(ae.archived_at, ua.archived_at) AS archived_at,
-    ae.occurrence,
-    ae.updated_at,
-    ua.priority_path,
-    ua.range_at,
-    ua.range_on,
-    -- exception overrides
-    ae.at,
-    ae.on,
-    ae.title,
-    ae.preview
+    upe.user_id,
+    n.id,
+    n.created_at,
+    n.updated_at,
+    n.source_created_at,
+    n.author_id,
+    n.created_by,
+    n.updated_by,
+    n.archived_at,
+    n.activity_id,
+    n.draft,
+    n.private,
+    n.content,
+    n.links,
+    n.mentions
 FROM
-    activity_exception ae
-    JOIN user_activity ua ON ua.id = ae.activity_id;
-
-ALTER VIEW "public"."user_activity_exception" OWNER TO postgres;
-REVOKE SELECT ON "public"."user_activity_exception" FROM anon;
-
-CREATE OR REPLACE VIEW "public"."user_activity_tags"
---
-AS
+    note n
+    JOIN activity a ON a.id = n.activity_id
+    JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id
+WHERE
+    (auth.uid() IS NULL OR upe.user_id = auth.uid())
+    AND (n.draft = FALSE OR auth.uid() IS NULL OR n.created_by = auth.uid())
+    AND (n.private = FALSE OR auth.uid() IS NULL
+        OR n.created_by = auth.uid()
+        OR auth.uid() = ANY(n.mentions))
+    AND (a.draft = FALSE OR auth.uid() IS NULL OR a.created_by = auth.uid())
+    AND (CASE WHEN a.private = FALSE THEN TRUE
+        WHEN auth.uid() IS NULL THEN TRUE
+        WHEN a.created_by = auth.uid() THEN TRUE
+        ELSE public.user_mentioned_in_activity(auth.uid(), a.id)
+    END)
+UNION ALL
 SELECT
-    ua.user_id,
-    ua.id,
-    ua.archived_at,
-    at.occurrence,
-    at.updated_at,
-    ua.priority_path,
-    ua.range_at,
-    ua.range_on,
-    at.tags
+    upe.user_id,
+    n.id,
+    n.created_at,
+    n.updated_at,
+    n.source_created_at,
+    n.author_id,
+    n.created_by,
+    n.updated_by,
+    COALESCE(n.archived_at, n.updated_at) AS archived_at,
+    n.activity_id,
+    n.draft,
+    n.private,
+    NULL::text AS content,
+    NULL::jsonb AS links,
+    CAST(NULL AS uuid[]) AS mentions
 FROM
-    activity_tags at
-    JOIN user_activity ua ON ua.id = at.activity_id;
-
-ALTER VIEW "public"."user_activity_tags" OWNER TO postgres;
-REVOKE SELECT ON "public"."user_activity_tags" FROM anon;
+    note n
+    JOIN activity a ON a.id = n.activity_id
+    JOIN user_priority_expanded upe ON upe.priority_id = a.priority_id
+WHERE
+    auth.uid() IS NOT NULL
+    AND upe.user_id = auth.uid()
+    AND (n.draft = FALSE OR n.created_by = auth.uid())
+    AND (a.draft = FALSE OR a.created_by = auth.uid())
+    AND (
+        (n.private = TRUE
+            AND n.created_by != auth.uid()
+            AND NOT (auth.uid() = ANY(COALESCE(n.mentions, CAST('{}' AS uuid[])))))
+        OR
+        (a.private = TRUE
+            AND a.created_by != auth.uid()
+            AND NOT public.user_mentioned_in_activity(auth.uid(), a.id))
+    );

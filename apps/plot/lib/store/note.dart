@@ -507,7 +507,10 @@ class Note extends Equatable implements Comparable<Note> {
   }
 
   // Tag-related getters
-  Map<Tag, List<ActorId>> get tags => _tags?.tags ?? const {};
+  Map<Tag, List<ActorId>> get tags => {
+    if (private) Tag.private: [authorId],
+    ...(_tags?.tags ?? const {}),
+  };
 
   /// Get all actors who have Tag.now or Tag.done on this note (i.e., assignees)
   List<ActorId> get assignees {
@@ -537,6 +540,7 @@ class Note extends Equatable implements Comparable<Note> {
 
   /// Check if a specific actor has a given tag
   bool hasTag(Tag tag, [ActorId? actorId]) {
+    if (tag == Tag.private) return private;
     final actors = tags[tag];
     if (actorId == null) {
       return actors?.isNotEmpty == true;
@@ -637,6 +641,11 @@ class Note extends Equatable implements Comparable<Note> {
   /// Sets or unsets a tag for a specific actor.
   /// Returns a new Note instance with the updated tag - caller must call save().
   Note setTag(Tag tag, ActorId actorId, [bool value = true]) {
+    // Handle compute tags that map to direct fields
+    if (tag == Tag.private) {
+      return copyWith(private: value);
+    }
+
     // Count tags can only be set for the current user
     if (tag.type == TagType.count && actorId != Base.actorId) {
       log.warning(

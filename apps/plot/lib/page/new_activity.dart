@@ -363,6 +363,7 @@ class NewActivityPageState extends State<NewActivityPage> {
                             draft: state.draft,
                             draftNote: state.draftNote,
                             twists: _draftTwists ?? state.twists,
+                            actors: state.actors,
                             onDraftChanged: (activity, {note}) async {
                               await context.read<PriorityBloc>().updateDraft(
                                 activity,
@@ -418,6 +419,7 @@ class NewActivityPageState extends State<NewActivityPage> {
                             draft: state.draft,
                             draftNote: state.draftNote,
                             twists: _draftTwists ?? state.twists,
+                            actors: state.actors,
                             onDraftChanged: (activity, {note}) async {
                               await context.read<PriorityBloc>().updateDraft(
                                 activity,
