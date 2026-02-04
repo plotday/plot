@@ -11,21 +11,24 @@ class CommandModal {
     Commands commands, {
     required BuildContext rootContext,
     bool? showFilter,
+    Future<Commands> Function()? commandsBuilder,
   }) {
-    return CommandModal._(commands, rootContext, showFilter);
+    return CommandModal._(commands, rootContext, showFilter, commandsBuilder);
   }
 
-  CommandModal._(this.commands, this.rootContext, this.showFilter);
+  CommandModal._(
+      this._commands, this.rootContext, this.showFilter, this.commandsBuilder);
 
-  final Commands commands;
+  Commands _commands;
   final BuildContext rootContext;
   final bool? showFilter;
+  final Future<Commands> Function()? commandsBuilder;
   Future<void> Function()? _refreshCallback;
   final Map<String, ListTileController> _controllers = {};
 
-  /// Stable key for controller lookup that survives commands.list() returning new instances.
+  /// Stable key for controller lookup that survives _commands.list() returning new instances.
   static String _controllerKey(Command command) =>
-      '${command.runtimeType}:${command.title}:${command.eventObject}:${command.eventAction}';
+      '${command.runtimeType}:${command.title}:${command.subtitle}:${command.eventObject}:${command.eventAction}';
 
   Future<CommandReturn> run(BuildContext context) async {
     if (!context.mounted) return CommandSkipped();
@@ -35,7 +38,7 @@ class CommandModal {
       context,
       items: (search) async {
         // Always fetch fresh data to ensure refresh works correctly
-        final commandsList = await commands.list(search: search);
+        final commandsList = await _commands.list(search: search);
         return commandsList
             .map(
               (cg) => SelectGroup<Command>(
@@ -88,8 +91,8 @@ class CommandModal {
           },
         );
       },
-      prompt: commands.prompt,
-      emptyMessage: commands.emptyMessage,
+      prompt: _commands.prompt,
+      emptyMessage: _commands.emptyMessage,
       onSelect: (modalContext, command, searchText) async {
         // Get the controller for this command and call run()
         // This ensures spinner state management for Enter key path
@@ -128,7 +131,12 @@ class CommandModal {
         return false;
       },
       onRefreshNeeded: (refresh) {
-        _refreshCallback = refresh;
+        _refreshCallback = () async {
+          if (commandsBuilder != null) {
+            _commands = await commandsBuilder!();
+          }
+          await refresh();
+        };
       },
       showFilter: showFilter,
     );

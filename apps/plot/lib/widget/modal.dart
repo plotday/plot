@@ -99,6 +99,9 @@ class Modal extends StatelessWidget {
 
     // Check if command opens its own modal - keep parent modal open
     if (command is ShowCommands || command is ShowForm || command is ShowPage) {
+      if (result is! CommandSkipped && onRefresh != null) {
+        await onRefresh();
+      }
       return false;
     }
 

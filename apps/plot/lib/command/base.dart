@@ -181,6 +181,9 @@ class ShowCommands extends Command {
         commandsInstance,
         rootContext: context,
         showFilter: isDynamic ? true : null,
+        commandsBuilder: commandsBuilder != null
+            ? () => commandsBuilder!(context)
+            : null,
       ).run(context);
     } on Error catch (e, t) {
       log.warning('Command "$title" failed', e, t);

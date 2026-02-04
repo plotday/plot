@@ -179,8 +179,9 @@ class OpenNextActivity extends Command {
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         shortcut: const SingleActivator(
-          LogicalKeyboardKey.arrowRight,
+          LogicalKeyboardKey.arrowDown,
           meta: true,
+          shift: true,
         ),
         icon: PlotIcon.next,
       );
@@ -224,8 +225,9 @@ class OpenPreviousActivity extends Command {
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         shortcut: const SingleActivator(
-          LogicalKeyboardKey.arrowLeft,
+          LogicalKeyboardKey.arrowUp,
           meta: true,
+          shift: true,
         ),
         icon: PlotIcon.previous,
       );

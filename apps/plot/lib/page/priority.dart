@@ -91,6 +91,28 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
     _priorityListController = controller;
   }
 
+  /// When nothing is focused, focus the "now" header position (matching
+  /// getAgendaItem's behaviour when no activity is selected).
+  void _moveFocusOrStart(
+    BidirectionalListController controller,
+    int offset,
+    BuildContext context,
+  ) {
+    if (controller.focusedIndex != null) {
+      controller.moveFocus(offset);
+      return;
+    }
+    final state = context.read<PriorityBloc>().state;
+    int nowIndex = state.first; // fallback: beginning of list
+    for (int i = 0; i < state.agendaItems.length; i++) {
+      final item = state.agendaItems[i];
+      if (item is AgendaHeaderItem && item.now) {
+        nowIndex = state.first + i;
+      }
+    }
+    controller.requestFocus(nowIndex);
+  }
+
   void registerActivityPanel({
     BidirectionalListController? listController,
     VoidCallback? editorFocusCallback,
@@ -124,7 +146,11 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                   onInvoke: (_) {
                     // Only handle if we have a controller (meaning PriorityPage is visible)
                     if (_priorityListController != null) {
-                      _priorityListController!.moveFocus(-1);
+                      _moveFocusOrStart(
+                        _priorityListController!,
+                        -1,
+                        context,
+                      );
                     }
                     return null;
                   },
@@ -132,7 +158,11 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                 MoveFocusDownIntent: CallbackAction<MoveFocusDownIntent>(
                   onInvoke: (_) {
                     if (_priorityListController != null) {
-                      _priorityListController!.moveFocus(1);
+                      _moveFocusOrStart(
+                        _priorityListController!,
+                        1,
+                        context,
+                      );
                     }
                     return null;
                   },
@@ -378,17 +408,29 @@ class PriorityPage extends StatelessWidget {
                             actions: {
                               MoveFocusUpIntent: CallbackAction<MoveFocusUpIntent>(
                                 onInvoke: (intent) {
-                                  // For Cmd-Up/Down: always move focus in PriorityPage
-                                  // This is triggered by global shortcuts for Cmd-Up/Down
-                                  listController.moveFocus(-1);
+                                  final provider =
+                                      _PriorityListControllerProvider.maybeOf(
+                                        context,
+                                      );
+                                  provider?._moveFocusOrStart(
+                                    listController,
+                                    -1,
+                                    context,
+                                  );
                                   return null;
                                 },
                               ),
                               MoveFocusDownIntent: CallbackAction<MoveFocusDownIntent>(
                                 onInvoke: (intent) {
-                                  // For Cmd-Down: always move focus in PriorityPage
-                                  // This is triggered by global shortcuts for Cmd-Up/Down
-                                  listController.moveFocus(1);
+                                  final provider =
+                                      _PriorityListControllerProvider.maybeOf(
+                                        context,
+                                      );
+                                  provider?._moveFocusOrStart(
+                                    listController,
+                                    1,
+                                    context,
+                                  );
                                   return null;
                                 },
                               ),
