@@ -5,6 +5,7 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
+  type Actor,
   type NewActivityWithNotes,
   type Priority,
   type ToolBuilder,
@@ -84,7 +85,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
     return id ? { id } : undefined;
   }
 
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
     // Get auth links from both calendar tools
     const googleAuthLink = await this.tools.googleCalendar.requestAuth(
       this.onAuthComplete,
@@ -95,10 +96,11 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
       "outlook"
     );
 
-    // Create onboarding activity
+    // Create onboarding activity — private so only the installing user sees it
     const connectActivityId = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect your calendar",
+      private: true,
       start: new Date(),
       end: null,
       notes: [
@@ -106,6 +108,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
           content:
             "Connect a calendar account to get started. You can connect as many as you like.",
           links: [googleAuthLink, outlookAuthLink],
+          ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
         },
       ],
     });

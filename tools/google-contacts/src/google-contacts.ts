@@ -1,4 +1,5 @@
 import {
+  type ActorId,
   type NewContact,
   Serializable,
   Tool,
@@ -6,7 +7,6 @@ import {
 } from "@plotday/twister";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
-  AuthLevel,
   AuthProvider,
   type AuthToken,
   type Authorization,
@@ -274,8 +274,6 @@ export default class GoogleContacts
     TArgs extends Serializable[],
     TCallback extends (auth: ContactAuth, ...args: TArgs) => any
   >(callback: TCallback, ...extraArgs: TArgs): Promise<any> {
-    const opaqueToken = crypto.randomUUID();
-
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
@@ -286,19 +284,21 @@ export default class GoogleContacts
     return await this.tools.integrations.request(
       {
         provider: AuthProvider.Google,
-        level: AuthLevel.User,
         scopes: GoogleContacts.SCOPES,
       },
       this.onAuthSuccess,
-      opaqueToken,
       callbackToken
     );
   }
 
   async getContacts(authToken: string): Promise<NewContact[]> {
-    const storedAuthToken = await this.get<AuthToken>(
-      `auth_token:${authToken}`
+    let storedAuthToken = await this.tools.integrations.get(
+      AuthProvider.Google,
+      authToken as ActorId
     );
+    if (!storedAuthToken) {
+      storedAuthToken = await this.get<AuthToken>(`auth_token:${authToken}`);
+    }
     if (!storedAuthToken) {
       throw new Error(
         "No Google authentication token available for the provided authToken"
@@ -317,9 +317,13 @@ export default class GoogleContacts
     TArgs extends Serializable[],
     TCallback extends (contacts: NewContact[], ...args: TArgs) => any
   >(authToken: string, callback: TCallback, ...extraArgs: TArgs): Promise<void> {
-    const storedAuthToken = await this.get<AuthToken>(
-      `auth_token:${authToken}`
+    let storedAuthToken = await this.tools.integrations.get(
+      AuthProvider.Google,
+      authToken as ActorId
     );
+    if (!storedAuthToken) {
+      storedAuthToken = await this.get<AuthToken>(`auth_token:${authToken}`);
+    }
     if (!storedAuthToken) {
       throw new Error(
         "No Google authentication token available for the provided authToken"
@@ -377,8 +381,8 @@ export default class GoogleContacts
       );
     }
 
-    // Generate opaque token ID for storage
-    const authTokenId = crypto.randomUUID();
+    // Use actor ID as the auth token identifier
+    const authTokenId = authorization.actor.id as string;
 
     // Store the auth token data (passed directly from caller)
     await this.set(`auth_token:${authTokenId}`, authToken);
@@ -411,9 +415,15 @@ export default class GoogleContacts
 
   async syncBatch(batchNumber: number, authToken: string): Promise<void> {
     try {
-      const storedAuthToken = await this.get<AuthToken>(
-        `auth_token:${authToken}`
+      let storedAuthToken = await this.tools.integrations.get(
+        AuthProvider.Google,
+        authToken as ActorId
       );
+      if (!storedAuthToken) {
+        storedAuthToken = await this.get<AuthToken>(
+          `auth_token:${authToken}`
+        );
+      }
       if (!storedAuthToken) {
         throw new Error(
           "No authentication token available for the provided authToken"
@@ -469,14 +479,10 @@ export default class GoogleContacts
 
   async onAuthSuccess(
     authResult: Authorization,
-    opaqueToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    // Store the actual auth token using opaque token as key
-    await this.set(`auth_token:${opaqueToken}`, authResult);
-
     const authSuccessResult: ContactAuth = {
-      authToken: opaqueToken,
+      authToken: authResult.actor.id as string,
     };
 
     await this.run(callbackToken, authSuccessResult);

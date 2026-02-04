@@ -1,4 +1,4 @@
-import { ActivityLink, type Priority, Uuid } from "./plot";
+import { ActivityLink, type Actor, type Priority, Uuid } from "./plot";
 import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
 import type { Serializable } from "./utils/serializable";
@@ -266,10 +266,11 @@ export abstract class Twist<TSelf> {
    * initial activities, configuring webhooks, or establishing external connections.
    *
    * @param priority - The priority context containing the priority ID
+   * @param context - Optional context containing the actor who triggered activation
    * @returns Promise that resolves when activation is complete
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  activate(priority: Pick<Priority, "id">): Promise<void> {
+  activate(priority: Pick<Priority, "id">, context?: { actor: Actor }): Promise<void> {
     return Promise.resolve();
   }
 

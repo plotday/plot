@@ -270,6 +270,8 @@ Building a tool? Follow this checklist:
 - [ ] Size batches appropriately - calculate requests per item to determine safe batch size
 - [ ] Use `this.runTask()` to create new executions with fresh request limits
 - [ ] Clean up stored state and callbacks in lifecycle methods
+- [ ] **Per-user auth for write-backs**: Try `actorId` as `authToken` first, fall back to installer's token
+- [ ] **Private auth activities**: Set `private: true` and add `mentions: [{ id: context.actor.id }]` in `activate()`
 
 ## Common Tool Pitfalls
 
@@ -279,7 +281,9 @@ Building a tool? Follow this checklist:
 4. **❌ Forgetting to store the callback token** - Store it immediately after creating
 5. **❌ Passing undefined instead of null** - Use `null` for optional values
 6. **❌ Not breaking loops into batches** - Each execution has ~1000 request limit; use `runTask()` for fresh limits
-7. **❌ Two-way sync without metadata correlation** - When pushing Plot items to an external system, embed the Plot ID (`Activity.id` / `Note.id`) in the external item's metadata, and update `source`/`key` after creation. In webhook handlers, check metadata for the Plot ID first. This prevents duplicates from a race condition where the webhook arrives before the `source`/`key` update. See SYNC_STRATEGIES.md §6 for a full example.
+7. **❌ Using installer auth for all write-backs** - In multi-user priorities, try the acting user's credentials first (`note.author.id` as authToken) before falling back to installer auth
+8. **❌ Non-private auth activities** - Auth activities from `activate()` should be `private: true` with mentions so only the installing user sees them
+9. **❌ Two-way sync without metadata correlation** - When pushing Plot items to an external system, embed the Plot ID (`Activity.id` / `Note.id`) in the external item's metadata, and update `source`/`key` after creation. In webhook handlers, check metadata for the Plot ID first. This prevents duplicates from a race condition where the webhook arrives before the `source`/`key` update. See SYNC_STRATEGIES.md §6 for a full example.
 
 ---
 

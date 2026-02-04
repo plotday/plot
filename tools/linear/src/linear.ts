@@ -15,6 +15,7 @@ import {
   type NewActivityWithNotes,
   type NewNote,
   Serializable,
+  type ActorId,
 } from "@plotday/twister";
 import type {
   Project,
@@ -26,7 +27,6 @@ import type { NewContact } from "@plotday/twister/plot";
 import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
-  AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
@@ -71,6 +71,13 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Create Linear API client with auth token
    */
   private async getClient(authToken: string): Promise<LinearClient> {
+    // Try new flow: authToken is an ActorId
+    const token = await this.tools.integrations.get(AuthProvider.Linear, authToken as ActorId);
+    if (token) {
+      return new LinearClient({ accessToken: token.token });
+    }
+
+    // Fall back to legacy flow: authToken is a UUID mapped to stored authorization
     const authorization = await this.get<Authorization>(
       `authorization:${authToken}`
     );
@@ -78,12 +85,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       throw new Error("Authorization no longer available");
     }
 
-    const token = await this.tools.integrations.get(authorization);
-    if (!token) {
+    const legacyToken = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
+    if (!legacyToken) {
       throw new Error("Authorization no longer available");
     }
 
-    return new LinearClient({ accessToken: token.token });
+    return new LinearClient({ accessToken: legacyToken.token });
   }
 
   /**
@@ -95,9 +102,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     const linearScopes = ["read", "write", "admin"];
 
-    // Generate opaque token for authorization
-    const authToken = crypto.randomUUID();
-
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
@@ -107,11 +111,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     return await this.tools.integrations.request(
       {
         provider: AuthProvider.Linear,
-        level: AuthLevel.User,
         scopes: linearScopes,
       },
       this.onAuthSuccess,
-      authToken,
       callbackToken
     );
   }
@@ -121,14 +123,10 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    */
   private async onAuthSuccess(
     authorization: Authorization,
-    authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    // Store authorization for later use
-    await this.set(`authorization:${authToken}`, authorization);
-
     // Execute the callback with the auth token
-    await this.run(callbackToken, { authToken });
+    await this.run(callbackToken, { authToken: authorization.actor.id as string });
   }
 
   /**

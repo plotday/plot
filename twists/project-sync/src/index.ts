@@ -6,6 +6,7 @@ import {
   ActivityLink,
   ActivityLinkType,
   ActivityType,
+  type Actor,
   ActorType,
   type NewActivityWithNotes,
   type Note,
@@ -108,7 +109,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
    * Called when twist is activated
    * Presents auth options for all supported providers
    */
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
     // Get auth links from all providers
     const linearAuthLink = await this.tools.linear.requestAuth(
       this.onAuthComplete,
@@ -123,15 +124,17 @@ export default class ProjectSync extends Twist<ProjectSync> {
       "asana"
     );
 
-    // Create onboarding activity with all provider options
+    // Create onboarding activity — private so only the installing user sees it
     const activityId = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect a project management tool",
+      private: true,
       notes: [
         {
           content:
             "Connect your project management account to start syncing projects and issues to Plot. Choose one:",
           links: [linearAuthLink, jiraAuthLink, asanaAuthLink],
+          ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
         },
       ],
     });
@@ -326,35 +329,44 @@ export default class ProjectSync extends Twist<ProjectSync> {
       return;
     }
 
-    // Get auth token for this provider
-    const authToken = await this.getAuthToken(provider);
-    if (!authToken) {
-      console.warn(`No auth token found for ${provider}, skipping note sync`);
+    const tool = this.getProviderTool(provider);
+    if (!tool.addIssueComment) {
+      console.warn(`Provider ${provider} does not support adding comments`);
       return;
     }
 
-    const tool = this.getProviderTool(provider);
+    // Try the note author's credentials first (per-user auth), then fall back
+    // to the installer's stored auth. The tool's getClient() handles lookup
+    // via integrations.get(provider, actorId).
+    const actorId = note.author.id as string;
+    const installerAuthToken = await this.getAuthToken(provider);
 
-    try {
-      // Sync note as comment
-      // Tool extracts its own ID from meta (e.g., linearId, taskGid, issueKey)
-      if (tool.addIssueComment) {
-        // Create comment in external system, passing note ID for metadata support.
-        // Tools that support metadata (Jira) embed the note ID in the comment,
-        // eliminating the race condition. For others (Linear, Asana), the note key
-        // update below should complete before the webhook arrives since the key
-        // update is an internal DB write while the webhook traverses the internet.
+    const authTokensToTry = [
+      actorId,
+      ...(installerAuthToken && installerAuthToken !== actorId
+        ? [installerAuthToken]
+        : []),
+    ];
+
+    for (const authToken of authTokensToTry) {
+      try {
         const commentKey = await tool.addIssueComment(
           authToken, activity.meta, note.content, note.id
         );
         if (commentKey) {
           await this.tools.plot.updateNote({ id: note.id, key: commentKey });
         }
-      } else {
-        console.warn(`Provider ${provider} does not support adding comments`);
+        return; // Success
+      } catch (error) {
+        // If this was the actor's token, try the installer's next
+        if (authToken === actorId && installerAuthToken && installerAuthToken !== actorId) {
+          console.warn(
+            `Actor ${actorId} has no ${provider} auth, falling back to installer auth`
+          );
+          continue;
+        }
+        console.error(`Failed to sync note to ${provider}:`, error);
       }
-    } catch (error) {
-      console.error(`Failed to sync note to ${provider}:`, error);
     }
   }
 

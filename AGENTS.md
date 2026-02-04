@@ -28,6 +28,7 @@ All type definitions are in `twister/src/` with full JSDoc:
 - **Runtime Environment**: `twister/docs/RUNTIME.md`
 - **Tools Guide**: `twister/docs/TOOLS_GUIDE.md`
 - **Twist Development**: `twister/cli/templates/AGENTS.template.md`
+- **Multi-User Auth**: `twister/docs/MULTI_USER_AUTH.md`
 - **Working Examples**: `tools/google-calendar/`, `tools/google-contacts/`, `tools/linear/`
 
 ## Common Pitfalls
@@ -37,6 +38,8 @@ All type definitions are in `twister/src/` with full JSDoc:
 3. **❌ Forgetting to clean up** - Delete callbacks and stored state when done
 4. **❌ Not handling missing auth** - Always check for stored tokens before operations
 5. **❌ Passing functions to `this.callback()`** - See `tools/AGENTS.md` for critical callback serialization pattern
+6. **❌ Non-private auth activities** - Auth activities in `activate()` should be `private: true` with mentions targeting `context.actor`
+7. **❌ Using installer auth for all write-backs** - Try acting user's credentials first for user-attributed actions (comments). See `twister/docs/MULTI_USER_AUTH.md`
 
 ---
 

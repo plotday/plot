@@ -1,4 +1,5 @@
 import {
+  type ActorId,
   type ActivityLink,
   type NewActivityWithNotes,
   Serializable,
@@ -13,7 +14,6 @@ import {
 } from "@plotday/twister/common/messaging";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
-  AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
@@ -121,9 +121,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
       "https://www.googleapis.com/auth/gmail.modify",
     ];
 
-    // Generate opaque token for authorization
-    const authToken = crypto.randomUUID();
-
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
@@ -134,16 +131,21 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     return await this.tools.integrations.request(
       {
         provider: AuthProvider.Google,
-        level: AuthLevel.User,
         scopes: gmailScopes,
       },
       this.onAuthSuccess,
-      authToken,
       callbackToken
     );
   }
 
   private async getApi(authToken: string): Promise<GmailApi> {
+    // Try new flow: authToken is an ActorId
+    const token = await this.tools.integrations.get(AuthProvider.Google, authToken as ActorId);
+    if (token) {
+      return new GmailApi(token.token);
+    }
+
+    // Fall back to legacy flow: authToken is an opaque key
     const authorization = await this.get<Authorization>(
       `authorization:${authToken}`
     );
@@ -151,12 +153,12 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
       throw new Error("Authorization no longer available");
     }
 
-    const token = await this.tools.integrations.get(authorization);
-    if (!token) {
+    const legacyToken = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
+    if (!legacyToken) {
       throw new Error("Authorization no longer available");
     }
 
-    return new GmailApi(token.token);
+    return new GmailApi(legacyToken.token);
   }
 
   async getChannels(authToken: string): Promise<MessageChannel[]> {
@@ -454,20 +456,13 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
   async onAuthSuccess(
     authResult: Authorization,
-    authToken: string,
     callback: Callback
   ): Promise<void> {
-    // Store the actual auth token using opaque token as key
-    await this.set(`authorization:${authToken}`, authResult);
-
     const authSuccessResult: MessagingAuth = {
-      authToken,
+      authToken: authResult.actor.id as string,
     };
 
     await this.run(callback, authSuccessResult);
-
-    // Clean up the callback token
-    await this.clear(`auth_callback_token:${authToken}`);
   }
 }
 

@@ -6,6 +6,7 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
+  type Actor,
   type NewActivityWithNotes,
   type Priority,
   type ToolBuilder,
@@ -146,23 +147,25 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   // Activation & Onboarding
   // ============================================================================
 
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
     // Request auth from Slack
     const slackAuthLink = await this.tools.slack.requestAuth(
       this.onAuthComplete,
       "slack"
     );
 
-    // Create onboarding activity with auth link
+    // Create onboarding activity — private so only the installing user sees it
     const connectActivityId = await this.tools.plot.createActivity({
       type: ActivityType.Action,
       title: "Connect messaging to create tasks",
+      private: true,
       start: new Date(),
       notes: [
         {
           content:
             "I'll analyze your message threads and create tasks when action is needed.",
           links: [slackAuthLink],
+          ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
         },
       ],
     });

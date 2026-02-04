@@ -5,6 +5,7 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
+  type ActorId,
   type NewActivity,
   type NewActivityWithNotes,
   NewContact,
@@ -19,7 +20,6 @@ import type {
 import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
-  AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
@@ -56,14 +56,21 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Create Jira API client with auth token
    */
   private async getClient(authToken: string): Promise<Version3Client> {
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
-    );
-    if (!authorization) {
-      throw new Error("Authorization no longer available");
+    // Try new pattern first (authToken is an ActorId)
+    let token = await this.tools.integrations.get(AuthProvider.Atlassian, authToken as ActorId);
+
+    // Fall back to legacy authorization lookup
+    if (!token) {
+      const authorization = await this.get<Authorization>(
+        `authorization:${authToken}`
+      );
+      if (!authorization) {
+        throw new Error("Authorization no longer available");
+      }
+
+      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
     }
 
-    const token = await this.tools.integrations.get(authorization);
     if (!token) {
       throw new Error("Authorization no longer available");
     }
@@ -93,9 +100,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     const jiraScopes = ["read:jira-work", "write:jira-work", "read:jira-user"];
 
-    // Generate opaque token for authorization
-    const authToken = crypto.randomUUID();
-
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
@@ -105,11 +109,9 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     return await this.tools.integrations.request(
       {
         provider: AuthProvider.Atlassian,
-        level: AuthLevel.User,
         scopes: jiraScopes,
       },
       this.onAuthSuccess,
-      authToken,
       callbackToken
     );
   }
@@ -119,14 +121,10 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    */
   private async onAuthSuccess(
     authorization: Authorization,
-    authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    // Store authorization for later use
-    await this.set(`authorization:${authToken}`, authorization);
-
-    // Execute the callback with the auth token
-    await this.run(callbackToken, { authToken });
+    // Execute the callback with the auth token (actor ID)
+    await this.run(callbackToken, { authToken: authorization.actor.id as string });
   }
 
   /**
@@ -335,14 +333,21 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Get the cloud ID from stored authorization
    */
   private async getCloudId(authToken: string): Promise<string> {
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
-    );
-    if (!authorization) {
-      throw new Error("Authorization no longer available");
+    // Try new pattern first (authToken is an ActorId)
+    let token = await this.tools.integrations.get(AuthProvider.Atlassian, authToken as ActorId);
+
+    // Fall back to legacy authorization lookup
+    if (!token) {
+      const authorization = await this.get<Authorization>(
+        `authorization:${authToken}`
+      );
+      if (!authorization) {
+        throw new Error("Authorization no longer available");
+      }
+
+      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
     }
 
-    const token = await this.tools.integrations.get(authorization);
     if (!token) {
       throw new Error("Authorization no longer available");
     }

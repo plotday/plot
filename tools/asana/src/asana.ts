@@ -6,6 +6,7 @@ import {
   ActivityLinkType,
   ActivityMeta,
   ActivityType,
+  type ActorId,
   type NewActivity,
   type NewActivityWithNotes,
   type NewNote,
@@ -21,7 +22,6 @@ import type { NewContact } from "@plotday/twister/plot";
 import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
-  AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
@@ -58,16 +58,22 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Create Asana API client with auth token
    */
   private async getClient(authToken: string): Promise<asana.Client> {
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
-    );
-    if (!authorization) {
-      throw new Error("Authorization no longer available");
-    }
+    // Try new flow: look up by provider + actor ID
+    let token = await this.tools.integrations.get(AuthProvider.Asana, authToken as ActorId);
 
-    const token = await this.tools.integrations.get(authorization);
+    // Fall back to legacy authorization lookup
     if (!token) {
-      throw new Error("Authorization no longer available");
+      const authorization = await this.get<Authorization>(
+        `authorization:${authToken}`
+      );
+      if (!authorization) {
+        throw new Error("Authorization no longer available");
+      }
+
+      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
+      if (!token) {
+        throw new Error("Authorization no longer available");
+      }
     }
 
     return asana.Client.create().useAccessToken(token.token);
@@ -82,9 +88,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
     const asanaScopes = ["default"];
 
-    // Generate opaque token for authorization
-    const authToken = crypto.randomUUID();
-
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
@@ -94,11 +97,9 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     return await this.tools.integrations.request(
       {
         provider: AuthProvider.Asana,
-        level: AuthLevel.User,
         scopes: asanaScopes,
       },
       this.onAuthSuccess,
-      authToken,
       callbackToken
     );
   }
@@ -108,14 +109,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    */
   private async onAuthSuccess(
     authorization: Authorization,
-    authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-    // Store authorization for later use
-    await this.set(`authorization:${authToken}`, authorization);
-
-    // Execute the callback with the auth token
-    await this.run(callbackToken, { authToken });
+    // Execute the callback with the actor ID as auth token
+    await this.run(callbackToken, { authToken: authorization.actor.id as string });
   }
 
   /**

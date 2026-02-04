@@ -261,7 +261,6 @@ export enum ConferencingProvider {
  *   type: ActivityLinkType.auth,
  *   title: "Continue with Google",
  *   provider: AuthProvider.Google,
- *   level: AuthLevel.User,
  *   scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
  *   callback: "callback-token-for-auth-completion"
  * };
@@ -298,8 +297,6 @@ export type ActivityLink =
       title: string;
       /** OAuth provider (e.g., "google", "microsoft") */
       provider: string;
-      /** Authorization level ("user" or "priority") */
-      level: string;
       /** Array of OAuth scopes to request */
       scopes: string[];
       /** Callback token for auth completion notification */

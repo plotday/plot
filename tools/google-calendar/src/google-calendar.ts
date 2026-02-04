@@ -25,7 +25,6 @@ import {
 } from "@plotday/twister/common/calendar";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
-  AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
@@ -46,6 +45,14 @@ import {
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
+
+type PendingSyncItem = {
+  type: "rsvp";
+  calendarId: string;
+  eventId: string;
+  status: "accepted" | "declined" | "tentative" | "needsAction";
+  activityId: string;
+};
 
 /**
  * Google Calendar integration tool.
@@ -149,9 +156,6 @@ export class GoogleCalendar
     // Combine calendar and contacts scopes for single OAuth flow
     const combinedScopes = [...GoogleCalendar.SCOPES, ...GoogleContacts.SCOPES];
 
-    // Generate opaque token for authorization
-    const authToken = crypto.randomUUID();
-
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
@@ -161,24 +165,33 @@ export class GoogleCalendar
     return await this.tools.integrations.request(
       {
         provider: AuthProvider.Google,
-        level: AuthLevel.User,
         scopes: combinedScopes,
       },
       this.onAuthSuccess,
-      authToken,
       callbackToken
     );
   }
 
   private async getApi(authToken: string): Promise<GoogleApi> {
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
+    // Try new pattern: authToken is the actorId directly
+    let token = await this.tools.integrations.get(
+      AuthProvider.Google,
+      authToken as ActorId
     );
-    if (!authorization) {
-      throw new Error("Authorization no longer available");
+
+    // Fall back to legacy opaque token pattern for existing callbacks
+    if (!token) {
+      const authorization = await this.get<Authorization>(
+        `authorization:${authToken}`
+      );
+      if (authorization) {
+        token = await this.tools.integrations.get(
+          authorization.provider,
+          authorization.actor.id
+        );
+      }
     }
 
-    const token = await this.tools.integrations.get(authorization);
     if (!token) {
       throw new Error("Authorization no longer available");
     }
@@ -1066,17 +1079,15 @@ export class GoogleCalendar
 
   async onAuthSuccess(
     authResult: Authorization,
-    authToken: string,
-    callback: Callback
+    callbackToken: Callback
   ): Promise<void> {
-    // Store the actual auth token using opaque token as key
-    await this.set(`authorization:${authToken}`, authResult);
+    // Use actor ID as the auth token — integrations.get(provider, actorId) is all we need
+    const actorId = authResult.actor.id as string;
 
     // Trigger contacts sync with the same authorization
     // This happens automatically when calendar auth succeeds
     try {
-      // Retrieve the actual auth token to pass to contacts
-      const token = await this.tools.integrations.get(authResult);
+      const token = await this.tools.integrations.get(authResult.provider, authResult.actor.id);
       if (token) {
         await this.tools.googleContacts.syncWithAuth(
           authResult,
@@ -1092,13 +1103,10 @@ export class GoogleCalendar
     }
 
     const authSuccessResult: CalendarAuth = {
-      authToken,
+      authToken: actorId,
     };
 
-    await this.run(callback, authSuccessResult);
-
-    // Clean up the callback token
-    await this.clear(`auth_callback_token:${authToken}`);
+    await this.run(callbackToken, authSuccessResult);
   }
 
   /**
@@ -1178,7 +1186,18 @@ export class GoogleCalendar
         return; // No RSVP-related tag changes
       }
 
-      // Determine new RSVP status based on current tags
+      // Collect unique actor IDs from RSVP tag changes
+      const actorIds = new Set<ActorId>();
+      for (const tag of [Tag.Attend, Tag.Skip, Tag.Undecided]) {
+        if (tag in changes.tagsAdded) {
+          for (const id of changes.tagsAdded[tag]) actorIds.add(id);
+        }
+        if (tag in changes.tagsRemoved) {
+          for (const id of changes.tagsRemoved[tag]) actorIds.add(id);
+        }
+      }
+
+      // Determine new RSVP status based on most recent tag change
       const hasAttend =
         activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
       const hasSkip =
@@ -1191,7 +1210,6 @@ export class GoogleCalendar
 
       // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
       if (hasAttend && (hasSkip || hasUndecided)) {
-        // Multiple tags present - use most recent from tagsAdded
         if (Tag.Attend in changes.tagsAdded) {
           newStatus = "accepted";
         } else if (Tag.Skip in changes.tagsAdded) {
@@ -1199,11 +1217,9 @@ export class GoogleCalendar
         } else if (Tag.Undecided in changes.tagsAdded) {
           newStatus = "tentative";
         } else {
-          // Multiple were already there, no change needed
           return;
         }
       } else if (hasSkip && hasUndecided) {
-        // Skip and Undecided present - use most recent
         if (Tag.Skip in changes.tagsAdded) {
           newStatus = "declined";
         } else if (Tag.Undecided in changes.tagsAdded) {
@@ -1218,7 +1234,6 @@ export class GoogleCalendar
       } else if (hasUndecided) {
         newStatus = "tentative";
       } else {
-        // No RSVP tags present - reset to needsAction
         newStatus = "needsAction";
       }
 
@@ -1249,7 +1264,6 @@ export class GoogleCalendar
       }
 
       // Determine the event ID to update
-      // If this is an occurrence-level change, construct the instance ID
       let eventId = baseEventId;
       if (changes.occurrence) {
         eventId = this.constructInstanceId(
@@ -1258,21 +1272,41 @@ export class GoogleCalendar
         );
       }
 
-      // Get the auth token for this calendar
+      // For each actor who changed RSVP, try to sync with their credentials
+      for (const actorId of actorIds) {
+        const token = await this.tools.integrations.get(
+          AuthProvider.Google,
+          actorId
+        );
 
-      const authToken = await this.get<string>(`auth_token_${calendarId}`);
-
-      if (!authToken) {
-        console.error("[RSVP Sync] No auth token found", {
-          calendar_id: calendarId,
-          storage_key: `auth_token_${calendarId}`,
-          activity_id: activity.id,
-          hint: 'Calendar ID may be "primary" but auth token stored with actual email',
-        });
-        return;
+        if (token) {
+          // Actor has auth — sync their RSVP directly
+          try {
+            const api = new GoogleApi(token.token);
+            await this.updateEventRSVPWithApi(
+              api,
+              calendarId,
+              eventId,
+              newStatus,
+              actorId
+            );
+          } catch (error) {
+            console.error("[RSVP Sync] Failed to update RSVP for actor", {
+              actor_id: actorId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        } else {
+          // Actor lacks auth — queue pending sync and create auth request
+          await this.queuePendingSync(actorId, {
+            type: "rsvp",
+            calendarId,
+            eventId,
+            status: newStatus,
+            activityId: activity.id,
+          });
+        }
       }
-
-      await this.updateEventRSVP(authToken, calendarId, eventId, newStatus);
     } catch (error) {
       console.error("[RSVP Sync] Error in callback", {
         error: error instanceof Error ? error.message : String(error),
@@ -1282,15 +1316,114 @@ export class GoogleCalendar
     }
   }
 
-  private async updateEventRSVP(
-    authToken: string,
+  /**
+   * Queue a pending write-back action for an unauthenticated actor.
+   * Creates a private auth-request activity if one doesn't exist (deduped by source).
+   */
+  private async queuePendingSync(
+    actorId: ActorId,
+    action: PendingSyncItem
+  ): Promise<void> {
+    // Add to pending queue
+    const key = `pending_sync:${actorId}`;
+    const pending = (await this.get<PendingSyncItem[]>(key)) || [];
+    pending.push(action);
+    await this.set(key, pending);
+
+    // Create auth-request activity (upsert by source to dedup)
+    const authLink = await this.tools.integrations.request(
+      {
+        provider: AuthProvider.Google,
+        scopes: GoogleCalendar.SCOPES,
+      },
+      this.onActorAuth,
+      actorId as string
+    );
+
+    await this.tools.plot.createActivity({
+      source: `auth:${actorId}`,
+      type: ActivityType.Action,
+      title: "Connect your Google Calendar",
+      private: true,
+      start: new Date(),
+      end: null,
+      notes: [
+        {
+          content:
+            "To sync your RSVP responses, please connect your Google Calendar.",
+          links: [authLink],
+          mentions: [{ id: actorId }],
+        },
+      ],
+    });
+  }
+
+  /**
+   * Callback for when an additional user authorizes.
+   * Applies any pending write-back actions. Does NOT start a sync.
+   */
+  async onActorAuth(
+    authorization: Authorization,
+    actorIdStr: string
+  ): Promise<void> {
+    const actorId = actorIdStr as ActorId;
+    const key = `pending_sync:${actorId}`;
+    const pending = await this.get<PendingSyncItem[]>(key);
+
+    if (!pending || pending.length === 0) {
+      return;
+    }
+
+    const token = await this.tools.integrations.get(
+      authorization.provider,
+      authorization.actor.id
+    );
+    if (!token) {
+      console.error("[RSVP Sync] Failed to get token after actor auth", {
+        actor_id: actorId,
+      });
+      return;
+    }
+
+    const api = new GoogleApi(token.token);
+
+    // Apply pending write-backs
+    for (const item of pending) {
+      if (item.type === "rsvp") {
+        try {
+          await this.updateEventRSVPWithApi(
+            api,
+            item.calendarId,
+            item.eventId,
+            item.status,
+            actorId
+          );
+        } catch (error) {
+          console.error("[RSVP Sync] Failed to apply pending RSVP", {
+            actor_id: actorId,
+            event_id: item.eventId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    // Clear pending queue
+    await this.clear(key);
+  }
+
+  /**
+   * Update RSVP status for a specific actor using a pre-authenticated GoogleApi instance.
+   * Looks up the actor's email from the calendar API to find the correct attendee.
+   */
+  private async updateEventRSVPWithApi(
+    api: GoogleApi,
     calendarId: string,
     eventId: string,
-    status: "accepted" | "declined" | "needsAction" | "tentative"
+    status: "accepted" | "declined" | "needsAction" | "tentative",
+    actorId: ActorId
   ): Promise<void> {
-    const api = await this.getApi(authToken);
-
-    // First, fetch the current event to get attendees list
+    // Fetch the current event to get attendees list
     const event = (await api.call(
       "GET",
       `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`
@@ -1300,33 +1433,36 @@ export class GoogleCalendar
       throw new Error(`Event ${eventId} not found`);
     }
 
-    // Get user email to find which attendee to update
-    const userEmail = await this.get<string>("user_email");
+    // Get the actor's email from the calendar API (their primary calendar ID)
+    const calendarList = (await api.call(
+      "GET",
+      "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary"
+    )) as { id: string };
+    const actorEmail = calendarList.id;
 
-    if (!userEmail) {
-      throw new Error("User email not found");
-    }
-
-    // Find and update the user's attendee status
+    // Find and update the actor's attendee status
     const attendees = event.attendees || [];
-    const userAttendeeIndex = attendees.findIndex(
+    const actorAttendeeIndex = attendees.findIndex(
       (att) =>
         att.self === true ||
-        att.email?.toLowerCase() === userEmail.toLowerCase()
+        att.email?.toLowerCase() === actorEmail.toLowerCase()
     );
 
-    if (userAttendeeIndex === -1) {
-      console.warn("User is not an attendee of this event");
+    if (actorAttendeeIndex === -1) {
+      console.warn("[RSVP Sync] Actor is not an attendee of this event", {
+        actor_id: actorId,
+        event_id: eventId,
+      });
       return;
     }
 
     // Check if status already matches to avoid infinite loops
-    if (attendees[userAttendeeIndex].responseStatus === status) {
+    if (attendees[actorAttendeeIndex].responseStatus === status) {
       return;
     }
 
     // Update the attendee's response status
-    attendees[userAttendeeIndex].responseStatus = status;
+    attendees[actorAttendeeIndex].responseStatus = status;
 
     // Update the event with the new attendees list
     await api.call(

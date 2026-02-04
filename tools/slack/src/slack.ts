@@ -1,4 +1,5 @@
 import {
+  type ActorId,
   type ActivityLink,
   type NewActivityWithNotes,
   Serializable,
@@ -13,7 +14,6 @@ import {
 } from "@plotday/twister/common/messaging";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
-  AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
@@ -143,9 +143,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       "mpim:history", // Read group direct messages
     ];
 
-    // Generate opaque token for authorization
-    const authToken = crypto.randomUUID();
-
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
@@ -156,26 +153,30 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     return await this.tools.integrations.request(
       {
         provider: AuthProvider.Slack,
-        level: AuthLevel.Priority,
         scopes: slackScopes,
       },
       this.onAuthSuccess,
-      authToken,
       callbackToken
     );
   }
 
   private async getApi(authToken: string): Promise<SlackApi> {
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
-    );
-    if (!authorization) {
-      throw new Error("Authorization no longer available");
-    }
+    // Try new flow: authToken is an ActorId
+    let token = await this.tools.integrations.get(AuthProvider.Slack, authToken as ActorId);
 
-    const token = await this.tools.integrations.get(authorization);
+    // Fall back to legacy authorization lookup
     if (!token) {
-      throw new Error("Authorization no longer available");
+      const authorization = await this.get<Authorization>(
+        `authorization:${authToken}`
+      );
+      if (!authorization) {
+        throw new Error("Authorization no longer available");
+      }
+
+      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
+      if (!token) {
+        throw new Error("Authorization no longer available");
+      }
     }
 
     return new SlackApi(token.token);
@@ -437,20 +438,13 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
   async onAuthSuccess(
     authResult: Authorization,
-    authToken: string,
     callback: Callback
   ): Promise<void> {
-    // Store the actual auth token using opaque token as key
-    await this.set(`authorization:${authToken}`, authResult);
-
     const authSuccessResult: MessagingAuth = {
-      authToken,
+      authToken: authResult.actor.id as string,
     };
 
     await this.run(callback, authSuccessResult);
-
-    // Clean up the callback token
-    await this.clear(`auth_callback_token:${authToken}`);
   }
 }
 

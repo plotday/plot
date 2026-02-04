@@ -13,7 +13,7 @@ npm install @plotday/tool-google-calendar @plotday/twister
 ```typescript
 import { Twist, Tools } from "@plotday/twister";
 import { GoogleCalendar } from "@plotday/tool-google-calendar";
-import { Integrations, AuthLevel, AuthProvider } from "@plotday/twister/tools/integrations";
+import { Integrations, AuthProvider } from "@plotday/twister/tools/integrations";
 
 export default class extends Twist {
   private googleCalendar: GoogleCalendar;
@@ -30,7 +30,6 @@ export default class extends Twist {
     const authLink = await this.integrations.request(
       {
         provider: AuthProvider.Google,
-        level: AuthLevel.User,
         scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
       },
       {

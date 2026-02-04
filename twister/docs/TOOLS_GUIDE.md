@@ -462,7 +462,7 @@ build(build: ToolBuilder) {
 ### Requesting Authentication
 
 ```typescript
-import { AuthLevel, AuthProvider, type Authorization } from "@plotday/twister/tools/integrations";
+import { AuthProvider, type Authorization } from "@plotday/twister/tools/integrations";
 import { ActivityLinkType } from "@plotday/twister";
 
 async activate(priority: Pick<Priority, "id">) {
@@ -473,7 +473,6 @@ async activate(priority: Pick<Priority, "id">) {
   const authLink = await this.tools.integrations.request(
     {
       provider: AuthProvider.Google,
-      level: AuthLevel.User,
       scopes: [
         "https://www.googleapis.com/auth/calendar.readonly"
       ]
@@ -519,11 +518,6 @@ async onAuthComplete(authorization: Authorization) {
 
 - **AuthProvider.Google** - Google services
 - **AuthProvider.Microsoft** - Microsoft services
-
-### Auth Levels
-
-- **AuthLevel.Priority** - Auth scoped to the current priority
-- **AuthLevel.User** - Auth scoped to the user across all priorities
 
 ### Using Auth Tokens
 

@@ -13,7 +13,7 @@ npm install @plotday/tool-outlook-calendar @plotday/twister
 ```typescript
 import { Twist, Tools } from "@plotday/twister";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
-import { Integrations, AuthLevel, AuthProvider } from "@plotday/twister/tools/integrations";
+import { Integrations, AuthProvider } from "@plotday/twister/tools/integrations";
 
 export default class extends Twist {
   private outlookCalendar: OutlookCalendar;
@@ -30,7 +30,6 @@ export default class extends Twist {
     const authLink = await this.integrations.request(
       {
         provider: AuthProvider.Microsoft,
-        level: AuthLevel.User,
         scopes: ["Calendars.Read"],
       },
       {

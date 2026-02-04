@@ -13,7 +13,7 @@ npm install @plotday/tool-google-contacts @plotday/twister
 ```typescript
 import { Twist, Tools } from "@plotday/twister";
 import { GoogleContacts } from "@plotday/tool-google-contacts";
-import { Integrations, AuthLevel, AuthProvider } from "@plotday/twister/tools/integrations";
+import { Integrations, AuthProvider } from "@plotday/twister/tools/integrations";
 
 export default class extends Twist {
   private googleContacts: GoogleContacts;
@@ -30,7 +30,6 @@ export default class extends Twist {
     const authLink = await this.integrations.request(
       {
         provider: AuthProvider.Google,
-        level: AuthLevel.User,
         scopes: ["https://www.googleapis.com/auth/contacts.readonly"],
       },
       {

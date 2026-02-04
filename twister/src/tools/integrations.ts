@@ -1,4 +1,4 @@
-import { type ActivityLink, ITool, Serializable } from "..";
+import { type Actor, type ActorId, type ActivityLink, ITool, Serializable } from "..";
 
 /**
  * Built-in tool for managing OAuth authentication flows.
@@ -20,7 +20,6 @@ import { type ActivityLink, ITool, Serializable } from "..";
  *   async requestAuth() {
  *     return await this.integrations.request({
  *       provider: AuthProvider.Google,
- *       level: AuthLevel.User,
  *       scopes: ["https://www.googleapis.com/auth/calendar.readonly"]
  *     }, {
  *       functionName: "onAuthComplete",
@@ -29,7 +28,7 @@ import { type ActivityLink, ITool, Serializable } from "..";
  *   }
  *
  *   async onAuthComplete(authResult: Authorization, context: any) {
- *     const authToken = await this.integrations.get(authResult);
+ *     const authToken = await this.integrations.get(authResult.provider, authResult.actor.id);
  *   }
  * }
  * ```
@@ -44,7 +43,6 @@ export abstract class Integrations extends ITool {
    *
    * @param auth - Authentication configuration
    * @param auth.provider - The OAuth provider to authenticate with
-   * @param auth.level - The authorization level (priority-scoped or user-scoped)
    * @param auth.scopes - Array of OAuth scopes to request
    * @param callback - Function receiving (authorization, ...extraArgs)
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, must be serializable)
@@ -57,7 +55,6 @@ export abstract class Integrations extends ITool {
   >(
     auth: {
       provider: AuthProvider;
-      level: AuthLevel;
       scopes: string[];
     },
     callback: TCallback,
@@ -67,13 +64,18 @@ export abstract class Integrations extends ITool {
   /**
    * Retrieves an access token (refreshing it first if necessary).
    *
-   * Returns null if the authorization is no longer valid or has been revoked.
+   * Looks up the token by provider and actor ID. If the given actor hasn't
+   * directly authenticated but is linked (same user_id) to a contact that has,
+   * returns that linked contact's token.
    *
-   * @param authorization - The authorization from the request callback
+   * Returns null if no valid token is found.
+   *
+   * @param provider - The OAuth provider to retrieve a token for
+   * @param actorId - The actor (contact) ID to look up
    * @returns Promise resolving to the access token or null if no longer available
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract get(authorization: Authorization): Promise<AuthToken | null>;
+  abstract get(provider: AuthProvider, actorId: ActorId): Promise<AuthToken | null>;
 }
 
 /**
@@ -106,30 +108,18 @@ export enum AuthProvider {
 }
 
 /**
- * Enumeration of authorization levels for OAuth flows.
+ * Represents a completed authorization from an OAuth flow.
  *
- * Different levels determine the scope and storage of authentication tokens.
- */
-export enum AuthLevel {
-  /** Priority-scoped authorization shared across twists in a priority */
-  Priority = "priority",
-  /** User-scoped authorization specific to individual users */
-  User = "user",
-}
-
-/**
- * Represents authorization criteria for token lookup.
- *
- * Used to specify which authentication token to retrieve from storage
- * based on provider, scopes, and authorization ID.
+ * Contains the provider, granted scopes, and the actor (contact) that was authorized.
+ * Tokens are looked up by (provider, actorId) rather than a random ID.
  */
 export type Authorization = {
-  /** Unique identifier for this authorization */
-  id: string;
   /** The OAuth provider this authorization is for */
   provider: AuthProvider;
   /** Array of OAuth scopes this authorization covers */
   scopes: string[];
+  /** The external account that was authorized (e.g., the Google account) */
+  actor: Actor;
 };
 
 /**

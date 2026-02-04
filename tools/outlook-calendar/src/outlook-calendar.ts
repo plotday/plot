@@ -25,7 +25,6 @@ import type {
 } from "@plotday/twister/common/calendar";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
-  AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
@@ -69,6 +68,14 @@ function detectConferencingProvider(url: string): ConferencingProvider {
   // Default to microsoftTeams for Outlook events
   return ConferencingProvider.microsoftTeams;
 }
+
+type OutlookPendingSyncItem = {
+  type: "rsvp";
+  calendarId: string;
+  eventId: string;
+  status: "accepted" | "declined" | "tentativelyAccepted";
+  activityId: string;
+};
 
 type WatchState = {
   subscriptionId: string;
@@ -146,6 +153,10 @@ export class OutlookCalendar
   extends Tool<OutlookCalendar>
   implements CalendarTool
 {
+  static readonly SCOPES = [
+    "https://graph.microsoft.com/calendars.readwrite",
+  ];
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
@@ -168,9 +179,6 @@ export class OutlookCalendar
     TArgs extends Serializable[],
     TCallback extends (auth: CalendarAuth, ...args: TArgs) => any
   >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    // Generate opaque token for authorization
-    const token = crypto.randomUUID();
-
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
@@ -181,26 +189,30 @@ export class OutlookCalendar
     return await this.tools.integrations.request(
       {
         provider: AuthProvider.Microsoft,
-        level: AuthLevel.User,
         scopes: ["https://graph.microsoft.com/calendars.readwrite"],
       },
       this.onAuthSuccess,
-      token,
       callbackToken
     );
   }
 
   private async getApi(authToken: string): Promise<GraphApi> {
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
-    );
-    if (!authorization) {
-      throw new Error("Authorization no longer available");
-    }
+    // Try new flow: authToken is an ActorId, look up directly
+    let token = await this.tools.integrations.get(AuthProvider.Microsoft, authToken as ActorId);
 
-    const token = await this.tools.integrations.get(authorization);
+    // Fall back to legacy flow: authToken is opaque UUID mapped to stored authorization
     if (!token) {
-      throw new Error("Authorization no longer available");
+      const authorization = await this.get<Authorization>(
+        `authorization:${authToken}`
+      );
+      if (!authorization) {
+        throw new Error("Authorization no longer available");
+      }
+
+      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
+      if (!token) {
+        throw new Error("Authorization no longer available");
+      }
     }
 
     return new GraphApi(token.token);
@@ -803,14 +815,10 @@ export class OutlookCalendar
 
   async onAuthSuccess(
     authResult: Authorization,
-    token: string,
     callbackToken: Callback
   ): Promise<void> {
-    // Store the actual auth token using opaque token as key
-    await this.set(`authorization:${token}`, authResult);
-
     const authSuccessResult: CalendarAuth = {
-      authToken: token,
+      authToken: authResult.actor.id as string,
     };
 
     await this.run(callbackToken, authSuccessResult);
@@ -824,146 +832,321 @@ export class OutlookCalendar
       occurrence?: ActivityOccurrence;
     }
   ): Promise<void> {
-    // Only process calendar events
-    const source = activity.source;
-    if (
-      !source ||
-      typeof source !== "string" ||
-      !source.startsWith("outlook-calendar:")
-    ) {
-      return;
-    }
-
-    // Check if RSVP tags changed
-    const attendChanged =
-      Tag.Attend in changes.tagsAdded || Tag.Attend in changes.tagsRemoved;
-    const skipChanged =
-      Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
-    const undecidedChanged =
-      Tag.Undecided in changes.tagsAdded ||
-      Tag.Undecided in changes.tagsRemoved;
-
-    if (!attendChanged && !skipChanged && !undecidedChanged) {
-      return; // No RSVP-related tag changes
-    }
-
-    // Determine new RSVP status based on current tags
-    const hasAttend =
-      activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
-    const hasSkip =
-      activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
-    const hasUndecided =
-      activity.tags?.[Tag.Undecided] && activity.tags[Tag.Undecided].length > 0;
-
-    let newStatus: "accepted" | "declined" | "tentativelyAccepted";
-
-    // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
-    if (hasAttend && (hasSkip || hasUndecided)) {
-      // Multiple tags present - use most recent from tagsAdded
-      if (Tag.Attend in changes.tagsAdded) {
-        newStatus = "accepted";
-      } else if (Tag.Skip in changes.tagsAdded) {
-        newStatus = "declined";
-      } else if (Tag.Undecided in changes.tagsAdded) {
-        newStatus = "tentativelyAccepted";
-      } else {
-        // Multiple were already there, no change needed
-        return;
-      }
-    } else if (hasSkip && hasUndecided) {
-      // Skip and Undecided present - use most recent
-      if (Tag.Skip in changes.tagsAdded) {
-        newStatus = "declined";
-      } else if (Tag.Undecided in changes.tagsAdded) {
-        newStatus = "tentativelyAccepted";
-      } else {
-        return;
-      }
-    } else if (hasAttend) {
-      newStatus = "accepted";
-    } else if (hasSkip) {
-      newStatus = "declined";
-    } else if (hasUndecided) {
-      newStatus = "tentativelyAccepted";
-    } else {
-      // No RSVP tags present - reset to tentativelyAccepted (acts as "needsAction")
-      newStatus = "tentativelyAccepted";
-    }
-
-    // Extract calendar info from metadata
-    if (!activity.meta) {
-      console.warn("Missing activity metadata");
-      return;
-    }
-
-    const baseEventId = activity.meta.id;
-    const calendarId = activity.meta.calendarId;
-
-    if (
-      !baseEventId ||
-      !calendarId ||
-      typeof baseEventId !== "string" ||
-      typeof calendarId !== "string"
-    ) {
-      console.warn(
-        "Missing or invalid event or calendar ID in activity metadata"
-      );
-      return;
-    }
-
-    // Determine the event ID to update
-    // If this is an occurrence-level change, look up the instance ID
-    let eventId = baseEventId;
-    if (changes.occurrence) {
-      const occurrenceDate =
-        changes.occurrence.occurrence instanceof Date
-          ? changes.occurrence.occurrence
-          : new Date(changes.occurrence.occurrence);
-
-      // Get the auth token for this calendar
-      const authToken = await this.get<string>(`auth_token_${calendarId}`);
-
-      if (!authToken) {
-        console.warn("No auth token found for calendar", calendarId);
+    try {
+      // Only process calendar events
+      const source = activity.source;
+      if (
+        !source ||
+        typeof source !== "string" ||
+        !source.startsWith("outlook-calendar:")
+      ) {
         return;
       }
 
-      try {
-        // Look up the instance ID for this occurrence
-        const instanceId = await this.getEventInstanceId(
-          authToken,
-          calendarId,
-          baseEventId,
-          occurrenceDate
-        );
+      // Check if RSVP tags changed
+      const attendChanged =
+        Tag.Attend in changes.tagsAdded || Tag.Attend in changes.tagsRemoved;
+      const skipChanged =
+        Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
+      const undecidedChanged =
+        Tag.Undecided in changes.tagsAdded ||
+        Tag.Undecided in changes.tagsRemoved;
 
-        if (instanceId) {
-          eventId = instanceId;
+      if (!attendChanged && !skipChanged && !undecidedChanged) {
+        return; // No RSVP-related tag changes
+      }
+
+      // Collect unique actor IDs from RSVP tag changes
+      const actorIds = new Set<ActorId>();
+      for (const tag of [Tag.Attend, Tag.Skip, Tag.Undecided]) {
+        if (tag in changes.tagsAdded) {
+          for (const id of changes.tagsAdded[tag]) actorIds.add(id);
+        }
+        if (tag in changes.tagsRemoved) {
+          for (const id of changes.tagsRemoved[tag]) actorIds.add(id);
+        }
+      }
+
+      // Determine new RSVP status based on most recent tag change
+      const hasAttend =
+        activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
+      const hasSkip =
+        activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
+      const hasUndecided =
+        activity.tags?.[Tag.Undecided] &&
+        activity.tags[Tag.Undecided].length > 0;
+
+      let newStatus: "accepted" | "declined" | "tentativelyAccepted";
+
+      // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
+      if (hasAttend && (hasSkip || hasUndecided)) {
+        if (Tag.Attend in changes.tagsAdded) {
+          newStatus = "accepted";
+        } else if (Tag.Skip in changes.tagsAdded) {
+          newStatus = "declined";
+        } else if (Tag.Undecided in changes.tagsAdded) {
+          newStatus = "tentativelyAccepted";
         } else {
-          console.warn(
-            `Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`
-          );
           return;
         }
-      } catch (error) {
-        console.error(`Failed to look up instance ID:`, error);
+      } else if (hasSkip && hasUndecided) {
+        if (Tag.Skip in changes.tagsAdded) {
+          newStatus = "declined";
+        } else if (Tag.Undecided in changes.tagsAdded) {
+          newStatus = "tentativelyAccepted";
+        } else {
+          return;
+        }
+      } else if (hasAttend) {
+        newStatus = "accepted";
+      } else if (hasSkip) {
+        newStatus = "declined";
+      } else if (hasUndecided) {
+        newStatus = "tentativelyAccepted";
+      } else {
+        // No RSVP tags present - reset to tentativelyAccepted (acts as "needsAction")
+        newStatus = "tentativelyAccepted";
+      }
+
+      // Extract calendar info from metadata
+      if (!activity.meta) {
+        console.error("[RSVP Sync] Missing activity metadata", {
+          activity_id: activity.id,
+        });
         return;
       }
+
+      const baseEventId = activity.meta.id;
+      const calendarId = activity.meta.calendarId;
+
+      if (
+        !baseEventId ||
+        !calendarId ||
+        typeof baseEventId !== "string" ||
+        typeof calendarId !== "string"
+      ) {
+        console.error("[RSVP Sync] Missing or invalid event/calendar ID", {
+          has_event_id: !!baseEventId,
+          has_calendar_id: !!calendarId,
+          event_id_type: typeof baseEventId,
+          calendar_id_type: typeof calendarId,
+        });
+        return;
+      }
+
+      // Determine the event ID to update
+      // If this is an occurrence-level change, look up the instance ID
+      let eventId = baseEventId;
+      if (changes.occurrence) {
+        const occurrenceDate =
+          changes.occurrence.occurrence instanceof Date
+            ? changes.occurrence.occurrence
+            : new Date(changes.occurrence.occurrence);
+
+        // Use the first actor's token to look up the instance ID
+        const firstActorId = actorIds.values().next().value;
+        if (!firstActorId) {
+          return;
+        }
+
+        const lookupToken = await this.tools.integrations.get(
+          AuthProvider.Microsoft,
+          firstActorId
+        );
+
+        if (!lookupToken) {
+          // Fall back to stored auth token for instance lookup
+          const storedAuthToken = await this.get<string>(
+            `auth_token_${calendarId}`
+          );
+          if (storedAuthToken) {
+            try {
+              const instanceId = await this.getEventInstanceId(
+                storedAuthToken,
+                calendarId,
+                baseEventId,
+                occurrenceDate
+              );
+              if (instanceId) {
+                eventId = instanceId;
+              } else {
+                console.warn(
+                  `Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`
+                );
+                return;
+              }
+            } catch (error) {
+              console.error(`Failed to look up instance ID:`, error);
+              return;
+            }
+          } else {
+            console.warn(
+              "[RSVP Sync] No auth available for instance ID lookup"
+            );
+            return;
+          }
+        } else {
+          try {
+            const api = new GraphApi(lookupToken.token);
+            const instanceId = await this.getEventInstanceIdWithApi(
+              api,
+              calendarId,
+              baseEventId,
+              occurrenceDate
+            );
+            if (instanceId) {
+              eventId = instanceId;
+            } else {
+              console.warn(
+                `Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`
+              );
+              return;
+            }
+          } catch (error) {
+            console.error(`Failed to look up instance ID:`, error);
+            return;
+          }
+        }
+      }
+
+      // For each actor who changed RSVP, try to sync with their credentials
+      for (const actorId of actorIds) {
+        const token = await this.tools.integrations.get(
+          AuthProvider.Microsoft,
+          actorId
+        );
+
+        if (token) {
+          // Actor has auth - sync their RSVP directly
+          try {
+            const api = new GraphApi(token.token);
+            await this.updateEventRSVPWithApi(
+              api,
+              calendarId,
+              eventId,
+              newStatus,
+              actorId
+            );
+          } catch (error) {
+            console.error("[RSVP Sync] Failed to update RSVP for actor", {
+              actor_id: actorId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        } else {
+          // Actor lacks auth - queue pending sync and create auth request
+          await this.queuePendingSync(actorId, {
+            type: "rsvp",
+            calendarId,
+            eventId,
+            status: newStatus,
+            activityId: activity.id,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("[RSVP Sync] Error in callback", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        activity_id: activity.id,
+      });
     }
+  }
 
-    // Get the auth token for this calendar (if not already retrieved above)
-    const authToken = await this.get<string>(`auth_token_${calendarId}`);
+  /**
+   * Queue a pending write-back action for an unauthenticated actor.
+   * Creates a private auth-request activity if one doesn't exist (deduped by source).
+   */
+  private async queuePendingSync(
+    actorId: ActorId,
+    action: OutlookPendingSyncItem
+  ): Promise<void> {
+    // Add to pending queue
+    const key = `pending_sync:${actorId}`;
+    const pending = (await this.get<OutlookPendingSyncItem[]>(key)) || [];
+    pending.push(action);
+    await this.set(key, pending);
 
-    if (!authToken) {
-      console.warn("No auth token found for calendar", calendarId);
+    // Create auth-request activity (upsert by source to dedup)
+    const authLink = await this.tools.integrations.request(
+      {
+        provider: AuthProvider.Microsoft,
+        scopes: OutlookCalendar.SCOPES,
+      },
+      this.onActorAuth,
+      actorId as string
+    );
+
+    await this.tools.plot.createActivity({
+      source: `auth:${actorId}`,
+      type: ActivityType.Action,
+      title: "Connect your Outlook Calendar",
+      private: true,
+      start: new Date(),
+      end: null,
+      notes: [
+        {
+          content:
+            "To sync your RSVP responses, please connect your Outlook Calendar.",
+          links: [authLink],
+          mentions: [{ id: actorId }],
+        },
+      ],
+    });
+  }
+
+  /**
+   * Callback for when an additional user authorizes.
+   * Applies any pending write-back actions. Does NOT start a sync.
+   */
+  async onActorAuth(
+    authorization: Authorization,
+    actorIdStr: string
+  ): Promise<void> {
+    const actorId = actorIdStr as ActorId;
+    const key = `pending_sync:${actorId}`;
+    const pending = await this.get<OutlookPendingSyncItem[]>(key);
+
+    if (!pending || pending.length === 0) {
       return;
     }
 
-    try {
-      await this.updateEventRSVP(authToken, calendarId, eventId, newStatus);
-    } catch (error) {
-      console.error(`Failed to update RSVP for event ${eventId}:`, error);
+    const token = await this.tools.integrations.get(
+      authorization.provider,
+      authorization.actor.id
+    );
+    if (!token) {
+      console.error("[RSVP Sync] Failed to get token after actor auth", {
+        actor_id: actorId,
+      });
+      return;
     }
+
+    const api = new GraphApi(token.token);
+
+    // Apply pending write-backs
+    for (const item of pending) {
+      if (item.type === "rsvp") {
+        try {
+          await this.updateEventRSVPWithApi(
+            api,
+            item.calendarId,
+            item.eventId,
+            item.status,
+            actorId
+          );
+        } catch (error) {
+          console.error("[RSVP Sync] Failed to apply pending RSVP", {
+            actor_id: actorId,
+            event_id: item.eventId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    // Clear pending queue
+    await this.clear(key);
   }
 
   /**
@@ -977,7 +1160,23 @@ export class OutlookCalendar
     occurrenceDate: Date
   ): Promise<string | null> {
     const api = await this.getApi(authToken);
+    return this.getEventInstanceIdWithApi(
+      api,
+      calendarId,
+      seriesMasterId,
+      occurrenceDate
+    );
+  }
 
+  /**
+   * Look up the instance ID for a specific occurrence using a pre-authenticated GraphApi.
+   */
+  private async getEventInstanceIdWithApi(
+    api: GraphApi,
+    calendarId: string,
+    seriesMasterId: string,
+    occurrenceDate: Date
+  ): Promise<string | null> {
     // Query instances for the series master
     const resource =
       calendarId === "primary"
@@ -1029,14 +1228,17 @@ export class OutlookCalendar
     }
   }
 
-  private async updateEventRSVP(
-    authToken: string,
+  /**
+   * Update RSVP status for a specific actor using a pre-authenticated GraphApi instance.
+   * Looks up the actor's email from the Graph API to find the correct attendee.
+   */
+  private async updateEventRSVPWithApi(
+    api: GraphApi,
     calendarId: string,
     eventId: string,
-    status: "accepted" | "declined" | "tentativelyAccepted"
+    status: "accepted" | "declined" | "tentativelyAccepted",
+    actorId: ActorId
   ): Promise<void> {
-    const api = await this.getApi(authToken);
-
     // First, fetch the current event to check if status already matches
     const resource =
       calendarId === "primary"
@@ -1052,21 +1254,36 @@ export class OutlookCalendar
       throw new Error(`Event ${eventId} not found`);
     }
 
-    // Get user email to find which attendee to check
-    const userEmail = await this.get<string>("user_email");
+    // Get the actor's email from the Graph API /me endpoint
+    const meData = (await api.call(
+      "GET",
+      "https://graph.microsoft.com/v1.0/me"
+    )) as { mail?: string; userPrincipalName?: string } | null;
 
-    if (!userEmail) {
-      throw new Error("User email not found");
+    const actorEmail = meData?.mail || meData?.userPrincipalName;
+    if (!actorEmail) {
+      console.warn("[RSVP Sync] Could not determine actor email", {
+        actor_id: actorId,
+      });
+      return;
     }
 
-    // Check current user's response status to avoid infinite loops
+    // Check current actor's response status to avoid infinite loops
     const attendees = event.attendees || [];
-    const userAttendee = attendees.find(
+    const actorAttendee = attendees.find(
       (att: any) =>
-        att.emailAddress?.address?.toLowerCase() === userEmail.toLowerCase()
+        att.emailAddress?.address?.toLowerCase() === actorEmail.toLowerCase()
     );
 
-    if (userAttendee && userAttendee.status?.response === status) {
+    if (!actorAttendee) {
+      console.warn("[RSVP Sync] Actor is not an attendee of this event", {
+        actor_id: actorId,
+        event_id: eventId,
+      });
+      return;
+    }
+
+    if (actorAttendee.status?.response === status) {
       return;
     }
 
