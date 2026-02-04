@@ -475,16 +475,20 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     authToken: string,
     meta: ActivityMeta,
     body: string
-  ): Promise<void> {
+  ): Promise<string | void> {
     const taskGid = meta.taskGid as string | undefined;
     if (!taskGid) {
       throw new Error("Asana task GID not found in activity meta");
     }
     const client = await this.getClient(authToken);
 
-    await client.tasks.addComment(taskGid, {
+    const result = await client.tasks.addComment(taskGid, {
       text: body,
     });
+
+    if (result?.gid) {
+      return `story-${result.gid}`;
+    }
   }
 
   /**

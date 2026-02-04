@@ -489,17 +489,13 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     if (!currentAssigneeActorId) {
       updateFields.assigneeId = null;
     } else {
-      const actors = await this.tools.plot.getActors([
-        currentAssigneeActorId,
-      ]);
+      const actors = await this.tools.plot.getActors([currentAssigneeActorId]);
       const actor = actors[0];
       const email = actor?.email;
 
       if (email) {
         // Check cache first
-        let linearUserId = await this.get<string>(
-          `linear_user:${email}`
-        );
+        let linearUserId = await this.get<string>(`linear_user:${email}`);
 
         if (!linearUserId) {
           // Query Linear for user by email
@@ -578,17 +574,22 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     authToken: string,
     meta: ActivityMeta,
     body: string
-  ): Promise<void> {
+  ): Promise<string | void> {
     const issueId = meta.linearId as string | undefined;
     if (!issueId) {
       throw new Error("Linear issue ID not found in activity meta");
     }
     const client = await this.getClient(authToken);
 
-    await client.createComment({
+    const payload = await client.createComment({
       issueId,
       body,
     });
+
+    const comment = await payload.comment;
+    if (comment?.id) {
+      return `comment-${comment.id}`;
+    }
   }
 
   /**

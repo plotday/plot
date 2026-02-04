@@ -570,6 +570,43 @@ const activity: NewActivity = {
 - **Incremental sync**: New activities appear as unread, and archived state is preserved (respects user's archiving decisions)
 - **Reinstall**: Acts as initial sync, so previously archived activities are unarchived (fresh start)
 
+### Two-Way Sync: Avoiding Race Conditions
+
+When implementing two-way sync where items created in Plot are pushed to an external system (e.g. Notes becoming comments), a race condition can occur: the external system may send a webhook for the newly created item before you've updated the Activity/Note with the external key. The webhook handler won't find the item by external key and may create a duplicate.
+
+**Solution:** Embed the Plot `Activity.id` / `Note.id` in the external item's metadata when creating it, and update `Activity.source` / `Note.key` after creation. When processing webhooks, check for the Plot ID in metadata first.
+
+```typescript
+async pushNoteAsComment(note: Note, externalItemId: string): Promise<void> {
+  // Create external item with Plot ID in metadata for webhook correlation
+  const externalComment = await externalApi.createComment(externalItemId, {
+    body: note.content,
+    metadata: { plotNoteId: note.id },
+  });
+
+  // Update Note with external key AFTER creation
+  // A webhook may arrive before this completes — that's OK (see onWebhook below)
+  await this.tools.plot.updateNote({
+    id: note.id,
+    key: `comment-${externalComment.id}`,
+  });
+}
+
+async onWebhook(payload: WebhookPayload): Promise<void> {
+  const comment = payload.comment;
+
+  // Use Plot ID from metadata if present (handles race condition),
+  // otherwise fall back to upserting by activity source and key
+  await this.tools.plot.createNote({
+    ...(comment.metadata?.plotNoteId
+      ? { id: comment.metadata.plotNoteId }
+      : { activity: { source: payload.itemUrl } }),
+    key: `comment-${comment.id}`,
+    content: comment.body,
+  });
+}
+```
+
 ## Error Handling
 
 Always handle errors gracefully and communicate them to users:

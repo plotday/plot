@@ -1059,7 +1059,7 @@ export type NewNote = Partial<
  * Type for updating existing notes.
  * Must provide either id or key to identify the note to update.
  */
-export type NoteUpdate = ({ id: Uuid } | { key: string }) &
+export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
   Partial<Pick<Note, "private" | "archived" | "content" | "links">> & {
     /**
      * Format of the note content. Determines how the note is processed:

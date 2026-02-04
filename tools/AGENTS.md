@@ -279,6 +279,7 @@ Building a tool? Follow this checklist:
 4. **❌ Forgetting to store the callback token** - Store it immediately after creating
 5. **❌ Passing undefined instead of null** - Use `null` for optional values
 6. **❌ Not breaking loops into batches** - Each execution has ~1000 request limit; use `runTask()` for fresh limits
+7. **❌ Two-way sync without metadata correlation** - When pushing Plot items to an external system, embed the Plot ID (`Activity.id` / `Note.id`) in the external item's metadata, and update `source`/`key` after creation. In webhook handlers, check metadata for the Plot ID first. This prevents duplicates from a race condition where the webhook arrives before the `source`/`key` update. See SYNC_STRATEGIES.md §6 for a full example.
 
 ---
 

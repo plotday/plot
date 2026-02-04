@@ -156,11 +156,13 @@ export type ProjectTool = {
    * @param authToken - Authorization token for access
    * @param meta - Activity metadata containing the tool's issue/task identifier
    * @param body - The comment text content
-   * @returns Promise that resolves when the comment is added
+   * @param noteId - Optional Plot note ID, used by tools that support comment metadata (e.g. Jira)
+   * @returns The external comment key (e.g. "comment-123") for dedup, or void
    */
   addIssueComment?(
     authToken: string,
     meta: ActivityMeta,
-    body: string
-  ): Promise<void>;
+    body: string,
+    noteId?: string,
+  ): Promise<string | void>;
 };

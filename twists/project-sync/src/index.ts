@@ -339,7 +339,17 @@ export default class ProjectSync extends Twist<ProjectSync> {
       // Sync note as comment
       // Tool extracts its own ID from meta (e.g., linearId, taskGid, issueKey)
       if (tool.addIssueComment) {
-        await tool.addIssueComment(authToken, activity.meta, note.content);
+        // Create comment in external system, passing note ID for metadata support.
+        // Tools that support metadata (Jira) embed the note ID in the comment,
+        // eliminating the race condition. For others (Linear, Asana), the note key
+        // update below should complete before the webhook arrives since the key
+        // update is an internal DB write while the webhook traverses the internet.
+        const commentKey = await tool.addIssueComment(
+          authToken, activity.meta, note.content, note.id
+        );
+        if (commentKey) {
+          await this.tools.plot.updateNote({ id: note.id, key: commentKey });
+        }
       } else {
         console.warn(`Provider ${provider} does not support adding comments`);
       }

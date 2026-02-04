@@ -605,8 +605,9 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   async addIssueComment(
     authToken: string,
     meta: import("@plotday/twister").ActivityMeta,
-    body: string
-  ): Promise<void> {
+    body: string,
+    noteId?: string,
+  ): Promise<string | void> {
     const issueKey = meta.issueKey as string | undefined;
     if (!issueKey) {
       throw new Error("Jira issue key not found in activity meta");
@@ -616,10 +617,15 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     // Convert plain text to Atlassian Document Format (ADF)
     const adfBody = this.convertTextToADF(body);
 
-    await client.issueComments.addComment({
+    const result = await client.issueComments.addComment({
       issueIdOrKey: issueKey,
       comment: adfBody,
+      properties: noteId ? [{ key: "plotNoteId", value: noteId }] : undefined,
     });
+
+    if (result?.id) {
+      return `comment-${result.id}`;
+    }
   }
 
   /**
@@ -812,6 +818,11 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         ? comment.body
         : this.extractTextFromADF(comment.body);
 
+    // Check for Plot note ID in comment properties (set when comment was created from Plot)
+    const plotNoteId = comment.properties?.find(
+      (p: any) => p.key === "plotNoteId"
+    )?.value;
+
     // Create activity update with single comment note
     const activity: NewActivityWithNotes = {
       ...(source ? { source } : {}),
@@ -819,6 +830,9 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       notes: [
         {
           key: `comment-${comment.id}`,
+          // If this comment originated from Plot, identify by note ID so we update the existing note
+          // rather than creating a duplicate
+          ...(plotNoteId ? { id: plotNoteId } : {}),
           activity: source ? { source } : undefined,
           content: commentText,
           created: comment.created ? new Date(comment.created) : undefined,
