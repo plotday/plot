@@ -213,7 +213,9 @@ abstract class BaseTable {
     // Using DESC order would cause the cursor to skip items sharing the same updated_at.
     PostgrestTransformBuilder<PostgrestList> query2;
     if (updatedSince != null) {
-      query2 = query.order('updated_at', ascending: true).order(cursorColumn, ascending: true);
+      query2 = query
+          .order('updated_at', ascending: true)
+          .order(cursorColumn, ascending: true);
     } else {
       query2 = sort(query);
     }
@@ -248,7 +250,12 @@ abstract class BaseTable {
     }
 
     DateTimeRange? returnRange;
-    if (range != null) {
+    // returnRange is only meaningful for pullTo() (range-based sync).
+    // For update pulls (updatedSince != null), sort is by updated_at not the
+    // primary order column, so created_at range would be meaningless.
+    if (updatedSince != null) {
+      // Skip range computation for update pulls
+    } else if (range != null) {
       returnRange = range;
     } else if (rows.isNotEmpty) {
       final firstTime = DateTime.parse(rows.first[order] as String);
