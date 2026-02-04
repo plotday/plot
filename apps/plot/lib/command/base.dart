@@ -135,27 +135,42 @@ class CommandWrapper extends Command {
   Widget? buildBody(BuildContext context) => command.buildBody(context);
 }
 
-/// A command for showing a set of commands
+/// A command for showing a set of commands.
+///
+/// Provide either [commands] (static) or [commandsBuilder] (async/dynamic),
+/// not both. Dynamic command lists automatically show the filter field on
+/// mobile so users can search or create entries (e.g. invite by email).
 class ShowCommands extends Command {
   ShowCommands({
     required super.title,
     super.icon,
     super.hoverIcon,
     super.shortcut,
-    required this.commands,
+    this.commands,
+    this.commandsBuilder,
     EventObject? eventObject,
     EventAction? eventAction,
-  }) : super(
+  }) : assert(
+         (commands != null) != (commandsBuilder != null),
+         'Provide either commands or commandsBuilder, not both',
+       ),
+       super(
          eventObject: eventObject ?? EventObject.commandBar,
          eventAction: eventAction ?? EventAction.opened,
        );
 
-  final Future<Commands> Function(BuildContext context) commands;
+  final Commands? commands;
+  final Future<Commands> Function(BuildContext context)? commandsBuilder;
+
+  /// Whether this command list is dynamic (async builder).
+  /// Dynamic lists always show the filter field on mobile.
+  bool get isDynamic => commandsBuilder != null;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final commandsInstance = await commands(context);
+      final commandsInstance =
+          commands ?? await commandsBuilder!(context);
       if (!context.mounted) {
         log.info(
           'Context no longer mounted, skipping CommandModal for "$title"',
@@ -165,6 +180,7 @@ class ShowCommands extends Command {
       return await CommandModal(
         commandsInstance,
         rootContext: context,
+        showFilter: isDynamic ? true : null,
       ).run(context);
     } on Error catch (e, t) {
       log.warning('Command "$title" failed', e, t);

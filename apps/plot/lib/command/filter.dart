@@ -193,7 +193,7 @@ class PickFilterCommand extends ShowCommands {
     : super(
         title: 'Pick Filter',
         icon: PlotIcon.filter,
-        commands: (context) async {
+        commandsBuilder: (context) async {
           final tags = Tag.getAll();
           final commands = tags
               .map((tag) => ToggleActivityFilter(tag, context: context))

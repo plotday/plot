@@ -7,14 +7,19 @@ import 'modal.dart';
 import 'select_modal.dart';
 
 class CommandModal {
-  factory CommandModal(Commands commands, {required BuildContext rootContext}) {
-    return CommandModal._(commands, rootContext);
+  factory CommandModal(
+    Commands commands, {
+    required BuildContext rootContext,
+    bool? showFilter,
+  }) {
+    return CommandModal._(commands, rootContext, showFilter);
   }
 
-  CommandModal._(this.commands, this.rootContext);
+  CommandModal._(this.commands, this.rootContext, this.showFilter);
 
   final Commands commands;
   final BuildContext rootContext;
+  final bool? showFilter;
   Future<void> Function()? _refreshCallback;
   final Map<String, ListTileController> _controllers = {};
 
@@ -125,6 +130,7 @@ class CommandModal {
       onRefreshNeeded: (refresh) {
         _refreshCallback = refresh;
       },
+      showFilter: showFilter,
     );
 
     return result.present ? const CommandDone() : const CommandSkipped();

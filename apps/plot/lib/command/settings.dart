@@ -55,9 +55,7 @@ class ShowSettings extends ShowCommands {
     : super(
         title: 'Settings',
         icon: PlotIcon.settings,
-        commands: (context) => Future.value(
-          Commands(groups: [settingsCommands], prompt: 'Settings'),
-        ),
+        commands: Commands(groups: [settingsCommands], prompt: 'Settings'),
         shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
       );
 }
@@ -67,8 +65,7 @@ class ChangeAppearance extends ShowCommands {
     : super(
         title: 'Change Light/Dark Mode',
         icon: FontAwesomeIcons.sun,
-        commands: (context) =>
-            Future.value(Commands(groups: [appearanceCommands])),
+        commands: Commands(groups: [appearanceCommands]),
       );
 }
 

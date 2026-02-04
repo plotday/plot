@@ -15,7 +15,7 @@ class ManageTwists extends ShowCommands {
     : super(
         title: 'Manage Twists',
         icon: PlotIcon.twist,
-        commands: (context) => _getTwistCommands(priority),
+        commandsBuilder: (context) => _getTwistCommands(priority),
       );
 
   static Future<Commands> _getTwistCommands(Priority? priority) async {

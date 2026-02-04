@@ -323,7 +323,6 @@ class ShowNoteCommands extends ShowCommands {
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
-        commands: (context) =>
-            Future.value(Commands(groups: noteCommandGroups(note))),
+        commands: Commands(groups: noteCommandGroups(note)),
       );
 }

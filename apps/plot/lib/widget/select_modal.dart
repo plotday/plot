@@ -42,6 +42,7 @@ class SelectModal<T> extends Modal {
     this.initialItems,
     this.emptyMessage,
     this.onRefreshNeeded,
+    this.showFilter,
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
@@ -54,6 +55,7 @@ class SelectModal<T> extends Modal {
            initialItems: initialItems,
            emptyMessage: emptyMessage,
            onRefreshNeeded: onRefreshNeeded,
+           showFilter: showFilter,
          ),
        );
 
@@ -88,6 +90,11 @@ class SelectModal<T> extends Modal {
   /// to reload the items while keeping the modal open.
   final void Function(Future<void> Function() refresh)? onRefreshNeeded;
 
+  /// Controls whether the filter/search field is shown.
+  /// `null` = default behavior (shown when physical keyboard is present),
+  /// `true` = always show, `false` = never show.
+  final bool? showFilter;
+
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
@@ -100,6 +107,7 @@ class SelectModal<T> extends Modal {
     onSelect,
     String? emptyMessage,
     void Function(Future<void> Function() refresh)? onRefreshNeeded,
+    bool? showFilter,
   }) async {
     // Pre-fetch items for empty search to avoid empty list on first build
     List<SelectGroup<T>>? initialItems;
@@ -123,6 +131,7 @@ class SelectModal<T> extends Modal {
       initialItems: initialItems,
       emptyMessage: emptyMessage,
       onRefreshNeeded: onRefreshNeeded,
+      showFilter: showFilter,
     ).show<T>(context);
 
     return result;
@@ -139,6 +148,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.initialItems,
     this.emptyMessage,
     this.onRefreshNeeded,
+    this.showFilter,
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
@@ -150,6 +160,7 @@ class _SelectModal<T> extends StatefulWidget {
   final List<SelectGroup<T>>? initialItems;
   final String? emptyMessage;
   final void Function(Future<void> Function() refresh)? onRefreshNeeded;
+  final bool? showFilter;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
@@ -528,7 +539,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
               builder: (context, constraints) => Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (hasPhysicalKeyboard())
+                  if (widget.showFilter ?? hasPhysicalKeyboard())
                     EditableArea(
                       position: EditableAreaPosition.top,
                       padding: true,

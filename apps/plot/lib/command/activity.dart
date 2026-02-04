@@ -623,7 +623,7 @@ class PickActionAssignee extends ShowCommands {
         title: 'Assign',
         icon: stateIcon ? activity.icon : FontAwesomeIcons.circleUserCirclePlus,
         hoverIcon: stateIcon ? FontAwesomeIcons.circleUserCirclePlus : null,
-        commands: (context) => _getAssigneeCommands(activity, onUpdate),
+        commandsBuilder: (context) => _getAssigneeCommands(activity, onUpdate),
         eventObject: EventObject.activity,
         eventAction: EventAction.updated,
       );
@@ -1043,7 +1043,7 @@ class MoveActivityToPriority extends ShowCommands {
         title: 'Move to Another Priority',
         icon: PlotIcon.move,
         shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
-        commands: (context) => _getMoveCommands(activity),
+        commandsBuilder: (context) => _getMoveCommands(activity),
       );
 
   final Activity activity;
@@ -1074,13 +1074,11 @@ class ShowActivityCommands extends ShowCommands {
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
-        commands: (context) => Future.value(
-          Commands(
-            groups: activityCommandGroups(
-              activity,
-              open: open,
-              isTouchDevice: !hasPhysicalKeyboard(),
-            ),
+        commands: Commands(
+          groups: activityCommandGroups(
+            activity,
+            open: open,
+            isTouchDevice: !hasPhysicalKeyboard(),
           ),
         ),
       );
@@ -1167,7 +1165,7 @@ class OpenFocusedItemActions extends ShowCommands {
   ) : _controller = controller,
       super(
         title: 'Open Actions for Focused Item',
-        commands: (context) async {
+        commandsBuilder: (context) async {
           final focusedIndex = controller.focusedIndex;
           if (focusedIndex == null) {
             return Commands(groups: []);

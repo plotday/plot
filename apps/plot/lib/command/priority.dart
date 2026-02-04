@@ -149,7 +149,7 @@ class PickCurrentPriority extends ShowCommands {
         title: 'Switch Priorities',
         icon: PlotIcon.priority,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
-        commands: (context) => Future.value(ChangeCurrentPriorityCommands()),
+        commands: ChangeCurrentPriorityCommands(),
       );
 }
 
@@ -409,17 +409,15 @@ class ShowPriorityCommands extends ShowCommands {
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
-        commands: (context) => Future.value(
-          Commands(
-            groups: [
-              StaticCommandGroup(
-                title: priority.title,
-                commands: current
-                    ? currentPriorityCommands(priority)
-                    : priorityCommands(priority),
-              ),
-            ],
-          ),
+        commands: Commands(
+          groups: [
+            StaticCommandGroup(
+              title: priority.title,
+              commands: current
+                  ? currentPriorityCommands(priority)
+                  : priorityCommands(priority),
+            ),
+          ],
         ),
       );
 }
@@ -549,7 +547,7 @@ class ManagePrioritySharing extends ShowCommands {
     : super(
         title: 'Share',
         icon: PlotIcon.share,
-        commands: (context) => _getSharingCommands(priority),
+        commandsBuilder: (context) => _getSharingCommands(priority),
       );
 
   final Priority priority;
@@ -798,12 +796,10 @@ class CurrentUserMemberCommand extends Command {
     return ShowCommands(
       title: 'You',
       icon: PlotIcon.users,
-      commands: (context) => Future.value(
-        Commands(
-          groups: [
-            StaticCommandGroup(commands: [LeavePriorityCommand(priority)]),
-          ],
-        ),
+      commands: Commands(
+        groups: [
+          StaticCommandGroup(commands: [LeavePriorityCommand(priority)]),
+        ],
       ),
     ).run(context);
   }
