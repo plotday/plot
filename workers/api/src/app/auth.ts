@@ -42,6 +42,11 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     return next();
   }
 
+  // Allow invitation lookup without auth (uses supabaseAdmin, no user identity needed)
+  if (c.req.path.startsWith("/app/invitation/") && c.req.method === "GET") {
+    return next();
+  }
+
   // Allow OPTIONS requests through (CORS preflight)
   if (c.req.method === "OPTIONS") {
     return await next();

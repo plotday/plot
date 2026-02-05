@@ -5,6 +5,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/store/store.dart' hide Link;
+import 'package:plot/router.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
@@ -137,12 +138,15 @@ class _InvitePageState extends State<InvitePage> {
     }
   }
 
+  void _signIn() {
+    context.router.push(SignInRoute());
+  }
+
   @override
   Widget build(BuildContext context) {
     final userState = context.read<UserBloc>().state;
-    final accountEmail = userState is UserReady
-        ? userState.user.primaryEmail
-        : null;
+    final isSignedIn = userState is UserReady;
+    final accountEmail = isSignedIn ? userState.user.primaryEmail : null;
 
     return Scaffold(
       center: true,
@@ -184,33 +188,53 @@ class _InvitePageState extends State<InvitePage> {
                             height: 1.5,
                           ),
                           children: [
-                            const TextSpan(text: 'Link '),
-                            TextSpan(
-                              text: _inviteEmail ?? 'this invitation',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (accountEmail != null) ...[
-                              const TextSpan(text: ' to your '),
+                            if (isSignedIn) ...[
+                              const TextSpan(text: 'Link '),
                               TextSpan(
-                                text: accountEmail,
+                                text: _inviteEmail ?? 'this invitation',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const TextSpan(text: ' account?'),
-                            ] else
-                              const TextSpan(text: ' to your account?'),
+                              if (accountEmail != null) ...[
+                                const TextSpan(text: ' to your '),
+                                TextSpan(
+                                  text: accountEmail,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const TextSpan(text: ' account?'),
+                              ] else
+                                const TextSpan(text: ' to your account?'),
+                            ] else ...[
+                              const TextSpan(
+                                  text: 'You\'ve been invited to collaborate'),
+                              if (_inviteEmail != null) ...[
+                                const TextSpan(text: ' as '),
+                                TextSpan(
+                                  text: _inviteEmail!,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                              const TextSpan(
+                                  text: '. Sign in to accept.'),
+                            ],
                           ],
                         ),
                       ),
                       FButton(
-                        onPress: _isRedeeming ? null : _redeemInvitation,
+                        onPress: _isRedeeming
+                            ? null
+                            : (isSignedIn ? _redeemInvitation : _signIn),
                         style: FButtonStyle.primary(),
                         child: _isRedeeming
                             ? const Spinner()
-                            : const Text('Link and Continue'),
+                            : Text(isSignedIn
+                                ? 'Link and Continue'
+                                : 'Sign in to accept'),
                       ),
                       if (_errorMessage != null)
                         FAlert(

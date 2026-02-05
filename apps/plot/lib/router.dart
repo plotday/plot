@@ -256,15 +256,9 @@ class AuthGuard extends AutoRouteGuard {
         }
         break;
       case UserSignedOut():
-        // Preserve invite token before redirecting to sign-in
-        if (resolver.route.name == InviteRoute.page.name) {
-          final token = resolver.route.pathParams.getString('token', '');
-          if (token.isNotEmpty) {
-            PendingInvite.token = token;
-          }
-        }
         if (resolver.route.name == SignInRoute.page.name ||
-            resolver.route.name == EmailSignInRoute.page.name) {
+            resolver.route.name == EmailSignInRoute.page.name ||
+            resolver.route.name == InviteRoute.page.name) {
           resolver.next();
         } else {
           // If --user was provided without password, redirect to email sign-in
