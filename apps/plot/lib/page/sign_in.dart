@@ -99,19 +99,20 @@ class _SignInPageState extends State<SignInPage> {
                         if (PendingInvite.inviterName != null) ...[
                           TextSpan(text: PendingInvite.inviterName),
                           const TextSpan(
-                              text:
-                                  ' has invited you to collaborate on Plot.\n'),
+                            text: ' has invited you to collaborate on Plot.\n',
+                          ),
                         ],
                         const TextSpan(text: 'Sign up or sign in'),
                         if (PendingInvite.email != null) ...[
                           const TextSpan(text: ' to link '),
                           TextSpan(
                             text: PendingInvite.email,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ],
-                        const TextSpan(text: ' and continue.'),
+                        const TextSpan(
+                          text: ' and make progress on your priorities.',
+                        ),
                       ],
                     ),
                   )
