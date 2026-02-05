@@ -153,9 +153,7 @@ export class OutlookCalendar
   extends Tool<OutlookCalendar>
   implements CalendarTool
 {
-  static readonly SCOPES = [
-    "https://graph.microsoft.com/calendars.readwrite",
-  ];
+  static readonly SCOPES = ["https://graph.microsoft.com/calendars.readwrite"];
 
   build(build: ToolBuilder) {
     return {
@@ -198,7 +196,10 @@ export class OutlookCalendar
 
   private async getApi(authToken: string): Promise<GraphApi> {
     // Try new flow: authToken is an ActorId, look up directly
-    let token = await this.tools.integrations.get(AuthProvider.Microsoft, authToken as ActorId);
+    let token = await this.tools.integrations.get(
+      AuthProvider.Microsoft,
+      authToken as ActorId
+    );
 
     // Fall back to legacy flow: authToken is opaque UUID mapped to stored authorization
     if (!token) {
@@ -209,7 +210,10 @@ export class OutlookCalendar
         throw new Error("Authorization no longer available");
       }
 
-      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
+      token = await this.tools.integrations.get(
+        authorization.provider,
+        authorization.actor.id
+      );
       if (!token) {
         throw new Error("Authorization no longer available");
       }
@@ -488,10 +492,11 @@ export class OutlookCalendar
           // Convert to Note type with blocked tag and cancellation note
           const activity: NewActivityWithNotes = {
             type: ActivityType.Note,
+            created: outlookEvent.createdDateTime
+              ? new Date(outlookEvent.createdDateTime)
+              : new Date(),
+            preview: "Cancelled",
             source,
-            tags: {
-              [Tag.Blocked]: [], // Toggle tag, empty actor array
-            },
             notes: [cancelNote],
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
@@ -792,7 +797,6 @@ export class OutlookCalendar
     calendarId: string,
     authToken: string
   ): Promise<void> {
-
     try {
       await this.getApi(authToken);
     } catch (error) {

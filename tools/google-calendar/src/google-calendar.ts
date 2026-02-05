@@ -362,9 +362,15 @@ export class GoogleCalendar
     let resolvedCalendarId = calendarId;
     if (authToken) {
       try {
-        resolvedCalendarId = await this.resolveCalendarId(authToken, calendarId);
+        resolvedCalendarId = await this.resolveCalendarId(
+          authToken,
+          calendarId
+        );
       } catch (error) {
-        console.warn("Failed to resolve calendar ID, using provided value", error);
+        console.warn(
+          "Failed to resolve calendar ID, using provided value",
+          error
+        );
       }
     }
 
@@ -473,7 +479,6 @@ export class GoogleCalendar
    */
   private async renewCalendarWatch(calendarId: string): Promise<void> {
     try {
-
       // Get auth token
       const authToken = await this.get<string>(`auth_token_${calendarId}`);
       if (!authToken) {
@@ -502,7 +507,6 @@ export class GoogleCalendar
 
       // Create new watch (reuses existing webhook URL and callback)
       await this.setupCalendarWatch(authToken, calendarId, authToken);
-
     } catch (error) {
       console.error(`Failed to renew watch for calendar ${calendarId}:`, error);
       // Don't throw - let reactive checking handle it as fallback
@@ -583,9 +587,11 @@ export class GoogleCalendar
         const syncLock = await this.get<boolean>(`sync_lock_${calendarId}`);
         if (!syncLock) {
           // Both state and lock are cleared - sync completed normally, this is a stale callback
-            } else {
+        } else {
           // State missing but lock still set - sync may have been superseded
-          console.warn(`No sync state found for calendar ${calendarId}, sync may have been superseded`);
+          console.warn(
+            `No sync state found for calendar ${calendarId}, sync may have been superseded`
+          );
           await this.clear(`sync_lock_${calendarId}`);
         }
         return;
@@ -678,7 +684,12 @@ export class GoogleCalendar
 
         // Check if this is a recurring event instance (exception)
         if (event.recurringEventId && event.originalStartTime) {
-          await this.processEventInstance(event, calendarId, initialSync, callbackToken);
+          await this.processEventInstance(
+            event,
+            calendarId,
+            initialSync,
+            callbackToken
+          );
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
@@ -700,14 +711,13 @@ export class GoogleCalendar
             // Convert to Note type with blocked tag and cancellation note
             const activity: NewActivityWithNotes = {
               source: canonicalUrl,
+              created: event.created ? new Date(event.created) : undefined,
               type: ActivityType.Note,
-              title: activityData.title || "",
+              title: activityData.title,
+              preview: "Cancelled",
               start: activityData.start || null,
               end: activityData.end || null,
               meta: activityData.meta ?? null,
-              tags: {
-                [Tag.Blocked]: [], // Toggle tag, empty actor array
-              },
               notes: [cancelNote],
               ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
               ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
@@ -1087,7 +1097,10 @@ export class GoogleCalendar
     // Trigger contacts sync with the same authorization
     // This happens automatically when calendar auth succeeds
     try {
-      const token = await this.tools.integrations.get(authResult.provider, authResult.actor.id);
+      const token = await this.tools.integrations.get(
+        authResult.provider,
+        authResult.actor.id
+      );
       if (token) {
         await this.tools.googleContacts.syncWithAuth(
           authResult,
