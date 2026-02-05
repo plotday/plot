@@ -92,6 +92,15 @@ Future<void> run(List<String> args) async {
     }
   }
 
+  // On web, extract invite token from browser URL (equivalent of native getInitialLink)
+  if (kIsWeb) {
+    final segments = Uri.base.pathSegments;
+    if (segments.length >= 2 && segments.first == 'invite') {
+      PendingInvite.token = segments[1];
+      log.info('Extracted invite token from web URL');
+    }
+  }
+
   // Initialize logging first
   try {
     hierarchicalLoggingEnabled = true;

@@ -144,7 +144,13 @@ class RootProviderState extends State<RootProvider> {
               PriorityTwist.stopGlobalWatch();
               // Set theme to Catalyst when signed out
               themeBloc.setPriorityColor(ThemeColor(0));
-              await router.replaceAll([SignInRoute()]);
+              if (PendingInvite.token != null) {
+                await router.replaceAll([
+                  InviteRoute(token: PendingInvite.token!),
+                ]);
+              } else {
+                await router.replaceAll([SignInRoute()]);
+              }
               // Wait for widget tree to update and dispose old widgets before removing Store
               await WidgetsBinding.instance.endOfFrame;
               await Store.stop();
