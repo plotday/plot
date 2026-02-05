@@ -684,6 +684,12 @@ pnpm types
 ❌ **Wrong**: Using `pnpm reset` to fix migration issues
 ✅ **Correct**: Fix the migration file and re-apply with psql
 
+### Triggers on `auth.*` Tables
+
+**`pnpm gen-migration` only diffs the `public` schema.** Triggers, functions, or other objects on `auth.*` tables (e.g., `auth.users`) are invisible to migration generation. If you add or modify a trigger on an `auth` table in the schema files, you **must manually create the migration** — it will never be auto-generated.
+
+Symptoms of this being missed: the schema file defines the trigger, `pnpm diff-schema-migrations` shows no diff, but the trigger doesn't exist in the database.
+
 ## Development Webhooks with Cloudflare Tunnel
 
 For testing webhooks from external services (Slack, Gmail, etc.) during local development, you can expose your local API worker via a Cloudflare Tunnel.
