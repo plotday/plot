@@ -9,6 +9,7 @@ on:
     paths:
       - "twists/**"
       - "libs/**"
+      - "public"
       - "public/**"
       - ".github/workflows/deploy-twists.yml"
   workflow_dispatch:
@@ -39,6 +40,15 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Detect if workflow file changed
         id: workflow_changed
@@ -119,10 +129,18 @@ jobs:
             exit 0
           fi
 
+          # If submodule changed, deploy all twists (public twists or shared deps may have changed)
+          if [ "${{ steps.submodule_check.outputs.changed }}" = "true" ]; then
+            TWISTS_JSON=$(printf '%s\n' "${TWIST_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
+            echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
+            echo "Submodule changed, deploying all twists: $TWISTS_JSON"
+            exit 0
+          fi
+
           # Automatic deployment: only deploy changed twists
           echo "Automatic trigger: checking for affected twists"
+          AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=${{ github.event.before }} --head=HEAD --json 2>/dev/null || echo "[]")
           for twist in "${TWIST_LIST[@]}"; do
-            AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=${{ github.event.before }} --head=HEAD --json 2>/dev/null || echo "[]")
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/twist-$twist$"; then
               TWISTS_TO_DEPLOY+=("\"$twist\"")
             fi
