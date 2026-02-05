@@ -63,6 +63,37 @@ class PlotTwist extends Twist<PlotTwist> {
       type: ActivityType.Note,
     });
 
+    // Getting around
+    await this.tools.plot.createActivity({
+      title: "Getting Around",
+      notes: [
+        {
+          content:
+            "Plot's goal is to get you to meaningful work as quickly as possible. Here are some tips for navigating efficiently.",
+        },
+        {
+          content:
+            "**Keyboard Navigation**\n\n" +
+            "- **Cmd-K**: Open the command palette (you can see more keyboard shortcuts in here)\n" +
+            "- **Up/Down arrows**: Select a note within an activity, then Cmd-K to open commands for that note\n" +
+            "- **Cmd-Up/Down**: Select activities in the activity list\n" +
+            "- **Cmd-Shift-Up/Down**: Open previous/next activity\n" +
+            "- **Cmd-N**: Create a new note\n" +
+            "- **Cmd-Enter**: On the new activity page, create an action instead of a note",
+        },
+        {
+          content:
+            "**Touch Gestures**\n\n" +
+            "- **Long press** on items to open the menu\n" +
+            "- **Swipe right** on activities: start Do Now (or mark done if already doing)\n" +
+            "- **Swipe left** on activities: schedule to Do Later",
+        },
+      ],
+      preview: "Keyboard and touch shortcuts",
+      priority: onboardingPriority,
+      type: ActivityType.Note,
+    });
+
     // Onboarding task
     await this.tools.plot.createActivity({
       title: "Create your initial Priorities",
