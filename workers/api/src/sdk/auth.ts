@@ -42,9 +42,20 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     .single();
 
   if (tokenError || !tokenData) {
-    return new Response("Unauthorized: Invalid or revoked token", {
-      status: 401,
-    });
+    // PGRST116 = "no rows returned" from .single() — legitimate "not found"
+    if (!tokenError || tokenError.code === "PGRST116") {
+      return new Response("Unauthorized: Invalid or revoked token", {
+        status: 401,
+      });
+    }
+    // Transient database error — log and return 503
+    console.error("Token lookup failed:", tokenError);
+    c.var.postHog?.captureException(
+      new Error(`Token lookup failed: ${tokenError.message}`),
+      undefined,
+      { code: tokenError.code, path: c.req.path }
+    );
+    return new Response("Service temporarily unavailable", { status: 503 });
   }
 
   // Update last_used_at
@@ -56,11 +67,20 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   // Handle user tokens
   if (tokenData.user_id) {
     // Fetch user data
-    const { data: userData } = await supabase.auth.admin.getUserById(
-      tokenData.user_id
-    );
+    const { data: userData, error: userError } =
+      await supabase.auth.admin.getUserById(tokenData.user_id);
 
-    if (!userData?.user) {
+    if (userError || !userData?.user) {
+      if (userError) {
+        // Transient auth service error — log and return 503
+        console.error("User lookup failed:", userError);
+        c.var.postHog?.captureException(
+          new Error(`User lookup failed: ${userError.message}`),
+          undefined,
+          { code: (userError as any).code, path: c.req.path }
+        );
+        return new Response("Service temporarily unavailable", { status: 503 });
+      }
       return new Response("Unauthorized: User not found", {
         status: 401,
       });
@@ -84,9 +104,20 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
       .single();
 
     if (publisherError || !publisherData) {
-      return new Response("Unauthorized: Publisher not found", {
-        status: 401,
-      });
+      // PGRST116 = "no rows returned" from .single() — legitimate "not found"
+      if (!publisherError || publisherError.code === "PGRST116") {
+        return new Response("Unauthorized: Publisher not found", {
+          status: 401,
+        });
+      }
+      // Transient database error — log and return 503
+      console.error("Publisher lookup failed:", publisherError);
+      c.var.postHog?.captureException(
+        new Error(`Publisher lookup failed: ${publisherError.message}`),
+        undefined,
+        { code: publisherError.code, path: c.req.path }
+      );
+      return new Response("Service temporarily unavailable", { status: 503 });
     }
 
     // Store token and publisher data in context for the handler
