@@ -78,7 +78,7 @@ class PlotTwist extends Twist<PlotTwist> {
             "- **Up/Down arrows**: Select a note within an activity, then Cmd-K to open commands for that note\n" +
             "- **Cmd-Up/Down**: Select activities in the activity list\n" +
             "- **Cmd-Shift-Up/Down**: Open previous/next activity\n" +
-            "- **Cmd-N**: Create a new note\n" +
+            "- **Cmd-N**: Create a new note (this is Cmd-Shift-N on web due to browser shortcut conflict)\n" +
             "- **Cmd-Enter**: On the new activity page, create an action instead of a note",
         },
         {
