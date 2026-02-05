@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -94,7 +95,11 @@ class NewActivity extends Command {
         eventObject: EventObject.activity,
         eventAction: EventAction.opened,
         icon: PlotIcon.addNote,
-        shortcut: SingleActivator(LogicalKeyboardKey.keyN, meta: true),
+        shortcut: SingleActivator(
+          LogicalKeyboardKey.keyN,
+          meta: true,
+          shift: kIsWeb,
+        ),
       );
 
   @override
