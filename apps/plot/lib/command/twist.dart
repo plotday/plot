@@ -5,7 +5,6 @@ import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/now.dart';
-import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';

@@ -214,7 +214,7 @@ invitation.get("/invitation/:token", async (c) => {
 
   const { data, error } = await c.var.supabaseAdmin
     .from("contact_invitation")
-    .select("contact:contact!inner(email)")
+    .select("contact_id, contact:contact!inner(email)")
     .eq("token", token)
     .maybeSingle();
 
@@ -233,7 +233,33 @@ invitation.get("/invitation/:token", async (c) => {
   }
 
   const contact = data.contact as unknown as { email: string };
-  return c.json({ email: contact.email });
+
+  // Look up inviter name via priority_contact.invited_by
+  let inviterName: string | null = null;
+  try {
+    const { data: pc } = await c.var.supabaseAdmin
+      .from("priority_contact")
+      .select("invited_by")
+      .eq("contact_id", data.contact_id)
+      .not("invited_by", "is", null)
+      .limit(1)
+      .maybeSingle();
+
+    if (pc?.invited_by) {
+      const { data: inviterData } =
+        await c.var.supabaseAdmin.auth.admin.getUserById(pc.invited_by);
+      const inviter = inviterData?.user;
+      inviterName =
+        inviter?.user_metadata?.name ||
+        inviter?.user_metadata?.full_name ||
+        inviter?.email?.split("@")[0] ||
+        null;
+    }
+  } catch {
+    // Non-critical: return response without inviter name
+  }
+
+  return c.json({ email: contact.email, inviterName });
 });
 
 // POST /invitation/redeem - Redeem an invitation token after auth

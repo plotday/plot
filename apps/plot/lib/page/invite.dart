@@ -1,5 +1,6 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
@@ -16,6 +17,14 @@ class PendingInvite {
   PendingInvite._();
 
   static String? token;
+  static String? email;
+  static String? inviterName;
+
+  static void clear() {
+    token = null;
+    email = null;
+    inviterName = null;
+  }
 }
 
 @RoutePage()
@@ -49,6 +58,8 @@ class _InvitePageState extends State<InvitePage> {
       if (!mounted) return;
       setState(() {
         _inviteEmail = result['email'] as String?;
+        PendingInvite.email = _inviteEmail;
+        PendingInvite.inviterName = result['inviterName'] as String?;
         _isLoading = false;
       });
     } on ApiException catch (e) {
@@ -91,8 +102,8 @@ class _InvitePageState extends State<InvitePage> {
         return;
       }
 
-      // Clear the pending invite token
-      PendingInvite.token = null;
+      // Clear the pending invite
+      PendingInvite.clear();
 
       // Refresh session to get updated JWT with active status
       await Base.refreshSession();
@@ -138,15 +149,15 @@ class _InvitePageState extends State<InvitePage> {
     }
   }
 
-  void _signIn() {
-    context.router.push(SignInRoute());
+  Future<void> _signOut() async {
+    await Base.signOut();
   }
 
   @override
   Widget build(BuildContext context) {
     final userState = context.read<UserBloc>().state;
-    final isSignedIn = userState is UserReady;
-    final accountEmail = isSignedIn ? userState.user.primaryEmail : null;
+    final accountEmail =
+        userState is UserReady ? userState.user.primaryEmail : null;
 
     return Scaffold(
       center: true,
@@ -161,6 +172,13 @@ class _InvitePageState extends State<InvitePage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    Center(
+                      child: SvgPicture.asset(
+                        'assets/p.svg',
+                        width: 120,
+                        height: 120,
+                      ),
+                    ),
                     if (_errorMessage != null && _inviteEmail == null) ...[
                       Text(
                         'Invitation',
@@ -175,7 +193,7 @@ class _InvitePageState extends State<InvitePage> {
                       ),
                     ] else ...[
                       Text(
-                        'Accept Invitation',
+                        'Link New Email to Your Plot Account',
                         style: context.theme.typography.xl2.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -188,59 +206,75 @@ class _InvitePageState extends State<InvitePage> {
                             height: 1.5,
                           ),
                           children: [
-                            if (isSignedIn) ...[
-                              const TextSpan(text: 'Link '),
+                            const TextSpan(
+                                text: 'You\'re accepting an invitation to '),
+                            TextSpan(
+                              text: _inviteEmail ?? 'a new email',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const TextSpan(
+                                text: ' with your existing Plot account'),
+                            if (accountEmail != null) ...[
+                              const TextSpan(text: ' ('),
                               TextSpan(
-                                text: _inviteEmail ?? 'this invitation',
+                                text: accountEmail,
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                    fontWeight: FontWeight.w600),
                               ),
-                              if (accountEmail != null) ...[
-                                const TextSpan(text: ' to your '),
-                                TextSpan(
-                                  text: accountEmail,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const TextSpan(text: ' account?'),
-                              ] else
-                                const TextSpan(text: ' to your account?'),
-                            ] else ...[
-                              const TextSpan(
-                                  text: 'You\'ve been invited to collaborate'),
-                              if (_inviteEmail != null) ...[
-                                const TextSpan(text: ' as '),
-                                TextSpan(
-                                  text: _inviteEmail!,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                              const TextSpan(
-                                  text: '. Sign in to accept.'),
+                              const TextSpan(text: ')'),
                             ],
+                            const TextSpan(
+                                text:
+                                    '. This will link those addresses so any new invitations to either will show up in your account.'),
                           ],
                         ),
                       ),
                       FButton(
-                        onPress: _isRedeeming
-                            ? null
-                            : (isSignedIn ? _redeemInvitation : _signIn),
+                        onPress: _isRedeeming ? null : _redeemInvitation,
                         style: FButtonStyle.primary(),
                         child: _isRedeeming
                             ? const Spinner()
-                            : Text(isSignedIn
-                                ? 'Link and Continue'
-                                : 'Sign in to accept'),
+                            : const Text('Link Email'),
                       ),
                       if (_errorMessage != null)
                         FAlert(
                           style: FAlertStyle.destructive(),
                           title: Text(_errorMessage!),
                         ),
+                      RichText(
+                        textAlign: TextAlign.center,
+                        text: TextSpan(
+                          style: context.theme.typography.sm.copyWith(
+                            height: 1.5,
+                            color: context.theme.colors.mutedForeground,
+                          ),
+                          children: [
+                            const TextSpan(
+                                text:
+                                    'If you want to accept this invitation with a new account, '),
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.baseline,
+                              baseline: TextBaseline.alphabetic,
+                              child: GestureDetector(
+                                onTap: _signOut,
+                                child: Text(
+                                  'sign out',
+                                  style: context.theme.typography.sm.copyWith(
+                                    color: context.theme.colors.primary,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor:
+                                        context.theme.colors.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const TextSpan(
+                                text:
+                                    ' and click the link again. If you don\'t want to link this email, you can ignore this.'),
+                          ],
+                        ),
+                      ),
                     ],
                   ],
                 ),

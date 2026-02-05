@@ -4,6 +4,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/api_exception.dart';
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
@@ -26,6 +29,31 @@ class SignInPage extends StatefulWidget {
 class _SignInPageState extends State<SignInPage> {
   String? _errorMessage;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (PendingInvite.token != null && PendingInvite.email == null) {
+      _fetchInviteInfo();
+    }
+  }
+
+  Future<void> _fetchInviteInfo() async {
+    try {
+      final result = await api.get<Map<String, dynamic>>(
+        '/invitation/${PendingInvite.token}',
+      );
+      if (!mounted) return;
+      setState(() {
+        PendingInvite.email = result['email'] as String?;
+        PendingInvite.inviterName = result['inviterName'] as String?;
+      });
+    } on ApiException catch (e) {
+      log.warning('Failed to fetch invitation info', e);
+    } on NetworkException catch (e) {
+      log.warning('Network error fetching invitation info', e);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,13 +79,54 @@ class _SignInPageState extends State<SignInPage> {
                   height: 120,
                 ),
               ),
-              Text(
-                PendingInvite.token != null
-                    ? "You've been invited to collaborate on Plot. Sign up or sign in to continue."
-                    : 'Sign in to make progress on your priorities',
-                textAlign: TextAlign.center,
-                style: context.theme.typography.base,
-              ),
+              if (PendingInvite.token != null) ...[
+                Text(
+                  "You've been invited to Plot",
+                  style: context.theme.typography.xl2.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                if (PendingInvite.inviterName != null ||
+                    PendingInvite.email != null)
+                  RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      style: context.theme.typography.base.copyWith(
+                        height: 1.5,
+                      ),
+                      children: [
+                        if (PendingInvite.inviterName != null) ...[
+                          TextSpan(text: PendingInvite.inviterName),
+                          const TextSpan(
+                              text:
+                                  ' has invited you to collaborate on Plot.\n'),
+                        ],
+                        const TextSpan(text: 'Sign up or sign in'),
+                        if (PendingInvite.email != null) ...[
+                          const TextSpan(text: ' to link '),
+                          TextSpan(
+                            text: PendingInvite.email,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                        const TextSpan(text: ' and continue.'),
+                      ],
+                    ),
+                  )
+                else
+                  Text(
+                    'Sign up or sign in to continue.',
+                    textAlign: TextAlign.center,
+                    style: context.theme.typography.base,
+                  ),
+              ] else
+                Text(
+                  'Sign in to make progress on your priorities',
+                  textAlign: TextAlign.center,
+                  style: context.theme.typography.base,
+                ),
               const SizedBox(height: 8),
 
               // OAuth buttons

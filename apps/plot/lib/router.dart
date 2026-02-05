@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 
 import 'auto_sign_in.dart';
-import 'page/invite.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
