@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.33.1
+
+### Added
+
+- addRecurrenceExdates and removeRecurrenceExdates ([`4bdbd52`](https://github.com/plotday/plot/commit/4bdbd52ea397dc556e5fdbddcc0d6f3e8c05f95b))
+
 ## 0.33.0
 
 ### Added
