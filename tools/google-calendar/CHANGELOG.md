@@ -1,5 +1,16 @@
 # @plotday/tool-google-calendar
 
+## 0.13.0
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.33.1
+
+### Fixed
+
+- Remove cancelled occurrences ([`4bdbd52`](https://github.com/plotday/plot/commit/4bdbd52ea397dc556e5fdbddcc0d6f3e8c05f95b))
+
 ## 0.12.0
 
 ### Changed
