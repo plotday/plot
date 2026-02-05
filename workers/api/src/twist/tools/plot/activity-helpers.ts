@@ -237,6 +237,18 @@ export function createPreviewFromMarkdown(
 
   let preview = markdown;
 
+  // Strip HTML tags (keep inner text)
+  preview = preview.replace(/<[^>]+>/g, "");
+
+  // Decode common HTML entities
+  preview = preview
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+
   // Strip markdown formatting
   // Remove code blocks
   preview = preview.replace(/```[\s\S]*?```/g, "");
