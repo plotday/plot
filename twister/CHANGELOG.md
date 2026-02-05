@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.33.0
+
+### Added
+
+- Update Note.key when updating with id ([`0004e24`](https://github.com/plotday/plot/commit/0004e241ea1c61a74141671a014788d4f96b9383))
+
+### Changed
+
+- BREAKING: All integrations are now individual, always acting on behalf of a particular user. ([`2208632`](https://github.com/plotday/plot/commit/22086320eb79c3cbe6c95aeaeb34472e4c3d7b50))
+
 ## 0.32.1
 
 ### Fixed

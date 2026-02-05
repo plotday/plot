@@ -1,5 +1,13 @@
 # @plotday/tool-slack
 
+## 0.8.0
+
+### Changed
+
+- BREAKING: All integrations are now individual, always acting on behalf of a particular user. ([`2208632`](https://github.com/plotday/plot/commit/22086320eb79c3cbe6c95aeaeb34472e4c3d7b50))
+- Updated dependencies:
+- @plotday/twister@0.33.0
+
 ## 0.7.1
 
 ### Changed
