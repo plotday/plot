@@ -97,39 +97,6 @@ CREATE TRIGGER on_contact_user_unlinked
     WHEN (OLD.user_id IS NOT NULL AND NEW.user_id IS NULL)
     EXECUTE FUNCTION public.contact_clear_primary_on_unlink();
 
--- When a contact is linked to a user (user_id set from NULL), accept any pending invitations
--- Belt-and-suspenders: ensures priority_user entries are created regardless of which code path
--- sets user_id on the contact (signup trigger, token redemption, etc.)
-CREATE OR REPLACE FUNCTION public.accept_invitations_on_contact_linked()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    SET search_path TO 'public', 'auth'
-    AS $function$
-BEGIN
-    INSERT INTO public.priority_user (user_id, priority_id)
-    SELECT
-        NEW.user_id,
-        pc.priority_id
-    FROM
-        public.priority_contact pc
-    WHERE
-        pc.contact_id = NEW.id
-        AND pc.invited_at IS NOT NULL
-    ON CONFLICT
-        DO NOTHING;
-    PERFORM
-        public.activate_invited_user (NEW.user_id);
-    RETURN NEW;
-END;
-$function$;
-
-CREATE TRIGGER on_contact_user_linked
-    AFTER UPDATE ON public.contact
-    FOR EACH ROW
-    WHEN (OLD.user_id IS NULL AND NEW.user_id IS NOT NULL)
-    EXECUTE FUNCTION public.accept_invitations_on_contact_linked();
-
 -- Restrict access: only service_role can call these functions
 -- These functions modify contacts and access auth.users
 REVOKE EXECUTE ON FUNCTION public.upsert_user_contact (uuid, text, text, text) FROM PUBLIC;
@@ -138,6 +105,4 @@ REVOKE EXECUTE ON FUNCTION public.upsert_user_contact (uuid, text, text, text) F
 REVOKE EXECUTE ON FUNCTION public.sync_user_contact_trigger () FROM PUBLIC;
 
 REVOKE EXECUTE ON FUNCTION public.contact_clear_primary_on_unlink () FROM PUBLIC;
-
-REVOKE EXECUTE ON FUNCTION public.accept_invitations_on_contact_linked () FROM PUBLIC;
 
