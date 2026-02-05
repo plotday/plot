@@ -193,14 +193,14 @@ class _InvitePageState extends State<InvitePage> {
                       ),
                     ] else ...[
                       Text(
-                        'Link New Email to Your Plot Account',
+                        'Link New Email\nto Your Plot Account',
                         style: context.theme.typography.xl2.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                         textAlign: TextAlign.center,
                       ),
                       RichText(
-                        textAlign: TextAlign.center,
+                        textAlign: TextAlign.left,
                         text: TextSpan(
                           style: context.theme.typography.base.copyWith(
                             height: 1.5,
@@ -243,7 +243,7 @@ class _InvitePageState extends State<InvitePage> {
                           title: Text(_errorMessage!),
                         ),
                       RichText(
-                        textAlign: TextAlign.center,
+                        textAlign: TextAlign.left,
                         text: TextSpan(
                           style: context.theme.typography.sm.copyWith(
                             height: 1.5,

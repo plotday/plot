@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/api/api.dart' as api;
 import 'package:plot/cli_args.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/command/page_link.dart';
@@ -115,11 +116,23 @@ class RootProviderState extends State<RootProvider> {
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
 
-                // Navigate to pending invite if present
+                // Auto-redeem pending invite (user just signed in/up via invite flow)
                 if (context.mounted && PendingInvite.token != null) {
-                  await router.replaceAll([
-                    InviteRoute(token: PendingInvite.token!),
-                  ]);
+                  try {
+                    final result = await api.post<Map<String, dynamic>>(
+                      '/invitation/redeem',
+                      body: {'token': PendingInvite.token},
+                    );
+                    final error = result['error'] as String?;
+                    if (error != null) {
+                      log.warning('Failed to redeem invitation: $error');
+                    }
+                    PendingInvite.clear();
+                    await Base.refreshSession();
+                  } catch (e) {
+                    log.warning('Error redeeming invitation', e);
+                    PendingInvite.clear();
+                  }
                 }
                 // Navigate to CLI URL if provided (only once)
                 else if (context.mounted &&
