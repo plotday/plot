@@ -1,11 +1,11 @@
--- Function to share a priority with other users/contacts
--- Handles extraction from personal tree when needed
-CREATE OR REPLACE FUNCTION public.share_priority (p_user_id uuid, p_priority_id uuid, p_add_actor_ids uuid[], p_remove_actor_ids uuid[])
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $function$
+SET ROLE "postgres";
+SET check_function_bodies = false;
+CREATE OR REPLACE FUNCTION public.share_priority(p_user_id uuid, p_priority_id uuid, p_add_actor_ids uuid[], p_remove_actor_ids uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
 DECLARE
     v_priority record;
     v_root_priority_id uuid;
@@ -191,8 +191,3 @@ BEGIN
         END);
 END;
 $function$;
-
--- Restrict access: only service_role can call this function
--- This function performs privileged operations bypassing RLS
-REVOKE EXECUTE ON FUNCTION public.share_priority (uuid, uuid, uuid[], uuid[]) FROM PUBLIC;
-

@@ -1,23 +1,4 @@
--- Upsert activity with smart handling
--- On INSERT: Infers required fields from defaults if provided
--- On UPDATE: Only updates fields whose keys are present in p_activity
---   - Key absent: keep existing value (unless activity is archived)
---   - Key present (even with null): use provided value (allows clearing to NULL)
---   - Archived activities: treated as INSERT, applying p_defaults for missing keys
--- Archived Detection: Activity is considered archived if:
---   - activity.archived_at IS NOT NULL, OR
---   - Priority is not accessible (no user_priority_expanded entry with NULL archived_at)
--- Derivation: Automatically derives source_priority_root, created_by_twist_id, and default assignee
---
--- Parameters:
---   p_activity: activity data as JSONB (explicitly provided values only)
---   p_defaults: default values as JSONB (all fields with defaults - used on INSERT if not in p_activity)
---
--- Assignee Derivation:
---   - If 'assignee_id' key exists in p_activity (even if null): use that value
---   - If 'assignee_id' key is absent AND type is 'action': derive from priority_twist owner
---
--- Returns: The full activity row (not just ID) so caller can process occurrences
+SET check_function_bodies = OFF;
 CREATE OR REPLACE FUNCTION public.upsert_activity (p_activity jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
     RETURNS activity
     LANGUAGE plpgsql
@@ -309,7 +290,3 @@ BEGIN
     RETURN v_result;
 END;
 $function$;
-
--- Restrict access: only service_role can call this function
--- This function can create/update any activity, bypassing RLS
-REVOKE EXECUTE ON FUNCTION public.upsert_activity (jsonb, jsonb) FROM PUBLIC;

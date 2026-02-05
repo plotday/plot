@@ -359,6 +359,39 @@ export async function updateActivity(
       dbUpdate.recurrence_exdates =
         activity.recurrenceExdates?.map((d) => d.toISOString()) ?? [];
     }
+    // Handle incremental add/remove of recurrence exdates
+    const addExdates = (activity as any).addRecurrenceExdates as
+      | Date[]
+      | undefined;
+    const removeExdates = (activity as any).removeRecurrenceExdates as
+      | Date[]
+      | undefined;
+    if (
+      (addExdates !== undefined || removeExdates !== undefined) &&
+      activity.recurrenceExdates === undefined
+    ) {
+      // Read current exdates from the database
+      const { data: currentActivity } = await plot.supabase
+        .from("activity")
+        .select("recurrence_exdates")
+        .eq("id", activityId)
+        .single();
+
+      const existing = (currentActivity?.recurrence_exdates ?? []) as string[];
+      const addSet = new Set(
+        addExdates?.map((d) => d.toISOString()) ?? []
+      );
+      const removeSet = new Set(
+        removeExdates?.map((d) => d.toISOString()) ?? []
+      );
+
+      // Merge: existing + add, then subtract remove, deduplicated
+      const merged = [...new Set([...existing, ...addSet])]
+        .filter((d) => !removeSet.has(d))
+        .sort();
+
+      dbUpdate.recurrence_exdates = merged;
+    }
     // Handle scheduling fields - need to calculate dbEnd and duration
     const hasSchedulingUpdate =
       activity.start !== undefined ||

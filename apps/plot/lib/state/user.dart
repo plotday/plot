@@ -27,6 +27,24 @@ class UserBloc extends Cubit<UserState> {
         return;
       } else if (!user.isActive) {
         if (state is UserWaitlisted) return;
+        // The user may have been activated by a database trigger (e.g. invitation
+        // acceptance) after the JWT was issued. Refresh the session to pick up
+        // any status changes before showing the invitation screen.
+        try {
+          final refreshed = await Base.refreshSession();
+          final refreshedUser = refreshed.user != null
+              ? User(refreshed.user!)
+              : null;
+          if (refreshedUser != null && refreshedUser.isActive) {
+            log.info(
+                'User activated after session refresh: ${refreshedUser.primaryEmail}');
+            // The refreshed session will trigger another event on Base.user,
+            // which will be handled by the normal active-user path above.
+            return;
+          }
+        } catch (e) {
+          log.warning('Session refresh failed during waitlist check: $e');
+        }
         log.info('User signed in but waitlisted: ${user.primaryEmail}');
         emit(UserWaitlisted(user));
         return;

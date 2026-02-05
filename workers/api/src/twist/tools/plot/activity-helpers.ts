@@ -916,6 +916,18 @@ export async function prepareActivityForDb(
     if (activity.meta !== undefined) {
       upsertFields.meta = activity.meta as Json | null;
     }
+    if ((activity as any).addRecurrenceExdates !== undefined) {
+      (upsertFields as any).recurrence_exdates_add =
+        (activity as any).addRecurrenceExdates?.map((d: Date) =>
+          d.toISOString()
+        ) ?? [];
+    }
+    if ((activity as any).removeRecurrenceExdates !== undefined) {
+      (upsertFields as any).recurrence_exdates_remove =
+        (activity as any).removeRecurrenceExdates?.map((d: Date) =>
+          d.toISOString()
+        ) ?? [];
+    }
     if (assigneeId !== undefined) {
       upsertFields.assignee_id = assigneeId;
     }
