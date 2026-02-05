@@ -118,7 +118,7 @@ class _SignInPageState extends State<SignInPage> {
                   )
                 else
                   Text(
-                    'Sign up or sign in to continue.',
+                    "You've been invited to collaborate on Plot.\nSign up or sign in to link your email and make progress on your priorities.",
                     textAlign: TextAlign.center,
                     style: context.theme.typography.base,
                   ),
