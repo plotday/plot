@@ -17,8 +17,6 @@ import {
   IconMessageCircle,
   IconStar,
 } from "@tabler/icons-react";
-import { Link } from "react-router";
-
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
@@ -98,8 +96,13 @@ export default function Home() {
               so you have the clarity to take action.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
-              <Button variant="gradient" size="lg" component={Link} to="/start">
-                Try Plot for free
+              <Button
+                variant="gradient"
+                size="lg"
+                component="a"
+                href="https://app.plot.day"
+              >
+                Get started free
               </Button>
               <Button
                 variant="subtle"
@@ -406,8 +409,13 @@ export default function Home() {
             <Title order={2} size="h2" className={classes.ctaTitle}>
               Turn collaboration chaos into prioritized progress
             </Title>
-            <Button variant="white" size="xl" component={Link} to="/start">
-              Try Plot for free
+            <Button
+              variant="white"
+              size="xl"
+              component="a"
+              href="https://app.plot.day"
+            >
+              Get started free
             </Button>
             <Flex gap="lg" wrap="wrap" justify="center">
               {["Mac, Windows, iOS, Android, and web"].map((item) => (

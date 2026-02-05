@@ -6,7 +6,6 @@ import {
   Box,
   Button,
   Group,
-  Title,
   UnstyledButton,
 } from "@mantine/core";
 
@@ -18,7 +17,7 @@ import classes from "./public-layout.module.css";
 
 function AppHeader({ menu }: { menu?: ReactNode }) {
   const location = useLocation();
-  const hideGetStartedPaths = ["/start", "/builder"];
+  const hideGetStartedPaths = ["/builder"];
 
   return (
     <AppShell.Header p="xs" className={classes.header}>
@@ -34,16 +33,13 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           <UnstyledButton component={Link} to="/" pt={6} pb={6}>
             <Logo />
           </UnstyledButton>
-          {location.pathname.startsWith("/start") && (
-            <Title order={2}>Try Plot</Title>
-          )}
         </Group>
         <Group>
           {!hideGetStartedPaths.some((path) =>
             location.pathname.startsWith(path)
           ) && (
-            <Button variant="outline" component={Link} to="/start">
-              Try Plot
+            <Button variant="outline" component="a" href="https://app.plot.day">
+              Get started
             </Button>
           )}
         </Group>

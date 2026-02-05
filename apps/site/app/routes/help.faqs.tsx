@@ -100,8 +100,10 @@ export default function FAQs() {
           <Accordion.Item value="pricing">
             <Accordion.Control>How much does Plot cost?</Accordion.Control>
             <Accordion.Panel>
-              Plot is free to use in the current private trial phase. We'll
-              announce pricing plans soon.
+              Plot is free to use for core collaboration features including
+              unlimited people, conversations, and priorities. Premium Twist
+              integrations and automations have pricing packages to fit every
+              team.
             </Accordion.Panel>
           </Accordion.Item>
 

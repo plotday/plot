@@ -1,9 +1,8 @@
 import { render as reactEmailRender } from "@react-email/render";
 
 import PriorityInvitation from "./emails/priority-invitation";
-import WaitlistWelcome from "./emails/waitlist-welcome";
 
-export type EmailType = "waitlist-welcome" | "priority-invitation";
+export type EmailType = "priority-invitation";
 
 interface PriorityInvitationProps {
   inviterName: string;
@@ -13,7 +12,6 @@ interface PriorityInvitationProps {
 }
 
 type EmailProps = {
-  "waitlist-welcome": undefined;
   "priority-invitation": PriorityInvitationProps;
 };
 
@@ -24,9 +22,6 @@ export const render = async <T extends EmailType>(
   const props = args[0];
   let Component;
   switch (type) {
-    case "waitlist-welcome":
-      Component = WaitlistWelcome;
-      break;
     case "priority-invitation":
       Component = PriorityInvitation;
       break;
