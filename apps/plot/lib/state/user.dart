@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
+import 'package:plot/api/api.dart' as api;
 import 'package:plot/store/store.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'logging.dart';
@@ -25,34 +26,20 @@ class UserBloc extends Cubit<UserState> {
         log.info('User requires password setup: ${user.primaryEmail}');
         emit(UserPasswordRequired(user));
         return;
-      } else if (!user.isActive) {
-        if (state is UserWaitlisted) return;
-        // The user may have been activated by a database trigger (e.g. invitation
-        // acceptance) after the JWT was issued. Refresh the session to pick up
-        // any status changes before showing the invitation screen.
-        try {
-          final refreshed = await Base.refreshSession();
-          final refreshedUser = refreshed.user != null
-              ? User(refreshed.user!)
-              : null;
-          if (refreshedUser != null && refreshedUser.isActive) {
-            log.info(
-                'User activated after session refresh: ${refreshedUser.primaryEmail}');
-            // The refreshed session will trigger another event on Base.user,
-            // which will be handled by the normal active-user path above.
-            return;
-          }
-        } catch (e) {
-          log.warning('Session refresh failed during waitlist check: $e');
-        }
-        log.info('User signed in but waitlisted: ${user.primaryEmail}');
-        emit(UserWaitlisted(user));
-        return;
       } else if (state is UserReady) {
         return;
       }
 
       log.info('User signed in: ${user.primaryEmail}');
+
+      // Call /activate to ensure account setup (Stripe, twist, etc.)
+      // This is idempotent so safe for existing users
+      try {
+        await api.post<Map<String, dynamic>>('/activate');
+      } catch (e) {
+        log.warning('Account setup call failed (non-blocking): $e');
+      }
+
       await Store.start(user);
       // Ensure Actor cache is populated before app becomes interactive
       await Actor.pullCritical();
@@ -78,9 +65,7 @@ class UserBloc extends Cubit<UserState> {
     // Re-emit state based on current user and new flag
     final currentUser = await Base.user.first;
     if (currentUser != null) {
-      if (!currentUser.isActive) {
-        emit(UserWaitlisted(currentUser));
-      } else if (_passwordSetupRequired) {
+      if (_passwordSetupRequired) {
         emit(UserPasswordRequired(currentUser));
       } else if (state is! UserReady) {
         await Store.start(currentUser);

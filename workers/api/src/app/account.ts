@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { z } from "zod";
 
 import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
@@ -15,57 +14,19 @@ import * as twistManagement from "../twist/management";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
-import { handleValidationError } from "../utils/validation";
 
 const account = new Hono<{ Bindings: Bindings }>();
 
-// Schema for activate request
-const ActivateRequestSchema = z.object({
-  code: z.string().min(1, "Invitation code is required"),
-});
 
-
-// POST /activate - Activate user account with invitation code
+// POST /activate - Set up user account (idempotent)
 account.post("/activate", async (c) => {
-  const rawBody = await c.req.json();
-  const parseResult = ActivateRequestSchema.safeParse(rawBody);
-
-  if (!parseResult.success) {
-    return handleValidationError(parseResult.error);
-  }
-
-  const { code } = parseResult.data;
   const user = c.var.user;
 
   if (!user) {
     return c.json({ message: "Unauthorized" }, 401);
   }
 
-  // Step 1: Atomically validate and redeem invitation code
-  // Using supabaseAdmin since function is revoked from authenticated
-  const { data: redeemResult, error: redeemError } = await c.var.supabaseAdmin.rpc(
-    "redeem_invitation_code",
-    {
-      invitation_code: code.toLowerCase(),
-      user_id: user.id,
-    }
-  );
-
-  if (redeemError) {
-    return captureServerError(c, new Error(redeemError.message), "Failed to redeem invitation", {
-      invitation_code: code,
-      user_id: user.id,
-    });
-  }
-
-  if (!(redeemResult as any).success) {
-    return c.json(
-      { message: "Invalid invitation code or no remaining uses" },
-      400
-    );
-  }
-
-  // Step 2: Check if root priority already exists
+  // Step 1: Check if root priority already exists
   const { data: existingPriorityUser, error: existingPriorityError } =
     await c.var.supabaseAdmin
       .from("priority_user")
@@ -92,7 +53,7 @@ account.post("/activate", async (c) => {
     });
     priority = { id: existingPriorityUser.priority_id };
   } else {
-    // Step 3: Generate path for root priority
+    // Step 2: Generate path for root priority
     const { data: pathData, error: pathError } = await c.var.supabase.rpc(
       "generate_path",
       { parent: null }
@@ -102,7 +63,7 @@ account.post("/activate", async (c) => {
       return captureServerError(c, pathError ? new Error(pathError.message) : new Error("Unknown error"), `Failed to generate path: ${pathError?.message || "Unknown error"}`);
     }
 
-    // Step 4: Create root priority
+    // Step 3: Create root priority
     const { data: newPriority, error: priorityError } =
       await c.var.supabaseAdmin
         .from("priority")
@@ -121,7 +82,7 @@ account.post("/activate", async (c) => {
       });
     }
 
-    // Step 4.5: Mark the priority_user entry as root
+    // Step 3.5: Mark the priority_user entry as root
     // The insert_priority_user trigger already created a priority_user entry
     const { error: keyError } = await c.var.supabaseAdmin
       .from("priority_user")
@@ -430,7 +391,7 @@ account.post("/activate", async (c) => {
     }
   }
 
-  // Step 8.5: Set up Help & Feedback priority using database function
+  // Step 9: Set up Help & Feedback priority using database function
   try {
     const { data: helpFeedbackResult, error: helpFeedbackError } = await c.var.supabaseAdmin.rpc(
       'setup_help_feedback_priority',
@@ -461,20 +422,6 @@ account.post("/activate", async (c) => {
     const logger = createLogger(context);
     logger.error("Exception setting up Help & Feedback priority", error as Error, {
       user_id: user.id,
-    });
-  }
-
-  // Step 9: Set user status to active
-  // Using supabaseAdmin since function is revoked from authenticated
-  const { error: statusError } = await c.var.supabaseAdmin.rpc("set_user_status", {
-    user_id: user.id,
-    status: "active",
-  });
-
-  if (statusError) {
-    return captureServerError(c, new Error(statusError.message), `Failed to set user status: ${statusError.message}`, {
-      user_id: user.id,
-      status: "active",
     });
   }
 

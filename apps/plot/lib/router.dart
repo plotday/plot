@@ -81,11 +81,6 @@ class AppRouter extends RootStackRouter {
           guards: [PlatformPickerGuard(), AuthGuard()],
         ),
         AutoRoute(
-          page: InvitationRoute.page,
-          path: 'invitation',
-          guards: [PlatformPickerGuard(), AuthGuard()],
-        ),
-        AutoRoute(
           page: InviteRoute.page,
           path: 'invite/:token',
           guards: [PlatformPickerGuard(), AuthGuard()],
@@ -240,7 +235,6 @@ class AuthGuard extends AutoRouteGuard {
         if ([
           SignInRoute.page.name,
           EmailSignInRoute.page.name,
-          InvitationRoute.page.name,
           PasswordSetupRoute.page.name,
         ].contains(resolver.route.name)) {
           _logger.info('AuthGuard: Redirecting to Now');
@@ -258,15 +252,6 @@ class AuthGuard extends AutoRouteGuard {
         } else {
           _logger.info('AuthGuard: Redirecting to PasswordSetupRoute');
           resolver.redirectUntil(PasswordSetupRoute());
-        }
-        break;
-      case UserWaitlisted():
-        if (resolver.route.name == InvitationRoute.page.name ||
-            resolver.route.name == InviteRoute.page.name) {
-          resolver.next();
-        } else {
-          _logger.info('AuthGuard: Redirecting to InvitationRoute');
-          resolver.redirectUntil(InvitationRoute());
         }
         break;
       case UserSignedOut():

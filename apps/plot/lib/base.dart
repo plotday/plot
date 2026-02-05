@@ -19,16 +19,14 @@ class User extends Equatable {
   String get id => _baseUser.id;
   String? get primaryEmail => _baseUser.email;
   String? get name => _baseUser.userMetadata?['full_name'] as String?;
-  String? get status => _baseUser.appMetadata['status'] as String?;
   String? get contactId => _baseUser.appMetadata['contact_id'] as String?;
-  bool get isActive => status == 'active';
 
   /* private */
 
   final supa.User _baseUser;
 
   @override
-  List<Object?> get props => [id, primaryEmail, name, status];
+  List<Object?> get props => [id, primaryEmail, name];
 }
 
 class Base {
@@ -287,7 +285,6 @@ class Base {
     // Exception: always process token refresh and user updated events
     if (_initialized &&
         currentUser?.id == newUser?.id &&
-        currentUser?.status == newUser?.status &&
         event != supa.AuthChangeEvent.tokenRefreshed &&
         event != supa.AuthChangeEvent.userUpdated) {
       log.info('User unchanged, skipping update');

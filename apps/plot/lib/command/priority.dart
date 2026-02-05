@@ -655,7 +655,11 @@ class AcceptedMembersGroup extends CommandGroup {
       // Filter by search
       if (search != null && search.isNotEmpty) {
         final searchLower = search.toLowerCase();
-        if (!actor.nameOrEmail.toLowerCase().contains(searchLower)) {
+        final nameMatch =
+            actor.name?.toLowerCase().contains(searchLower) ?? false;
+        final emailMatch =
+            actor.email?.toLowerCase().contains(searchLower) ?? false;
+        if (!nameMatch && !emailMatch) {
           continue;
         }
       }
@@ -695,7 +699,11 @@ class InvitedMembersGroup extends CommandGroup {
       // Filter by search
       if (search != null && search.isNotEmpty) {
         final searchLower = search.toLowerCase();
-        if (!actor.nameOrEmail.toLowerCase().contains(searchLower)) {
+        final nameMatch =
+            actor.name?.toLowerCase().contains(searchLower) ?? false;
+        final emailMatch =
+            actor.email?.toLowerCase().contains(searchLower) ?? false;
+        if (!nameMatch && !emailMatch) {
           continue;
         }
       }
@@ -858,7 +866,7 @@ class EditInvitationCommand extends ShowForm {
   EditInvitationCommand(this.priority, this.actor, String inviterName)
     : super(
         title: actor.nameOrEmail,
-        subtitle: 'Invited by $inviterName',
+        subtitle: '${actor.email} (invited by $inviterName)',
         icon: PlotIcon.waiting,
         form: (context) => _buildForm(priority, actor),
       );

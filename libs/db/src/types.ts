@@ -539,27 +539,6 @@ export type Database = {
           },
         ]
       }
-      invitation: {
-        Row: {
-          code: string
-          created_at: string
-          id: number
-          remaining: number
-        }
-        Insert: {
-          code: string
-          created_at?: string
-          id?: never
-          remaining?: number
-        }
-        Update: {
-          code?: string
-          created_at?: string
-          id?: never
-          remaining?: number
-        }
-        Relationships: []
-      }
       note: {
         Row: {
           activity_id: string
@@ -3079,10 +3058,6 @@ export type Database = {
         }
       }
       parent_path: { Args: { p: unknown }; Returns: unknown }
-      redeem_invitation_code: {
-        Args: { invitation_code: string; user_id: string }
-        Returns: Json
-      }
       redeem_invitation_token: {
         Args: { p_token: string; p_user_id: string }
         Returns: Json

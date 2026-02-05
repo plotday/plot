@@ -137,9 +137,7 @@ class _InvitePageState extends State<InvitePage> {
     final userState = context.read<UserBloc>().state;
     final accountEmail = userState is UserReady
         ? userState.user.primaryEmail
-        : userState is UserWaitlisted
-            ? userState.user.primaryEmail
-            : null;
+        : null;
 
     return Scaffold(
       center: true,

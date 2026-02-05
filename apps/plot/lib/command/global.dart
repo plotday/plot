@@ -44,7 +44,6 @@ class GlobalShortcuts extends StatelessWidget {
         // Determine if signed in based on UserState
         final signedIn =
             state is UserReady ||
-            state is UserWaitlisted ||
             state is UserPasswordRequired;
 
         return CommandScope(commands: _getCommands(signedIn), child: child);

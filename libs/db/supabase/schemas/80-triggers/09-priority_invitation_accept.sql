@@ -1,4 +1,4 @@
--- Function to auto-accept pending invitations when a user creates an account
+-- Function to auto-accept pending invitations and set up user on signup
 CREATE OR REPLACE FUNCTION public.accept_invitations_on_signup ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -7,7 +7,6 @@ CREATE OR REPLACE FUNCTION public.accept_invitations_on_signup ()
     AS $function$
 DECLARE
     v_contact_id uuid;
-    v_invitation_count integer := 0;
 BEGIN
     -- Get the contact_id for this user (by email)
     SELECT
@@ -30,18 +29,11 @@ BEGIN
             AND pc.invited_at IS NOT NULL
         ON CONFLICT
             DO NOTHING;
-        -- Get count of how many invitations were processed
-        GET DIAGNOSTICS v_invitation_count = ROW_COUNT;
         -- Note: priority_contact remains - status changes from 'invited' to 'accepted' in priority_member view
-        -- Only activate if user had pending invitations
-        -- This prevents auto-activation for users with contact records but no invitations
-        IF v_invitation_count > 0 THEN
-            -- Activate the user (creates root priority, settings, sets status to active)
-            -- This is idempotent and safe to call multiple times
-            PERFORM
-                public.activate_invited_user (NEW.id);
-        END IF;
     END IF;
+    -- Always set up the user with root priority and settings
+    PERFORM
+        public.activate_invited_user (NEW.id);
     RETURN NEW;
 END;
 $function$;

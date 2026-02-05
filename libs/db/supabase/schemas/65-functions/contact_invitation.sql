@@ -135,10 +135,6 @@ BEGIN
     ON CONFLICT
         DO NOTHING;
     -- Note: priority_contact remains - status changes from 'invited' to 'accepted' in priority_member view
-    -- Activate the user (creates root priority, settings, sets status to active)
-    -- This is idempotent and safe to call multiple times
-    PERFORM
-        public.activate_invited_user (p_user_id);
     RETURN jsonb_build_object('success', TRUE, 'already_redeemed', FALSE, 'contact_id', v_contact_id);
 END;
 $function$;

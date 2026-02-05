@@ -232,7 +232,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       final isNewUser = user?.userMetadata?['full_name'] == null;
 
       // Set local flag to indicate password setup is required
-      // This will trigger UserPasswordRequired or UserWaitlisted state
+      // This will trigger UserPasswordRequired state
       // and navigate to the password setup page with the appropriate mode
       await context.read<UserBloc>().setPasswordSetupRequired(true);
 

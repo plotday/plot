@@ -152,15 +152,6 @@ class RootProviderState extends State<RootProvider> {
               // race conditions with streams accessing actorId during cleanup
               Base.clearActorId();
               break;
-            case UserWaitlisted _:
-              if (PendingInvite.token != null) {
-                await router.replaceAll([
-                  InviteRoute(token: PendingInvite.token!),
-                ]);
-              } else {
-                await router.replaceAll([InvitationRoute()]);
-              }
-              break;
             case UserPasswordRequired _:
               await router.replaceAll([PasswordSetupRoute()]);
               break;
@@ -173,7 +164,6 @@ class RootProviderState extends State<RootProvider> {
             builder: (context, state) {
               return switch (state) {
                 UserLoading _ => const LoadingPage(),
-                UserWaitlisted _ => widget.builder(routerConfig),
                 UserPasswordRequired _ => widget.builder(routerConfig),
                 UserSignedOut _ => widget.builder(routerConfig),
                 UserReady _ => BlocBuilder<NowBloc, NowState>(

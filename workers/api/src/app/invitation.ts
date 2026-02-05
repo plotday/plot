@@ -272,7 +272,6 @@ invitation.post("/invitation/redeem", async (c) => {
     return c.json({ success: false, error: result.error }, 500);
   }
 
-  // After successful redemption, check if user was activated
   // Get the root priority for this user to perform additional setup
   const { data: rootPriorityUser, error: rootPriorityError } =
     await c.var.supabaseAdmin
