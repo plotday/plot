@@ -78,10 +78,31 @@ CREATE TRIGGER on_user_updated_sync_contact
     WHEN (OLD.email IS DISTINCT FROM NEW.email OR OLD.raw_user_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_user_meta_data ->> 'full_name' OR OLD.raw_app_meta_data ->> 'full_name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'full_name' OR OLD.raw_app_meta_data ->> 'name' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'name' OR OLD.raw_app_meta_data ->> 'avatar_url' IS DISTINCT FROM NEW.raw_app_meta_data ->> 'avatar_url')
     EXECUTE FUNCTION public.sync_user_contact_trigger ();
 
+-- When user_id is set to NULL (e.g. user deletion), ensure primary is also cleared
+CREATE OR REPLACE FUNCTION public.contact_clear_primary_on_unlink()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $function$
+BEGIN
+    IF NEW.user_id IS NULL AND OLD.user_id IS NOT NULL AND NEW."primary" = true THEN
+        NEW."primary" := false;
+    END IF;
+    RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER on_contact_user_unlinked
+    BEFORE UPDATE ON public.contact
+    FOR EACH ROW
+    WHEN (OLD.user_id IS NOT NULL AND NEW.user_id IS NULL)
+    EXECUTE FUNCTION public.contact_clear_primary_on_unlink();
+
 -- Restrict access: only service_role can call these functions
 -- These functions modify contacts and access auth.users
 REVOKE EXECUTE ON FUNCTION public.upsert_user_contact (uuid, text, text, text) FROM PUBLIC;
 
 -- Trigger function cannot be called via RPC, but REVOKE for defense-in-depth
 REVOKE EXECUTE ON FUNCTION public.sync_user_contact_trigger () FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION public.contact_clear_primary_on_unlink () FROM PUBLIC;
 
