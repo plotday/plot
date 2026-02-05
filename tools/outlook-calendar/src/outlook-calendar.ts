@@ -692,6 +692,23 @@ export class OutlookCalendar
       return; // Skip deleted events
     }
 
+    // Handle cancelled recurring instances by adding to recurrence exdates
+    if (event.isCancelled) {
+      const start = instanceData?.start ?? new Date(originalStart);
+      const end = instanceData?.end ?? null;
+
+      const occurrenceUpdate = {
+        type: ActivityType.Event,
+        source: masterCanonicalUrl,
+        start: start,
+        end: end,
+        addRecurrenceExdates: [new Date(originalStart)],
+      };
+
+      await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
+      return;
+    }
+
     // Determine RSVP status for attendees
     const validAttendees =
       event.attendees?.filter(

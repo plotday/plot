@@ -872,6 +872,19 @@ export type NewActivity = Pick<Activity, "type"> &
      * ```
      */
     occurrences?: NewActivityOccurrence[];
+
+    /**
+     * Dates to add to the recurrence exclusion list.
+     * These are merged with existing exdates. Use this for incremental updates
+     * (e.g., cancelling a single occurrence) instead of replacing the full list.
+     */
+    addRecurrenceExdates?: Date[];
+
+    /**
+     * Dates to remove from the recurrence exclusion list.
+     * Use this to "uncancel" a previously excluded occurrence.
+     */
+    removeRecurrenceExdates?: Date[];
   };
 
 export type ActivityUpdate = (
@@ -962,6 +975,19 @@ export type ActivityUpdate = (
      * ```
      */
     occurrences?: (NewActivityOccurrence | ActivityOccurrenceUpdate)[];
+
+    /**
+     * Dates to add to the recurrence exclusion list.
+     * These are merged with existing exdates. Use this for incremental updates
+     * (e.g., cancelling a single occurrence) instead of replacing the full list.
+     */
+    addRecurrenceExdates?: Date[];
+
+    /**
+     * Dates to remove from the recurrence exclusion list.
+     * Use this to "uncancel" a previously excluded occurrence.
+     */
+    removeRecurrenceExdates?: Date[];
   };
 
 /**

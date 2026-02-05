@@ -894,7 +894,7 @@ export class GoogleCalendar
     // Transform the instance data
     const instanceData = transformGoogleEvent(event, calendarId);
 
-    // Handle cancelled recurring instances by archiving the occurrence
+    // Handle cancelled recurring instances by adding to recurrence exdates
     if (event.status === "cancelled") {
       // Extract start/end from the event (they're present even for cancelled events)
       const start = event.start?.dateTime
@@ -909,20 +909,12 @@ export class GoogleCalendar
         ? event.end.date
         : null;
 
-      const occurrence: Omit<NewActivityOccurrence, "activity"> = {
-        occurrence: new Date(originalStartTime),
-        start: start instanceof Date ? start : new Date(originalStartTime),
-        archived: true,
-      };
-
-      // Include start/end at activity level to allow master activity creation
-      // during initial sync (upsert_activity needs these to infer scheduling)
       const occurrenceUpdate = {
         type: ActivityType.Event,
         source: masterCanonicalUrl,
         start: start,
         end: end,
-        occurrences: [occurrence],
+        addRecurrenceExdates: [new Date(originalStartTime)],
       };
 
       await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
