@@ -10,6 +10,29 @@ import * as out from "../utils/output";
 import { handleSSEStream } from "../utils/sse";
 import { resolveToken } from "../utils/token.js";
 
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 3
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.status < 500 || attempt === maxRetries) {
+        return response;
+      }
+      // 5xx — retry with backoff
+      const delay = 1000 * Math.pow(2, attempt);
+      await new Promise((r) => setTimeout(r, delay));
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+      const delay = 1000 * Math.pow(2, attempt);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("Retry logic error");
+}
+
 // Publisher types for API interaction
 interface Publisher {
   id: number;
@@ -65,7 +88,7 @@ async function createNewPublisher(
   // Try to get user's name for default
   let defaultName = "";
   try {
-    const userResponse = await fetch(`${apiUrl}/v1/twist/user`, {
+    const userResponse = await fetchWithRetry(`${apiUrl}/v1/twist/user`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${deployToken}`,
@@ -81,6 +104,12 @@ async function createNewPublisher(
       out.error(
         "Authentication failed",
         "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+      );
+      process.exit(1);
+    } else if (userResponse.status >= 500) {
+      out.error(
+        "Server error",
+        "The Plot API is temporarily unavailable. Please try again."
       );
       process.exit(1);
     }
@@ -130,23 +159,33 @@ async function createNewPublisher(
   try {
     out.progress(`Creating publisher "${publisherName}"...`);
 
-    const createResponse = await fetch(`${apiUrl}/v1/twist/publishers`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${deployToken}`,
-      },
-      body: JSON.stringify({
-        name: publisherName,
-        url: response.url || null,
-      } as NewPublisher),
-    });
+    const createResponse = await fetchWithRetry(
+      `${apiUrl}/v1/twist/publishers`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${deployToken}`,
+        },
+        body: JSON.stringify({
+          name: publisherName,
+          url: response.url || null,
+        } as NewPublisher),
+      }
+    );
 
     if (!createResponse.ok) {
       if (createResponse.status === 401) {
         out.error(
           "Authentication failed",
           "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+        );
+        process.exit(1);
+      }
+      if (createResponse.status >= 500) {
+        out.error(
+          "Server error",
+          "The Plot API is temporarily unavailable. Please try again."
         );
         process.exit(1);
       }
@@ -312,7 +351,7 @@ export async function deployCommand(options: DeployOptions) {
     const urlPath = deploymentId || "personal";
 
     try {
-      const twistInfoResponse = await fetch(
+      const twistInfoResponse = await fetchWithRetry(
         `${options.apiUrl}/v1/twist/${urlPath}`,
         {
           method: "GET",
@@ -334,6 +373,12 @@ export async function deployCommand(options: DeployOptions) {
         out.error(
           "Authentication failed",
           "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+        );
+        process.exit(1);
+      } else if (twistInfoResponse.status >= 500) {
+        out.error(
+          "Server error",
+          "The Plot API is temporarily unavailable. Please try again."
         );
         process.exit(1);
       } else if (twistInfoResponse.status !== 404) {
@@ -359,7 +404,7 @@ export async function deployCommand(options: DeployOptions) {
 
       try {
         // Fetch accessible publishers
-        const publishersResponse = await fetch(
+        const publishersResponse = await fetchWithRetry(
           `${options.apiUrl}/v1/twist/publishers`,
           {
             method: "GET",
@@ -375,6 +420,13 @@ export async function deployCommand(options: DeployOptions) {
             out.error(
               "Authentication failed",
               "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+            );
+            process.exit(1);
+          }
+          if (publishersResponse.status >= 500) {
+            out.error(
+              "Server error",
+              "The Plot API is temporarily unavailable. Please try again."
             );
             process.exit(1);
           }
@@ -520,21 +572,31 @@ export async function deployCommand(options: DeployOptions) {
     const urlPath = deploymentId || "personal";
 
     try {
-      const response = await fetch(`${options.apiUrl}/v1/twist/${urlPath}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-          Authorization: `Bearer ${deployToken}`,
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const response = await fetchWithRetry(
+        `${options.apiUrl}/v1/twist/${urlPath}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${deployToken}`,
+          },
+          body: JSON.stringify(requestBody),
+        }
+      );
 
       if (!response.ok) {
         if (response.status === 401) {
           out.error(
             "Authentication failed",
             "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+          );
+          process.exit(1);
+        }
+        if (response.status >= 500) {
+          out.error(
+            "Server error",
+            "The Plot API is temporarily unavailable. Please try again."
           );
           process.exit(1);
         }
