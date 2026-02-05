@@ -1,5 +1,17 @@
 # @plotday/tool-asana
 
+## 0.6.0
+
+### Changed
+
+- BREAKING: All integrations are now individual, always acting on behalf of a particular user. ([`2208632`](https://github.com/plotday/plot/commit/22086320eb79c3cbe6c95aeaeb34472e4c3d7b50))
+- Updated dependencies:
+- @plotday/twister@0.33.0
+
+### Fixed
+
+- Duplicate comments when commenting inside Plot ([`0004e24`](https://github.com/plotday/plot/commit/0004e241ea1c61a74141671a014788d4f96b9383))
+
 ## 0.5.1
 
 ### Changed
