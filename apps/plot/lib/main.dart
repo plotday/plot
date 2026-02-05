@@ -21,6 +21,7 @@ import 'util/time_service.dart' show Time;
 import 'util/profile_preferences.dart';
 import 'util/instance_lock.dart';
 import 'command/page_link.dart';
+import 'page/invite.dart';
 
 // Global instance lock for cleanup
 InstanceLock? _instanceLock;
@@ -80,7 +81,11 @@ Future<void> run(List<String> args) async {
       final initialUri = await appLinks.getInitialLink();
       if (initialUri != null) {
         log.info('App opened with deep link: $initialUri');
-        // The router will handle this automatically when it initializes
+        // Extract invite token so it survives until the router initializes
+        final segments = initialUri.pathSegments;
+        if (segments.length >= 2 && segments.first == 'invite') {
+          PendingInvite.token = segments[1];
+        }
       }
     } catch (error, stackTrace) {
       log.warning('Deep link initialization failed', error, stackTrace);

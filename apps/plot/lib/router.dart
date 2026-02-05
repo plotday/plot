@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 
 import 'auto_sign_in.dart';
+import 'page/invite.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
@@ -255,6 +256,13 @@ class AuthGuard extends AutoRouteGuard {
         }
         break;
       case UserSignedOut():
+        // Preserve invite token before redirecting to sign-in
+        if (resolver.route.name == InviteRoute.page.name) {
+          final token = resolver.route.pathParams.getString('token', '');
+          if (token.isNotEmpty) {
+            PendingInvite.token = token;
+          }
+        }
         if (resolver.route.name == SignInRoute.page.name ||
             resolver.route.name == EmailSignInRoute.page.name) {
           resolver.next();
