@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/util/shortcut.dart';
 import 'command.dart';
 
 class CloseModalCommand extends Command {
@@ -71,7 +72,7 @@ class ToggleSearchCommand extends Command {
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: searchExpanded ? PlotIcon.close : PlotIcon.search,
-        shortcut: const SingleActivator(LogicalKeyboardKey.slash, meta: true),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.slash),
       );
 
   final bool searchExpanded;

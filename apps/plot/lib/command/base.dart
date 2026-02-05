@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/util/value.dart';
+import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'provider.dart';
@@ -582,7 +583,7 @@ class CommandScopeState extends State<CommandScope> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
+        platformSingleActivator(LogicalKeyboardKey.keyK): () =>
             Commands(
               prompt: 'Run a command',
               groups: CommandRegistry.of(context).commands,

@@ -4,6 +4,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/util/shortcut.dart';
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -148,7 +149,7 @@ class PickCurrentPriority extends ShowCommands {
     : super(
         title: 'Switch Priorities',
         icon: PlotIcon.priority,
-        shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyJ),
         commands: ChangeCurrentPriorityCommands(),
       );
 }

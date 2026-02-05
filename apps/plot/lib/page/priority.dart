@@ -10,6 +10,7 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/shortcut.dart';
 import 'priorities.dart';
 import 'loading.dart';
 
@@ -177,12 +178,10 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
               },
               child: Shortcuts(
                 shortcuts: <ShortcutActivator, Intent>{
-                  const SingleActivator(LogicalKeyboardKey.arrowUp, meta: true):
+                  platformSingleActivator(LogicalKeyboardKey.arrowUp):
                       const MoveFocusUpIntent(),
-                  const SingleActivator(
-                    LogicalKeyboardKey.arrowDown,
-                    meta: true,
-                  ): const MoveFocusDownIntent(),
+                  platformSingleActivator(LogicalKeyboardKey.arrowDown):
+                      const MoveFocusDownIntent(),
                   // Global Escape handler - focus ActivityEditor when ActivityPage is open
                   if (_activityEditorFocusCallback != null)
                     const SingleActivator(LogicalKeyboardKey.escape):
@@ -327,14 +326,10 @@ class PriorityPage extends StatelessWidget {
                 builder: (context, layoutState) {
                   // Build shortcuts map conditionally based on panel visibility
                   final shortcuts = <ShortcutActivator, Intent>{
-                    const SingleActivator(
-                      LogicalKeyboardKey.arrowUp,
-                      meta: true,
-                    ): const MoveFocusUpIntent(),
-                    const SingleActivator(
-                      LogicalKeyboardKey.arrowDown,
-                      meta: true,
-                    ): const MoveFocusDownIntent(),
+                    platformSingleActivator(LogicalKeyboardKey.arrowUp):
+                        const MoveFocusUpIntent(),
+                    platformSingleActivator(LogicalKeyboardKey.arrowDown):
+                        const MoveFocusDownIntent(),
                     const SingleActivator(LogicalKeyboardKey.enter):
                         const OpenFocusedItemActionsIntent(),
                     const SingleActivator(LogicalKeyboardKey.escape):

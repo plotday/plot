@@ -6,6 +6,7 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/env.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/router.dart';
+import 'package:plot/util/shortcut.dart';
 import 'command.dart';
 import 'logging.dart';
 
@@ -16,9 +17,8 @@ class CopyPageLink extends Command {
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: FontAwesomeIcons.link,
-        shortcut: const SingleActivator(
+        shortcut: platformSingleActivator(
           LogicalKeyboardKey.keyC,
-          meta: true,
           shift: true,
         ),
       );
@@ -107,9 +107,8 @@ class OpenCopiedPageLink extends Command {
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: FontAwesomeIcons.link,
-        shortcut: const SingleActivator(
+        shortcut: platformSingleActivator(
           LogicalKeyboardKey.keyV,
-          meta: true,
           shift: true,
         ),
       );

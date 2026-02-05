@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/store/store.dart';
@@ -95,9 +96,8 @@ class NewActivity extends Command {
         eventObject: EventObject.activity,
         eventAction: EventAction.opened,
         icon: PlotIcon.addNote,
-        shortcut: SingleActivator(
+        shortcut: platformSingleActivator(
           LogicalKeyboardKey.keyN,
-          meta: true,
           shift: kIsWeb,
         ),
       );
@@ -128,7 +128,7 @@ class NewAction extends Command {
         eventObject: EventObject.activity,
         eventAction: EventAction.opened,
         icon: PlotIcon.add,
-        shortcut: SingleActivator(LogicalKeyboardKey.keyT, meta: true),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyT),
       );
 
   @override
@@ -183,9 +183,8 @@ class OpenNextActivity extends Command {
         title: 'Next Activity Thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
-        shortcut: const SingleActivator(
+        shortcut: platformSingleActivator(
           LogicalKeyboardKey.arrowDown,
-          meta: true,
           shift: true,
         ),
         icon: PlotIcon.next,
@@ -229,9 +228,8 @@ class OpenPreviousActivity extends Command {
         title: 'Previous Activity Thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
-        shortcut: const SingleActivator(
+        shortcut: platformSingleActivator(
           LogicalKeyboardKey.arrowUp,
-          meta: true,
           shift: true,
         ),
         icon: PlotIcon.previous,
@@ -1049,7 +1047,7 @@ class MoveActivityToPriority extends ShowCommands {
     : super(
         title: 'Move to Another Priority',
         icon: PlotIcon.move,
-        shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.period),
         commandsBuilder: (context) => _getMoveCommands(activity),
       );
 

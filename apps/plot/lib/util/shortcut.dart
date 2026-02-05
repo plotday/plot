@@ -58,7 +58,16 @@ String _shiftSymbol() {
 }
 
 String _metaSymbol() {
-  return _isMacOS() ? '⌘' : 'Win+';
+  return _isMacOS() ? '⌘' : 'Ctrl+';
+}
+
+/// Creates a SingleActivator that uses Meta (Cmd) on macOS and Control on other platforms.
+SingleActivator platformSingleActivator(
+  LogicalKeyboardKey key, {
+  bool shift = false,
+}) {
+  final useMeta = _isMacOS();
+  return SingleActivator(key, meta: useMeta, control: !useMeta, shift: shift);
 }
 
 String _formatKey(LogicalKeyboardKey key) {

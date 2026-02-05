@@ -18,6 +18,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/shortcut.dart';
 import 'command.dart';
 import 'page_link.dart';
 import 'logging.dart';
@@ -33,7 +34,7 @@ final appearanceCommands = StaticCommandGroup(
 
 final settingsCommands = StaticCommandGroup(
   title: 'App',
-  shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
+  shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
   commands: [
     ManageTwists(),
     CopyPageLink(), OpenCopiedPageLink(),
@@ -56,7 +57,7 @@ class ShowSettings extends ShowCommands {
         title: 'Settings',
         icon: PlotIcon.settings,
         commands: Commands(groups: [settingsCommands], prompt: 'Settings'),
-        shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
       );
 }
 
