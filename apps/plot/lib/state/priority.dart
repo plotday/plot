@@ -153,6 +153,18 @@ class PriorityBloc extends Cubit<PriorityState> {
         'Expanding start by $daysToExpand days (need ~$itemsNeeded items, '
         'density=${itemsPerDay.toStringAsFixed(1)}/day): $newStart',
       );
+
+      // If we know the previous activity's date and our expansion doesn't
+      // reach it, jump to include it. Without this, the range expands
+      // incrementally but never reaches `previous`, leaving doneStart=false
+      // and showing an infinite spinner.
+      if (state.previous != null && newStart.isAfter(state.previous!)) {
+        log.fine(
+          'Jumping start to previous activity date ${state.previous} '
+          '(was $newStart)',
+        );
+        newStart = state.previous!;
+      }
     }
 
     // Expand forward if needed
@@ -167,6 +179,15 @@ class PriorityBloc extends Cubit<PriorityState> {
         'Expanding end by $daysToExpand days (need ~$itemsNeeded items, '
         'density=${itemsPerDay.toStringAsFixed(1)}/day): $newEnd',
       );
+
+      // Same jump logic as backward expansion
+      if (state.next != null && newEnd.isBefore(state.next!)) {
+        log.fine(
+          'Jumping end to next activity date ${state.next} '
+          '(was $newEnd)',
+        );
+        newEnd = state.next!.addDays(1);
+      }
     }
 
     final newRange = CustomBoundedDateRange(newStart, newEnd);
