@@ -298,32 +298,34 @@ class _HeaderState extends State<Header> {
           child: FAnimatedTheme(
             data: darkenTheme(context, context.theme, context.colour, steps: 2),
             child: Builder(
-              builder: (context) => DecoratedBox(
-                decoration: BoxDecoration(
-                  color: context.theme.colors.background,
-                  border: Border(
-                    bottom: BorderSide(
-                      color: context.theme.colors.border,
-                      width: 0.5,
+              builder: (context) => ClipRect(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: context.theme.colors.background,
+                    border: Border(
+                      bottom: BorderSide(
+                        color: context.theme.colors.border,
+                        width: 0.5,
+                      ),
                     ),
                   ),
-                ),
-                child: FHeader(
-                  style: (style) {
-                    final resolvedPadding = style.padding.resolve(
-                      TextDirection.ltr,
-                    );
-                    return style.copyWith(
-                      padding: EdgeInsets.fromLTRB(
-                        resolvedPadding.left,
-                        resolvedPadding.top,
-                        resolvedPadding.right,
-                        8,
-                      ),
-                    );
-                  },
-                  title: Row(spacing: 8, children: titleChildren),
-                  suffixes: suffixes,
+                  child: FHeader(
+                    style: (style) {
+                      final resolvedPadding = style.padding.resolve(
+                        TextDirection.ltr,
+                      );
+                      return style.copyWith(
+                        padding: EdgeInsets.fromLTRB(
+                          resolvedPadding.left,
+                          resolvedPadding.top,
+                          resolvedPadding.right,
+                          8,
+                        ),
+                      );
+                    },
+                    title: Row(spacing: 8, children: titleChildren),
+                    suffixes: suffixes,
+                  ),
                 ),
               ),
             ),

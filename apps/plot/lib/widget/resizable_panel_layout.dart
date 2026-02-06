@@ -77,7 +77,9 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       0.0,
       double.infinity,
     );
-    return _leftPanelWidth.clamp(0.0, maxLeftWidth);
+    final width = _leftPanelWidth.clamp(0.0, maxLeftWidth);
+    if (width < LayoutState.leftPanelMinWidth) return 0.0;
+    return width;
   }
 
   /// Calculate middle panel width based on available space
@@ -93,7 +95,9 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     final desiredCenterWidth = remainingWidth * _middlePanelRatio;
     final maxMiddleWidth = (remainingWidth - LayoutState.rightPanelMinWidth)
         .clamp(0.0, double.infinity);
-    return desiredCenterWidth.clamp(0.0, maxMiddleWidth);
+    final width = desiredCenterWidth.clamp(0.0, maxMiddleWidth);
+    if (width < LayoutState.middlePanelMinWidth) return 0.0;
+    return width;
   }
 
   /// Calculate right panel width based on available space
