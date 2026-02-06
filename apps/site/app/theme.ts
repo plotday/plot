@@ -153,8 +153,9 @@ export const resolver: CSSVariablesResolver = (theme) => ({
   dark: {
     "--mantine-color-brand-background": theme.colors.brand[8],
     "--mantine-color-brand-hover": theme.colors.brand[7],
-    "--mantine-color-brand-filled": theme.colors.brand[6],
-    "--mantine-color-brand-filled-hover": theme.colors.brand[7],
+    "--mantine-color-brand-filled": theme.colors.brand[5],
+    "--mantine-color-brand-filled-hover": theme.colors.brand[6],
+    "--mantine-color-anchor": theme.colors.brand[5],
     "--mantine-color-brand-filled-foreground": theme.white,
     "--mantine-color-brand-border": theme.colors.brand[9],
     "--mantine-color-brand-dimmed": theme.colors.brand[6],
