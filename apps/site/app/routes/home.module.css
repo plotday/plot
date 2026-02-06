@@ -139,8 +139,9 @@
 }
 
 .illustrationImage {
-  width: 50%;
+  width: 40%;
   border-radius: var(--mantine-radius-md);
+  justify-self: center;
 }
 
 .ctaSection {
