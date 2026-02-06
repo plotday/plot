@@ -663,8 +663,7 @@ class EditorState extends State<Editor> {
   }
 
   /// Build enter key handler based on behavior setting
-  DocumentKeyboardAction /* SuperEditorKeyboardAction after upgrade */
-  _buildEnterKeyHandler(EnterBehavior behavior) {
+  SuperEditorKeyboardAction _buildEnterKeyHandler(EnterBehavior behavior) {
     return ({
       required SuperEditorContext editContext,
       required KeyEvent keyEvent,
@@ -739,8 +738,7 @@ class EditorState extends State<Editor> {
   }
 
   /// Keyboard action that handles navigation when mention popover is visible
-  DocumentKeyboardAction /* SuperEditorKeyboardAction after upgrade */
-  get _handleMentionPopoverNavigation {
+  SuperEditorKeyboardAction get _handleMentionPopoverNavigation {
     return ({
       required SuperEditorContext editContext,
       required KeyEvent keyEvent,
