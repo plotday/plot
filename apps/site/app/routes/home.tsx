@@ -122,13 +122,16 @@ export default function Home() {
               </Button>
             </Flex>
           </Stack>
-          <Box mt="xl">
+        </Container>
+        <Container size="lg" mt="xl">
+          <picture>
+            <source srcSet="/assets/screenshot-d.png" media="(prefers-color-scheme: dark)" />
             <img
               src="/assets/screenshot.png"
               alt="Plot interface showing a team conversation transforming into a prioritized action item"
               className={classes.heroScreenshot}
             />
-          </Box>
+          </picture>
         </Container>
       </Box>
 
