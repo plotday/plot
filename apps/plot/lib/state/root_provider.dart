@@ -40,6 +40,7 @@ class RootProviderState extends State<RootProvider> {
   void Function()? _nowBlocListener;
   StreamSubscription<Priority>? _contextPriorityListener;
   bool _hasNavigatedToCliUrl = false;
+  bool _routerInitialized = false;
 
   @override
   void initState() {
@@ -116,6 +117,18 @@ class RootProviderState extends State<RootProvider> {
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
 
+                // Navigate to main app after re-sign-in. On first startup
+                // _routerInitialized is still false (router not yet built),
+                // so the router's own initial navigation handles it.
+                if (_routerInitialized && context.mounted) {
+                  final priorityId = nowBloc.loadedState.priority.id;
+                  router.replaceAll([
+                    PriorityRoute(
+                      priorityIdString: priorityId.toShortString(),
+                    ),
+                  ]);
+                }
+
                 // Auto-redeem pending invite (user just signed in/up via invite flow)
                 if (context.mounted && PendingInvite.token != null) {
                   try {
@@ -174,20 +187,27 @@ class RootProviderState extends State<RootProvider> {
         },
         child: RootMenuBar(
           child: BlocBuilder<UserBloc, UserState>(
-            builder: (context, state) {
-              return switch (state) {
-                UserLoading _ => const LoadingPage(),
-                UserPasswordRequired _ => widget.builder(routerConfig),
-                UserSignedOut _ => widget.builder(routerConfig),
-                UserReady _ => BlocBuilder<NowBloc, NowState>(
-                  builder: (context, state) {
-                    if (state is NowLoading) {
-                      return const LoadingPage();
-                    }
-                    return widget.builder(routerConfig);
-                  },
-                ),
-              };
+            builder: (context, userState) {
+              if (userState is UserLoading) {
+                return const LoadingPage();
+              }
+              return BlocBuilder<NowBloc, NowState>(
+                builder: (context, nowState) {
+                  // Only gate on NowLoaded when UserReady, because the Now
+                  // route guard deadlocks when NowBloc is still loading.
+                  // For other states (SignedOut, PasswordRequired), the
+                  // AuthGuard redirects before the NowBloc guard runs.
+                  // Once built, keep the router in the tree across all
+                  // subsequent state changes for widget stability.
+                  if (!_routerInitialized &&
+                      userState is UserReady &&
+                      nowState is NowLoading) {
+                    return const LoadingPage();
+                  }
+                  _routerInitialized = true;
+                  return widget.builder(routerConfig);
+                },
+              );
             },
           ),
         ),
