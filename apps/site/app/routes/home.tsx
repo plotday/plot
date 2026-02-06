@@ -8,7 +8,6 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { Link } from "react-router";
 
 import {
   IconCheck,
@@ -18,6 +17,8 @@ import {
   IconMessageCircle,
   IconStar,
 } from "@tabler/icons-react";
+import { Link } from "react-router";
+
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
@@ -66,7 +67,7 @@ const PRODUCT_ICONS: { name: string; color: string; path: string }[] = [
 
 export function meta(_: Route.MetaArgs) {
   return [
-    { title: "Plot | Prioritized Team Collaboration" },
+    { title: "Plot | Decisive Team Collaboration" },
     {
       name: "description",
       content:
@@ -74,7 +75,7 @@ export function meta(_: Route.MetaArgs) {
     },
     { "og:image": "https://plot.day/assets/p.png" },
     { "twitter:title": "Plot" },
-    { "twitter:description": "Prioritized Team Collaboration" },
+    { "twitter:description": "Decisive Team Collaboration" },
     { "twitter:image": "https://plot.day/assets/p.png" },
   ];
 }
