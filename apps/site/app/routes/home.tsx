@@ -322,6 +322,9 @@ export default function Home() {
                 Easy to use. Easy to build. Enable pre-built integrations or
                 create custom automations that work exactly how your team needs.
               </Text>
+              <Button variant="subtle" component={Link} to="/twists">
+                Learn more about Twists →
+              </Button>
             </Stack>
             <Box className={classes.integrationGrid}>
               {PRODUCT_ICONS.map(({ name, color, path }) => (

@@ -35,6 +35,9 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
+          <Anchor component={Link} to="/twists">
+            Twists
+          </Anchor>
           <Anchor component={Link} to="/pricing">
             Pricing
           </Anchor>

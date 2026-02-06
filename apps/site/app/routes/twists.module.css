@@ -1,0 +1,116 @@
+.heroSection {
+  display: flex;
+  align-items: center;
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+}
+
+.heroTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  line-height: 1.1;
+  font-weight: 900;
+  font-size: rem(36px);
+
+  @media (min-width: $mantine-breakpoint-sm) {
+    font-size: rem(48px);
+  }
+}
+
+.heroSubtext {
+  font-size: rem(18px);
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  max-width: 600px;
+}
+
+.graySection {
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.whiteSection {
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+}
+
+.sectionTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sectionBody {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  line-height: 1.7;
+}
+
+.card {
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-lg);
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+  height: 100%;
+}
+
+.integrationGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--mantine-spacing-md);
+  width: 100%;
+
+  @media (min-width: $mantine-breakpoint-sm) {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.integrationTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-xs);
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-md);
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.integrationIcon {
+  width: 40px;
+  height: 40px;
+}
+
+.buildSection {
+  border: 2px dashed
+    light-dark(var(--mantine-color-brand-4), var(--mantine-color-brand-6));
+  border-radius: var(--mantine-radius-lg);
+  padding: var(--mantine-spacing-xl);
+  background-color: light-dark(
+    var(--mantine-color-brand-0),
+    rgba(var(--mantine-color-brand-9-rgb), 0.15)
+  );
+}
+
+.ctaSection {
+  background: var(--mantine-color-brand-filled);
+  color: var(--mantine-color-white);
+}
+
+.ctaTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--mantine-color-white);
+}
