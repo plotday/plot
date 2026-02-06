@@ -1,54 +1,53 @@
 {
-    // launch.json
-    "version": "0.2.0",
-    "configurations": [
-      {
-        "name": "Plot macOS",
-        "type": "dart",
-        "request": "launch",
-        "program": "lib/main.dart",
-        "args": [
-          "-d",
-          "chrome"
-        ],
-        "cwd": "apps/plot"
-      },
-      {
-        "name": "Plot macOS debug",
-        "type": "dart",
-        "request": "launch",
-        "program": "lib/main.dart",
-        "args": [
-          "-d",
-          "macos"
-        ],
-        "cwd": "apps/plot",
-        "flutterMode": "debug"
-      },
-      {
-        "name": "Plot Chrome",
-        "type": "dart",
-        "request": "launch",
-        "program": "lib/main.dart",
-        "args": [
-          "-d",
-          "chrome",
-          "--web-port=8788"
-        ],
-        "cwd": "apps/plot"
-      },
-      {
-        "name": "Plot Chrome debug",
-        "type": "dart",
-        "request": "launch",
-        "program": "lib/main.dart",
-        "args": [
-          "-d",
-          "chrome",
-          "--web-port=8788"
-        ],
-        "cwd": "apps/plot",
-        "flutterMode": "debug"
-      }
-    ]
-  }
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Plot macOS",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [
+        "-d",
+        "chrome"
+      ],
+      "cwd": "apps/plot"
+    },
+    {
+      "name": "Plot macOS debug",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [
+        "-d",
+        "macos"
+      ],
+      "cwd": "apps/plot",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Plot Chrome",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [
+        "-d",
+        "chrome",
+        "--web-port=8788"
+      ],
+      "cwd": "apps/plot"
+    },
+    {
+      "name": "Plot Chrome debug",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [
+        "-d",
+        "chrome",
+        "--web-port=8788"
+      ],
+      "cwd": "apps/plot",
+      "flutterMode": "debug"
+    }
+  ]
+}

@@ -35,6 +35,9 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
+          <Anchor component={Link} to="/pricing">
+            Pricing
+          </Anchor>
           {!hideGetStartedPaths.some((path) =>
             location.pathname.startsWith(path)
           ) && (

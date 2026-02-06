@@ -8,6 +8,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { Link } from "react-router";
 
 import {
   IconCheck,
@@ -398,6 +399,9 @@ export default function Home() {
                 </Box>
               ))}
             </Stack>
+            <Button variant="subtle" component={Link} to="/pricing">
+              See full pricing →
+            </Button>
           </Stack>
         </Container>
       </Box>

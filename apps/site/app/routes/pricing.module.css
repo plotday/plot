@@ -1,0 +1,211 @@
+.heroSection {
+  display: flex;
+  align-items: center;
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+}
+
+.heroTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  line-height: 1.1;
+  font-weight: 900;
+  font-size: rem(36px);
+
+  @media (min-width: $mantine-breakpoint-sm) {
+    font-size: rem(48px);
+  }
+}
+
+.heroSubtext {
+  font-size: rem(18px);
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  max-width: 600px;
+}
+
+.graySection {
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.whiteSection {
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+}
+
+.sectionTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sectionBody {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  line-height: 1.7;
+}
+
+.pricingGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-md);
+
+  @media (min-width: $mantine-breakpoint-sm) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (min-width: $mantine-breakpoint-lg) {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+.pricingCard {
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-lg);
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.pricingCardHighlight {
+  composes: pricingCard;
+  border-color: var(--mantine-color-brand-4);
+  border-width: 2px;
+  background-color: light-dark(
+    var(--mantine-color-brand-0),
+    var(--mantine-color-dark-6)
+  );
+  position: relative;
+}
+
+.popularBadge {
+  position: absolute;
+  top: calc(-1 * var(--mantine-spacing-sm));
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--mantine-color-brand-filled);
+  color: var(--mantine-color-white);
+  border-radius: var(--mantine-radius-xl);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  font-size: rem(12px);
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.planName {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 700;
+  font-size: rem(18px);
+}
+
+.priceBox {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+}
+
+.price {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 900;
+  font-size: rem(36px);
+  line-height: 1;
+}
+
+.pricePeriod {
+  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-5));
+  font-size: rem(14px);
+}
+
+.planDescription {
+  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-4));
+  font-size: rem(14px);
+  min-height: rem(40px);
+}
+
+.featureList {
+  flex: 1;
+}
+
+.featureItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-xs);
+  font-size: rem(14px);
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  line-height: 1.5;
+}
+
+.featureIcon {
+  flex-shrink: 0;
+  margin-top: rem(2px);
+}
+
+.payWhatYouWantBanner {
+  border: 2px dashed
+    light-dark(var(--mantine-color-brand-4), var(--mantine-color-brand-6));
+  border-radius: var(--mantine-radius-lg);
+  padding: var(--mantine-spacing-xl);
+  background-color: light-dark(
+    var(--mantine-color-brand-0),
+    rgba(var(--mantine-color-brand-9-rgb), 0.15)
+  );
+}
+
+.bannerTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 700;
+  font-size: rem(20px);
+}
+
+.bannerText {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  font-size: rem(15px);
+  line-height: 1.6;
+}
+
+.faqSection {
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+}
+
+.faqItem {
+  border-bottom: 1px solid
+    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
+  padding: var(--mantine-spacing-md) 0;
+}
+
+.faqQuestion {
+  font-weight: 600;
+  margin-bottom: var(--mantine-spacing-xs);
+}
+
+.faqAnswer {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  font-size: rem(15px);
+  line-height: 1.6;
+}
+
+.ctaSection {
+  background: var(--mantine-color-brand-filled);
+  color: var(--mantine-color-white);
+}
+
+.ctaTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--mantine-color-white);
+}
