@@ -59,6 +59,13 @@ enum Tag {
     type: TagType.compute,
     shortcodes: ['private', 'lock'],
   ),
+  unread(
+    9,
+    PlotIcon.unread,
+    'Unread',
+    type: TagType.compute,
+    addable: false,
+  ),
 
   // Toggle tags
   pinned(100, PlotIcon.pinned, 'Pinned', shortcodes: ['pushpin']),

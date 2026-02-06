@@ -83,6 +83,7 @@ class PlotIcon {
   static const twist = FontAwesomeIcons.wavesSine;
   static const star = FontAwesomeIcons.star;
   static const idea = FontAwesomeIcons.lightbulb;
+  static const unread = FontAwesomeIcons.messageDot;
   static const attachment = FontAwesomeIcons.paperclip;
   static const link = FontAwesomeIcons.link;
   static const fire = FontAwesomeIcons.fire;

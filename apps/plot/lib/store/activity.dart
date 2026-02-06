@@ -739,13 +739,34 @@ class Activity extends Equatable implements Comparable<Activity> {
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
     );
 
-    return Rx.combineLatest5(
+    // COUNT query for Tag.unread
+    final unreadQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    unreadQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    unreadQuery.where(
+      a.archivedAt.isNull() &
+          a.draft.equals(false) &
+          a.unread.equals(true) &
+          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+    );
+    final unreadCountStream = unreadQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
+
+    return Rx.combineLatest6(
       tagsQuery.watch(),
       doneCountStream,
       nowCountStream,
       laterCountStream,
       archivedCountStream,
-      (rows, doneCount, nowCount, laterCount, archivedCount) {
+      unreadCountStream,
+      (rows, doneCount, nowCount, laterCount, archivedCount, unreadCount) {
         final Map<Tag, int> tagCounts = {};
 
         // Count stored tags
@@ -772,6 +793,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         if (nowCount > 0) tagCounts[Tag.now] = nowCount;
         if (laterCount > 0) tagCounts[Tag.later] = laterCount;
         if (archivedCount > 0) tagCounts[Tag.archived] = archivedCount;
+        if (unreadCount > 0) tagCounts[Tag.unread] = unreadCount;
 
         // Convert to list of (Tag, count) and sort by count descending
         final result = tagCounts.entries.map((e) => (e.key, e.value)).toList()
@@ -878,6 +900,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     final doNow = mutableFilter?.remove(Tag.now) == true;
     final doLater = mutableFilter?.remove(Tag.later) == true;
     final done = mutableFilter?.remove(Tag.done) == true;
+    final filterUnread = mutableFilter?.remove(Tag.unread) == true;
 
     final a = Store.get.alias(Store.get.activities, 'a');
     final startingQuery = Store.get.select(a);
@@ -979,6 +1002,12 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
     if (done) {
       query.where(a.doneAt.isNotNull());
+    }
+    if (filterUnread) {
+      query.where(
+        a.unread.equals(true) &
+            (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+      );
     }
     if (archived != null) {
       query.where(archived ? a.archivedAt.isNotNull() : a.archivedAt.isNull());
