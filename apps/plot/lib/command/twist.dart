@@ -5,6 +5,8 @@ import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/api/api_exception.dart';
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
@@ -16,6 +18,25 @@ class ManageTwists extends ShowCommands {
         icon: PlotIcon.twist,
         commandsBuilder: (context) => _getTwistCommands(priority),
       );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      return await super.run(context);
+    } on ApiException catch (e, t) {
+      log.warning('Failed to load twists', e, t);
+      return const CommandMessage(
+        'Could not connect to Plot servers.',
+        isError: true,
+      );
+    } on NetworkException catch (e, t) {
+      log.warning('Failed to load twists', e, t);
+      return const CommandMessage(
+        'Could not connect to Plot servers.',
+        isError: true,
+      );
+    }
+  }
 
   static Future<Commands> _getTwistCommands(Priority? priority) async {
     final defaultPriority = priority ?? await Priority.getDefault();
