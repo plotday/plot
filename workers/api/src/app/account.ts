@@ -315,50 +315,56 @@ account.post("/activate", async (c) => {
   }
 
   // Step 8: Install and activate Plot twist on root priority if not already installed
-  // Check if Plot twist is already installed on the root priority
-  const { data: existingPriorityTwist, error: twistCheckError } = await c.var.supabaseAdmin
-    .from("priority_twist")
-    .select("id")
-    .eq("priority_id", priority.id)
+  // First, look up the Plot twist
+  const { data: plotTwist, error: plotTwistError } = await c.var.supabase
+    .from("twist")
+    .select("id,version")
+    .eq("name", "Plot")
+    .eq("environment", "public")
     .is("archived_at", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
     .maybeSingle();
 
-  if (twistCheckError) {
-    return captureServerError(c, new Error(twistCheckError.message), `Failed to check for existing Plot twist: ${twistCheckError.message}`, {
+  if (plotTwistError) {
+    return captureServerError(c, new Error(plotTwistError.message), `Failed to look up Plot twist: ${plotTwistError.message}`, {
       user_id: user.id,
-      priority_id: priority.id,
     });
   }
 
-  if (existingPriorityTwist) {
-    // Plot twist already installed
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.info("Plot twist already installed on root priority, skipping installation", {
-      user_id: user.id,
-      priority_id: priority.id,
-      priority_twist_id: existingPriorityTwist.id,
-    });
+  if (!plotTwist) {
+    const context6 = extractRequestContext(c);
+    const logger6 = createLogger(context6);
+    logger6.warn("Plot twist not found, skipping installation");
   } else {
-    // Install Plot twist
-    try {
-      const { data: plotTwist, error: plotTwistError } = await c.var.supabase
-        .from("twist")
-        .select("id,version")
-        .eq("name", "Plot")
-        .eq("environment", "public")
-        .is("archived_at", null)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+    // Check if Plot twist is already installed on the root priority
+    const { data: existingPriorityTwist, error: twistCheckError } = await c.var.supabaseAdmin
+      .from("priority_twist")
+      .select("id")
+      .eq("priority_id", priority.id)
+      .eq("twist_id", plotTwist.id)
+      .is("archived_at", null)
+      .maybeSingle();
 
-      if (plotTwistError) {
-        throw new Error(
-          `Plot twist not found: ${plotTwistError?.message || "Unknown error"}`
-        );
-      }
+    if (twistCheckError) {
+      return captureServerError(c, new Error(twistCheckError.message), `Failed to check for existing Plot twist: ${twistCheckError.message}`, {
+        user_id: user.id,
+        priority_id: priority.id,
+      });
+    }
 
-      if (plotTwist) {
+    if (existingPriorityTwist) {
+      // Plot twist already installed
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.info("Plot twist already installed on root priority, skipping installation", {
+        user_id: user.id,
+        priority_id: priority.id,
+        priority_twist_id: existingPriorityTwist.id,
+      });
+    } else {
+      // Install Plot twist
+      try {
         await twistManagement.add(
           c.var.supabase,
           c.var.supabaseAdmin,
@@ -376,18 +382,14 @@ account.post("/activate", async (c) => {
             version: plotTwist.version,
           }
         );
-      } else {
-        const context6 = extractRequestContext(c);
-        const logger6 = createLogger(context6);
-        logger6.warn("Plot twist not found, skipping installation");
+      } catch (error) {
+        const context7 = extractRequestContext(c);
+        const logger7 = createLogger(context7);
+        logger7.error("Failed to add Plot twist", error as Error, {
+          priority_id: priority.id,
+          user_id: user.id,
+        });
       }
-    } catch (error) {
-      const context7 = extractRequestContext(c);
-      const logger7 = createLogger(context7);
-      logger7.error("Failed to add Plot twist", error as Error, {
-        priority_id: priority.id,
-        user_id: user.id,
-      });
     }
   }
 
