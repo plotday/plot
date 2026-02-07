@@ -3,6 +3,7 @@
 -- Migration generation (supabase db diff / pg-delta) only compares the public
 -- schema, so triggers on auth.* tables must be migrated manually.
 
+DROP TRIGGER IF EXISTS accept_invitations_after_user_created ON auth.users;
 CREATE TRIGGER accept_invitations_after_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW
