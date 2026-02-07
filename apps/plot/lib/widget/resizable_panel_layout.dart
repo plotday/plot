@@ -57,7 +57,11 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   /// Load panel dimensions from profile preferences
   Future<void> _loadFromPreferences() async {
     final prefs = ProfilePreferences.instance;
-    _leftPanelWidth = prefs.getDouble('layout_left_panel_width') ?? 280.0;
+    final savedLeft = prefs.getDouble('layout_left_panel_width') ?? 280.0;
+    // Clamp to minimum to recover from floating-point drift in saved values
+    _leftPanelWidth = savedLeft < LayoutState.leftPanelMinWidth
+        ? 280.0
+        : savedLeft;
     _middlePanelRatio = prefs.getDouble('layout_middle_panel_ratio') ?? 0.5;
   }
 
@@ -217,10 +221,10 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                           layoutState: layoutState,
                           headerHeight: _headerHeight,
                           onLeftWidthChanged: (width) {
-                            setState(() => _leftPanelWidth = width);
+                            _leftPanelWidth = width;
                           },
                           onMiddleRatioChanged: (ratio) {
-                            setState(() => _middlePanelRatio = ratio);
+                            _middlePanelRatio = ratio;
                           },
                         ),
                       ),
@@ -262,6 +266,11 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   static const double _hitRegionExtent = 10.0; // Desktop hit region size
   BoxConstraints? _previousConstraints;
 
+  // Drag hysteresis state: tracks gap between pointer intent and divider position
+  int? _draggingDividerIndex;
+  double _cumulativeDelta = 0.0;
+  double _dragStartOffset = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -294,8 +303,12 @@ class _HoverableResizableState extends State<_HoverableResizable> {
     var mutableRegions = regions.toList();
 
     if (widget.layoutState.leftPanelVisible && mutableRegions.isNotEmpty) {
-      newLeftWidth = mutableRegions[0].extent.current;
-      prefs.setDouble('layout_left_panel_width', newLeftWidth);
+      final extent = mutableRegions[0].extent.current;
+      // Don't save sub-minimum values that would hide the panel on reload
+      if (extent >= LayoutState.leftPanelMinWidth) {
+        newLeftWidth = extent;
+        prefs.setDouble('layout_left_panel_width', newLeftWidth);
+      }
       mutableRegions = mutableRegions.sublist(1);
     }
     if (widget.layoutState.middlePanelVisible && mutableRegions.length >= 2) {
@@ -312,6 +325,39 @@ class _HoverableResizableState extends State<_HoverableResizable> {
     if (newMiddleRatio != null) {
       widget.onMiddleRatioChanged(newMiddleRatio);
     }
+  }
+
+  void _onDragStart(int dividerIndex) {
+    _draggingDividerIndex = dividerIndex;
+    _cumulativeDelta = 0.0;
+    _dragStartOffset = _controller.regions[dividerIndex].offset.max;
+  }
+
+  void _onDragUpdate(int dividerIndex, double delta) {
+    if (delta == 0.0) return;
+
+    _cumulativeDelta += delta;
+
+    // Where the pointer wants the divider vs where it actually is
+    final desiredOffset = _dragStartOffset + _cumulativeDelta;
+    final actualOffset = _controller.regions[dividerIndex].offset.max;
+    final gap = desiredOffset - actualOffset;
+
+    // If pointer hasn't caught up to divider yet, skip
+    if (gap.abs() > 0.5 && gap * delta < 0) return;
+
+    // Cap delta so divider doesn't overshoot pointer position
+    final adjustedDelta = (gap.abs() > 0.5 && gap.abs() < delta.abs())
+        ? gap
+        : delta;
+    _controller.update(dividerIndex, dividerIndex + 1, adjustedDelta);
+  }
+
+  void _onDragEnd(int dividerIndex) {
+    _controller.end(dividerIndex, dividerIndex + 1);
+    _draggingDividerIndex = null;
+    _cumulativeDelta = 0.0;
+    _dragStartOffset = 0.0;
   }
 
   @override
@@ -353,7 +399,7 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                       divider: FResizableDivider.none,
                       children: widget.regions,
                     ),
-                    // Overlay hover detection and colored dividers
+                    // Overlay dividers with drag hysteresis handling
                     if (_controller.regions.isNotEmpty)
                       for (var i = 0; i < _controller.regions.length - 1; i++)
                         Positioned(
@@ -361,14 +407,18 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                               _controller.regions[i].offset.max -
                               (_hitRegionExtent / 2),
                           top: overlayTop,
-                          child: MouseRegion(
-                            opaque: false,
-                            cursor: SystemMouseCursors.resizeLeftRight,
-                            onEnter: (_) =>
-                                setState(() => _hoveredDividerIndex = i),
-                            onExit: (_) =>
-                                setState(() => _hoveredDividerIndex = null),
-                            child: IgnorePointer(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onHorizontalDragStart: (_) => _onDragStart(i),
+                            onHorizontalDragUpdate: (details) =>
+                                _onDragUpdate(i, details.delta.dx),
+                            onHorizontalDragEnd: (_) => _onDragEnd(i),
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.resizeLeftRight,
+                              onEnter: (_) =>
+                                  setState(() => _hoveredDividerIndex = i),
+                              onExit: (_) =>
+                                  setState(() => _hoveredDividerIndex = null),
                               child: SizedBox(
                                 width: _hitRegionExtent,
                                 height: overlayHeight,
@@ -376,11 +426,13 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 150),
                                     curve: Curves.easeInOut,
-                                    width: _hoveredDividerIndex == i
+                                    width: (_hoveredDividerIndex == i ||
+                                            _draggingDividerIndex == i)
                                         ? 2.0
                                         : 0.5,
                                     height: overlayHeight,
-                                    color: _hoveredDividerIndex == i
+                                    color: (_hoveredDividerIndex == i ||
+                                            _draggingDividerIndex == i)
                                         ? colorScheme.accent
                                         : context.theme.colors.border,
                                   ),
