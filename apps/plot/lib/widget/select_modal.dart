@@ -656,6 +656,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         final Widget child = isListTile
                             ? itemWidget
                             : GestureDetector(
+                                behavior: HitTestBehavior.opaque,
                                 onTap: () => _selectItem(item),
                                 child: itemWidget,
                               );
@@ -667,13 +668,17 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             if (header != null) header,
                             if (info != null) info,
                             MouseRegion(
-                              onEnter: (_) => listController.setHovered(index),
-                              onExit: (_) => listController.setHovered(null),
+                              onEnter: (_) {
+                                listController.setHovered(index);
+                                setState(() => _highlightedIndex = index);
+                              },
+                              onExit: (_) {
+                                listController.setHovered(null);
+                                setState(() => _highlightedIndex = -1);
+                              },
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color:
-                                      (index == _highlightedIndex &&
-                                          hasPhysicalKeyboard())
+                                  color: index == _highlightedIndex
                                       ? context.theme.colors.secondary
                                       : null,
                                 ),
