@@ -22,6 +22,9 @@ import 'sliver.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
 import 'editor_mention_popover.dart';
+import 'editor_link_detector.dart';
+import 'editor_link_toolbar.dart';
+import 'editor_link_modal.dart';
 import 'task_component.dart';
 import 'logging.dart';
 
@@ -42,10 +45,7 @@ List<_MentionInfo> _extractMentions(String markdown) {
 
   for (final match in mentionPattern.allMatches(markdown)) {
     mentions.add(
-      _MentionInfo(
-        name: match.group(1) ?? '',
-        actorId: match.group(2) ?? '',
-      ),
+      _MentionInfo(name: match.group(1) ?? '', actorId: match.group(2) ?? ''),
     );
   }
 
@@ -135,9 +135,14 @@ void _trimCodeBlockTrailingNewlines(MutableDocument document) {
           range: SpanRange(0, trimmedText.length - 1),
         );
         for (final span in spans) {
-          final endIndex = span.end < trimmedText.length ? span.end : trimmedText.length - 1;
+          final endIndex = span.end < trimmedText.length
+              ? span.end
+              : trimmedText.length - 1;
           if (span.start <= endIndex) {
-            newText.addAttribution(span.attribution, SpanRange(span.start, endIndex));
+            newText.addAttribution(
+              span.attribution,
+              SpanRange(span.start, endIndex),
+            );
           }
         }
       }
@@ -183,17 +188,12 @@ class MentionItem {
   });
 
   /// Create from a PriorityTwist
-  factory MentionItem.fromTwist(PriorityTwist twist) => MentionItem(
-    id: twist.id.toString(),
-    name: twist.name,
-    isTwist: true,
-  );
+  factory MentionItem.fromTwist(PriorityTwist twist) =>
+      MentionItem(id: twist.id.toString(), name: twist.name, isTwist: true);
 
   /// Create from an Actor
-  factory MentionItem.fromActor(Actor actor) => MentionItem(
-    id: actor.id.toString(),
-    name: actor.nameOrEmail,
-  );
+  factory MentionItem.fromActor(Actor actor) =>
+      MentionItem(id: actor.id.toString(), name: actor.nameOrEmail);
 
   final String id;
   final String name;
@@ -248,6 +248,19 @@ class EditorState extends State<Editor> {
   bool _showMentionPopoverAbove = false;
   final GlobalKey<EditorMentionPopoverState> _mentionPopoverKey =
       GlobalKey<EditorMentionPopoverState>();
+
+  // Link editing functionality
+  late EditorLinkDetector _linkDetector;
+  late final LeaderLink _linkLeaderLink;
+  final OverlayPortalController _linkOverlayController =
+      OverlayPortalController();
+  bool _showLinkToolbarAbove = false;
+  bool _listenersAttached = false;
+  // Saved state for restoring selection after link modal closes
+  DocumentSelection? _savedSelection;
+  LinkAttribution? _savedExistingLink;
+  SpanRange? _savedLinkSpanRange;
+  String? _savedLinkNodeId;
 
   /// Returns the appropriate gesture mode based on the current platform
   DocumentGestureMode get _gestureMode {
@@ -446,6 +459,13 @@ class EditorState extends State<Editor> {
     );
     _mentionLeaderLink = LeaderLink();
 
+    // Initialize link detector
+    _linkDetector = EditorLinkDetector(
+      document: _document,
+      composer: _composer,
+    );
+    _linkLeaderLink = LeaderLink();
+
     // Don't call clear() if we have initial content
     // Defer clear until after first frame to ensure SuperEditor layout is ready
     if (widget.initialContent == null || widget.initialContent!.isEmpty) {
@@ -500,6 +520,7 @@ class EditorState extends State<Editor> {
     _editor.removeListener(_documentChangeListener);
     _editorFocusNode.removeListener(_onFocusChange);
     _mentionDetector.removeListener(_updateMentionOverlay);
+    _linkDetector.removeListener(_updateLinkOverlay);
     _debouncer.cancel();
     _scrollController.dispose();
     // Only dispose the FocusNode if we created it
@@ -507,6 +528,7 @@ class EditorState extends State<Editor> {
       _editorFocusNode.dispose();
     }
     _mentionDetector.dispose();
+    _linkDetector.dispose();
     super.dispose();
   }
 
@@ -516,84 +538,92 @@ class EditorState extends State<Editor> {
     final settingsState = context.watch<SettingsBloc>().state;
 
     return OverlayPortal(
-      controller: _mentionOverlayController,
-      overlayChildBuilder: _buildEditorMentionPopover,
-      child: Shortcuts(
-        shortcuts: _isEmpty
-            ? const <ShortcutActivator, Intent>{
-                // When empty, shortcuts are handled at the page level
-              }
-            : _buildShortcuts(settingsState.enterBehavior),
-        child: Actions(
-          actions: <Type, Action<Intent>>{
-            SubmitIntent: CallbackAction<SubmitIntent>(
-              onInvoke: (SubmitIntent intent) {
-                _submitFromKeyboard(intent.alt);
-                return KeyEventResult.handled;
-              },
-            ),
-          },
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => _editorFocusNode.requestFocus(),
-            child: SuperEditor(
-              inputRole: 'plot-note-editor',
-              autofocus: widget.autofocus,
-              editor: _editor,
-              focusNode: _editorFocusNode,
-              shrinkWrap: widget.shrinkWrap,
-              scrollController: _scrollController,
-              documentLayoutKey: _docLayoutKey,
-              inputSource: _inputSource,
-              gestureMode: _gestureMode,
-              documentOverlayBuilders: [
-                // Platform-specific overlays for mobile
-                if (defaultTargetPlatform == TargetPlatform.android) ...[
-                  SuperEditorAndroidHandlesDocumentLayerBuilder(
-                    caretColor: context.theme.colors.mutedForeground,
-                  ),
-                  SuperEditorAndroidToolbarFocalPointDocumentLayerBuilder(),
-                ] else if (defaultTargetPlatform == TargetPlatform.iOS) ...[
-                  SuperEditorIosHandlesDocumentLayerBuilder(),
-                  SuperEditorIosToolbarFocalPointDocumentLayerBuilder(),
-                ] else ...[
-                  DefaultCaretOverlayBuilder(
-                    caretStyle: CaretStyle().copyWith(
-                      color: context.theme.colors.mutedForeground,
-                    ),
-                  ),
-                ],
-                // Position leader at caret for mention popover
-                _buildMentionLeaderOverlay,
-              ],
-              stylesheet: _buildStylesheet(context, isDark),
-              selectionStyle: SelectionStyles(
-                selectionColor: context.theme.colors.primaryForeground,
+      controller: _linkOverlayController,
+      overlayChildBuilder: _buildEditorLinkToolbar,
+      child: OverlayPortal(
+        controller: _mentionOverlayController,
+        overlayChildBuilder: _buildEditorMentionPopover,
+        child: Shortcuts(
+          shortcuts: _isEmpty
+              ? const <ShortcutActivator, Intent>{
+                  // When empty, shortcuts are handled at the page level
+                }
+              : _buildShortcuts(settingsState.enterBehavior),
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              SubmitIntent: CallbackAction<SubmitIntent>(
+                onInvoke: (SubmitIntent intent) {
+                  _submitFromKeyboard(intent.alt);
+                  return KeyEventResult.handled;
+                },
               ),
-              componentBuilders: [
-                if (widget.hint != null)
-                  HintComponentBuilder(
-                    widget.hint!,
-                    (context) => _baseTextStyle(
-                      context,
-                    ).copyWith(color: context.theme.plotColors.muted),
-                  ),
-                PlotTaskComponentBuilder(_editor),
-                ...defaultComponentBuilders,
-              ],
-              keyboardActions: [
-                _bubbleOverrideKeys,
-                if (_isEmpty) _bubbleArrowKeys,
-                _handleMentionPopoverNavigation,
-                _buildEnterKeyHandler(settingsState.enterBehavior),
-                _handlePunctuationAfterMention,
-                _handleBackspaceOverMention,
-                // Use IME keyboard actions on mobile, regular keyboard actions on desktop
-                ...(_inputSource == TextInputSource.ime
-                    ? defaultImeKeyboardActions
-                    : defaultKeyboardActions),
-                _bubbleSpecialKeys, // Process meta key combos first to allow propagation
-              ],
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => _editorFocusNode.requestFocus(),
+              child: SuperEditor(
+                inputRole: 'plot-note-editor',
+                autofocus: widget.autofocus,
+                editor: _editor,
+                focusNode: _editorFocusNode,
+                shrinkWrap: widget.shrinkWrap,
+                scrollController: _scrollController,
+                documentLayoutKey: _docLayoutKey,
+                inputSource: _inputSource,
+                gestureMode: _gestureMode,
+                documentOverlayBuilders: [
+                  // Platform-specific overlays for mobile
+                  if (defaultTargetPlatform == TargetPlatform.android) ...[
+                    SuperEditorAndroidHandlesDocumentLayerBuilder(
+                      caretColor: context.theme.colors.mutedForeground,
+                    ),
+                    SuperEditorAndroidToolbarFocalPointDocumentLayerBuilder(),
+                  ] else if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+                    SuperEditorIosHandlesDocumentLayerBuilder(),
+                    SuperEditorIosToolbarFocalPointDocumentLayerBuilder(),
+                  ] else ...[
+                    DefaultCaretOverlayBuilder(
+                      caretStyle: CaretStyle().copyWith(
+                        color: context.theme.colors.mutedForeground,
+                      ),
+                    ),
+                  ],
+                  // Position leader at caret for mention popover
+                  _buildMentionLeaderOverlay,
+                  // Position leader at selection extent for link toolbar
+                  _buildLinkLeaderOverlay,
+                ],
+                stylesheet: _buildStylesheet(context, isDark),
+                selectionStyle: SelectionStyles(
+                  selectionColor: context.theme.colors.primaryForeground,
+                ),
+                componentBuilders: [
+                  if (widget.hint != null)
+                    HintComponentBuilder(
+                      widget.hint!,
+                      (context) => _baseTextStyle(
+                        context,
+                      ).copyWith(color: context.theme.plotColors.muted),
+                    ),
+                  PlotTaskComponentBuilder(_editor),
+                  ...defaultComponentBuilders,
+                ],
+                keyboardActions: [
+                  _bubbleOverrideKeys,
+                  if (_isEmpty) _bubbleArrowKeys,
+                  _handleMentionPopoverNavigation,
+                  _buildEnterKeyHandler(settingsState.enterBehavior),
+                  _handlePunctuationAfterMention,
+                  _handleBackspaceOverMention,
+                  _handleCmdKForLink,
+                  _handleSmartPaste,
+                  // Use IME keyboard actions on mobile, regular keyboard actions on desktop
+                  ...(_inputSource == TextInputSource.ime
+                      ? defaultImeKeyboardActions
+                      : defaultKeyboardActions),
+                  _bubbleSpecialKeys, // Process meta key combos first to allow propagation
+                ],
+              ),
             ),
           ),
         ),
@@ -787,8 +817,13 @@ class EditorState extends State<Editor> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Listen to mention detector to show/hide overlay
-    _mentionDetector.addListener(_updateMentionOverlay);
+    if (!_listenersAttached) {
+      _listenersAttached = true;
+      // Listen to mention detector to show/hide overlay
+      _mentionDetector.addListener(_updateMentionOverlay);
+      // Listen to link detector to show/hide link toolbar
+      _linkDetector.addListener(_updateLinkOverlay);
+    }
   }
 
   /// Build the combined mention items list from twists and actors
@@ -857,10 +892,7 @@ class EditorState extends State<Editor> {
         // Record mention usage for MRU sorting
         localPrefs.recordMentionUsage(item.id);
 
-        _mentionDetector.completeMention(
-          actorId: item.id,
-          username: item.name,
-        );
+        _mentionDetector.completeMention(actorId: item.id, username: item.name);
         _editorFocusNode.requestFocus();
       },
       onCancelRequested: () {
@@ -868,6 +900,292 @@ class EditorState extends State<Editor> {
         _editorFocusNode.requestFocus();
       },
     );
+  }
+
+  // --- Link editing ---
+
+  void _updateLinkOverlay() {
+    final shouldShow = _linkDetector.shouldShowToolbar;
+
+    // Hide link toolbar when mention popover is active
+    if (_mentionDetector.composingMention != null) {
+      if (_linkOverlayController.isShowing) {
+        _hideLinkOverlay();
+      }
+      return;
+    }
+
+    if (shouldShow && !_linkOverlayController.isShowing) {
+      _linkOverlayController.show();
+    } else if (!shouldShow && _linkOverlayController.isShowing) {
+      _hideLinkOverlay();
+    }
+  }
+
+  void _hideLinkOverlay() {
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _linkOverlayController.isShowing) {
+          _linkOverlayController.hide();
+        }
+      });
+    } else {
+      _linkOverlayController.hide();
+    }
+  }
+
+  Widget _buildEditorLinkToolbar(BuildContext context) {
+    if (!_linkDetector.shouldShowToolbar) {
+      return const SizedBox.shrink();
+    }
+
+    return EditorLinkToolbar(
+      editorFocusNode: _editorFocusNode,
+      leaderLink: _linkLeaderLink,
+      showAbove: _showLinkToolbarAbove,
+      hasExistingLink: _linkDetector.existingLink != null,
+      onLinkTapped: _openLinkModal,
+    );
+  }
+
+  /// Builds a leader overlay at the selection extent for the link toolbar
+  SuperEditorLayerBuilder get _buildLinkLeaderOverlay {
+    return LinkLeaderLayerBuilder(
+      linkDetector: _linkDetector,
+      composer: _composer,
+      leaderLink: _linkLeaderLink,
+      onPositionChanged: (bool showAbove) {
+        if (_showLinkToolbarAbove != showAbove) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _showLinkToolbarAbove = showAbove;
+              });
+            }
+          });
+        }
+      },
+    );
+  }
+
+  void _openLinkModal() {
+    // Save current state before modal steals focus
+    _savedSelection = _composer.selection;
+    _savedExistingLink = _linkDetector.existingLink;
+    _savedLinkSpanRange = _linkDetector.linkSpanRange;
+    _savedLinkNodeId = _linkDetector.linkNodeId;
+
+    final existingUrl = _savedExistingLink?.plainTextUri;
+
+    // Hide the link toolbar while modal is open
+    if (_linkOverlayController.isShowing) {
+      _linkOverlayController.hide();
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      final result = await EditorLinkModal(
+        existingUrl: existingUrl,
+      ).run(context);
+
+      if (!mounted) return;
+
+      // Restore editor focus and selection
+      _editorFocusNode.requestFocus();
+
+      if (_savedSelection != null) {
+        _editor.execute([
+          ChangeSelectionRequest(
+            _savedSelection!,
+            SelectionChangeType.placeCaret,
+            SelectionReason.userInteraction,
+          ),
+        ]);
+      }
+
+      if (result is LinkModalApply) {
+        _applyLink(result.url);
+      } else if (result is LinkModalRemove) {
+        _removeLink();
+      }
+
+      // Clear saved state
+      _savedSelection = null;
+      _savedExistingLink = null;
+      _savedLinkSpanRange = null;
+      _savedLinkNodeId = null;
+    });
+  }
+
+  void _applyLink(String url) {
+    if (_savedExistingLink != null &&
+        _savedLinkSpanRange != null &&
+        _savedLinkNodeId != null) {
+      // Editing existing link: remove old, add new
+      final range = DocumentRange(
+        start: DocumentPosition(
+          nodeId: _savedLinkNodeId!,
+          nodePosition: TextNodePosition(offset: _savedLinkSpanRange!.start),
+        ),
+        end: DocumentPosition(
+          nodeId: _savedLinkNodeId!,
+          nodePosition: TextNodePosition(offset: _savedLinkSpanRange!.end + 1),
+        ),
+      );
+
+      _editor.execute([
+        RemoveTextAttributionsRequest(
+          documentRange: range,
+          attributions: {_savedExistingLink!},
+        ),
+        AddTextAttributionsRequest(
+          documentRange: range,
+          attributions: {LinkAttribution(url)},
+        ),
+      ]);
+    } else if (_savedSelection != null && !_savedSelection!.isCollapsed) {
+      // New link on selected text
+      _editor.execute([
+        AddTextAttributionsRequest(
+          documentRange: _savedSelection!,
+          attributions: {LinkAttribution(url)},
+        ),
+      ]);
+    }
+  }
+
+  void _removeLink() {
+    if (_savedExistingLink != null &&
+        _savedLinkSpanRange != null &&
+        _savedLinkNodeId != null) {
+      final range = DocumentRange(
+        start: DocumentPosition(
+          nodeId: _savedLinkNodeId!,
+          nodePosition: TextNodePosition(offset: _savedLinkSpanRange!.start),
+        ),
+        end: DocumentPosition(
+          nodeId: _savedLinkNodeId!,
+          nodePosition: TextNodePosition(offset: _savedLinkSpanRange!.end + 1),
+        ),
+      );
+
+      _editor.execute([
+        RemoveTextAttributionsRequest(
+          documentRange: range,
+          attributions: {_savedExistingLink!},
+        ),
+      ]);
+    }
+  }
+
+  /// Keyboard action: Cmd+K opens link modal when context is appropriate,
+  /// otherwise falls through to let the command modal handle it.
+  ExecutionInstruction _handleCmdKForLink({
+    required SuperEditorContext editContext,
+    required KeyEvent keyEvent,
+  }) {
+    if (keyEvent is! KeyDownEvent) {
+      return ExecutionInstruction.continueExecution;
+    }
+
+    if (keyEvent.logicalKey != LogicalKeyboardKey.keyK) {
+      return ExecutionInstruction.continueExecution;
+    }
+
+    final isMetaPressed =
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed;
+    if (!isMetaPressed) {
+      return ExecutionInstruction.continueExecution;
+    }
+
+    // Don't handle if shift is also pressed (Cmd+Shift+K is a different shortcut)
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      return ExecutionInstruction.continueExecution;
+    }
+
+    if (_linkDetector.shouldShowToolbar) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _openLinkModal();
+        }
+      });
+      return ExecutionInstruction.haltExecution;
+    }
+
+    // Fall through to let _bubbleSpecialKeys handle it (bubbles to CommandScope)
+    return ExecutionInstruction.continueExecution;
+  }
+
+  /// Keyboard action: Smart paste - Cmd+V with selected text and a URL on
+  /// clipboard applies the URL as a link attribution to the selected text.
+  ExecutionInstruction _handleSmartPaste({
+    required SuperEditorContext editContext,
+    required KeyEvent keyEvent,
+  }) {
+    if (keyEvent is! KeyDownEvent) {
+      return ExecutionInstruction.continueExecution;
+    }
+
+    if (keyEvent.logicalKey != LogicalKeyboardKey.keyV) {
+      return ExecutionInstruction.continueExecution;
+    }
+
+    final isMetaPressed =
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed;
+    if (!isMetaPressed) {
+      return ExecutionInstruction.continueExecution;
+    }
+
+    final selection = editContext.composer.selection;
+    if (selection == null || selection.isCollapsed) {
+      return ExecutionInstruction.continueExecution;
+    }
+
+    // Halt execution and handle async clipboard read
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      final clipboardData = await Clipboard.getData('text/plain');
+      final text = clipboardData?.text?.trim();
+
+      if (text != null && text.isNotEmpty && _isUrl(text)) {
+        // Apply link attribution to selected text
+        final currentSelection = _composer.selection;
+        if (currentSelection != null && !currentSelection.isCollapsed) {
+          _editor.execute([
+            AddTextAttributionsRequest(
+              documentRange: currentSelection,
+              attributions: {LinkAttribution(text)},
+            ),
+          ]);
+        }
+      } else {
+        // Not a URL - perform normal paste
+        CommonEditorOperations(
+          document: _document,
+          editor: _editor,
+          composer: _composer,
+          documentLayoutResolver: () =>
+              _docLayoutKey.currentState as DocumentLayout,
+        ).paste();
+      }
+    });
+
+    return ExecutionInstruction.haltExecution;
+  }
+
+  /// Check if text looks like a URL
+  static bool _isUrl(String text) {
+    final uri = Uri.tryParse(text);
+    if (uri == null) return false;
+    return uri.hasScheme &&
+        (uri.scheme == 'http' ||
+            uri.scheme == 'https' ||
+            uri.scheme == 'mailto');
   }
 }
 
@@ -956,7 +1274,10 @@ class MentionLeaderLayerBuilder implements SuperEditorLayerBuilder {
       return ContentLayerProxyWidget(
         key: const ValueKey('mention_leader'),
         child: Transform.translate(
-          offset: Offset(triggerRect.left, triggerRect.bottom + context.theme.spacing.sm),
+          offset: Offset(
+            triggerRect.left,
+            triggerRect.bottom + context.theme.spacing.sm,
+          ),
           child: Leader(link: leaderLink, child: const SizedBox()),
         ),
       );
@@ -992,6 +1313,110 @@ class MentionLeaderLayerBuilder implements SuperEditorLayerBuilder {
       key: const ValueKey('mention_leader'),
       child: Transform.translate(
         offset: Offset(triggerRect.left, verticalOffset),
+        child: Leader(link: leaderLink, child: const SizedBox()),
+      ),
+    );
+  }
+}
+
+/// Layer builder that positions a leader at the selection extent for the link toolbar
+class LinkLeaderLayerBuilder implements SuperEditorLayerBuilder {
+  const LinkLeaderLayerBuilder({
+    required this.linkDetector,
+    required this.composer,
+    required this.leaderLink,
+    required this.onPositionChanged,
+  });
+
+  final EditorLinkDetector linkDetector;
+  final DocumentComposer composer;
+  final LeaderLink leaderLink;
+  final void Function(bool showAbove) onPositionChanged;
+
+  @override
+  ContentLayerWidget build(
+    BuildContext context,
+    SuperEditorContext editContext,
+  ) {
+    if (!linkDetector.shouldShowToolbar) {
+      return ContentLayerProxyWidget(
+        key: const ValueKey('link_leader_empty'),
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    final selection = composer.selection;
+    if (selection == null) {
+      return ContentLayerProxyWidget(
+        key: const ValueKey('link_leader_no_selection'),
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    final docLayout = editContext.documentLayout;
+    final extentRect = docLayout.getRectForPosition(selection.extent);
+    if (extentRect == null) {
+      return ContentLayerProxyWidget(
+        key: const ValueKey('link_leader_no_rect'),
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    // Find RenderBox for coordinate conversion
+    RenderBox? docLayoutBox;
+    if (docLayout is State) {
+      RenderObject? renderObject = (docLayout as State).context
+          .findRenderObject();
+      RenderObject? current = renderObject;
+      int depth = 0;
+      while (current != null && depth < 10) {
+        if (current is RenderBox) {
+          docLayoutBox = current;
+          break;
+        }
+        RenderObject? nextChild;
+        current.visitChildren((child) {
+          nextChild ??= child;
+        });
+        current = nextChild;
+        depth++;
+      }
+    }
+
+    if (docLayoutBox == null) {
+      return ContentLayerProxyWidget(
+        key: const ValueKey('link_leader'),
+        child: Transform.translate(
+          offset: Offset(
+            extentRect.right,
+            extentRect.top - context.theme.spacing.sm - 30,
+          ),
+          child: Leader(link: leaderLink, child: const SizedBox()),
+        ),
+      );
+    }
+
+    final extentGlobalOffset = docLayoutBox.localToGlobal(extentRect.topLeft);
+    final viewportHeight = MediaQuery.of(context).size.height;
+    const toolbarHeight = 30.0;
+    final spacing = context.theme.spacing.sm;
+    final spaceAbove = extentGlobalOffset.dy;
+    final spaceBelow =
+        viewportHeight - extentGlobalOffset.dy - extentRect.height;
+
+    final showAbove =
+        spaceBelow < toolbarHeight + spacing * 2 && spaceAbove > spaceBelow;
+
+    final verticalOffset = showAbove
+        ? extentRect.top - spacing
+        : extentRect.bottom + spacing;
+
+    onPositionChanged(showAbove);
+
+    return ContentLayerProxyWidget(
+      key: const ValueKey('link_leader'),
+      child: Transform.translate(
+        offset: Offset(extentRect.right + spacing, verticalOffset),
         child: Leader(link: leaderLink, child: const SizedBox()),
       ),
     );
@@ -1117,7 +1542,8 @@ TextStyle _inlineTextStyler(
   // Apply dark theme base color if no specific attribution styling is applied
   if (isDark &&
       !attributions.contains(editorMentionComposingAttribution) &&
-      !attributions.whereType<CommittedEditorMentionAttribution>().isNotEmpty) {
+      attributions.whereType<CommittedEditorMentionAttribution>().isEmpty &&
+      attributions.whereType<LinkAttribution>().isEmpty) {
     style = style.copyWith(color: context.theme.colors.foreground);
   }
 
@@ -1146,22 +1572,34 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
       // Headers: larger top margin for visual separation, smaller bottom for grouping
       StyleRule(const BlockSelector("header1"), (doc, docNode) {
         return {
-          Styles.padding: CascadingPadding.only(top: spacing.xxl, bottom: spacing.md),
+          Styles.padding: CascadingPadding.only(
+            top: spacing.xxl,
+            bottom: spacing.md,
+          ),
         };
       }),
       StyleRule(const BlockSelector("header2"), (doc, docNode) {
         return {
-          Styles.padding: CascadingPadding.only(top: spacing.xxl, bottom: spacing.md),
+          Styles.padding: CascadingPadding.only(
+            top: spacing.xxl,
+            bottom: spacing.md,
+          ),
         };
       }),
       StyleRule(const BlockSelector("header3"), (doc, docNode) {
         return {
-          Styles.padding: CascadingPadding.only(top: spacing.xxl, bottom: spacing.md),
+          Styles.padding: CascadingPadding.only(
+            top: spacing.xxl,
+            bottom: spacing.md,
+          ),
         };
       }),
       StyleRule(const BlockSelector("header4"), (doc, docNode) {
         return {
-          Styles.padding: CascadingPadding.only(top: spacing.xxl, bottom: spacing.md),
+          Styles.padding: CascadingPadding.only(
+            top: spacing.xxl,
+            bottom: spacing.md,
+          ),
         };
       }),
       StyleRule(const BlockSelector("listItem"), (doc, docNode) {
@@ -1171,8 +1609,11 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
       StyleRule(const BlockSelector("code"), (doc, docNode) {
         return {
           Styles.textStyle: baseStyle.copyWith(
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            fontSize: baseStyle.fontSize != null ? baseStyle.fontSize! * 0.9 : null,
+            fontFamily:
+                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: baseStyle.fontSize != null
+                ? baseStyle.fontSize! * 0.9
+                : null,
             height: 1.5,
           ),
           Styles.padding: CascadingPadding.symmetric(
