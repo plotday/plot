@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/local_preferences.dart';
@@ -74,12 +75,11 @@ class PlatformPickerPage extends StatelessWidget {
                 runSpacing: 12,
                 alignment: WrapAlignment.center,
                 children: [
-                  FTooltip(
-                    tipBuilder: (context, controller) =>
-                        const Text('Coming soon'),
-                    child: _PlatformButton(
-                      icon: FontAwesomeIcons.apple,
-                      label: 'macOS',
+                  _PlatformButton(
+                    icon: FontAwesomeIcons.apple,
+                    label: 'Mac',
+                    onTap: () => launchUrl(
+                      Uri.parse('https://testflight.apple.com/join/WyVQ2GgV'),
                     ),
                   ),
                   FTooltip(
