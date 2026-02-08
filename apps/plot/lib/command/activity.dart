@@ -563,7 +563,6 @@ class ActorGroup extends CommandGroup {
       search: search, // Backend search by name/email
       limit: 50,
     );
-
     return [
       builder(null), // Unassign option
       ...actors.map((actor) => builder(actor)),

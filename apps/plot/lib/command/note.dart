@@ -366,9 +366,8 @@ class PickNoteAssignee extends ShowCommands {
 }
 
 class ToggleAssignNoteActor extends NoteCommand {
-  ToggleAssignNoteActor(Note note, this.actor)
+  ToggleAssignNoteActor(super.note, this.actor)
     : super(
-        note,
         title: actor.nameOrEmail,
         eventObject: EventObject.note,
         eventAction: note.isAssignedTo(actor.id)

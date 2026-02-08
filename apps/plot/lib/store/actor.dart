@@ -237,6 +237,7 @@ class Actor extends ActorRow {
             innerJoin(
               pa,
               pa.actorId.equalsExp(a.id) &
+                  pa.archivedAt.isNull() &
                   (pa.priorityPath.equalsValue(
                         Path(priorityPath),
                       ) | // Exact match
@@ -249,6 +250,11 @@ class Actor extends ActorRow {
             ),
           ])
         : Store.get.select(a).join([]);
+
+    // Deduplicate actors that match multiple priority paths
+    if (priorityPath != null) {
+      query.groupBy([a.id]);
+    }
 
     // Apply archived filter
     if (archived == true) {

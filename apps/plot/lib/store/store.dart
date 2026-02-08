@@ -601,15 +601,23 @@ class Store extends _$Store {
       return;
     } on AuthException catch (e) {
       // Definitive auth failure — sign out
-      log.warning("Token refresh failed (AuthException: ${e.message}) - signing out");
+      log.warning(
+        "Token refresh failed (AuthException: ${e.message}) - signing out",
+      );
       try {
         await Base.signOut();
       } catch (signOutError, stackTrace) {
-        log.warning("Error during auth failure sign-out", signOutError, stackTrace);
+        log.warning(
+          "Error during auth failure sign-out",
+          signOutError,
+          stackTrace,
+        );
       }
     } catch (e) {
       // Unexpected error — don't sign out
-      log.warning("Unexpected error during token refresh ($e) - not signing out");
+      log.warning(
+        "Unexpected error during token refresh ($e) - not signing out",
+      );
     }
   }
 
@@ -1668,7 +1676,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 240;
+  int get schemaVersion => 241;
 
   @override
   MigrationStrategy get migration {

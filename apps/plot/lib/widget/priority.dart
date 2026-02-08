@@ -52,13 +52,14 @@ class PriorityWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext buildContext) {
-    bool isContext = priority == this.context;
+    bool isContext = priority == context;
     final listTile = ListTile(
       command: !isContext
           ? ChangeCurrentPriority(priority, ancestry: showAncestry)
           : null,
-      longPressCommand:
-          !hasPhysicalKeyboard() ? ShowPriorityCommands(priority) : null,
+      longPressCommand: !hasPhysicalKeyboard()
+          ? ShowPriorityCommands(priority)
+          : null,
       trailingBuilder: (isHovered, hasFocus) => (isHovered || hasFocus)
           ? Row(
               children: [

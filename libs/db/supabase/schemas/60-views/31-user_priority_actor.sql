@@ -15,21 +15,24 @@ FROM (
     -- Contacts associated with priorities via priority_contact
     SELECT
         upe.user_id,
-        p.path AS priority_path,
+        up.path AS priority_path,
         pc.contact_id AS actor_id,
         LEAST (COALESCE(pc.created_at, c.created_at), COALESCE(c.created_at, pc.created_at)) AS created_at,
-        GREATEST (COALESCE(pc.created_at, c.updated_at), COALESCE(c.updated_at, pc.created_at)) AS updated_at,
-        c.archived_at AS archived_at
+        GREATEST (pc.updated_at, c.updated_at) AS updated_at,
+        CASE
+            WHEN pc.invited_by IS NOT NULL AND pc.invited_at IS NULL THEN pc.updated_at
+            ELSE c.archived_at
+        END AS archived_at
     FROM
         user_priority_expanded upe
         JOIN priority_contact pc ON pc.priority_id = upe.priority_id
         JOIN contact c ON c.id = pc.contact_id
-        JOIN priority p ON p.id = pc.priority_id
+        JOIN user_priority up ON up.user_id = upe.user_id AND up.id = upe.priority_id
 UNION ALL
 -- Priority twists (which are actors themselves)
 SELECT
     upe.user_id,
-    p.path AS priority_path,
+    up.path AS priority_path,
     pt.id AS actor_id,
     pt.created_at,
     pt.updated_at,
@@ -37,5 +40,5 @@ SELECT
 FROM
     user_priority_expanded upe
     JOIN priority_twist pt ON pt.priority_id = upe.priority_id
-    JOIN priority p ON p.id = pt.priority_id) AS actors;
+    JOIN user_priority up ON up.user_id = upe.user_id AND up.id = upe.priority_id) AS actors;
 
