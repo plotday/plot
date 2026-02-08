@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart' as supa;
+
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/base.dart';
@@ -66,23 +68,39 @@ String _getErrorTitle(int statusCode) {
   }
 }
 
-/// Checks response for auth errors and signs out on 401 (Unauthorized)
+/// Checks response for auth errors on 401 (Unauthorized)
+/// Attempts to refresh the session before signing out.
 /// Note: 403 (Forbidden) means user is authenticated but not authorized,
 /// so we just let it throw - the calling code can display an error to the user
 Future<void> _checkAuthError(http.Response response, String url) async {
   if (response.statusCode == 401) {
     log.warning("Auth error from API: 401 Unauthorized $url ${response.body}");
     try {
-      await Base.signOut();
-    } catch (e, stackTrace) {
-      log.warning("Error during auth failure sign-out", e, stackTrace);
+      await Base.refreshSession();
+      // Refresh succeeded — don't sign out. The ApiException still propagates
+      // to tell the caller this request failed, but the next request will use
+      // the refreshed token.
+      return;
+    } on supa.AuthRetryableFetchException {
+      // Network error — don't sign out, just return
+      return;
+    } on supa.AuthException catch (e) {
+      // Definitive auth failure — sign out
+      log.warning("Token refresh failed (AuthException: ${e.message}) - signing out");
+      try {
+        await Base.signOut();
+      } catch (signOutError, stackTrace) {
+        log.warning("Error during auth failure sign-out", signOutError, stackTrace);
+      }
+    } catch (e) {
+      // Unexpected error — don't sign out
+      log.warning("Unexpected error during token refresh ($e) - not signing out");
     }
   }
 }
 
 Map<String, String> getHeaders() {
-  final auth =
-      'Bearer ${Base.client.auth.currentSession?.accessToken}/${Base.client.auth.currentSession?.refreshToken}';
+  final auth = 'Bearer ${Base.client.auth.currentSession?.accessToken}';
   return {
     'Content-Type': 'application/json; charset=UTF-8',
     'Authorization': auth,

@@ -487,11 +487,9 @@ class Store extends _$Store {
           error.code == 'PGRST302'; // JWT invalid
     }
 
-    // Check for generic exceptions with 401 status code (not 403)
-    if (error is Exception) {
-      final message = error.toString().toLowerCase();
-      // 401 = Unauthorized (auth failure), 403 = Forbidden (authorization failure)
-      return message.contains('401') && !message.contains('403');
+    // Check for AuthException (excluding retryable network errors)
+    if (error is AuthException && error is! AuthRetryableFetchException) {
+      return true;
     }
 
     return false;
@@ -589,14 +587,29 @@ class Store extends _$Store {
     }
   }
 
-  /// Handles authentication errors by signing out the user
-  /// This triggers the auth state change listener which will update UserBloc
+  /// Handles authentication errors by attempting token refresh before signing out.
+  /// This triggers the auth state change listener which will update UserBloc.
   static Future<void> _handleAuthError() async {
-    log.warning("Authentication failure detected - signing out user");
+    log.warning("Authentication failure detected - attempting token refresh");
     try {
-      await Base.signOut();
-    } catch (e, stackTrace) {
-      log.warning("Error during auth failure sign-out", e, stackTrace);
+      await Base.refreshSession();
+      log.info("Token refresh successful");
+      return;
+    } on AuthRetryableFetchException {
+      // Network error — don't sign out
+      log.info("Token refresh failed due to network error - not signing out");
+      return;
+    } on AuthException catch (e) {
+      // Definitive auth failure — sign out
+      log.warning("Token refresh failed (AuthException: ${e.message}) - signing out");
+      try {
+        await Base.signOut();
+      } catch (signOutError, stackTrace) {
+        log.warning("Error during auth failure sign-out", signOutError, stackTrace);
+      }
+    } catch (e) {
+      // Unexpected error — don't sign out
+      log.warning("Unexpected error during token refresh ($e) - not signing out");
     }
   }
 

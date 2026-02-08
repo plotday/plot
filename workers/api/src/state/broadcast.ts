@@ -5,6 +5,7 @@ import { type SupabaseClient, createClient } from "@plotday/db";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
+import { getUser } from "../utils/auth";
 
 interface QueuedMessage {
   message: any;
@@ -63,7 +64,7 @@ export class Broadcast extends DurableObject<Bindings> {
       });
     }
 
-    // Parse protocols - format: "plot-v1, {access_token}|{refresh_token}"
+    // Parse protocols - format: "plot-v1, {access_token}" (or legacy "plot-v1, {access_token}|{refresh_token}")
     const protocolList = protocols.split(",").map((p) => p.trim());
     if (protocolList.length < 2 || protocolList[0] !== "plot-v1") {
       return new Response("Invalid protocol format", { status: 401 });
@@ -74,26 +75,21 @@ export class Broadcast extends DurableObject<Bindings> {
       return new Response("Missing authentication token", { status: 401 });
     }
 
-    // Parse tokens (access_token|refresh_token format)
-    const [access_token, refresh_token] = token.split("|");
-    if (!access_token || !refresh_token) {
+    // Parse token (access_token or access_token|refresh_token format)
+    const [access_token] = token.split("|");
+    if (!access_token) {
       return new Response("Invalid token format", { status: 401 });
     }
 
-    // Validate the user with Supabase
+    // Validate the JWT locally (no token consumption, no network call)
     const logger = createLogger({
       durable_object: "Broadcast",
       operation: "handleWebSocket",
     });
 
     try {
-      const session = await this.supabase.auth.setSession({
-        access_token,
-        refresh_token,
-      });
-
-      const user = session.data?.user;
-      if (!user) {
+      const { user, error } = await getUser(this.supabase, access_token);
+      if (error || !user) {
         return new Response("Authentication failed", { status: 401 });
       }
 

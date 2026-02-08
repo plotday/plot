@@ -6,6 +6,7 @@ import type { PostHog } from "posthog-node";
 import { type SupabaseClient, createClient } from "@plotday/db";
 
 import type { Bindings } from "../env";
+import { getUser } from "../utils/auth";
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -54,19 +55,29 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
 
   let tokens = c.req.header("Authorization");
   if (!tokens?.startsWith("Bearer ")) {
-    return c.json({ message: "Forbidden" }, 403);
+    return c.json({ message: "Unauthorized" }, 401);
   }
   tokens = tokens.replace(/\s*Bearer\s+/, "");
   const [access_token, refresh_token] = tokens?.split("/");
   const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY);
+
+  // Validate JWT locally before calling setSession to avoid consuming
+  // the client's refresh token on expired access tokens
+  const { error } = await getUser(supabase, access_token);
+  if (error) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  // JWT is valid — setSession won't attempt a refresh
   const session = await supabase.auth.setSession({
     access_token,
-    refresh_token,
+    refresh_token: refresh_token ?? "",
   });
   const user = session.data?.user;
   if (!user) {
-    return c.json({ message: "Forbidden" }, 403);
+    return c.json({ message: "Unauthorized" }, 401);
   }
+
   c.set("supabase", supabase);
   c.set("user", user);
   await next();

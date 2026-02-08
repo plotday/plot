@@ -156,7 +156,7 @@ class BroadcastClient with WidgetsBindingObserver {
         return;
       }
 
-      final token = '${session!.accessToken}|${session.refreshToken}';
+      final token = session!.accessToken;
       final userId = session.user.id;
 
       // Build WebSocket URL
