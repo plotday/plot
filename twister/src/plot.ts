@@ -213,6 +213,8 @@ export enum ActivityLinkType {
   callback = "callback",
   /** Video conferencing links with provider-specific handling */
   conferencing = "conferencing",
+  /** File attachment links stored in R2 */
+  file = "file",
 }
 
 /**
@@ -309,6 +311,18 @@ export type ActivityLink =
       title: string;
       /** Token identifying the callback to execute */
       callback: Callback;
+    }
+  | {
+      /** File attachment link stored in R2 */
+      type: ActivityLinkType.file;
+      /** Unique identifier for the stored file */
+      fileId: string;
+      /** Original filename */
+      fileName: string;
+      /** File size in bytes */
+      fileSize: number;
+      /** MIME type of the file */
+      mimeType: string;
     };
 
 /**
