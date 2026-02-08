@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_sign_in_all_platforms/google_sign_in_all_platforms.dart'
+    as gsap;
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:forui/forui.dart';
@@ -40,26 +42,45 @@ class _AuthUrlResult {
 }
 
 class AuthButton extends StatefulWidget {
-  static Future<void> init() async {
-    late final String clientId;
-    String? serverClientId;
-    if (kIsWeb) {
-      clientId = Env.googleClientId;
-    } else if (defaultTargetPlatform == TargetPlatform.android) {
-      clientId = Env.googleAndroidClientId;
-      serverClientId = Env.googleClientId;
-    } else if (defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS) {
-      clientId = Env.googleIosClientId;
-      serverClientId = Env.googleClientId;
-    } else {
-      clientId = Env.googleClientId;
-    }
+  /// Whether native google_sign_in is supported on this platform.
+  static bool get _useNativeGoogleSignIn =>
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.android;
 
-    await GoogleSignIn.instance.initialize(
-      clientId: clientId,
-      serverClientId: serverClientId,
-    );
+  static gsap.GoogleSignIn? _allPlatformsSignIn;
+
+  static Future<void> init() async {
+    if (_useNativeGoogleSignIn) {
+      late final String clientId;
+      String? serverClientId;
+      if (kIsWeb) {
+        clientId = Env.googleClientId;
+      } else if (defaultTargetPlatform == TargetPlatform.android) {
+        clientId = Env.googleAndroidClientId;
+        serverClientId = Env.googleClientId;
+      } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS) {
+        clientId = Env.googleIosClientId;
+        serverClientId = Env.googleClientId;
+      } else {
+        clientId = Env.googleClientId;
+      }
+
+      await GoogleSignIn.instance.initialize(
+        clientId: clientId,
+        serverClientId: serverClientId,
+      );
+    } else {
+      _allPlatformsSignIn = gsap.GoogleSignIn(
+        params: gsap.GoogleSignInParams(
+          clientId: Env.googleClientId,
+          clientSecret: Env.googleClientSecret ?? '',
+          scopes: ['openid', 'profile', 'email'],
+        ),
+      );
+    }
   }
 
   // Run an OIDC authentication flow for the given provider
@@ -140,27 +161,46 @@ class _AuthButtonState extends State<AuthButton> {
   void initState() {
     super.initState();
     if (widget.provider == AuthProvider.google) {
-      final GoogleSignIn signIn = GoogleSignIn.instance;
+      if (AuthButton._useNativeGoogleSignIn) {
+        final GoogleSignIn signIn = GoogleSignIn.instance;
 
-      // On web, listen to the user stream to handle sign-in from the rendered button
-      // Only cache the web button for sign-in flows, not authorize flows
-      if (kIsWeb && !signIn.supportsAuthenticate() && widget._link == null) {
-        // Cache the web button widget to prevent re-rendering
-        _cachedWebButton = web.buildGoogleSignInButton();
+        // On web, listen to the user stream to handle sign-in from the rendered button
+        // Only cache the web button for sign-in flows, not authorize flows
+        if (kIsWeb && !signIn.supportsAuthenticate() && widget._link == null) {
+          // Cache the web button widget to prevent re-rendering
+          _cachedWebButton = web.buildGoogleSignInButton();
 
-        signIn.authenticationEvents.listen((event) {
-          log.info('Google sign-in event: $event');
-          if (event is GoogleSignInAuthenticationEventSignIn) {
-            _onGoogleSignIn(event.user);
-          }
-        });
-      }
+          signIn.authenticationEvents.listen((event) {
+            log.info('Google sign-in event: $event');
+            if (event is GoogleSignInAuthenticationEventSignIn) {
+              _onGoogleSignIn(event.user);
+            }
+          });
+        }
 
-      if (widget.autoSignIn) {
+        if (widget.autoSignIn) {
+          unawaited(() async {
+            final account = await signIn.attemptLightweightAuthentication();
+            if (account != null) {
+              _onGoogleSignIn(account);
+            }
+          }());
+        }
+      } else if (widget.autoSignIn) {
         unawaited(() async {
-          final account = await signIn.attemptLightweightAuthentication();
-          if (account != null) {
-            _onGoogleSignIn(account);
+          try {
+            final credentials =
+                await AuthButton._allPlatformsSignIn!.silentSignIn();
+            if (credentials != null) {
+              await widget.onComplete(
+                clientId: Env.googleClientId,
+                redirectUri: Env.authServerCallbackUrl,
+                idToken: credentials.idToken,
+                accessToken: credentials.accessToken,
+              );
+            }
+          } catch (e) {
+            log.info('Silent sign-in not available on desktop', e);
           }
         }());
       }
@@ -477,13 +517,46 @@ class _AuthButtonState extends State<AuthButton> {
     );
   }
 
+  void _startGoogleAuthDesktop() async {
+    setState(() => _isLoading = true);
+    try {
+      final credentials = await AuthButton._allPlatformsSignIn!.signIn();
+      if (credentials == null) return;
+
+      await widget.onComplete(
+        clientId: Env.googleClientId,
+        redirectUri: Env.authServerCallbackUrl,
+        idToken: credentials.idToken,
+        accessToken: credentials.accessToken,
+      );
+    } catch (e, t) {
+      log.warning('Google sign-in failed (desktop)', e, t);
+      final message = 'Unable to connect with Google. Please try again.';
+      if (widget.onError != null) {
+        widget.onError!(message);
+      } else if (mounted) {
+        context.showToast(message: message, isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   void _onPress() {
     if (_isLoading) return;
     if (widget.provider == AuthProvider.google) {
-      // On web, use backend OAuth for authorize flows to avoid:
-      // 1. Multiple popup blocking (authorizeScopes/authorizeServer open separate popups)
-      // 2. User sign-out when selecting a different account
-      if (kIsWeb && widget._link != null) {
+      if (!AuthButton._useNativeGoogleSignIn) {
+        // On Windows/Linux, use browser-based OAuth for authorize flows,
+        // or the all-platforms sign-in for authentication
+        if (widget._link != null) {
+          _startOAuth();
+        } else {
+          _startGoogleAuthDesktop();
+        }
+      } else if (kIsWeb && widget._link != null) {
+        // On web, use backend OAuth for authorize flows to avoid:
+        // 1. Multiple popup blocking (authorizeScopes/authorizeServer open separate popups)
+        // 2. User sign-out when selecting a different account
         _startOAuth();
       } else {
         _startGoogleAuth();
