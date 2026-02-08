@@ -167,11 +167,11 @@ class _PrioritiesListState extends State<PrioritiesList>
         final headerStyle = isLeftPanel
             ? context.theme.typography.xs
             : context.theme.typography.sm;
-        final itemStyle = (isLeftPanel
-            ? context.theme.typography.sm
-            : context.theme.typography.base).copyWith(
-          fontWeight: FontWeight.w500,
-        );
+        final itemStyle =
+            (isLeftPanel
+                    ? context.theme.typography.sm
+                    : context.theme.typography.base)
+                .copyWith(fontWeight: FontWeight.w500);
 
         // Automatic expansion logic
         bool shouldExpand(Priority priority) {
@@ -254,9 +254,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                 textStyle: textStyle.copyWith(
                   color: priority.archivedAt != null
                       ? context.theme.colors.mutedForeground
-                      : context.colour.colours.fromTheme(
-                          priority.displayColor,
-                        ),
+                      : context.colour.colours.fromTheme(priority.displayColor),
                 ),
                 unread: !priorityExpanded && _hasDescendantUnread(priority)
                     ? true
@@ -325,6 +323,7 @@ class _PrioritiesListState extends State<PrioritiesList>
         }
 
         return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

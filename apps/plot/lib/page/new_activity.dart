@@ -380,8 +380,11 @@ class NewActivityPageState extends State<NewActivityPage> {
                     return Column(
                       mainAxisAlignment: MainAxisAlignment.start,
                       children: [
-                        // Fixed 25% spacing from top
-                        SizedBox(height: constraints.maxHeight * 0.25),
+                        // ~25% spacing from top (flexible so it shrinks
+                        // when viewport is short)
+                        Flexible(
+                          child: SizedBox(height: constraints.maxHeight * 0.25),
+                        ),
 
                         // PriorityLabel (centered, clickable)
                         Center(
@@ -409,24 +412,28 @@ class NewActivityPageState extends State<NewActivityPage> {
 
                         SizedBox(height: 16),
 
-                        // ActivityEditor (height constrained to ~50% viewport)
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: constraints.maxHeight * 0.5,
-                          ),
-                          child: ActivityEditor(
-                            key: _activityEditorKey,
-                            draft: state.draft,
-                            draftNote: state.draftNote,
-                            twists: _draftTwists ?? state.twists,
-                            actors: state.actors,
-                            onDraftChanged: (activity, {note}) async {
-                              await context.read<PriorityBloc>().updateDraft(
-                                activity,
-                                note: note,
-                              );
-                            },
-                            flushToBottom: false,
+                        // ActivityEditor (height constrained to ~50% viewport,
+                        // flexible so it shrinks in short viewports)
+                        Flexible(
+                          flex: 2,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: constraints.maxHeight * 0.5,
+                            ),
+                            child: ActivityEditor(
+                              key: _activityEditorKey,
+                              draft: state.draft,
+                              draftNote: state.draftNote,
+                              twists: _draftTwists ?? state.twists,
+                              actors: state.actors,
+                              onDraftChanged: (activity, {note}) async {
+                                await context.read<PriorityBloc>().updateDraft(
+                                  activity,
+                                  note: note,
+                                );
+                              },
+                              flushToBottom: false,
+                            ),
                           ),
                         ),
 
