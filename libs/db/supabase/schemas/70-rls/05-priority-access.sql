@@ -74,12 +74,15 @@ CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_id uuid)
             SELECT
                 1
             FROM
-                public.user_priority_expanded upe
+                priority_user pu
+                JOIN priority pp ON pu.priority_id = pp.id
+                JOIN priority p ON p.path <@ pp.path
             WHERE
-                upe.user_id = (
+                pu.user_id = (
                     SELECT
                         auth.uid ())
-                    AND upe.priority_id = _priority_id);
+                    AND pu.archived_at IS NULL
+                    AND p.id = _priority_id);
 $function$;
 
 CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path ltree)

@@ -27,21 +27,6 @@ FROM
     "public"."priority" p
     JOIN "public"."priority" c ON c.path <@ p.path;
 
-CREATE OR REPLACE VIEW "public"."user_priority_expanded" WITH ( security_invoker = TRUE)
---
-AS
-SELECT
-    pu.user_id AS user_id,
-    c.child_id AS priority_id,
-    MIN(pu.created_at) AS joined_at,
-    LEAST (MIN(pu.archived_at), MIN(c.archived_at)) AS archived_at
-FROM
-    priority_user pu
-    JOIN priority_child c ON pu.priority_id = c.priority_id
-GROUP BY
-    pu.user_id,
-    c.child_id;
-
 CREATE OR REPLACE VIEW "public"."priority_settings_inherited" WITH ( security_invoker = TRUE)
 -- for formatting
 AS
@@ -101,6 +86,51 @@ ORDER BY
     source_type ASC;
 
 -- priority_settings.color before priority.color at same distance
+
+CREATE OR REPLACE VIEW "public"."user_priority_expanded" WITH ( security_invoker = TRUE)
+--
+AS
+WITH base AS (
+    SELECT
+        pu.user_id,
+        c.child_id AS priority_id,
+        MIN(pu.created_at) AS joined_at,
+        LEAST (MIN(pu.archived_at), MIN(c.archived_at)) AS archived_at
+    FROM
+        priority_user pu
+        JOIN priority_child c ON pu.priority_id = c.priority_id
+    GROUP BY
+        pu.user_id,
+        c.child_id
+)
+SELECT
+    b.user_id,
+    b.priority_id,
+    b.joined_at,
+    b.archived_at,
+    CASE
+        WHEN inherited_settings.path IS NOT NULL THEN
+            inherited_settings.path
+        WHEN user_root.path @> p.path THEN
+            p.path
+        WHEN parent_inherited_settings.path IS NOT NULL THEN
+            parent_inherited_settings.path || text(subpath (p.path, nlevel (p.path) - 1, 1))::ltree
+        ELSE
+            user_root.path || p.path
+    END AS path
+FROM
+    base b
+    LEFT JOIN priority p ON p.id = b.priority_id
+    LEFT JOIN priority_user pu_root ON b.user_id = pu_root.user_id
+        AND pu_root.personal = TRUE
+    LEFT JOIN priority user_root ON pu_root.priority_id = user_root.id
+    LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = b.user_id
+        AND inherited_settings.priority_id = b.priority_id
+    LEFT JOIN priority parent_p ON nlevel (p.path) > 1
+        AND parent_p.path = subpath (p.path, 0, nlevel (p.path) - 1)
+    LEFT JOIN priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = b.user_id
+        AND parent_p.id = parent_inherited_settings.priority_id;
+
 SET check_function_bodies = OFF;
 
 CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid, p_user_id uuid)
@@ -147,4 +177,3 @@ $function$;
 REVOKE EXECUTE ON FUNCTION public.get_accessible_twists (uuid, uuid) FROM PUBLIC;
 
 REVOKE EXECUTE ON FUNCTION public.is_accessible_twist (bigint, uuid, uuid) FROM PUBLIC;
-
