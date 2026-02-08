@@ -1,4 +1,7 @@
-import type { SupabaseClient as _SupabaseClient } from "@supabase/supabase-js";
+import type {
+  SupabaseClient as _SupabaseClient,
+  SupabaseClientOptions,
+} from "@supabase/supabase-js";
 import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
 
 import { toDate } from "@plotday/tz";
@@ -10,11 +13,16 @@ export type SupabaseClient = _SupabaseClient<Database>;
 
 // Create a non-session client.
 // Use supabase/ssr for sessions.
-export function createClient(supabaseUrl: string, supabaseKey: string) {
+export function createClient(
+  supabaseUrl: string,
+  supabaseKey: string,
+  options?: SupabaseClientOptions<"public">
+) {
   return supabaseCreateClient<Database>(supabaseUrl, supabaseKey, {
     auth: {
       persistSession: false,
     },
+    ...options,
   });
 }
 

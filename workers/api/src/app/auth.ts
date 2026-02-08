@@ -53,32 +53,27 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     return await next();
   }
 
-  let tokens = c.req.header("Authorization");
-  if (!tokens?.startsWith("Bearer ")) {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
     return c.json({ message: "Unauthorized" }, 401);
   }
-  tokens = tokens.replace(/\s*Bearer\s+/, "");
-  const [access_token, refresh_token] = tokens?.split("/");
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY);
+  const access_token = authHeader.replace(/\s*Bearer\s+/, "");
 
-  // Validate JWT locally before calling setSession to avoid consuming
-  // the client's refresh token on expired access tokens
-  const { error } = await getUser(supabase, access_token);
-  if (error) {
+  // Validate JWT via getClaims — rejects expired tokens without ever
+  // consuming the client's refresh token (unlike setSession)
+  const { user, error } = await getUser(supabaseAdmin, access_token);
+  if (error || !user) {
     return c.json({ message: "Unauthorized" }, 401);
   }
 
-  // JWT is valid — setSession won't attempt a refresh
-  const session = await supabase.auth.setSession({
-    access_token,
-    refresh_token: refresh_token ?? "",
+  // Create Supabase client with the user's token for RLS
+  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY, {
+    global: {
+      headers: { Authorization: `Bearer ${access_token}` },
+    },
   });
-  const user = session.data?.user;
-  if (!user) {
-    return c.json({ message: "Unauthorized" }, 401);
-  }
 
   c.set("supabase", supabase);
-  c.set("user", user);
+  c.set("user", user as unknown as User);
   await next();
 };
