@@ -22,7 +22,6 @@ class PriorityState extends Equatable {
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
     Priority? targetPriority,
-    bool isReorderMode = false,
   }) {
     final agenda = agendaItems ?? _makeAgenda(schedule, context: context);
 
@@ -73,7 +72,6 @@ class PriorityState extends Equatable {
           ? List.unmodifiable(tagSuggestions)
           : tagSuggestions,
       targetPriority: targetPriority,
-      isReorderMode: isReorderMode,
     );
   }
 
@@ -96,7 +94,6 @@ class PriorityState extends Equatable {
     this.tags = const [],
     this.tagSuggestions = const [],
     this.targetPriority,
-    this.isReorderMode = false,
   });
 
   final Priority context;
@@ -117,7 +114,6 @@ class PriorityState extends Equatable {
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
   final Priority? targetPriority;
-  final bool isReorderMode;
 
   bool get doneStart =>
       range != null && (previous == null || range!.includes(previous!));
@@ -819,7 +815,6 @@ class PriorityState extends Equatable {
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
     Value<Priority?> targetPriority = const Value.absent(),
-    bool? isReorderMode,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -859,7 +854,6 @@ class PriorityState extends Equatable {
                 : tagSuggestions)
           : this.tagSuggestions,
       targetPriority: targetPriority.or(this.targetPriority),
-      isReorderMode: isReorderMode ?? this.isReorderMode,
     );
   }
 
@@ -883,7 +877,6 @@ class PriorityState extends Equatable {
     tags,
     tagSuggestions,
     targetPriority,
-    isReorderMode,
   ];
 
   @override

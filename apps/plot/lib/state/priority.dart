@@ -45,10 +45,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadPriority();
   }
 
-  void setReorderMode(bool enabled) {
-    emit(state.copyWith(isReorderMode: enabled));
-  }
-
   void updateFilter(List<Tag> filter) {
     log.info('Updating filter to $filter');
     emit(state.copyWith(filter: filter));
@@ -300,7 +296,6 @@ class PriorityBloc extends Cubit<PriorityState> {
         targetPriority: Value(newPriority),
         draft: newDraft,
         draftNote: draftNote,
-        isReorderMode: false,
       ),
     );
 
@@ -312,13 +307,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (state.activity == activity) {
       return;
     }
-    // Clear reorder mode when opening an activity
-    emit(
-      state.copyWith(
-        activity: Value(activity),
-        isReorderMode: activity != null ? false : null,
-      ),
-    );
+    emit(state.copyWith(activity: Value(activity)));
 
     // Manage activity subscription
     if (activity != null) {

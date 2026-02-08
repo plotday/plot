@@ -1,7 +1,9 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/initials.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
@@ -19,7 +21,6 @@ class ActivityWidget extends StatelessWidget {
     this.focusNode,
     this.onHover,
     this.reorderableIndex,
-    this.isReorderMode = false,
     super.key,
   });
 
@@ -31,7 +32,6 @@ class ActivityWidget extends StatelessWidget {
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
-  final bool isReorderMode;
 
   Command? _getSwipeRightCommand() {
     if (activity.type == ActivityType.event) return null;
@@ -146,7 +146,11 @@ class ActivityWidget extends StatelessWidget {
         ],
       ),
       trailingBuilder: (isHovered, hasFocus) => Padding(
-        padding: EdgeInsets.only(right: buildContext.theme.spacing.md),
+        padding: EdgeInsets.only(
+          right: (isTouchDevice && reorderableIndex != null)
+              ? 0
+              : buildContext.theme.spacing.md,
+        ),
         child: ActivityCommands(
           activity: activity,
           tagSuggestions: tagSuggestions,
@@ -157,7 +161,6 @@ class ActivityWidget extends StatelessWidget {
       focusNode: focusNode,
       onHover: onHover,
       reorderableIndex: reorderableIndex,
-      showLeadingDragHandle: isReorderMode,
     );
   }
 
@@ -166,25 +169,59 @@ class ActivityWidget extends StatelessWidget {
     final isTouchDevice = !hasPhysicalKeyboard();
     final listTile = _buildListTile(buildContext, isTouchDevice);
 
-    // Skip swipeable when in reorder mode or not on touch device
-    if (!isTouchDevice || isReorderMode) {
+    // Desktop: no drag handle, full-tile drag works via ReorderableDragStartListener in ListTile
+    if (!isTouchDevice) {
       return listTile;
     }
 
     final swipeRightCommand = _getSwipeRightCommand();
     final swipeLeftCommand = _getSwipeLeftCommand();
+    final hasSwipeCommands =
+        swipeRightCommand != null || swipeLeftCommand != null;
 
-    // If no swipe actions available, just return the list tile
-    if (swipeRightCommand == null && swipeLeftCommand == null) {
-      return listTile;
+    // Mobile with reorderable: trailing drag handle, swipeable only wraps content
+    if (reorderableIndex != null) {
+      final dragHandle = ReorderableDragStartListener(
+        index: reorderableIndex!,
+        child: Container(
+          color: const Color(0x00000000),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Icon(
+            FontAwesomeIcons.gripDotsVertical,
+            size: buildContext.theme.iconSizes.sm,
+            color: buildContext.theme.plotColors.muted,
+          ),
+        ),
+      );
+
+      final content = hasSwipeCommands
+          ? Swipeable(
+              key: ValueKey(activity.id),
+              startCommand: swipeRightCommand,
+              endCommand: swipeLeftCommand,
+              child: listTile,
+            )
+          : listTile;
+
+      return Row(
+        children: [
+          Expanded(child: content),
+          dragHandle,
+        ],
+      );
     }
 
-    return Swipeable(
-      key: ValueKey(activity.id),
-      startCommand: swipeRightCommand,
-      endCommand: swipeLeftCommand,
-      child: listTile,
-    );
+    // Mobile without reorderable: wrap with swipeable if commands exist
+    if (hasSwipeCommands) {
+      return Swipeable(
+        key: ValueKey(activity.id),
+        startCommand: swipeRightCommand,
+        endCommand: swipeLeftCommand,
+        child: listTile,
+      );
+    }
+
+    return listTile;
   }
 }
 

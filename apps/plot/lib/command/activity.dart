@@ -12,7 +12,6 @@ import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/util/platform.dart';
 import 'logging.dart';
 
 abstract class ActivityCommand extends Command {
@@ -582,7 +581,7 @@ class AssignAction extends _UpdateActivityCommand {
     super.onUpdate,
     this.stateIcon = false,
   }) : super(
-         title: assignee?.name ?? 'Unassign',
+         title: assignee?.nameOrEmail ?? 'Unassign',
          subtitle: assignee?.email,
          eventObject: EventObject.activity,
          eventAction: EventAction.updated,
@@ -1026,22 +1025,6 @@ class MoveToNewThread extends Command {
   }
 }
 
-class EnterReorderMode extends Command {
-  EnterReorderMode()
-    : super(
-        title: 'Reorder',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: FontAwesomeIcons.gripDotsVertical,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    context.read<PriorityBloc>().setReorderMode(true);
-    return const CommandDone();
-  }
-}
-
 class MoveActivityToPriority extends ShowCommands {
   MoveActivityToPriority(this.activity)
     : super(
@@ -1083,7 +1066,6 @@ class ShowActivityCommands extends ShowCommands {
           groups: activityCommandGroups(
             activity,
             open: open,
-            isTouchDevice: !hasPhysicalKeyboard(),
           ),
         ),
       );
@@ -1208,7 +1190,6 @@ class OpenFocusedItemActions extends ShowCommands {
 List<StaticCommandGroup> activityCommandGroups(
   Activity activity, {
   bool open = true,
-  bool isTouchDevice = false,
 }) {
   final tags = Tag.getAll()
       .where(
@@ -1221,7 +1202,6 @@ List<StaticCommandGroup> activityCommandGroups(
   final commands = activityCommands(
     activity,
     open: open,
-    isTouchDevice: isTouchDevice,
   );
   final remove = tags
       .where(
@@ -1253,7 +1233,6 @@ List<Command> activityCommands(
   bool open = false,
   bool skipInfrequent = false,
   bool skipPrimary = false,
-  bool isTouchDevice = false,
 }) {
   final primary = skipPrimary
       ? null
@@ -1283,7 +1262,6 @@ List<Command> activityCommands(
     if (activity.type != .event && actualPrimary is! PickActionAssignee)
       PickActionAssignee(activity),
     MoveActivityToPriority(activity),
-    if (isTouchDevice) EnterReorderMode(),
     if (activity.type != .note && !skipInfrequent) ActivityToNote(activity),
     if (!skipInfrequent &&
         (!activity.private || activity.authorId == Base.actorId))

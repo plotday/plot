@@ -9,7 +9,6 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
-import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'priorities.dart';
 import 'loading.dart';
@@ -681,8 +680,6 @@ class PriorityPage extends StatelessWidget {
                                                         context: state.context,
                                                         reorderableIndex:
                                                             reorderableIndex,
-                                                        isReorderMode:
-                                                            state.isReorderMode,
                                                       ),
                                                     ],
                                                   ),
@@ -749,9 +746,6 @@ class PriorityPage extends StatelessWidget {
                                         },
                                       ),
                                     ),
-                                    if (state.isReorderMode &&
-                                        !hasPhysicalKeyboard())
-                                      const ReorderModeBottomBar(),
                                   ],
                                 ),
                               ),

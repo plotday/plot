@@ -28,7 +28,6 @@ export 'priority_selector.dart';
 export 'priority.dart';
 export 'pulsing_color_button.dart';
 export 'reorderable_list_view.dart';
-export 'reorder_mode_bottom_bar.dart';
 export 'reschedule_event_modal.dart';
 export 'scaffold.dart';
 export 'scroll_context.dart';

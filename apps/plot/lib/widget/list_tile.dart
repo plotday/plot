@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
@@ -150,9 +149,6 @@ class ListTile extends StatefulWidget {
     /// Whether to show the keyboard shortcut (default: false).
     this.showShortcut = false,
 
-    /// Whether to show a drag handle in the leading area (for reorder mode).
-    this.showLeadingDragHandle = false,
-
     super.key,
   }) : subtitle = subtitle ?? command?.subtitle;
 
@@ -186,7 +182,6 @@ class ListTile extends StatefulWidget {
   onRun;
   final int? reorderableIndex;
   final bool showShortcut;
-  final bool showLeadingDragHandle;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -322,8 +317,7 @@ class _ListTileState extends State<ListTile> {
           index: widget.reorderableIndex ?? 0,
           enabled:
               widget.reorderableIndex != null &&
-              hasPhysicalKeyboard() &&
-              !widget.showLeadingDragHandle,
+              hasPhysicalKeyboard(),
           child: Container(
             decoration: BoxDecoration(
               color: widget.selected
@@ -346,29 +340,10 @@ class _ListTileState extends State<ListTile> {
                       : 0,
                 ),
 
-                // Leading area: either drag handle (in reorder mode) or custom leading builder
-                if (widget.showLeadingDragHandle &&
-                    widget.reorderableIndex != null)
-                  ReorderableDragStartListener(
-                    index: widget.reorderableIndex!,
-                    child: Container(
-                      color: Color(0x00000000),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: Icon(
-                        FontAwesomeIcons.gripDotsVertical,
-                        size: context.theme.iconSizes.sm,
-                        color: context.theme.plotColors.muted,
-                      ),
-                    ),
-                  )
-                else
-                  ...[
-                    if (widget.leadingBuilder != null)
-                      widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
-                  ].whereType<Widget>(),
+                ...[
+                  if (widget.leadingBuilder != null)
+                    widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
+                ].whereType<Widget>(),
                 Expanded(
                   child: hasPhysicalKeyboard()
                       // Desktop: GestureDetector participates in gesture arena,
