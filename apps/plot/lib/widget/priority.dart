@@ -1,6 +1,10 @@
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/util/platform.dart';
 import 'package:plot/util/theme_color.dart';
 
 class PriorityWidget extends StatelessWidget {
@@ -14,6 +18,7 @@ class PriorityWidget extends StatelessWidget {
     this.textStyle,
     this.showAncestry = false,
     this.unread,
+    this.reorderableIndex,
     super.key,
   });
 
@@ -42,14 +47,18 @@ class PriorityWidget extends StatelessWidget {
   /// Custom unread value (if null, uses priority.unread)
   final bool? unread;
 
+  /// Index for reorderable list. If provided on mobile, shows trailing drag handle.
+  final int? reorderableIndex;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext buildContext) {
     bool isContext = priority == this.context;
-    // bool contextChild = priority.parentId == this.context?.id;
-    return ListTile(
+    final listTile = ListTile(
       command: !isContext
           ? ChangeCurrentPriority(priority, ancestry: showAncestry)
           : null,
+      longPressCommand:
+          !hasPhysicalKeyboard() ? ShowPriorityCommands(priority) : null,
       trailingBuilder: (isHovered, hasFocus) => (isHovered || hasFocus)
           ? Row(
               children: [
@@ -82,6 +91,28 @@ class PriorityWidget extends StatelessWidget {
         ),
       ),
     );
+
+    if (!hasPhysicalKeyboard() && reorderableIndex != null) {
+      return Row(
+        children: [
+          Expanded(child: listTile),
+          ReorderableDragStartListener(
+            index: reorderableIndex!,
+            child: Container(
+              color: const Color(0x00000000),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Icon(
+                FontAwesomeIcons.gripDotsVertical,
+                size: buildContext.theme.iconSizes.sm,
+                color: buildContext.theme.plotColors.muted,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return listTile;
   }
 }
 

@@ -27,8 +27,11 @@ class ActivityList extends StatelessWidget {
         children: [
           ReorderableListView<Activity>(
             list: activities,
-            itemBuilder: (buildContext, activity) =>
-                ActivityWidget(activity: activity),
+            itemBuilder: (buildContext, activity, reorderableIndex) =>
+                ActivityWidget(
+                  activity: activity,
+                  reorderableIndex: reorderableIndex,
+                ),
             shrinkWrap: true,
             onReorder: (int oldIndex, int newIndex) async {
               var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);

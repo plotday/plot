@@ -2,8 +2,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:platform_builder/platform_builder.dart';
 
+import 'package:plot/util/platform.dart';
+
 typedef ListItemWidgetBuilder<T> = Widget Function(
-    BuildContext context, T item);
+    BuildContext context, T item, int? reorderableIndex);
 
 class ReorderableListView<T> extends StatefulWidget {
   const ReorderableListView({
@@ -52,11 +54,18 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
       proxyDecorator: Platform.instance.isNative
           ? (Widget child, int index, Animation<double> animation) => child
           : null,
-      itemBuilder: (context, index) => ReorderableDragStartListener(
-        index: index,
-        key: ValueKey(list[index]),
-        child: widget.itemBuilder(context, list[index]),
-      ),
+      itemBuilder: (context, index) {
+        if (hasPhysicalKeyboard()) {
+          // Desktop: full item is drag target
+          return ReorderableDragStartListener(
+            index: index,
+            key: ValueKey(list[index]),
+            child: widget.itemBuilder(context, list[index], null),
+          );
+        }
+        // Mobile: pass index so item can place its own drag handle
+        return widget.itemBuilder(context, list[index], index);
+      },
       onReorder: (int oldIndex, int newIndex) {
         setState(() {
           if (oldIndex < newIndex) {

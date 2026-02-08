@@ -185,6 +185,7 @@ class _PrioritiesListState extends State<PrioritiesList>
           int indentLevel = 0,
           bool topSection = false,
           required TextStyle textStyle,
+          int? reorderableIndex,
         }) {
           final priorityExpanded = shouldExpand(priority);
 
@@ -206,6 +207,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                   : (!priorityExpanded && _hasDescendantUnread(priority)
                         ? true
                         : null),
+              reorderableIndex: reorderableIndex,
             ),
             if (priority.children.isNotEmpty)
               _AnimatedPriorityChildren(
@@ -277,7 +279,7 @@ class _PrioritiesListState extends State<PrioritiesList>
             ReorderableListView<Priority>(
               list: priorities,
               shrinkWrap: true,
-              itemBuilder: (context, priority) {
+              itemBuilder: (context, priority, reorderableIndex) {
                 final priorityExpanded = shouldExpand(priority);
 
                 return Column(
@@ -300,6 +302,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                           !priorityExpanded && _hasDescendantUnread(priority)
                           ? true
                           : null,
+                      reorderableIndex: reorderableIndex,
                     ),
                     if (priority.children.isNotEmpty)
                       _AnimatedPriorityChildren(
@@ -362,7 +365,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                 ReorderableListView<Priority>(
                   list: widget.topPriorities,
                   shrinkWrap: true,
-                  itemBuilder: (context, priority) => Column(
+                  itemBuilder: (context, priority, reorderableIndex) => Column(
                     key: ValueKey('top-${priority.id}'),
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: buildPriorityItems(
@@ -374,6 +377,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                           priority.displayColor,
                         ),
                       ),
+                      reorderableIndex: reorderableIndex,
                     ),
                   ),
                   onReorder: (int oldIndex, int newIndex) async {
