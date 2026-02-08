@@ -3,6 +3,8 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/activity.dart';
+import 'package:plot/state/now.dart';
+import 'package:plot/router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'logging.dart';
@@ -194,9 +196,16 @@ class ToggleNoteTag extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
+      ActivityBloc? activityBloc;
+      try {
+        activityBloc = context.read<ActivityBloc>();
+      } catch (e) {
+        activityBloc = null;
+      }
+
       final updatedNote = note.toggleTag(tag, actorId);
-      final activityBloc = context.read<ActivityBloc>();
-      if (activityBloc.state.draft.id == updatedNote.id) {
+      if (activityBloc != null &&
+          activityBloc.state.draft.id == updatedNote.id) {
         await activityBloc.updateDraft(updatedNote);
       }
       await updatedNote.save();
@@ -251,6 +260,75 @@ class ArchiveNote extends NoteCommand {
   }
 }
 
+class SplitNoteToNewActivity extends NoteCommand {
+  SplitNoteToNewActivity(super.note)
+    : super(
+        title: 'Split to New Activity',
+        eventObject: EventObject.note,
+        eventAction: EventAction.moved,
+        icon: PlotIcon.move,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      // Look up parent activity to get its priority
+      final parentActivity = await Activity.getOne(note.activityId);
+
+      // Create a new activity in the same priority with preview from note content
+      final newActivity = Activity(
+        priority: parentActivity.priority,
+        draft: false,
+        preview: note.content,
+        title: note.content,
+      );
+      await newActivity.save();
+
+      // Move the note to the new activity
+      await note.copyWith(activityId: newActivity.id).save();
+
+      // Fire-and-forget AI title generation
+      if (note.content != null && note.content!.trim().isNotEmpty) {
+        newActivity
+            .generateTitle(note.content!)
+            .then((title) async {
+              if (title != newActivity.title) {
+                await newActivity.copyWith(title: Value(title)).save();
+              }
+            })
+            .catchError((Object e) {
+              // Error already logged by generateTitle(), just ignore here
+            });
+      }
+
+      // Navigate to the new activity in the current priority context
+      var routePriority = newActivity.priority;
+      if (context.mounted) {
+        final nowBloc = context.read<NowBloc>();
+        if (nowBloc.loadedState.context != null) {
+          routePriority = nowBloc.loadedState.context!;
+        }
+      }
+
+      return CommandRoute(
+        PriorityRoute(
+          priorityIdString: routePriority.id.toShortString(),
+          children: [
+            ActivityRoute(activityIdString: newActivity.id.toShortString()),
+          ],
+        ),
+        replace: true,
+      );
+    } catch (e, stackTrace) {
+      log.severe('Error in SplitNoteToNewActivity: $e', e, stackTrace);
+      return CommandMessage(
+        'Failed to split note to new activity',
+        isError: true,
+      );
+    }
+  }
+}
+
 List<StaticCommandGroup> noteCommandGroups(Note note) {
   final actorId = Base.actorId;
   final tags = Tag.getAll()
@@ -287,8 +365,9 @@ List<Command> noteCommands(Note note) {
   return [
     if (!isAssigned) StartTask(note),
     if (isAssigned) FinishTask(note),
-    if (!note.private || note.authorId == Base.actorId)
-      ToggleNotePrivate(note),
+    if (!note.draft && note.content != null && note.content!.trim().isNotEmpty)
+      SplitNoteToNewActivity(note),
+    if (!note.private || note.authorId == Base.actorId) ToggleNotePrivate(note),
     ArchiveNote(note),
   ];
 }
