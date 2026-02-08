@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.33.2
+
+### Added
+
+- File attachments. For now, just metadata is available to twists. ([`279cb7b`](https://github.com/plotday/plot/commit/279cb7b23640a2d027f303b070f83c48f285bf4e))
+
 ## 0.33.1
 
 ### Added
