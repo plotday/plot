@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:plot/api/broadcast.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
@@ -93,28 +94,60 @@ class PrioritiesPage extends StatelessWidget {
                           child: Column(
                             children: [
                               SizedBox(height: 8),
-                              ListTile(
-                                title: 'Twists',
-                                textStyle: context.theme.typography.sm,
-                                trailingBuilder: (isHovered, hasFocus) =>
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        left: 4,
-                                        right: 16,
+                              ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    BroadcastClient.instance.connectionState,
+                                builder: (context, isConnected, _) {
+                                  if (isConnected) {
+                                    return ListTile(
+                                      title: 'Twists',
+                                      textStyle: context.theme.typography.sm,
+                                      trailingBuilder:
+                                          (isHovered, hasFocus) => Padding(
+                                            padding: const EdgeInsets.only(
+                                              left: 4,
+                                              right: 16,
+                                            ),
+                                            child: Icon(
+                                              PlotIcon.twist,
+                                              size:
+                                                  context.theme.iconSizes.sm,
+                                              color: context
+                                                  .theme
+                                                  .colors
+                                                  .mutedForeground,
+                                            ),
+                                          ),
+                                      command: CommandWrapper(
+                                        ManageTwists(),
+                                        icon: Value(null),
                                       ),
-                                      child: Icon(
-                                        PlotIcon.twist,
-                                        size: context.theme.iconSizes.sm,
-                                        color: context
-                                            .theme
-                                            .colors
-                                            .mutedForeground,
-                                      ),
+                                    );
+                                  }
+                                  return ListTile(
+                                    title: 'Offline',
+                                    textStyle: context.theme.typography.sm,
+                                    trailingBuilder:
+                                        (isHovered, hasFocus) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 4,
+                                            right: 16,
+                                          ),
+                                          child: Icon(
+                                            PlotIcon.offline,
+                                            size: context.theme.iconSizes.sm,
+                                            color: context
+                                                .theme
+                                                .colors
+                                                .mutedForeground,
+                                          ),
+                                        ),
+                                    command: CommandWrapper(
+                                      ShowOfflineInfo(),
+                                      icon: Value(null),
                                     ),
-                                command: CommandWrapper(
-                                  ManageTwists(),
-                                  icon: Value(null),
-                                ),
+                                  );
+                                },
                               ),
                               BlocBuilder<UserBloc, UserState>(
                                 builder: (context, userState) {

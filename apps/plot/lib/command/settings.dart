@@ -11,6 +11,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/select_modal.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/settings.dart';
@@ -230,5 +231,72 @@ class CopyVersion extends Command {
       log.warning("Copy version failed", e, t);
       return CommandMessage('Failed to copy version', isError: true);
     }
+  }
+}
+
+class ShowOfflineInfo extends ShowPage {
+  ShowOfflineInfo()
+    : super(
+        title: 'Offline',
+        icon: PlotIcon.offline,
+        builder: (context) => _OfflineInfoContent(),
+      );
+}
+
+class _OfflineInfoContent extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: widgetPadding,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Unable to reach Plot servers',
+            style: context.theme.typography.lg.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Check your network connection and try again. If you\'re online, try signing in again.',
+            style: context.theme.typography.base.copyWith(
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              FButton(
+                onPress: () => Modal.pop<CommandReturn>(
+                  context,
+                  Value(const CommandDone()),
+                ),
+                style: FButtonStyle.outline(),
+                child: const Text('Close'),
+              ),
+              const SizedBox(width: 12),
+              FButton(
+                onPress: () async {
+                  Modal.pop<CommandReturn>(
+                    context,
+                    Value(const CommandDone()),
+                  );
+                  try {
+                    await Base.signOut();
+                  } catch (e, t) {
+                    log.warning("Sign out failed", e, t);
+                  }
+                },
+                style: FButtonStyle.primary(),
+                child: const Text('Sign In'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

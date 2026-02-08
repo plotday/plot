@@ -210,11 +210,7 @@ class _ListTileState extends State<ListTile> {
     try {
       context.run(widget.longPressCommand!);
     } catch (e, t) {
-      log.warning(
-        "Action ${widget.longPressCommand?.title} failed",
-        e,
-        t,
-      );
+      log.warning("Action ${widget.longPressCommand?.title} failed", e, t);
     }
   }
 
@@ -393,10 +389,10 @@ class _ListTileState extends State<ListTile> {
                           },
                           onPointerUp: (event) {
                             if (_tapStartPosition != null) {
-                              final delta =
-                                  event.position - _tapStartPosition!;
-                              final duration =
-                                  Time.now().difference(_tapStartTime!);
+                              final delta = event.position - _tapStartPosition!;
+                              final duration = Time.now().difference(
+                                _tapStartTime!,
+                              );
                               if (delta.distance < 10 &&
                                   duration < Duration(milliseconds: 500)) {
                                 if (widget.command != null) {
@@ -441,25 +437,30 @@ class _ListTileState extends State<ListTile> {
         builder: (context) {
           // Build the icon widget
           final iconWidget = () {
-            // If running with delay passed, show spinner
-            if (_showSpinner) {
-              return Spinner(
-                size: widget.style == ListTileStyle.header
-                    ? context.theme.iconSizes.sm
-                    : context.theme.iconSizes.base,
-                color: context.theme.plotColors.muted,
-              );
+            // Check for custom icon widget first (like Button does)
+            final customIcon = widget.command?.buildIcon(context);
+            if (customIcon != null) {
+              if (_showSpinner) {
+                return Spinner(
+                  size: widget.style == ListTileStyle.header
+                      ? context.theme.iconSizes.sm
+                      : context.theme.iconSizes.base,
+                  color: context.theme.plotColors.muted,
+                );
+              }
+              return customIcon;
             }
 
-            // Check for custom icon widget first (like Button does)
-            final customIcon = widget.command?.buildIcon(
-              context,
-            );
-            if (customIcon != null) return customIcon;
-
             // Fall back to IconData icon
-            if (widget.icon != null ||
-                widget.command?.icon != null) {
+            if (widget.icon != null || widget.command?.icon != null) {
+              if (_showSpinner) {
+                return Spinner(
+                  size: widget.style == ListTileStyle.header
+                      ? context.theme.iconSizes.sm
+                      : context.theme.iconSizes.base,
+                  color: context.theme.plotColors.muted,
+                );
+              }
               return Icon(
                 widget.icon ?? widget.command?.icon,
                 size: widget.style == ListTileStyle.header
@@ -482,19 +483,13 @@ class _ListTileState extends State<ListTile> {
               if (hasIcon) iconWidget else iconWidget,
               Expanded(
                 child: Padding(
-                  padding:
-                      (widget.padding?.resolve(null) ??
-                              widgetPaddingSm)
-                          .copyWith(
-                            left: 0,
-                            right: 0,
-                            top: widget.style == .header
-                                ? 2
-                                : null,
-                            bottom: widget.style == .header
-                                ? 2
-                                : null,
-                          ),
+                  padding: (widget.padding?.resolve(null) ?? widgetPaddingSm)
+                      .copyWith(
+                        left: 0,
+                        right: 0,
+                        top: widget.style == .header ? 2 : null,
+                        bottom: widget.style == .header ? 2 : null,
+                      ),
                   child: Column(
                     crossAxisAlignment: widget.centered
                         ? CrossAxisAlignment.center
@@ -517,27 +512,17 @@ class _ListTileState extends State<ListTile> {
                               ) ??
                               widget.body ??
                               (widget.title == null
-                                  ? widget.command?.buildBody(
-                                      context,
-                                    )
+                                  ? widget.command?.buildBody(context)
                                   : null);
                           return commandBody != null
-                              ? Row(
-                                  children: [
-                                    Expanded(
-                                      child: commandBody,
-                                    ),
-                                  ],
-                                )
+                              ? Row(children: [Expanded(child: commandBody)])
                               : Text.rich(
                                   TextSpan(
                                     children: [
                                       TextSpan(
                                         text:
                                             widget.title ??
-                                            widget
-                                                .command
-                                                ?.title ??
+                                            widget.command?.title ??
                                             'Untitled',
                                         style:
                                             (widget.textStyle ??
@@ -552,9 +537,7 @@ class _ListTileState extends State<ListTile> {
                                                               .typography
                                                               .base))
                                                 .copyWith(
-                                                  color:
-                                                      widget
-                                                          .selected
+                                                  color: widget.selected
                                                       ? context
                                                             .theme
                                                             .colors
@@ -568,18 +551,14 @@ class _ListTileState extends State<ListTile> {
                                                       : null,
                                                   fontWeight:
                                                       widget.style ==
-                                                          ListTileStyle
-                                                              .button
-                                                      ? FontWeight
-                                                            .bold
+                                                          ListTileStyle.button
+                                                      ? FontWeight.bold
                                                       : null,
                                                 ),
                                       ),
-                                      if (widget.subtitle !=
-                                          null)
+                                      if (widget.subtitle != null)
                                         TextSpan(
-                                          text:
-                                              '  ${widget.subtitle!}',
+                                          text: '  ${widget.subtitle!}',
                                           style:
                                               (widget.textStyle ??
                                                       context
@@ -595,16 +574,14 @@ class _ListTileState extends State<ListTile> {
                                         ),
                                     ],
                                   ),
-                                  overflow:
-                                      TextOverflow.ellipsis,
+                                  overflow: TextOverflow.ellipsis,
                                   textAlign: widget.centered
                                       ? TextAlign.center
                                       : TextAlign.start,
                                 );
                         },
                       ),
-                      if (widget.details != null)
-                        widget.details!,
+                      if (widget.details != null) widget.details!,
                     ],
                   ),
                 ),

@@ -44,6 +44,7 @@ class PlotIcon {
   static const share = FontAwesomeIcons.userPlus;
   static const users = FontAwesomeIcons.users;
   static const private = FontAwesomeIcons.lock;
+  static const offline = FontAwesomeIcons.wifiSlash;
 
   // Activity kind icons
   static const document = FontAwesomeIcons.fileLines;

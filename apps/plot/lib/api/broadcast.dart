@@ -32,6 +32,13 @@ class BroadcastClient with WidgetsBindingObserver {
   static const Duration _baseReconnectDelay = Duration(seconds: 1);
   static const Duration _maxReconnectDelay = Duration(seconds: 30);
   static const Duration _pingInterval = Duration(seconds: 30);
+  static const Duration _offlineDebounceDelay = Duration(seconds: 10);
+
+  /// Debounced connection state for UI consumption.
+  /// Goes to `false` only after being disconnected for 10 seconds.
+  /// Returns to `true` immediately on reconnection.
+  final ValueNotifier<bool> connectionState = ValueNotifier<bool>(true);
+  Timer? _offlineDebounceTimer;
 
   bool _isConnected = false;
   bool _shouldReconnect = false;
@@ -103,6 +110,25 @@ class BroadcastClient with WidgetsBindingObserver {
     _currentDelayMs = _baseReconnectDelay.inMilliseconds;
   }
 
+  /// Update the debounced connection notifier.
+  /// Immediately shows connected; debounces 10s before showing offline.
+  void _updateConnectionNotifier() {
+    if (_isConnected) {
+      _offlineDebounceTimer?.cancel();
+      _offlineDebounceTimer = null;
+      connectionState.value = true;
+    } else {
+      // Start debounce timer — only mark offline after sustained disconnection
+      if (_offlineDebounceTimer == null || !_offlineDebounceTimer!.isActive) {
+        _offlineDebounceTimer = Timer(_offlineDebounceDelay, () {
+          if (!_isConnected) {
+            connectionState.value = false;
+          }
+        });
+      }
+    }
+  }
+
   /// Connect to the WebSocket endpoint
   Future<void> _connect() async {
     if (_isConnected || _channel != null) {
@@ -152,6 +178,7 @@ class BroadcastClient with WidgetsBindingObserver {
       );
 
       _isConnected = true;
+      _updateConnectionNotifier();
       _resetBackoff();
       _reconnectTimer?.cancel();
 
@@ -233,6 +260,9 @@ class BroadcastClient with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
 
     _isConnected = false;
+    _offlineDebounceTimer?.cancel();
+    _offlineDebounceTimer = null;
+    connectionState.value = true;
     _wasEverConnected = false;
     _isRefreshingToken = false;
     _messageHandler = null;
@@ -284,6 +314,7 @@ class BroadcastClient with WidgetsBindingObserver {
       _channel = null;
     }
     _isConnected = false;
+    _updateConnectionNotifier();
 
     // Guard against concurrent refresh attempts
     if (_isRefreshingToken) {
@@ -335,6 +366,7 @@ class BroadcastClient with WidgetsBindingObserver {
   Future<void> _handleError(Object error) async {
     final wasConnected = _isConnected;
     _isConnected = false;
+    _updateConnectionNotifier();
     _cancelPingTimer();
 
     if (_channel != null) {
@@ -369,6 +401,7 @@ class BroadcastClient with WidgetsBindingObserver {
     final closeCode = _channel?.closeCode;
     final wasConnected = _isConnected;
     _isConnected = false;
+    _updateConnectionNotifier();
     _cancelPingTimer();
 
     // Check for authentication-related close codes
