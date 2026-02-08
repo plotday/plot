@@ -11,6 +11,7 @@ import { authMiddleware as appAuthMiddleware } from "./app/auth";
 import authRoutes from "./app/authRoutes";
 import callbacks from "./app/callbacks";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
+import files from "./app/files";
 import summary from "./app/summary";
 import updates from "./app/updates";
 import type { Bindings } from "./env";
@@ -135,6 +136,7 @@ appSection.route("/", authRoutes);
 appSection.route("/", callbacks);
 appSection.route("/", summary);
 appSection.route("/", updates);
+appSection.route("/", files);
 
 // Sync section - internal endpoints called from DB triggers
 const syncSection = new Hono<{ Bindings: Bindings }>();

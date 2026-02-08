@@ -167,4 +167,5 @@ export type Bindings = {
   readonly TWIST_SYNC: DurableObjectNamespace<TwistSync>;
   readonly SYNC_RECOVERY: DurableObjectNamespace<SyncRecovery>;
   readonly TWIST_MODULES_BUCKET: R2Bucket;
+  readonly FILES_BUCKET: R2Bucket;
 };

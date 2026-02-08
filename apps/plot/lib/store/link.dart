@@ -1,6 +1,6 @@
 part of 'store.dart';
 
-enum LinkType { external, auth, callback, conferencing }
+enum LinkType { external, auth, callback, conferencing, file }
 
 enum ConferencingProvider { googleMeet, zoom, microsoftTeams, webex, other }
 
@@ -24,6 +24,8 @@ abstract class Link extends Equatable {
         return CallbackLink.fromJson(json);
       case LinkType.conferencing:
         return ConferencingLink.fromJson(json);
+      case LinkType.file:
+        return FileLink.fromJson(json);
     }
   }
 
@@ -140,6 +142,45 @@ class ConferencingLink extends Link {
 
   @override
   List<Object?> get props => [type, url, provider];
+}
+
+class FileLink extends Link {
+  const FileLink({
+    required this.fileId,
+    required this.fileName,
+    required this.fileSize,
+    required this.mimeType,
+  }) : super(type: LinkType.file);
+
+  final String fileId;
+  final String fileName;
+  final int fileSize;
+  final String mimeType;
+
+  bool get isImage => mimeType.startsWith('image/');
+
+  factory FileLink.fromJson(Map<String, dynamic> json) {
+    return FileLink(
+      fileId: json['fileId'] as String,
+      fileName: json['fileName'] as String,
+      fileSize: json['fileSize'] as int,
+      mimeType: json['mimeType'] as String,
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name,
+      'fileId': fileId,
+      'fileName': fileName,
+      'fileSize': fileSize,
+      'mimeType': mimeType,
+    };
+  }
+
+  @override
+  List<Object?> get props => [type, fileId, fileName, fileSize, mimeType];
 }
 
 class LinksConverter extends TypeConverter<List<Link>?, String?>

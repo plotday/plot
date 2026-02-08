@@ -192,6 +192,17 @@ class NoteEditorState extends State<NoteEditor> {
                           ToggleNoteTag(widget.draft, Tag.private, Base.actorId),
                           selected: widget.draft.private,
                         ),
+                      Button.icon(
+                        AttachFile(
+                          priorityId: context.read<ActivityBloc>().state.activity.priority.id.toString(),
+                          currentLinks: widget.draft.links ?? const [],
+                          onLinksChanged: (links) {
+                            final updatedDraft = widget.draft.copyWith(links: links);
+                            context.read<ActivityBloc>().updateDraft(updatedDraft);
+                          },
+                        ),
+                        selected: widget.draft.links?.any((l) => l.type == LinkType.file) ?? false,
+                      ),
                       const Spacer(),
                       // Right side: Save button (always visible)
                       Button.icon(
@@ -203,7 +214,8 @@ class NoteEditorState extends State<NoteEditor> {
                           },
                         ),
                         style: ButtonStyle.primary,
-                        enabled: !_isEmpty,
+                        enabled: !_isEmpty ||
+                            (widget.draft.links?.any((l) => l.type == LinkType.file) ?? false),
                       ),
                     ],
                   ),

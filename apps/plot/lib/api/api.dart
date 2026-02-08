@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:mime/mime.dart';
 
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
@@ -211,6 +213,88 @@ Future<T> delete<T>(String url) async {
       );
     }
     return _parseResponse(response);
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
+  }
+}
+
+/// Upload a file attachment, returning file metadata.
+Future<Map<String, dynamic>> uploadFile({
+  required String filePath,
+  required String fileName,
+  required String priorityId,
+  Uint8List? bytes,
+}) async {
+  try {
+    final uri = Uri.parse('${Env.apiRoot}/files');
+    final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(getHeaders()..remove('Content-Type'));
+    request.fields['priorityId'] = priorityId;
+
+    final contentType = lookupMimeType(fileName);
+    final mediaType = contentType != null
+        ? http.MediaType.parse(contentType)
+        : null;
+
+    if (bytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes('file', bytes,
+            filename: fileName, contentType: mediaType),
+      );
+    } else {
+      request.files.add(
+        await http.MultipartFile.fromPath('file', filePath,
+            filename: fileName, contentType: mediaType),
+      );
+    }
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, '/files');
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: '/files',
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+      );
+    }
+
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
+  }
+}
+
+/// Download a file attachment, returning the raw bytes.
+Future<Uint8List> getFileBytes(String fileId) async {
+  try {
+    final headers = getHeaders()..remove('Content-Type');
+    final response = await http.get(
+      Uri.parse('${Env.apiRoot}/files/$fileId'),
+      headers: headers,
+    );
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, '/files/$fileId');
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: '/files/$fileId',
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+      );
+    }
+    return response.bodyBytes;
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {

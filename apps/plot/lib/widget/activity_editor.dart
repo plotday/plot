@@ -294,6 +294,19 @@ class ActivityEditorState extends State<ActivityEditor> {
                       ),
                       selected: widget.draft.private,
                     ),
+                  Button.icon(
+                    AttachFile(
+                      priorityId: widget.draft.priority.id.toString(),
+                      currentLinks: widget.draftNote.links ?? const [],
+                      onLinksChanged: (links) {
+                        widget.onDraftChanged(
+                          widget.draft,
+                          note: widget.draftNote.copyWith(links: links),
+                        );
+                      },
+                    ),
+                    selected: widget.draftNote.links?.any((l) => l.type == LinkType.file) ?? false,
+                  ),
                   const Spacer(),
                   // Right side: Save button (always visible)
                   Button.icon(
