@@ -1,5 +1,4 @@
 import 'dart:io' show File;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,7 +6,6 @@ import 'package:forui/forui.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/util/value.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/modal.dart';
@@ -359,7 +357,7 @@ class _FileImageWidgetState extends State<FileImageWidget> {
           child: Image.memory(
             _bytes!,
             fit: BoxFit.contain,
-            errorBuilder: (_, error, ___) {
+            errorBuilder: (_, error, _) {
               log.warning(
                 '[FileImage] decode failed for ${widget.link.fileName}: $error',
               );
