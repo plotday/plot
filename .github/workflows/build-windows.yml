@@ -205,97 +205,57 @@ jobs:
 
           ls -lh "Plot-${{ steps.version.outputs.new_version }}-portable.zip"
 
-      - name: Install Node.js for wrangler
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+      - name: Rename MSIX with version
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+          mv "plot.msix" "Plot-${{ steps.version.outputs.new_version }}.msix"
 
-      - name: Install wrangler
-        run: npm install -g wrangler
-
-      - name: Upload MSIX to R2
+      - name: Upload files to R2
         shell: bash
         run: |
           cd apps/plot/build/windows/x64/runner/Release
 
-          MSIX_FILE="plot.msix"
-          VERSIONED_MSIX="Plot-${{ steps.version.outputs.new_version }}.msix"
+          # Configure AWS CLI for R2 (S3-compatible)
+          export AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID
+          export AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY
+          export AWS_DEFAULT_REGION=auto
 
-          # Rename MSIX with version
-          mv "$MSIX_FILE" "$VERSIONED_MSIX"
+          R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          BUCKET="s3://${R2_BUCKET_NAME}"
+          VERSION="${{ steps.version.outputs.new_version }}"
+          MSIX_FILE="Plot-${VERSION}.msix"
+          ZIP_FILE="Plot-${VERSION}-portable.zip"
 
-          R2_PATH="releases/${{ steps.version.outputs.new_version }}/windows/$VERSIONED_MSIX"
+          # Upload versioned MSIX
+          echo "Uploading $MSIX_FILE to R2..."
+          aws s3 cp "$MSIX_FILE" "${BUCKET}/releases/${VERSION}/windows/${MSIX_FILE}" \
+            --endpoint-url "$R2_ENDPOINT"
 
-          # Configure wrangler with R2 credentials
-          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
-          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+          # Upload MSIX to stable path
+          echo "Uploading $MSIX_FILE to stable path..."
+          aws s3 cp "$MSIX_FILE" "${BUCKET}/windows" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/vnd.ms-appx" \
+            --content-disposition "attachment; filename=\"Plot.msix\""
 
-          echo "Uploading $VERSIONED_MSIX to R2 at $R2_PATH"
-          wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$VERSIONED_MSIX" --remote
+          # Upload versioned portable ZIP
+          echo "Uploading $ZIP_FILE to R2..."
+          aws s3 cp "$ZIP_FILE" "${BUCKET}/releases/${VERSION}/windows/${ZIP_FILE}" \
+            --endpoint-url "$R2_ENDPOINT"
 
-          echo "MSIX uploaded successfully!"
-          echo "Download URL: https://download.plot.day/${R2_PATH}"
+          # Upload ZIP to stable path
+          echo "Uploading $ZIP_FILE to stable path..."
+          aws s3 cp "$ZIP_FILE" "${BUCKET}/windows-portable" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/zip" \
+            --content-disposition "attachment; filename=\"Plot-portable.zip\""
 
-      - name: Upload MSIX to stable path
-        shell: bash
-        run: |
-          cd apps/plot/build/windows/x64/runner/Release
-
-          VERSIONED_MSIX="Plot-${{ steps.version.outputs.new_version }}.msix"
-          STABLE_PATH="windows"
-
-          # Configure wrangler with R2 credentials
-          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
-          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
-
-          echo "Uploading $VERSIONED_MSIX to stable path: $STABLE_PATH"
-          wrangler r2 object put "${R2_BUCKET_NAME}/${STABLE_PATH}" \
-            --file="$VERSIONED_MSIX" \
-            --content-type="application/vnd.ms-appx" \
-            --content-disposition="attachment; filename=\"Plot.msix\"" \
-            --remote
-
-          echo "Stable MSIX uploaded successfully!"
-          echo "Stable URL: https://download.plot.day/${STABLE_PATH}"
-
-      - name: Upload portable ZIP to R2
-        shell: bash
-        run: |
-          cd apps/plot/build/windows/x64/runner/Release
-
-          ZIP_FILE="Plot-${{ steps.version.outputs.new_version }}-portable.zip"
-          R2_PATH="releases/${{ steps.version.outputs.new_version }}/windows/$ZIP_FILE"
-
-          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
-          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
-
-          echo "Uploading $ZIP_FILE to R2 at $R2_PATH"
-          wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$ZIP_FILE" --remote
-
-          echo "ZIP uploaded successfully!"
-          echo "Download URL: https://download.plot.day/${R2_PATH}"
-
-      - name: Upload ZIP to stable path
-        shell: bash
-        run: |
-          cd apps/plot/build/windows/x64/runner/Release
-
-          ZIP_FILE="Plot-${{ steps.version.outputs.new_version }}-portable.zip"
-          STABLE_PATH="windows-portable"
-
-          # Configure wrangler with R2 credentials
-          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
-          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
-
-          echo "Uploading $ZIP_FILE to stable path: $STABLE_PATH"
-          wrangler r2 object put "${R2_BUCKET_NAME}/${STABLE_PATH}" \
-            --file="$ZIP_FILE" \
-            --content-type="application/zip" \
-            --content-disposition="attachment; filename=\"Plot-portable.zip\"" \
-            --remote
-
-          echo "Stable ZIP uploaded successfully!"
-          echo "Stable URL: https://download.plot.day/${STABLE_PATH}"
+          echo "All files uploaded successfully!"
+          echo "MSIX: https://download.plot.day/releases/${VERSION}/windows/${MSIX_FILE}"
+          echo "ZIP: https://download.plot.day/releases/${VERSION}/windows/${ZIP_FILE}"
+          echo "Stable MSIX: https://download.plot.day/windows"
+          echo "Stable ZIP: https://download.plot.day/windows-portable"
 
       - name: Create and upload version manifest
         shell: bash
@@ -335,11 +295,16 @@ jobs:
 
           cat latest-windows.json
 
-          # Upload manifest
-          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
-          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+          # Upload manifest via AWS CLI
+          export AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID
+          export AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY
+          export AWS_DEFAULT_REGION=auto
 
-          wrangler r2 object put "${R2_BUCKET_NAME}/latest-windows.json" --file="latest-windows.json" --remote
+          R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          aws s3 cp latest-windows.json "s3://${R2_BUCKET_NAME}/latest-windows.json" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/json"
 
           echo "Manifest uploaded successfully!"
           echo "Manifest URL: https://download.plot.day/latest-windows.json"
