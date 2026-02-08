@@ -768,7 +768,7 @@ export async function getActivityOccurrence(
       activity: activity,
       start: occurrenceStart,
       end: occurrenceEnd,
-      done: exception?.done_at ? new Date(exception.done_at) : activity.done,
+      done: exception?.done_at ? new Date(exception.done_at) : activity.type === ActivityType.Action ? activity.done : null,
       title: exception?.title ?? activity.title,
       meta: (exception?.meta as ActivityMeta | null) ?? activity.meta,
       tags: (tagsData?.tags as Tags) || activity.tags,
