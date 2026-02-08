@@ -46,7 +46,6 @@ class NoteLinkWidget extends StatelessWidget {
         return ConferencingLinkButton(link: link as ConferencingLink);
       case LinkType.file:
         final fileLink = link as FileLink;
-        log.info('[FileLink] fileName=${fileLink.fileName} mimeType=${fileLink.mimeType} isImage=${fileLink.isImage}');
         if (fileLink.isImage) {
           return FileImageWidget(link: fileLink);
         }
@@ -144,11 +143,7 @@ class ExternalLinkButton extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
       child: Flexible(
-        child: Text(
-          link.title,
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-        ),
+        child: Text(link.title, overflow: TextOverflow.ellipsis, maxLines: 1),
       ),
     );
   }
@@ -177,11 +172,7 @@ class ConferencingLinkButton extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
       child: Flexible(
-        child: Text(
-          _getTitle(),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-        ),
+        child: Text(_getTitle(), overflow: TextOverflow.ellipsis, maxLines: 1),
       ),
     );
   }
@@ -231,8 +222,13 @@ class _FileLinkButtonState extends State<FileLinkButton> {
       style: FButtonStyle.secondary(),
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
-      prefix: _isLoading ? null : Icon(PlotIcon.attachment, size: 14,
-          color: context.theme.colors.foreground),
+      prefix: _isLoading
+          ? null
+          : Icon(
+              PlotIcon.attachment,
+              size: 14,
+              color: context.theme.colors.foreground,
+            ),
       child: Flexible(
         child: Text(
           '${widget.link.fileName} (${_formatFileSize(widget.link.fileSize)})',
@@ -315,7 +311,10 @@ class _FileImageWidgetState extends State<FileImageWidget> {
         });
       }
     } catch (e) {
-      log.warning('Failed to load image: ${widget.link.fileName} (mimeType=${widget.link.mimeType})', e);
+      log.warning(
+        'Failed to load image: ${widget.link.fileName} (mimeType=${widget.link.mimeType})',
+        e,
+      );
       if (mounted) {
         setState(() {
           _error = true;
@@ -333,10 +332,8 @@ class _FileImageWidgetState extends State<FileImageWidget> {
       maxWidthPercentage: 0.9,
       maxHeightPercentage: 0.9,
       padding: EdgeInsets.zero,
-      builder: (context) => _FullImageViewer(
-        bytes: bytes,
-        fileName: widget.link.fileName,
-      ),
+      builder: (context) =>
+          _FullImageViewer(bytes: bytes, fileName: widget.link.fileName),
     ).show<void>(context);
   }
 
@@ -363,7 +360,9 @@ class _FileImageWidgetState extends State<FileImageWidget> {
             _bytes!,
             fit: BoxFit.contain,
             errorBuilder: (_, error, ___) {
-              log.warning('[FileImage] decode failed for ${widget.link.fileName}: $error');
+              log.warning(
+                '[FileImage] decode failed for ${widget.link.fileName}: $error',
+              );
               return FileLinkButton(link: widget.link);
             },
           ),
@@ -393,9 +392,9 @@ class _FullImageViewer extends StatelessWidget {
                   fileName,
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
-                  style: DefaultTextStyle.of(context).style.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: DefaultTextStyle.of(
+                    context,
+                  ).style.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
               Tapable(
