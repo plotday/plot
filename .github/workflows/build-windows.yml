@@ -181,9 +181,7 @@ jobs:
       - name: Build Windows app
         run: |
           cd apps/plot
-          flutter build windows --release --verbose \
-            --build-name=${{ steps.version.outputs.version_name }} \
-            --build-number=${{ steps.version.outputs.build_number }}
+          flutter build windows --release --verbose
 
       # NOTE: MSIX package is signed with self-signed certificate
       # Users must install the public certificate (plot-codesign.cer) to their
