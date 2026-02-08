@@ -344,19 +344,20 @@ class TagsConverter extends TypeConverter<Map<Tag, List<ActorId>>?, String?>
   }
 }
 
-class TagUpdatesConverter extends TypeConverter<Map<int, bool>?, String?>
-    with JsonTypeConverter2<Map<int, bool>?, String?, Map<String, dynamic>?> {
+class TagUpdatesConverter extends TypeConverter<Map<String, bool>?, String?>
+    with
+        JsonTypeConverter2<Map<String, bool>?, String?, Map<String, dynamic>?> {
   const TagUpdatesConverter();
 
   @override
-  Map<int, bool>? fromSql(String? fromDb) {
+  Map<String, bool>? fromSql(String? fromDb) {
     if (fromDb == null) return null;
     try {
       final decoded = jsonDecode(fromDb) as Map<String, dynamic>?;
       if (decoded == null) return null;
 
       return decoded.map(
-        (key, value) => MapEntry(int.parse(key), value as bool),
+        (key, value) => MapEntry(key, value as bool),
       );
     } catch (e, t) {
       log.warning('Error decoding tagUpdates', e, t);
@@ -365,13 +366,10 @@ class TagUpdatesConverter extends TypeConverter<Map<int, bool>?, String?>
   }
 
   @override
-  String? toSql(Map<int, bool>? value) {
+  String? toSql(Map<String, bool>? value) {
     if (value == null || value.isEmpty) return null;
     try {
-      final stringMap = value.map(
-        (key, value) => MapEntry(key.toString(), value),
-      );
-      return jsonEncode(stringMap);
+      return jsonEncode(value);
     } catch (e, t) {
       log.warning('Error encoding tagUpdates', e, t);
       return null;
@@ -379,18 +377,17 @@ class TagUpdatesConverter extends TypeConverter<Map<int, bool>?, String?>
   }
 
   @override
-  Map<int, bool>? fromJson(Map<String, dynamic>? json) {
+  Map<String, bool>? fromJson(Map<String, dynamic>? json) {
     return null;
   }
 
   @override
-  Map<String, dynamic>? toJson(Map<int, bool>? value) {
+  Map<String, dynamic>? toJson(Map<String, bool>? value) {
     if (value == null) return null;
     try {
       final Map<String, bool> result = {};
       for (final entry in value.entries) {
-        final tag = entry.key;
-        result[tag.toString()] = entry.value;
+        result[entry.key] = entry.value;
       }
       return result;
     } catch (e, t) {

@@ -52,7 +52,7 @@ CREATE POLICY "Users can view note_tag in their accessible priorities" ON "publi
 
 CREATE POLICY "Users can insert note_tag for notes in their accessible priorities" ON "public"."note_tag"
     FOR INSERT
-        WITH CHECK (actor_id = user_contact_id ()
+        WITH CHECK ((actor_id = user_contact_id () OR tag_id IN (1, 3))
         AND EXISTS (
             SELECT
                 1
@@ -69,6 +69,7 @@ GRANT UPDATE (updated_at, updated_by, archived_at) ON TABLE public.note_tag TO a
 CREATE POLICY "Users can update note_tag for notes in their accessible priorities" ON "public"."note_tag"
     FOR UPDATE
         USING (actor_id = user_contact_id ()
+            OR note_tag.tag_id IN (1, 3)
             OR EXISTS (
                 SELECT
                     1
@@ -77,5 +78,5 @@ CREATE POLICY "Users can update note_tag for notes in their accessible prioritie
                     JOIN activity a ON a.id = n.activity_id
                 WHERE
                     n.id = note_tag.note_id AND public.user_has_priority_access ((select auth.uid ()), a.priority_id) AND get_tag_type (note_tag.tag_id) = 'toggle'))
-                WITH CHECK (note_tag.actor_id = user_contact_id ());
+                WITH CHECK (note_tag.actor_id = user_contact_id () OR note_tag.tag_id IN (1, 3));
 

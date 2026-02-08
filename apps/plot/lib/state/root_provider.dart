@@ -168,6 +168,7 @@ class RootProviderState extends State<RootProvider> {
               prioritiesBloc.stop();
               nowBloc.stop();
               PriorityTwist.stopGlobalWatch();
+              Actor.clearCache();
               // Set theme to Catalyst when signed out
               themeBloc.setPriorityColor(ThemeColor(0));
               await router.replaceAll([SignInRoute()]);

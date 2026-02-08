@@ -747,6 +747,11 @@ export async function prepareActivityForDb(
     }
   }
 
+  // Only actions can have done_at — promote type if needed
+  if (activity.done && dbActivityType !== "action") {
+    dbActivityType = "action";
+  }
+
   // Extract occurrences array (SDK format) - will be processed after insert/upsert via processOccurrences
   const occurrences: NewActivityOccurrence[] =
     "occurrences" in activity && activity.occurrences
@@ -905,6 +910,9 @@ export async function prepareActivityForDb(
     }
     if (activity.done !== undefined) {
       upsertFields.done_at = activity.done ? activity.done.toISOString() : null;
+      if (activity.done && activity.type === undefined) {
+        upsertFields.type = "action";
+      }
     }
     if (activity.recurrenceRule !== undefined) {
       upsertFields.recurrence_rule = activity.recurrenceRule;

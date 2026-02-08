@@ -154,17 +154,23 @@ class FinishTask extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // Use current user ID if actorIdspecified
-      final targetActorId = actorId ?? Base.actorId;
+      final ActorId targetActorId;
+      final assignees = note.activeAssignees;
+
+      if (actorId != null) {
+        // Explicit actor specified
+        targetActorId = actorId!;
+      } else if (assignees.length == 1) {
+        // Single assignee: complete for them (even if different user)
+        targetActorId = assignees.first;
+      } else {
+        // Multiple (or zero) assignees: complete for current user
+        targetActorId = Base.actorId;
+      }
 
       // Check if already completed by this actor
       if (note.isCompletedBy(targetActorId)) {
         return const CommandMessage('Already marked as done');
-      }
-
-      // Check if the actor is assigned
-      if (!note.isAssignedTo(targetActorId)) {
-        return const CommandMessage('Not assigned to this note', isError: true);
       }
 
       // Complete the note for this actor (replaces Tag.now with Tag.done)
@@ -329,6 +335,94 @@ class SplitNoteToNewActivity extends NoteCommand {
   }
 }
 
+class PickNoteAssignee extends ShowCommands {
+  PickNoteAssignee(this.note)
+    : super(
+        title: 'Assign',
+        icon: FontAwesomeIcons.circleUserCirclePlus,
+        commandsBuilder: (context) => _getAssigneeCommands(note),
+        eventObject: EventObject.note,
+        eventAction: EventAction.updated,
+      );
+
+  final Note note;
+
+  static Future<Commands> _getAssigneeCommands(Note note) async {
+    final activity = await Activity.getOne(note.activityId);
+    // Refresh note to get latest tag state
+    final freshNote = await note.refresh();
+    return Commands(
+      prompt: 'Assign to',
+      groups: [
+        ActorGroup(
+          priorityId: activity.priority.id,
+          builder: (actor) => actor == null
+              ? _UnassignAllFromNote(freshNote)
+              : ToggleAssignNoteActor(freshNote, actor),
+        ),
+      ],
+    );
+  }
+}
+
+class ToggleAssignNoteActor extends NoteCommand {
+  ToggleAssignNoteActor(Note note, this.actor)
+    : super(
+        note,
+        title: actor.nameOrEmail,
+        eventObject: EventObject.note,
+        eventAction: note.isAssignedTo(actor.id)
+            ? EventAction.untagged
+            : EventAction.tagged,
+        icon: note.isAssignedTo(actor.id)
+            ? FontAwesomeIcons.circleCheck
+            : FontAwesomeIcons.circleUser,
+      );
+
+  final Actor actor;
+
+  @override
+  String? get subtitle => actor.email;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final isAssigned = note.isAssignedTo(actor.id);
+      final updatedNote = note.setTag(Tag.now, actor.id, !isAssigned);
+      await updatedNote.save();
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in ToggleAssignNoteActor: $e', e, stackTrace);
+      return CommandMessage('Failed to toggle assignment', isError: true);
+    }
+  }
+}
+
+class _UnassignAllFromNote extends NoteCommand {
+  _UnassignAllFromNote(super.note)
+    : super(
+        title: 'Unassign All',
+        eventObject: EventObject.note,
+        eventAction: EventAction.untagged,
+        icon: FontAwesomeIcons.circleUserCircleXmark,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      Note updatedNote = note;
+      for (final actorId in note.activeAssignees) {
+        updatedNote = updatedNote.setTag(Tag.now, actorId, false);
+      }
+      await updatedNote.save();
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in _UnassignAllFromNote: $e', e, stackTrace);
+      return CommandMessage('Failed to unassign all', isError: true);
+    }
+  }
+}
+
 List<StaticCommandGroup> noteCommandGroups(Note note) {
   final actorId = Base.actorId;
   final tags = Tag.getAll()
@@ -365,6 +459,7 @@ List<Command> noteCommands(Note note) {
   return [
     if (!isAssigned) StartTask(note),
     if (isAssigned) FinishTask(note),
+    PickNoteAssignee(note),
     if (!note.draft && note.content != null && note.content!.trim().isNotEmpty)
       SplitNoteToNewActivity(note),
     if (!note.private || note.authorId == Base.actorId) ToggleNotePrivate(note),

@@ -191,18 +191,28 @@ class NoteTagsBase extends BaseTable {
           local.tagsUpdated!.isNotEmpty) {
         // Check which pending changes are not yet reflected on server
         final serverTags = noteTagsRow.tags ?? {};
-        final pendingChanges = <int, bool>{};
+        final pendingChanges = <String, bool>{};
 
         for (final entry in local.tagsUpdated!.entries) {
-          final tagId = entry.key;
+          final key = entry.key;
           final wantTagPresent = entry.value;
+
+          // Parse composite key: "tagId" or "tagId:actorId"
+          final parts = key.split(':');
+          final tagId = int.parse(parts[0]);
+          final targetActorId =
+              parts.length > 1 ? ActorId.fromString(parts[1]) : Base.actorId;
+
           final tag = Tag.get(id: tagId);
           if (tag == null) continue; // Unknown tag, skip
-          final tagPresentOnServer = serverTags.containsKey(tag);
+
+          // Check if the specific actor has this tag on the server
+          final actorList = serverTags[tag] ?? [];
+          final tagPresentOnServer = actorList.contains(targetActorId);
 
           // Only keep pending changes where server doesn't match desired state
           if (tagPresentOnServer != wantTagPresent) {
-            pendingChanges[tagId] = wantTagPresent;
+            pendingChanges[key] = wantTagPresent;
           }
         }
 

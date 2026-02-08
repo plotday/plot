@@ -198,6 +198,38 @@ class ActivitiesBase extends BaseTable {
   }
 
   @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final activityRow = row as ActivityRow;
+      // Check if local has a pending unread change
+      final local = await (store.select(store.activities)
+            ..where((t) => t.id.equals(activityRow.id.toBytes())))
+          .getSingleOrNull();
+      if (local != null && local.unreadUpdated == true) {
+        if (activityRow.unread == local.unread) {
+          // Server confirms our local unread state - clear the pending flag
+          result.add(activityRow.copyWith(
+            unreadUpdated: const Value(null),
+          ));
+        } else {
+          // Server still has stale data - preserve local unread state
+          result.add(activityRow.copyWith(
+            unread: local.unread,
+            unreadUpdated: const Value(true),
+          ));
+        }
+      } else {
+        result.add(row);
+      }
+    }
+    return result;
+  }
+
+  @override
   Map<String, dynamic> toBase(DataClass row) {
     final json = super.toBase(row);
 
@@ -389,21 +421,14 @@ class Activity extends Equatable implements Comparable<Activity> {
         }
       }
 
-      // Clear unreadUpdated flags for all activities (only on success)
-      for (final activity in unreadActivities) {
-        await (Store.get.update(
-          Store.get.activities,
-        )..where((t) => t.id.equals(activity.id.toBytes()))).write(
-          ActivitiesCompanion(
-            unreadUpdated: const Value(null),
-            updatedAt: Value(DateTime.now()),
-          ),
-        );
-      }
+      // Don't clear unreadUpdated here - let processPulledRows clear it
+      // when the server confirms the unread state matches.
+      // Clearing eagerly creates a race: a concurrent pull with stale data
+      // (started before the activity_read push) can overwrite unread with
+      // the stale server value because unreadUpdated was already null.
     } catch (e) {
       log.severe('Failed to push activity_read changes: $e');
-      // Don't clear unreadUpdated flags on failure
-      // They will be retried on next push
+      // unreadUpdated stays true, will be retried on next push
       rethrow;
     }
 
@@ -1790,6 +1815,11 @@ class Activity extends Equatable implements Comparable<Activity> {
       unread = false;
     }
 
+    // Only actions can have done_at — auto-promote type when marking done
+    if (doneAt.present && doneAt.value != null) {
+      type ??= ActivityType.action;
+    }
+
     // Ensure assigneeId is set when converting to action type
     // If type is being changed to action and no assigneeId is provided, default to current user
     if (type == ActivityType.action &&
@@ -1993,7 +2023,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     bool isAdding = false;
 
     // Initialize tag updates map early since we need it for RSVP exclusivity
-    final currentTagUpdates = Map<int, bool>.from(_tags?.tagsUpdated ?? {});
+    final currentTagUpdates = Map<String, bool>.from(_tags?.tagsUpdated ?? {});
 
     if (tag.type == TagType.toggle) {
       // Toggle behavior: add if not present, remove if present
@@ -2033,7 +2063,7 @@ class Activity extends Equatable implements Comparable<Activity> {
                   currentTags[rsvpTag] = rsvpUsers;
                 }
                 // Track removal in tagsUpdated
-                currentTagUpdates[rsvpTag.id] = false;
+                currentTagUpdates[rsvpTag.id.toString()] = false;
               }
             }
           }
@@ -2047,7 +2077,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
 
     // Update the tag updates map
-    currentTagUpdates[tag.id] = isAdding;
+    currentTagUpdates[tag.id.toString()] = isAdding;
     log.info(
       "Toggling tag ${tag.name} (${tag.type}) to $isAdding ($currentTags, $currentTagUpdates)",
     );

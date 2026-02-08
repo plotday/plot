@@ -983,13 +983,16 @@ class Store extends _$Store {
         }
       });
 
+      // Allow base table to merge with local pending state
+      final processedRows = await baseTable.processPulledRows(this, storeRows);
+
       await batch((batch) {
         // Use insertOrReplace mode to ensure null values are explicitly set.
         // - insertAllOnConflictUpdate uses toColumns(true) which treats null as
         //   "don't update this column" - causing unarchived items to stay archived
         // - insertOrReplace deletes and re-inserts the row, ensuring all columns
         //   including nulls are set correctly
-        batch.insertAll(table, storeRows, mode: InsertMode.insertOrReplace);
+        batch.insertAll(table, processedRows, mode: InsertMode.insertOrReplace);
       });
 
       totalRows += baseRows.length;
@@ -1665,7 +1668,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 239;
+  int get schemaVersion => 240;
 
   @override
   MigrationStrategy get migration {

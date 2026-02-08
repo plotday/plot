@@ -676,8 +676,8 @@ class Note extends Equatable implements Comparable<Note> {
         : {};
 
     // Get current tag updates or create empty map
-    Map<int, bool> currentTagUpdates = _tags?.tagsUpdated != null
-        ? Map<int, bool>.from(_tags!.tagsUpdated!)
+    Map<String, bool> currentTagUpdates = _tags?.tagsUpdated != null
+        ? Map<String, bool>.from(_tags!.tagsUpdated!)
         : {};
 
     if (value) {
@@ -696,8 +696,11 @@ class Note extends Equatable implements Comparable<Note> {
       }
     }
 
-    // Track which tag changed
-    currentTagUpdates[tag.id] = value;
+    // Track which tag changed - use composite key "tagId:actorId" for cross-user tags
+    final tagKey = actorId == Base.actorId
+        ? tag.id.toString()
+        : '${tag.id}:$actorId';
+    currentTagUpdates[tagKey] = value;
 
     // Create new tags row with updated data
     final newTags =
@@ -780,15 +783,15 @@ class Note extends Equatable implements Comparable<Note> {
           Map<Tag, List<ActorId>> currentTags = effectiveTags?.tags != null
               ? Map<Tag, List<ActorId>>.from(effectiveTags!.tags!)
               : {};
-          Map<int, bool> currentTagUpdates = effectiveTags?.tagsUpdated != null
-              ? Map<int, bool>.from(effectiveTags!.tagsUpdated!)
+          Map<String, bool> currentTagUpdates = effectiveTags?.tagsUpdated != null
+              ? Map<String, bool>.from(effectiveTags!.tagsUpdated!)
               : {};
 
           // Add Twisting tag if not already present
           currentTags.putIfAbsent(Tag.twist, () => []);
           if (!currentTags[Tag.twist]!.contains(mentionId)) {
             currentTags[Tag.twist]!.add(mentionId);
-            currentTagUpdates[Tag.twist.id] = true;
+            currentTagUpdates[Tag.twist.id.toString()] = true;
           }
 
           effectiveTags =

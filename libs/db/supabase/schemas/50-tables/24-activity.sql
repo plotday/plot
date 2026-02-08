@@ -1,5 +1,5 @@
 CREATE TYPE "public"."activity_type" AS enum (
-    'action', -- doesn't block time; incomplete until done_at is set
+    'action', -- doesn't block time; incomplete until done_at is set. Only type that can have done_at.
     'event', -- blocks time
     'note'
 );
@@ -100,6 +100,9 @@ ALTER TABLE "public"."activity"
 -- This allows unassigned actions to exist as unscheduled items
 ALTER TABLE "public"."activity"
     ADD CONSTRAINT activity_action_assignee CHECK (TYPE != 'action' OR assignee_id IS NOT NULL OR (at IS NULL AND "on" IS NULL));
+
+ALTER TABLE "public"."activity"
+    ADD CONSTRAINT activity_done_requires_action CHECK (done_at IS NULL OR TYPE = 'action');
 
 ALTER TABLE "public"."activity"
     ADD CONSTRAINT activity_title_required_when_not_draft CHECK (draft = TRUE OR (title IS NOT NULL AND title != ''));

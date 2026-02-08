@@ -68,7 +68,7 @@ class PlotIcon {
   static const later = FontAwesomeIcons.clock;
   static const done = FontAwesomeIcons.check;
   static const other = FontAwesomeIcons.circleUser;
-  static const otherDone = FontAwesomeIcons.circleUserCircleCheck;
+  static const otherDone = FontAwesomeIcons.check;
   static const pinned = FontAwesomeIcons.thumbtackAngle;
   static const archived = FontAwesomeIcons.boxArchive;
   static const urgent = FontAwesomeIcons.sirenOn;

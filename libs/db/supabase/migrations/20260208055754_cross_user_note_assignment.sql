@@ -1,8 +1,10 @@
-CREATE OR REPLACE FUNCTION public.update_note_tags (p_note_id uuid, p_actor_id uuid, p_client_id integer, p_tag_updates jsonb)
-    RETURNS void
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    AS $function$
+SET ROLE "postgres";
+SET check_function_bodies = false;
+CREATE OR REPLACE FUNCTION public.update_note_tags(p_note_id uuid, p_actor_id uuid, p_client_id integer, p_tag_updates jsonb)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
 DECLARE
     tag_record record;
     tag_id_int integer;
@@ -97,3 +99,15 @@ BEGIN
 END;
 $function$;
 
+-- Update RLS policies for note_tag to allow cross-user assignment for tags 1 (now) and 3 (done)
+ALTER POLICY "Users can insert note_tag for notes in their accessible priorit" ON public.note_tag WITH CHECK ((((actor_id = public.user_contact_id()) OR (tag_id = ANY (ARRAY[1, 3]))) AND (EXISTS ( SELECT 1
+   FROM (public.note n
+     JOIN public.activity a ON ((a.id = n.activity_id)))
+  WHERE ((n.id = note_tag.note_id) AND public.user_has_priority_access(( SELECT auth.uid() AS uid), a.priority_id))))));
+
+ALTER POLICY "Users can update note_tag for notes in their accessible priorit" ON public.note_tag USING (((actor_id = public.user_contact_id()) OR (tag_id = ANY (ARRAY[1, 3])) OR (EXISTS ( SELECT 1
+   FROM (public.note n
+     JOIN public.activity a ON ((a.id = n.activity_id)))
+  WHERE ((n.id = note_tag.note_id) AND public.user_has_priority_access(( SELECT auth.uid() AS uid), a.priority_id) AND (public.get_tag_type(note_tag.tag_id) = 'toggle'::public.tag_type))))));
+
+ALTER POLICY "Users can update note_tag for notes in their accessible priorit" ON public.note_tag WITH CHECK (((actor_id = public.user_contact_id()) OR (tag_id = ANY (ARRAY[1, 3]))));

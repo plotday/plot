@@ -5,6 +5,7 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:logging/logging.dart';
 import 'package:super_editor/super_editor.dart' show LogNames;
 import 'package:app_links/app_links.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'analytics/tracker.dart';
@@ -168,6 +169,14 @@ Future<void> run(List<String> args) async {
 
       // Store instance lock globally for cleanup
       _instanceLock = instanceLock;
+    }
+
+    // Set global SharedPreferences prefix for profile isolation.
+    // This ensures ALL SharedPreferences usage (including Supabase auth)
+    // is isolated per profile, not just our own keys.
+    final profile = CliArgs.profile;
+    if (profile != null) {
+      SharedPreferences.setPrefix('flutter.profile.$profile.');
     }
 
     // Initialize profile-aware preferences (must be after CliArgs, before Window)

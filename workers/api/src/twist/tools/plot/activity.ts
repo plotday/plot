@@ -346,6 +346,10 @@ export async function updateActivity(
     }
     if (activity.done !== undefined) {
       dbUpdate.done_at = activity.done ? activity.done.toISOString() : null;
+      // Only actions can have done_at — auto-set type if not already provided
+      if (activity.done && activity.type === undefined) {
+        dbUpdate.type = "action";
+      }
     }
     if (activity.meta !== undefined) {
       dbUpdate.meta = activity.meta;
