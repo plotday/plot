@@ -413,10 +413,73 @@ export class TwistSync extends DurableObject<Bindings> {
         });
       }
 
+      // Calculate the number of batches needed (based on max items across all arrays)
+      const maxItems = Math.max(
+        newNotes.length,
+        updatedNotes.length,
+        newActivities.length,
+        updatedActivities.length
+      );
+      const batchCount = Math.ceil(maxItems / MAX_ITEMS_PER_BATCH);
+
+      // Send queue messages BEFORE updating sync timestamps
+      // This ensures twist callbacks are always delivered even if timestamp updates fail
+      // (transient PostgREST 500s). If timestamps fail to advance, the next alarm will
+      // re-fetch the same items, causing duplicate but harmless callbacks.
+      for (let i = 0; i < batchCount; i++) {
+        const start = i * MAX_ITEMS_PER_BATCH;
+        const end = start + MAX_ITEMS_PER_BATCH;
+
+        const batchNewNotes = newNotes.slice(start, end);
+        const batchUpdatedNotes = updatedNotes.slice(start, end);
+        const batchNewActivities = newActivities.slice(start, end);
+        const batchUpdatedActivities = updatedActivities.slice(start, end);
+
+        // Filter tag changes to only include those relevant to activities in this batch
+        // Include both new and updated activities for tag changes
+        const batchActivityIds = new Set([
+          ...batchNewActivities.map((a) => a.id),
+          ...batchUpdatedActivities.map((a) => a.id),
+        ]);
+        const batchTagChanges = activityTagChanges.filter((tc) =>
+          batchActivityIds.has(tc.activityId)
+        );
+
+        if (
+          batchNewNotes.length > 0 ||
+          batchUpdatedNotes.length > 0 ||
+          batchNewActivities.length > 0 ||
+          batchUpdatedActivities.length > 0
+        ) {
+          await this.env.UPDATES_QUEUE.send({
+            type: "twist_batch",
+            priorityTwistId: this.priorityTwistId,
+            twistId: priorityTwist.twist_id,
+            environment: twist.environment,
+            version: twist.version,
+            newNotes: batchNewNotes,
+            updatedNotes: batchUpdatedNotes,
+            newActivities: batchNewActivities,
+            updatedActivities: batchUpdatedActivities,
+            activityTagChanges: batchTagChanges,
+            priorityTwist: null, // TODO: Handle priority_twist config updates
+          });
+        }
+      }
+
       // Update each entity/operation pair with its specific timestamp
       // This ensures each operation advances independently based on items actually processed
       // Using database timestamps avoids clock skew and timezone issues
-      await Promise.all([
+      // Uses Promise.allSettled so transient PostgREST 500s don't throw — failed updates
+      // simply mean the next alarm re-fetches the same items (duplicate callbacks are acceptable)
+      const syncUpdateNames = [
+        "activity create sync",
+        "activity update sync",
+        "note create sync",
+        "note update sync",
+      ] as const;
+
+      const syncUpdateResults = await Promise.allSettled([
         safeQuery(
           this.supabase
             .from("priority_twist_sync")
@@ -455,53 +518,19 @@ export class TwistSync extends DurableObject<Bindings> {
         ),
       ]);
 
-      // Calculate the number of batches needed (based on max items across all arrays)
-      const maxItems = Math.max(
-        newNotes.length,
-        updatedNotes.length,
-        newActivities.length,
-        updatedActivities.length
-      );
-      const batchCount = Math.ceil(maxItems / MAX_ITEMS_PER_BATCH);
-
-      // Send batches of up to MAX_ITEMS_PER_BATCH items each
-      for (let i = 0; i < batchCount; i++) {
-        const start = i * MAX_ITEMS_PER_BATCH;
-        const end = start + MAX_ITEMS_PER_BATCH;
-
-        const batchNewNotes = newNotes.slice(start, end);
-        const batchUpdatedNotes = updatedNotes.slice(start, end);
-        const batchNewActivities = newActivities.slice(start, end);
-        const batchUpdatedActivities = updatedActivities.slice(start, end);
-
-        // Filter tag changes to only include those relevant to activities in this batch
-        // Include both new and updated activities for tag changes
-        const batchActivityIds = new Set([
-          ...batchNewActivities.map((a) => a.id),
-          ...batchUpdatedActivities.map((a) => a.id),
-        ]);
-        const batchTagChanges = activityTagChanges.filter((tc) =>
-          batchActivityIds.has(tc.activityId)
-        );
-
-        if (
-          batchNewNotes.length > 0 ||
-          batchUpdatedNotes.length > 0 ||
-          batchNewActivities.length > 0 ||
-          batchUpdatedActivities.length > 0
-        ) {
-          await this.env.UPDATES_QUEUE.send({
-            type: "twist_batch",
-            priorityTwistId: this.priorityTwistId,
-            twistId: priorityTwist.twist_id,
-            environment: twist.environment,
-            version: twist.version,
-            newNotes: batchNewNotes,
-            updatedNotes: batchUpdatedNotes,
-            newActivities: batchNewActivities,
-            updatedActivities: batchUpdatedActivities,
-            activityTagChanges: batchTagChanges,
-            priorityTwist: null, // TODO: Handle priority_twist config updates
+      // Log any failed sync timestamp updates
+      for (let i = 0; i < syncUpdateResults.length; i++) {
+        const result = syncUpdateResults[i];
+        if (result.status === "rejected") {
+          const error = result.reason;
+          const dbContext = error instanceof DbError ? error.toLogContext() : {};
+          logger.error(`Failed to update ${syncUpdateNames[i]}`, error as Error, {
+            priority_twist_id: this.priorityTwistId!,
+            ...dbContext,
+          });
+          this.captureException(error as Error, {
+            sync_update: syncUpdateNames[i],
+            ...dbContext,
           });
         }
       }
