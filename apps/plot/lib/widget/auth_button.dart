@@ -490,6 +490,13 @@ class _AuthButtonState extends State<AuthButton> {
     );
   }
 
+  /// Desktop Google sign-in uses a localhost callback with FlutterWebAuth2's
+  /// server mode. Custom URL schemes (plotapp://) don't work on Windows because
+  /// the OS launches a new app instance instead of routing to the existing one.
+  /// Google allows http://localhost with any port for desktop OAuth clients.
+  static const _desktopCallbackPort = 23522;
+  static const _desktopCallbackUrl = 'http://localhost:$_desktopCallbackPort';
+
   void _startGoogleAuthDesktop() async {
     setState(() => _isLoading = true);
     try {
@@ -497,7 +504,7 @@ class _AuthButtonState extends State<AuthButton> {
 
       final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
         'client_id': clientId,
-        'redirect_uri': Env.authCallbackUrl,
+        'redirect_uri': _desktopCallbackUrl,
         'response_type': 'code',
         'scope': 'openid profile email',
         'access_type': 'offline',
@@ -506,7 +513,8 @@ class _AuthButtonState extends State<AuthButton> {
 
       final result = await FlutterWebAuth2.authenticate(
         url: authUrl.toString(),
-        callbackUrlScheme: Env.authCallbackUrl.split(':').first,
+        callbackUrlScheme: _desktopCallbackUrl,
+        options: const FlutterWebAuth2Options(useWebview: false),
       );
 
       final responseUri = Uri.parse(result);
@@ -519,7 +527,7 @@ class _AuthButtonState extends State<AuthButton> {
       final uri = Uri.parse('${Env.apiRoot}/auth').replace(queryParameters: {
         'code': code,
         'clientId': clientId,
-        'redirectUri': Env.authCallbackUrl,
+        'redirectUri': _desktopCallbackUrl,
         'provider': 'google',
       });
       final tokenResponse = await http.post(uri);
@@ -538,7 +546,7 @@ class _AuthButtonState extends State<AuthButton> {
 
       await widget.onComplete(
         clientId: clientId,
-        redirectUri: Env.authCallbackUrl,
+        redirectUri: _desktopCallbackUrl,
         idToken: idToken,
         accessToken: tokens['access_token'] as String?,
       );
