@@ -14,7 +14,7 @@ publish_to: "none"
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.4+131
+version: 1.1.4+132
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -206,7 +206,7 @@ msix_config:
   display_name: Plot
   publisher_display_name: Plot Technologies Inc.
   identity_name: com.plottechnologies.plot
-  msix_version: 1.1.4+131
+  msix_version: 1.1.4+132
   logo_path: assets/plot-windows-512x512.png
   capabilities: internetClient
   install_certificate: false
