@@ -85,8 +85,8 @@ class Scaffold extends StatelessWidget {
       webBuilder: (_) => material.Material(child: scaffold),
       builder: (_) => Directionality(
         textDirection: TextDirection.ltr,
-        child: Container(
-          color: translucent ? null : context.theme.colors.background,
+        child: material.Material(
+          color: translucent ? material.Colors.transparent : context.theme.colors.background,
           child: scaffold,
         ),
       ),
