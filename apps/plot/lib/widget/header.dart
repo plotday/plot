@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:platform_builder/platform_builder.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
@@ -128,17 +130,20 @@ class _HeaderState extends State<Header> {
             PanelPositionProvider.of(context) ??
             HeaderPosition.right;
 
+        final resolvedToolbarPadding =
+            Window.toolbarPadding.resolve(TextDirection.ltr);
+
         // Build title with position-specific left buttons
         final titleChildren = <Widget>[
-          // Avoid the window button area on the first panel
-          if (Window.toolbarPadding.horizontal != 0 &&
+          // Avoid the window button area on the first panel (macOS - left side)
+          if (resolvedToolbarPadding.left != 0 &&
               (!layoutState.multiPanel ||
                   position == HeaderPosition.left ||
                   (!layoutState.leftPanelVisible &&
                       position == HeaderPosition.middle) ||
                   (!layoutState.leftPanelVisible &&
                       !layoutState.middlePanelVisible)))
-            SizedBox(width: Window.toolbarPadding.horizontal),
+            SizedBox(width: resolvedToolbarPadding.left),
           // Right sidebar toggle for right position when panel is open
           if (position == HeaderPosition.right &&
               !layoutState.middlePanelVisible &&
@@ -292,9 +297,14 @@ class _HeaderState extends State<Header> {
                 isVisible: layoutState.middlePanelVisible,
               ),
             ),
+          // Avoid window controls on the last panel (Windows - right side)
+          if (resolvedToolbarPadding.right != 0 &&
+              (!layoutState.multiPanel ||
+                  position == HeaderPosition.right))
+            SizedBox(width: resolvedToolbarPadding.right),
         ];
 
-        return _HeaderHeightReporter(
+        Widget header = _HeaderHeightReporter(
           child: FAnimatedTheme(
             data: darkenTheme(context, context.theme, context.colour, steps: 2),
             child: Builder(
@@ -331,6 +341,13 @@ class _HeaderState extends State<Header> {
             ),
           ),
         );
+
+        // Wrap with DragToMoveArea on Windows for window dragging
+        if (Platform.instance.isWindows) {
+          header = DragToMoveArea(child: header);
+        }
+
+        return header;
       },
     );
   }

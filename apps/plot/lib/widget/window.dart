@@ -45,6 +45,14 @@ class Window extends StatefulWidget {
             buttonType: NSWindowButtonType.zoomButton,
           );
       toolbarPadding = EdgeInsets.only(left: lastWindowButtonPos.right);
+    } else if (Platform.instance.isWindows) {
+      await windowManager.setTitleBarStyle(
+        TitleBarStyle.hidden,
+        windowButtonVisibility: true,
+      );
+      toolbarHeight = 32.0;
+      // ~138px for 3 native buttons (46px each)
+      toolbarPadding = const EdgeInsets.only(right: 138);
     } else {
       toolbarHeight = 32.0;
       toolbarPadding = const EdgeInsets.all(0);
