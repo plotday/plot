@@ -1,12 +1,12 @@
 import 'dart:async' show unawaited;
+import 'dart:convert' show jsonDecode;
 
 import 'package:flutter/foundation.dart'
     show kIsWeb, kReleaseMode, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:google_sign_in_all_platforms/google_sign_in_all_platforms.dart'
-    as gsap;
+import 'package:http/http.dart' as http;
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:forui/forui.dart';
@@ -49,8 +49,6 @@ class AuthButton extends StatefulWidget {
       defaultTargetPlatform == TargetPlatform.macOS ||
       defaultTargetPlatform == TargetPlatform.android;
 
-  static gsap.GoogleSignIn? _allPlatformsSignIn;
-
   static Future<void> init() async {
     if (_useNativeGoogleSignIn) {
       late final String clientId;
@@ -71,14 +69,6 @@ class AuthButton extends StatefulWidget {
       await GoogleSignIn.instance.initialize(
         clientId: clientId,
         serverClientId: serverClientId,
-      );
-    } else {
-      _allPlatformsSignIn = gsap.GoogleSignIn(
-        params: gsap.GoogleSignInParams(
-          clientId: Env.googleClientId,
-          clientSecret: Env.googleClientSecret ?? '',
-          scopes: ['openid', 'profile', 'email'],
-        ),
       );
     }
   }
@@ -186,23 +176,6 @@ class _AuthButtonState extends State<AuthButton> {
             }
           }());
         }
-      } else if (widget.autoSignIn) {
-        unawaited(() async {
-          try {
-            final credentials =
-                await AuthButton._allPlatformsSignIn!.silentSignIn();
-            if (credentials != null) {
-              await widget.onComplete(
-                clientId: Env.googleClientId,
-                redirectUri: Env.authServerCallbackUrl,
-                idToken: credentials.idToken,
-                accessToken: credentials.accessToken,
-              );
-            }
-          } catch (e) {
-            log.info('Silent sign-in not available on desktop', e);
-          }
-        }());
       }
     }
   }
@@ -520,14 +493,54 @@ class _AuthButtonState extends State<AuthButton> {
   void _startGoogleAuthDesktop() async {
     setState(() => _isLoading = true);
     try {
-      final credentials = await AuthButton._allPlatformsSignIn!.signIn();
-      if (credentials == null) return;
+      final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
+        'client_id': Env.googleClientId,
+        'redirect_uri': Env.authCallbackUrl,
+        'response_type': 'code',
+        'scope': 'openid profile email',
+        'access_type': 'offline',
+        'prompt': 'select_account',
+      });
+
+      final result = await FlutterWebAuth2.authenticate(
+        url: authUrl.toString(),
+        callbackUrlScheme: Env.authCallbackUrl.split(':').first,
+      );
+
+      final responseUri = Uri.parse(result);
+      final code = responseUri.queryParameters['code'];
+      if (code == null) {
+        throw Exception('No authorization code received from Google');
+      }
+
+      final tokenResponse = await http.post(
+        Uri.parse('https://oauth2.googleapis.com/token'),
+        body: {
+          'client_id': Env.googleClientId,
+          'client_secret': Env.googleClientSecret ?? '',
+          'code': code,
+          'grant_type': 'authorization_code',
+          'redirect_uri': Env.authCallbackUrl,
+        },
+      );
+
+      if (tokenResponse.statusCode != 200) {
+        throw Exception(
+          'Token exchange failed (${tokenResponse.statusCode}): ${tokenResponse.body}',
+        );
+      }
+
+      final tokens = jsonDecode(tokenResponse.body) as Map<String, dynamic>;
+      final idToken = tokens['id_token'] as String?;
+      if (idToken == null) {
+        throw Exception('No id_token in token response');
+      }
 
       await widget.onComplete(
         clientId: Env.googleClientId,
-        redirectUri: Env.authServerCallbackUrl,
-        idToken: credentials.idToken,
-        accessToken: credentials.accessToken,
+        redirectUri: Env.authCallbackUrl,
+        idToken: idToken,
+        accessToken: tokens['access_token'] as String?,
       );
     } catch (e, t) {
       log.warning('Google sign-in failed (desktop)', e, t);

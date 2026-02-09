@@ -42,7 +42,6 @@ dependencies:
   bloc_concurrency: ^0.3.0
   adaptive_theme: ^3.4.1
   google_sign_in: ^7.1.1
-  google_sign_in_all_platforms: ^2.0.2
   sign_in_with_apple: ^6.1.2
   dart_date: ^1.4.0
   http: ^1.2.0
