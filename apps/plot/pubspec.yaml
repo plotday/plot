@@ -208,6 +208,8 @@ msix_config:
   msix_version: 1.1.4+134
   logo_path: assets/plot-windows-512x512.png
   icons_background_color: '#01845e'
+  protocol_activation: plotapp, com.googleusercontent.apps.535301598151-te9ckilam7u7rh9lvdoi607690idocmd
+  app_uri_handler_hosts: app.plot.day
   capabilities: internetClient
   install_certificate: false
   sign_msix: true
