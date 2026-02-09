@@ -281,7 +281,7 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   @override
   void didUpdateWidget(covariant _HoverableResizable oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.regions.length != oldWidget.regions.length) {
+    if (_regionsChanged(widget.regions, oldWidget.regions)) {
       _hoveredDividerIndex = null;
       // The controller's region offsets update during FResizable's layout phase,
       // after this build. Force a post-frame rebuild so the overlay dividers
@@ -290,6 +290,15 @@ class _HoverableResizableState extends State<_HoverableResizable> {
         if (mounted) setState(() {});
       });
     }
+  }
+
+  /// Check if regions changed by count or identity (via keys)
+  bool _regionsChanged(List<FResizableRegion> a, List<FResizableRegion> b) {
+    if (a.length != b.length) return true;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].key != b[i].key) return true;
+    }
+    return false;
   }
 
   void _handleResize() async {
@@ -399,14 +408,22 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                       divider: FResizableDivider.none,
                       children: widget.regions,
                     ),
-                    // Overlay dividers with drag hysteresis handling
-                    if (_controller.regions.isNotEmpty)
+                    // Overlay dividers with drag hysteresis handling.
+                    // Use Transform.translate instead of Positioned to
+                    // guarantee repaint on position change (RenderTransform
+                    // calls markNeedsPaint; Positioned only marks layout).
+                    // Skip when controller regions are stale (count mismatch)
+                    // to avoid rendering dividers at wrong positions.
+                    if (_controller.regions.length ==
+                            widget.regions.length &&
+                        _controller.regions.isNotEmpty)
                       for (var i = 0; i < _controller.regions.length - 1; i++)
-                        Positioned(
-                          left:
-                              _controller.regions[i].offset.max -
-                              (_hitRegionExtent / 2),
-                          top: overlayTop,
+                        Transform.translate(
+                          offset: Offset(
+                            _controller.regions[i].offset.max -
+                                (_hitRegionExtent / 2),
+                            overlayTop,
+                          ),
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onHorizontalDragStart: (_) => _onDragStart(i),
