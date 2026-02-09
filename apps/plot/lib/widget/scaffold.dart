@@ -2,10 +2,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'bottom_navigation_provider.dart';
 import 'modal.dart';
+import 'window.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/style/theme.dart';
+import 'package:plot/style/colors.dart';
 
 class Scaffold extends StatelessWidget {
   const Scaffold({
@@ -72,8 +76,14 @@ class Scaffold extends StatelessWidget {
     }
 
     final footer = _buildFooter(context);
+
+    // On Windows, when no header is provided, add a minimal drag bar with app name
+    final effectiveHeader = header ?? (Platform.instance.isWindows
+        ? _WindowsDragBar()
+        : null);
+
     final scaffold = FScaffold(
-      header: header,
+      header: effectiveHeader,
       sidebar: sidebar,
       footer: footer,
       childPad: childPad,
@@ -88,6 +98,50 @@ class Scaffold extends StatelessWidget {
         child: material.Material(
           color: translucent ? material.Colors.transparent : context.theme.colors.background,
           child: scaffold,
+        ),
+      ),
+    );
+  }
+}
+
+/// Minimal draggable title bar for Windows pages that don't have a Header.
+class _WindowsDragBar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final toolbarPadding = Window.toolbarPadding.resolve(TextDirection.ltr);
+    return FAnimatedTheme(
+      data: darkenTheme(context, context.theme, context.colour, steps: 2),
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.theme.colors.background,
+            border: Border(
+              bottom: BorderSide(
+                color: context.theme.colors.border,
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: DragToMoveArea(
+            child: SizedBox(
+              height: Window.toolbarHeight,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 12,
+                  right: toolbarPadding.right,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Plot',
+                    style: context.theme.typography.sm.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
