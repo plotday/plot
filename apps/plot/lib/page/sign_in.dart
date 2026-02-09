@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:auto_route/auto_route.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -181,55 +182,56 @@ class _SignInPageState extends State<SignInPage> {
                 },
               ),
 
-              AuthButton.authenticate(
-                provider: AuthProvider.apple,
-                autoSignIn: false,
-                onAuth: ({required idToken, accessToken}) async {
-                  if (mounted) {
-                    setState(() {
-                      _errorMessage = null;
-                      _isLoading = true;
-                    });
-                  }
-
-                  try {
-                    await Base.client.auth.signInWithIdToken(
-                      provider: OAuthProvider.apple,
-                      idToken: idToken,
-                      accessToken: accessToken,
-                    );
-
-                    // Clear password setup flag for OAuth sign-ins
-                    // (they already have a password via OAuth provider)
-                    if (context.mounted) {
-                      await context
-                          .read<UserBloc>()
-                          .clearPasswordSetupRequired();
+              if (defaultTargetPlatform != TargetPlatform.windows)
+                AuthButton.authenticate(
+                  provider: AuthProvider.apple,
+                  autoSignIn: false,
+                  onAuth: ({required idToken, accessToken}) async {
+                    if (mounted) {
+                      setState(() {
+                        _errorMessage = null;
+                        _isLoading = true;
+                      });
                     }
-                  } on AuthException catch (e, t) {
-                    log.warning('Error signing into Apple', e, t);
-                    if (!mounted) return;
-                    String message = e.message;
-                    if (message.contains('email_already_linked') ||
-                        message.contains('already associated')) {
-                      message =
-                          'This email is already associated with another account. '
-                          'Please sign in with the email you originally registered with.';
+
+                    try {
+                      await Base.client.auth.signInWithIdToken(
+                        provider: OAuthProvider.apple,
+                        idToken: idToken,
+                        accessToken: accessToken,
+                      );
+
+                      // Clear password setup flag for OAuth sign-ins
+                      // (they already have a password via OAuth provider)
+                      if (context.mounted) {
+                        await context
+                            .read<UserBloc>()
+                            .clearPasswordSetupRequired();
+                      }
+                    } on AuthException catch (e, t) {
+                      log.warning('Error signing into Apple', e, t);
+                      if (!mounted) return;
+                      String message = e.message;
+                      if (message.contains('email_already_linked') ||
+                          message.contains('already associated')) {
+                        message =
+                            'This email is already associated with another account. '
+                            'Please sign in with the email you originally registered with.';
+                      }
+                      setState(() {
+                        _errorMessage = message;
+                        _isLoading = false;
+                      });
                     }
-                    setState(() {
-                      _errorMessage = message;
-                      _isLoading = false;
-                    });
-                  }
-                },
-                onError: (error) {
-                  if (mounted) {
-                    setState(() {
-                      _errorMessage = error;
-                    });
-                  }
-                },
-              ),
+                  },
+                  onError: (error) {
+                    if (mounted) {
+                      setState(() {
+                        _errorMessage = error;
+                      });
+                    }
+                  },
+                ),
 
               // Continue with email button
               FButton(
