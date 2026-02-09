@@ -43,6 +43,11 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     return next();
   }
 
+  // Allow OAuth token exchange (codes are single-use, exchange requires server-side secret)
+  if (c.req.path === "/app/auth" && c.req.method === "POST") {
+    return next();
+  }
+
   // Allow invitation lookup without auth (uses supabaseAdmin, no user identity needed)
   if (c.req.path.startsWith("/app/invitation/") && c.req.method === "GET") {
     return next();

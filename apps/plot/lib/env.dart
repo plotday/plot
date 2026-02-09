@@ -25,6 +25,7 @@ abstract class Env {
     googleClientId = getEnvOrThrow('AUTH_GOOGLE_ID');
     googleIosClientId = getEnvOrThrow('AUTH_GOOGLE_IOS_ID');
     googleAndroidClientId = getEnvOrThrow('AUTH_GOOGLE_ANDROID_ID');
+    googleDesktopClientId = dotenv.maybeGet('AUTH_GOOGLE_DESKTOP_ID');
     googleClientSecret = dotenv.maybeGet('AUTH_GOOGLE_SECRET');
     // Use web service ID for web, native bundle ID for iOS/macOS/Android
     appleClientId = kIsWeb
@@ -63,6 +64,7 @@ abstract class Env {
   static late final String googleClientId;
   static late final String googleIosClientId;
   static late final String googleAndroidClientId;
+  static late final String? googleDesktopClientId;
   static late final String? googleClientSecret;
   static late final String appleClientId;
 

@@ -493,8 +493,10 @@ class _AuthButtonState extends State<AuthButton> {
   void _startGoogleAuthDesktop() async {
     setState(() => _isLoading = true);
     try {
+      final clientId = Env.googleDesktopClientId ?? Env.googleClientId;
+
       final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
-        'client_id': Env.googleClientId,
+        'client_id': clientId,
         'redirect_uri': Env.authCallbackUrl,
         'response_type': 'code',
         'scope': 'openid profile email',
@@ -513,16 +515,14 @@ class _AuthButtonState extends State<AuthButton> {
         throw Exception('No authorization code received from Google');
       }
 
-      final tokenResponse = await http.post(
-        Uri.parse('https://oauth2.googleapis.com/token'),
-        body: {
-          'client_id': Env.googleClientId,
-          'client_secret': Env.googleClientSecret ?? '',
-          'code': code,
-          'grant_type': 'authorization_code',
-          'redirect_uri': Env.authCallbackUrl,
-        },
-      );
+      // POST code to API for server-side token exchange
+      final uri = Uri.parse('${Env.apiRoot}/auth').replace(queryParameters: {
+        'code': code,
+        'clientId': clientId,
+        'redirectUri': Env.authCallbackUrl,
+        'provider': 'google',
+      });
+      final tokenResponse = await http.post(uri);
 
       if (tokenResponse.statusCode != 200) {
         throw Exception(
@@ -537,7 +537,7 @@ class _AuthButtonState extends State<AuthButton> {
       }
 
       await widget.onComplete(
-        clientId: Env.googleClientId,
+        clientId: clientId,
         redirectUri: Env.authCallbackUrl,
         idToken: idToken,
         accessToken: tokens['access_token'] as String?,

@@ -566,6 +566,20 @@ export class Integrations extends Tool implements IAuth {
         }
       }
 
+      // Sign-in flow (no callback): return tokens to the client
+      if (!authState.callback) {
+        return new Response(
+          JSON.stringify({
+            id_token: tokenResponse.id_token,
+            access_token: tokenResponse.access_token,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+
       return new Response(
         JSON.stringify({
           message: "Authentication successful! You can close this window.",
