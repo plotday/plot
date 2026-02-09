@@ -670,7 +670,6 @@ class EditorState extends State<Editor> {
   void submit(bool alt) async {
     final md = _serializeWithMentions(_document);
     widget.onSubmitted?.call(md, alt: alt);
-    clear();
   }
 
   /// Build shortcuts based on enter key behavior setting

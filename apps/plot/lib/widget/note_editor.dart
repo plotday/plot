@@ -26,6 +26,8 @@ class NoteEditorState extends State<NoteEditor> {
   final GlobalKey<EditableAreaState> _editableAreaKey =
       GlobalKey<EditableAreaState>();
   bool _isEmpty = true;
+  bool _finalized = false;
+  bool _saving = false;
   String _lastSavedContent = '';
   Uuid? _lastDraftNoteId;
   FocusNode? _currentFocusNode;
@@ -67,16 +69,19 @@ class NoteEditorState extends State<NoteEditor> {
 
   @override
   void deactivate() {
-    // Save draft when navigating away
-    final editorState = _editorKey.currentState;
-    if (editorState != null) {
-      final content = editorState.serialize();
-      _saveDraftNote(content);
+    // Save draft when navigating away (unless finalized)
+    if (!_finalized) {
+      final editorState = _editorKey.currentState;
+      if (editorState != null) {
+        final content = editorState.serialize();
+        _saveDraftNote(content);
+      }
     }
     super.deactivate();
   }
 
   void _onFocusChange() {
+    if (_finalized) return;
     if (_currentFocusNode != null && !_currentFocusNode!.hasFocus) {
       // Focus lost (blur) - save draft
       final editorState = _editorKey.currentState;
@@ -88,6 +93,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Future<void> _saveDraftNote(String content) async {
+    if (_finalized) return;
     // Only save if content has changed
     if (content == _lastSavedContent) return;
 
@@ -135,7 +141,10 @@ class NoteEditorState extends State<NoteEditor> {
                 });
               },
               onSubmitted: (body, {bool alt = false}) async {
-                await context.run(AddNote(finalizeDraft(body, alt: alt)));
+                final note = finalizeDraft(body, alt: alt);
+                if (!context.mounted) return;
+                setState(() { _saving = true; });
+                await context.run(AddNote(note));
               },
             );
             return Padding(
@@ -150,58 +159,74 @@ class NoteEditorState extends State<NoteEditor> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 spacing: 4,
                 children: [
-                  Flexible(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(
-                              top: 8,
-                              bottom: 4,
-                              left: 6,
-                              right: 6,
+                  IgnorePointer(
+                    ignoring: _saving,
+                    child: Opacity(
+                      opacity: _saving ? 0.6 : 1.0,
+                      child: Flexible(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  top: 8,
+                                  bottom: 4,
+                                  left: 6,
+                                  right: 6,
+                                ),
+                                child: editor,
+                              ),
                             ),
-                            child: editor,
-                          ),
-                        ),
 
-                        if (_isEmpty)
-                          SpeechDictationButton(
-                            onResult: (text) {
-                              _editorKey.currentState?.insertTextAtCursor(text);
-                            },
-                            onError: (error) {
-                              Alert.show(context, error);
-                            },
-                          ),
-                      ],
+                            if (_isEmpty)
+                              SpeechDictationButton(
+                                onResult: (text) {
+                                  _editorKey.currentState?.insertTextAtCursor(text);
+                                },
+                                onError: (error) {
+                                  Alert.show(context, error);
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   // Bottom bar - stays at bottom, above keyboard
                   Row(
                     children: [
-                      // Left side: Do Now toggle
-                      Button.icon(
-                        ToggleNoteTag(widget.draft, Tag.now, Base.actorId),
-                        selected: widget.draft.isAssignedTo(Base.actorId),
-                      ),
-                      // Private toggle
-                      if (!widget.draft.private || widget.draft.authorId == Base.actorId)
-                        Button.icon(
-                          ToggleNoteTag(widget.draft, Tag.private, Base.actorId),
-                          selected: widget.draft.private,
+                      IgnorePointer(
+                        ignoring: _saving,
+                        child: Opacity(
+                          opacity: _saving ? 0.6 : 1.0,
+                          child: Row(
+                            children: [
+                              // Left side: Do Now toggle
+                              Button.icon(
+                                ToggleNoteTag(widget.draft, Tag.now, Base.actorId),
+                                selected: widget.draft.isAssignedTo(Base.actorId),
+                              ),
+                              // Private toggle
+                              if (!widget.draft.private || widget.draft.authorId == Base.actorId)
+                                Button.icon(
+                                  ToggleNoteTag(widget.draft, Tag.private, Base.actorId),
+                                  selected: widget.draft.private,
+                                ),
+                              Button.icon(
+                                AttachFile(
+                                  priorityId: context.read<ActivityBloc>().state.activity.priority.id.toString(),
+                                  currentLinks: widget.draft.links ?? const [],
+                                  onLinksChanged: (links) {
+                                    final updatedDraft = widget.draft.copyWith(links: links);
+                                    context.read<ActivityBloc>().updateDraft(updatedDraft);
+                                  },
+                                ),
+                                selected: widget.draft.links?.any((l) => l.type == LinkType.file) ?? false,
+                              ),
+                            ],
+                          ),
                         ),
-                      Button.icon(
-                        AttachFile(
-                          priorityId: context.read<ActivityBloc>().state.activity.priority.id.toString(),
-                          currentLinks: widget.draft.links ?? const [],
-                          onLinksChanged: (links) {
-                            final updatedDraft = widget.draft.copyWith(links: links);
-                            context.read<ActivityBloc>().updateDraft(updatedDraft);
-                          },
-                        ),
-                        selected: widget.draft.links?.any((l) => l.type == LinkType.file) ?? false,
                       ),
                       const Spacer(),
                       // Right side: Save button (always visible)
@@ -214,8 +239,9 @@ class NoteEditorState extends State<NoteEditor> {
                           },
                         ),
                         style: ButtonStyle.primary,
-                        enabled: !_isEmpty ||
-                            (widget.draft.links?.any((l) => l.type == LinkType.file) ?? false),
+                        loading: _saving,
+                        enabled: !_saving && (!_isEmpty ||
+                            (widget.draft.links?.any((l) => l.type == LinkType.file) ?? false)),
                       ),
                     ],
                   ),
@@ -229,6 +255,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Future<Note> finalizeDraft(String body, {bool alt = false}) async {
+    _finalized = true;
     Note note = widget.draft.copyWith(
       content: body.isEmpty ? null : body,
       draft: false,

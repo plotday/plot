@@ -40,6 +40,7 @@ class ActivityEditorState extends State<ActivityEditor> {
       GlobalKey<EditableAreaState>();
   bool _isEmpty = true;
   bool _finalized = false;
+  bool _saving = false;
   String _lastSavedContent = '';
   Uuid? _lastDraftNoteId;
   FocusNode? _currentFocusNode;
@@ -119,6 +120,7 @@ class ActivityEditorState extends State<ActivityEditor> {
   }
 
   void _onFocusChange() {
+    if (_finalized) return;
     if (_currentFocusNode != null && !_currentFocusNode!.hasFocus) {
       // Focus lost (blur) - save draft
       final editorState = _editorKey.currentState;
@@ -130,6 +132,7 @@ class ActivityEditorState extends State<ActivityEditor> {
   }
 
   Future<void> _saveDraft(String content) async {
+    if (_finalized) return;
     // Only save if content has changed
     if (content == _lastSavedContent) return;
 
@@ -209,6 +212,7 @@ class ActivityEditorState extends State<ActivityEditor> {
               alt: alt,
             );
             if (!context.mounted) return;
+            setState(() { _saving = true; });
 
             // Use AddEvent for events, AddActivityWithNote for other types
             if (widget.draft.type == ActivityType.event) {
@@ -230,82 +234,98 @@ class ActivityEditorState extends State<ActivityEditor> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 4,
             children: [
-              Flexible(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          top: 8,
-                          bottom: 4,
-                          left: 6,
-                          right: 6,
+              IgnorePointer(
+                ignoring: _saving,
+                child: Opacity(
+                  opacity: _saving ? 0.6 : 1.0,
+                  child: Flexible(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              top: 8,
+                              bottom: 4,
+                              left: 6,
+                              right: 6,
+                            ),
+                            child: editor,
+                          ),
                         ),
-                        child: editor,
-                      ),
+                        if (_isEmpty)
+                          SpeechDictationButton(
+                            onResult: (text) {
+                              _editorKey.currentState?.insertTextAtCursor(text);
+                            },
+                            onError: (error) {
+                              Alert.show(context, error);
+                            },
+                          ),
+                      ],
                     ),
-                    if (_isEmpty)
-                      SpeechDictationButton(
-                        onResult: (text) {
-                          _editorKey.currentState?.insertTextAtCursor(text);
-                        },
-                        onError: (error) {
-                          Alert.show(context, error);
-                        },
-                      ),
-                  ],
+                  ),
                 ),
               ),
               // Bottom bar - stays at bottom, above keyboard
               Row(
                 children: [
-                  // Left side: Do Now toggle
-                  Button.icon(
-                    ToggleAction(
-                      widget.draft,
-                      onUpdate: (activity) => widget.onDraftChanged(activity),
-                    ),
-                    selected: widget.draft.doNow,
-                  ),
-                  Button.icon(
-                    widget.draft.type == .event
-                        ? UnscheduleEvent(
-                            widget.draft,
-                            onUpdate: (activity) =>
-                                widget.onDraftChanged(activity),
-                          )
-                        : ScheduleEvent(
-                            widget.draft,
-                            at: DateTimeRange(
-                              Time.now(),
-                              Time.now().add(const Duration(hours: 1)),
+                  IgnorePointer(
+                    ignoring: _saving,
+                    child: Opacity(
+                      opacity: _saving ? 0.6 : 1.0,
+                      child: Row(
+                        children: [
+                          // Left side: Do Now toggle
+                          Button.icon(
+                            ToggleAction(
+                              widget.draft,
+                              onUpdate: (activity) => widget.onDraftChanged(activity),
                             ),
-                            onUpdate: (activity) =>
-                                widget.onDraftChanged(activity),
+                            selected: widget.draft.doNow,
                           ),
-                    selected: widget.draft.type == .event,
-                  ),
-                  if (!widget.draft.private || widget.draft.authorId == Base.actorId)
-                    Button.icon(
-                      ToggleActivityPrivate(
-                        widget.draft,
-                        onUpdate: (activity) =>
-                            widget.onDraftChanged(activity),
+                          Button.icon(
+                            widget.draft.type == .event
+                                ? UnscheduleEvent(
+                                    widget.draft,
+                                    onUpdate: (activity) =>
+                                        widget.onDraftChanged(activity),
+                                  )
+                                : ScheduleEvent(
+                                    widget.draft,
+                                    at: DateTimeRange(
+                                      Time.now(),
+                                      Time.now().add(const Duration(hours: 1)),
+                                    ),
+                                    onUpdate: (activity) =>
+                                        widget.onDraftChanged(activity),
+                                  ),
+                            selected: widget.draft.type == .event,
+                          ),
+                          if (!widget.draft.private || widget.draft.authorId == Base.actorId)
+                            Button.icon(
+                              ToggleActivityPrivate(
+                                widget.draft,
+                                onUpdate: (activity) =>
+                                    widget.onDraftChanged(activity),
+                              ),
+                              selected: widget.draft.private,
+                            ),
+                          Button.icon(
+                            AttachFile(
+                              priorityId: widget.draft.priority.id.toString(),
+                              currentLinks: widget.draftNote.links ?? const [],
+                              onLinksChanged: (links) {
+                                widget.onDraftChanged(
+                                  widget.draft,
+                                  note: widget.draftNote.copyWith(links: links),
+                                );
+                              },
+                            ),
+                            selected: widget.draftNote.links?.any((l) => l.type == LinkType.file) ?? false,
+                          ),
+                        ],
                       ),
-                      selected: widget.draft.private,
                     ),
-                  Button.icon(
-                    AttachFile(
-                      priorityId: widget.draft.priority.id.toString(),
-                      currentLinks: widget.draftNote.links ?? const [],
-                      onLinksChanged: (links) {
-                        widget.onDraftChanged(
-                          widget.draft,
-                          note: widget.draftNote.copyWith(links: links),
-                        );
-                      },
-                    ),
-                    selected: widget.draftNote.links?.any((l) => l.type == LinkType.file) ?? false,
                   ),
                   const Spacer(),
                   // Right side: Save button (always visible)
@@ -318,8 +338,9 @@ class ActivityEditorState extends State<ActivityEditor> {
                       },
                     ),
                     style: ButtonStyle.primary,
+                    loading: _saving,
                     enabled:
-                        !_isEmpty || widget.draft.type == ActivityType.event,
+                        !_saving && (!_isEmpty || widget.draft.type == ActivityType.event),
                   ),
                 ],
               ),
