@@ -404,7 +404,11 @@ export type ActivityCommon = {
   mentions: ActorId[];
 };
 
-export type Activity = ActivityCommon & {
+/**
+ * Common fields shared by all activity types (Note, Action, Event).
+ * Does not include the discriminant `type` field or type-specific fields like `done`.
+ */
+type ActivityFields = ActivityCommon & {
   /**
    * Globally unique, stable identifier for the item in an external system.
    * MUST use immutable system-generated IDs, not human-readable slugs or titles.
@@ -425,8 +429,6 @@ export type Activity = ActivityCommon & {
   source: string | null;
   /** The display title/summary of the activity */
   title: string;
-  /** The type of activity (Note, Task, or Event) */
-  type: ActivityType;
   /** Optional kind for additional categorization within the activity */
   kind: ActivityKind | null;
   /**
@@ -438,6 +440,8 @@ export type Activity = ActivityCommon & {
    * - For synced tasks from external systems, typically set `assignee: null` for unassigned items
    *
    * **For notes and events:** Assignee is optional and typically null.
+   * When marking an activity as done, it becomes an Action; if no assignee is set,
+   * the twist owner is assigned automatically.
    *
    * @example
    * ```typescript
@@ -468,8 +472,6 @@ export type Activity = ActivityCommon & {
    * ```
    */
   assignee: Actor | null;
-  /** Timestamp when the activity was marked as complete. Null if not completed. */
-  done: Date | null;
   /**
    * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
@@ -538,6 +540,19 @@ export type Activity = ActivityCommon & {
   /** Metadata about the activity, typically from an external system that created it */
   meta: ActivityMeta | null;
 };
+
+export type Activity = ActivityFields &
+  (
+    | { type: ActivityType.Note }
+    | {
+        type: ActivityType.Action;
+        /**
+         * Timestamp when the activity was marked as complete. Null if not completed.
+         */
+        done: Date | null;
+      }
+    | { type: ActivityType.Event }
+  );
 
 export type ActivityWithNotes = Activity & {
   notes: Note[];
@@ -759,13 +774,16 @@ export type PickPriorityConfig = {
  * };
  * ```
  */
-export type NewActivity = Pick<Activity, "type"> &
+export type NewActivity = (
+  | { type: ActivityType.Note; done?: never }
+  | { type: ActivityType.Action; done?: Date | null }
+  | { type: ActivityType.Event; done?: never }
+) &
   Partial<
     Omit<
-      Activity,
+      ActivityFields,
       | "author"
       | "assignee"
-      | "type"
       | "priority"
       | "tags"
       | "mentions"
@@ -917,12 +935,10 @@ export type ActivityUpdate = (
 ) &
   Partial<
     Pick<
-      Activity,
-      | "type"
+      ActivityFields,
       | "kind"
       | "start"
       | "end"
-      | "done"
       | "title"
       | "assignee"
       | "private"
@@ -934,6 +950,13 @@ export type ActivityUpdate = (
       | "recurrenceCount"
     >
   > & {
+    /** Update the type of the activity. */
+    type?: ActivityType;
+    /**
+     * Timestamp when the activity was marked as complete. Null if not completed.
+     * Setting done will automatically set the type to Action if not already.
+     */
+    done?: Date | null;
     /**
      * Tags to change on the activity. Use an empty array of NewActor to remove a tag.
      * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.

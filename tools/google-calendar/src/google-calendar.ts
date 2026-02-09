@@ -834,15 +834,13 @@ export class GoogleCalendar
             });
           }
 
-          const activity: NewActivityWithNotes = {
+          const shared = {
             source: canonicalUrl,
-            type: activityData.type,
             created: event.created ? new Date(event.created) : undefined,
             start: activityData.start || null,
             end: activityData.end || null,
             recurrenceUntil: activityData.recurrenceUntil || null,
             recurrenceCount: activityData.recurrenceCount || null,
-            done: null,
             title: activityData.title || "",
             author: authorContact,
             recurrenceRule: activityData.recurrenceRule || null,
@@ -853,7 +851,14 @@ export class GoogleCalendar
             preview: hasDescription ? description : null,
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
-          };
+          } as const;
+
+          const activity: NewActivityWithNotes =
+            activityData.type === ActivityType.Action
+              ? { type: ActivityType.Action, ...shared }
+              : activityData.type === ActivityType.Event
+                ? { type: ActivityType.Event, ...shared }
+                : { type: ActivityType.Note, ...shared };
 
           // Send activity - database handles upsert automatically
           await this.tools.callbacks.run(callbackToken, activity);

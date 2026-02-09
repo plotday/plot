@@ -488,14 +488,8 @@ export function transformOutlookEvent(
   // Handle cancelled events differently
   const isCancelled = event.isCancelled === true;
 
-  // Create base activity
-  const activity: NewActivity = {
+  const shared = {
     source: `outlook-calendar:${event.id}`,
-    type: isCancelled
-      ? ActivityType.Note
-      : isAllDay
-      ? ActivityType.Note
-      : ActivityType.Event,
     title: isCancelled
       ? event.subject
         ? `Cancelled: ${event.subject}`
@@ -512,7 +506,12 @@ export function transformOutlookEvent(
       originalStart: start instanceof Date ? start.toISOString() : start,
       originalEnd: end instanceof Date ? end.toISOString() : end,
     },
-  };
+  } as const;
+
+  const activity: NewActivity =
+    isCancelled || isAllDay
+      ? { type: ActivityType.Note, ...shared }
+      : { type: ActivityType.Event, ...shared };
 
   // Handle recurrence for master events (not instances or exceptions)
   if (event.recurrence && event.type === "seriesMaster") {
@@ -559,7 +558,9 @@ export function transformOutlookEvent(
     // Store the exception info in metadata
     if (activity.meta) {
       activity.meta.seriesMasterId = event.seriesMasterId;
-      activity.meta.originalStartDate = new Date(event.originalStart).toISOString();
+      activity.meta.originalStartDate = new Date(
+        event.originalStart
+      ).toISOString();
     }
   }
 
@@ -601,7 +602,9 @@ export async function syncOutlookCalendar(
     // Add time filter if specified
     if (state.min && state.max) {
       // Both min and max - use combined filter
-      params.push(`$filter=start/dateTime ge '${state.min.toISOString()}' and start/dateTime lt '${state.max.toISOString()}'`);
+      params.push(
+        `$filter=start/dateTime ge '${state.min.toISOString()}' and start/dateTime lt '${state.max.toISOString()}'`
+      );
     } else if (state.min) {
       // Only min
       params.push(`$filter=start/dateTime ge '${state.min.toISOString()}'`);

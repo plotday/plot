@@ -453,7 +453,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
 
     // Handle completion status based on done
     // Asana only has completed boolean (no In Progress state)
-    updateFields.completed = activity.done !== null;
+    updateFields.completed =
+      activity.type === ActivityType.Action && activity.done !== null;
 
     // Apply updates if any fields changed
     if (Object.keys(updateFields).length > 0) {

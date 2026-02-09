@@ -558,7 +558,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     let targetTransition;
 
     // Determine target state based on combination
-    if (activity.done !== null) {
+    if (activity.type === ActivityType.Action && activity.done !== null) {
       // Completed - look for "Done", "Close", or "Resolve" transition
       targetTransition = transitions.transitions?.find(
         (t) =>

@@ -529,7 +529,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       let targetState;
 
       // Determine target state based on combination
-      if (activity.done !== null) {
+      if (activity.type === ActivityType.Action && activity.done !== null) {
         // Completed
         targetState = states.nodes.find(
           (s) =>

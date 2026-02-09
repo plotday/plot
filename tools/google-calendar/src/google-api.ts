@@ -358,9 +358,8 @@ export function transformGoogleEvent(
   // Handle cancelled events differently
   const isCancelled = event.status === "cancelled";
 
-  const activity: NewActivity = {
+  const shared = {
     source: `google-calendar:${event.id}`,
-    type: isCancelled ? ActivityType.Note : (isAllDay ? ActivityType.Note : ActivityType.Event),
     title: event.summary || "",
     start: isCancelled ? null : start,
     end: isCancelled ? null : end,
@@ -371,14 +370,23 @@ export function transformGoogleEvent(
       hangoutLink: event.hangoutLink || null,
       status: event.status,
       originalStart: isCancelled
-        ? (start instanceof Date ? start.toISOString() : start)
+        ? start instanceof Date
+          ? start.toISOString()
+          : start
         : null,
       originalEnd: isCancelled
-        ? (end instanceof Date ? end.toISOString() : end)
+        ? end instanceof Date
+          ? end.toISOString()
+          : end
         : null,
       description: event.description || null,
     },
-  };
+  } as const;
+
+  const activity: NewActivity =
+    isCancelled || isAllDay
+      ? { type: ActivityType.Note, ...shared }
+      : { type: ActivityType.Event, ...shared };
 
   // Handle recurrence for master events (not instances)
   if (event.recurrence && !event.recurringEventId) {
