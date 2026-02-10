@@ -155,16 +155,35 @@ class Window extends StatefulWidget {
 }
 
 class WindowState extends State<Window> with WindowListener {
+  late final AppLifecycleListener _lifecycleListener;
+
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    // Handle Cmd+Q and system-initiated termination (not covered by
+    // onWindowClose which only fires for the window close button).
+    // Closes the database before allowing exit to prevent FFI crashes
+    // in the Drift isolate worker during VM shutdown.
+    _lifecycleListener = AppLifecycleListener(
+      onExitRequested: _onExitRequested,
+    );
   }
 
   @override
   void dispose() {
+    _lifecycleListener.dispose();
     windowManager.removeListener(this);
     super.dispose();
+  }
+
+  Future<AppExitResponse> _onExitRequested() async {
+    await Window._saveWindowState();
+    await Store.stop();
+    if (instanceLock != null) {
+      await instanceLock!.release();
+    }
+    return AppExitResponse.exit;
   }
 
   @override
