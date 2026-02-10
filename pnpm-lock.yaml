@@ -298,6 +298,19 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  public/tools/google-drive:
+    dependencies:
+      '@plotday/tool-google-contacts':
+        specifier: workspace:^
+        version: link:../google-contacts
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   public/tools/jira:
     dependencies:
       '@plotday/twister':
@@ -417,6 +430,19 @@ importers:
       typebox:
         specifier: ^1.0.35
         version: 1.0.35
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  public/twists/document-comments:
+    dependencies:
+      '@plotday/tool-google-drive':
+        specifier: workspace:^
+        version: link:../../tools/google-drive
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
