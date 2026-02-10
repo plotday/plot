@@ -1,5 +1,16 @@
 # @plotday/twister
 
+## 0.34.0
+
+### Added
+
+- Note.reNote for notes replying to other notes (e.g. comment threads within a document) ([`057fc71`](https://github.com/plotday/plot/commit/057fc713a64db9dda04c7ddf687e86168ae95cf1))
+- Contact.source for external service PII compliance ([`df93091`](https://github.com/plotday/plot/commit/df93091c6da6eed16ebc9daa9931677f670d2688))
+
+### Changed
+
+- Tightened types so Activity.done only available when type == Action ([`6ab1839`](https://github.com/plotday/plot/commit/6ab18392520eb6ef69a43212d2b66d599c9443e4))
+
 ## 0.33.2
 
 ### Added

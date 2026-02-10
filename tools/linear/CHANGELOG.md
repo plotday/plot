@@ -1,5 +1,13 @@
 # @plotday/tool-linear
 
+## 0.6.1
+
+### Changed
+
+- Tightened types so Activity.done only available when type == Action ([`6ab1839`](https://github.com/plotday/plot/commit/6ab18392520eb6ef69a43212d2b66d599c9443e4))
+- Updated dependencies:
+- @plotday/twister@0.34.0
+
 ## 0.6.0
 
 ### Changed
