@@ -378,7 +378,7 @@ export class Plot extends Tool implements IPlot {
           try {
             await this.supabase.rpc("update_note_tags", {
               p_note_id: currentNote.id,
-              p_actor_id: this.priorityTwistId,
+              p_actor_id: currentNote.author.id,
               p_client_id: 0, // API client
               p_tag_updates: { [Tag.Twist]: false },
             });
@@ -395,7 +395,7 @@ export class Plot extends Tool implements IPlot {
             ...result,
             deferredTagRemoval: {
               noteId: currentNote.id,
-              actorId: this.priorityTwistId,
+              actorId: currentNote.author.id,
             },
           });
         }
