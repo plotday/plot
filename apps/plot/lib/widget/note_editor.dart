@@ -211,11 +211,11 @@ class NoteEditorState extends State<NoteEditor> {
                       );
                     },
                   ),
-                  IgnorePointer(
-                    ignoring: _saving,
-                    child: Opacity(
-                      opacity: _saving ? 0.6 : 1.0,
-                      child: Flexible(
+                  Flexible(
+                    child: IgnorePointer(
+                      ignoring: _saving,
+                      child: Opacity(
+                        opacity: _saving ? 0.6 : 1.0,
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [

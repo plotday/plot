@@ -234,11 +234,11 @@ class ActivityEditorState extends State<ActivityEditor> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 4,
             children: [
-              IgnorePointer(
-                ignoring: _saving,
-                child: Opacity(
-                  opacity: _saving ? 0.6 : 1.0,
-                  child: Flexible(
+              Flexible(
+                child: IgnorePointer(
+                  ignoring: _saving,
+                  child: Opacity(
+                    opacity: _saving ? 0.6 : 1.0,
                     child: Row(
                       children: [
                         Expanded(
