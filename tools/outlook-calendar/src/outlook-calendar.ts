@@ -475,6 +475,10 @@ export class OutlookCalendar
       try {
         // Handle deleted events
         if (outlookEvent["@removed"]) {
+          // On initial sync, skip creating activities for already-deleted events
+          if (initialSync) {
+            continue;
+          }
           // Build source URL using event ID
           const source = `outlook-calendar:${outlookEvent.id}`;
 
@@ -548,6 +552,11 @@ export class OutlookCalendar
 
         // Skip deleted events (transformOutlookEvent returns null for deleted)
         if (!activity) {
+          continue;
+        }
+
+        // On initial sync, skip cancelled standalone events
+        if (initialSync && outlookEvent.isCancelled) {
           continue;
         }
 

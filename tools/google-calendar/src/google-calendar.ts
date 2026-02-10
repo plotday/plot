@@ -696,6 +696,10 @@ export class GoogleCalendar
 
           // Handle cancelled events
           if (event.status === "cancelled") {
+            // On initial sync, skip creating activities for already-cancelled events
+            if (initialSync) {
+              continue;
+            }
             // Canonical source for this event (required for upsert)
             const canonicalUrl = `google-calendar:${event.id}`;
 
