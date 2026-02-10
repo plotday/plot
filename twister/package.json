@@ -105,6 +105,11 @@
       "types": "./dist/common/projects.d.ts",
       "default": "./dist/common/projects.js"
     },
+    "./common/documents": {
+      "@plotday/source": "./src/common/documents.ts",
+      "types": "./dist/common/documents.d.ts",
+      "default": "./dist/common/documents.js"
+    },
     "./twist-guide": {
       "@plotday/source": "./src/twist-guide.ts",
       "types": "./dist/twist-guide.d.ts",
@@ -194,6 +199,11 @@
       "@plotday/source": "./src/llm-docs/common/projects.ts",
       "types": "./dist/llm-docs/common/projects.d.ts",
       "default": "./dist/llm-docs/common/projects.js"
+    },
+    "./llm-docs/common/documents": {
+      "@plotday/source": "./src/llm-docs/common/documents.ts",
+      "types": "./dist/llm-docs/common/documents.d.ts",
+      "default": "./dist/llm-docs/common/documents.js"
     },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
