@@ -1056,6 +1056,8 @@ export type Note = ActivityCommon & {
   content: string | null;
   /** Array of interactive links attached to the note */
   links: Array<ActivityLink> | null;
+  /** The note this is a reply to, or null if not a reply */
+  reNote: { id: Uuid } | null;
 };
 
 /**
@@ -1068,7 +1070,7 @@ export type Note = ActivityCommon & {
  * - neither: A new note with auto-generated UUID will be created
  */
 export type NewNote = Partial<
-  Omit<Note, "author" | "activity" | "tags" | "mentions" | "id" | "key">
+  Omit<Note, "author" | "activity" | "tags" | "mentions" | "id" | "key" | "reNote">
 > &
   ({ id: Uuid } | { key: string } | {}) & {
     /** Reference to the parent activity (required) */
@@ -1113,6 +1115,15 @@ export type NewNote = Partial<
      * Use false for initial sync to avoid marking historical items as unread.
      */
     unread?: boolean;
+
+    /**
+     * Reference to a parent note this note is a reply to.
+     * - `{ id }`: reply by UUID
+     * - `{ key }`: reply by key, resolved after creation (for batch ops)
+     * - `null`: explicitly not a reply
+     * - `undefined` (omitted): not a reply
+     */
+    reNote?: { id: Uuid } | { key: string } | null;
   };
 
 /**
@@ -1120,7 +1131,7 @@ export type NewNote = Partial<
  * Must provide either id or key to identify the note to update.
  */
 export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
-  Partial<Pick<Note, "private" | "archived" | "content" | "links">> & {
+  Partial<Pick<Note, "private" | "archived" | "content" | "links" | "reNote">> & {
     /**
      * Format of the note content. Determines how the note is processed:
      * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
