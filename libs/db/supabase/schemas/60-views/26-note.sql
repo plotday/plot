@@ -17,7 +17,8 @@ SELECT
     n.private,
     n.content,
     n.links,
-    n.mentions
+    n.mentions,
+    n.re_note_id
 FROM
     note n
     JOIN activity a ON a.id = n.activity_id
@@ -53,7 +54,8 @@ SELECT
     n.private,
     NULL::text AS content,
     NULL::jsonb AS links,
-    CAST(NULL AS uuid[]) AS mentions
+    CAST(NULL AS uuid[]) AS mentions,
+    n.re_note_id
 FROM
     note n
     JOIN activity a ON a.id = n.activity_id

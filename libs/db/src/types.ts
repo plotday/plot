@@ -553,6 +553,7 @@ export type Database = {
           links: Json | null
           mentions: string[] | null
           private: boolean
+          re_note_id: string | null
           source_created_at: string
           sync_depth: number | null
           updated_at: string
@@ -581,6 +582,7 @@ export type Database = {
           links?: Json | null
           mentions?: string[] | null
           private?: boolean
+          re_note_id?: string | null
           source_created_at?: string
           sync_depth?: number | null
           updated_at?: string
@@ -599,6 +601,7 @@ export type Database = {
           links?: Json | null
           mentions?: string[] | null
           private?: boolean
+          re_note_id?: string | null
           source_created_at?: string
           sync_depth?: number | null
           updated_at?: string
@@ -631,6 +634,34 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "user_note_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -2347,6 +2378,7 @@ export type Database = {
           priority_id: string | null
           priority_twist_id: string | null
           private: boolean | null
+          re_note_id: string | null
           source_created_at: string | null
           sync_depth: number | null
           tags: Json | null
@@ -2429,6 +2461,34 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "user_note_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -2455,6 +2515,7 @@ export type Database = {
           priority_id: string | null
           priority_twist_id: string | null
           private: boolean | null
+          re_note_id: string | null
           source_created_at: string | null
           sync_depth: number | null
           tags: Json | null
@@ -2537,6 +2598,34 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_note_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
+            referencedRelation: "user_note_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -2678,6 +2767,7 @@ export type Database = {
           links: Json | null
           mentions: string[] | null
           private: boolean | null
+          re_note_id: string | null
           source_created_at: string | null
           updated_at: string | null
           updated_by: number | null
@@ -2736,6 +2826,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           joined_at: string | null
+          path: unknown
           priority_id: string | null
           user_id: string | null
         }

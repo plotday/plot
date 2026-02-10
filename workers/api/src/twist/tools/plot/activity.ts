@@ -809,6 +809,7 @@ export async function getNote(
           key,
           links,
           mentions,
+          re_note_id,
           author:actor!author_id(
             id,
             name,
@@ -892,6 +893,7 @@ export async function getNote(
       archived: data.archived_at !== null,
       content: data.content,
       key: data.key || null,
+      reNote: data.re_note_id ? { id: data.re_note_id as Uuid } : null,
       links: data.links as ActivityLink[] | null,
       mentions: (data.mentions as string[])?.map((m) => m as ActorId) ?? [],
       tags: (tagsData?.tags as Partial<Record<Tag, ActorId[]>> | null) || {},

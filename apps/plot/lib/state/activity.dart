@@ -58,6 +58,11 @@ class ActivityBloc extends Cubit<ActivityState> {
     await draft.save();
   }
 
+  /// Sets the note being replied to. Pass null to clear.
+  void setReplyTo(Note? note) {
+    emit(state.copyWith(replyTo: note, clearReplyTo: note == null));
+  }
+
   /// Adds a note by converting the current draft to a non-draft.
   /// Creates a fresh draft note for the activity afterward.
   /// Note: Twisting tag for twist mentions is added in Note.save()
@@ -68,7 +73,11 @@ class ActivityBloc extends Cubit<ActivityState> {
 
     // Create fresh draft for the activity (in-memory only, will be saved when content is added)
     // Don't save empty draft - it will be saved when content is added via updateDraft()
-    emit(state.copyWith(draft: Note.draft(activityId: state.activity.id)));
+    // Also clear replyTo state
+    emit(state.copyWith(
+      draft: Note.draft(activityId: state.activity.id),
+      clearReplyTo: true,
+    ));
   }
 
   void _loadActivity() {

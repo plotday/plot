@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/state/activity.dart';
@@ -159,6 +160,57 @@ class NoteEditorState extends State<NoteEditor> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 spacing: 4,
                 children: [
+                  // Reply indicator
+                  BlocBuilder<ActivityBloc, ActivityState>(
+                    buildWhen: (prev, curr) => prev.replyTo != curr.replyTo,
+                    builder: (context, activityState) {
+                      final replyTo = activityState.replyTo;
+                      if (replyTo == null) return const SizedBox.shrink();
+                      final raw = replyTo.content ?? '';
+                      final firstLine = raw.split('\n').first;
+                      final preview = firstLine.length > 60
+                          ? '${firstLine.substring(0, 60)}...'
+                          : firstLine;
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 6, right: 6, top: 4),
+                        child: Container(
+                          padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              left: BorderSide(color: context.colour.muted, width: 2),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'reply to: $preview',
+                                  style: context.theme.typography.xs.copyWith(
+                                    color: context.colour.muted,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () {
+                                  context.read<ActivityBloc>().setReplyTo(null);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: Icon(
+                                    FontAwesomeIcons.xmark,
+                                    size: 12,
+                                    color: context.colour.muted,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   IgnorePointer(
                     ignoring: _saving,
                     child: Opacity(
@@ -256,9 +308,15 @@ class NoteEditorState extends State<NoteEditor> {
 
   Future<Note> finalizeDraft(String body, {bool alt = false}) async {
     _finalized = true;
+
+    // Get replyTo from ActivityBloc state
+    final activityBloc = context.read<ActivityBloc>();
+    final replyTo = activityBloc.state.replyTo;
+
     Note note = widget.draft.copyWith(
       content: body.isEmpty ? null : body,
       draft: false,
+      reNoteId: replyTo?.id,
     );
 
     // If Cmd-Enter was pressed, assign the note to current user

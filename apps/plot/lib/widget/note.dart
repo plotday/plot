@@ -4,6 +4,51 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/activity.dart';
 
+class _NoteReplyReference extends StatelessWidget {
+  const _NoteReplyReference({required this.reNoteId});
+
+  final NoteId reNoteId;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Note?>(
+      future: Note.get(reNoteId),
+      builder: (context, snapshot) {
+        final reNote = snapshot.data;
+        final String preview;
+        if (snapshot.connectionState != ConnectionState.done) {
+          preview = '...';
+        } else if (reNote == null) {
+          preview = '[deleted]';
+        } else {
+          final raw = reNote.content ?? '';
+          final firstLine = raw.split('\n').first;
+          preview = firstLine.length > 60
+              ? '${firstLine.substring(0, 60)}...'
+              : firstLine;
+        }
+
+        return Container(
+          padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(color: context.colour.muted, width: 2),
+            ),
+          ),
+          child: Text(
+            'reply to: $preview',
+            style: context.theme.typography.xs.copyWith(
+              color: context.colour.muted,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      },
+    );
+  }
+}
+
 class NoteWidget extends StatefulWidget {
   const NoteWidget({
     required this.note,
@@ -62,6 +107,11 @@ class _NoteWidgetState extends State<NoteWidget> {
       bodyBuilder: (context, highlighted) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (widget.note.reNoteId != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: _NoteReplyReference(reNoteId: widget.note.reNoteId!),
+            ),
           if (noteContent.isNotEmpty)
             Padding(
               padding: .symmetric(horizontal: 6),

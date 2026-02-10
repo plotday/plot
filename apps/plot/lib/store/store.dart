@@ -1676,7 +1676,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 241;
+  int get schemaVersion => 242;
 
   @override
   MigrationStrategy get migration {

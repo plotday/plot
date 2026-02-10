@@ -11,6 +11,7 @@ class ActivityState extends Equatable {
     this.search = '',
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
+    this.replyTo,
   }) : notes = notes.isNotEmpty ? List.unmodifiable(notes) : notes,
        filter = filter.isNotEmpty ? List.unmodifiable(filter) : filter,
        tags = tags.isNotEmpty ? List.unmodifiable(tags) : tags,
@@ -34,6 +35,7 @@ class ActivityState extends Equatable {
   final String search;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
+  final Note? replyTo;
   final bool hasOtherAuthors;
 
   ActivityState copyWith({
@@ -46,6 +48,8 @@ class ActivityState extends Equatable {
     String? search,
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
+    Note? replyTo,
+    bool clearReplyTo = false,
   }) {
     return ActivityState(
       activity: activity ?? this.activity,
@@ -66,6 +70,7 @@ class ActivityState extends Equatable {
                 ? List.unmodifiable(tagSuggestions)
                 : tagSuggestions)
           : this.tagSuggestions,
+      replyTo: clearReplyTo ? null : (replyTo ?? this.replyTo),
     );
   }
 
@@ -79,6 +84,7 @@ class ActivityState extends Equatable {
     search,
     tags,
     tagSuggestions,
+    replyTo,
     hasOtherAuthors,
   ];
 

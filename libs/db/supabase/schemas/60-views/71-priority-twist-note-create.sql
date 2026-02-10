@@ -22,6 +22,7 @@ SELECT
     n.links,
     n.key,
     n.mentions,
+    n.re_note_id,
     -- Enriched fields
     ax.priority_id,
     ax.title AS activity_title,

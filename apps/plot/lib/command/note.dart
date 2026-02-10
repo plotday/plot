@@ -245,6 +245,28 @@ class ToggleNotePrivate extends NoteCommand {
   }
 }
 
+class ReplyToNote extends NoteCommand {
+  ReplyToNote(super.note)
+    : super(
+        title: 'Reply',
+        eventObject: EventObject.note,
+        eventAction: EventAction.added,
+        icon: FontAwesomeIcons.reply,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final activityBloc = context.read<ActivityBloc>();
+      activityBloc.setReplyTo(note);
+      return const CommandDone();
+    } catch (e, stackTrace) {
+      log.severe('Error in ReplyToNote: $e', e, stackTrace);
+      return CommandMessage('Failed to set reply', isError: true);
+    }
+  }
+}
+
 class ArchiveNote extends NoteCommand {
   ArchiveNote(super.note)
     : super(
@@ -458,6 +480,7 @@ List<Command> noteCommands(Note note) {
   return [
     if (!isAssigned) StartTask(note),
     if (isAssigned) FinishTask(note),
+    if (!note.draft) ReplyToNote(note),
     PickNoteAssignee(note),
     if (!note.draft && note.content != null && note.content!.trim().isNotEmpty)
       SplitNoteToNewActivity(note),

@@ -15,6 +15,7 @@ class Notes extends Table
   TextColumn get links => text().nullable().map(const LinksConverter())();
   TextColumn get mentions =>
       text().nullable().map(const ActorIdListConverter())();
+  BlobColumn get reNoteId => blob().nullable().map(const UuidConverter())();
 }
 
 class NotesBase extends BaseTable {
@@ -74,6 +75,7 @@ class Note extends Equatable implements Comparable<Note> {
     String? content,
     List<Link>? links,
     List<ActorId>? mentions,
+    NoteId? reNoteId,
     required DateTime createdAt,
     required DateTime sourceCreatedAt,
     required DateTime updatedAt,
@@ -94,6 +96,7 @@ class Note extends Equatable implements Comparable<Note> {
       sourceCreatedAt: sourceCreatedAt,
       links: links,
       mentions: effectiveMentions,
+      reNoteId: reNoteId,
       createdAt: createdAt,
       updatedAt: updatedAt,
       archivedAt: archivedAt,
@@ -109,6 +112,7 @@ class Note extends Equatable implements Comparable<Note> {
       content = null,
       links = null,
       mentions = null,
+      reNoteId = null,
       createdAt = DateTime.now(),
       sourceCreatedAt = DateTime.now(),
       updatedAt = DateTime.now(),
@@ -124,6 +128,7 @@ class Note extends Equatable implements Comparable<Note> {
     this.content,
     this.links,
     this.mentions,
+    this.reNoteId,
     required this.createdAt,
     required this.sourceCreatedAt,
     required this.updatedAt,
@@ -149,6 +154,7 @@ class Note extends Equatable implements Comparable<Note> {
       sourceCreatedAt: noteRow.sourceCreatedAt,
       links: noteRow.links,
       mentions: effectiveMentions,
+      reNoteId: noteRow.reNoteId,
       createdAt: noteRow.createdAt,
       updatedAt: noteRow.updatedAt,
       archivedAt: noteRow.archivedAt,
@@ -164,6 +170,7 @@ class Note extends Equatable implements Comparable<Note> {
   final String? content;
   final List<Link>? links;
   final List<ActorId>? mentions;
+  final NoteId? reNoteId;
   final DateTime createdAt;
   final DateTime sourceCreatedAt;
   final DateTime updatedAt;
@@ -472,6 +479,7 @@ class Note extends Equatable implements Comparable<Note> {
       sourceCreatedAt: sourceCreatedAt,
       links: links,
       mentions: mentions,
+      reNoteId: reNoteId,
       createdAt: createdAt,
       updatedAt: updatedAt,
       archivedAt: archivedAt,
@@ -760,6 +768,8 @@ class Note extends Equatable implements Comparable<Note> {
     String? content,
     List<Link>? links,
     List<ActorId>? mentions,
+    NoteId? reNoteId,
+    bool clearReNoteId = false,
     NoteTagsRow? tags,
   }) {
     final now = DateTime.now();
@@ -823,6 +833,7 @@ class Note extends Equatable implements Comparable<Note> {
         sourceCreatedAt: isPublishing ? now : sourceCreatedAt,
         links: links ?? this.links,
         mentions: effectiveMentions,
+        reNoteId: clearReNoteId ? null : (reNoteId ?? this.reNoteId),
         createdAt: isPublishing ? now : createdAt,
         updatedAt: DateTime.now(),
         archivedAt: archivedAt,
@@ -841,6 +852,7 @@ class Note extends Equatable implements Comparable<Note> {
     content,
     links,
     mentions,
+    reNoteId,
     createdAt,
     updatedAt,
     archivedAt,

@@ -14,7 +14,8 @@ CREATE TABLE "public"."note" (
     "content" text, -- markdown
     "links" jsonb,
     "key" text,
-    "mentions" uuid[]
+    "mentions" uuid[],
+    "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL
 );
 
 COMMENT ON COLUMN "public"."note"."source_created_at" IS 'When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot''s database.';
@@ -53,6 +54,11 @@ CREATE INDEX idx_note_activity_archived ON "public"."note" ("activity_id", "arch
 CREATE INDEX idx_note_author_activity ON "public"."note" ("activity_id", "author_id", "created_at")
 WHERE
     archived_at IS NULL;
+
+-- Support lookup of replies to a specific note
+CREATE INDEX idx_note_re_note_id ON "public"."note" ("re_note_id")
+WHERE
+    re_note_id IS NOT NULL;
 
 -- Support mention array queries in user_activity view (mentions @> ARRAY[user_id])
 CREATE INDEX idx_note_mentions ON "public"."note" USING gin ("mentions")

@@ -221,6 +221,7 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     },
     content: noteRecord.content,
     key: noteRecord.key || null,
+    reNote: noteRecord.re_note_id ? { id: noteRecord.re_note_id as Uuid } : null,
     mentions: (noteRecord.mentions as ActorId[]) || [],
     tags: (noteRecord.tags as Partial<Record<number, ActorId[]>>) || {},
     private: noteRecord.private ?? false,

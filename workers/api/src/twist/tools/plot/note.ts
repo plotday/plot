@@ -175,6 +175,7 @@ export async function createNote(
       sync_depth: plot.syncDepth + 1,
       // Default to un-archived for upserts unless archived is explicitly specified
       archived_at: note.archived ? new Date().toISOString() : null,
+      re_note_id: note.reNote && "id" in note.reNote ? note.reNote.id : null,
     };
 
     // If tool provided an ID, use it instead of letting database generate one
@@ -339,6 +340,64 @@ export async function createNotes(
     })
     .filter((id): id is Uuid => id !== null);
 
+  // Resolve reNote key references → re_note_id for notes that specified a key-based reply
+  const notesNeedingKeyResolution = processedNotes
+    .map((note, index) => ({ note, index }))
+    .filter(
+      ({ note, index }) =>
+        note.reNote &&
+        "key" in note.reNote &&
+        results[index].status === "fulfilled"
+    );
+
+  if (notesNeedingKeyResolution.length > 0) {
+    // Resolve the activity ID from the first note
+    let activityId: string | undefined;
+    const firstNote = processedNotes[0];
+    if ("id" in firstNote.activity) {
+      activityId = firstNote.activity.id;
+    } else if ("source" in firstNote.activity) {
+      const priorityRoot = await plot.getPriorityRoot();
+      const { data } = await plot.supabase
+        .from("activity")
+        .select("id")
+        .eq("source", firstNote.activity.source)
+        .eq("source_priority_root", priorityRoot)
+        .single();
+      activityId = data?.id;
+    }
+
+    if (activityId) {
+      // Batch lookup: all referenced keys in this activity
+      const keys = notesNeedingKeyResolution.map(
+        ({ note }) => (note.reNote as { key: string }).key
+      );
+      const { data: keyNotes } = await plot.supabase
+        .from("note")
+        .select("id, key")
+        .eq("activity_id", activityId)
+        .in("key", keys);
+
+      if (keyNotes && keyNotes.length > 0) {
+        const keyToId = new Map(
+          keyNotes.map((n: any) => [n.key, n.id])
+        );
+
+        for (const { note, index } of notesNeedingKeyResolution) {
+          const parentId = keyToId.get((note.reNote as { key: string }).key);
+          const noteId = (results[index] as PromiseFulfilledResult<Uuid>)
+            .value;
+          if (parentId && noteId) {
+            await plot.supabase
+              .from("note")
+              .update({ re_note_id: parentId })
+              .eq("id", noteId);
+          }
+        }
+      }
+    }
+  }
+
   // Notify sync DOs once for the batch (unless called from createActivities which notifies itself)
   if (!activityContext) {
     await plot.notifySyncDOs(new Set([plot.priorityId]));
@@ -433,6 +492,9 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     }
     if (note.archived !== undefined) {
       dbUpdate.archived_at = note.archived ? new Date().toISOString() : null;
+    }
+    if (note.reNote !== undefined) {
+      dbUpdate.re_note_id = note.reNote && "id" in note.reNote ? note.reNote.id : null;
     }
     if (note.mentions !== undefined) {
       // Process mentions - convert NewActor[] to ActorId[]
@@ -569,6 +631,7 @@ export async function getNotes(
           key,
           links,
           mentions,
+          re_note_id,
           author:actor!author_id(
             id,
             name,
@@ -635,6 +698,7 @@ export async function getNotes(
         archived: row.archived_at !== null,
         content: row.content,
         key: row.key || null,
+        reNote: row.re_note_id ? { id: row.re_note_id as Uuid } : null,
         links: row.links as ActivityLink[] | null,
         mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? [],
         tags:
