@@ -1,5 +1,6 @@
-import { type Actor, type ActorId, ActorType } from "@plotday/twister/plot";
+import { type Actor, type ActorId, ActorType, type NewContact } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
+import { createLogger } from "@plotday/worker-util";
 
 import type { Plot } from "./index";
 
@@ -27,7 +28,7 @@ function normalizeName(name: string | undefined | null): string | undefined {
 
 export async function addContacts(
   plot: Plot,
-  contacts: Array<{ email: string; name?: string; avatar?: string }>
+  contacts: Array<NewContact>
 ): Promise<Actor[]> {
   // Validate contact write access permissions
   plot.requireContactAccess(ContactAccess.Write);
@@ -38,6 +39,7 @@ export async function addContacts(
     email: contact.email.toLowerCase(),
     name: normalizeName(contact.name),
     avatar: contact.avatar,
+    source: contact.source,
   }));
 
   const contactsToUpsert = normalizedContacts.map((contact) => ({
@@ -68,6 +70,51 @@ export async function addContacts(
     }
     return actor;
   });
+
+  // Store external account mappings for privacy compliance reporting
+  const externalAccounts = normalizedContacts
+    .filter((c) => c.source)
+    .map((c) => {
+      // Find the matching actor by email
+      const actor = actors.find(
+        (a) => a.email === c.email
+      );
+      return actor
+        ? {
+            contact_id: actor.id,
+            provider: c.source!.provider,
+            account_id: c.source!.accountId,
+          }
+        : null;
+    })
+    .filter(Boolean) as Array<{
+    contact_id: string;
+    provider: string;
+    account_id: string;
+  }>;
+
+  if (externalAccounts.length > 0) {
+    const { error: ceaError } = await plot.supabase
+      .from("contact_external_account")
+      .upsert(
+        externalAccounts.map((ea) => ({
+          contact_id: ea.contact_id,
+          provider: ea.provider,
+          account_id: ea.account_id,
+          data_fetched_at: new Date().toISOString(),
+        })),
+        { onConflict: "provider,account_id" }
+      );
+
+    if (ceaError) {
+      // Log but don't fail the contact creation
+      const logger = createLogger({ operation: "addContacts" });
+      logger.error(
+        "Failed to upsert contact_external_account",
+        new Error(ceaError.message)
+      );
+    }
+  }
 
   return actors;
 }

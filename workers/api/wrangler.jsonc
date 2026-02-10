@@ -58,6 +58,10 @@
     {
       "tag": "v13",
       "new_sqlite_classes": ["SyncRecovery"]
+    },
+    {
+      "tag": "v14",
+      "new_sqlite_classes": ["PrivacyReporting"]
     }
   ],
   "env": {
@@ -210,6 +214,10 @@
           {
             "name": "SYNC_RECOVERY",
             "class_name": "SyncRecovery"
+          },
+          {
+            "name": "PRIVACY_REPORTING",
+            "class_name": "PrivacyReporting"
           }
         ]
       },
@@ -375,6 +383,10 @@
           {
             "name": "SYNC_RECOVERY",
             "class_name": "SyncRecovery"
+          },
+          {
+            "name": "PRIVACY_REPORTING",
+            "class_name": "PrivacyReporting"
           }
         ]
       },

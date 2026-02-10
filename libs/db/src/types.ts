@@ -445,6 +445,38 @@ export type Database = {
         }
         Relationships: []
       }
+      contact_external_account: {
+        Row: {
+          account_id: string
+          contact_id: string
+          data_fetched_at: string
+          last_reported_at: string | null
+          provider: string
+        }
+        Insert: {
+          account_id: string
+          contact_id: string
+          data_fetched_at?: string
+          last_reported_at?: string | null
+          provider: string
+        }
+        Update: {
+          account_id?: string
+          contact_id?: string
+          data_fetched_at?: string
+          last_reported_at?: string | null
+          provider?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_external_account_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contact"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_invitation: {
         Row: {
           contact_id: string

@@ -50,6 +50,7 @@ export { TwistTail } from "./twist/tail";
 export { UserSync } from "./state/user-sync";
 export { TwistSync } from "./state/twist-sync";
 export { SyncRecovery } from "./state/sync-recovery";
+export { PrivacyReporting } from "./state/privacy-reporting";
 
 export class TwistBuilder extends Container {
   defaultPort = 3000;
@@ -188,6 +189,17 @@ async function scheduled(
     logger.info("Sync recovery triggered by cron");
   } catch (error) {
     logger.error("Error in scheduled handler", error as Error);
+  }
+
+  try {
+    const privacyId = env.PRIVACY_REPORTING.idFromName("singleton");
+    const privacyDO = env.PRIVACY_REPORTING.get(privacyId);
+    const privacyResult = await privacyDO.fetch(
+      new Request("http://do/trigger", { method: "POST" })
+    );
+    disposeRpc(privacyResult);
+  } catch (error) {
+    logger.error("Error in privacy reporting handler", error as Error);
   }
 }
 

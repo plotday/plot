@@ -8,6 +8,7 @@ import type {
   NewActivityOccurrence,
   NewActivityWithNotes,
   NewActor,
+  NewContact,
   PickPriorityConfig,
 } from "@plotday/twister/plot";
 import { ActivityType } from "@plotday/twister/plot";
@@ -337,8 +338,7 @@ export async function processNewActorArray(
 
   // Separate existing actor IDs from new contacts
   const existingActorIds: ActorId[] = [];
-  const newContacts: Array<{ email: string; name?: string; avatar?: string }> =
-    [];
+  const newContacts: NewContact[] = [];
   const actorOrder: Array<{ type: "existing" | "new"; index: number }> = [];
 
   for (const newActor of newActors) {

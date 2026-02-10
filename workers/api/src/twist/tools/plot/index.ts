@@ -6,6 +6,7 @@ import {
   type ActorId,
   type NewActivity,
   type NewActivityWithNotes,
+  type NewContact,
   type NewNote,
   type NewPriority,
   type Note,
@@ -858,9 +859,7 @@ export class Plot extends Tool implements IPlot {
   }
 
   // Contact operations
-  async addContacts(
-    contacts: Array<{ email: string; name?: string; avatar?: string }>
-  ): Promise<Actor[]> {
+  async addContacts(contacts: NewContact[]): Promise<Actor[]> {
     return contactsOps.addContacts(this, contacts);
   }
 

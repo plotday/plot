@@ -8,6 +8,7 @@ import { type SdkTokenStore } from "./state/sdk-token-store";
 import { type Storage } from "./state/storage";
 import { type TwistSync } from "./state/twist-sync";
 import { type SyncRecovery } from "./state/sync-recovery";
+import { type PrivacyReporting } from "./state/privacy-reporting";
 import { type Usage } from "./state/usage";
 import { type UserSync } from "./state/user-sync";
 import type {
@@ -166,6 +167,7 @@ export type Bindings = {
   readonly USER_SYNC: DurableObjectNamespace<UserSync>;
   readonly TWIST_SYNC: DurableObjectNamespace<TwistSync>;
   readonly SYNC_RECOVERY: DurableObjectNamespace<SyncRecovery>;
+  readonly PRIVACY_REPORTING: DurableObjectNamespace<PrivacyReporting>;
   readonly TWIST_MODULES_BUCKET: R2Bucket;
   readonly FILES_BUCKET: R2Bucket;
 };
