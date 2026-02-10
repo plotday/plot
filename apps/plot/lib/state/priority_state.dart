@@ -120,9 +120,7 @@ class PriorityState extends Equatable {
   bool get doneEnd {
     final range = this.range;
     final next = this.next;
-    return range != null &&
-        (next == null ||
-            next < range.end);
+    return range != null && (next == null || next < range.end);
   }
 
   /// Finds the first gap of at least 1 hour in a day's schedule.
@@ -353,6 +351,21 @@ class PriorityState extends Equatable {
       final isToday = day.date == today;
       final isPast = day.date.isBefore(today);
       final todayStartIndex = isToday ? items.length : -1;
+
+      // Insert today header before any future day if today has no activities
+      if (!isPast && !isToday && !processedToday) {
+        final nineAM = today.toStart().add(const Duration(hours: 9));
+        final dayScheduleStart = now.isAfter(nineAM) ? now : nineAM;
+        items.add(
+          AgendaHeaderItem(
+            priority: null,
+            date: today,
+            now: true,
+            scheduleAt: dayScheduleStart,
+          ),
+        );
+        processedToday = true;
+      }
 
       if (isPast) {
         // All activities on past days are shown as-is
