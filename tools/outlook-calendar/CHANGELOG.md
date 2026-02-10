@@ -1,5 +1,17 @@
 # @plotday/tool-outlook-calendar
 
+## 0.13.1
+
+### Changed
+
+- Tightened types so Activity.done only available when type == Action ([`6ab1839`](https://github.com/plotday/plot/commit/6ab18392520eb6ef69a43212d2b66d599c9443e4))
+- Updated dependencies:
+- @plotday/twister@0.34.0
+
+### Fixed
+
+- Skip creating cancelled events on initial sync ([`a82d77d`](https://github.com/plotday/plot/commit/a82d77d7f50ff347bed213fe4af40d2334258638))
+
 ## 0.13.0
 
 ### Changed
