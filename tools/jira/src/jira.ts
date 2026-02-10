@@ -382,6 +382,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         email: reporter.emailAddress,
         name: reporter.displayName,
         avatar: reporter.avatarUrls?.["48x48"],
+        ...atlassianSource(reporter.accountId),
       };
     }
     if (assignee?.emailAddress) {
@@ -389,6 +390,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         email: assignee.emailAddress,
         name: assignee.displayName,
         avatar: assignee.avatarUrls?.["48x48"],
+        ...atlassianSource(assignee.accountId),
       };
     }
 
@@ -453,6 +455,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
           email: author.emailAddress,
           name: author.displayName,
           avatar: author.avatarUrl,
+          ...atlassianSource(author.accountId),
         };
       }
 
@@ -721,6 +724,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         email: reporter.emailAddress,
         name: reporter.displayName,
         avatar: reporter.avatarUrls?.["48x48"],
+        ...atlassianSource(reporter.accountId),
       };
     }
     if (assignee?.emailAddress) {
@@ -728,6 +732,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         email: assignee.emailAddress,
         name: assignee.displayName,
         avatar: assignee.avatarUrls?.["48x48"],
+        ...atlassianSource(assignee.accountId),
       };
     }
 
@@ -814,6 +819,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
         email: author.emailAddress,
         name: author.displayName,
         avatar: author.avatarUrls?.["48x48"],
+        ...atlassianSource(author.accountId),
       };
     }
 
@@ -871,6 +877,17 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     // Cleanup sync state
     await this.clear(`sync_state_${projectId}`);
   }
+}
+
+/**
+ * Returns a `source` property for NewContact if the Atlassian accountId is valid.
+ * Used for Atlassian personal data reporting compliance.
+ */
+function atlassianSource(accountId: string | undefined): Pick<NewContact, "source"> | {} {
+  if (accountId && accountId !== "_unknown_") {
+    return { source: { provider: AuthProvider.Atlassian, accountId } };
+  }
+  return {};
 }
 
 export default Jira;

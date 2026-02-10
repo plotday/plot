@@ -1,11 +1,13 @@
 import { type Tag } from "./tag";
 import { type Callback } from "./tools/callbacks";
+import { type AuthProvider } from "./tools/integrations";
 import { type JSONValue } from "./utils/types";
 import { Uuid } from "./utils/uuid";
 
 export { Tag } from "./tag";
 export { Uuid } from "./utils/uuid";
 export { type JSONValue } from "./utils/types";
+export { type AuthProvider } from "./tools/integrations";
 
 /**
  * @fileoverview
@@ -1243,6 +1245,12 @@ export type NewContact = {
   name?: string;
   /** Optional avatar image URL for the contact */
   avatar?: string;
+  /**
+   * External provider account source. Used for privacy compliance
+   * (e.g. Atlassian personal data reporting for GDPR account closure).
+   * Required for contacts sourced from providers that mandate personal data reporting.
+   */
+  source?: { provider: AuthProvider; accountId: string };
 };
 
 export type ContentType = "text" | "markdown" | "html";
