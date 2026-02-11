@@ -106,89 +106,97 @@ class TwistDetails extends StatelessWidget {
     }
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Agent name and description
-        if (twist.description != null) ...[
-          Padding(
-            padding: widgetPadding.copyWith(top: 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(height: theme.spacing.sm),
-                Text(
-                  twist.description!,
-                  style: TextStyle(
-                    fontSize: theme.typography.base.fontSize,
-                    color: theme.colors.mutedForeground,
+        SizedBox(height: widgetPadding.bottom),
+        Container(height: 1, color: theme.colors.border),
+        Container(
+          decoration: BoxDecoration(color: theme.colors.secondary),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Metadata section
+              if (twist.description != null) ...[
+                Padding(
+                  padding: widgetPadding.copyWith(top: 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(height: theme.spacing.sm),
+                      Text(
+                        'Details',
+                        style: TextStyle(
+                          fontSize: theme.typography.sm.fontSize,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colors.mutedForeground,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacing.md),
+                      Text(
+                        twist.description!,
+                        style: TextStyle(
+                          fontSize: theme.typography.base.fontSize,
+                          // color: theme.colors.mutedForeground,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacing.md),
+                      if (priority != null) ...[
+                        _buildPriorityRow(context, priority!),
+                        SizedBox(height: theme.spacing.sm),
+                      ],
+                      _buildMetadataRow(context, 'Author', authorText),
+                      if (twist.environment != 'public') ...[
+                        SizedBox(height: theme.spacing.sm),
+                        _buildMetadataRow(
+                          context,
+                          'Publishing Status',
+                          twist.environment.capitalize(),
+                        ),
+                      ],
+                      if (twist.createdAt != null) ...[
+                        SizedBox(height: theme.spacing.sm),
+                        _buildMetadataRow(
+                          context,
+                          'First Published',
+                          dateFormat.format(twist.createdAt!),
+                        ),
+                      ],
+                      if (twist.updatedAt != null) ...[
+                        SizedBox(height: theme.spacing.sm),
+                        _buildMetadataRow(
+                          context,
+                          'Last Updated',
+                          dateFormat.format(twist.updatedAt!),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
-            ),
-          ),
 
-          // Divider
-          Container(height: 1, color: theme.colors.border),
-        ],
+              // Divider
+              Container(height: 1, color: theme.colors.border),
 
-        // Metadata section
-        Padding(
-          padding: widgetPadding,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (priority != null) ...[
-                _buildPriorityRow(context, priority!),
-                SizedBox(height: theme.spacing.sm),
-              ],
-              _buildMetadataRow(context, 'Author', authorText),
-              if (twist.environment != 'public') ...[
-                SizedBox(height: theme.spacing.sm),
-                _buildMetadataRow(
-                  context,
-                  'Publishing Status',
-                  twist.environment.capitalize(),
-                ),
-              ],
-              if (twist.createdAt != null) ...[
-                SizedBox(height: theme.spacing.sm),
-                _buildMetadataRow(
-                  context,
-                  'First Published',
-                  dateFormat.format(twist.createdAt!),
-                ),
-              ],
-              if (twist.updatedAt != null) ...[
-                SizedBox(height: theme.spacing.sm),
-                _buildMetadataRow(
-                  context,
-                  'Last Updated',
-                  dateFormat.format(twist.updatedAt!),
-                ),
-              ],
-            ],
-          ),
-        ),
-
-        // Divider
-        Container(height: 1, color: theme.colors.border),
-
-        // Permissions section
-        Padding(
-          padding: widgetPadding,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Permissions',
-                style: TextStyle(
-                  fontSize: theme.typography.sm.fontSize,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colors.mutedForeground,
+              // Permissions section
+              Padding(
+                padding: widgetPadding.copyWith(bottom: 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Permissions',
+                      style: TextStyle(
+                        fontSize: theme.typography.sm.fontSize,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colors.mutedForeground,
+                      ),
+                    ),
+                    ...permissionsList,
+                  ],
                 ),
               ),
-              ...permissionsList,
+              SizedBox(height: theme.spacing.sm),
             ],
           ),
         ),

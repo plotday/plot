@@ -160,14 +160,6 @@ class EditTwistCommand extends ShowForm {
         groups: [
           StaticFormGroup(
             items: [
-              FormInfo(
-                key: 'info',
-                divider: true,
-                builder: (context) => TwistDetails(
-                  twist: matchingTwist,
-                  priority: loadedPriority,
-                ),
-              ),
               FormTextInput(
                 key: 'name',
                 label: 'Name',
@@ -185,6 +177,14 @@ class EditTwistCommand extends ShowForm {
               FormButton(
                 key: 'archive',
                 buildCommand: (_) => PromptToArchiveTwist(priorityTwist),
+              ),
+              FormInfo(
+                key: 'info',
+                divider: false,
+                builder: (context) => TwistDetails(
+                  twist: matchingTwist,
+                  priority: loadedPriority,
+                ),
               ),
             ],
           ),
@@ -255,8 +255,9 @@ class ShowTwistInfo extends ShowForm {
 
     // Don't default to @plot or its descendants
     final allPriorities = await Priority.get(order: PriorityOrder.nested);
-    final plotPriority =
-        allPriorities.firstWhereOrNull((p) => p.key == '@plot');
+    final plotPriority = allPriorities.firstWhereOrNull(
+      (p) => p.key == '@plot',
+    );
     if (plotPriority != null && _isUnderPlot(initialPriority, plotPriority)) {
       initialPriority = await Priority.getDefault();
     }
@@ -266,35 +267,31 @@ class ShowTwistInfo extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            FormInfo(
-              key: 'info',
-              divider: true,
-              builder: (context) => TwistDetails(twist: twist),
+            FormSelect<Priority>(
+              key: 'priority',
+              label: 'Add to Priority',
+              initialValue: initialPriority,
+              items: (search) async {
+                final priorities = await Priority.get(
+                  order: PriorityOrder.nested,
+                  search: search,
+                );
+                final plot = priorities.firstWhereOrNull(
+                  (p) => p.key == '@plot',
+                );
+                if (plot == null) return priorities;
+                return priorities.where((p) => !_isUnderPlot(p, plot)).toList();
+              },
+              labelBuilder: (p) => PriorityLabel(priority: p),
+              titleBuilder: (p) => p.ancestorsLabel() != null
+                  ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
+                  : p.title,
             ),
             FormTextInput(
               key: 'name',
               label: 'Name',
               initialValue: twist.name,
               required: true,
-            ),
-            FormSelect<Priority>(
-              key: 'priority',
-              label: 'Priority',
-              initialValue: initialPriority,
-              items: (search) async {
-                final priorities = await Priority.get(
-                    order: PriorityOrder.nested, search: search);
-                final plot =
-                    priorities.firstWhereOrNull((p) => p.key == '@plot');
-                if (plot == null) return priorities;
-                return priorities
-                    .where((p) => !_isUnderPlot(p, plot))
-                    .toList();
-              },
-              labelBuilder: (p) => PriorityLabel(priority: p),
-              titleBuilder: (p) => p.ancestorsLabel() != null
-                  ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
-                  : p.title,
             ),
             FormButton(
               key: 'add',
@@ -303,6 +300,11 @@ class ShowTwistInfo extends ShowForm {
                 final name = values['name'] as String;
                 return AddTwist(selectedPriority, twist, name: name);
               },
+            ),
+            FormInfo(
+              key: 'info',
+              divider: false,
+              builder: (context) => TwistDetails(twist: twist),
             ),
           ],
         ),

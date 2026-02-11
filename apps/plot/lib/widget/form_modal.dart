@@ -601,7 +601,6 @@ class FormModalState extends State<_FormModal> {
                         },
                       ),
                     ),
-                    const SizedBox(height: 8),
                   ],
                 ),
               );
