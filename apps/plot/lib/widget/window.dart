@@ -24,7 +24,6 @@ class Window extends StatefulWidget {
     if (Platform.instance.isMacOS || Platform.instance.isWindows) {
       await windowManager.ensureInitialized();
       await windowManager.setPreventClose(true);
-      await _restoreWindowState();
     }
 
     // Initialize macOS-specific window styling
@@ -59,6 +58,12 @@ class Window extends StatefulWidget {
       toolbarHeight = 32.0;
       toolbarPadding = const EdgeInsets.all(0);
     }
+
+    // Restore window state after platform styling (especially toolbar) is
+    // applied, so macOS doesn't shift the window to accommodate the toolbar.
+    if (Platform.instance.isMacOS || Platform.instance.isWindows) {
+      await _restoreWindowState();
+    }
   }
 
   static Future<void> _restoreWindowState() async {
@@ -74,12 +79,6 @@ class Window extends StatefulWidget {
       final savedY = prefs.getDouble('window_y');
       final savedWidth = prefs.getDouble('window_width');
       final savedHeight = prefs.getDouble('window_height');
-      final wasMaximized = prefs.getBool('window_maximized') ?? false;
-
-      if (wasMaximized) {
-        await windowManager.maximize();
-        return;
-      }
 
       // Set default size if no saved state
       double width = savedWidth ?? 1200;
@@ -129,19 +128,13 @@ class Window extends StatefulWidget {
   static Future<void> _saveWindowState() async {
     try {
       final prefs = ProfilePreferences.instance;
-      final isMaximized = await windowManager.isMaximized();
+      final size = await windowManager.getSize();
+      final position = await windowManager.getPosition();
 
-      await prefs.setBool('window_maximized', isMaximized);
-
-      if (!isMaximized) {
-        final size = await windowManager.getSize();
-        final position = await windowManager.getPosition();
-
-        await prefs.setDouble('window_width', size.width);
-        await prefs.setDouble('window_height', size.height);
-        await prefs.setDouble('window_x', position.dx);
-        await prefs.setDouble('window_y', position.dy);
-      }
+      await prefs.setDouble('window_width', size.width);
+      await prefs.setDouble('window_height', size.height);
+      await prefs.setDouble('window_x', position.dx);
+      await prefs.setDouble('window_y', position.dy);
     } catch (e, t) {
       log.warning('Failed to save window state', e, t);
       // Ignore save errors
