@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -234,6 +235,11 @@ class ShowTwistInfo extends ShowForm {
 
   final Twist twist;
 
+  static bool _isUnderPlot(Priority priority, Priority plotPriority) {
+    return priority.id == plotPriority.id ||
+        plotPriority.path.isParent(priority.path);
+  }
+
   static Future<FormData> _buildForm(
     BuildContext context,
     Twist twist,
@@ -244,8 +250,16 @@ class ShowTwistInfo extends ShowForm {
     final currentPriority = nowBloc.state is NowLoaded
         ? (nowBloc.state as NowLoaded).priority
         : null;
-    final initialPriority =
+    var initialPriority =
         defaultPriority ?? currentPriority ?? await Priority.getDefault();
+
+    // Don't default to @plot or its descendants
+    final allPriorities = await Priority.get(order: PriorityOrder.nested);
+    final plotPriority =
+        allPriorities.firstWhereOrNull((p) => p.key == '@plot');
+    if (plotPriority != null && _isUnderPlot(initialPriority, plotPriority)) {
+      initialPriority = await Priority.getDefault();
+    }
 
     return FormData(
       title: twist.name,
@@ -267,8 +281,16 @@ class ShowTwistInfo extends ShowForm {
               key: 'priority',
               label: 'Priority',
               initialValue: initialPriority,
-              items: (search) =>
-                  Priority.get(order: PriorityOrder.nested, search: search),
+              items: (search) async {
+                final priorities = await Priority.get(
+                    order: PriorityOrder.nested, search: search);
+                final plot =
+                    priorities.firstWhereOrNull((p) => p.key == '@plot');
+                if (plot == null) return priorities;
+                return priorities
+                    .where((p) => !_isUnderPlot(p, plot))
+                    .toList();
+              },
               labelBuilder: (p) => PriorityLabel(priority: p),
               titleBuilder: (p) => p.ancestorsLabel() != null
                   ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
