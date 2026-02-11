@@ -53,7 +53,7 @@
         <string>Editor</string>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>plotapp</string>
+          <string>plotday</string>
         </array>
       </dict>
     </array>

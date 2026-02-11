@@ -309,9 +309,13 @@ class _AuthButtonState extends State<AuthButton> {
   void _startOAuth() async {
     setState(() => _isLoading = true);
 
+    // On non-web platforms, use the custom URL scheme so FlutterWebAuth2
+    // intercepts the callback directly instead of navigating to a web page.
+    final redirectUri = kIsWeb ? Env.authCallbackUrl : _appCallbackUrl;
+
     try {
       log.info('Starting OAuth flow for ${widget.provider.name}');
-      final authUrl = await _generateAuthUrl();
+      final authUrl = await _generateAuthUrl(redirectUri: redirectUri);
       log.info('Generated auth URL for ${widget.provider.name}', {
         'clientId': authUrl.clientId,
         'hasState': authUrl.state.isNotEmpty,
@@ -319,7 +323,7 @@ class _AuthButtonState extends State<AuthButton> {
 
       final result = await FlutterWebAuth2.authenticate(
         url: authUrl.url,
-        callbackUrlScheme: Env.authCallbackUrl.split(':').first,
+        callbackUrlScheme: redirectUri.split(':').first,
       );
 
       final responseUri = Uri.parse(result);
@@ -331,7 +335,7 @@ class _AuthButtonState extends State<AuthButton> {
 
       await widget.onComplete(
         clientId: authUrl.clientId,
-        redirectUri: Env.authCallbackUrl,
+        redirectUri: redirectUri,
         code: params['code'],
         state: authUrl.state,
       );
@@ -359,7 +363,11 @@ class _AuthButtonState extends State<AuthButton> {
     }
   }
 
-  Future<_AuthUrlResult> _generateAuthUrl() async {
+  Future<_AuthUrlResult> _generateAuthUrl({
+    String? redirectUri,
+  }) async {
+    final effectiveRedirectUri = redirectUri ?? Env.authCallbackUrl;
+
     String? platform;
     if (kIsWeb) {
       platform = null;
@@ -380,7 +388,7 @@ class _AuthButtonState extends State<AuthButton> {
         'provider': link.provider.name,
         'scopes': link.scopes,
         'callback': link.callback,
-        'redirectUri': Env.authCallbackUrl,
+        'redirectUri': effectiveRedirectUri,
         if (platform != null) 'platform': platform,
       },
     );
@@ -490,8 +498,14 @@ class _AuthButtonState extends State<AuthButton> {
     );
   }
 
+  /// Custom URL scheme callback for non-web OAuth flows.
+  /// On native platforms, FlutterWebAuth2 intercepts this scheme directly,
+  /// avoiding the issue where https:// callbacks load a web page instead of
+  /// routing back to the app.
+  static const _appCallbackUrl = 'plotday://auth/callback';
+
   /// Desktop Google sign-in uses a localhost callback with FlutterWebAuth2's
-  /// server mode. Custom URL schemes (plotapp://) don't work on Windows because
+  /// server mode. Custom URL schemes (plotday://) don't work on Windows because
   /// the OS launches a new app instance instead of routing to the existing one.
   /// Google allows http://localhost with any port for desktop OAuth clients.
   static const _desktopCallbackPort = 23522;
