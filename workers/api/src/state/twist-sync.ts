@@ -10,6 +10,7 @@ import { createLogger } from "@plotday/worker-util";
 const MIN_WAIT_MS = 100; // Minimum time to wait before processing
 const MIN_INTERVAL_MS = 100; // Minimum gap between queue messages
 const MAX_ITEMS_PER_BATCH = 12; // Maximum items per batch in queue messages
+const MAX_BATCH_BYTES = 120_000; // Maximum batch size in bytes (128KB limit minus 8KB headroom)
 
 interface TwistSyncState {
   lastNotifyTime: number;
@@ -413,27 +414,53 @@ export class TwistSync extends DurableObject<Bindings> {
         });
       }
 
-      // Calculate the number of batches needed (based on max items across all arrays)
-      const maxItems = Math.max(
-        newNotes.length,
-        updatedNotes.length,
-        newActivities.length,
-        updatedActivities.length
-      );
-      const batchCount = Math.ceil(maxItems / MAX_ITEMS_PER_BATCH);
+      // Build size-aware batches to stay under Cloudflare's 128KB queue message limit.
+      // Items are added sequentially (all newNotes, then updatedNotes, then newActivities,
+      // then updatedActivities). The consumer processes each array independently, so
+      // co-location of items from different arrays in the same batch is not required.
+      type TaggedItem =
+        | { array: "newNotes"; item: (typeof newNotes)[number]; size: number }
+        | { array: "updatedNotes"; item: (typeof updatedNotes)[number]; size: number }
+        | { array: "newActivities"; item: (typeof newActivities)[number]; size: number }
+        | { array: "updatedActivities"; item: (typeof updatedActivities)[number]; size: number };
+
+      const taggedItems: TaggedItem[] = [
+        ...newNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
+        ...updatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: JSON.stringify(item).length })),
+        ...newActivities.map((item) => ({ array: "newActivities" as const, item, size: JSON.stringify(item).length })),
+        ...updatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: JSON.stringify(item).length })),
+      ];
+
+      const batches: TaggedItem[][] = [];
+      let currentBatch: TaggedItem[] = [];
+      let currentBatchSize = 0;
+
+      for (const tagged of taggedItems) {
+        // Start a new batch if adding this item would exceed limits (but always allow at least 1 item)
+        if (
+          currentBatch.length > 0 &&
+          (currentBatchSize + tagged.size > MAX_BATCH_BYTES || currentBatch.length >= MAX_ITEMS_PER_BATCH)
+        ) {
+          batches.push(currentBatch);
+          currentBatch = [];
+          currentBatchSize = 0;
+        }
+        currentBatch.push(tagged);
+        currentBatchSize += tagged.size;
+      }
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+      }
 
       // Send queue messages BEFORE updating sync timestamps
       // This ensures twist callbacks are always delivered even if timestamp updates fail
       // (transient PostgREST 500s). If timestamps fail to advance, the next alarm will
       // re-fetch the same items, causing duplicate but harmless callbacks.
-      for (let i = 0; i < batchCount; i++) {
-        const start = i * MAX_ITEMS_PER_BATCH;
-        const end = start + MAX_ITEMS_PER_BATCH;
-
-        const batchNewNotes = newNotes.slice(start, end);
-        const batchUpdatedNotes = updatedNotes.slice(start, end);
-        const batchNewActivities = newActivities.slice(start, end);
-        const batchUpdatedActivities = updatedActivities.slice(start, end);
+      for (const batch of batches) {
+        const batchNewNotes = batch.filter((t) => t.array === "newNotes").map((t) => t.item);
+        const batchUpdatedNotes = batch.filter((t) => t.array === "updatedNotes").map((t) => t.item);
+        const batchNewActivities = batch.filter((t) => t.array === "newActivities").map((t) => t.item);
+        const batchUpdatedActivities = batch.filter((t) => t.array === "updatedActivities").map((t) => t.item);
 
         // Filter tag changes to only include those relevant to activities in this batch
         // Include both new and updated activities for tag changes
@@ -445,25 +472,37 @@ export class TwistSync extends DurableObject<Bindings> {
           batchActivityIds.has(tc.activityId)
         );
 
-        if (
-          batchNewNotes.length > 0 ||
-          batchUpdatedNotes.length > 0 ||
-          batchNewActivities.length > 0 ||
-          batchUpdatedActivities.length > 0
-        ) {
-          await this.env.UPDATES_QUEUE.send({
-            type: "twist_batch",
-            priorityTwistId: this.priorityTwistId,
-            twistId: priorityTwist.twist_id,
-            environment: twist.environment,
-            version: twist.version,
-            newNotes: batchNewNotes,
-            updatedNotes: batchUpdatedNotes,
-            newActivities: batchNewActivities,
-            updatedActivities: batchUpdatedActivities,
-            activityTagChanges: batchTagChanges,
-            priorityTwist: null, // TODO: Handle priority_twist config updates
-          });
+        const message = {
+          type: "twist_batch" as const,
+          priorityTwistId: this.priorityTwistId,
+          twistId: priorityTwist.twist_id,
+          environment: twist.environment,
+          version: twist.version,
+          newNotes: batchNewNotes,
+          updatedNotes: batchUpdatedNotes,
+          newActivities: batchNewActivities,
+          updatedActivities: batchUpdatedActivities,
+          activityTagChanges: batchTagChanges,
+          priorityTwist: null, // TODO: Handle priority_twist config updates
+        };
+
+        try {
+          await this.env.UPDATES_QUEUE.send(message);
+        } catch (error) {
+          if (batch.length === 1) {
+            // Single oversized item — log and skip so other batches can proceed
+            logger.error("Queue send failed for oversized single item, skipping", error as Error, {
+              priority_twist_id: this.priorityTwistId,
+              item_array: batch[0].array,
+              item_size: batch[0].size,
+            });
+            this.captureException(error as Error, {
+              item_array: batch[0].array,
+              item_size: batch[0].size,
+            });
+            continue;
+          }
+          throw error;
         }
       }
 
@@ -535,7 +574,7 @@ export class TwistSync extends DurableObject<Bindings> {
         }
       }
 
-      if (maxItems > 0) {
+      if (taggedItems.length > 0) {
         logger.info("Twist sync completed and queued", {
           priority_twist_id: this.priorityTwistId,
           twist_id: String(priorityTwist.twist_id),
@@ -544,7 +583,7 @@ export class TwistSync extends DurableObject<Bindings> {
           new_activity_count: newActivities.length,
           updated_activity_count: updatedActivities.length,
           tag_change_count: activityTagChanges.length,
-          batch_count: batchCount,
+          batch_count: batches.length,
         });
       }
 
