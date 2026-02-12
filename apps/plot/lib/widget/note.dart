@@ -270,16 +270,24 @@ class NoteCommands extends StatelessWidget {
               ? CommandWrapper(command, subtitle: Value(actorNames))
               : command;
 
+          final count = note.tags[tag]?.length ?? 0;
+
           // Use pulsing animation for twist tags
           if (tag == Tag.twist) {
-            return PulsingColorButton(
-              wrappedCommand,
-              key: key,
-              primaryColor: accentColor,
+            return CountBadge(
+              count: count,
+              child: PulsingColorButton(
+                wrappedCommand,
+                key: key,
+                primaryColor: accentColor,
+              ),
             );
           }
 
-          return Button.icon(wrappedCommand, key: key, selected: true);
+          return CountBadge(
+            count: count,
+            child: Button.icon(wrappedCommand, key: key, selected: true),
+          );
         })
         .toList();
 
@@ -326,15 +334,22 @@ class NoteCommands extends StatelessWidget {
                     final command = tag == Tag.now
                         ? FinishTask(note)
                         : ToggleNoteTag(note, tag, actorId);
+                    final count = note.tags[tag]?.length ?? 0;
                     // Use pulsing animation for twist tags
                     if (tag == Tag.twist) {
-                      return PulsingColorButton(
-                        command,
-                        key: key,
-                        primaryColor: context.colour.accent,
+                      return CountBadge(
+                        count: count,
+                        child: PulsingColorButton(
+                          command,
+                          key: key,
+                          primaryColor: context.colour.accent,
+                        ),
                       );
                     }
-                    return Button.icon(command, key: key, selected: true);
+                    return CountBadge(
+                      count: count,
+                      child: Button.icon(command, key: key, selected: true),
+                    );
                   })
                   .toList();
 

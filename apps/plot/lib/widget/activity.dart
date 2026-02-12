@@ -290,20 +290,28 @@ class ActivityCommands extends HookWidget {
             ? CommandWrapper(command, subtitle: Value(actorNames))
             : command;
 
+        final count = activity.tags[tag]?.length ?? 0;
+
         // Use pulsing animation for twist tags
         if (tag == Tag.twist) {
-          return PulsingColorButton(
-            wrappedCommand,
-            key: key,
-            primaryColor: activityColor,
+          return CountBadge(
+            count: count,
+            child: PulsingColorButton(
+              wrappedCommand,
+              key: key,
+              primaryColor: activityColor,
+            ),
           );
         }
 
-        return Button.icon(
-          wrappedCommand,
-          key: key,
-          selected: true,
-          selectedColor: activityColor,
+        return CountBadge(
+          count: count,
+          child: Button.icon(
+            wrappedCommand,
+            key: key,
+            selected: true,
+            selectedColor: activityColor,
+          ),
         );
       }).toList(),
       [activity.id, activity.tags],
@@ -339,19 +347,26 @@ class ActivityCommands extends HookWidget {
                     final command = tag == Tag.now
                         ? FinishAction(activity, stateIcon: true)
                         : ToggleActivityTag(activity, tag);
+                    final count = activity.tags[tag]?.length ?? 0;
                     // Use pulsing animation for twist tags
                     if (tag == Tag.twist) {
-                      return PulsingColorButton(
-                        command,
-                        key: key,
-                        primaryColor: activityColor,
+                      return CountBadge(
+                        count: count,
+                        child: PulsingColorButton(
+                          command,
+                          key: key,
+                          primaryColor: activityColor,
+                        ),
                       );
                     }
-                    return Button.icon(
-                      command,
-                      key: key,
-                      selected: true,
-                      selectedColor: activityColor,
+                    return CountBadge(
+                      count: count,
+                      child: Button.icon(
+                        command,
+                        key: key,
+                        selected: true,
+                        selectedColor: activityColor,
+                      ),
                     );
                   })
                   .take(5)
