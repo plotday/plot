@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+
 import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
@@ -484,6 +486,8 @@ List<Command> noteCommands(Note note) {
     PickNoteAssignee(note),
     if (!note.draft && note.content != null && note.content!.trim().isNotEmpty)
       SplitNoteToNewActivity(note),
+    if (note.content != null && note.content!.trim().isNotEmpty)
+      CopyNoteContent(note),
     if (!note.private || note.authorId == Base.actorId) ToggleNotePrivate(note),
     ArchiveNote(note),
   ];
@@ -512,6 +516,27 @@ List<Command> topNoteTags(
       .take(maxToShow)
       .map((tag) => ToggleNoteTag(note, tag, actorId))
       .toList();
+}
+
+class CopyNoteContent extends NoteCommand {
+  CopyNoteContent(super.note)
+    : super(
+        title: 'Copy',
+        eventObject: EventObject.note,
+        eventAction: EventAction.clicked,
+        icon: FontAwesomeIcons.copy,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: note.content!));
+      return CommandMessage('Note copied to clipboard');
+    } catch (e, stackTrace) {
+      log.severe('Error in CopyNoteContent: $e', e, stackTrace);
+      return CommandMessage('Failed to copy note', isError: true);
+    }
+  }
 }
 
 class ShowNoteCommands extends ShowCommands {
