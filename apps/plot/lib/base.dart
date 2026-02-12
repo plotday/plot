@@ -173,9 +173,18 @@ class Base {
   }
 
   Base() : _client = supa.Supabase.instance.client, _userId = null {
-    _client!.auth.onAuthStateChange.listen((data) {
-      _handleAuthStateChange(data);
-    });
+    _client!.auth.onAuthStateChange.listen(
+      (data) {
+        _handleAuthStateChange(data);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (error is supa.AuthRetryableFetchException) {
+          log.info('Transient auth fetch error: $error');
+        } else {
+          log.severe('Auth stream error', error, stackTrace);
+        }
+      },
+    );
   }
 
   /// Handles auth state changes with improved logging and context
