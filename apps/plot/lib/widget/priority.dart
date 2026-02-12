@@ -113,6 +113,17 @@ class PriorityWidget extends StatelessWidget {
       );
     }
 
+    if (hasPhysicalKeyboard()) {
+      return ContextMenu(
+        items: () => priorityCommands(priority).map((cmd) => FItem(
+          title: Text(cmd.title),
+          prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+          onPress: () => buildContext.run(cmd),
+        )).toList(),
+        child: listTile,
+      );
+    }
+
     return listTile;
   }
 }

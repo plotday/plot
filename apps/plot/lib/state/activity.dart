@@ -63,6 +63,15 @@ class ActivityBloc extends Cubit<ActivityState> {
     emit(state.copyWith(replyTo: note, clearReplyTo: note == null));
   }
 
+  /// Sets thread filter to show only a note and its replies. Pass null to clear.
+  void setThreadFilter(NoteId? noteId) {
+    emit(state.copyWith(
+      threadNoteId: noteId,
+      clearThreadNoteId: noteId == null,
+    ));
+    _loadNotes();
+  }
+
   /// Adds a note by converting the current draft to a non-draft.
   /// Creates a fresh draft note for the activity afterward.
   /// Note: Twisting tag for twist mentions is added in Note.save()
@@ -151,6 +160,7 @@ class ActivityBloc extends Cubit<ActivityState> {
         draft: false,
         filter: state.filter.isNotEmpty ? state.filter : null,
         search: state.search.isNotEmpty ? state.search : null,
+        threadNoteId: state.threadNoteId,
       ).listen((notes) {
         emit(state.copyWith(notes: notes));
       }),

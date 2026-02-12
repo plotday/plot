@@ -3,6 +3,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/activity.dart';
+import 'package:plot/util/platform.dart';
 
 class _NoteReplyReference extends StatelessWidget {
   const _NoteReplyReference({required this.reNoteId});
@@ -28,20 +29,26 @@ class _NoteReplyReference extends StatelessWidget {
               : firstLine;
         }
 
-        return Container(
-          padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
-          decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(color: context.colour.muted, width: 2),
+        return GestureDetector(
+          onTap: () => context.read<ActivityBloc>().setThreadFilter(reNoteId),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: Container(
+              padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
+              decoration: BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: context.colour.muted, width: 2),
+                ),
+              ),
+              child: Text(
+                'reply to: $preview',
+                style: context.theme.typography.xs.copyWith(
+                  color: context.colour.muted,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          child: Text(
-            'reply to: $preview',
-            style: context.theme.typography.xs.copyWith(
-              color: context.colour.muted,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         );
       },
@@ -102,7 +109,7 @@ class _NoteWidgetState extends State<NoteWidget> {
     final noteContent = widget.note.content ?? '';
     final noteLinks = widget.note.links ?? [];
 
-    return ListTile(
+    final listTile = ListTile(
       padding: const .only(left: 10, right: 16, top: 8),
       bodyBuilder: (context, highlighted) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,6 +211,19 @@ class _NoteWidgetState extends State<NoteWidget> {
       reorderableIndex: widget.reorderableIndex,
       noHoverHighlight: true,
     );
+
+    if (hasPhysicalKeyboard()) {
+      return ContextMenu(
+        items: () => noteCommands(widget.note).map((cmd) => FItem(
+          title: Text(cmd.title),
+          prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+          onPress: () => context.run(cmd),
+        )).toList(),
+        child: listTile,
+      );
+    }
+
+    return listTile;
   }
 }
 

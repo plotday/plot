@@ -9,6 +9,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/state/layout.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
@@ -188,6 +189,24 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                       HardwareKeyboard.instance.isShiftPressed ||
                       HardwareKeyboard.instance.isAltPressed;
 
+                  // Handle Cmd+C / Ctrl+C to copy focused note content
+                  if (event.logicalKey == LogicalKeyboardKey.keyC &&
+                      (HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed) &&
+                      !HardwareKeyboard.instance.isShiftPressed &&
+                      !HardwareKeyboard.instance.isAltPressed) {
+                    final focusedIndex = listController.focusedIndex;
+                    if (focusedIndex != null) {
+                      final note = _getNoteAtIndex(state, focusedIndex);
+                      if (note != null &&
+                          note.content != null &&
+                          note.content!.trim().isNotEmpty) {
+                        context.run(CopyNoteContent(note));
+                        return KeyEventResult.handled;
+                      }
+                    }
+                  }
+
                   // Only handle plain arrow keys/enter/escape (no modifiers)
                   // Cmd-Up/Down should bubble up to global PriorityPage handler
                   if (!hasModifiers) {
@@ -246,12 +265,72 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                     translucent: true,
                     childPad: false,
                     header: Header(
-                      title: state.activity.displayTitle,
+                      title: state.threadNoteId == null
+                          ? state.activity.displayTitle
+                          : null,
+                      main: state.threadNoteId != null
+                          ? Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    state.activity.displayTitle,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: context.theme.typography.base,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () => context
+                                      .read<ActivityBloc>()
+                                      .setThreadFilter(null),
+                                  child: MouseRegion(
+                                    cursor: SystemMouseCursors.click,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: context.colour.accentBackground,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            FontAwesomeIcons.reply,
+                                            size: 10,
+                                            color: context.colour.accent,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Thread',
+                                            style: context.theme.typography.xs
+                                                .copyWith(
+                                                  color: context.colour.accent,
+                                                ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Icon(
+                                            PlotIcon.close,
+                                            size: 8,
+                                            color: context.colour.accent,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : null,
                       prefixCommands: prefixActions,
                       onSearchChanged: (search) =>
                           context.read<ActivityBloc>().updateSearch(search),
-                      onSearchClosed: () =>
-                          context.read<ActivityBloc>().updateFilter([]),
+                      onSearchClosed: () {
+                        context.read<ActivityBloc>().updateFilter([]);
+                        context.read<ActivityBloc>().setThreadFilter(null);
+                      },
                       filterCommands: state.tags
                           .map(
                             (tagData) =>

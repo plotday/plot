@@ -169,9 +169,16 @@ class ActivityWidget extends StatelessWidget {
     final isTouchDevice = !hasPhysicalKeyboard();
     final listTile = _buildListTile(buildContext, isTouchDevice);
 
-    // Desktop: no drag handle, full-tile drag works via ReorderableDragStartListener in ListTile
+    // Desktop: right-click context menu, no drag handle
     if (!isTouchDevice) {
-      return listTile;
+      return ContextMenu(
+        items: () => activityCommands(activity).map((cmd) => FItem(
+          title: Text(cmd.title),
+          prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+          onPress: () => buildContext.run(cmd),
+        )).toList(),
+        child: listTile,
+      );
     }
 
     final swipeRightCommand = _getSwipeRightCommand();

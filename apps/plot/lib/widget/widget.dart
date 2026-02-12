@@ -10,6 +10,7 @@ export 'badge.dart';
 export 'bidirectional_list.dart';
 export 'button.dart';
 export 'command_modal.dart';
+export 'context_menu.dart';
 export 'modal.dart';
 export 'dropdown.dart';
 export 'editor.dart';

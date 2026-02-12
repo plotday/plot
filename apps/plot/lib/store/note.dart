@@ -263,6 +263,7 @@ class Note extends Equatable implements Comparable<Note> {
     bool? draft = false,
     List<Tag>? filter,
     String? search,
+    NoteId? threadNoteId,
   }) {
     // Check if notes for this activity have been loaded, if not trigger pull
     _ensureNotesLoadedForActivity(activityId);
@@ -301,6 +302,13 @@ class Note extends Equatable implements Comparable<Note> {
     // Filter by draft status if draft parameter is provided
     if (draft != null) {
       query.where(n.draft.equals(draft));
+    }
+
+    // Filter to thread: show the root note and all its replies
+    if (threadNoteId != null) {
+      query.where(
+        n.id.equalsValue(threadNoteId) | n.reNoteId.equalsValue(threadNoteId),
+      );
     }
 
     // Add tag filtering if filter list is provided

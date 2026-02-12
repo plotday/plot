@@ -206,6 +206,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
               minAncestorTopOrder: p.minAncestorTopOrder,
               active: activeIds.contains(p.id),
               unreadComputed: unreadIds.contains(p.id),
+              displayColor: p.displayColor,
             );
           }).toList();
         })
@@ -312,6 +313,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         minAncestorTopOrder: p.minAncestorTopOrder,
         active: activeIds.contains(p.id),
         unreadComputed: unreadIds.contains(p.id),
+        displayColor: p.displayColor,
       );
     }).toList();
   }
