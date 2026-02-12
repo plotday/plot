@@ -413,10 +413,17 @@ class _ModalProviderState extends State<ModalProvider> {
     }
     // Use the same context that was used to create the dialog
     final modalContext = _rootContextKey.currentContext ?? context;
-    await Navigator.of(
+    final navigator = Navigator.of(
       modalContext,
       rootNavigator: _usedRootNavigator,
-    ).maybePop();
+    );
+    // Use pop() directly instead of maybePop(). maybePop() checks PopScope's
+    // canPop which reads from _modalStackNotifier — but we cleared the stack
+    // without updating the notifier, so canPop is stale and maybePop becomes
+    // a no-op, leaving the dialog open on the navigator forever.
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
   }
 
   void _notifyStackChanged() {

@@ -496,7 +496,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
           // Pop modal with refresh result so parent can handle it
           Modal.pop<CommandReturn>(context, Value(result));
         } else if (result is CommandRoute) {
-          Modal.popAll(context);
+          await Modal.popAll(context);
           result.go(context);
         } else if (result is! CommandSkipped) {
           Modal.pop<CommandReturn>(context, Value(result));
