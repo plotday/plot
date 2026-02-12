@@ -9,6 +9,7 @@ import {
   type NewContact,
   type NewNote,
   Serializable,
+  Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -59,16 +60,14 @@ import {
  * - Bidirectional comment sync
  *
  * **Required OAuth Scopes:**
- * - `https://www.googleapis.com/auth/drive.readonly` - Read files, folders, comments
- * - `https://www.googleapis.com/auth/drive.file` - Write comments on files
+ * - `https://www.googleapis.com/auth/drive` - Read/write files, folders, comments
  */
 export class GoogleDrive
   extends Tool<GoogleDrive>
   implements DocumentTool
 {
   static readonly SCOPES = [
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive",
   ];
 
   build(build: ToolBuilder) {
@@ -344,7 +343,7 @@ export class GoogleDrive
       const watchData = (await api.call(
         "POST",
         "https://www.googleapis.com/drive/v3/changes/watch",
-        undefined,
+        { pageToken: changesToken },
         {
           id: watchId,
           type: "web_hook",
@@ -352,12 +351,16 @@ export class GoogleDrive
         }
       )) as { expiration: string; resourceId: string };
 
+      const expiry = new Date(parseInt(watchData.expiration));
+      const hoursUntilExpiry = (expiry.getTime() - Date.now()) / (1000 * 60 * 60);
+      console.log(`[GDRIVE] Watch created for folder ${folderId}: watchId=${watchId}, expiry=${expiry.toISOString()} (${hoursUntilExpiry.toFixed(1)}h from now)`);
+
       await this.set(`drive_watch_${folderId}`, {
         watchId,
         resourceId: watchData.resourceId,
         folderId,
         changesToken,
-        expiry: new Date(parseInt(watchData.expiration)),
+        expiry,
       });
 
       // Schedule proactive renewal
@@ -396,13 +399,22 @@ export class GoogleDrive
     }
 
     const expiry = new Date(watchData.expiry);
-    const renewalTime = new Date(expiry.getTime() - 24 * 60 * 60 * 1000);
+    const timeUntilExpiry = expiry.getTime() - Date.now();
 
+    // Renew at 80% of the watch lifetime, with a minimum of 5 minutes before expiry
+    const buffer = Math.max(timeUntilExpiry * 0.2, 5 * 60 * 1000);
+    const renewalTime = new Date(expiry.getTime() - buffer);
+
+    // Don't schedule if the watch has already expired
     if (renewalTime <= new Date()) {
-      await this.renewDriveWatch(folderId);
+      console.log(`[GDRIVE] Watch already expired or expiring too soon, skipping renewal scheduling`);
       return;
     }
 
+    console.log(`[GDRIVE] scheduleWatchRenewal: expiry=${expiry.toISOString()}, renewalTime=${renewalTime.toISOString()}`);
+
+    // Always schedule as a task to avoid recursive loops
+    // (renewDriveWatch -> setupDriveWatch -> scheduleWatchRenewal -> renewDriveWatch)
     const renewalCallback = await this.callback(
       this.renewDriveWatch,
       folderId
@@ -418,6 +430,7 @@ export class GoogleDrive
   }
 
   private async renewDriveWatch(folderId: string): Promise<void> {
+    console.log(`[GDRIVE] renewDriveWatch called for folder ${folderId}`);
     try {
       const authToken = await this.get<string>(`auth_token_${folderId}`);
       if (!authToken) {
@@ -427,8 +440,8 @@ export class GoogleDrive
 
       try {
         await this.stopDriveWatch(authToken, folderId);
-      } catch (error) {
-        console.warn(`Failed to stop old watch for ${folderId}:`, error);
+      } catch {
+        // Expected if old watch already expired
       }
 
       await this.setupDriveWatch(authToken, folderId);
@@ -438,30 +451,15 @@ export class GoogleDrive
   }
 
   async onDriveWebhook(
-    request: WebhookRequest,
+    _request: WebhookRequest,
     folderId: string,
     authToken: string
   ): Promise<void> {
-    const channelId = request.headers["x-goog-channel-id"];
-    if (!channelId) {
-      throw new Error("Invalid webhook headers");
-    }
-
+    console.log(`[GDRIVE] Webhook received for folder ${folderId}`);
     const watchData = await this.get<any>(`drive_watch_${folderId}`);
-    if (!watchData || watchData.watchId !== channelId) {
-      console.warn("Unknown or expired webhook notification");
+    if (!watchData) {
+      console.log(`[GDRIVE] No watch data found, ignoring webhook`);
       return;
-    }
-
-    // Reactive expiry check
-    const expiration = new Date(watchData.expiry);
-    const hoursUntilExpiry =
-      (expiration.getTime() - Date.now()) / (1000 * 60 * 60);
-
-    if (hoursUntilExpiry < 24) {
-      this.renewDriveWatch(folderId).catch((error) => {
-        console.error(`Failed to reactively renew watch for ${folderId}:`, error);
-      });
     }
 
     // Trigger incremental sync
@@ -475,8 +473,11 @@ export class GoogleDrive
     // Check if initial sync is still in progress
     const syncInProgress = await this.get<boolean>(`sync_lock_${folderId}`);
     if (syncInProgress) {
+      console.log(`[GDRIVE] Sync lock active for folder ${folderId}, skipping`);
       return;
     }
+
+    console.log(`[GDRIVE] Starting incremental sync for folder ${folderId}`);
 
     // Set sync lock for incremental
     await this.set(`sync_lock_${folderId}`, true);
@@ -581,6 +582,8 @@ export class GoogleDrive
       const api = await this.getApi(authToken);
       const result = await listChanges(api, changesToken);
 
+      console.log(`[GDRIVE] Incremental sync: ${result.changes.length} changes, token=${changesToken.substring(0, 20)}...`);
+
       const callbackToken = await this.get<Callback>(`callback_${folderId}`);
       if (!callbackToken) {
         console.warn("No callback token found, skipping incremental sync");
@@ -589,6 +592,7 @@ export class GoogleDrive
       }
 
       // Filter changes to files in our synced folder
+      let processedCount = 0;
       for (const change of result.changes) {
         if (change.removed || !change.file) continue;
 
@@ -598,6 +602,9 @@ export class GoogleDrive
         // Skip folders
         if (change.file.mimeType === "application/vnd.google-apps.folder") continue;
 
+        processedCount++;
+        console.log(`[GDRIVE] Processing changed file: ${change.file.name} (${change.file.id})`);
+
         try {
           const activity = await this.buildActivityFromFile(
             api,
@@ -605,11 +612,14 @@ export class GoogleDrive
             folderId,
             false // incremental sync
           );
+          console.log(`[GDRIVE] Built activity with ${activity.notes?.length ?? 0} notes for file ${change.file.name}`);
           await this.tools.callbacks.run(callbackToken, activity);
         } catch (error) {
           console.error(`Failed to process changed file ${change.fileId}:`, error);
         }
       }
+
+      console.log(`[GDRIVE] Processed ${processedCount} files in folder from ${result.changes.length} total changes`);
 
       if (result.nextPageToken) {
         // More change pages
@@ -623,6 +633,7 @@ export class GoogleDrive
       } else {
         // Update stored changes token for next incremental sync
         const newToken = result.newStartPageToken || changesToken;
+        console.log(`[GDRIVE] Sync complete, new token=${newToken.substring(0, 20)}... (changed=${newToken !== changesToken})`);
         const state = await this.get<SyncState>(`sync_state_${folderId}`);
         if (state) {
           await this.set(`sync_state_${folderId}`, {
@@ -661,18 +672,27 @@ export class GoogleDrive
       }
     }
 
+    // Build displayName → email lookup from file permissions
+    // (Drive API doesn't return emailAddress on comment authors)
+    const emailByName = new Map<string, string>();
+    if (file.permissions) {
+      for (const perm of file.permissions) {
+        if (perm.displayName && perm.emailAddress) {
+          emailByName.set(perm.displayName, perm.emailAddress);
+        }
+      }
+    }
+
     // Build notes
     const notes: NewNote[] = [];
 
-    // Summary note with description or mime type info
-    const summaryContent = file.description
-      ? file.description
-      : `${file.mimeType}`;
+    // Summary note with description if available
     notes.push({
       activity: { source: canonicalSource },
       key: "summary",
-      content: summaryContent,
+      content: file.description || null,
       contentType: "text",
+      author,
       created: file.createdTime ? new Date(file.createdTime) : new Date(),
     });
 
@@ -680,13 +700,13 @@ export class GoogleDrive
     try {
       const comments = await listComments(api, file.id);
       for (const comment of comments) {
-        notes.push(this.buildCommentNote(canonicalSource, comment));
+        notes.push(this.buildCommentNote(canonicalSource, comment, emailByName));
 
         // Add replies
         if (comment.replies) {
           for (const reply of comment.replies) {
             notes.push(
-              this.buildReplyNote(canonicalSource, comment.id, reply)
+              this.buildReplyNote(canonicalSource, comment.id, reply, emailByName)
             );
           }
         }
@@ -734,15 +754,20 @@ export class GoogleDrive
 
   private buildCommentNote(
     canonicalSource: string,
-    comment: GoogleDriveComment
+    comment: GoogleDriveComment,
+    emailByName: Map<string, string>
   ): NewNote {
-    const commentAuthor: NewContact | undefined =
-      comment.author.emailAddress
-        ? {
-            email: comment.author.emailAddress,
-            name: comment.author.displayName,
-          }
-        : undefined;
+    const email =
+      comment.author.emailAddress ||
+      (comment.author.displayName
+        ? emailByName.get(comment.author.displayName)
+        : undefined);
+    const commentAuthor: NewContact | undefined = email
+      ? {
+          email,
+          name: comment.author.displayName,
+        }
+      : undefined;
 
     return {
       activity: { source: canonicalSource },
@@ -751,17 +776,26 @@ export class GoogleDrive
       contentType: comment.htmlContent ? "html" : "text",
       author: commentAuthor,
       created: new Date(comment.createdTime),
+      ...(comment.assigneeEmailAddress
+        ? { tags: { [Tag.Now]: [{ email: comment.assigneeEmailAddress }] } }
+        : {}),
     };
   }
 
   private buildReplyNote(
     canonicalSource: string,
     commentId: string,
-    reply: GoogleDriveComment["replies"] extends (infer R)[] | undefined ? R : never
+    reply: GoogleDriveComment["replies"] extends (infer R)[] | undefined ? R : never,
+    emailByName: Map<string, string>
   ): NewNote {
-    const replyAuthor: NewContact | undefined = reply.author.emailAddress
+    const email =
+      reply.author.emailAddress ||
+      (reply.author.displayName
+        ? emailByName.get(reply.author.displayName)
+        : undefined);
+    const replyAuthor: NewContact | undefined = email
       ? {
-          email: reply.author.emailAddress,
+          email,
           name: reply.author.displayName,
         }
       : undefined;

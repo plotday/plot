@@ -11,6 +11,10 @@ export type GoogleDriveFile = {
     emailAddress?: string;
     displayName?: string;
   }>;
+  permissions?: Array<{
+    emailAddress?: string;
+    displayName?: string;
+  }>;
   parents?: string[];
 };
 
@@ -22,6 +26,7 @@ export type GoogleDriveComment = {
     displayName?: string;
     emailAddress?: string;
   };
+  assigneeEmailAddress?: string;
   createdTime: string;
   modifiedTime: string;
   resolved: boolean;
@@ -137,7 +142,7 @@ export async function listFilesInFolder(
   const data = (await api.call("GET", `${DRIVE_API}/files`, {
     q: `'${folderId}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`,
     fields:
-      "nextPageToken,files(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,parents)",
+      "nextPageToken,files(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents)",
     pageSize: 50,
     pageToken,
   })) as { files: GoogleDriveFile[]; nextPageToken?: string } | null;
@@ -161,7 +166,7 @@ export async function listComments(
       `${DRIVE_API}/files/${fileId}/comments`,
       {
         fields:
-          "nextPageToken,comments(id,content,htmlContent,author,createdTime,modifiedTime,resolved,replies(id,content,htmlContent,author,createdTime,modifiedTime))",
+          "nextPageToken,comments(id,content,htmlContent,author,assigneeEmailAddress,createdTime,modifiedTime,resolved,replies(id,content,htmlContent,author,createdTime,modifiedTime))",
         pageSize: 100,
         includeDeleted: false,
         pageToken,
@@ -240,7 +245,7 @@ export async function listChanges(
   const data = (await api.call("GET", `${DRIVE_API}/changes`, {
     pageToken,
     fields:
-      "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,parents))",
+      "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents))",
     pageSize: 100,
     includeRemoved: true,
   })) as {

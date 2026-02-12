@@ -20,13 +20,14 @@ import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
 import { Uuid } from "@plotday/twister/utils/uuid";
 
 /**
- * Document Comments Twist
+ * Document Actions Twist
  *
- * Syncs documents and comments from Google Drive with Plot.
+ * Syncs documents, comments, and action items from Google Drive with Plot.
  * Converts documents into Plot activities with notes for comments,
- * and syncs Plot notes back as comments on the documents.
+ * syncs Plot notes back as comments on the documents,
+ * and tags action items with Tag.Now for assigned users.
  */
-export default class DocumentComments extends Twist<DocumentComments> {
+export default class DocumentActions extends Twist<DocumentActions> {
   build(build: ToolBuilder) {
     return {
       googleDrive: build(GoogleDrive),

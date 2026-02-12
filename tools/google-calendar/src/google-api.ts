@@ -360,7 +360,7 @@ export function transformGoogleEvent(
 
   const shared = {
     source: `google-calendar:${event.id}`,
-    title: event.summary || "",
+    title: event.summary || (isCancelled ? "Cancelled event" : ""),
     start: isCancelled ? null : start,
     end: isCancelled ? null : end,
     meta: {
