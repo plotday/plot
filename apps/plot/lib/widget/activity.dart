@@ -172,11 +172,15 @@ class ActivityWidget extends StatelessWidget {
     // Desktop: right-click context menu, no drag handle
     if (!isTouchDevice) {
       return ContextMenu(
-        items: () => activityCommands(activity).map((cmd) => FItem(
-          title: Text(cmd.title),
-          prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
-          onPress: () => buildContext.run(cmd),
-        )).toList(),
+        items: () => activityCommands(activity)
+            .map(
+              (cmd) => FItem(
+                title: Text(cmd.title),
+                prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+                onPress: () => buildContext.run(cmd),
+              ),
+            )
+            .toList(),
         child: listTile,
       );
     }

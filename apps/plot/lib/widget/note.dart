@@ -5,15 +5,29 @@ import 'package:plot/command/command.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/util/platform.dart';
 
-class _NoteReplyReference extends StatelessWidget {
+class _NoteReplyReference extends StatefulWidget {
   const _NoteReplyReference({required this.reNoteId});
 
   final NoteId reNoteId;
 
   @override
+  State<_NoteReplyReference> createState() => _NoteReplyReferenceState();
+}
+
+class _NoteReplyReferenceState extends State<_NoteReplyReference> {
+  bool _isHovered = false;
+  late final Future<Note?> _noteFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _noteFuture = Note.get(widget.reNoteId);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<Note?>(
-      future: Note.get(reNoteId),
+      future: _noteFuture,
       builder: (context, snapshot) {
         final reNote = snapshot.data;
         final String preview;
@@ -23,27 +37,33 @@ class _NoteReplyReference extends StatelessWidget {
           preview = '[deleted]';
         } else {
           final raw = reNote.content ?? '';
-          final firstLine = raw.split('\n').first;
-          preview = firstLine.length > 60
-              ? '${firstLine.substring(0, 60)}...'
-              : firstLine;
+          preview = raw.split('\n').first;
         }
 
         return GestureDetector(
-          onTap: () => context.read<ActivityBloc>().setThreadFilter(reNoteId),
+          onTap: () => context.read<ActivityBloc>().setThreadFilter(widget.reNoteId),
           child: MouseRegion(
             cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
             child: Container(
               padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
               decoration: BoxDecoration(
                 border: Border(
-                  left: BorderSide(color: context.colour.muted, width: 2),
+                  left: BorderSide(
+                    color: _isHovered
+                        ? context.colour.foreground
+                        : context.colour.muted,
+                    width: 2,
+                  ),
                 ),
               ),
               child: Text(
-                'reply to: $preview',
+                preview,
                 style: context.theme.typography.xs.copyWith(
-                  color: context.colour.muted,
+                  color: _isHovered
+                      ? context.colour.foreground
+                      : context.colour.muted,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -116,7 +136,7 @@ class _NoteWidgetState extends State<NoteWidget> {
         children: [
           if (widget.note.reNoteId != null)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+              padding: const EdgeInsets.only(left: 6, right: 6, bottom: 4),
               child: _NoteReplyReference(reNoteId: widget.note.reNoteId!),
             ),
           if (noteContent.isNotEmpty)

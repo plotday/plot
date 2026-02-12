@@ -144,7 +144,9 @@ class NoteEditorState extends State<NoteEditor> {
               onSubmitted: (body, {bool alt = false}) async {
                 final note = finalizeDraft(body, alt: alt);
                 if (!context.mounted) return;
-                setState(() { _saving = true; });
+                setState(() {
+                  _saving = true;
+                });
                 await context.run(AddNote(note));
               },
             );
@@ -172,19 +174,30 @@ class NoteEditorState extends State<NoteEditor> {
                           ? '${firstLine.substring(0, 60)}...'
                           : firstLine;
                       return Padding(
-                        padding: const EdgeInsets.only(left: 6, right: 6, top: 4),
+                        padding: const EdgeInsets.only(
+                          left: 6,
+                          right: 6,
+                          top: 4,
+                        ),
                         child: Container(
-                          padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
+                          padding: const EdgeInsets.only(
+                            left: 8,
+                            top: 4,
+                            bottom: 4,
+                          ),
                           decoration: BoxDecoration(
                             border: Border(
-                              left: BorderSide(color: context.colour.muted, width: 2),
+                              left: BorderSide(
+                                color: context.colour.muted,
+                                width: 2,
+                              ),
                             ),
                           ),
                           child: Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  'reply to: $preview',
+                                  preview,
                                   style: context.theme.typography.xs.copyWith(
                                     color: context.colour.muted,
                                   ),
@@ -197,7 +210,9 @@ class NoteEditorState extends State<NoteEditor> {
                                   context.read<ActivityBloc>().setReplyTo(null);
                                 },
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
                                   child: Icon(
                                     FontAwesomeIcons.xmark,
                                     size: 12,
@@ -234,7 +249,9 @@ class NoteEditorState extends State<NoteEditor> {
                             if (_isEmpty)
                               SpeechDictationButton(
                                 onResult: (text) {
-                                  _editorKey.currentState?.insertTextAtCursor(text);
+                                  _editorKey.currentState?.insertTextAtCursor(
+                                    text,
+                                  );
                                 },
                                 onError: (error) {
                                   Alert.show(context, error);
@@ -256,25 +273,50 @@ class NoteEditorState extends State<NoteEditor> {
                             children: [
                               // Left side: Do Now toggle
                               Button.icon(
-                                ToggleNoteTag(widget.draft, Tag.now, Base.actorId),
-                                selected: widget.draft.isAssignedTo(Base.actorId),
+                                ToggleNoteTag(
+                                  widget.draft,
+                                  Tag.now,
+                                  Base.actorId,
+                                ),
+                                selected: widget.draft.isAssignedTo(
+                                  Base.actorId,
+                                ),
                               ),
                               // Private toggle
-                              if (!widget.draft.private || widget.draft.authorId == Base.actorId)
+                              if (!widget.draft.private ||
+                                  widget.draft.authorId == Base.actorId)
                                 Button.icon(
-                                  ToggleNoteTag(widget.draft, Tag.private, Base.actorId),
+                                  ToggleNoteTag(
+                                    widget.draft,
+                                    Tag.private,
+                                    Base.actorId,
+                                  ),
                                   selected: widget.draft.private,
                                 ),
                               Button.icon(
                                 AttachFile(
-                                  priorityId: context.read<ActivityBloc>().state.activity.priority.id.toString(),
+                                  priorityId: context
+                                      .read<ActivityBloc>()
+                                      .state
+                                      .activity
+                                      .priority
+                                      .id
+                                      .toString(),
                                   currentLinks: widget.draft.links ?? const [],
                                   onLinksChanged: (links) {
-                                    final updatedDraft = widget.draft.copyWith(links: links);
-                                    context.read<ActivityBloc>().updateDraft(updatedDraft);
+                                    final updatedDraft = widget.draft.copyWith(
+                                      links: links,
+                                    );
+                                    context.read<ActivityBloc>().updateDraft(
+                                      updatedDraft,
+                                    );
                                   },
                                 ),
-                                selected: widget.draft.links?.any((l) => l.type == LinkType.file) ?? false,
+                                selected:
+                                    widget.draft.links?.any(
+                                      (l) => l.type == LinkType.file,
+                                    ) ??
+                                    false,
                               ),
                             ],
                           ),
@@ -292,8 +334,13 @@ class NoteEditorState extends State<NoteEditor> {
                         ),
                         style: ButtonStyle.primary,
                         loading: _saving,
-                        enabled: !_saving && (!_isEmpty ||
-                            (widget.draft.links?.any((l) => l.type == LinkType.file) ?? false)),
+                        enabled:
+                            !_saving &&
+                            (!_isEmpty ||
+                                (widget.draft.links?.any(
+                                      (l) => l.type == LinkType.file,
+                                    ) ??
+                                    false)),
                       ),
                     ],
                   ),

@@ -94,6 +94,24 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
       typography,
       iconSizes,
     ),
+    popoverMenuStyle: (style) => style.copyWith(
+      itemGroupStyle: (groupStyle) => groupStyle.copyWith(
+        itemStyle: (itemStyle) => itemStyle.copyWith(
+          contentStyle: (contentStyle) => contentStyle.copyWith(
+            prefixIconStyle: FWidgetStateMap({
+              WidgetState.disabled: IconThemeData(
+                color: colorScheme.disable(colorScheme.foreground),
+                size: 15,
+              ),
+              WidgetState.any: IconThemeData(
+                color: colorScheme.foreground,
+                size: 15,
+              ),
+            }),
+          ),
+        ),
+      ),
+    ),
   );
 
   return theme;
