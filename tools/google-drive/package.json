@@ -1,7 +1,7 @@
 {
   "name": "@plotday/tool-google-drive",
   "displayName": "Google Drive",
-  "description": "Sync documents and comments from Google Drive",
+  "description": "Sync documents comments from Google Drive",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.1.1",
