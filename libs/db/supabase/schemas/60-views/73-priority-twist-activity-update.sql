@@ -5,52 +5,52 @@ CREATE OR REPLACE VIEW "public"."priority_twist_activity_update" WITH ( security
 --
 AS
 SELECT
-    ax.created_by AS priority_twist_id,
-    ax.id,
-    ax.created_at,
-    GREATEST (ax.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) AS updated_at,
-    ax.source_created_at,
-    ax.author_id,
-    ax.created_by,
-    ax.assignee_id,
-    ax.updated_by,
-    ax.sync_depth,
-    ax.archived_at,
-    ax.priority_id,
-    ax.type,
-    ax."order",
-    ax.draft,
-    ax.private,
-    ax.title,
-    ax.preview,
-    ax.at,
-    ax."on",
-    ax.duration,
-    ax.done_at,
-    ax.recurrence_rule,
-    ax.recurrence_exdates,
-    ax.source,
-    ax.meta,
-    ax.mentions,
+    a.created_by AS priority_twist_id,
+    a.id,
+    a.created_at,
+    GREATEST (a.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) AS updated_at,
+    a.source_created_at,
+    a.author_id,
+    a.created_by,
+    a.assignee_id,
+    a.updated_by,
+    a.sync_depth,
+    a.archived_at,
+    a.priority_id,
+    a.type,
+    a."order",
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    a.at,
+    a."on",
+    a.duration,
+    a.done_at,
+    a.recurrence_rule,
+    a.recurrence_exdates,
+    a.source,
+    a.meta,
+    public.get_activity_mentions (a.id) AS mentions,
     -- Enriched fields
     author.name AS author_name,
     author.type AS author_type,
-    p.title AS priority_title,
+    pc.title AS priority_title,
     at.tags
 FROM
-    priority_child_twist pct
-    JOIN activity_x ax ON ax.priority_id = pct.priority_child_id
-    LEFT JOIN actor author ON author.id = ax.author_id
-    LEFT JOIN priority p ON p.id = ax.priority_id
-    LEFT JOIN activity_tags at ON at.activity_id = ax.id
+    priority_twist pt
+    JOIN priority pp ON pp.id = pt.priority_id
+    JOIN priority pc ON pc.path <@ pp.path
+    JOIN activity a ON a.priority_id = pc.id
+    LEFT JOIN actor author ON author.id = a.author_id
+    LEFT JOIN activity_tags at ON at.activity_id = a.id
         AND at.occurrence IS NULL
 WHERE
-    ax.draft = FALSE
-    AND pct.id = ax.created_by
-    AND GREATEST (ax.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) > ax.created_at
-    AND updated_by_uuid (pct.id) != ax.updated_by
-    AND pct.archived_at IS NULL
-    AND GREATEST (ax.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) > pct.created_at
+    a.draft = FALSE
+    AND pt.id = a.created_by
+    AND GREATEST (a.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) > a.created_at
+    AND updated_by_uuid (pt.id) != a.updated_by
+    AND pt.archived_at IS NULL
+    AND GREATEST (a.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) > pt.created_at
 ORDER BY
-    GREATEST (ax.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) ASC;
-
+    GREATEST (a.updated_at, COALESCE(at.updated_at, 'epoch'::timestamptz)) ASC;

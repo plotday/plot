@@ -218,7 +218,9 @@ export class TwistSync extends DurableObject<Bindings> {
             .from("priority_twist_activity_create")
             .select("*")
             .eq("priority_twist_id", this.priorityTwistId)
-            .gt("created_at", activityCreateLastSyncAt),
+            .gt("created_at", activityCreateLastSyncAt)
+            .order("created_at", { ascending: true })
+            .limit(100),
           { table: "priority_twist_activity_create" }
         ),
 
@@ -231,7 +233,9 @@ export class TwistSync extends DurableObject<Bindings> {
             .from("priority_twist_activity_update")
             .select("*")
             .eq("priority_twist_id", this.priorityTwistId)
-            .gt("updated_at", activityUpdateLastSyncAt),
+            .gt("updated_at", activityUpdateLastSyncAt)
+            .order("updated_at", { ascending: true })
+            .limit(100),
           { table: "priority_twist_activity_update" }
         ),
 
@@ -244,7 +248,9 @@ export class TwistSync extends DurableObject<Bindings> {
             .from("priority_twist_note_create")
             .select("*")
             .eq("priority_twist_id", this.priorityTwistId)
-            .gt("created_at", noteCreateLastSyncAt),
+            .gt("created_at", noteCreateLastSyncAt)
+            .order("created_at", { ascending: true })
+            .limit(100),
           { table: "priority_twist_note_create" }
         ),
 
@@ -255,7 +261,9 @@ export class TwistSync extends DurableObject<Bindings> {
             .from("priority_twist_note_update")
             .select("*")
             .eq("priority_twist_id", this.priorityTwistId)
-            .gt("updated_at", noteUpdateLastSyncAt),
+            .gt("updated_at", noteUpdateLastSyncAt)
+            .order("updated_at", { ascending: true })
+            .limit(100),
           { table: "priority_twist_note_update" }
         ),
       ]);
