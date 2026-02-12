@@ -17,7 +17,11 @@ class CommandModal {
   }
 
   CommandModal._(
-      this._commands, this.rootContext, this.showFilter, this.commandsBuilder);
+    this._commands,
+    this.rootContext,
+    this.showFilter,
+    this.commandsBuilder,
+  );
 
   Commands _commands;
   final BuildContext rootContext;
@@ -59,13 +63,16 @@ class CommandModal {
 
         // Commands that show modals need modalContext to display UI
         // All other commands get rootContext for provider access
-        final wrappedCommand = command is ShowCommands ||
+        final wrappedCommand =
+            command is ShowCommands ||
                 command is ShowForm ||
                 command is ShowPage
             ? command
             : CommandWrapper(
                 command,
-                run: (cmd, _) => cmd.run(rootContext),
+                run: (cmd, _) => rootContext.mounted
+                    ? cmd.run(rootContext)
+                    : Future.value(const CommandSkipped()),
               );
 
         return ListTile(
@@ -107,11 +114,13 @@ class CommandModal {
         }
 
         // Controller doesn't exist or not attached — run command directly without spinner
-        final context = command is ShowCommands ||
+        final context =
+            command is ShowCommands ||
                 command is ShowForm ||
                 command is ShowPage
             ? modalContext
             : rootContext;
+        if (!context.mounted) return false;
         final result = await command.run(context);
 
         if (!modalContext.mounted) return false;
