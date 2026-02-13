@@ -443,6 +443,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       assignee: assigneeContact ?? null,
       done: issue.completedAt ?? issue.canceledAt ?? null,
       start: assigneeContact ? undefined : null,
+      order: issue.sortOrder,
       meta: {
         linearId: issue.id,
         projectId,
@@ -479,6 +480,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     // Handle title
     if (activity.title !== null) {
       updateFields.title = activity.title;
+    }
+
+    // Handle order -> sortOrder
+    if (activity.order !== undefined && activity.order !== null) {
+      updateFields.sortOrder = activity.order;
     }
 
     // Handle assignee - map Plot actor to Linear user via email lookup
@@ -718,6 +724,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         ? new Date(issue.canceledAt)
         : null,
       start: assigneeContact ? undefined : null,
+      order: issue.sortOrder,
       meta: {
         linearId: issue.id,
         projectId,

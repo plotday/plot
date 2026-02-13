@@ -541,6 +541,8 @@ type ActivityFields = ActivityCommon & {
   recurrenceExdates: Date[] | null;
   /** Metadata about the activity, typically from an external system that created it */
   meta: ActivityMeta | null;
+  /** Sort order for the activity (fractional positioning) */
+  order: number;
 };
 
 export type Activity = ActivityFields &
@@ -946,6 +948,7 @@ export type ActivityUpdate = (
       | "private"
       | "archived"
       | "meta"
+      | "order"
       | "recurrenceRule"
       | "recurrenceExdates"
       | "recurrenceUntil"
