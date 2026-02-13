@@ -354,6 +354,9 @@ export async function updateActivity(
     if (activity.meta !== undefined) {
       dbUpdate.meta = activity.meta;
     }
+    if (activity.order !== undefined) {
+      dbUpdate.order = activity.order;
+    }
 
     // Handle recurrence fields
     if (activity.recurrenceRule !== undefined) {

@@ -171,6 +171,7 @@ export function fromDbActivity(
     recurrenceExdates:
       dbActivity.recurrence_exdates?.map((d: string) => new Date(d)) || null,
     meta: dbActivity.meta as ActivityMeta | null,
+    order: dbActivity.order ?? 0,
     tags: (dbActivity.tags as Tags) || {},
     mentions: (dbActivity.mentions as ActorId[]) || [],
     source: dbActivity.source || null,

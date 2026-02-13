@@ -184,6 +184,7 @@ export function buildActivityFromDbRecord(
       ? activityRecord.recurrence_exdates.map((date: string) => new Date(date))
       : null,
     meta: activityRecord.meta as ActivityMeta | null,
+    order: (activityRecord as any).order ?? 0,
     source: activityRecord.source || null,
     tags: (activityRecord.tags as Partial<Record<number, ActorId[]>>) || {},
     mentions: (activityRecord.mentions as ActorId[]) || [],

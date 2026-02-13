@@ -876,6 +876,7 @@ export async function prepareActivityForDb(
     // Conditionally add optional fields
     ...("id" in activity && activity.id ? { id: activity.id } : {}),
     ...(assigneeId !== undefined ? { assignee_id: assigneeId } : {}),
+    ...(activity.order !== undefined ? { order: activity.order } : {}),
   };
 
   // Return different structures based on whether activity has a source
@@ -938,6 +939,9 @@ export async function prepareActivityForDb(
     }
     if (assigneeId !== undefined) {
       upsertFields.assignee_id = assigneeId;
+    }
+    if (activity.order !== undefined) {
+      upsertFields.order = activity.order;
     }
     if (defaultRange.duration) {
       upsertFields.duration = formatInterval(defaultRange.duration);
