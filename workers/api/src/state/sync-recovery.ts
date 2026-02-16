@@ -196,23 +196,25 @@ export class SyncRecovery extends DurableObject<Bindings> {
     // Parallelize DO notifications using Promise.allSettled
     // to ensure one failure doesn't stop others
     const notifyStartTime = Date.now();
-    const notifyPromises = staleUserSyncs.map(async (record) => {
+    // rpc() unwraps single-column TABLE results into raw values
+    const userIds = staleUserSyncs as unknown as string[];
+    const notifyPromises = userIds.map(async (userId) => {
       try {
-        const userSyncId = this.env.USER_SYNC.idFromName(record.user_id);
+        const userSyncId = this.env.USER_SYNC.idFromName(userId);
         const userSyncDO = this.env.USER_SYNC.get(userSyncId);
         const result = await userSyncDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
-            body: JSON.stringify({ id: record.user_id }),
+            body: JSON.stringify({ id: userId }),
           })
         );
         disposeRpc(result);
-        return { success: true, user_id: record.user_id };
+        return { success: true, user_id: userId };
       } catch (error) {
         logger.error("Error notifying UserSync DO", error as Error, {
-          user_id: record.user_id,
+          user_id: userId,
         });
-        return { success: false, user_id: record.user_id, error };
+        return { success: false, user_id: userId, error };
       }
     });
 
@@ -270,25 +272,25 @@ export class SyncRecovery extends DurableObject<Bindings> {
 
     // Parallelize DO notifications using Promise.allSettled
     const notifyStartTime = Date.now();
-    const notifyPromises = staleTwistSyncs.map(async (record) => {
+    // rpc() unwraps single-column TABLE results into raw values
+    const priorityTwistIds = staleTwistSyncs as unknown as string[];
+    const notifyPromises = priorityTwistIds.map(async (priorityTwistId) => {
       try {
-        const twistSyncId = this.env.TWIST_SYNC.idFromName(
-          record.priority_twist_id
-        );
+        const twistSyncId = this.env.TWIST_SYNC.idFromName(priorityTwistId);
         const twistSyncDO = this.env.TWIST_SYNC.get(twistSyncId);
         const result = await twistSyncDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
-            body: JSON.stringify({ id: record.priority_twist_id }),
+            body: JSON.stringify({ id: priorityTwistId }),
           })
         );
         disposeRpc(result);
-        return { success: true, priority_twist_id: record.priority_twist_id };
+        return { success: true, priority_twist_id: priorityTwistId };
       } catch (error) {
         logger.error("Error notifying TwistSync DO", error as Error, {
-          priority_twist_id: record.priority_twist_id,
+          priority_twist_id: priorityTwistId,
         });
-        return { success: false, priority_twist_id: record.priority_twist_id, error };
+        return { success: false, priority_twist_id: priorityTwistId, error };
       }
     });
 

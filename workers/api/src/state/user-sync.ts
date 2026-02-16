@@ -38,12 +38,18 @@ export class UserSync extends DurableObject<Bindings> {
 
     if (url.pathname === "/notify" && request.method === "POST") {
       const body = await request.json<{ id: string }>();
+      if (!body.id) {
+        return new Response("Missing id", { status: 400 });
+      }
       await this.notify(body.id);
       return new Response("OK", { status: 200 });
     }
 
     if (url.pathname === "/onClientConnected" && request.method === "POST") {
       const body = await request.json<{ userId: string }>();
+      if (!body.userId) {
+        return new Response("Missing userId", { status: 400 });
+      }
       await this.onClientConnected(body.userId);
       return new Response("OK", { status: 200 });
     }

@@ -67,6 +67,9 @@ export class TwistSync extends DurableObject<Bindings> {
 
     if (url.pathname === "/notify" && request.method === "POST") {
       const body = await request.json<{ id: string }>();
+      if (!body.id) {
+        return new Response("Missing id", { status: 400 });
+      }
       await this.notify(body.id);
       return new Response("OK", { status: 200 });
     }
