@@ -4,10 +4,27 @@ import { type Callback } from "@plotday/twister/tools/callbacks";
 import type { Tasks as IRun } from "@plotday/twister/tools/tasks";
 
 import { type Bindings, type TwistEnvironment } from "../../env";
+import { isCallbackError } from "../../errors";
 import { type CallbacksState } from "../../state/callbacks";
 import { extractRunQueueContext } from "../../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { Tool } from "./tool";
+
+/**
+ * Detect transient infrastructure errors (DO communication failures,
+ * Hyperdrive connection issues) that should be retried silently without
+ * reporting to PostHog.
+ */
+function isTransientError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message;
+  return (
+    msg.includes("Network connection lost") ||
+    msg.includes("error code: 1019") ||
+    msg.includes("The Durable Object") ||
+    msg.includes("internal error")
+  );
+}
 
 export type RunMessage = {
   priorityTwistId: string;
@@ -117,6 +134,27 @@ export class Tasks extends Tool implements IRun {
       } catch (error) {
         const context = extractRunQueueContext(message.body, batch.queue);
         const logger = createLogger(context);
+
+        // Transient infrastructure errors (DO communication, Hyperdrive) —
+        // retry silently without PostHog noise
+        if (isTransientError(error)) {
+          logger.warn("Transient error executing callback, retrying", {
+            error: String(error),
+          });
+          message.retry();
+          continue;
+        }
+
+        // CallbackErrors crossing DO boundary (NOT_FOUND, EXPIRED, etc.) —
+        // permanent failures, ack to prevent infinite retries
+        if (isCallbackError(error)) {
+          logger.warn("Callback error, acking message", {
+            error: String(error),
+          });
+          message.ack();
+          continue;
+        }
+
         logger.error("Failed to execute callback", error as Error);
         postHog.captureException(error as Error, undefined, {
           priority_twist_id: message.body.priorityTwistId,
