@@ -14,6 +14,7 @@ import {
   getCallbackErrorType,
   type CallbackErrorType,
 } from "./errors";
+import { captureServerError } from "./utils/error-capture";
 
 const webhook = new Hono<{ Bindings: Bindings }>();
 
@@ -173,10 +174,9 @@ webhook.post("/hook/clerk", async (c) => {
           });
         }
       } catch (error) {
-        logger.error("Failed to delete user from database", error as Error, {
+        return captureServerError(c, error, "Failed to delete user from database", {
           clerk_id: clerkId,
         });
-        return new Response("Internal server error", { status: 500 });
       }
 
       return c.json({ ok: true });
@@ -235,12 +235,10 @@ webhook.post("/hook/clerk", async (c) => {
     );
 
     if (!result.success) {
-      logger.error("Failed to send Clerk auth email", undefined, {
+      return captureServerError(c, new Error(result.error || "Email send failed"), "Failed to send Clerk auth email", {
         slug,
         to: to_email_address,
-        error: result.error,
       });
-      return new Response("Failed to send email", { status: 500 });
     }
 
     logger.info("Sent Clerk auth email", {
@@ -251,8 +249,7 @@ webhook.post("/hook/clerk", async (c) => {
 
     return c.json({ ok: true });
   } catch (error) {
-    logger.error("Error processing Clerk webhook", error as Error);
-    return new Response("Internal server error", { status: 500 });
+    return captureServerError(c, error, "Error processing Clerk webhook");
   }
 });
 
@@ -471,9 +468,8 @@ webhook.post("/hook/gmail/:topicId", async (c) => {
     // Always return 200 OK to acknowledge message
     return c.json({ ok: true });
   } catch (error) {
-    logger.error("Error processing Gmail webhook", error as Error);
     // Return 500 to indicate failure, so Pub/Sub will retry
-    return new Response("Internal server error", { status: 500 });
+    return captureServerError(c, error, "Error processing Gmail webhook");
   }
 });
 
@@ -558,8 +554,7 @@ webhook.all(Network.PATH, async (c) => {
       const errorType = getCallbackErrorType(error as Error);
       if (!errorType) {
         // Shouldn't happen, but fallback to 500
-        logger.error("CallbackError missing type", error as Error);
-        return new Response("Internal server error", { status: 500 });
+        return captureServerError(c, error, "CallbackError missing type");
       }
 
       const status = statusMap[errorType];
@@ -580,8 +575,7 @@ webhook.all(Network.PATH, async (c) => {
     }
 
     // All other errors are server errors
-    logger.error("Error processing callback", error as Error);
-    return new Response("Internal server error", { status: 500 });
+    return captureServerError(c, error, "Error processing callback");
   }
 });
 
