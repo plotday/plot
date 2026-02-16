@@ -102,7 +102,7 @@ const CLERK_EMAIL_MAP: Record<
     emailType: "password-removed",
     subject: "Your Plot password has been removed",
   },
-  new_device: {
+  new_device_sign_in: {
     emailType: "new-device-sign-in",
     subject: "New sign-in to your Plot account",
   },
