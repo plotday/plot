@@ -69,6 +69,11 @@ jobs:
               echo "Manual trigger: deploying all workers"
               for worker_dir in workers/*/; do
                 worker=$(basename "$worker_dir")
+                # Skip workers without a deploy script (e.g. dev)
+                if ! node -pe "!!require('./workers/' + '$worker' + '/package.json').scripts?.deploy" 2>/dev/null | grep -q "true"; then
+                  echo "Skipping $worker (no deploy script)"
+                  continue
+                fi
                 WORKERS+=("\"$worker\"")
               done
             else
@@ -90,6 +95,11 @@ jobs:
             echo "Automatic trigger: checking for affected workers"
             for worker_dir in workers/*/; do
               worker=$(basename "$worker_dir")
+
+              # Skip workers without a deploy script (e.g. dev)
+              if ! node -pe "!!require('./workers/' + '$worker' + '/package.json').scripts?.deploy" 2>/dev/null | grep -q "true"; then
+                continue
+              fi
 
               # Check if worker has changes by looking at affected projects
               AFFECTED_OUTPUT=$(pnpm exec nx show projects --affected --base=${{ github.event.before }} --head=HEAD --json 2>/dev/null || echo "[]")
