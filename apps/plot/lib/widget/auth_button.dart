@@ -19,6 +19,7 @@ import 'package:plot/util/google_sign_in.dart' as web;
 import 'package:plot/store/store.dart' show AuthLink;
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/style/layout.dart';
 import 'logging.dart';
 
@@ -180,7 +181,7 @@ class _AuthButtonState extends State<AuthButton> {
     }
   }
 
-  void _onGoogleSignIn(GoogleSignInAccount account) async {
+  Future<void> _onGoogleSignIn(GoogleSignInAccount account) async {
     final googleAuth = account.authentication;
     final idToken = googleAuth.idToken;
 
@@ -219,7 +220,7 @@ class _AuthButtonState extends State<AuthButton> {
       final account = await GoogleSignIn.instance.authenticate(
         scopeHint: widget.scopes,
       );
-      _onGoogleSignIn(account);
+      await _onGoogleSignIn(account);
     } on GoogleSignInException catch (e, t) {
       if (e.code == GoogleSignInExceptionCode.canceled) {
         // In release builds, cancellation can occur if the SHA-1 fingerprint
@@ -235,6 +236,19 @@ class _AuthButtonState extends State<AuthButton> {
         return;
       }
       log.warning('Google sign-in failed', e, t);
+      Tracker.captureException(e, t);
+      final message = 'Unable to connect with Google. Please try again.';
+      if (widget.onError != null) {
+        widget.onError!(message);
+      } else {
+        if (mounted) {
+          context.showToast(message: message, isError: true);
+        }
+      }
+      return;
+    } catch (e, t) {
+      log.warning('Google sign-in failed', e, t);
+      Tracker.captureException(e, t);
       final message = 'Unable to connect with Google. Please try again.';
       if (widget.onError != null) {
         widget.onError!(message);
@@ -279,6 +293,7 @@ class _AuthButtonState extends State<AuthButton> {
         return;
       }
       log.warning('Apple sign-in failed: ${e.code} - ${e.message}');
+      Tracker.captureException(e, StackTrace.current);
       final message = 'Unable to connect with Apple. Please try again.';
       if (widget.onError != null) {
         widget.onError!(message);
@@ -290,6 +305,7 @@ class _AuthButtonState extends State<AuthButton> {
       return;
     } catch (e, t) {
       log.warning('Apple sign-in failed', e, t);
+      Tracker.captureException(e, t);
       final message = 'Unable to connect with Apple. Please try again.';
       if (widget.onError != null) {
         widget.onError!(message);
@@ -332,6 +348,7 @@ class _AuthButtonState extends State<AuthButton> {
       );
     } catch (e, t) {
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
+      Tracker.captureException(e, t);
       if (mounted) {
         // Create a user-friendly error message based on the provider
         final providerName =

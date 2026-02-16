@@ -115,6 +115,7 @@ class _SignInPageState extends State<SignInPage> {
         return;
       }
       log.warning('Error signing in with OAuth', e, t);
+      Tracker.captureException(e, t);
       if (_isExternalAccountNotFound(e)) {
         try {
           log.info('External account not found, attempting sign-up');
