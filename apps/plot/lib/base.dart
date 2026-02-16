@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:clerk_auth/clerk_auth.dart' as clerk;
 
+import 'package:plot/util/shared_preferences_persistor.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -72,15 +74,21 @@ class Base {
     try {
       log.info("Initializing Clerk auth");
 
-      final profile = CliArgs.profile;
-      final cacheDir = await _getClerkCacheDirectory(profile);
+      final clerk.Persistor persistor;
+      if (kIsWeb) {
+        persistor = SharedPreferencesPersistor();
+      } else {
+        final profile = CliArgs.profile;
+        final cacheDir = await _getClerkCacheDirectory(profile);
+        persistor = clerk.DefaultPersistor(
+          getCacheDirectory: () async => cacheDir,
+        );
+      }
 
       final clerkAuth = clerk.Auth(
         config: clerk.AuthConfig(
           publishableKey: Env.clerkPublishableKey,
-          persistor: clerk.DefaultPersistor(
-            getCacheDirectory: () async => cacheDir,
-          ),
+          persistor: persistor,
         ),
       );
       await clerkAuth.initialize();
