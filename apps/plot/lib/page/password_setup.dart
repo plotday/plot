@@ -1,8 +1,8 @@
-import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/auth/auth_service.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'logging.dart';
@@ -83,10 +83,9 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
         );
       } else {
         // Update the pending sign-up with password and name.
-        // clerk_auth detects the existing sign-up and PATCHes it.
         // Once all requirements are met, Clerk creates a session.
         await Base.auth.attemptSignUp(
-          strategy: clerk.Strategy.password,
+          strategy: AuthStrategy.password,
           password: password,
           passwordConfirmation: confirmPassword,
           firstName: firstName,
@@ -96,7 +95,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
         if (!Base.auth.isSignedIn) {
           throw Exception(
             'Sign-up incomplete after setting password. '
-            'Missing: ${Base.auth.client.signUp?.missingFields}',
+            'Missing: ${Base.auth.signUpMissingFields}',
           );
         }
       }
@@ -104,14 +103,10 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
       // Call /activate to get user identity
       await Base.resolveIdentity();
       // UserBloc will pick up the emission and transition to UserReady
-    } on clerk.ClerkError catch (e, t) {
+    } on AuthError catch (e, t) {
       log.warning('Error completing sign-up', e, t);
       if (!mounted) return;
       setState(() {
-        // ClerkError.message contains a raw template '{arg} (ERROR ...)'.
-        // The actual message is in .argument (or via .toString() which
-        // interpolates it). Use .argument when available, fall back to
-        // toString() to always show the human-readable text.
         _errorMessage = e.argument ?? e.toString();
         _isLoading = false;
       });

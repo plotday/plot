@@ -1,6 +1,6 @@
-import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:logging/logging.dart';
 
+import 'package:plot/auth/auth_service.dart';
 import 'base.dart';
 import 'cli_args.dart';
 import 'util/profile_preferences.dart';
@@ -38,7 +38,9 @@ class AutoSignIn {
     try {
       // Check current user
       final isSignedIn = Base.signedIn;
-      final currentEmail = ProfilePreferences.instance.getString('clerk_user_email');
+      final currentEmail = ProfilePreferences.instance.getString(
+        'clerk_user_email',
+      );
 
       if (isSignedIn && currentEmail != null) {
         if (currentEmail.toLowerCase() == targetUser.toLowerCase()) {
@@ -61,13 +63,13 @@ class AutoSignIn {
         _signInInProgress = true;
 
         try {
-          // clerk_auth uses two-step sign-in
+          // Two-step sign-in
           await Base.auth.attemptSignIn(
-            strategy: clerk.Strategy.emailAddress,
+            strategy: AuthStrategy.emailAddress,
             identifier: targetUser,
           );
           await Base.auth.attemptSignIn(
-            strategy: clerk.Strategy.password,
+            strategy: AuthStrategy.password,
             password: password,
           );
           await Base.resolveIdentity();

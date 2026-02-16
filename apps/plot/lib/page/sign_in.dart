@@ -1,4 +1,3 @@
-import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_svg/flutter_svg.dart';
@@ -8,6 +7,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/auth/auth_service.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
@@ -30,12 +30,12 @@ class _SignInPageState extends State<SignInPage> {
   String? _errorMessage;
   bool _isLoading = false;
 
-  bool _isExternalAccountNotFound(clerk.ClerkError error) {
+  bool _isExternalAccountNotFound(AuthError error) {
     final message = error.toString().toLowerCase();
     return message.contains('external account') && message.contains('not found');
   }
 
-  bool _isAlreadySignedIn(clerk.ClerkError error) {
+  bool _isAlreadySignedIn(AuthError error) {
     final message = error.toString().toLowerCase();
     return message.contains('already signed in');
   }
@@ -75,7 +75,7 @@ class _SignInPageState extends State<SignInPage> {
   }
 
   Future<void> _handleOAuthSignIn({
-    required clerk.IdTokenProvider provider,
+    required IdTokenProvider provider,
     required String idToken,
   }) async {
     if (mounted) {
@@ -86,7 +86,7 @@ class _SignInPageState extends State<SignInPage> {
     }
 
     try {
-      await Base.auth.idTokenSignIn(
+      await Base.auth.signInWithIdToken(
         provider: provider,
         idToken: idToken,
       );
@@ -97,8 +97,8 @@ class _SignInPageState extends State<SignInPage> {
       // Call /activate to get user identity
       await Base.resolveIdentity();
       // UserBloc will pick up the emission and transition to UserReady
-    } on clerk.ClerkError catch (e, t) {
-      clerk.ClerkError errorToShow = e;
+    } on AuthError catch (e, t) {
+      AuthError errorToShow = e;
       if (_isAlreadySignedIn(e)) {
         // Clerk already has a session — just activate to set up identity
         try {
@@ -119,14 +119,14 @@ class _SignInPageState extends State<SignInPage> {
       if (_isExternalAccountNotFound(e)) {
         try {
           log.info('External account not found, attempting sign-up');
-          await Base.auth.idTokenSignUp(
+          await Base.auth.signUpWithIdToken(
             provider: provider,
             idToken: idToken,
           );
           await Base.auth.transfer();
           await Base.resolveIdentity();
           return;
-        } on clerk.ClerkError catch (signUpError, signUpTrace) {
+        } on AuthError catch (signUpError, signUpTrace) {
           log.warning('Error signing up with OAuth', signUpError, signUpTrace);
           errorToShow = signUpError;
         } catch (signUpError, signUpTrace) {
@@ -138,8 +138,8 @@ class _SignInPageState extends State<SignInPage> {
       if (!mounted) return;
       String message = errorToShow.toString();
       if (message.contains('google_one_tap') ||
-          errorToShow.code == clerk.ClerkErrorCode.noSuchFirstFactorStrategy ||
-          errorToShow.code == clerk.ClerkErrorCode.noAssociatedStrategy) {
+          errorToShow.code == AuthErrorCode.noSuchFirstFactorStrategy ||
+          errorToShow.code == AuthErrorCode.noAssociatedStrategy) {
         message =
             'Google sign-in is not enabled for this environment. Please try another method.';
       }
@@ -149,7 +149,7 @@ class _SignInPageState extends State<SignInPage> {
             'This email is already associated with another account. '
             'Please sign in with the email you originally registered with.';
       }
-      if (errorToShow.code == clerk.ClerkErrorCode.serverErrorResponse ||
+      if (errorToShow.code == AuthErrorCode.serverErrorResponse ||
           message.contains('error received from server')) {
         _showGenericError(errorToShow, t);
         return;
@@ -245,7 +245,7 @@ class _SignInPageState extends State<SignInPage> {
                 autoSignIn: false,
                 onAuth: ({required idToken, accessToken}) async {
                   await _handleOAuthSignIn(
-                    provider: clerk.IdTokenProvider.google,
+                    provider: IdTokenProvider.google,
                     idToken: idToken,
                   );
                 },
@@ -264,7 +264,7 @@ class _SignInPageState extends State<SignInPage> {
                   autoSignIn: false,
                   onAuth: ({required idToken, accessToken}) async {
                     await _handleOAuthSignIn(
-                      provider: clerk.IdTokenProvider.apple,
+                      provider: IdTokenProvider.apple,
                       idToken: idToken,
                     );
                   },

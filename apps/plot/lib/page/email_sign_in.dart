@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/auth/auth_service.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'package:plot/router.dart' show PasswordSetupRoute;
@@ -58,7 +58,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
   }
 
-  String _clerkErrorMessage(clerk.ClerkError e) {
+  String _authErrorMessage(AuthError e) {
     // For server errors, the human-readable message is in .argument
     // (.message contains a raw '{arg}' template).
     if (e.argument != null) return e.argument!;
@@ -89,26 +89,26 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      // clerk_auth uses a two-step sign-in flow:
+      // Two-step sign-in flow:
       // 1. Identify with email
       await Base.auth.attemptSignIn(
-        strategy: clerk.Strategy.emailAddress,
+        strategy: AuthStrategy.emailAddress,
         identifier: email,
       );
       // 2. Authenticate with password
       await Base.auth.attemptSignIn(
-        strategy: clerk.Strategy.password,
+        strategy: AuthStrategy.password,
         password: password,
       );
 
       // Call /activate to get user identity
       await Base.resolveIdentity();
       // UserBloc will pick up the emission and transition to UserReady
-    } on clerk.ClerkError catch (e, t) {
+    } on AuthError catch (e, t) {
       log.warning('Error signing in with password', e, t);
       if (!mounted) return;
       setState(() {
-        _errorMessage = _clerkErrorMessage(e);
+        _errorMessage = _authErrorMessage(e);
         _isLoading = false;
       });
     } on NetworkException {
@@ -141,18 +141,18 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     try {
       // Start sign-up flow — Clerk sends the email code
       await Base.auth.attemptSignUp(
-        strategy: clerk.Strategy.emailCode,
+        strategy: AuthStrategy.emailCode,
         emailAddress: email,
       );
       setState(() {
         _mode = _AuthMode.otpSent;
         _isLoading = false;
       });
-    } on clerk.ClerkError catch (e, t) {
+    } on AuthError catch (e, t) {
       log.warning('Error sending signup OTP', e, t);
       if (!mounted) return;
       setState(() {
-        _errorMessage = _clerkErrorMessage(e);
+        _errorMessage = _authErrorMessage(e);
         _isLoading = false;
       });
     } on NetworkException {
@@ -192,7 +192,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     try {
       // Verify the email code
       await Base.auth.attemptSignUp(
-        strategy: clerk.Strategy.emailCode,
+        strategy: AuthStrategy.emailCode,
         code: token,
       );
 
@@ -207,11 +207,11 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         context.router.replace(PasswordSetupRoute());
         return;
       }
-    } on clerk.ClerkError catch (e, t) {
+    } on AuthError catch (e, t) {
       log.warning('Error verifying OTP', e, t);
       if (!mounted) return;
       setState(() {
-        _errorMessage = _clerkErrorMessage(e);
+        _errorMessage = _authErrorMessage(e);
         _isLoading = false;
       });
     } on NetworkException {

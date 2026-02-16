@@ -1,16 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:equatable/equatable.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:path_provider/path_provider.dart';
 
-import 'package:clerk_auth/clerk_auth.dart' as clerk;
-
-import 'package:plot/util/shared_preferences_persistor.dart';
+import 'package:plot/auth/auth_service.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -37,7 +32,7 @@ class User extends Equatable {
 }
 
 class Base {
-  static clerk.Auth get auth => Injector.appInstance.get<Base>()._auth;
+  static AuthService get auth => Injector.appInstance.get<Base>()._auth;
   static Stream<User?> get user =>
       Injector.appInstance.get<Base>()._currentUserController.stream;
   static bool get signedIn => Injector.appInstance.get<Base>()._userId != null;
@@ -59,11 +54,10 @@ class Base {
 
   /// Get session token for API calls.
   /// Returns null if not signed in or token cannot be obtained.
-  /// clerk_auth handles token refresh automatically.
+  /// Token refresh is handled automatically by the platform auth service.
   static Future<String?> getSessionToken() async {
     try {
-      final token = await auth.sessionToken();
-      return token.jwt;
+      return await auth.getSessionToken();
     } catch (e) {
       log.warning('Failed to get session token: $e');
       return null;
@@ -74,26 +68,12 @@ class Base {
     try {
       log.info("Initializing Clerk auth");
 
-      final clerk.Persistor persistor;
-      if (kIsWeb) {
-        persistor = SharedPreferencesPersistor();
-      } else {
-        final profile = CliArgs.profile;
-        final cacheDir = await _getClerkCacheDirectory(profile);
-        persistor = clerk.DefaultPersistor(
-          getCacheDirectory: () async => cacheDir,
-        );
-      }
-
-      final clerkAuth = clerk.Auth(
-        config: clerk.AuthConfig(
-          publishableKey: Env.clerkPublishableKey,
-          persistor: persistor,
-        ),
+      final authService = await createAuthService(
+        publishableKey: Env.clerkPublishableKey,
+        profile: CliArgs.profile,
       );
-      await clerkAuth.initialize();
 
-      final base = Base._(clerkAuth);
+      final base = Base._(authService);
       Injector.appInstance.registerSingleton<Base>(() => base);
 
       // Restore identity from local storage (doesn't require network)
@@ -101,7 +81,7 @@ class Base {
 
       // If Clerk has a session but local identity wasn't restored (e.g. first
       // sign-in with Clerk, or preferences were cleared), activate via API.
-      if (!base._currentUserController.hasValue && clerkAuth.isSignedIn) {
+      if (!base._currentUserController.hasValue && authService.isSignedIn) {
         log.info('Clerk session found without local identity, resolving identity');
         try {
           await Base.resolveIdentity();
@@ -111,7 +91,7 @@ class Base {
           // user can sign in fresh instead of being stuck ("already signed in").
           log.info('Signing out stale Clerk session');
           try {
-            await clerkAuth.signOut();
+            await authService.signOut();
           } catch (signOutError) {
             log.warning('Failed to sign out stale session', signOutError);
           }
@@ -230,7 +210,7 @@ class Base {
 
   Base._(this._auth);
 
-  final clerk.Auth _auth;
+  final AuthService _auth;
   Uuid? _userId;
   ActorId? _actorId;
   DateTime? _signInTime;
@@ -241,7 +221,7 @@ class Base {
     _currentUserController.close();
   }
 
-  /// Restore user identity from ProfilePreferences after clerk_auth init.
+  /// Restore user identity from ProfilePreferences after auth init.
   /// Called during Base.init() — if we have stored identity, emit the user
   /// immediately (no network call needed). We trust stored identity because
   /// it's explicitly cleared on sign-out, so its presence means the user
@@ -323,19 +303,6 @@ class Base {
     await prefs.remove('clerk_user_email');
     await prefs.remove('clerk_user_name');
     await prefs.remove('clerk_user_contact_id');
-  }
-
-  /// Get clerk cache directory, isolated per profile.
-  static Future<Directory> _getClerkCacheDirectory(String? profile) async {
-    final appSupport = await getApplicationSupportDirectory();
-    final dirName = profile != null
-        ? 'clerk_profile_$profile'
-        : 'clerk';
-    final dir = Directory('${appSupport.path}/$dirName');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    return dir;
   }
 }
 
