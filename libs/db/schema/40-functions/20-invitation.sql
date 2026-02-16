@@ -1,0 +1,2 @@
+-- set_user_status is no longer needed with Clerk auth
+-- User metadata is managed through Clerk's API instead of a database auth schema

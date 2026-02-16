@@ -3,11 +3,12 @@ import type {
   Twists as ITwists,
 } from "@plotday/twister/tools/twists";
 import type { Callback } from "@plotday/twister/tools/callbacks";
-import type { SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
 
+import type { DB } from "../../db-types";
 import { type TwistEnvironment, type Bindings } from "../../env";
+import { rpcUser } from "../../rpc";
 import { type LogSubscriptions } from "../../state/log-subscriptions";
-import { getUser } from "../../utils/auth";
 import { deployTwist } from "../deployment";
 import { generateTwist } from "../generator";
 import type { TwistSource } from "../types";
@@ -16,20 +17,20 @@ import { Tool } from "./tool";
 export class Twists extends Tool implements ITwists {
   private env: Bindings;
   private ctx: { exports: ExecutionContext["exports"] };
-  private supabase: SupabaseClient;
+  private db: Kysely<DB>;
   private priorityTwistId: string;
   private logSubscriptionsNamespace: DurableObjectNamespace<LogSubscriptions>;
 
   constructor(options: {
     env: Bindings;
     ctx: { exports: ExecutionContext["exports"] };
-    supabase: SupabaseClient;
+    db: Kysely<DB>;
     priorityTwistId: string;
   }) {
     super();
     this.env = options.env;
     this.ctx = options.ctx;
-    this.supabase = options.supabase;
+    this.db = options.db;
     this.priorityTwistId = options.priorityTwistId;
     this.logSubscriptionsNamespace = options.env.LOG_SUBSCRIPTIONS;
   }
@@ -39,60 +40,51 @@ export class Twists extends Tool implements ITwists {
    * @throws Error if access is denied
    */
   private async verifyTwistAccess(twistPackageId: string): Promise<void> {
-    // Get priority_id from priority_twist context
-    const { data: priorityTwist, error: fetchError } = await this.supabase
-      .from("priority_twist")
-      .select("priority_id")
-      .eq("id", this.priorityTwistId)
-      .is("archived_at", null)
-      .single();
+    // Get priority_id and owner_id from priority_twist context
+    const priorityTwist = await this.db
+      .selectFrom("priority_twist")
+      .select(["priority_id", "owner_id"])
+      .where("id", "=", this.priorityTwistId)
+      .where("archived_at", "is", null)
+      .executeTakeFirstOrThrow();
 
-    if (fetchError || !priorityTwist) {
-      throw new Error(
-        `Failed to fetch priority context: ${fetchError?.message}`
-      );
-    }
-
-    // Get user info to check which twist_admin entry to query
-    const { user } = await getUser(this.supabase);
-    if (!user) {
+    const userId = priorityTwist.owner_id;
+    if (!userId) {
       throw new Error("User not authenticated");
     }
 
     // Verify user has access to this twist via twist_admin
     // For personal twists, check with user_id; for non-personal, user_id is NULL
     // Try personal first
-    let twistAdmin = await this.supabase
-      .from("twist_admin")
-      .select("priority_id, user_id, publisher_id")
-      .eq("twist_package_id", twistPackageId)
-      .eq("user_id", user.id)
-      .maybeSingle();
+    let twistAdmin = await this.db
+      .selectFrom("twist_admin")
+      .select(["priority_id", "user_id", "publisher_id"])
+      .where("twist_package_id", "=", twistPackageId)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
 
     // If not found, try non-personal (user_id is NULL)
-    if (!twistAdmin.data) {
-      twistAdmin = await this.supabase
-        .from("twist_admin")
-        .select("priority_id, user_id, publisher_id")
-        .eq("twist_package_id", twistPackageId)
-        .is("user_id", null)
-        .maybeSingle();
+    if (!twistAdmin) {
+      twistAdmin = await this.db
+        .selectFrom("twist_admin")
+        .select(["priority_id", "user_id", "publisher_id"])
+        .where("twist_package_id", "=", twistPackageId)
+        .where("user_id", "is", null)
+        .executeTakeFirst();
     }
 
-    if (twistAdmin.error || !twistAdmin.data) {
+    if (!twistAdmin) {
       throw new Error(
         "Access denied: You do not have permission to access this twist"
       );
     }
 
     // Check if user can access the twist's priority (if it has one)
-    if (twistAdmin.data.priority_id) {
-      const { data: hasAccess } = await this.supabase.rpc(
-        "can_access_priority",
-        {
-          _priority_id: twistAdmin.data.priority_id,
-        }
-      );
+    if (twistAdmin.priority_id) {
+      const hasAccess = await rpcUser(this.db, "has_priority_access", {
+        user_id: userId,
+        priority_id: twistAdmin.priority_id!,
+      });
 
       if (!hasAccess) {
         throw new Error(
@@ -103,23 +95,16 @@ export class Twists extends Tool implements ITwists {
   }
 
   async create(): Promise<string> {
-    // Get priority_id from priority_twist context
-    const { data: priorityTwist, error: fetchError } = await this.supabase
-      .from("priority_twist")
-      .select("priority_id")
-      .eq("id", this.priorityTwistId)
-      .is("archived_at", null)
-      .single();
+    // Get priority_id and owner_id from priority_twist context
+    const priorityTwist = await this.db
+      .selectFrom("priority_twist")
+      .select(["priority_id", "owner_id"])
+      .where("id", "=", this.priorityTwistId)
+      .where("archived_at", "is", null)
+      .executeTakeFirstOrThrow();
 
-    if (fetchError || !priorityTwist) {
-      throw new Error(
-        `Failed to fetch priority context: ${fetchError?.message}`
-      );
-    }
-
-    // Get user info
-    const { user } = await getUser(this.supabase);
-    if (!user) {
+    const userId = priorityTwist.owner_id;
+    if (!userId) {
       throw new Error("User not authenticated");
     }
 
@@ -127,16 +112,15 @@ export class Twists extends Tool implements ITwists {
     const twistPackageId = crypto.randomUUID();
 
     // Insert into twist_admin table (with user_id for personal twist)
-    const { error } = await this.supabase.from("twist_admin").insert({
-      twist_package_id: twistPackageId,
-      user_id: user.id,
-      publisher_id: null,
-      priority_id: priorityTwist.priority_id,
-    });
-
-    if (error) {
-      throw new Error(`Failed to create twist admin: ${error.message}`);
-    }
+    await this.db
+      .insertInto("twist_admin")
+      .values({
+        twist_package_id: twistPackageId,
+        user_id: userId,
+        publisher_id: null,
+        priority_id: priorityTwist.priority_id,
+      })
+      .execute();
 
     return twistPackageId;
   }
@@ -185,60 +169,46 @@ export class Twists extends Tool implements ITwists {
     // Get user_id for personal environment
     let userId: string | null = null;
     if (environment === "personal") {
-      const { user } = await getUser(this.supabase);
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-      userId = user.id;
+      const priorityTwistOwner = await this.db
+        .selectFrom("priority_twist")
+        .select("owner_id")
+        .where("id", "=", this.priorityTwistId)
+        .executeTakeFirstOrThrow();
+      userId = priorityTwistOwner.owner_id;
+      if (!userId) throw new Error("User not authenticated");
     }
 
     // Get twist_admin_id based on environment
     let twistAdminId: number;
     if (environment === "personal") {
       // For personal, look up by twist_package_id and user_id
-      const { data: twistAdmin, error: adminError } = await this.supabase
-        .from("twist_admin")
+      const twistAdmin = await this.db
+        .selectFrom("twist_admin")
         .select("id")
-        .eq("twist_package_id", twistPackageId)
-        .eq("user_id", userId!)
-        .single();
+        .where("twist_package_id", "=", twistPackageId)
+        .where("user_id", "=", userId!)
+        .executeTakeFirstOrThrow();
 
-      if (adminError || !twistAdmin) {
-        throw new Error(
-          `Failed to fetch twist_admin for personal environment: ${adminError?.message}`
-        );
-      }
-      twistAdminId = twistAdmin.id;
+      twistAdminId = Number(twistAdmin.id);
     } else {
       // For non-personal, user_id should be NULL
-      const { data: twistAdmin, error: adminError } = await this.supabase
-        .from("twist_admin")
+      const twistAdmin = await this.db
+        .selectFrom("twist_admin")
         .select("id")
-        .eq("twist_package_id", twistPackageId)
-        .is("user_id", null)
-        .single();
+        .where("twist_package_id", "=", twistPackageId)
+        .where("user_id", "is", null)
+        .executeTakeFirstOrThrow();
 
-      if (adminError || !twistAdmin) {
-        throw new Error(
-          `Failed to fetch twist_admin for non-personal environment: ${adminError?.message}`
-        );
-      }
-      twistAdminId = twistAdmin.id;
+      twistAdminId = Number(twistAdmin.id);
     }
 
     // Check if twist already exists to determine if name is required
-    const { data: existingTwist, error: existingError } = await this.supabase
-      .from("twist")
-      .select("name, description")
-      .eq("twist_admin_id", twistAdminId)
-      .eq("environment", environment)
-      .maybeSingle();
-
-    if (existingError) {
-      throw new Error(
-        `Failed to check existing twist: ${existingError.message}`
-      );
-    }
+    const existingTwist = await this.db
+      .selectFrom("twist")
+      .select(["name", "description"])
+      .where("twist_admin_id", "=", String(twistAdminId))
+      .where("environment", "=", environment)
+      .executeTakeFirst();
 
     // Require name for first deployment
     if (!existingTwist && !name) {
@@ -249,7 +219,7 @@ export class Twists extends Tool implements ITwists {
     const result = await deployTwist({
       env: this.env,
       ctx: this.ctx,
-      supabase: this.supabase,
+      db: this.db,
       twistAdminId,
       input: _module !== undefined ? { module: _module } : { source: _source! },
       environment,

@@ -44,7 +44,7 @@ class ActivityExceptionsBase extends BaseTable {
   ActivityExceptionsBase({this.priorityPath})
     : super(
         table: 'user_activity_exception',
-        writeTable: 'activity_exception',
+        syncEndpoint: 'activity-exceptions',
         name: "activity_exceptions",
         filterName: priorityPath,
         order: 'updated_at',
@@ -55,33 +55,35 @@ class ActivityExceptionsBase extends BaseTable {
   final String? priorityPath;
 
   @override
-  PostgrestFilterBuilder<T2> filter<T2>(
-    PostgrestFilterBuilder<T2> query, {
+  Map<String, String> buildParams({
+    DateTime? updatedSince,
+    String? lastId,
     bool initial = false,
     bool archived = false,
   }) {
-    query = super.filter(query, initial: initial, archived: archived);
-
-    // Add priority path filtering if priorityPath is provided
-    // Use ltree 'cd' operator (contained in / descendant of)
+    final params = super.buildParams(
+      updatedSince: updatedSince,
+      lastId: lastId,
+      initial: initial,
+      archived: archived,
+    );
     if (priorityPath != null) {
-      query = query.filter('priority_path', 'cd', priorityPath);
+      params['priority_path'] = priorityPath!;
     }
-
-    return query;
+    return params;
   }
 
   @override
-  PostgrestFilterBuilder<T2> filterRange<T2>(
-    PostgrestFilterBuilder<T2> query,
-    DateTimeRange? range,
-  ) {
-    if (range != null && range.start != null && range.end != null) {
-      final dateRange = '[${range.start!.toDate()},${range.end!.toDate()})';
-      final dateTimeRange = '[${range.start!.toDb()},${range.end!.toDb()})';
-      query = query.or('range_at.ov."$dateTimeRange",range_on.ov."$dateRange"');
+  Map<String, String> buildRangeParams(DateTimeRange range) {
+    // Calendar overlap filtering via range_start/range_end
+    final params = <String, String>{};
+    if (range.start != null) {
+      params['range_start'] = range.start!.toIso8601String();
     }
-    return query;
+    if (range.end != null) {
+      params['range_end'] = range.end!.toIso8601String();
+    }
+    return params;
   }
 
   @override

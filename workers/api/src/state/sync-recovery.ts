@@ -1,8 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { PostHog } from "posthog-node";
+import type { Kysely } from "kysely";
 
-import { type SupabaseClient, createClient } from "@plotday/db";
-
+import { type DB, createDb } from "../db";
+import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
@@ -26,11 +27,11 @@ const MAX_ITEMS_PER_QUERY = 50; // Limit per table per run
  * - After 5 alarms, stops (cron will restart the cycle)
  */
 export class SyncRecovery extends DurableObject<Bindings> {
-  private supabase: SupabaseClient;
+  private db: Kysely<DB>;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+    this.db = createDb(env);
   }
 
   /**
@@ -170,22 +171,20 @@ export class SyncRecovery extends DurableObject<Bindings> {
 
     // Use RPC to properly compare columns (last_update_at > last_sync_at)
     // and filter by stale threshold (last_sync_at < staleThreshold)
-    const { data: staleUserSyncs, error } = await this.supabase.rpc(
-      "get_stale_user_syncs",
-      {
+    let staleUserSyncs: Awaited<ReturnType<typeof rpc<"get_stale_user_syncs">>>;
+    try {
+      staleUserSyncs = await rpc(this.db, "get_stale_user_syncs", {
         p_stale_threshold: staleThreshold,
         p_limit: MAX_ITEMS_PER_QUERY,
-      }
-    );
-
-    const dbQueryTime = Date.now() - startTime;
-
-    if (error) {
-      logger.error("Error querying stale user_sync records", error);
+      });
+    } catch (error) {
+      logger.error("Error querying stale user_sync records", error as Error);
       return;
     }
 
-    if (!staleUserSyncs || staleUserSyncs.length === 0) {
+    const dbQueryTime = Date.now() - startTime;
+
+    if (!staleUserSyncs || !Array.isArray(staleUserSyncs) || staleUserSyncs.length === 0) {
       return;
     }
 
@@ -247,22 +246,20 @@ export class SyncRecovery extends DurableObject<Bindings> {
 
     // Use RPC to properly compare columns (last_update_at > last_sync_at)
     // and filter by stale threshold (last_sync_at < staleThreshold)
-    const { data: staleTwistSyncs, error } = await this.supabase.rpc(
-      "get_stale_twist_syncs",
-      {
+    let staleTwistSyncs: Awaited<ReturnType<typeof rpc<"get_stale_twist_syncs">>>;
+    try {
+      staleTwistSyncs = await rpc(this.db, "get_stale_twist_syncs", {
         p_stale_threshold: staleThreshold,
         p_limit: MAX_ITEMS_PER_QUERY,
-      }
-    );
-
-    const dbQueryTime = Date.now() - startTime;
-
-    if (error) {
-      logger.error("Error querying stale priority_twist_sync records", error);
+      });
+    } catch (error) {
+      logger.error("Error querying stale priority_twist_sync records", error as Error);
       return;
     }
 
-    if (!staleTwistSyncs || staleTwistSyncs.length === 0) {
+    const dbQueryTime = Date.now() - startTime;
+
+    if (!staleTwistSyncs || !Array.isArray(staleTwistSyncs) || staleTwistSyncs.length === 0) {
       return;
     }
 

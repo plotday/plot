@@ -1,19 +1,15 @@
-import 'dart:async';
-import 'package:supabase_flutter/supabase_flutter.dart' hide User;
-import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:clerk_auth/clerk_auth.dart' as clerk;
+import 'package:auto_route/auto_route.dart';
 
+import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
-import 'package:plot/state/user.dart';
-import 'package:plot/router.dart';
-import 'package:plot/util/profile_preferences.dart';
 import 'logging.dart';
 
 @RoutePage()
 class PasswordSetupPage extends StatefulWidget {
-  const PasswordSetupPage({this.returnTo, super.key});
-
-  final String? returnTo;
+  const PasswordSetupPage({super.key});
 
   @override
   State<PasswordSetupPage> createState() => _PasswordSetupPageState();
@@ -25,20 +21,6 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
-  bool _isPasswordReset = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadResetMode();
-  }
-
-  Future<void> _loadResetMode() async {
-    final prefs = ProfilePreferences.instance;
-    setState(() {
-      _isPasswordReset = prefs.getBool('is_password_reset') ?? false;
-    });
-  }
 
   @override
   void dispose() {
@@ -48,13 +30,12 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
     super.dispose();
   }
 
-  Future<void> _handlePasswordUpdate() async {
+  Future<void> _handleSubmit() async {
     final name = _nameController.text.trim();
     final password = _passwordController.text;
     final confirmPassword = _confirmPasswordController.text;
 
-    // Only validate name for new users (not password reset)
-    if (!_isPasswordReset && name.isEmpty) {
+    if (name.isEmpty) {
       setState(() {
         _errorMessage = 'Please enter your name';
       });
@@ -88,60 +69,67 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
     });
 
     try {
-      // Update the user's password (and name for new users)
-      final response = await Base.client.auth.updateUser(
-        UserAttributes(
-          password: password,
-          data: _isPasswordReset ? null : {'full_name': name},
-        ),
-      );
+      // Split name into first/last for Clerk
+      final parts = name.split(' ');
+      final firstName = parts.first;
+      final lastName = parts.length > 1 ? parts.sublist(1).join(' ') : null;
 
-      if (response.user == null) {
-        throw Exception('Failed to update password');
+      if (Base.auth.isSignedIn) {
+        // Already signed in (e.g. from a previous attempt). Just update the
+        // user's name and proceed to activation.
+        await Base.auth.updateUser(
+          firstName: firstName,
+          lastName: lastName,
+        );
+      } else {
+        // Update the pending sign-up with password and name.
+        // clerk_auth detects the existing sign-up and PATCHes it.
+        // Once all requirements are met, Clerk creates a session.
+        await Base.auth.attemptSignUp(
+          strategy: clerk.Strategy.password,
+          password: password,
+          passwordConfirmation: confirmPassword,
+          firstName: firstName,
+          lastName: lastName,
+        );
+
+        if (!Base.auth.isSignedIn) {
+          throw Exception(
+            'Sign-up incomplete after setting password. '
+            'Missing: ${Base.auth.client.signUp?.missingFields}',
+          );
+        }
       }
 
-      // Clear the reset mode flag
-      final prefs = ProfilePreferences.instance;
-      await prefs.remove('is_password_reset');
-
-      if (!mounted) return;
-
-      // Clear the local password setup flag
-      // This will trigger UserReady state and allow navigation
-      await context.read<UserBloc>().setPasswordSetupRequired(false);
-    } on AuthException catch (e) {
-      log.warning('Error updating password', e);
+      // Call /activate to get user identity
+      await Base.resolveIdentity();
+      // UserBloc will pick up the emission and transition to UserReady
+    } on clerk.ClerkError catch (e, t) {
+      log.warning('Error completing sign-up', e, t);
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.message;
+        // ClerkError.message contains a raw template '{arg} (ERROR ...)'.
+        // The actual message is in .argument (or via .toString() which
+        // interpolates it). Use .argument when available, fall back to
+        // toString() to always show the human-readable text.
+        _errorMessage = e.argument ?? e.toString();
         _isLoading = false;
       });
-    } catch (e) {
+    } on NetworkException {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Failed to set password: $e';
+        _errorMessage = 'Unable to connect. Please check your internet.';
+        _isLoading = false;
+      });
+    } catch (e, t) {
+      log.warning('Error completing sign-up', e, t);
+      Tracker.captureException(e, t);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Something went wrong. Please try again.';
         _isLoading = false;
       });
     }
-  }
-
-  Future<void> _handleCancel() async {
-    // Get the user's email before clearing state
-    final userState = context.read<UserBloc>().state;
-    final email = userState is UserPasswordRequired
-        ? userState.user.primaryEmail
-        : null;
-
-    // Clear both flags and navigate back to sign-in page
-    final prefs = ProfilePreferences.instance;
-    await prefs.remove('is_password_reset');
-
-    if (!mounted) return;
-    await context.read<UserBloc>().setPasswordSetupRequired(false);
-
-    if (!mounted) return;
-    // Navigate to email sign-in page, which should automatically sign in
-    await context.router.navigate(EmailSignInRoute(email: email));
   }
 
   @override
@@ -157,83 +145,57 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Title
               Text(
-                _isPasswordReset
-                    ? 'Reset your password'
-                    : 'Complete your account',
+                'Complete your account',
                 style: context.theme.typography.lg.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
               ),
 
-              Text(
-                _isPasswordReset
-                    ? 'Choose a new secure password'
-                    : 'Enter your name and choose a secure password',
+              const Text(
+                'Enter your name and choose a secure password',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFF6B7280)),
+                style: TextStyle(color: Color(0xFF6B7280)),
               ),
 
               const SizedBox(height: 8),
 
-              // Name field (only for new users)
-              if (!_isPasswordReset)
-                FTextField(
-                  control: .managed(controller: _nameController),
-                  hint: 'Enter your name',
-                  label: const Text('Name'),
-                  autofocus: true,
-                  onSubmit: (_) => _handlePasswordUpdate(),
-                ),
-
-              // Password field
               FTextField(
-                control: .managed(controller: _passwordController),
-                hint: _isPasswordReset
-                    ? 'Enter new password'
-                    : 'Enter your password',
-                label: const Text('Password'),
-                obscureText: true,
-                autofocus: _isPasswordReset,
-                onSubmit: (_) => _handlePasswordUpdate(),
+                control: .managed(controller: _nameController),
+                hint: 'Enter your name',
+                label: const Text('Name'),
+                autofocus: true,
+                onSubmit: (_) => _handleSubmit(),
               ),
 
-              // Confirm password field
+              FTextField(
+                control: .managed(controller: _passwordController),
+                hint: 'Enter your password',
+                label: const Text('Password'),
+                obscureText: true,
+                onSubmit: (_) => _handleSubmit(),
+              ),
+
               FTextField(
                 control: .managed(controller: _confirmPasswordController),
                 hint: 'Re-enter your password',
                 label: const Text('Confirm Password'),
                 obscureText: true,
-                onSubmit: (_) => _handlePasswordUpdate(),
+                onSubmit: (_) => _handleSubmit(),
               ),
 
-              // Submit button
               SizedBox(
                 height: 44,
                 child: FButton(
-                  onPress: _isLoading ? null : _handlePasswordUpdate,
+                  onPress: _isLoading ? null : _handleSubmit,
                   style: FButtonStyle.primary(),
                   child: _isLoading
                       ? const Spinner()
-                      : Text(
-                          _isPasswordReset
-                              ? 'Reset Password'
-                              : 'Create Account',
-                        ),
+                      : const Text('Create Account'),
                 ),
               ),
 
-              // Cancel button (only for password reset)
-              if (_isPasswordReset)
-                FButton(
-                  onPress: _isLoading ? null : _handleCancel,
-                  style: FButtonStyle.ghost(),
-                  child: const Text('Cancel and sign in'),
-                ),
-
-              // Error message
               if (_errorMessage != null) ...[
                 FAlert(
                   style: FAlertStyle.destructive(),

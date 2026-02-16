@@ -14,7 +14,7 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
 }
 
 class ActorsBase extends BaseTable {
-  ActorsBase() : super(table: 'user_actor');
+  ActorsBase() : super(table: 'user_actor', syncEndpoint: 'actors');
 
   @override
   Map<String, dynamic> toBase(DataClass row) {
@@ -196,18 +196,12 @@ class Actor extends ActorRow {
 
   /// Get Actor by auth user ID (via contact.user_id lookup).
   /// Returns null if no contact is found for the given user ID.
+  // TODO: Add API endpoint to look up contact by user_id, or sync user_id to local actors table
   static Future<Actor?> getByUserId(Uuid userId) async {
     try {
-      // Query the contact table to find the contact for this user_id
-      final result =
-          await Base.client
-                  .from('contact')
-                  .select('id')
-                  .eq('user_id', userId.toString())
-                  .isFilter('archived_at', null)
-                  .limit(1)
-              as List<dynamic>;
-
+      final result = await api.get<List<dynamic>>(
+        '/contact/by-user/${userId.toString()}',
+      );
       if (result.isEmpty) return null;
 
       final contactId = result.first['id'] as String;

@@ -105,9 +105,6 @@ class _InvitePageState extends State<InvitePage> {
       // Clear the pending invite
       PendingInvite.clear();
 
-      // Refresh session to get updated JWT with active status
-      await Base.refreshSession();
-
       // Navigate to the main app
       if (mounted) {
         context.router.replaceAll([EmptyShellRoute("Now")()]);

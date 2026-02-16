@@ -14,8 +14,8 @@ import {
 } from "../twist/management";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
-import { disposeRpc } from "../utils/rpc";
 import { handleValidationError } from "../utils/validation";
+import { notifySync } from "./sync/notify";
 
 const twists = new Hono<{ Bindings: Bindings }>();
 
@@ -43,14 +43,14 @@ twists.get("/twists", async (c) => {
     return c.json({ message: "Bad request (missing priorityId)" }, 400);
   }
 
-  const twists = await getAllTwists(c.var.supabase, c.var.supabaseAdmin, priorityId);
+  const twists = await getAllTwists(c.var.db, c.var.user.id, priorityId);
   return c.json(twists);
 });
 
 // GET /twist/:id - Get twist by ID
 twists.get("/twist/:id", async (c) => {
   const twistId = c.req.param("id");
-  const twists = await getTwistById(c.var.supabase, twistId);
+  const twists = await getTwistById(c.var.db, twistId);
   return c.json(twists);
 });
 
@@ -63,7 +63,7 @@ twists.get("/twist", async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
   logger.debug("Fetching installed twists for priority", { priority_id: priorityId });
-  const twists = await getTwistsByPriority(c.var.supabase, priorityId);
+  const twists = await getTwistsByPriority(c.var.db, priorityId);
   logger.debug("Found installed twists", { priority_id: priorityId, count: twists.length });
   return c.json(twists);
 });
@@ -78,8 +78,8 @@ twists.post("/twist", async (c) => {
   const body = parseResult.data;
   try {
     const dbPriorityTwist = await addTwist(
-      c.var.supabase,
-      c.var.supabaseAdmin,
+      c.var.db,
+      c.var.user.id,
       body.priorityId,
       body.twistId,
       body.twistEnvironment,
@@ -89,53 +89,12 @@ twists.post("/twist", async (c) => {
         twistFactory: twistFactory({
           env: c.env,
           ctx: c.executionCtx as ExecutionContext,
-          supabase: c.var.supabaseAdmin,
+          db: c.var.db,
         }),
       }
     );
 
-    // Broadcast sync for priority_twist and actor tables to all users with access
-    // (priority twists appear as actors in user_priority_actor view)
-    // Using supabaseAdmin since function is revoked from authenticated
-    try {
-      const usersResult = await c.var.supabaseAdmin.rpc(
-        "get_users_with_priority_access",
-        {
-          target_priority_id: body.priorityId,
-        }
-      );
-
-      if (usersResult.data && usersResult.data.length > 0) {
-        for (const user of usersResult.data) {
-          try {
-            const broadcastId = c.env.BROADCAST.idFromName(user.user_id);
-            const broadcast = c.env.BROADCAST.get(broadcastId);
-            const result1 = await broadcast.send({
-              type: "sync",
-              table: "priority_twist",
-            });
-            disposeRpc(result1);
-            const result2 = await broadcast.send({
-              type: "sync",
-              table: "actor",
-            });
-            disposeRpc(result2);
-          } catch (broadcastError) {
-            const logger = createLogger();
-            logger.error("Error broadcasting to user", broadcastError as Error, {
-              user_id: user.user_id,
-              priority_id: body.priorityId,
-            });
-          }
-        }
-      }
-    } catch (error) {
-      const logger = createLogger();
-      logger.error("Error broadcasting twist add", error as Error, {
-        priority_id: body.priorityId,
-      });
-      // Don't fail the request if broadcast fails
-    }
+    notifySync(c, body.priorityId);
 
     return c.json({ id: dbPriorityTwist.id });
   } catch (error) {
@@ -163,7 +122,7 @@ twists.patch("/twist/:id", async (c) => {
   }
   const body = parseResult.data;
   try {
-    const dbTwist = await updateTwist(c.var.supabase, twistId, body);
+    const dbTwist = await updateTwist(c.var.db, twistId, body);
     return c.json(dbTwist);
   } catch (error) {
     if (error instanceof Error) {
@@ -176,60 +135,17 @@ twists.patch("/twist/:id", async (c) => {
 // DELETE /twist/:id - Delete twist
 twists.delete("/twist/:id", async (c) => {
   const twistId = c.req.param("id");
-  await deleteTwist(c.var.supabase, twistId);
+  await deleteTwist(c.var.db, twistId);
   return c.json({ success: true });
 });
 
 // DELETE /twist/:id/archive-activities - Archive activities and delete twist
 twists.delete("/twist/:id/archive-activities", async (c) => {
   const twistId = c.req.param("id");
-  const result = await archiveAndDeleteTwist(c.var.supabase, twistId);
+  const result = await archiveAndDeleteTwist(c.var.db, twistId);
 
-  // Broadcast to all users with access to the priority
   if (result?.priority_id) {
-    try {
-      // Get users with access to this priority
-      // Using supabaseAdmin since function is revoked from authenticated
-      const usersResult = await c.var.supabaseAdmin.rpc(
-        "get_users_with_priority_access",
-        {
-          target_priority_id: result.priority_id,
-        }
-      );
-
-      if (usersResult.data && usersResult.data.length > 0) {
-        // Send broadcast to each user
-        for (const user of usersResult.data) {
-          try {
-            const broadcastId = c.env.BROADCAST.idFromName(user.user_id);
-            const broadcast = c.env.BROADCAST.get(broadcastId);
-            const result1 = await broadcast.send({
-              type: "sync",
-              table: "priority_twist",
-            });
-            disposeRpc(result1);
-            // Also sync actor view since priority_twist is part of actor
-            const result2 = await broadcast.send({
-              type: "sync",
-              table: "actor",
-            });
-            disposeRpc(result2);
-          } catch (broadcastError) {
-            const logger = createLogger();
-            logger.error("Error broadcasting to user", broadcastError as Error, {
-              user_id: user.user_id,
-              priority_id: result.priority_id,
-            });
-          }
-        }
-      }
-    } catch (error) {
-      const logger = createLogger();
-      logger.error("Error broadcasting twist archive", error as Error, {
-        priority_id: result.priority_id,
-      });
-      // Don't fail the request if broadcast fails
-    }
+    notifySync(c, result.priority_id);
   }
 
   return c.json({ success: true });

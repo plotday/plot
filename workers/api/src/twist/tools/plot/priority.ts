@@ -6,16 +6,26 @@ import {
   type Uuid,
 } from "@plotday/twister/plot";
 import { PriorityAccess } from "@plotday/twister/tools/plot";
+import { sql } from "kysely";
 
+import { rpc } from "../../../rpc";
 import { fromDbPriority } from "./converters";
 import type { Plot } from "./index";
 
 export async function createPriority(
   plot: Plot,
   priority: NewPriority
-): Promise<Priority> {
+): Promise<Priority & { created: boolean }> {
   // Validate priority create access permissions
   plot.requirePriorityAccess(PriorityAccess.Create);
+
+  // If a key is provided, check if the priority already exists (idempotent upsert)
+  if ("key" in priority && priority.key) {
+    const existing = await getPriority(plot, { key: priority.key });
+    if (existing) {
+      return { ...existing, created: false };
+    }
+  }
 
   // Determine parent priority ID
   let parentId: string;
@@ -24,20 +34,20 @@ export async function createPriority(
     if ("key" in priority.parent) {
       // Look up parent by key, scoped to the twist's priority root
       const priorityRoot = await plot.getPriorityRoot();
-      const result = await plot.supabase
-        .from("priority")
+      const result = await plot.db
+        .selectFrom("priority")
         .select("id")
-        .eq("key", priority.parent.key)
-        .filter("path", "cd", priorityRoot)
-        .single();
+        .where("key", "=", priority.parent.key)
+        .where(sql<boolean>`path <@ ${priorityRoot}::ltree`)
+        .executeTakeFirst();
 
-      if (result.error || !result.data) {
+      if (!result) {
         throw new Error(
           `Parent priority with key "${priority.parent.key}" not found in priority tree`
         );
       }
 
-      parentId = result.data.id;
+      parentId = result.id;
     } else {
       parentId = priority.parent.id;
     }
@@ -49,30 +59,23 @@ export async function createPriority(
   // Validate access to the parent priority
   await plot.validatePriorityAccess(parentId);
 
-  const parentResult = await plot.supabase
-    .from("priority")
-    .select("path, created_by")
-    .eq("id", parentId)
-    .single();
-
-  if (parentResult.error) {
-    throw new Error(`Parent priority not found: ${parentResult.error.message}`);
-  }
+  const parentResult = await plot.db
+    .selectFrom("priority")
+    .select(["path", "created_by"])
+    .where("id", "=", parentId)
+    .executeTakeFirstOrThrow();
 
   // Generate child path using database function
-  const pathResult = await plot.supabase.rpc("generate_path", {
-    parent: parentResult.data.path,
+  // rpc() unwraps scalar results, so we get the path string directly
+  const path = await rpc(plot.db, "generate_path", {
+    parent: parentResult.path,
   });
-
-  if (pathResult.error) {
-    throw new Error(`Path generation failed: ${pathResult.error.message}`);
-  }
 
   // Build the priority insert object
   const dbPriority: Database["public"]["Tables"]["priority"]["Insert"] = {
-    created_by: parentResult.data.created_by,
+    created_by: parentResult.created_by,
     title: priority.title,
-    path: pathResult.data,
+    path: path as string,
     updated_by: plot.getUpdatedBy(),
     sync_depth: plot.syncDepth + 1,
   };
@@ -92,17 +95,13 @@ export async function createPriority(
     dbPriority.color = priority.color;
   }
 
-  const result = await plot.supabase
-    .from("priority")
-    .insert(dbPriority)
-    .select()
-    .single();
+  const result = await plot.db
+    .insertInto("priority")
+    .values(dbPriority as any)
+    .returningAll()
+    .executeTakeFirstOrThrow();
 
-  if (result.error) {
-    throw new Error(`Priority creation failed: ${result.error.message}`);
-  }
-
-  return fromDbPriority(result.data);
+  return { ...fromDbPriority(result), created: true };
 }
 
 export async function getPriority(
@@ -117,31 +116,31 @@ export async function getPriority(
   if ("key" in priority) {
     // Look up priority by key in priority table, scoped to twist's priority root
     const priorityRoot = await plot.getPriorityRoot();
-    const result = await plot.supabase
-      .from("priority")
-      .select("id, title, archived_at, key, color")
-      .eq("key", priority.key)
-      .filter("path", "cd", priorityRoot)
-      .single();
+    const result = await plot.db
+      .selectFrom("priority")
+      .select(["id", "title", "archived_at", "key", "color"])
+      .where("key", "=", priority.key)
+      .where(sql<boolean>`path <@ ${priorityRoot}::ltree`)
+      .executeTakeFirst();
 
-    if (result.error || !result.data) {
+    if (!result) {
       return null;
     }
 
-    dbPriority = result.data;
+    dbPriority = result;
   } else {
     // Look up priority by ID
-    const result = await plot.supabase
-      .from("priority")
-      .select("id, title, archived_at, key, color")
-      .eq("id", priority.id)
-      .single();
+    const result = await plot.db
+      .selectFrom("priority")
+      .select(["id", "title", "archived_at", "key", "color"])
+      .where("id", "=", priority.id)
+      .executeTakeFirst();
 
-    if (result.error) {
+    if (!result) {
       return null;
     }
 
-    dbPriority = result.data;
+    dbPriority = result;
   }
 
   // Validate that the twist has access to this priority
@@ -166,18 +165,18 @@ export async function updatePriority(
 
   if ("key" in update) {
     const priorityRoot = await plot.getPriorityRoot();
-    const result = await plot.supabase
-      .from("priority")
+    const result = await plot.db
+      .selectFrom("priority")
       .select("id")
-      .eq("key", update.key)
-      .filter("path", "cd", priorityRoot)
-      .single();
+      .where("key", "=", update.key)
+      .where(sql<boolean>`path <@ ${priorityRoot}::ltree`)
+      .executeTakeFirst();
 
-    if (result.error || !result.data) {
+    if (!result) {
       throw new Error(`Priority with key "${update.key}" not found in priority tree`);
     }
 
-    priorityId = result.data.id;
+    priorityId = result.id;
   } else {
     priorityId = update.id;
   }
@@ -198,12 +197,9 @@ export async function updatePriority(
     dbUpdate.archived_at = update.archived ? new Date().toISOString() : null;
   }
 
-  const result = await plot.supabase
-    .from("priority")
-    .update(dbUpdate)
-    .eq("id", priorityId);
-
-  if (result.error) {
-    throw new Error(`Priority update failed: ${result.error.message}`);
-  }
+  await plot.db
+    .updateTable("priority")
+    .set(dbUpdate as any)
+    .where("id", "=", priorityId)
+    .execute();
 }

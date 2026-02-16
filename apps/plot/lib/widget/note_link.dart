@@ -13,7 +13,6 @@ import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/tapable.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/api/api.dart' as api;
-import 'package:plot/base.dart';
 import 'logging.dart';
 
 /// Widget that displays a single note link with appropriate styling based on type

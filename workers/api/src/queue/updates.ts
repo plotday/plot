@@ -1,7 +1,7 @@
 import type { PostHog } from "posthog-node";
+import type { Kysely } from "kysely";
 
-import { type SupabaseClient, createClient } from "@plotday/db";
-
+import { type DB, createDb } from "../db";
 import { type Bindings, type TwistBatchMessage } from "../env";
 import { twistFactory } from "../twist";
 import { createLogger } from "@plotday/worker-util";
@@ -16,14 +16,14 @@ export async function processUpdates(
   ctx: ExecutionContext,
   postHog: PostHog
 ): Promise<void> {
-  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+  const db = createDb(env);
 
   for (const message of batch.messages) {
     await processTwistBatch(
       message.body,
       env,
       ctx,
-      supabase,
+      db,
       batch.queue,
       postHog
     );
@@ -108,7 +108,7 @@ async function processTwistBatch(
   batchData: TwistBatchMessage,
   env: Bindings,
   ctx: ExecutionContext,
-  supabase: SupabaseClient,
+  db: Kysely<DB>,
   queue: string,
   postHog: PostHog
 ): Promise<void> {
@@ -133,12 +133,26 @@ async function processTwistBatch(
     queue,
   });
 
+  // Check if twist is suspended before processing
+  const twistStatus = await db
+    .selectFrom("priority_twist")
+    .select("suspended_at")
+    .where("id", "=", priorityTwistId)
+    .executeTakeFirst();
+
+  if (twistStatus?.suspended_at) {
+    logger.info("Skipping twist batch for suspended twist", {
+      priority_twist_id: priorityTwistId,
+    });
+    return;
+  }
+
   try {
     // Get twist factory and create twist instance
     const factory = twistFactory({
       env,
       ctx,
-      supabase,
+      db,
     });
 
     // Get priority_id from the first item or fetch it
@@ -153,11 +167,11 @@ async function processTwistBatch(
       priorityId = String(updatedNotes[0].priority_id);
     } else {
       // Fallback: fetch priority_id from priority_twist table
-      const { data: pt } = await supabase
-        .from("priority_twist")
+      const pt = await db
+        .selectFrom("priority_twist")
         .select("priority_id")
-        .eq("id", priorityTwistId)
-        .single();
+        .where("id", "=", priorityTwistId)
+        .executeTakeFirst();
       if (pt) {
         priorityId = String(pt.priority_id);
       }

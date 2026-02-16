@@ -17,7 +17,7 @@ class PriorityTwistsBase extends BaseTable {
   PriorityTwistsBase()
     : super(
         table: 'user_twist',
-        writeTable: 'priority_twist',
+        syncEndpoint: 'priority-twists',
         name: "priority_twists",
         order: 'created_at',
         ascending: false,

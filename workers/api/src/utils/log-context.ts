@@ -34,6 +34,17 @@ export function extractRequestContext(c: Context<{ Bindings: Bindings }>): LogCo
     // User not available (not authenticated or middleware not run)
   }
 
+  // Add client version if present
+  try {
+    const clientInfo = c.var.clientInfo;
+    if (clientInfo) {
+      context.client_version = clientInfo.version;
+      context.client_platform = clientInfo.platform;
+    }
+  } catch {
+    // Client info not available (middleware not run)
+  }
+
   return context;
 }
 
@@ -132,7 +143,6 @@ function categorizeError(error: Error): string {
   // Database errors
   if (
     name.includes("database") ||
-    name.includes("supabase") ||
     message.includes("database") ||
     message.includes("query") ||
     message.includes("duplicate key")

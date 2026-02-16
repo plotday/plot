@@ -29,9 +29,14 @@ class PlotTwist extends Twist<PlotTwist> {
   async activate(_priority: Pick<Priority, "id">) {
     const onboardingPriority = await this.tools.plot.createPriority({
       title: "Getting Started",
+      key: "@plot.getting-started",
       parent: { key: "@plot" },
       color: ThemeColor.Catalyst, // Color 0 - Green
     });
+
+    if (!onboardingPriority.created) {
+      return;
+    }
 
     // Welcome note
     await this.tools.plot.createActivity({

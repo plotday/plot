@@ -11,7 +11,7 @@ class NoteTagsBase extends BaseTable {
   NoteTagsBase({this.priorityPath, this.activityId})
     : super(
         table: 'user_note_tags',
-        writeTable: 'note_tag',
+        syncEndpoint: 'note-tags',
         name: "note_tags",
         filterName: priorityPath ?? activityId?.toString(),
         order: 'updated_at',
@@ -23,45 +23,35 @@ class NoteTagsBase extends BaseTable {
   final Uuid? activityId;
 
   @override
-  PostgrestFilterBuilder<T2> filter<T2>(
-    PostgrestFilterBuilder<T2> query, {
+  Map<String, String> buildParams({
+    DateTime? updatedSince,
+    String? lastId,
     bool initial = false,
     bool archived = false,
   }) {
-    query = super.filter(query, initial: initial, archived: archived);
-
-    // Add priority path filtering if priorityPath is provided
-    // Use ltree 'cd' operator (contained in / descendant of)
+    final params = super.buildParams(
+      updatedSince: updatedSince,
+      lastId: lastId,
+      initial: initial,
+      archived: archived,
+    );
     if (priorityPath != null) {
-      query = query.filter('priority_path', 'cd', priorityPath);
+      params['priority_path'] = priorityPath!;
     }
-
-    // Add activity filtering if activityId is provided
-    // Need to join with note table to filter by activity_id
-    // Since the view doesn't expose activity_id directly, we filter via the note table
-    if (activityId != null) {
-      // The user_note_tags view joins note, so we can filter using note.activity_id
-      // We need to use the 'id' column which is the note_id
-      // But Supabase doesn't support arbitrary joins in filters, so we use a subquery approach
-      // Actually, simpler: just pull all note_tags and let Drift filter locally
-      // For now, we'll just use this as a marker in filterName for sync tracking
-      // The actual filtering happens client-side based on which notes we have
-    }
-
-    return query;
+    return params;
   }
 
   @override
-  PostgrestFilterBuilder<T2> filterRange<T2>(
-    PostgrestFilterBuilder<T2> query,
-    DateTimeRange? range,
-  ) {
-    if (range != null && range.start != null && range.end != null) {
-      final dateRange = '[${range.start!.toDate()},${range.end!.toDate()})';
-      final dateTimeRange = '[${range.start!.toDb()},${range.end!.toDb()})';
-      query = query.or('range_at.ov."$dateTimeRange",range_on.ov."$dateRange"');
+  Map<String, String> buildRangeParams(DateTimeRange range) {
+    // Calendar overlap filtering via range_start/range_end
+    final params = <String, String>{};
+    if (range.start != null) {
+      params['range_start'] = range.start!.toIso8601String();
     }
-    return query;
+    if (range.end != null) {
+      params['range_end'] = range.end!.toIso8601String();
+    }
+    return params;
   }
 
   @override
@@ -111,39 +101,23 @@ class NoteTagsBase extends BaseTable {
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
 
-    log.info('NoteTagsBase.put called with ${rows.length} rows');
-
     for (final row in rows) {
-      log.info(
-        'NoteTagsBase.put - processing row: ${row['id']}, tags_updated: ${row['tags_updated']}',
-      );
-
       final tagsUpdated = row['tags_updated'] as Map<String, dynamic>?;
-      if (tagsUpdated == null || tagsUpdated.isEmpty) {
-        log.info(
-          'NoteTagsBase.put - skipping row ${row['id']}: no tags_updated',
-        );
-        continue;
-      }
+      if (tagsUpdated == null || tagsUpdated.isEmpty) continue;
 
       final id = row['id'] as String;
       final updatedBy = row['updated_by'] as int;
 
-      log.info('NoteTagsBase.put - updating note tags for id: $id');
-
-      // Update the server
+      // Update the server via sync API
       try {
-        await Base.client.rpc<void>(
-          'update_note_tags',
-          params: {
-            'p_note_id': id,
-            'p_actor_id': Base.actorId.toString(),
-            'p_client_id': updatedBy,
-            'p_tag_updates': tagsUpdated,
+        await api.post<dynamic>(
+          '/sync/note-tags/update',
+          body: {
+            'note_id': id,
+            'actor_id': Base.actorId.toString(),
+            'client_id': updatedBy,
+            'tag_updates': tagsUpdated,
           },
-        );
-        log.info(
-          'NoteTagsBase.put - update_note_tags RPC completed successfully',
         );
       } catch (e, stackTrace) {
         log.severe(
@@ -155,9 +129,6 @@ class NoteTagsBase extends BaseTable {
       }
 
       // After successfully updating the server, clear tagsUpdated in the local database
-      log.info(
-        'NoteTagsBase.put - clearing tagsUpdated in local database for id: $id',
-      );
       await Store.get
           .update(Store.get.noteTags)
           .replace(
@@ -167,7 +138,6 @@ class NoteTagsBase extends BaseTable {
               updatedAt: Value(DateTime.now()),
             ),
           );
-      log.info('NoteTagsBase.put - completed processing row: $id');
     }
   }
 

@@ -1,7 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
+import type { Kysely } from "kysely";
 
-import { type SupabaseClient, createClient } from "@plotday/db";
-
+import { type DB, createDb } from "../db";
+import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
@@ -18,13 +19,13 @@ interface UserSyncState {
 }
 
 export class UserSync extends DurableObject<Bindings> {
-  private supabase: SupabaseClient;
+  private db: Kysely<DB>;
   private userId: string | null = null;
   private state: UserSyncState;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+    this.db = createDb(env);
     this.state = {
       lastNotifyTime: 0,
       lastSyncTime: 0,
@@ -149,19 +150,19 @@ export class UserSync extends DurableObject<Bindings> {
       }
 
       // Query pending updates using RPC to compare columns
-      const { data: pendingUpdates, error } = await this.supabase.rpc(
-        "get_pending_user_sync",
-        { p_user_id: this.userId }
-      );
-
-      if (error) {
-        logger.error("Error querying user_sync", error, {
+      let pendingUpdates: Awaited<ReturnType<typeof rpc<"get_pending_user_sync">>>;
+      try {
+        pendingUpdates = await rpc(this.db, "get_pending_user_sync", {
+          p_user_id: this.userId,
+        });
+      } catch (error) {
+        logger.error("Error querying user_sync", error as Error, {
           user_id: this.userId,
         });
         return;
       }
 
-      if (!pendingUpdates || pendingUpdates.length === 0) {
+      if (!pendingUpdates || !Array.isArray(pendingUpdates) || pendingUpdates.length === 0) {
         // No pending updates
         this.state.lastSyncTime = now;
         return;
@@ -193,37 +194,38 @@ export class UserSync extends DurableObject<Bindings> {
       let updateError: any = null;
 
       while (retryCount <= maxRetries) {
-        const { error } = await this.supabase
-          .from("user_sync")
-          .update({ last_sync_at: syncUpTo })
-          .eq("user_id", this.userId)
-          .in("entity", entities);
+        try {
+          await this.db
+            .updateTable("user_sync")
+            .set({ last_sync_at: syncUpTo })
+            .where("user_id", "=", this.userId)
+            .where("entity", "in", entities)
+            .execute();
 
-        if (!error) {
           updateError = null;
           break;
+        } catch (error: any) {
+          // Check if this is a deadlock error
+          if (error?.code === "40P01" && retryCount < maxRetries) {
+            retryCount++;
+            // Exponential backoff with jitter: 50-100ms, 100-200ms, 200-400ms
+            const baseDelay = 50 * Math.pow(2, retryCount - 1);
+            const jitter = Math.random() * baseDelay;
+            const delayMs = baseDelay + jitter;
+
+            logger.warn(`Deadlock detected, retrying (${retryCount}/${maxRetries})`, {
+              user_id: this.userId,
+              delay_ms: Math.round(delayMs),
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            continue;
+          }
+
+          // Non-deadlock error or max retries exceeded
+          updateError = error;
+          break;
         }
-
-        // Check if this is a deadlock error
-        if (error.code === "40P01" && retryCount < maxRetries) {
-          retryCount++;
-          // Exponential backoff with jitter: 50-100ms, 100-200ms, 200-400ms
-          const baseDelay = 50 * Math.pow(2, retryCount - 1);
-          const jitter = Math.random() * baseDelay;
-          const delayMs = baseDelay + jitter;
-
-          logger.warn(`Deadlock detected, retrying (${retryCount}/${maxRetries})`, {
-            user_id: this.userId,
-            delay_ms: Math.round(delayMs),
-          });
-
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          continue;
-        }
-
-        // Non-deadlock error or max retries exceeded
-        updateError = error;
-        break;
       }
 
       if (updateError) {
@@ -277,19 +279,13 @@ export class UserSync extends DurableObject<Bindings> {
     try {
       // Call database function to sync last_sync_at to match last_update_at
       // This ensures incremental updates work correctly after client reconnects
-      const { error } = await this.supabase.rpc("sync_user_on_connect", {
+      await rpc(this.db, "sync_user_on_connect", {
         p_user_id: userId,
       });
 
-      if (error) {
-        logger.error("Error calling sync_user_on_connect", error, {
-          user_id: userId,
-        });
-      } else {
-        logger.info("User sync state updated on client connect", {
-          user_id: userId,
-        });
-      }
+      logger.info("User sync state updated on client connect", {
+        user_id: userId,
+      });
     } catch (error) {
       logger.error("Error in onClientConnected", error as Error, {
         user_id: userId,

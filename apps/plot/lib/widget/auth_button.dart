@@ -314,12 +314,7 @@ class _AuthButtonState extends State<AuthButton> {
     final redirectUri = kIsWeb ? Env.authCallbackUrl : _appCallbackUrl;
 
     try {
-      log.info('Starting OAuth flow for ${widget.provider.name}');
       final authUrl = await _generateAuthUrl(redirectUri: redirectUri);
-      log.info('Generated auth URL for ${widget.provider.name}', {
-        'clientId': authUrl.clientId,
-        'hasState': authUrl.state.isNotEmpty,
-      });
 
       final result = await FlutterWebAuth2.authenticate(
         url: authUrl.url,
@@ -329,18 +324,12 @@ class _AuthButtonState extends State<AuthButton> {
       final responseUri = Uri.parse(result);
       final params = responseUri.queryParameters;
 
-      log.info('OAuth callback received for ${widget.provider.name}', {
-        'hasCode': params['code'] != null,
-      });
-
       await widget.onComplete(
         clientId: authUrl.clientId,
         redirectUri: redirectUri,
         code: params['code'],
         state: authUrl.state,
       );
-
-      log.info('OAuth flow completed successfully for ${widget.provider.name}');
     } catch (e, t) {
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
       if (mounted) {
@@ -393,21 +382,8 @@ class _AuthButtonState extends State<AuthButton> {
       },
     );
 
-    log.info('Requesting auth URL from API', {
-      'provider': link.provider.name,
-      'scopes': link.scopes.join(', '),
-      'platform': platform,
-      'uri': uri.toString(),
-    });
-
     try {
       final response = await api.get<Map<String, dynamic>>(uri.toString());
-      log.info('Received auth URL response from API', {
-        'provider': link.provider.name,
-        'hasUrl': response.containsKey('url'),
-        'hasClientId': response.containsKey('clientId'),
-        'hasState': response.containsKey('state'),
-      });
       return _AuthUrlResult(response);
     } catch (e, t) {
       log.severe(

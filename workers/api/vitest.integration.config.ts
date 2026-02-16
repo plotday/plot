@@ -15,8 +15,6 @@ export default defineWorkersProject({
           enabled: true,
           include: [
             "websocket",
-            "@supabase/realtime-js",
-            "@supabase/supabase-js",
             "@plotday/db",
           ],
         },
@@ -24,7 +22,7 @@ export default defineWorkersProject({
     },
     poolOptions: {
       workers: {
-        isolatedStorage: false, // Required for WebSocket support (Supabase realtime)
+        isolatedStorage: false, // Required for WebSocket support
         singleWorker: true, // Use single worker for all tests when storage is shared
         wrangler: {
           // Use test-specific configuration without containers

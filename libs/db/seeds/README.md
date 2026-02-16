@@ -17,7 +17,6 @@ pnpm gen-seed my-data.yaml | psql -d plot_local
 
 ## Requirements
 
-- **Environment Variables**: The generator requires `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to create or lookup users via the Supabase Admin API
 - **Local Testing**: For local development, users are created with their email as the password for convenience
 
 ## Features

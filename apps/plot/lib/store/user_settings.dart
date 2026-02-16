@@ -14,11 +14,11 @@ class UserSettingsBase extends BaseTable {
   UserSettingsBase()
     : super(
         table: 'user_settings',
+        syncEndpoint: 'user-settings',
         name: "user_settings",
         order: 'updated_at',
         supportsArchiving: false,
         cursorColumn: 'user_id',
-        secondarySortColumns: const ['user_id'],
       );
 
   @override

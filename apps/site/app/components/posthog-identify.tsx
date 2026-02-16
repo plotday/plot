@@ -1,23 +1,19 @@
+import { useUser } from "@clerk/react-router";
 import { useEffect, useRef } from "react";
 
-interface Props {
-  user: {
-    id: string;
-    email?: string;
-    name?: string;
-    createdAt?: string;
-  } | null;
-}
-
-export function PostHogIdentify({ user }: Props) {
+export function PostHogIdentify() {
+  const { user } = useUser();
   const lastUserId = useRef<string | null>(null);
 
   useEffect(() => {
     if (user && user.id !== lastUserId.current) {
       window.posthog?.identify(
         user.id,
-        { email: user.email, name: user.name },
-        { signed_up_time: user.createdAt }
+        {
+          email: user.primaryEmailAddress?.emailAddress,
+          name: user.fullName,
+        },
+        { signed_up_time: user.createdAt?.toISOString() }
       );
       lastUserId.current = user.id;
     }

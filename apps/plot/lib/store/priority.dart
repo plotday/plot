@@ -28,9 +28,9 @@ class PrioritiesBase extends BaseTable {
   PrioritiesBase()
     : super(
         table: 'user_priority',
+        syncEndpoint: 'priorities',
         name: "priorities",
         order: 'created_at',
-        upsertAsUpdate: true,
       );
 
   @override

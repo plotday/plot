@@ -70,9 +70,8 @@ class CommandModal {
             ? command
             : CommandWrapper(
                 command,
-                run: (cmd, _) => rootContext.mounted
-                    ? cmd.run(rootContext)
-                    : Future.value(const CommandSkipped()),
+                run: (cmd, ctx) =>
+                    cmd.run(rootContext.mounted ? rootContext : ctx),
               );
 
         return ListTile(
@@ -119,7 +118,7 @@ class CommandModal {
                 command is ShowForm ||
                 command is ShowPage
             ? modalContext
-            : rootContext;
+            : (rootContext.mounted ? rootContext : modalContext);
         if (!context.mounted) return false;
         final result = await command.run(context);
 

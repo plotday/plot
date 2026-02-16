@@ -2,8 +2,13 @@ import {
   ColorSchemeScript,
   MantineProvider,
   mantineHtmlProps,
+  useComputedColorScheme,
 } from "@mantine/core";
 import "@mantine/core/styles.css";
+
+import { ClerkProvider } from "@clerk/react-router";
+import { rootAuthLoader } from "@clerk/react-router/ssr.server";
+import { dark } from "@clerk/themes";
 
 import {
   Links,
@@ -18,23 +23,15 @@ import {
 import type { Route } from "./+types/root";
 import stylesheet from "./app.css?url";
 import { PostHogIdentify } from "./components/posthog-identify";
-import { getUser } from "./lib/supabase.server";
-import { resolver, theme } from "./theme";
+import { clerkAppearance, resolver, theme } from "./theme";
 
-export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user } = await getUser(request, context.cloudflare.env);
-  return {
-    posthogApiKey: context.cloudflare.env.POSTHOG_API_KEY || "",
-    posthogProxy: context.cloudflare.env.POSTHOG_PROXY || "",
-    user: user
-      ? {
-          id: user.id,
-          email: user.email,
-          name: user.user_metadata?.name || user.user_metadata?.full_name,
-          createdAt: user.created_at,
-        }
-      : null,
-  };
+export async function loader(args: Route.LoaderArgs) {
+  return rootAuthLoader(args, ({ context }) => {
+    return {
+      posthogApiKey: (context.cloudflare.env as Record<string, string>).POSTHOG_API_KEY || "",
+      posthogProxy: (context.cloudflare.env as Record<string, string>).POSTHOG_PROXY || "",
+    };
+  });
 }
 
 export const links: Route.LinksFunction = () => [
@@ -63,7 +60,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const data = useRouteLoaderData<typeof loader>("root");
   const posthogApiKey = data?.posthogApiKey || "";
   const posthogProxy = data?.posthogProxy || "";
-  const user = data?.user || null;
 
   return (
     <html lang="en" {...mantineHtmlProps}>
@@ -118,14 +114,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </MantineProvider>
         <ScrollRestoration />
         <Scripts />
-        <PostHogIdentify user={user} />
       </body>
     </html>
   );
 }
 
-export default function App() {
-  return <Outlet />;
+export default function App({ loaderData }: Route.ComponentProps) {
+  const colorScheme = useComputedColorScheme("light");
+  const isDark = colorScheme === "dark";
+
+  return (
+    <ClerkProvider
+      loaderData={loaderData}
+      appearance={{
+        ...(isDark ? { baseTheme: dark } : {}),
+        ...clerkAppearance,
+      }}
+    >
+      <Outlet />
+      <PostHogIdentify />
+    </ClerkProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

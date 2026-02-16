@@ -6,7 +6,7 @@
  * Generates SQL INSERT statements from YAML seed data definition.
  * See YAML_SPEC.md for format documentation.
  */
-import { createClient } from "@supabase/supabase-js";
+import pg from "pg";
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -74,9 +74,8 @@ function loadEnvFromFile() {
 }
 
 /**
- * Get or create a user by email using Supabase Admin API.
- * Uses email as the password for local testing.
- * @returns Object with userId (auth user ID) and contactId (contact/actor ID)
+ * Get or create a user by email using direct PostgreSQL queries.
+ * @returns Object with userId and contactId
  */
 async function getOrCreateUser(
   email: string,
@@ -85,81 +84,58 @@ async function getOrCreateUser(
   // Load from .env.development.local if needed
   loadEnvFromFile();
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+  const dbUrl =
+    process.env.DATABASE_URL ||
+    "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error(
-      "SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables are required"
+  const pool = new pg.Pool({ connectionString: dbUrl });
+
+  try {
+    // Check if user exists in public."user"
+    const existing = await pool.query(
+      "SELECT id FROM public.\"user\" WHERE email = $1",
+      [email]
     );
-  }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+    let userId: string;
 
-  // Check if user exists
-  const { data: existingUsers, error: listError } =
-    await supabase.auth.admin.listUsers();
-
-  if (listError) {
-    throw new Error(`Failed to list users: ${listError.message}`);
-  }
-
-  const existingUser = existingUsers.users.find((u) => u.email === email);
-
-  let userId: string;
-  let contactId: string | undefined;
-
-  if (existingUser) {
-    console.error(`✓ Found existing user: ${email} (${existingUser.id})`);
-    userId = existingUser.id;
-    contactId = existingUser.app_metadata?.contact_id;
-  } else {
-    // Create new user
-    console.error(`Creating new user: ${email}`);
-    const { data: newUser, error: createError } =
-      await supabase.auth.admin.createUser({
-        email,
-        password: email, // Use email as password for local testing
-        email_confirm: true,
-        user_metadata: {
-          full_name: userName,
-        },
-      });
-
-    if (createError || !newUser.user) {
-      throw new Error(`Failed to create user: ${createError?.message}`);
-    }
-
-    console.error(`✓ Created new user: ${email} (${newUser.user.id})`);
-    userId = newUser.user.id;
-    contactId = newUser.user.app_metadata?.contact_id;
-  }
-
-  // If contact_id is not in app_metadata, query the contact table
-  if (!contactId) {
-    const { data: contact, error: contactError } = await supabase
-      .from("contact")
-      .select("id")
-      .eq("user_id", userId)
-      .single();
-
-    if (contactError || !contact) {
-      throw new Error(
-        `Failed to find contact for user ${userId}: ${
-          contactError?.message || "Contact not found"
-        }`
+    if (existing.rows.length > 0) {
+      userId = existing.rows[0].id;
+      console.error(`✓ Found existing user: ${email} (${userId})`);
+    } else {
+      // Create new user
+      const result = await pool.query(
+        "INSERT INTO public.\"user\" (id, email, name) VALUES (gen_random_uuid(), $1, $2) RETURNING id",
+        [email, userName]
       );
+      userId = result.rows[0].id;
+      console.error(`✓ Created new user: ${email} (${userId})`);
     }
 
-    contactId = contact.id;
-  }
+    // Get contact for this user
+    const contactResult = await pool.query(
+      "SELECT id FROM contact WHERE user_id = $1 LIMIT 1",
+      [userId]
+    );
 
-  return { userId, contactId };
+    let contactId: string;
+
+    if (contactResult.rows.length > 0) {
+      contactId = contactResult.rows[0].id;
+    } else {
+      // Create contact if it doesn't exist
+      const newContact = await pool.query(
+        "INSERT INTO contact (email, name, user_id) VALUES ($1, $2, $3) RETURNING id",
+        [email, userName, userId]
+      );
+      contactId = newContact.rows[0].id;
+      console.error(`✓ Created contact for user: ${email}`);
+    }
+
+    return { userId, contactId };
+  } finally {
+    await pool.end();
+  }
 }
 
 // ============================================================================

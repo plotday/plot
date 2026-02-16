@@ -1,45 +1,52 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:equatable/equatable.dart';
 import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:path_provider/path_provider.dart';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:supabase_flutter/supabase_flutter.dart' as supa;
+import 'package:clerk_auth/clerk_auth.dart' as clerk;
 
-import 'package:plot/util/idb_local_storage.dart';
 import 'package:plot/util/uuid.dart';
+import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/api.dart' as api;
 import 'env.dart';
+import 'cli_args.dart';
 import 'logging.dart';
 
 class User extends Equatable {
-  const User(this._baseUser);
+  const User({
+    required this.id,
+    this.primaryEmail,
+    this.name,
+    this.contactId,
+  });
 
-  String get id => _baseUser.id;
-  String? get primaryEmail => _baseUser.email;
-  String? get name => _baseUser.userMetadata?['full_name'] as String?;
-  String? get contactId => _baseUser.appMetadata['contact_id'] as String?;
-
-  /* private */
-
-  final supa.User _baseUser;
+  final String id; // UUID from public."user"
+  final String? primaryEmail;
+  final String? name;
+  final String? contactId;
 
   @override
   List<Object?> get props => [id, primaryEmail, name];
 }
 
 class Base {
-  static supa.SupabaseClient get client =>
-      Injector.appInstance.get<Base>()._client!;
+  static clerk.Auth get auth => Injector.appInstance.get<Base>()._auth;
   static Stream<User?> get user =>
       Injector.appInstance.get<Base>()._currentUserController.stream;
   static bool get signedIn => Injector.appInstance.get<Base>()._userId != null;
   static Uuid get userId => Injector.appInstance.get<Base>()._userId!;
   static ActorId get actorId => Injector.appInstance.get<Base>()._actorId!;
 
-  // Global refresh lock - only one refresh at a time
-  static Completer<supa.AuthResponse>? _refreshCompleter;
+  /// True when identity was set via sign-in or /activate (not restored from
+  /// local storage). UserBloc uses this to decide whether to call /activate
+  /// in the background.
+  static bool get isFreshSignIn =>
+      Injector.appInstance.get<Base>()._freshSignIn;
 
   /// Clears the actor ID. This should be called after all blocs and Store
   /// are stopped during sign-out to prevent race conditions with streams
@@ -48,94 +55,132 @@ class Base {
     Injector.appInstance.get<Base>()._actorId = null;
   }
 
+  /// Get session token for API calls.
+  /// Returns null if not signed in or token cannot be obtained.
+  /// clerk_auth handles token refresh automatically.
+  static Future<String?> getSessionToken() async {
+    try {
+      final token = await auth.sessionToken();
+      return token.jwt;
+    } catch (e) {
+      log.warning('Failed to get session token: $e');
+      return null;
+    }
+  }
+
   static Future<void> init() async {
     try {
-      log.info("Initializing Supabase (${Env.supabaseUrl})");
-      await supa.Supabase.initialize(
-        url: Env.supabaseUrl,
-        anonKey: Env.supabaseAnonKey,
-        authOptions: kIsWeb
-            ? supa.FlutterAuthClientOptions(
-                localStorage: IdbLocalStorage(
-                  persistSessionKey:
-                      "sb-${Uri.parse(Env.supabaseUrl).host.split(".").first}-auth-token",
-                ),
-              )
-            : const supa.FlutterAuthClientOptions(),
-      );
-      Injector.appInstance.registerSingleton<Base>(() => Base());
+      log.info("Initializing Clerk auth");
 
-      // Wait for token refresh if session is expired
-      final session = supa.Supabase.instance.client.auth.currentSession;
-      if (session != null) {
-        final expiresAt = session.expiresAt;
-        if (expiresAt != null) {
-          final expiryTime = DateTime.fromMillisecondsSinceEpoch(
-            expiresAt * 1000,
-          );
-          if (expiryTime.isBefore(DateTime.now())) {
-            log.info('Session expired, waiting for refresh to complete');
-            try {
-              await refreshSession();
-              log.info('Session refresh completed during init');
-            } on supa.AuthException catch (e) {
-              // If refresh fails with "Already Used", check if we have a valid session now
-              // (another refresh might have succeeded)
-              final newSession =
-                  supa.Supabase.instance.client.auth.currentSession;
-              final newExpiresAt = newSession?.expiresAt;
-              if (newExpiresAt != null) {
-                final newExpiry = DateTime.fromMillisecondsSinceEpoch(
-                  newExpiresAt * 1000,
-                );
-                if (newExpiry.isAfter(DateTime.now())) {
-                  log.info(
-                    'Refresh failed but valid session exists (concurrent refresh succeeded)',
-                  );
-                  // Session is valid, continue
-                } else {
-                  log.warning(
-                    'Refresh failed and no valid session: ${e.message}',
-                  );
-                  rethrow;
-                }
-              } else {
-                rethrow;
-              }
-            }
+      final profile = CliArgs.profile;
+      final cacheDir = await _getClerkCacheDirectory(profile);
+
+      final clerkAuth = clerk.Auth(
+        config: clerk.AuthConfig(
+          publishableKey: Env.clerkPublishableKey,
+          persistor: clerk.DefaultPersistor(
+            getCacheDirectory: () async => cacheDir,
+          ),
+        ),
+      );
+      await clerkAuth.initialize();
+
+      final base = Base._(clerkAuth);
+      Injector.appInstance.registerSingleton<Base>(() => base);
+
+      // Restore identity from local storage (doesn't require network)
+      await base._restoreIdentity();
+
+      // If Clerk has a session but local identity wasn't restored (e.g. first
+      // sign-in with Clerk, or preferences were cleared), activate via API.
+      if (!base._currentUserController.hasValue && clerkAuth.isSignedIn) {
+        log.info('Clerk session found without local identity, resolving identity');
+        try {
+          await Base.resolveIdentity();
+        } catch (e, stack) {
+          log.warning('Failed to resolve identity on startup', e, stack);
+          // Session token is likely expired/invalid. Sign out of Clerk so the
+          // user can sign in fresh instead of being stuck ("already signed in").
+          log.info('Signing out stale Clerk session');
+          try {
+            await clerkAuth.signOut();
+          } catch (signOutError) {
+            log.warning('Failed to sign out stale session', signOutError);
           }
         }
       }
 
-      log.info("Supabase ready");
+      // Ensure the user stream emits a value so the UI can proceed.
+      if (!base._currentUserController.hasValue) {
+        log.info('No identity available, emitting signed-out state');
+        base._currentUserController.add(null);
+      }
+
+      log.info("Clerk auth ready");
     } catch (e, stack) {
-      log.warning("Supabase error", e, stack);
+      log.warning("Clerk auth error", e, stack);
     }
   }
 
-  /// Refreshes the session with global locking to prevent concurrent attempts.
-  /// If a refresh is already in progress, waits for that refresh instead.
-  static Future<supa.AuthResponse> refreshSession() async {
-    // If refresh already in progress, wait for it
-    if (_refreshCompleter != null) {
-      log.fine('Refresh already in progress, waiting for existing refresh');
-      return _refreshCompleter!.future;
-    }
+  /// Called after successful Clerk sign-in to activate and set identity.
+  static Future<void> activate() async {
+    final result = await api.post<Map<String, dynamic>>('/activate');
+    await Injector.appInstance.get<Base>().setIdentity(
+      userId: result['userId'] as String,
+      email: result['email'] as String?,
+      name: result['name'] as String?,
+      contactId: result['contactId'] as String?,
+    );
+  }
 
-    _refreshCompleter = Completer<supa.AuthResponse>();
-
+  /// Try to extract identity from JWT claims without an API call.
+  /// Returns null if required fields are missing (e.g. first sign-in before
+  /// /activate has set external_id and contact_id in the JWT).
+  static Future<User?> identityFromJwt() async {
+    final token = await getSessionToken();
+    if (token == null) return null;
+    final parts = token.split('.');
+    if (parts.length != 3) return null;
     try {
-      log.info('Starting session refresh');
-      final response = await client.auth.refreshSession();
-      log.info('Session refresh completed successfully');
-      _refreshCompleter!.complete(response);
-      return response;
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      ) as Map<String, dynamic>;
+      final userId = payload['external_id'] as String?;
+      final contactId = payload['contact_id'] as String?;
+      if (userId == null || contactId == null) return null;
+      return User(
+        id: userId,
+        primaryEmail: payload['email'] as String?,
+        name: payload['name'] as String?,
+        contactId: contactId,
+      );
     } catch (e) {
-      log.warning('Session refresh failed: $e');
-      _refreshCompleter!.completeError(e);
-      rethrow;
-    } finally {
-      _refreshCompleter = null;
+      log.warning('Failed to decode JWT payload: $e');
+      return null;
+    }
+  }
+
+  /// Resolve identity: try JWT decode first, fall back to /activate.
+  /// After /activate, refresh the Clerk client so the cached JWT
+  /// picks up the newly-set publicMetadata (contact_id).
+  static Future<void> resolveIdentity() async {
+    final jwtUser = await identityFromJwt();
+    if (jwtUser != null) {
+      await Injector.appInstance.get<Base>().setIdentity(
+        userId: jwtUser.id,
+        email: jwtUser.primaryEmail,
+        name: jwtUser.name,
+        contactId: jwtUser.contactId,
+      );
+      return;
+    }
+    // New user or missing metadata — full activate
+    await activate();
+    // Refresh client so Clerk issues a fresh JWT with the new publicMetadata
+    try {
+      await auth.refreshClient();
+    } catch (e) {
+      log.warning('Failed to refresh Clerk client after activate (non-blocking)', e);
     }
   }
 
@@ -165,174 +210,124 @@ class Base {
     await Tracker.reset();
     base._signInTime = null;
 
+    // Clear stored identity
+    await base._clearStoredIdentity();
+
     // Emit null to trigger UI sign-out flow
     base._currentUserController.add(null);
 
-    // Sign out from Supabase
-    await base._client!.auth.signOut();
+    // Sign out from Clerk
+    await base._auth.signOut();
   }
 
-  Base() : _client = supa.Supabase.instance.client, _userId = null {
-    _client!.auth.onAuthStateChange.listen(
-      (data) {
-        _handleAuthStateChange(data);
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        if (error is supa.AuthRetryableFetchException) {
-          log.info('Transient auth fetch error: $error');
-        } else {
-          log.severe('Auth stream error', error, stackTrace);
-        }
-      },
-    );
-  }
+  Base._(this._auth);
 
-  /// Handles auth state changes with improved logging and context
-  void _handleAuthStateChange(supa.AuthState data) {
-    final event = data.event;
-    final session = data.session;
-
-    log.info('Auth state change: $event (session: ${session != null})');
-
-    // Log additional context for debugging
-    if (session != null) {
-      final expiresAt = session.expiresAt;
-      if (expiresAt != null) {
-        final expiryTime = DateTime.fromMillisecondsSinceEpoch(
-          expiresAt * 1000,
-        );
-        final timeUntilExpiry = expiryTime.difference(DateTime.now());
-        log.info(
-          'Session expires in: ${timeUntilExpiry.inMinutes} minutes (at $expiryTime)',
-        );
-      }
-    }
-
-    // Handle different auth events
-    switch (event) {
-      case supa.AuthChangeEvent.signedIn:
-        log.info('User signed in');
-        break;
-      case supa.AuthChangeEvent.signedOut:
-        log.info('User signed out');
-        break;
-      case supa.AuthChangeEvent.tokenRefreshed:
-        log.info('Token refreshed successfully');
-        break;
-      case supa.AuthChangeEvent.userUpdated:
-        log.info('User data updated');
-        break;
-      case supa.AuthChangeEvent.passwordRecovery:
-        log.info('Password recovery initiated');
-        break;
-      default:
-        log.info('Other auth event: $event');
-    }
-
-    // Intentionally not awaiting to avoid blocking the listener
-    _updateUser(session?.user, event);
-  }
-
-  final supa.SupabaseClient? _client;
-  bool _initialized = false;
+  final clerk.Auth _auth;
   Uuid? _userId;
   ActorId? _actorId;
   DateTime? _signInTime;
+  bool _freshSignIn = false;
   final _currentUserController = BehaviorSubject<User?>();
 
-  // Dispose of the StreamController
   void dispose() {
     _currentUserController.close();
   }
 
-  Future<void> _updateUser(
-    supa.User? supaUser,
-    supa.AuthChangeEvent? event,
-  ) async {
-    log.info(
-      'Updating user: ${supaUser?.id ?? 'null'} (event: ${event?.name ?? 'unknown'})',
+  /// Restore user identity from ProfilePreferences after clerk_auth init.
+  /// Called during Base.init() — if we have stored identity, emit the user
+  /// immediately (no network call needed). We trust stored identity because
+  /// it's explicitly cleared on sign-out, so its presence means the user
+  /// didn't sign out. This avoids depending on Clerk's isSignedIn which may
+  /// not be ready immediately after initialize().
+  Future<void> _restoreIdentity() async {
+    final prefs = ProfilePreferences.instance;
+    final storedUserId = prefs.getString('clerk_user_id');
+    final storedEmail = prefs.getString('clerk_user_email');
+    final storedName = prefs.getString('clerk_user_name');
+    final storedContactId = prefs.getString('clerk_user_contact_id');
+
+    if (storedUserId != null) {
+      _userId = Uuid.fromString(storedUserId);
+      _actorId = storedContactId != null
+          ? ActorId.fromString(storedContactId)
+          : null;
+
+      final user = User(
+        id: storedUserId,
+        primaryEmail: storedEmail,
+        name: storedName,
+        contactId: storedContactId,
+      );
+
+      log.info('Restored user identity from local storage: ${user.primaryEmail}');
+      _currentUserController.add(user);
+    }
+  }
+
+  /// Called after successful /activate to store identity locally and emit user.
+  /// This is the ONLY place that creates and emits a User after sign-in.
+  Future<void> setIdentity({
+    required String userId,
+    required String? email,
+    required String? name,
+    required String? contactId,
+  }) async {
+    _userId = Uuid.fromString(userId);
+    _actorId = contactId != null ? ActorId.fromString(contactId) : null;
+    _signInTime = DateTime.now();
+    _freshSignIn = true;
+
+    // Persist identity for offline restoration
+    final prefs = ProfilePreferences.instance;
+    await prefs.setString('clerk_user_id', userId);
+    if (email != null) await prefs.setString('clerk_user_email', email);
+    if (name != null) await prefs.setString('clerk_user_name', name);
+    if (contactId != null) {
+      await prefs.setString('clerk_user_contact_id', contactId);
+    }
+
+    final user = User(
+      id: userId,
+      primaryEmail: email,
+      name: name,
+      contactId: contactId,
     );
-    final currentUser = _currentUserController.valueOrNull;
-    final newUser = supaUser == null ? null : User(supaUser);
 
-    // Ignore failed token refreshes - treat as offline, not signed out
-    // Supabase will automatically retry token refresh
-    if (event == supa.AuthChangeEvent.tokenRefreshed && supaUser == null) {
-      log.info(
-        'Token refresh failed (likely offline) - keeping user signed in, Supabase will retry',
-      );
-      return;
-    }
-
-    // Ignore signedOut events from Supabase - these can happen due to token
-    // expiry while offline or "Already Used" errors from race conditions.
-    // Actual sign-out is handled by Base.signOut() which clears _userId and
-    // emits to the user stream before calling Supabase signOut.
-    // This maintains local-first functionality when the user is offline.
-    if (event == supa.AuthChangeEvent.signedOut) {
-      // Check if we still have a valid session (another refresh might have succeeded)
-      final currentSession = _client!.auth.currentSession;
-      if (currentSession != null) {
-        final expiresAt = currentSession.expiresAt;
-        if (expiresAt != null) {
-          final expiry = DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
-          if (expiry.isAfter(DateTime.now())) {
-            log.info(
-              'Ignoring signedOut - valid session still exists (concurrent refresh succeeded)',
-            );
-            return;
-          }
-        }
-      }
-      log.info(
-        'Received signedOut event from Supabase - no action (sign-out handled by Base.signOut() if intentional)',
-      );
-      return;
-    }
-
-    // Skip if user hasn't changed (same ID and status)
-    // Exception: always process token refresh and user updated events
-    if (_initialized &&
-        currentUser?.id == newUser?.id &&
-        event != supa.AuthChangeEvent.tokenRefreshed &&
-        event != supa.AuthChangeEvent.userUpdated) {
-      log.info('User unchanged, skipping update');
-      return;
-    }
-
-    // At this point, we have a valid user (signedOut and tokenRefreshed with
-    // null user are handled above). Set _userId - never clear it here.
-    User? user = supaUser == null ? null : User(supaUser);
-    if (user != null) {
-      _userId = Uuid.fromString(user.id);
-      _actorId = user.contactId == null
-          ? null
-          : ActorId.fromString(user.contactId!);
-    }
-    _initialized = true;
-
-    // Handle sign-in and token refresh events
-    if (event == supa.AuthChangeEvent.signedIn && user != null) {
-      log.info('Processing sign in: ${user.primaryEmail}');
-      await Tracker.identify(
-        user.id,
-        properties: {
-          ...(user.primaryEmail == null ? {} : {"email": user.primaryEmail!}),
-          ...(user.name == null ? {} : {"name": user.name!}),
-        },
-        propertiesSetOnce: {
-          "signed_up_time": DateTime.now().toUtc().toIso8601String(),
-        },
-      );
-
-      // Track sign in event
-      _signInTime = DateTime.now();
-      await Tracker.trackSession(EventAction.signedIn);
-    } else if (event == supa.AuthChangeEvent.tokenRefreshed) {
-      log.info('Token refreshed, session updated');
-    }
+    // Track sign-in
+    await Tracker.identify(
+      userId,
+      properties: {
+        if (email != null) "email": email,
+        if (name != null) "name": name,
+      },
+      propertiesSetOnce: {
+        "signed_up_time": DateTime.now().toUtc().toIso8601String(),
+      },
+    );
+    await Tracker.trackSession(EventAction.signedIn);
 
     _currentUserController.add(user);
+  }
+
+  Future<void> _clearStoredIdentity() async {
+    final prefs = ProfilePreferences.instance;
+    await prefs.remove('clerk_user_id');
+    await prefs.remove('clerk_user_email');
+    await prefs.remove('clerk_user_name');
+    await prefs.remove('clerk_user_contact_id');
+  }
+
+  /// Get clerk cache directory, isolated per profile.
+  static Future<Directory> _getClerkCacheDirectory(String? profile) async {
+    final appSupport = await getApplicationSupportDirectory();
+    final dirName = profile != null
+        ? 'clerk_profile_$profile'
+        : 'clerk';
+    final dir = Directory('${appSupport.path}/$dirName');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
   }
 }
 

@@ -4,9 +4,11 @@ import { z } from "zod";
 import { createLogger } from "@plotday/worker-util";
 
 import type { Bindings } from "../env";
+import { rpc } from "../rpc";
 import { captureServerError } from "../utils/error-capture";
 import { handleValidationError } from "../utils/validation";
 import { sendInvitation } from "./invitation";
+import { notifySync } from "./sync/notify";
 
 const share = new Hono<{ Bindings: Bindings }>();
 
@@ -93,15 +95,21 @@ share.post("/priority/:id/share", async (c) => {
   if (addEmails.length > 0) {
     const contactsToUpsert = addEmails.map((email) => ({ email }));
 
-    const { data: upsertedContacts, error: upsertError } =
-      await c.var.supabaseAdmin.rpc("upsert_contacts", {
+    try {
+      const upsertedContacts = await rpc(c.var.db, "upsert_contacts", {
         contacts: contactsToUpsert,
       });
 
-    if (upsertError) {
+      // Extract contact IDs from the upserted results
+      const contacts = (Array.isArray(upsertedContacts) ? upsertedContacts : [upsertedContacts]) as Array<{
+        id: string;
+        user_id: string | null;
+      }>;
+      contactIdsFromEmails = contacts.map((c) => c.id);
+    } catch (upsertError) {
       return captureServerError(
         c,
-        new Error(upsertError.message),
+        upsertError as Error,
         "Failed to create contacts",
         {
           priority_id: priorityId,
@@ -110,50 +118,37 @@ share.post("/priority/:id/share", async (c) => {
         }
       );
     }
-
-    // Extract contact IDs from the upserted results
-    const contacts = upsertedContacts as Array<{
-      id: string;
-      user_id: string | null;
-    }>;
-    contactIdsFromEmails = contacts.map((c) => c.id);
   }
 
   // Combine UUIDs with contact IDs from emails
   const allAddIds = [...addUuids, ...contactIdsFromEmails];
 
   // Call the share_priority function
-  // Using supabaseAdmin since the function is revoked from authenticated
-  const { data, error: shareError } = await c.var.supabaseAdmin.rpc(
-    "share_priority",
-    {
+  let shareResult: SharePriorityResult | null = null;
+  try {
+    const data = await rpc(c.var.db, "share_priority", {
       p_user_id: user.id,
       p_priority_id: priorityId,
-      p_add_actor_ids: allAddIds,
-      p_remove_actor_ids: remove,
-    }
-  );
-  const shareResult = data as SharePriorityResult | null;
-
-  if (shareError) {
-    logger.error("share_priority failed", new Error(shareError.message));
-  } else {
+      p_add_actor_ids: `{${allAddIds.join(",")}}` as any,
+      p_remove_actor_ids: `{${remove.join(",")}}` as any,
+    });
+    shareResult = data as SharePriorityResult | null;
     logger.info("share_priority completed", {
       added_contacts: allAddIds.length,
     });
-  }
-
-  if (shareError) {
+  } catch (shareError) {
+    const errMsg = (shareError as Error).message;
+    logger.error("share_priority failed", shareError as Error);
     // Check for access denied error
-    if (shareError.message.includes("does not have access")) {
+    if (errMsg.includes("does not have access")) {
       return c.json({ message: "Access denied" }, 403);
     }
-    if (shareError.message.includes("not found")) {
+    if (errMsg.includes("not found")) {
       return c.json({ message: "Priority not found" }, 404);
     }
     return captureServerError(
       c,
-      new Error(shareError.message),
+      shareError as Error,
       "Failed to share priority",
       {
         priority_id: priorityId,
@@ -162,25 +157,27 @@ share.post("/priority/:id/share", async (c) => {
     );
   }
 
+  notifySync(c, priorityId);
+
   // Check which of the newly added contacts need invitation emails
   // This handles both contacts from emails AND contacts passed as UUIDs
   let finalNonUserContactIds: string[] = [];
   if (allAddIds.length > 0) {
-    const { data: addedContacts, error: contactCheckError } =
-      await c.var.supabaseAdmin
-        .from("contact")
-        .select("id, user_id")
-        .in("id", allAddIds);
+    try {
+      const addedContacts = await c.var.db
+        .selectFrom("contact")
+        .select(["id", "user_id"])
+        .where("id", "in", allAddIds)
+        .execute();
 
-    if (contactCheckError) {
-      logger.error(
-        "Failed to check added contacts",
-        new Error(contactCheckError.message)
-      );
-    } else if (addedContacts) {
       finalNonUserContactIds = addedContacts
         .filter((c) => c.user_id === null)
         .map((c) => c.id);
+    } catch (contactCheckError) {
+      logger.error(
+        "Failed to check added contacts",
+        contactCheckError as Error
+      );
     }
   }
 
@@ -190,7 +187,7 @@ share.post("/priority/:id/share", async (c) => {
     c.executionCtx.waitUntil(
       Promise.allSettled(
         finalNonUserContactIds.map((contactId) =>
-          sendInvitation(c.var.supabaseAdmin, {
+          sendInvitation(c.var.db, {
             contactId,
             priorityId,
             inviterUserId: user.id,
@@ -248,18 +245,17 @@ share.post("/priority/:id/share", async (c) => {
   }
 
   // Fetch updated priority info
-  const { data: priority, error: priorityError } = await c.var.supabaseAdmin
-    .from("priority")
-    .select("id, title, path")
-    .eq("id", priorityId)
-    .single();
-
-  if (priorityError || !priority) {
+  let priority;
+  try {
+    priority = await c.var.db
+      .selectFrom("priority")
+      .select(["id", "title", "path"])
+      .where("id", "=", priorityId)
+      .executeTakeFirstOrThrow();
+  } catch (priorityError) {
     return captureServerError(
       c,
-      priorityError
-        ? new Error(priorityError.message)
-        : new Error("Priority not found"),
+      priorityError as Error,
       "Failed to fetch updated priority",
       { priority_id: priorityId }
     );
@@ -267,21 +263,30 @@ share.post("/priority/:id/share", async (c) => {
 
   // Fetch all contacts with access (via priority_contact)
   // This includes both users (contact.user_id is set) and invitations (contact.user_id is null)
-  const { data: contacts, error: contactsError } = await c.var.supabaseAdmin
-    .from("priority_contact")
-    .select(
-      `
-      id,
-      contact:contact!inner(id, email, name, user_id)
-    `
-    )
-    .eq("priority_id", priorityId)
-    .or("invited_by.is.null,invited_at.not.is.null");
-
-  if (contactsError) {
+  let allContacts: Array<{ id: string; contact_id: string; email: string; name: string | null; user_id: string | null }>;
+  try {
+    allContacts = await c.var.db
+      .selectFrom("priority_contact")
+      .innerJoin("contact", "contact.id", "priority_contact.contact_id")
+      .select([
+        "priority_contact.id",
+        "priority_contact.contact_id",
+        "contact.email",
+        "contact.name",
+        "contact.user_id",
+      ])
+      .where("priority_contact.priority_id", "=", priorityId)
+      .where((eb) =>
+        eb.or([
+          eb("priority_contact.invited_by", "is", null),
+          eb("priority_contact.invited_at", "is not", null),
+        ])
+      )
+      .execute();
+  } catch (contactsError) {
     return captureServerError(
       c,
-      new Error(contactsError.message),
+      contactsError as Error,
       "Failed to fetch priority contacts",
       {
         priority_id: priorityId,
@@ -290,11 +295,8 @@ share.post("/priority/:id/share", async (c) => {
   }
 
   // Separate contacts into users (has user_id) and invitations (no user_id)
-  const allContacts = contacts ?? [];
-  const users = allContacts.filter((c: any) => c.contact?.user_id != null);
-  const invitations = allContacts.filter(
-    (c: any) => c.contact?.user_id == null
-  );
+  const users = allContacts.filter((c) => c.user_id != null);
+  const invitations = allContacts.filter((c) => c.user_id == null);
 
   return c.json({
     id: priority.id,
@@ -302,17 +304,17 @@ share.post("/priority/:id/share", async (c) => {
     path: priority.path,
     extracted: shareResult?.extracted ?? false,
     oldPath: shareResult?.oldPath ?? null,
-    users: users.map((u: any) => ({
-      id: u.contact?.user_id,
-      contactId: u.contact?.id,
-      email: u.contact?.email,
-      name: u.contact?.name,
+    users: users.map((u) => ({
+      id: u.user_id,
+      contactId: u.contact_id,
+      email: u.email,
+      name: u.name,
     })),
-    invitations: invitations.map((i: any) => ({
+    invitations: invitations.map((i) => ({
       id: i.id,
-      contactId: i.contact?.id,
-      email: i.contact?.email,
-      name: i.contact?.name,
+      contactId: i.contact_id,
+      email: i.email,
+      name: i.name,
     })),
   });
 });

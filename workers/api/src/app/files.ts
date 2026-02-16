@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import { createClient } from "@plotday/db";
+
 import type { Bindings } from "../env";
+import { rpcUser } from "../rpc";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
@@ -27,14 +28,13 @@ files.post("/files", async (c) => {
     return c.json({ message: "File too large (max 25MB)" }, 400);
   }
 
-  // Verify user has access to the priority (RLS enforces access)
-  const { data: priority, error: priorityError } = await c.var.supabase
-    .from("priority")
-    .select("id")
-    .eq("id", priorityId)
-    .maybeSingle();
+  // Verify user has access to the priority
+  const hasAccess = await rpcUser(c.var.db, "has_priority_access", {
+    user_id: user.id,
+    priority_id: priorityId,
+  });
 
-  if (priorityError || !priority) {
+  if (!hasAccess) {
     return c.json({ message: "Priority not found or access denied" }, 403);
   }
 
@@ -87,13 +87,9 @@ files.get("/files/:fileId", async (c) => {
   }
 
   // Verify user has access to the priority
-  const supabase = createClient(
-    c.env.SUPABASE_URL,
-    c.env.SUPABASE_SERVICE_KEY
-  );
-  const { data: hasAccess } = await supabase.rpc("user_has_priority_access", {
+  const hasAccess = await rpcUser(c.var.db, "has_priority_access", {
     user_id: user.id,
-    target_priority_id: priorityId,
+    priority_id: priorityId,
   });
 
   if (!hasAccess) {

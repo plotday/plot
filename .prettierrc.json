@@ -2,7 +2,6 @@
   "importOrder": [
     "^react$",
     "@remix-run/.*",
-    "@supabase/.*",
     "@mantine/.*",
     "<THIRD_PARTY_MODULES>",
     "^@plotday/(.*)$",

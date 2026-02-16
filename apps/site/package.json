@@ -5,7 +5,7 @@
   "sideEffects": false,
   "type": "module",
   "config": {
-    "deploy_vars": "API_ROOT APP_ROOT SUPABASE_URL SUPABASE_ANON_KEY POSTHOG_API_KEY POSTHOG_PROXY",
+    "deploy_vars": "API_ROOT APP_ROOT CLERK_SECRET_KEY CLERK_PUBLISHABLE_KEY POSTHOG_API_KEY POSTHOG_PROXY",
     "env_file": ".env"
   },
   "scripts": {
@@ -18,12 +18,12 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
+    "@clerk/react-router": "^1.0.0",
+    "@clerk/themes": "^2.4.52",
     "@mantine/core": "8.3.11",
     "@mantine/hooks": "8.3.11",
     "@react-router/node": "^7.9.2",
     "@react-router/serve": "^7.9.2",
-    "@supabase/ssr": "^0.8.0",
-    "@supabase/supabase-js": "^2.90.1",
     "@tabler/icons-react": "^3.34.1",
     "isbot": "^5.1.30",
     "posthog-js": "^1.313.0",

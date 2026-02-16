@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { createClient } from "@plotday/db";
-
+import { createDb } from "../db";
+import { rpcUser } from "../rpc";
 import type { Bindings } from "../env";
 import { deployTwist } from "../twist/deployment";
 import {
@@ -34,8 +34,7 @@ twist.get("/twist/user", async (c) => {
     email: user.email,
     // Extract name from user metadata, fallback to email username
     name:
-      user.user_metadata?.name ||
-      user.user_metadata?.full_name ||
+      user.name ||
       user.email?.split("@")[0] ||
       "User",
   });
@@ -75,7 +74,7 @@ const TwistDeploymentSchema = z
     env: z.record(z.string(), z.any()).optional(),
     name: z.string().optional(),
     description: z.string().optional(),
-    publisherId: z.number().optional(),
+    publisherId: z.coerce.number().optional(),
     environment: z
       .enum(["personal", "private", "review"])
       .optional()
@@ -97,10 +96,10 @@ twist.get("/twist/publishers", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+  const db = createDb(c.env);
 
   try {
-    const publishers = await getAccessiblePublishers(user.id, supabase);
+    const publishers = await getAccessiblePublishers(user.id, db);
     return c.json(publishers);
   } catch (error) {
     const logger = createLogger();
@@ -138,10 +137,10 @@ twist.post("/twist/publishers", async (c) => {
 
   const { name, url } = parseResult.data;
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+  const db = createDb(c.env);
 
   try {
-    const publisher = await createPublisher(name, url || null, supabase);
+    const publisher = await createPublisher(name, url || null, db);
     return c.json(publisher);
   } catch (error) {
     const logger = createLogger();
@@ -246,39 +245,27 @@ twist.get("/twist/:id", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+  const db = createDb(c.env);
 
   // Query twist_admin for non-personal deployment (user_id IS NULL)
-  const { data: twistAdmin, error: adminError } = await supabase
-    .from("twist_admin")
-    .select(
-      `
-      id,
-      twist_package_id,
-      priority_id,
-      created_at,
-      updated_at,
-      publisher:publisher_id (
-        id,
-        name,
-        email,
-        url
-      )
-    `
-    )
-    .eq("twist_package_id", twistPackageId)
-    .is("user_id", null)
-    .maybeSingle();
-
-  if (adminError) {
-    const logger = createLogger();
-    logger.error("Error fetching twist admin", adminError as Error, {
-      twist_package_id: twistPackageId
-    });
-    return new Response(`Error fetching twist: ${adminError.message}`, {
-      status: 500,
-    });
-  }
+  // Need a JOIN for publisher relation
+  const twistAdmin = await db
+    .selectFrom("twist_admin")
+    .leftJoin("publisher", "publisher.id", "twist_admin.publisher_id")
+    .select([
+      "twist_admin.id",
+      "twist_admin.twist_package_id",
+      "twist_admin.priority_id",
+      "twist_admin.created_at",
+      "twist_admin.updated_at",
+      "publisher.id as publisher_id",
+      "publisher.name as publisher_name",
+      "publisher.email as publisher_email",
+      "publisher.url as publisher_url",
+    ])
+    .where("twist_admin.twist_package_id", "=", twistPackageId)
+    .where("twist_admin.user_id", "is", null)
+    .executeTakeFirst();
 
   if (!twistAdmin) {
     return new Response("Twist not published", { status: 404 });
@@ -288,7 +275,14 @@ twist.get("/twist/:id", async (c) => {
     id: twistAdmin.id,
     twist_package_id: twistAdmin.twist_package_id,
     priority_id: twistAdmin.priority_id,
-    publisher: twistAdmin.publisher as any,
+    publisher: twistAdmin.publisher_id
+      ? {
+          id: twistAdmin.publisher_id,
+          name: twistAdmin.publisher_name,
+          email: twistAdmin.publisher_email,
+          url: twistAdmin.publisher_url,
+        }
+      : null,
     created_at: twistAdmin.created_at,
     updated_at: twistAdmin.updated_at,
   });
@@ -327,7 +321,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     environment,
   } = parseResult.data;
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+  const db = createDb(c.env);
 
   // Validate name is provided
   if (!name) {
@@ -366,7 +360,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         packageId,
         name,
         true, // isPersonal
-        supabase
+        db
       );
       twistAdminId = result.twistAdminId;
     } catch (error) {
@@ -413,16 +407,12 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     let twistAdmin;
     try {
       // First check if admin entry exists
-      const { data: existingAdmin, error: adminError } = await supabase
-        .from("twist_admin")
-        .select("id, publisher_id, priority_id")
-        .eq("twist_package_id", packageId)
-        .is("user_id", null)
-        .maybeSingle();
-
-      if (adminError) {
-        throw new Error(`Failed to query twist_admin: ${adminError.message}`);
-      }
+      const existingAdmin = await db
+        .selectFrom("twist_admin")
+        .select(["id", "publisher_id", "priority_id"])
+        .where("twist_package_id", "=", packageId)
+        .where("user_id", "is", null)
+        .executeTakeFirst();
 
       if (existingAdmin) {
         // Admin exists, check if we need to create/update priority
@@ -448,55 +438,40 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
             packageId,
             name,
             false, // isPersonal
-            supabase,
+            db,
             publisherId
           );
           twistAdminId = result.twistAdminId;
 
           // Re-fetch admin to get publisher_id
-          const { data: updatedAdmin, error: refetchError } = await supabase
-            .from("twist_admin")
-            .select("id, publisher_id, priority_id")
-            .eq("id", result.twistAdminId)
-            .single();
+          const updatedAdmin = await db
+            .selectFrom("twist_admin")
+            .select(["id", "publisher_id", "priority_id"])
+            .where("id", "=", String(result.twistAdminId))
+            .executeTakeFirstOrThrow();
 
-          if (refetchError || !updatedAdmin) {
-            throw new Error(
-              `Failed to fetch updated admin: ${refetchError?.message}`
-            );
-          }
           twistAdmin = updatedAdmin;
         } else {
-          twistAdminId = existingAdmin.id;
+          twistAdminId = Number(existingAdmin.id);
 
           // If publisherId was provided and differs from current, update it
           if (
             publisherId !== undefined &&
-            publisherId !== existingAdmin.publisher_id
+            String(publisherId) !== existingAdmin.publisher_id
           ) {
-            const { error: updateError } = await supabase
-              .from("twist_admin")
-              .update({ publisher_id: publisherId })
-              .eq("id", existingAdmin.id);
-
-            if (updateError) {
-              throw new Error(
-                `Failed to update publisher: ${updateError.message}`
-              );
-            }
+            await db
+              .updateTable("twist_admin")
+              .set({ publisher_id: publisherId })
+              .where("id", "=", existingAdmin.id)
+              .execute();
 
             // Re-fetch to get updated publisher_id
-            const { data: updatedAdmin, error: refetchError } = await supabase
-              .from("twist_admin")
-              .select("id, publisher_id, priority_id")
-              .eq("id", existingAdmin.id)
-              .single();
+            const updatedAdmin = await db
+              .selectFrom("twist_admin")
+              .select(["id", "publisher_id", "priority_id"])
+              .where("id", "=", existingAdmin.id)
+              .executeTakeFirstOrThrow();
 
-            if (refetchError || !updatedAdmin) {
-              throw new Error(
-                `Failed to fetch updated admin: ${refetchError?.message}`
-              );
-            }
             twistAdmin = updatedAdmin;
           } else {
             twistAdmin = existingAdmin;
@@ -524,21 +499,18 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           packageId,
           name,
           false, // isPersonal
-          supabase,
+          db,
           publisherId
         );
         twistAdminId = result.twistAdminId;
 
         // Fetch the new admin entry
-        const { data: newAdmin, error: fetchError } = await supabase
-          .from("twist_admin")
-          .select("id, publisher_id, priority_id")
-          .eq("id", result.twistAdminId)
-          .single();
+        const newAdmin = await db
+          .selectFrom("twist_admin")
+          .select(["id", "publisher_id", "priority_id"])
+          .where("id", "=", String(result.twistAdminId))
+          .executeTakeFirstOrThrow();
 
-        if (fetchError || !newAdmin) {
-          throw new Error(`Failed to fetch new admin: ${fetchError?.message}`);
-        }
         twistAdmin = newAdmin;
       }
     } catch (error) {
@@ -567,15 +539,12 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     // Integrations check: user token must have access to priority, or publisher token must match
     if (userToken && user) {
       // Check if user has access to the admin priority
-      const { data: hasAccess, error: accessError } = await supabase.rpc(
-        "user_has_priority_access",
-        {
-          user_id: user.id,
-          target_priority_id: twistAdmin.priority_id!,
-        }
-      );
+      const hasAccess = await rpcUser(db, "has_priority_access", {
+        user_id: user.id,
+        priority_id: twistAdmin.priority_id!,
+      });
 
-      if (accessError || !hasAccess) {
+      if (!hasAccess) {
         return new Response(
           "Forbidden: you do not have access to this twist's priority",
           {
@@ -585,7 +554,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
       }
     } else if (publisherToken && publisher) {
       // Check if publisher matches
-      if (publisher.id !== twistAdmin.publisher_id) {
+      if (String(publisher.id) !== twistAdmin.publisher_id) {
         return new Response(
           "Forbidden: publisher token does not match twist publisher",
           {
@@ -612,7 +581,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         const result = await deployTwist({
           env: c.env,
           ctx: c.executionCtx as ExecutionContext,
-          supabase,
+          db,
           twistAdminId: twistAdminId!,
           input:
             module !== undefined ? { module, sourcemap } : { source: source! },
@@ -620,7 +589,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           name: name!,
           description,
           userId,
-          userName: user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0],
+          userName: user?.name || user?.email?.split("@")[0],
           userEmail: user?.email,
           dryRun,
           onProgress: (message) => stream.sendProgress(message),
@@ -638,16 +607,22 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         }
 
         // Fetch the final twist to return
-        const { data: finalTwist, error: finalError } = await supabase
-          .from("twist")
-          .select("*")
-          .eq("twist_admin_id", twistAdminId)
-          .eq("environment", environment)
-          .single();
+        try {
+          const finalTwist = await db
+            .selectFrom("twist")
+            .selectAll()
+            .where("twist_admin_id", "=", String(twistAdminId))
+            .where("environment", "=", environment)
+            .executeTakeFirstOrThrow();
 
-        if (finalError || !finalTwist) {
+          stream.sendResult({
+            ...finalTwist,
+            permissions: result.permissions,
+          });
+          resultSent = true;
+        } catch (fetchError) {
           const logger = createLogger();
-          logger.error("Error fetching deployed twist", finalError as Error, {
+          logger.error("Error fetching deployed twist", fetchError as Error, {
             twist_admin_id: twistAdminId,
             environment
           });
@@ -655,14 +630,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
             "Deployment succeeded, but failed to retrieve twist details. Please try refreshing."
           );
           resultSent = true;
-          return;
         }
-
-        stream.sendResult({
-          ...finalTwist,
-          permissions: result.permissions,
-        });
-        resultSent = true;
       } catch (error) {
         const logger = createLogger();
         logger.error("Error deploying twist", error as Error, {
@@ -704,7 +672,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
       result = await deployTwist({
         env: c.env,
         ctx: c.executionCtx as ExecutionContext,
-        supabase,
+        db,
         twistAdminId: twistAdminId!,
         input:
           module !== undefined ? { module, sourcemap } : { source: source! },
@@ -712,7 +680,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         name: name!,
         description,
         userId,
-        userName: user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0],
+        userName: user?.name || user?.email?.split("@")[0],
         userEmail: user?.email,
         dryRun,
       });
@@ -743,16 +711,21 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     }
 
     // Fetch the final twist to return
-    const { data: finalTwist, error: finalError } = await supabase
-      .from("twist")
-      .select("*")
-      .eq("twist_admin_id", twistAdminId)
-      .eq("environment", environment)
-      .single();
+    try {
+      const finalTwist = await db
+        .selectFrom("twist")
+        .selectAll()
+        .where("twist_admin_id", "=", String(twistAdminId))
+        .where("environment", "=", environment)
+        .executeTakeFirstOrThrow();
 
-    if (finalError || !finalTwist) {
+      return c.json({
+        ...finalTwist,
+        permissions: result.permissions,
+      });
+    } catch (error) {
       const logger = createLogger();
-      logger.error("Error fetching deployed twist", finalError as Error, {
+      logger.error("Error fetching deployed twist", error as Error, {
         twist_admin_id: twistAdminId,
         environment
       });
@@ -763,11 +736,6 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         }
       );
     }
-
-    return c.json({
-      ...finalTwist,
-      permissions: result.permissions,
-    });
   }
 });
 
@@ -787,32 +755,32 @@ twist.get("/twist/:id/logs", async (c) => {
     return new Response("Invalid environment", { status: 400 });
   }
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+  const db = createDb(c.env);
 
   // For personal environment, verify twist exists and user owns it
   // For other environments, verify user has access to the twist's priority
   if (environment === "personal") {
     // Check if twist_admin exists for this user and package
-    const { data: twistAdmin, error: adminError } = await supabase
-      .from("twist_admin")
-      .select("id")
-      .eq("twist_package_id", twistPackageId)
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const twistAdmin = await db
+      .selectFrom("twist_admin")
+      .select(["id"])
+      .where("twist_package_id", "=", twistPackageId)
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
 
-    if (adminError || !twistAdmin) {
+    if (!twistAdmin) {
       return new Response("Twist not found", { status: 404 });
     }
   } else {
     // For non-personal environments, check priority access
-    const { data: twistAdmin, error: adminError } = await supabase
-      .from("twist_admin")
-      .select("id, priority_id")
-      .eq("twist_package_id", twistPackageId)
-      .is("user_id", null)
-      .single();
+    const twistAdmin = await db
+      .selectFrom("twist_admin")
+      .select(["id", "priority_id"])
+      .where("twist_package_id", "=", twistPackageId)
+      .where("user_id", "is", null)
+      .executeTakeFirst();
 
-    if (adminError || !twistAdmin) {
+    if (!twistAdmin) {
       return new Response("Twist not found", { status: 404 });
     }
 
@@ -821,15 +789,12 @@ twist.get("/twist/:id/logs", async (c) => {
     }
 
     // Check if user has access to the priority
-    const { data: hasAccess, error: accessError } = await supabase.rpc(
-      "user_has_priority_access",
-      {
-        user_id: user.id,
-        target_priority_id: twistAdmin.priority_id,
-      }
-    );
+    const hasAccess = await rpcUser(db, "has_priority_access", {
+      user_id: user.id,
+      priority_id: twistAdmin.priority_id,
+    });
 
-    if (accessError || !hasAccess) {
+    if (!hasAccess) {
       return new Response("Forbidden: you do not have access to this twist", {
         status: 403,
       });

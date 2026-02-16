@@ -7,6 +7,7 @@ import { type LogSubscriptions } from "./state/log-subscriptions";
 import { type SdkTokenStore } from "./state/sdk-token-store";
 import { type Storage } from "./state/storage";
 import { type TwistSync } from "./state/twist-sync";
+import { type SyncNotify } from "./state/sync-notify";
 import { type SyncRecovery } from "./state/sync-recovery";
 import { type PrivacyReporting } from "./state/privacy-reporting";
 import { type Usage } from "./state/usage";
@@ -79,16 +80,14 @@ export type TwistBatchMessage = {
 export type QueueMessage = RunMessage | TwistBatchMessage | LogMessage;
 
 export type Bindings = {
-  readonly API_HMAC_SECRET?: string;
+  readonly HYPERDRIVE: Hyperdrive;
   readonly POSTHOG_API_KEY: string;
   readonly POSTHOG_HOST: string;
 
-  // Supabase authentication keys (new API key format)
-  // ANON_KEY: Client-facing publishable key (sb_publishable_*)
-  // SERVICE_KEY: Server-side secret key (sb_secret_*)
-  readonly SUPABASE_URL: string;
-  readonly SUPABASE_ANON_KEY: string;
-  readonly SUPABASE_SERVICE_KEY: string;
+  // Clerk authentication
+  readonly CLERK_SECRET_KEY: string;
+  readonly CLERK_JWT_KEY: string; // PEM public key for networkless JWT verification
+  readonly CLERK_WEBHOOK_SIGNING_SECRET: string;
 
   readonly AUTH_GOOGLE_ID: string;
   readonly AUTH_GOOGLE_IOS_ID: string;
@@ -143,6 +142,7 @@ export type Bindings = {
   readonly TOKEN_RATE_LIMITER: RateLimit;
   readonly WEBHOOK_RATE_LIMITER: RateLimit;
   readonly SYNC_RATE_LIMITER: RateLimit;
+  readonly APP_SYNC_RATE_LIMITER: RateLimit;
   readonly DEPLOYMENT_RATE_LIMITER: RateLimit;
 
   readonly TWIST_BUILDER: DurableObjectNamespace<TwistBuilder>;
@@ -166,6 +166,7 @@ export type Bindings = {
   readonly SDK_TOKEN_STORE: DurableObjectNamespace<SdkTokenStore>;
   readonly USER_SYNC: DurableObjectNamespace<UserSync>;
   readonly TWIST_SYNC: DurableObjectNamespace<TwistSync>;
+  readonly SYNC_NOTIFY: DurableObjectNamespace<SyncNotify>;
   readonly SYNC_RECOVERY: DurableObjectNamespace<SyncRecovery>;
   readonly PRIVACY_REPORTING: DurableObjectNamespace<PrivacyReporting>;
   readonly TWIST_MODULES_BUCKET: R2Bucket;

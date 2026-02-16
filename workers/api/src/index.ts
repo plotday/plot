@@ -12,9 +12,11 @@ import authRoutes from "./app/authRoutes";
 import callbacks from "./app/callbacks";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import files from "./app/files";
+import appSync from "./app/sync";
 import summary from "./app/summary";
 import updates from "./app/updates";
 import type { Bindings } from "./env";
+import { clientVersionMiddleware } from "./middleware/client-version";
 import { postHogIdentifyMiddleware } from "./middleware/posthog-identify";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { queue } from "./queue";
@@ -27,15 +29,14 @@ import tokens from "./sdk/tokens";
 import { stripeMiddleware } from "./stripe/middleware";
 import stripe from "./stripe/stripe";
 // Import sync routes and middleware
-import { authMiddleware as syncAuthMiddleware } from "./sync/auth";
-import database from "./sync/database";
+import { syncAuthMiddleware } from "./sync/auth";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
 import { disposeRpc } from "./utils/rpc";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
-import { generalRateLimiter } from "./middleware/rate-limit";
+import { generalRateLimiter, appSyncRateLimiter } from "./middleware/rate-limit";
 
 // Export Durable Objects
 export { Storage } from "./state/storage";
@@ -49,6 +50,7 @@ export { SdkTokenStore } from "./state/sdk-token-store";
 export { TwistTail } from "./twist/tail";
 export { UserSync } from "./state/user-sync";
 export { TwistSync } from "./state/twist-sync";
+export { SyncNotify } from "./state/sync-notify";
 export { SyncRecovery } from "./state/sync-recovery";
 export { PrivacyReporting } from "./state/privacy-reporting";
 
@@ -62,6 +64,7 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 // Apply request ID middleware first (for trace correlation)
 app.use("*", requestIdMiddleware);
+app.use("*", clientVersionMiddleware);
 
 // Apply PostHog middleware
 app.use("*", async (c, next) => {
@@ -138,11 +141,16 @@ appSection.route("/", callbacks);
 appSection.route("/", summary);
 appSection.route("/", updates);
 appSection.route("/", files);
+// Note: /app/sync routes are mounted separately with syncAuthMiddleware.
 
-// Sync section - internal endpoints called from DB triggers
-const syncSection = new Hono<{ Bindings: Bindings }>();
-syncSection.use("*", syncAuthMiddleware);
-syncSection.route("/", database);
+// App sync section - public sync endpoints (user-authenticated)
+// Auth runs before rate limiter to enable per-user keying (not per-IP)
+const appSyncSection = new Hono<{ Bindings: Bindings }>();
+appSyncSection.use(appCorsMiddleware);
+appSyncSection.use("*", syncAuthMiddleware);
+appSyncSection.use("*", appSyncRateLimiter);
+appSyncSection.use("*", postHogIdentifyMiddleware);
+appSyncSection.route("/", appSync);
 
 // SDK section - endpoints called by plot CLI
 const sdkSection = new Hono<{ Bindings: Bindings }>();
@@ -161,7 +169,7 @@ stripeSection.route("/", stripe);
 
 // Mount all sections
 app.route("/app", appSection);
-app.route("/sync", syncSection);
+app.route("/app", appSyncSection);
 app.route("/v1", sdkSection);
 app.route("/stripe", stripeSection);
 

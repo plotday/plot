@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createTool, collectToolPermissions } from "../tools/factory";
-import { createMockEnv, createMockSupabase } from "./utils/mocks";
-import { mockPriority } from "./utils/fixtures";
+import { createMockEnv } from "./utils/mocks";
 import { ActivityAccess, PriorityAccess, ContactAccess } from "@plotday/twister/tools/plot";
 
 describe("Tool Factory", () => {
@@ -9,12 +8,11 @@ describe("Tool Factory", () => {
 
   beforeEach(() => {
     const env = createMockEnv();
-    const supabase = createMockSupabase({ priorities: [mockPriority] });
 
     context = {
       twistId: "test-twist",
       environment: "production" as const,
-      supabase,
+      db: {} as any,
       priorityId: "priority-1",
       priorityTwistId: "pa-1",
       storage: env.STORAGE,

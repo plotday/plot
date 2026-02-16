@@ -5,15 +5,18 @@ import {
   Card,
   Code,
   Container,
+  Group,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
 
+import { useAuth, useUser } from "@clerk/react-router";
+import { getAuth } from "@clerk/react-router/ssr.server";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { Form, Link, useActionData, useNavigation } from "react-router";
 
-import { createSupabaseServerClient, getUser } from "../lib/supabase.server";
+import { initClerkEnv } from "../lib/clerk.server";
 import type { Route } from "./+types/twister.login";
 
 export function meta(_: Route.MetaArgs) {
@@ -25,49 +28,41 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user } = await getUser(request, context.cloudflare.env);
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("session");
 
   return {
-    user,
     sessionId,
     apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
   };
 }
 
-export async function action({ request, context }: Route.ActionArgs) {
-  const { user } = await getUser(request, context.cloudflare.env);
+export async function action(args: Route.ActionArgs) {
+  if (args.context.cloudflare?.env) {
+    initClerkEnv(args.context.cloudflare.env);
+  }
+  const auth = await getAuth(args);
 
-  if (!user) {
+  if (!auth.userId) {
     return { error: "No active session" };
   }
 
-  const formData = await request.formData();
-  const sessionId = formData.get("sessionId") as string;
+  const token = await auth.getToken();
 
-  const apiUrl = context.cloudflare.env.API_ROOT || "https://api.plot.day";
-
-  // Get access token from Supabase session (works with @supabase/ssr cookie format)
-  const { supabase } = createSupabaseServerClient(
-    request,
-    context.cloudflare.env,
-  );
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
+  if (!token) {
     return { error: "No access token found" };
   }
+
+  const formData = await args.request.formData();
+  const sessionId = formData.get("sessionId") as string;
+  const apiUrl = args.context.cloudflare.env.API_ROOT || "https://api.plot.day";
 
   try {
     const response = await fetch(`${apiUrl}/v1/session/authorize`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         sessionId,
@@ -88,17 +83,21 @@ export async function action({ request, context }: Route.ActionArgs) {
 }
 
 export default function SdkLogin({ loaderData }: Route.ComponentProps) {
+  const { isSignedIn, isLoaded } = useAuth();
+  const { user } = useUser();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
-  const { user, sessionId } = loaderData;
+  const { sessionId } = loaderData;
 
   // Check if authorization was successful
   const success = actionData?.success === true;
 
+  if (!isLoaded) return null;
+
   // If not authenticated, redirect to auth with return URL
-  if (!user) {
+  if (!isSignedIn) {
     const returnUrl = `/twister/login?session=${sessionId}`;
     return (
       <Container size="xs" mt="xl">
@@ -182,10 +181,14 @@ export default function SdkLogin({ loaderData }: Route.ComponentProps) {
 
         <Card withBorder padding="md">
           <Stack gap="xs">
-            <Text size="sm" c="dimmed">
-              Signing in as:
-            </Text>
-            <Text fw={500}>{user.email}</Text>
+            <Group gap="xs" align="center">
+              <Text size="sm" c="dimmed">
+                Signing in as:
+              </Text>
+              <Text size="sm" fw={500}>
+                {user?.primaryEmailAddress?.emailAddress}
+              </Text>
+            </Group>
             <Anchor
               size="sm"
               href={`/signout?returnTo=${encodeURIComponent(`/twister/login?session=${sessionId}`)}`}

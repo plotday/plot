@@ -2,7 +2,7 @@ import { Heading, Text } from "@react-email/components";
 
 import EmailLayout from "./components/email-layout";
 
-export default function EmailChange() {
+export default function EmailChange({ code }: { code: string }) {
   return (
     <EmailLayout preview="Confirm your new email address">
       <Heading style={h1}>Confirm email change</Heading>
@@ -10,7 +10,7 @@ export default function EmailChange() {
         You recently requested to change the email address for your Plot
         account. Enter this code in the app to confirm this change:
       </Text>
-      <Text style={otpCode}>{"{{ .Token }}"}</Text>
+      <Text style={otpCode}>{code}</Text>
       <Text style={hint}>
         This code will expire in one hour for your security.
       </Text>

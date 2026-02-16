@@ -15,11 +15,11 @@ class PriorityUsersBase extends BaseTable {
   PriorityUsersBase()
       : super(
           table: 'priority_user',
+          syncEndpoint: 'priority-users',
           name: "priority_users",
           order: 'created_at',
           ascending: false,
           cursorColumn: 'user_id',
-          secondarySortColumns: const ['user_id', 'priority_id'],
         );
 
   @override

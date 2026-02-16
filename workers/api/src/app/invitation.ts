@@ -1,11 +1,13 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Kysely } from "kysely";
 
 import * as crypto from "crypto";
 import { Hono } from "hono";
 
 import { createLogger } from "@plotday/worker-util";
 
+import type { DB } from "../db-types";
 import type { Bindings } from "../env";
+import { rpc } from "../rpc";
 import {
   createFreeSubscription,
   createFreeTierBillingCycle,
@@ -15,7 +17,6 @@ import {
 } from "../stripe/utils";
 import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
-import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 
 interface SendInvitationParams {
@@ -54,7 +55,7 @@ interface RedeemInvitationResult {
  * 4. Updates the sent_at timestamp
  */
 export async function sendInvitation(
-  supabaseAdmin: SupabaseClient,
+  db: Kysely<DB>,
   params: SendInvitationParams
 ): Promise<SendInvitationResult> {
   const { contactId, priorityId, inviterUserId, mailQueue, appRoot } = params;
@@ -66,16 +67,16 @@ export async function sendInvitation(
   });
 
   // 1. Get contact info
-  const { data: contact, error: contactError } = await supabaseAdmin
-    .from("contact")
-    .select("id, email, name")
-    .eq("id", contactId)
-    .single();
+  const contact = await db
+    .selectFrom("contact")
+    .select(["id", "email", "name"])
+    .where("id", "=", contactId)
+    .executeTakeFirst();
 
-  if (contactError || !contact) {
+  if (!contact) {
     logger.error(
       "Contact not found",
-      new Error(contactError?.message || "Contact not found"),
+      new Error("Contact not found"),
       { contact_id: contactId }
     );
     return { success: false, error: "contact_not_found" };
@@ -85,17 +86,10 @@ export async function sendInvitation(
 
   // 2. Get or create invitation token
   const newToken = crypto.randomBytes(32).toString("hex");
-  const { data: tokenResult, error: tokenError } = await supabaseAdmin.rpc(
-    "get_invitation_token",
-    {
-      p_contact_id: contactId,
-      p_new_token: newToken,
-    }
-  );
-
-  if (tokenError) {
-    return { success: false, error: tokenError.message };
-  }
+  const tokenResult = await rpc(db, "get_invitation_token", {
+    p_contact_id: contactId,
+    p_new_token: newToken,
+  });
 
   const { token, sent_at, is_new } = tokenResult as {
     token: string;
@@ -118,21 +112,23 @@ export async function sendInvitation(
 
   // 4. Get inviter and priority info for email
   const [inviterResult, priorityResult] = await Promise.all([
-    supabaseAdmin.auth.admin.getUserById(inviterUserId),
-    supabaseAdmin
-      .from("priority")
+    db
+      .selectFrom("user")
+      .select(["name", "email"])
+      .where("id", "=", inviterUserId)
+      .executeTakeFirst(),
+    db
+      .selectFrom("priority")
       .select("title")
-      .eq("id", priorityId)
-      .single(),
+      .where("id", "=", priorityId)
+      .executeTakeFirst(),
   ]);
 
-  const inviter = inviterResult.data?.user;
   const inviterName =
-    inviter?.user_metadata?.name ||
-    inviter?.user_metadata?.full_name ||
-    inviter?.email?.split("@")[0] ||
+    inviterResult?.name ||
+    inviterResult?.email?.split("@")[0] ||
     "Someone";
-  const priorityName = priorityResult.data?.title || "a priority";
+  const priorityName = priorityResult?.title || "a priority";
 
   // 5. Queue invitation email to mail worker
   const inviteUrl = `${appRoot}/invite/${token}`;
@@ -169,7 +165,7 @@ export async function sendInvitation(
   }
 
   // Update sent_at so the 24-hour cooldown starts at queue-time
-  await supabaseAdmin.rpc("update_invitation_sent_at", {
+  await rpc(db, "update_invitation_sent_at", {
     p_contact_id: contactId,
   });
 
@@ -185,20 +181,16 @@ export async function sendInvitation(
  * 3. Deletes the token (one-time use)
  */
 export async function redeemInvitation(
-  supabaseAdmin: SupabaseClient,
+  db: Kysely<DB>,
   userId: string,
   token: string
 ): Promise<RedeemInvitationResult> {
-  const { data, error } = await supabaseAdmin.rpc("redeem_invitation_token", {
+  const data = await rpc(db, "redeem_invitation_token", {
     p_user_id: userId,
     p_token: token,
   });
 
-  if (error) {
-    return { success: false, error: error.message };
-  }
-
-  return data as RedeemInvitationResult;
+  return data as unknown as RedeemInvitationResult;
 }
 
 // Hono router for invitation endpoints
@@ -212,54 +204,54 @@ invitation.get("/invitation/:token", async (c) => {
     return c.json({ message: "Token required" }, 400);
   }
 
-  const { data, error } = await c.var.supabaseAdmin
-    .from("contact_invitation")
-    .select("contact_id, contact:contact!inner(email)")
-    .eq("token", token)
-    .maybeSingle();
+  try {
+    const data = await c.var.db
+      .selectFrom("contact_invitation")
+      .innerJoin("contact", "contact.id", "contact_invitation.contact_id")
+      .select(["contact_invitation.contact_id", "contact.email"])
+      .where("contact_invitation.token", "=", token)
+      .executeTakeFirst();
 
-  if (error) {
+    if (!data) {
+      return c.json({ message: "Invalid or expired invitation" }, 404);
+    }
+
+    // Look up inviter name via priority_contact.invited_by
+    let inviterName: string | null = null;
+    try {
+      const pc = await c.var.db
+        .selectFrom("priority_contact")
+        .select("invited_by")
+        .where("contact_id", "=", data.contact_id)
+        .where("invited_by", "is not", null)
+        .limit(1)
+        .executeTakeFirst();
+
+      if (pc?.invited_by) {
+        const inviter = await c.var.db
+          .selectFrom("user")
+          .select(["name", "email"])
+          .where("id", "=", pc.invited_by)
+          .executeTakeFirst();
+        inviterName =
+          inviter?.name ||
+          inviter?.email?.split("@")[0] ||
+          null;
+      }
+    } catch {
+      // Non-critical: return response without inviter name
+    }
+
+    return c.json({ email: data.email, inviterName });
+  } catch (error) {
     const logger = createLogger({ component: "invitation" });
     logger.error(
       "Failed to look up invitation token",
-      new Error(error.message),
+      error as Error,
       { token }
     );
     return c.json({ message: "Internal error" }, 500);
   }
-
-  if (!data) {
-    return c.json({ message: "Invalid or expired invitation" }, 404);
-  }
-
-  const contact = data.contact as unknown as { email: string };
-
-  // Look up inviter name via priority_contact.invited_by
-  let inviterName: string | null = null;
-  try {
-    const { data: pc } = await c.var.supabaseAdmin
-      .from("priority_contact")
-      .select("invited_by")
-      .eq("contact_id", data.contact_id)
-      .not("invited_by", "is", null)
-      .limit(1)
-      .maybeSingle();
-
-    if (pc?.invited_by) {
-      const { data: inviterData } =
-        await c.var.supabaseAdmin.auth.admin.getUserById(pc.invited_by);
-      const inviter = inviterData?.user;
-      inviterName =
-        inviter?.user_metadata?.name ||
-        inviter?.user_metadata?.full_name ||
-        inviter?.email?.split("@")[0] ||
-        null;
-    }
-  } catch {
-    // Non-critical: return response without inviter name
-  }
-
-  return c.json({ email: contact.email, inviterName });
 });
 
 // POST /invitation/redeem - Redeem an invitation token after auth
@@ -276,7 +268,7 @@ invitation.post("/invitation/redeem", async (c) => {
     return c.json({ message: "Token required" }, 400);
   }
 
-  const result = await redeemInvitation(c.var.supabaseAdmin, user.id, token);
+  const result = await redeemInvitation(c.var.db, user.id, token);
 
   if (!result.success) {
     // Return appropriate status based on error
@@ -299,47 +291,23 @@ invitation.post("/invitation/redeem", async (c) => {
   }
 
   // Get the root priority for this user to perform additional setup
-  const { data: rootPriorityUser, error: rootPriorityError } =
-    await c.var.supabaseAdmin
-      .from("priority_user")
-      .select("priority_id")
-      .eq("user_id", user.id)
-      .eq("personal", true)
-      .maybeSingle();
-
-  if (rootPriorityError) {
-    return captureServerError(
-      c,
-      new Error(rootPriorityError.message),
-      `Failed to check for root priority: ${rootPriorityError.message}`,
-      {
-        user_id: user.id,
-      }
-    );
-  }
+  const rootPriorityUser = await c.var.db
+    .selectFrom("priority_user")
+    .select("priority_id")
+    .where("user_id", "=", user.id)
+    .where("personal", "=", true)
+    .executeTakeFirst();
 
   // If a root priority exists, perform Stripe and Plot twist setup
   if (rootPriorityUser) {
     const rootPriorityId = rootPriorityUser.priority_id;
 
     // Check if user_subscription already exists (skip if already set up)
-    const { data: existingSubscription, error: subscriptionCheckError } =
-      await c.var.supabaseAdmin
-        .from("user_subscription")
-        .select("user_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-    if (subscriptionCheckError) {
-      return captureServerError(
-        c,
-        new Error(subscriptionCheckError.message),
-        `Failed to check for existing subscription: ${subscriptionCheckError.message}`,
-        {
-          user_id: user.id,
-        }
-      );
-    }
+    const existingSubscription = await c.var.db
+      .selectFrom("user_subscription")
+      .select("user_id")
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
 
     // Only set up Stripe if subscription doesn't exist
     if (!existingSubscription) {
@@ -354,8 +322,8 @@ invitation.post("/invitation/redeem", async (c) => {
 
         const customer = await createStripeCustomer(stripe, {
           userId: user.id,
-          email: user.email!,
-          name: user.user_metadata?.name,
+          email: user.email,
+          name: user.name ?? undefined,
         });
         stripeCustomerId = customer.id;
         const context1 = extractRequestContext(c);
@@ -418,24 +386,25 @@ invitation.post("/invitation/redeem", async (c) => {
       }
 
       // Insert user_subscription record with whatever Stripe data we have
-      const { error: subscriptionError } = await c.var.supabaseAdmin
-        .from("user_subscription")
-        .insert({
-          user_id: user.id,
-          stripe_customer_id: stripeCustomerId,
-          stripe_subscription_id: stripeSubscriptionId,
-          plan: "free",
-          status: "active",
-          billing_cycle_start: billingStart.toISOString(),
-          billing_cycle_end: billingEnd.toISOString(),
-        });
-
-      if (subscriptionError) {
+      try {
+        await c.var.db
+          .insertInto("user_subscription")
+          .values({
+            user_id: user.id,
+            stripe_customer_id: stripeCustomerId,
+            stripe_subscription_id: stripeSubscriptionId,
+            plan: "free",
+            status: "active",
+            billing_cycle_start: billingStart!.toISOString(),
+            billing_cycle_end: billingEnd!.toISOString(),
+          })
+          .execute();
+      } catch (subscriptionError) {
         const context5 = extractRequestContext(c);
         const logger5 = createLogger(context5);
         logger5.error(
           "Failed to create user_subscription for invited user",
-          new Error(subscriptionError.message),
+          subscriptionError as Error,
           {
             user_id: user.id,
           }
@@ -452,38 +421,36 @@ invitation.post("/invitation/redeem", async (c) => {
 
     // Install Plot twist on root priority (if not already installed)
     try {
-      const { data: plotTwist, error: plotTwistError } = await c.var.supabase
-        .from("twist")
-        .select("id,version")
-        .eq("name", "Plot")
-        .eq("environment", "public")
-        .is("archived_at", null)
-        .order("created_at", { ascending: true })
+      const plotTwist = await c.var.db
+        .selectFrom("twist")
+        .select(["id", "version"])
+        .where("name", "=", "Plot")
+        .where("environment", "=", "public")
+        .where("archived_at", "is", null)
+        .orderBy("created_at", "asc")
         .limit(1)
-        .maybeSingle();
+        .executeTakeFirst();
 
-      if (plotTwistError) {
-        throw new Error(
-          `Plot twist not found: ${plotTwistError?.message || "Unknown error"}`
-        );
-      }
-
-      if (plotTwist) {
+      if (!plotTwist) {
+        const context9 = extractRequestContext(c);
+        const logger9 = createLogger(context9);
+        logger9.warn("Plot twist not found, skipping installation");
+      } else {
         // Check if Plot twist is already installed
-        const { data: existingInstallation } = await c.var.supabaseAdmin
-          .from("priority_twist")
+        const existingInstallation = await c.var.db
+          .selectFrom("priority_twist")
           .select("id")
-          .eq("priority_id", rootPriorityId)
-          .eq("twist_id", plotTwist.id)
-          .is("archived_at", null)
-          .maybeSingle();
+          .where("priority_id", "=", rootPriorityId)
+          .where("twist_id", "=", plotTwist.id)
+          .where("archived_at", "is", null)
+          .executeTakeFirst();
 
         if (!existingInstallation) {
           await twistManagement.add(
-            c.var.supabase,
-            c.var.supabaseAdmin,
+            c.var.db,
+            user.id,
             rootPriorityId,
-            plotTwist.id,
+            Number(plotTwist.id),
             "public",
             "Plot",
             undefined,
@@ -491,7 +458,7 @@ invitation.post("/invitation/redeem", async (c) => {
               twistFactory: twistFactory({
                 env: c.env,
                 ctx: c.executionCtx as ExecutionContext,
-                supabase: c.var.supabaseAdmin,
+                db: c.var.db,
               }),
               version: plotTwist.version,
             }
@@ -510,10 +477,6 @@ invitation.post("/invitation/redeem", async (c) => {
             user_id: user.id,
           });
         }
-      } else {
-        const context9 = extractRequestContext(c);
-        const logger9 = createLogger(context9);
-        logger9.warn("Plot twist not found, skipping installation");
       }
     } catch (error) {
       const context10 = extractRequestContext(c);

@@ -18,11 +18,10 @@ export default [
     route("help/getting-started", "routes/help.getting-started.tsx"),
     route("help/faqs", "routes/help.faqs.tsx"),
     route("help/contact", "routes/help.contact.tsx"),
-    route("signin", "routes/signin.tsx"),
+    route("signin/*", "routes/signin.tsx"),
     route("signout", "routes/signout.tsx"),
 
     route("account/delete", "routes/account.delete.tsx"),
-    route("auth/callback", "routes/auth.callback.tsx"),
     route("twister/login", "routes/twister.login.tsx"),
   ]),
 ] satisfies RouteConfig;

@@ -14,11 +14,11 @@ class PriorityActorsBase extends BaseTable {
   PriorityActorsBase()
     : super(
         table: 'user_priority_actor',
+        syncEndpoint: 'priority-actors',
         name: "priority_actors",
         order: 'updated_at',
         ascending: false,
         cursorColumn: 'actor_id',
-        secondarySortColumns: ['actor_id'],
       );
 
   @override

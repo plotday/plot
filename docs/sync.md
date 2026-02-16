@@ -76,7 +76,7 @@ Tracks pending sync updates for app clients.
 
 ```sql
 CREATE TABLE user_sync (
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public."user"(id) ON DELETE CASCADE,
   entity text NOT NULL,
   last_update_at timestamptz NOT NULL,
   last_sync_at timestamptz NOT NULL DEFAULT '1970-01-01'::timestamptz,

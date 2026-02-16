@@ -65,10 +65,9 @@ class ActivityBloc extends Cubit<ActivityState> {
 
   /// Sets thread filter to show only a note and its replies. Pass null to clear.
   void setThreadFilter(NoteId? noteId) {
-    emit(state.copyWith(
-      threadNoteId: noteId,
-      clearThreadNoteId: noteId == null,
-    ));
+    emit(
+      state.copyWith(threadNoteId: noteId, clearThreadNoteId: noteId == null),
+    );
     _loadNotes();
   }
 
@@ -78,15 +77,19 @@ class ActivityBloc extends Cubit<ActivityState> {
   Future<void> add(Note note) async {
     // Convert the draft to a non-draft
     note = note.copyWith(draft: false);
-    await note.save();
 
     // Create fresh draft for the activity (in-memory only, will be saved when content is added)
     // Don't save empty draft - it will be saved when content is added via updateDraft()
     // Also clear replyTo state
-    emit(state.copyWith(
-      draft: Note.draft(activityId: state.activity.id),
-      clearReplyTo: true,
-    ));
+    emit(
+      state.copyWith(
+        draft: Note.draft(activityId: state.activity.id),
+        clearReplyTo: true,
+      ),
+    );
+
+    // Async
+    note.save();
   }
 
   void _loadActivity() {

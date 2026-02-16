@@ -1,5 +1,6 @@
-import { type SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
 
+import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { twistFactory } from "./factory";
 
@@ -10,7 +11,7 @@ export async function storeTwistModule({
   module,
   sourcemap,
   environment,
-  supabase,
+  db,
   dryRun = false,
 }: {
   env: Bindings;
@@ -19,7 +20,7 @@ export async function storeTwistModule({
   module: string;
   sourcemap?: string;
   environment: TwistEnvironment;
-  supabase: SupabaseClient;
+  db: Kysely<DB>;
   dryRun?: boolean;
 }) {
   // Generate timestamp version (or placeholder for dry-run)
@@ -29,7 +30,7 @@ export async function storeTwistModule({
   const { permissions, toolPermissions } = await twistFactory({
     env,
     ctx,
-    supabase,
+    db,
     checkPermissions: false,
     module,
   })({ id, environment, version, priorityId: "", priorityTwistId: "__deployment__" });

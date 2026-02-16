@@ -1,9 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { PostHog } from "posthog-node";
+import type { Kysely } from "kysely";
 
-import { type SupabaseClient, createClient } from "@plotday/db";
 import { AuthProvider } from "@plotday/twister/tools/integrations";
 
+import { type DB, createDb, sql } from "../db";
 import type { Bindings } from "../env";
 import { PROVIDER_CONFIGS, type StoredTokenData } from "../provider";
 import { createLogger } from "@plotday/worker-util";
@@ -27,11 +28,11 @@ const SENTINEL_EMAIL = "removed@system.plot.day";
  * Auth: OAuth 2.0 3LO (uses an existing Jira twist's token)
  */
 export class PrivacyReporting extends DurableObject<Bindings> {
-  private supabase: SupabaseClient;
+  private db: Kysely<DB>;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+    this.db = createDb(env);
   }
 
   private captureException(
@@ -114,22 +115,24 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     });
 
     // 1. Get accounts that need reporting
-    const { data: accounts, error: queryError } = await this.supabase
-      .from("contact_external_account")
-      .select("contact_id, provider, account_id, last_reported_at")
-      .eq("provider", "atlassian")
-      .or(
-        `last_reported_at.is.null,last_reported_at.lt.${new Date(Date.now() - REPORT_INTERVAL_MS).toISOString()}`
+    const accounts = await this.db
+      .selectFrom("contact_external_account")
+      .select(["contact_id", "provider", "account_id", "last_reported_at"])
+      .where("provider", "=", "atlassian")
+      .where((eb) =>
+        eb.or([
+          eb("last_reported_at", "is", null),
+          eb(
+            "last_reported_at",
+            "<",
+            new Date(Date.now() - REPORT_INTERVAL_MS)
+          ),
+        ])
       )
-      .limit(1000);
+      .limit(1000)
+      .execute();
 
-    if (queryError) {
-      throw new Error(
-        `Failed to query contact_external_account: ${queryError.message}`
-      );
-    }
-
-    if (!accounts || accounts.length === 0) {
+    if (accounts.length === 0) {
       logger.info("No Atlassian accounts to report");
       return;
     }
@@ -173,16 +176,17 @@ export class PrivacyReporting extends DurableObject<Bindings> {
 
     // 5. Update last_reported_at for successfully reported accounts
     if (reportedIds.length > 0) {
-      const { error: updateError } = await this.supabase
-        .from("contact_external_account")
-        .update({ last_reported_at: new Date().toISOString() })
-        .eq("provider", "atlassian")
-        .in("account_id", reportedIds);
-
-      if (updateError) {
+      try {
+        await this.db
+          .updateTable("contact_external_account")
+          .set({ last_reported_at: new Date().toISOString() })
+          .where("provider", "=", "atlassian")
+          .where("account_id", "in", reportedIds)
+          .execute();
+      } catch (updateError) {
         logger.error(
           "Failed to update last_reported_at",
-          new Error(updateError.message)
+          updateError as Error
         );
       }
 
@@ -205,14 +209,15 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     });
 
     // Find active Jira-related priority twists
-    const { data: twists, error } = await this.supabase
-      .from("priority_twist")
-      .select("id, owner_id")
-      .is("archived_at", null)
-      .ilike("name", "%jira%")
-      .limit(20);
+    const twists = await this.db
+      .selectFrom("priority_twist")
+      .select(["id", "owner_id"])
+      .where("archived_at", "is", null)
+      .where("name", "ilike", "%jira%")
+      .limit(20)
+      .execute();
 
-    if (error || !twists || twists.length === 0) {
+    if (twists.length === 0) {
       logger.info("No active Jira twists found");
       return null;
     }
@@ -263,12 +268,13 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     ownerId: string
   ): Promise<StoredTokenData | null> {
     // Get all contacts for this user
-    const { data: contacts } = await this.supabase
-      .from("contact")
+    const contacts = await this.db
+      .selectFrom("contact")
       .select("id")
-      .eq("user_id", ownerId);
+      .where("user_id", "=", ownerId)
+      .execute();
 
-    if (!contacts || contacts.length === 0) return null;
+    if (contacts.length === 0) return null;
 
     const storageId = this.env.STORAGE.idFromName(priorityTwistId);
     const storageDO = this.env.STORAGE.get(storageId);
@@ -425,16 +431,17 @@ export class PrivacyReporting extends DurableObject<Bindings> {
         }
       } else if (status.status === "updated") {
         // Mark for refresh - data will be updated on next Jira sync
-        const { error } = await this.supabase
-          .from("contact_external_account")
-          .update({ data_fetched_at: new Date(0).toISOString() })
-          .eq("provider", "atlassian")
-          .eq("account_id", status.accountId);
-
-        if (error) {
+        try {
+          await this.db
+            .updateTable("contact_external_account")
+            .set({ data_fetched_at: new Date(0).toISOString() })
+            .where("provider", "=", "atlassian")
+            .where("account_id", "=", status.accountId)
+            .execute();
+        } catch (error) {
           logger.error(
             "Failed to mark account for refresh",
-            new Error(error.message),
+            error as Error,
             { accountId: status.accountId }
           );
         }
@@ -459,11 +466,11 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     });
 
     // Get sentinel contact ID
-    const { data: sentinel } = await this.supabase
-      .from("contact")
+    const sentinel = await this.db
+      .selectFrom("contact")
       .select("id")
-      .eq("email", SENTINEL_EMAIL)
-      .single();
+      .where("email", "=", SENTINEL_EMAIL)
+      .executeTakeFirst();
 
     if (!sentinel) {
       throw new Error("Sentinel contact not found");
@@ -472,77 +479,79 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     const sentinelId = sentinel.id;
 
     // Replace Jira-sourced activity author references
-    await this.supabase
-      .from("activity")
-      .update({ author_id: sentinelId })
-      .eq("author_id", contactId)
-      .like("source", "jira:%");
+    await this.db
+      .updateTable("activity")
+      .set({ author_id: sentinelId })
+      .where("author_id", "=", contactId)
+      .where("source", "like", "jira:%")
+      .execute();
 
     // Replace Jira-sourced activity assignee references
-    await this.supabase
-      .from("activity")
-      .update({ assignee_id: sentinelId })
-      .eq("assignee_id", contactId)
-      .like("source", "jira:%");
+    await this.db
+      .updateTable("activity")
+      .set({ assignee_id: sentinelId })
+      .where("assignee_id", "=", contactId)
+      .where("source", "like", "jira:%")
+      .execute();
 
     // Replace Jira-sourced note author references
-    const { data: jiraActivities } = await this.supabase
-      .from("activity")
+    const jiraActivities = await this.db
+      .selectFrom("activity")
       .select("id")
-      .like("source", "jira:%");
+      .where("source", "like", "jira:%")
+      .execute();
 
-    if (jiraActivities && jiraActivities.length > 0) {
+    if (jiraActivities.length > 0) {
       const jiraActivityIds = jiraActivities.map((a) => a.id);
 
-      await this.supabase
-        .from("note")
-        .update({ author_id: sentinelId })
-        .eq("author_id", contactId)
-        .in("activity_id", jiraActivityIds);
+      await this.db
+        .updateTable("note")
+        .set({ author_id: sentinelId })
+        .where("author_id", "=", contactId)
+        .where("activity_id", "in", jiraActivityIds)
+        .execute();
 
-      // Replace mentions using raw SQL (array_replace not available via PostgREST)
+      // Replace mentions using raw SQL (array_replace)
       // This is a best-effort operation
-      const { error: mentionError } = await this.supabase.rpc(
-        "exec_sql" as any,
-        {
-          query: `UPDATE note SET mentions = array_replace(mentions, $1::uuid, $2::uuid) WHERE $1::uuid = ANY(mentions) AND activity_id = ANY($3::uuid[])`,
-          params: [contactId, sentinelId, jiraActivityIds],
-        }
-      );
-      if (mentionError) {
-        // Mentions replacement may not be available via RPC - log and continue
-        logger.info("Mention replacement via RPC not available, skipping", {
+      try {
+        await sql`UPDATE note SET mentions = array_replace(mentions, ${contactId}::uuid, ${sentinelId}::uuid) WHERE ${contactId}::uuid = ANY(mentions) AND activity_id = ANY(${jiraActivityIds}::uuid[])`.execute(this.db);
+      } catch (mentionError) {
+        // Mentions replacement failed - log and continue
+        logger.info("Mention replacement failed, skipping", {
           contactId,
         });
       }
     }
 
     // Check if contact has remaining non-Jira references
-    const { count: nonJiraAuthorCount } = await this.supabase
-      .from("activity")
-      .select("id", { count: "exact", head: true })
-      .eq("author_id", contactId)
-      .not("source", "like", "jira:%");
+    const nonJiraAuthorResult = await this.db
+      .selectFrom("activity")
+      .select((eb) => eb.fn.countAll().as("count"))
+      .where("author_id", "=", contactId)
+      .where("source", "not like", "jira:%")
+      .executeTakeFirstOrThrow();
 
-    const { count: nonJiraAssigneeCount } = await this.supabase
-      .from("activity")
-      .select("id", { count: "exact", head: true })
-      .eq("assignee_id", contactId)
-      .not("source", "like", "jira:%");
+    const nonJiraAssigneeResult = await this.db
+      .selectFrom("activity")
+      .select((eb) => eb.fn.countAll().as("count"))
+      .where("assignee_id", "=", contactId)
+      .where("source", "not like", "jira:%")
+      .executeTakeFirstOrThrow();
 
     const hasNonJiraRefs =
-      (nonJiraAuthorCount || 0) > 0 || (nonJiraAssigneeCount || 0) > 0;
+      Number(nonJiraAuthorResult.count) > 0 || Number(nonJiraAssigneeResult.count) > 0;
 
     if (!hasNonJiraRefs) {
       // No remaining references - clear personal data and archive
-      await this.supabase
-        .from("contact")
-        .update({
+      await this.db
+        .updateTable("contact")
+        .set({
           name: null,
           avatar_url: null,
           archived_at: new Date().toISOString(),
         })
-        .eq("id", contactId);
+        .where("id", "=", contactId)
+        .execute();
 
       logger.info(
         "Cleared and archived contact for closed Atlassian account",
@@ -556,10 +565,10 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     }
 
     // Delete the contact_external_account row
-    await this.supabase
-      .from("contact_external_account")
-      .delete()
-      .eq("provider", "atlassian")
-      .eq("account_id", accountId);
+    await this.db
+      .deleteFrom("contact_external_account")
+      .where("provider", "=", "atlassian")
+      .where("account_id", "=", accountId)
+      .execute();
   }
 }

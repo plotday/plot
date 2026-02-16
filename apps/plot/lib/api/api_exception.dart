@@ -5,14 +5,18 @@ class ApiException implements Exception {
   final String title;
   final String description;
 
+  /// PostgreSQL error code from the API (e.g. '42501', '23503')
+  final String? pgCode;
+
   ApiException({
     required this.statusCode,
     required this.endpoint,
     required this.title,
     required this.description,
+    this.pgCode,
   });
 
   @override
   String toString() =>
-      'ApiException($statusCode $endpoint): $title - $description';
+      'ApiException($statusCode $endpoint): $title - $description${pgCode != null ? ' [pg:$pgCode]' : ''}';
 }

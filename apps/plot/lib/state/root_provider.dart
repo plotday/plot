@@ -141,7 +141,6 @@ class RootProviderState extends State<RootProvider> {
                       log.warning('Failed to redeem invitation: $error');
                     }
                     PendingInvite.clear();
-                    await Base.refreshSession();
                   } catch (e) {
                     log.warning('Error redeeming invitation', e);
                     PendingInvite.clear();
@@ -178,9 +177,6 @@ class RootProviderState extends State<RootProvider> {
               // Clear actorId after all blocs and store are stopped to prevent
               // race conditions with streams accessing actorId during cleanup
               Base.clearActorId();
-              break;
-            case UserPasswordRequired _:
-              await router.replaceAll([PasswordSetupRoute()]);
               break;
             default:
               break;

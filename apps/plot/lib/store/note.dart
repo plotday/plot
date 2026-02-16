@@ -22,7 +22,7 @@ class NotesBase extends BaseTable {
   NotesBase({this.activityId})
     : super(
         table: 'user_note',
-        writeTable: 'note',
+        syncEndpoint: 'notes',
         name: "notes",
         filterName: activityId?.toString(),
         ascending: true, // Order by created_at ascending within an activity
@@ -31,19 +31,22 @@ class NotesBase extends BaseTable {
   final ActivityId? activityId;
 
   @override
-  PostgrestFilterBuilder<T2> filter<T2>(
-    PostgrestFilterBuilder<T2> query, {
+  Map<String, String> buildParams({
+    DateTime? updatedSince,
+    String? lastId,
     bool initial = false,
     bool archived = false,
   }) {
-    query = super.filter(query, initial: initial, archived: archived);
-
-    // Add activity filtering if activityId is provided
+    final params = super.buildParams(
+      updatedSince: updatedSince,
+      lastId: lastId,
+      initial: initial,
+      archived: archived,
+    );
     if (activityId != null) {
-      query = query.eq('activity_id', activityId.toString());
+      params['activity_id'] = activityId.toString();
     }
-
-    return query;
+    return params;
   }
 
   @override
@@ -58,8 +61,8 @@ class NotesBase extends BaseTable {
   Map<String, dynamic> toBase(DataClass row) {
     final json = super.toBase(row);
 
-    // Remove author_id - it's set by the database trigger
-    json.remove('author_id');
+    // The client sets author_id correctly to Base.actorId (contact ID)
+    // Do NOT remove - the sync API needs it to set the correct author
 
     return json;
   }

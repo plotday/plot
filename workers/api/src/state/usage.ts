@@ -1,13 +1,18 @@
 import { DurableObject } from "cloudflare:workers";
+import { type Kysely, sql } from "kysely";
 
-import { type SupabaseClient, createClient } from "@plotday/db";
-
-import { type Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
+
+import { type DB, createDb } from "../db";
+import { type Bindings } from "../env";
 import { disposeRpc } from "../utils/rpc";
 
 const FLUSH_INTERVAL_MS = 60_000; // 1 minute
 const HOUR_MS = 60 * 60 * 1000;
+
+// Cost safety limits per priority_twist
+const COST_LIMIT_4H = 5; // $5 in 4 hours
+const COST_LIMIT_30D = 20; // $20 in 30 days
 
 type UsageRow = {
   cost_type: string;
@@ -17,7 +22,7 @@ type UsageRow = {
 
 export class Usage extends DurableObject<Bindings> {
   private sql: SqlStorage;
-  private supabase: SupabaseClient;
+  private db: Kysely<DB>;
   private priorityTwistId?: string;
   private isDirty: boolean = false;
   private nextFlushTime: number | null = null;
@@ -38,10 +43,7 @@ export class Usage extends DurableObject<Bindings> {
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
-    this.supabase = createClient(
-      this.env.SUPABASE_URL,
-      this.env.SUPABASE_SERVICE_KEY
-    );
+    this.db = createDb(env);
     this.initializeTable();
     this.loadState();
   }
@@ -132,9 +134,9 @@ export class Usage extends DurableObject<Bindings> {
 
     if (!previousHourResult.done) {
       // We have data from a previous hour, flush it before continuing
-      // Note: flushToSupabase is async but we can't await it here
+      // Note: flushToDb is async but we can't await it here
       // It will handle errors internally
-      this.flushToSupabase();
+      this.flushToDb();
     }
 
     // Insert or update the current hour's usage
@@ -179,14 +181,14 @@ export class Usage extends DurableObject<Bindings> {
     this.persistState();
 
     if (this.isDirty) {
-      await this.flushToSupabase();
+      await this.flushToDb();
     }
   }
 
   /**
-   * Flush all usage data to Supabase
+   * Flush all usage data to Db
    */
-  private async flushToSupabase(): Promise<void> {
+  private async flushToDb(): Promise<void> {
     const currentHour = this.getCurrentHour();
 
     // Get all usage records
@@ -211,7 +213,7 @@ export class Usage extends DurableObject<Bindings> {
 
     // Process each hour's records
     for (const [hour, records] of recordsByHour.entries()) {
-      await this.flushHourToSupabase(hour, records);
+      await this.flushHourToDb(hour, records);
 
       // Delete records from previous hours after successful flush
       if (hour < currentHour) {
@@ -221,19 +223,131 @@ export class Usage extends DurableObject<Bindings> {
 
     this.isDirty = false;
     this.persistState();
+
+    // Check cost limits after successful flush
+    await this.checkCostLimit();
   }
 
   /**
-   * Flush a specific hour's usage to Supabase
+   * Check if this twist's usage exceeds cost safety limits.
+   * If exceeded, suspend the twist and notify the owner.
    */
-  private async flushHourToSupabase(
+  private async checkCostLimit(): Promise<void> {
+    const priorityTwistId = this.getPriorityTwistId();
+    const logger = createLogger({
+      durable_object: "Usage",
+      operation: "checkCostLimit",
+      priority_twist_id: priorityTwistId,
+    });
+
+    try {
+      // Check if already suspended
+      const pt = await this.db
+        .selectFrom("priority_twist")
+        .select(["suspended_at", "owner_id", "name"])
+        .where("id", "=", priorityTwistId)
+        .executeTakeFirst();
+
+      if (!pt || pt.suspended_at) {
+        return;
+      }
+
+      // Aggregate costs for this priority_twist
+      const costResult = await sql<{
+        cost_4h: number;
+        cost_30d: number;
+      }>`
+        SELECT
+          COALESCE(SUM(CASE WHEN u.hour >= DATE_TRUNC('hour', NOW() - INTERVAL '4 hours')
+            THEN u.amount * c.amount ELSE 0 END), 0) as cost_4h,
+          COALESCE(SUM(u.amount * c.amount), 0) as cost_30d
+        FROM usage u
+        JOIN cost c ON u.cost_id = c.id
+        WHERE u.priority_twist_id = ${priorityTwistId}
+          AND u.hour >= DATE_TRUNC('hour', NOW() - INTERVAL '30 days')
+      `.execute(this.db);
+
+      const { cost_4h, cost_30d } = costResult.rows[0] ?? {
+        cost_4h: 0,
+        cost_30d: 0,
+      };
+
+      // Check thresholds
+      const exceeds4h = cost_4h >= COST_LIMIT_4H;
+      const exceeds30d = cost_30d >= COST_LIMIT_30D;
+
+      if (!exceeds4h && !exceeds30d) {
+        return;
+      }
+
+      const reason = exceeds4h
+        ? `$${cost_4h.toFixed(
+            2
+          )} in the last 4 hours (limit: $${COST_LIMIT_4H})`
+        : `$${cost_30d.toFixed(
+            2
+          )} in the last 30 days (limit: $${COST_LIMIT_30D})`;
+
+      logger.info("Cost limit exceeded, suspending twist", {
+        cost_4h,
+        cost_30d,
+        reason,
+      });
+
+      // Suspend the twist
+      await this.db
+        .updateTable("priority_twist")
+        .set({ suspended_at: sql`NOW()` })
+        .where("id", "=", priorityTwistId)
+        .execute();
+
+      // Notify the owner via Help & Feedback activity
+      const helpPriority = await this.db
+        .selectFrom("priority")
+        .select("id")
+        .where("key", "=", `@help-feedback-${pt.owner_id}`)
+        .executeTakeFirst();
+
+      if (helpPriority) {
+        const activity = await this.db
+          .insertInto("activity")
+          .values({
+            priority_id: helpPriority.id,
+            type: "action",
+            title: "Twist processing suspended due to high usage",
+            created_by: priorityTwistId,
+            author_id: priorityTwistId,
+          })
+          .returning("id")
+          .executeTakeFirstOrThrow();
+
+        await this.db
+          .insertInto("note")
+          .values({
+            activity_id: activity.id,
+            content: `The twist **${pt.name}** was automatically suspended because it exceeded cost safety limits.\n\n**Reason:** ${reason}\n\nTo resume processing, clear the suspension in the database.`,
+            created_by: priorityTwistId,
+            author_id: priorityTwistId,
+          })
+          .execute();
+      }
+    } catch (error) {
+      // Cost check failures should not break usage tracking
+      logger.error("Failed to check cost limit", error as Error);
+    }
+  }
+
+  /**
+   * Flush a specific hour's usage to Db
+   */
+  private async flushHourToDb(
     hour: number,
     records: UsageRow[]
   ): Promise<void> {
     const priorityTwistId = this.getPriorityTwistId();
     const logger = createLogger({
       durable_object: "Usage",
-      operation: "flushHourToSupabase",
+      operation: "flushHourToDb",
       priority_twist_id: priorityTwistId,
     });
 
@@ -244,14 +358,10 @@ export class Usage extends DurableObject<Bindings> {
     });
 
     // Get ALL cost types from the database
-    const { data: costs, error: costsError } = await this.supabase
-      .from("cost")
-      .select("id, name");
-
-    if (costsError || !costs) {
-      logger.error("Failed to fetch costs", costsError as Error);
-      throw new Error(`Failed to fetch costs: ${costsError?.message}`);
-    }
+    const costs = await this.db
+      .selectFrom("cost")
+      .select(["id", "name"])
+      .execute();
 
     // Create a set of existing cost names
     const existingCostNames = new Set(costs.map((c) => c.name));
@@ -274,24 +384,19 @@ export class Usage extends DurableObject<Bindings> {
         cost_names: missingCostNames,
       });
 
-      const { data: insertedCosts, error: insertError } = await this.supabase
-        .from("cost")
-        .upsert(newCosts, { onConflict: "name,start", ignoreDuplicates: false })
-        .select("id, name");
-
-      if (insertError) {
-        logger.error("Failed to insert missing costs", insertError as Error, {
-          cost_names: missingCostNames,
-        });
-        throw new Error(
-          `Failed to insert missing costs: ${insertError.message}`
-        );
-      }
+      const insertedCosts = await this.db
+        .insertInto("cost")
+        .values(newCosts)
+        .onConflict((oc) =>
+          oc.columns(["name", "start"]).doUpdateSet((eb) => ({
+            amount: eb.ref("excluded.amount"),
+          }))
+        )
+        .returning(["id", "name"])
+        .execute();
 
       // Add newly inserted costs to our costs array
-      if (insertedCosts) {
-        costs.push(...insertedCosts);
-      }
+      costs.push(...insertedCosts);
     }
 
     // Create a map of cost name -> amount from records
@@ -299,43 +404,40 @@ export class Usage extends DurableObject<Bindings> {
       records.map((r) => [r.cost_type, r.amount])
     );
 
-    // Prepare usage records for ALL cost types, using 0 for missing ones
-    const usageRows = costs.map((cost) => {
-      const amount = recordAmountMap.get(cost.name) ?? 0;
-
-      return {
+    // Prepare usage records only for cost types that have actual usage
+    const usageRows = costs
+      .filter((cost) => recordAmountMap.has(cost.name))
+      .map((cost) => ({
         priority_twist_id: priorityTwistId,
         hour: new Date(hour).toISOString(),
         cost_id: cost.id,
-        amount,
-      };
-    });
+        amount: recordAmountMap.get(cost.name)!,
+      }));
 
     if (usageRows.length === 0) {
       return;
     }
 
-    // Upsert to Supabase - use .select() to get affected rows
-    const { data, error: upsertError } = await this.supabase
-      .from("usage")
-      .upsert(usageRows, {
-        onConflict: "priority_twist_id,hour,cost_id",
-        ignoreDuplicates: false,
-      })
-      .select();
-
-    if (upsertError) {
-      logger.error("Failed to upsert usage", upsertError as Error, {
-        row_count: usageRows.length,
-      });
-      throw new Error(`Failed to upsert usage: ${upsertError.message}`);
-    }
+    // Upsert to database
+    const data = await this.db
+      .insertInto("usage")
+      .values(usageRows)
+      .onConflict((oc) =>
+        oc
+          .columns(["priority_twist_id", "hour", "cost_id"])
+          .doUpdateSet((eb) => ({
+            amount: eb.ref("excluded.amount"),
+          }))
+      )
+      .returningAll()
+      .execute();
 
     // Check if rows were actually affected
     if (!data || data.length === 0) {
       logger.error("Upsert succeeded but no rows were returned", {
         expected_row_count: usageRows.length,
-        warning: "This may indicate a database constraint issue or silent failure",
+        warning:
+          "This may indicate a database constraint issue or silent failure",
       });
     }
   }

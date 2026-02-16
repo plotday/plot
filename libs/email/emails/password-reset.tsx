@@ -2,7 +2,7 @@ import { Heading, Text } from "@react-email/components";
 
 import EmailLayout from "./components/email-layout";
 
-export default function PasswordReset() {
+export default function PasswordReset({ code }: { code: string }) {
   return (
     <EmailLayout preview="Reset your Plot password">
       <Heading style={h1}>Reset your password</Heading>
@@ -10,7 +10,7 @@ export default function PasswordReset() {
         We received a request to reset your password for your Plot account.
         Enter this code in the app to create a new password:
       </Text>
-      <Text style={otpCode}>{"{{ .Token }}"}</Text>
+      <Text style={otpCode}>{code}</Text>
       <Text style={hint}>
         This code will expire in one hour for your security.
       </Text>

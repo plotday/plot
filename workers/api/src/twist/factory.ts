@@ -1,6 +1,8 @@
-import { type SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
+
 import { type Priority } from "@plotday/twister/plot";
 
+import type { DB } from "../db-types";
 import { type Bindings, type TwistEnvironment } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { handleTwistOperation } from "./error-handling";
@@ -17,13 +19,13 @@ import { type Tool } from "./tools/tool";
 export function twistFactory({
   env,
   ctx,
-  supabase,
+  db,
   checkPermissions,
   module,
 }: {
   env: Bindings;
   ctx: { exports: ExecutionContext["exports"] };
-  supabase: SupabaseClient;
+  db: Kysely<DB>;
   checkPermissions?: boolean;
   module?: string;
 }) {
@@ -47,7 +49,7 @@ export function twistFactory({
     const twistData = await getTwist({
       env,
       ctx,
-      supabase,
+      db,
       id: providedId,
       environment: providedEnvironment,
       version,
@@ -143,7 +145,7 @@ export function twistFactory({
       const tool = createTool(path, toolId, options, {
         twistId: id,
         environment,
-        supabase,
+        db,
         priorityId,
         priorityTwistId,
         env,

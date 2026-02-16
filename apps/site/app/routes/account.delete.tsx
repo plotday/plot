@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { createClient } from "@supabase/supabase-js";
+import { useAuth, useClerk } from "@clerk/react-router";
 
 import {
   Alert,
@@ -13,7 +13,6 @@ import {
   Checkbox,
 } from "@mantine/core";
 
-import { getUser } from "../lib/supabase.server";
 import type { Route } from "./+types/account.delete";
 
 export function meta(_: Route.MetaArgs) {
@@ -24,35 +23,19 @@ export function meta(_: Route.MetaArgs) {
   ];
 }
 
-export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user } = await getUser(request, context.cloudflare.env);
-
+export async function loader({ context }: Route.LoaderArgs) {
   return {
-    supabaseUrl: context.cloudflare.env.SUPABASE_URL,
-    supabaseAnonKey: context.cloudflare.env.SUPABASE_ANON_KEY,
     apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
-    isAuthenticated: !!user,
-    user: user
-      ? {
-          email: user.email,
-        }
-      : null,
   };
 }
 
 export default function DeleteAccount({ loaderData }: Route.ComponentProps) {
+  const { isSignedIn, isLoaded, getToken } = useAuth();
+  const { signOut } = useClerk();
   const [confirmed, setConfirmed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-
-  const getSupabaseClient = () => {
-    return createClient(loaderData.supabaseUrl, loaderData.supabaseAnonKey, {
-      auth: {
-        flowType: "pkce",
-      },
-    });
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,14 +51,9 @@ export default function DeleteAccount({ loaderData }: Route.ComponentProps) {
     setError(null);
 
     try {
-      // Get current session
-      const supabase = getSupabaseClient();
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
+      const token = await getToken();
 
-      if (sessionError || !session) {
+      if (!token) {
         throw new Error("You must be signed in to delete your account");
       }
 
@@ -83,7 +61,7 @@ export default function DeleteAccount({ loaderData }: Route.ComponentProps) {
       const response = await fetch(`${loaderData.apiUrl}/app/account`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -93,7 +71,7 @@ export default function DeleteAccount({ loaderData }: Route.ComponentProps) {
       }
 
       // Sign out and show success
-      await supabase.auth.signOut();
+      await signOut();
       setSuccess(true);
     } catch (err) {
       console.error("Error deleting account:", err);
@@ -101,6 +79,8 @@ export default function DeleteAccount({ loaderData }: Route.ComponentProps) {
       setIsLoading(false);
     }
   };
+
+  if (!isLoaded) return null;
 
   if (success) {
     return (
@@ -165,7 +145,7 @@ export default function DeleteAccount({ loaderData }: Route.ComponentProps) {
           contact us at <a href="mailto:team@plot.day">team@plot.day</a>.
         </Text>
 
-        {!loaderData.isAuthenticated ? (
+        {!isSignedIn ? (
           <Button
             component="a"
             href="/signin?returnTo=/account/delete"

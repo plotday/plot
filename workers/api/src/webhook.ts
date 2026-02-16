@@ -1,6 +1,9 @@
 import { Hono } from "hono";
+import { render } from "@plotday/email";
 
 import { Network } from "./twist/tools/network";
+import { sendEmail } from "./email/send";
+import { createDb } from "./db";
 import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
 import { createLogger } from "@plotday/worker-util";
@@ -16,6 +19,242 @@ const webhook = new Hono<{ Bindings: Bindings }>();
 
 // Apply moderate rate limiting to all webhook routes (300 req/min)
 webhook.use("*", webhookRateLimiter);
+
+/**
+ * Verifies Svix webhook signature (used by Clerk).
+ * https://docs.svix.com/receiving/verifying-payloads/how-manual
+ */
+async function verifySvixSignature(
+  svixId: string,
+  svixTimestamp: string,
+  svixSignature: string,
+  body: string,
+  secret: string
+): Promise<boolean> {
+  // Check timestamp to prevent replay attacks (within 5 minutes)
+  const currentTime = Math.floor(Date.now() / 1000);
+  const requestTime = parseInt(svixTimestamp, 10);
+  if (isNaN(requestTime) || Math.abs(currentTime - requestTime) > 300) {
+    return false;
+  }
+
+  // Svix secret is prefixed with "whsec_" and base64-encoded
+  const secretBytes = Uint8Array.from(
+    atob(secret.startsWith("whsec_") ? secret.slice(6) : secret),
+    (c) => c.charCodeAt(0)
+  );
+
+  const encoder = new TextEncoder();
+  const baseString = `${svixId}.${svixTimestamp}.${body}`;
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    secretBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signatureBytes = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(baseString)
+  );
+
+  const expectedSignature =
+    "v1," +
+    btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
+
+  // svix-signature header may contain multiple space-separated signatures
+  const signatures = svixSignature.split(" ");
+  return signatures.some((sig) => sig === expectedSignature);
+}
+
+/** Map Clerk email template slugs to our email types and subjects */
+const CLERK_EMAIL_MAP: Record<
+  string,
+  { emailType: Parameters<typeof render>[0]; subject: string; needsCode?: boolean }
+> = {
+  verification_code: {
+    emailType: "email-confirmation",
+    subject: "Verify your Plot email",
+    needsCode: true,
+  },
+  reset_password_code: {
+    emailType: "password-reset",
+    subject: "Reset your Plot password",
+    needsCode: true,
+  },
+  email_address_verification: {
+    emailType: "email-change",
+    subject: "Confirm your new email address",
+    needsCode: true,
+  },
+  account_locked: {
+    emailType: "account-locked",
+    subject: "Your Plot account has been locked",
+  },
+  password_changed: {
+    emailType: "password-changed",
+    subject: "Your Plot password has been changed",
+  },
+  password_removed: {
+    emailType: "password-removed",
+    subject: "Your Plot password has been removed",
+  },
+  new_device: {
+    emailType: "new-device-sign-in",
+    subject: "New sign-in to your Plot account",
+  },
+};
+
+// Clerk webhook endpoint - handles email.created events for auth emails
+webhook.post("/hook/clerk", async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
+  try {
+    const svixId = c.req.header("svix-id");
+    const svixTimestamp = c.req.header("svix-timestamp");
+    const svixSignature = c.req.header("svix-signature");
+
+    if (!svixId || !svixTimestamp || !svixSignature) {
+      logger.warn("Clerk webhook missing Svix headers");
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    const rawBody = await c.req.text();
+
+    const isValid = await verifySvixSignature(
+      svixId,
+      svixTimestamp,
+      svixSignature,
+      rawBody,
+      c.env.CLERK_WEBHOOK_SIGNING_SECRET
+    );
+
+    if (!isValid) {
+      logger.warn("Clerk webhook signature verification failed");
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    let body: any;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      logger.warn("Failed to parse Clerk webhook body");
+      return new Response("Bad request", { status: 400 });
+    }
+
+    // Handle user.deleted events - delete user from database (cascades)
+    if (body.type === "user.deleted") {
+      const clerkId = body.data?.id;
+      if (!clerkId) {
+        logger.warn("Clerk user.deleted missing user id");
+        return c.json({ ok: true });
+      }
+
+      const db = createDb(c.env);
+      try {
+        const deleted = await db
+          .deleteFrom("user")
+          .where("clerk_id", "=", clerkId)
+          .returning("id")
+          .executeTakeFirst();
+
+        if (deleted) {
+          logger.info("Deleted user from database", {
+            user_id: deleted.id,
+            clerk_id: clerkId,
+          });
+        } else {
+          logger.info("Clerk user.deleted but no matching user in database", {
+            clerk_id: clerkId,
+          });
+        }
+      } catch (error) {
+        logger.error("Failed to delete user from database", error as Error, {
+          clerk_id: clerkId,
+        });
+        return new Response("Internal server error", { status: 500 });
+      }
+
+      return c.json({ ok: true });
+    }
+
+    // Only handle email.created events below
+    if (body.type !== "email.created") {
+      return c.json({ ok: true });
+    }
+
+    const { slug, to_email_address, data } = body.data ?? {};
+
+    if (!slug || !to_email_address) {
+      logger.warn("Clerk email.created missing slug or to_email_address", {
+        slug,
+      });
+      return c.json({ ok: true });
+    }
+
+    const mapping = CLERK_EMAIL_MAP[slug];
+    if (!mapping) {
+      logger.info("Unhandled Clerk email slug", { slug });
+      return c.json({ ok: true });
+    }
+
+    // Render email - OTP emails need a code, notification emails don't
+    let html: string;
+    let text: string;
+
+    if (mapping.needsCode) {
+      const code =
+        data?.otp_code ?? data?.verification_code ?? data?.code ?? "";
+
+      if (!code) {
+        logger.warn("Clerk email.created missing verification code", {
+          slug,
+          dataKeys: data ? Object.keys(data) : [],
+        });
+        return c.json({ ok: true });
+      }
+
+      ({ html, text } = await render(mapping.emailType as "email-confirmation", { code }));
+    } else {
+      ({ html, text } = await render(mapping.emailType as "account-locked"));
+    }
+
+    const result = await sendEmail(
+      {
+        from: "Plot <noreply@updates.plot.day>",
+        to: [to_email_address],
+        subject: mapping.subject,
+        html,
+        text,
+      },
+      c.env.RESEND_API_KEY
+    );
+
+    if (!result.success) {
+      logger.error("Failed to send Clerk auth email", undefined, {
+        slug,
+        to: to_email_address,
+        error: result.error,
+      });
+      return new Response("Failed to send email", { status: 500 });
+    }
+
+    logger.info("Sent Clerk auth email", {
+      slug,
+      emailType: mapping.emailType,
+      to: to_email_address,
+    });
+
+    return c.json({ ok: true });
+  } catch (error) {
+    logger.error("Error processing Clerk webhook", error as Error);
+    return new Response("Internal server error", { status: 500 });
+  }
+});
 
 /**
  * Verifies Slack webhook signature
@@ -311,6 +550,7 @@ webhook.all(Network.PATH, async (c) => {
         INVALID_TOKEN: 400,
         NOT_FOUND: 404,
         EXPIRED: 410,
+        SUSPENDED: 503,
         UNINITIALIZED: 500,
       };
 

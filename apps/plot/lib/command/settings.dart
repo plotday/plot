@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
@@ -157,9 +156,9 @@ class SignOut extends Command {
     try {
       await Base.signOut();
       return CommandDone();
-    } on supa.AuthException catch (e, t) {
+    } catch (e, t) {
       log.warning("Sign out failed", e, t);
-      return CommandMessage('Sign out failed: ${e.message}', isError: true);
+      return CommandMessage('Sign out failed: $e', isError: true);
     }
   }
 }

@@ -7,52 +7,27 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       activity: {
         Row: {
           archived_at: string | null
           assignee_id: string | null
-          at: unknown
+          at: unknown | null
           author_id: string
           created_at: string
           created_by: string
           created_by_twist_id: number | null
           done_at: string | null
           draft: boolean
-          duration: string | null
-          embedding: unknown
+          duration: unknown | null
+          embedding: unknown | null
           id: string
           kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           meta: Json | null
-          on: unknown
+          on: unknown | null
           order: number
           pick_priority: Json | null
           preview: string | null
@@ -62,51 +37,33 @@ export type Database = {
           recurrence_rule: string | null
           source: string | null
           source_created_at: string
-          source_priority_root: unknown
+          source_priority_root: unknown | null
           sync_depth: number | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"]
           updated_at: string
           updated_by: number
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
-          assignee: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
+          actor: unknown | null
+          assignee: unknown | null
         }
         Insert: {
           archived_at?: string | null
           assignee_id?: string | null
-          at?: unknown
+          at?: unknown | null
           author_id: string
           created_at?: string
-          created_by?: string
+          created_by: string
           created_by_twist_id?: number | null
           done_at?: string | null
           draft?: boolean
-          duration?: string | null
-          embedding?: unknown
+          duration?: unknown | null
+          embedding?: unknown | null
           id?: string
           kind?: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
           meta?: Json | null
-          on?: unknown
+          on?: unknown | null
           order?: number
           pick_priority?: Json | null
           preview?: string | null
@@ -116,7 +73,7 @@ export type Database = {
           recurrence_rule?: string | null
           source?: string | null
           source_created_at?: string
-          source_priority_root?: unknown
+          source_priority_root?: unknown | null
           sync_depth?: number | null
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
@@ -126,21 +83,21 @@ export type Database = {
         Update: {
           archived_at?: string | null
           assignee_id?: string | null
-          at?: unknown
+          at?: unknown | null
           author_id?: string
           created_at?: string
           created_by?: string
           created_by_twist_id?: number | null
           done_at?: string | null
           draft?: boolean
-          duration?: string | null
-          embedding?: unknown
+          duration?: unknown | null
+          embedding?: unknown | null
           id?: string
           kind?: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
           meta?: Json | null
-          on?: unknown
+          on?: unknown | null
           order?: number
           pick_priority?: Json | null
           preview?: string | null
@@ -150,7 +107,7 @@ export type Database = {
           recurrence_rule?: string | null
           source?: string | null
           source_created_at?: string
-          source_priority_root?: unknown
+          source_priority_root?: unknown | null
           sync_depth?: number | null
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
@@ -169,8 +126,8 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
@@ -178,6 +135,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
@@ -190,21 +154,14 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
         ]
@@ -213,14 +170,14 @@ export type Database = {
         Row: {
           activity_id: string
           archived_at: string | null
-          at: unknown
+          at: unknown | null
           created_at: string
           done_at: string | null
-          duration: string | null
+          duration: unknown | null
           id: string
           meta: Json | null
           occurrence: string
-          on: unknown
+          on: unknown | null
           preview: string | null
           title: string | null
           updated_at: string
@@ -229,14 +186,14 @@ export type Database = {
         Insert: {
           activity_id: string
           archived_at?: string | null
-          at?: unknown
+          at?: unknown | null
           created_at?: string
           done_at?: string | null
-          duration?: string | null
+          duration?: unknown | null
           id?: string
           meta?: Json | null
           occurrence: string
-          on?: unknown
+          on?: unknown | null
           preview?: string | null
           title?: string | null
           updated_at?: string
@@ -245,14 +202,14 @@ export type Database = {
         Update: {
           activity_id?: string
           archived_at?: string | null
-          at?: unknown
+          at?: unknown | null
           created_at?: string
           done_at?: string | null
-          duration?: string | null
+          duration?: unknown | null
           id?: string
           meta?: Json | null
           occurrence?: string
-          on?: unknown
+          on?: unknown | null
           preview?: string | null
           title?: string | null
           updated_at?: string
@@ -337,6 +294,13 @@ export type Database = {
             referencedRelation: "priority_twist_activity_update"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "activity_read_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
         ]
       }
       activity_tag: {
@@ -415,11 +379,7 @@ export type Database = {
           primary: boolean
           updated_at: string
           user_id: string | null
-          organization: {
-            created_at: string
-            id: number
-            name: string
-          } | null
+          organization: unknown | null
         }
         Insert: {
           archived_at?: string | null
@@ -443,7 +403,15 @@ export type Database = {
           updated_at?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contact_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contact_external_account: {
         Row: {
@@ -511,6 +479,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: true
             referencedRelation: "contact"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_invitation_redeemed_by_fkey"
+            columns: ["redeemed_by"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -590,16 +565,7 @@ export type Database = {
           sync_depth: number | null
           updated_at: string
           updated_by: number
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
+          actor: unknown | null
         }
         Insert: {
           activity_id: string
@@ -607,7 +573,7 @@ export type Database = {
           author_id: string
           content?: string | null
           created_at?: string
-          created_by?: string
+          created_by: string
           draft?: boolean
           id?: string
           key?: string | null
@@ -679,6 +645,13 @@ export type Database = {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
             isOneToOne: false
+            referencedRelation: "note_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            isOneToOne: false
             referencedRelation: "priority_twist_note_create"
             referencedColumns: ["id"]
           },
@@ -687,13 +660,6 @@ export type Database = {
             columns: ["re_note_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_note_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            isOneToOne: false
-            referencedRelation: "user_note_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -741,6 +707,13 @@ export type Database = {
             foreignKeyName: "note_tag_note_id_fkey"
             columns: ["note_id"]
             isOneToOne: false
+            referencedRelation: "note_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
             referencedRelation: "priority_twist_note_create"
             referencedColumns: ["id"]
           },
@@ -749,13 +722,6 @@ export type Database = {
             columns: ["note_id"]
             isOneToOne: false
             referencedRelation: "priority_twist_note_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_tag_note_id_fkey"
-            columns: ["note_id"]
-            isOneToOne: false
-            referencedRelation: "user_note_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -818,7 +784,15 @@ export type Database = {
           updated_at?: string
           updated_by?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "priority_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       priority_contact: {
         Row: {
@@ -857,11 +831,32 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "priority_contact_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_contact_priority_id_fkey"
@@ -874,13 +869,6 @@ export type Database = {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_contact_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
@@ -888,21 +876,14 @@ export type Database = {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_contact_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
         ]
@@ -911,7 +892,7 @@ export type Database = {
         Row: {
           color: number | null
           order: number | null
-          path: unknown
+          path: unknown | null
           pomodoro: number | null
           priority_id: string
           title: string | null
@@ -922,7 +903,7 @@ export type Database = {
         Insert: {
           color?: number | null
           order?: number | null
-          path?: unknown
+          path?: unknown | null
           pomodoro?: number | null
           priority_id: string
           title?: string | null
@@ -933,7 +914,7 @@ export type Database = {
         Update: {
           color?: number | null
           order?: number | null
-          path?: unknown
+          path?: unknown | null
           pomodoro?: number | null
           priority_id?: string
           title?: string | null
@@ -953,8 +934,8 @@ export type Database = {
             foreignKeyName: "priority_settings_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "priority_settings_priority_id_fkey"
@@ -962,6 +943,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "priority_settings_priority_id_fkey"
@@ -974,22 +962,22 @@ export type Database = {
             foreignKeyName: "priority_settings_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_settings_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_settings_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_unread"
-            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -1002,6 +990,7 @@ export type Database = {
           name: string
           owner_id: string
           priority_id: string
+          suspended_at: string | null
           twist_id: number
           updated_at: string
         }
@@ -1013,6 +1002,7 @@ export type Database = {
           name: string
           owner_id: string
           priority_id: string
+          suspended_at?: string | null
           twist_id: number
           updated_at?: string
         }
@@ -1024,10 +1014,25 @@ export type Database = {
           name?: string
           owner_id?: string
           priority_id?: string
+          suspended_at?: string | null
           twist_id?: number
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "priority_twist_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
@@ -1040,14 +1045,14 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
@@ -1060,21 +1065,14 @@ export type Database = {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
           {
@@ -1141,7 +1139,7 @@ export type Database = {
             foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
             columns: ["priority_twist_id"]
             isOneToOne: false
-            referencedRelation: "user_twist"
+            referencedRelation: "twist"
             referencedColumns: ["id"]
           },
         ]
@@ -1183,8 +1181,8 @@ export type Database = {
             foreignKeyName: "priority_user_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "priority_user_priority_id_fkey"
@@ -1192,6 +1190,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_user_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "priority_user_priority_id_fkey"
@@ -1204,22 +1209,22 @@ export type Database = {
             foreignKeyName: "priority_user_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_user_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_user_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_user_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_unread"
-            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -1293,8 +1298,8 @@ export type Database = {
             foreignKeyName: "series_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "series_priority_id_fkey"
@@ -1302,6 +1307,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "series_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "series_priority_id_fkey"
@@ -1314,22 +1326,22 @@ export type Database = {
             foreignKeyName: "series_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "series_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "series_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "series_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "series_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_unread"
-            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -1385,8 +1397,8 @@ export type Database = {
             foreignKeyName: "session_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "session_priority_id_fkey"
@@ -1394,6 +1406,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "session_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "session_priority_id_fkey"
@@ -1406,22 +1425,22 @@ export type Database = {
             foreignKeyName: "session_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "session_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "session_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "session_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "session_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_unread"
-            referencedColumns: ["priority_id"]
           },
         ]
       }
@@ -1465,6 +1484,13 @@ export type Database = {
             columns: ["publisher_id"]
             isOneToOne: false
             referencedRelation: "publisher"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "token_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -1559,8 +1585,8 @@ export type Database = {
             foreignKeyName: "twist_admin_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "twist_admin_priority_id_fkey"
@@ -1568,6 +1594,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "twist_admin_priority_id_fkey"
@@ -1580,21 +1613,14 @@ export type Database = {
             foreignKeyName: "twist_admin_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "twist_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "twist_admin_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
           {
@@ -1602,6 +1628,13 @@ export type Database = {
             columns: ["publisher_id"]
             isOneToOne: false
             referencedRelation: "publisher"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "twist_admin_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -1674,10 +1707,40 @@ export type Database = {
             foreignKeyName: "usage_priority_twist_id_fkey"
             columns: ["priority_twist_id"]
             isOneToOne: false
-            referencedRelation: "user_twist"
+            referencedRelation: "twist"
             referencedColumns: ["id"]
           },
         ]
+      }
+      user: {
+        Row: {
+          avatar_url: string | null
+          clerk_id: string | null
+          created_at: string
+          email: string
+          id: string
+          name: string | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          clerk_id?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          clerk_id?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       user_settings: {
         Row: {
@@ -1695,7 +1758,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_subscription: {
         Row: {
@@ -1734,7 +1805,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_subscription_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_sync: {
         Row: {
@@ -1755,7 +1834,15 @@ export type Database = {
           last_update_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_sync_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -1802,48 +1889,38 @@ export type Database = {
         Row: {
           archived_at: string | null
           assignee_id: string | null
-          at: unknown
+          at: unknown | null
           author_id: string | null
           created_at: string | null
           created_by: string | null
           created_by_twist_id: number | null
           done_at: string | null
           draft: boolean | null
-          duration: string | null
-          embedding: unknown
+          duration: unknown | null
+          embedding: unknown | null
           id: string | null
           kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           mentions: string[] | null
           meta: Json | null
-          on: unknown
+          on: unknown | null
           order: number | null
           pick_priority: Json | null
           preview: string | null
           priority_id: string | null
-          priority_path: unknown
+          priority_path: unknown | null
           private: boolean | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           source: string | null
           source_created_at: string | null
-          source_priority_root: unknown
+          source_priority_root: unknown | null
           sync_depth: number | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
           updated_by: number | null
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
         }
         Relationships: [
           {
@@ -1858,14 +1935,14 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
@@ -1878,21 +1955,21 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
         ]
@@ -1943,7 +2020,7 @@ export type Database = {
             foreignKeyName: "note_tag_note_id_fkey"
             columns: ["note_id"]
             isOneToOne: false
-            referencedRelation: "user_note_tags"
+            referencedRelation: "note_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -1969,6 +2046,7 @@ export type Database = {
           owner_id: string | null
           priority_child_id: string | null
           priority_id: string | null
+          suspended_at: string | null
           twist_environment:
             | Database["public"]["Enums"]["twist_environment"]
             | null
@@ -1977,6 +2055,13 @@ export type Database = {
           version: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "priority_twist_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
@@ -1989,14 +2074,14 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
@@ -2009,21 +2094,21 @@ export type Database = {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
           {
@@ -2055,11 +2140,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "priority_contact_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_contact_priority_id_fkey"
@@ -2072,13 +2171,6 @@ export type Database = {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_contact_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
             referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
@@ -2086,21 +2178,21 @@ export type Database = {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
         ]
@@ -2108,7 +2200,7 @@ export type Database = {
       priority_settings_inherited: {
         Row: {
           color: number | null
-          path: unknown
+          path: unknown | null
           pomodoro: number | null
           priority_id: string | null
           user_id: string | null
@@ -2135,14 +2227,14 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
@@ -2155,21 +2247,21 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
         ]
@@ -2178,7 +2270,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           assignee_id: string | null
-          at: unknown
+          at: unknown | null
           author_id: string | null
           author_name: string | null
           author_type: string | null
@@ -2186,11 +2278,11 @@ export type Database = {
           created_by: string | null
           done_at: string | null
           draft: boolean | null
-          duration: string | null
+          duration: unknown | null
           id: string | null
           mentions: string[] | null
           meta: Json | null
-          on: unknown
+          on: unknown | null
           order: number | null
           preview: string | null
           priority_id: string | null
@@ -2221,14 +2313,14 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
@@ -2241,21 +2333,21 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
         ]
@@ -2305,7 +2397,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           assignee_id: string | null
-          at: unknown
+          at: unknown | null
           author_id: string | null
           author_name: string | null
           author_type: string | null
@@ -2313,11 +2405,11 @@ export type Database = {
           created_by: string | null
           done_at: string | null
           draft: boolean | null
-          duration: string | null
+          duration: unknown | null
           id: string | null
           mentions: string[] | null
           meta: Json | null
-          on: unknown
+          on: unknown | null
           order: number | null
           preview: string | null
           priority_id: string | null
@@ -2348,14 +2440,14 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
@@ -2368,21 +2460,21 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
         ]
@@ -2430,14 +2522,14 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
@@ -2450,21 +2542,21 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
           {
@@ -2520,7 +2612,7 @@ export type Database = {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
             isOneToOne: false
-            referencedRelation: "user_note_tags"
+            referencedRelation: "note_tags"
             referencedColumns: ["id"]
           },
         ]
@@ -2567,14 +2659,14 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
+            referencedColumns: ["child_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
@@ -2587,21 +2679,21 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority"
+            referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_expanded"
+            referencedRelation: "priority_expanded"
             referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "user_priority_unread"
+            referencedRelation: "priority_unread"
             referencedColumns: ["priority_id"]
           },
           {
@@ -2657,303 +2749,36 @@ export type Database = {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
             isOneToOne: false
-            referencedRelation: "user_note_tags"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_activity: {
-        Row: {
-          archived_at: string | null
-          assignee_id: string | null
-          at: unknown
-          author_id: string | null
-          created_at: string | null
-          created_by_twist_id: number | null
-          done_at: string | null
-          draft: boolean | null
-          duration: string | null
-          id: string | null
-          kind: Database["public"]["Enums"]["activity_kind"] | null
-          last_note_created_at: string | null
-          last_note_source_created_at: string | null
-          mentions: string[] | null
-          meta: Json | null
-          on: unknown
-          order: number | null
-          preview: string | null
-          priority_id: string | null
-          priority_path: unknown
-          private: boolean | null
-          range_at: unknown
-          range_on: unknown
-          recurrence_exdates: string[] | null
-          recurrence_rule: string | null
-          source: string | null
-          source_created_at: string | null
-          title: string | null
-          type: Database["public"]["Enums"]["activity_type"] | null
-          unread: boolean | null
-          updated_at: string | null
-          updated_by: number | null
-          user_id: string | null
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
-        }
-        Relationships: []
-      }
-      user_activity_exception: {
-        Row: {
-          activity_id: string | null
-          archived_at: string | null
-          at: unknown
-          id: string | null
-          occurrence: string | null
-          on: unknown
-          preview: string | null
-          priority_path: unknown
-          range_at: unknown
-          range_on: unknown
-          title: string | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "priority_twist_activity_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_exception_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "priority_twist_activity_update"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_activity_tags: {
-        Row: {
-          archived_at: string | null
-          id: string | null
-          occurrence: string | null
-          priority_path: unknown
-          range_at: unknown
-          range_on: unknown
-          tags: Json | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_actor: {
-        Row: {
-          archived_at: string | null
-          avatar_url: string | null
-          created_at: string | null
-          email: string | null
-          id: string | null
-          name: string | null
-          self: boolean | null
-          type: string | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_note: {
-        Row: {
-          activity_id: string | null
-          archived_at: string | null
-          author_id: string | null
-          content: string | null
-          created_at: string | null
-          created_by: string | null
-          draft: boolean | null
-          id: string | null
-          links: Json | null
-          mentions: string[] | null
-          private: boolean | null
-          re_note_id: string | null
-          source_created_at: string | null
-          updated_at: string | null
-          updated_by: number | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_note_tags: {
-        Row: {
-          archived_at: string | null
-          id: string | null
-          priority_path: unknown
-          range_at: unknown
-          range_on: unknown
-          tags: Json | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_priority: {
-        Row: {
-          archived_at: string | null
-          color: number | null
-          created_at: string | null
-          created_by: string | null
-          global_path: unknown
-          id: string | null
-          key: string | null
-          order: number | null
-          path: unknown
-          personal: boolean | null
-          pomodoro: number | null
-          root: boolean | null
-          title: string | null
-          top_order: number | null
-          unread: boolean | null
-          updated_at: string | null
-          updated_by: number | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_priority_actor: {
-        Row: {
-          actor_id: string | null
-          archived_at: string | null
-          created_at: string | null
-          priority_path: unknown
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_priority_expanded: {
-        Row: {
-          archived_at: string | null
-          joined_at: string | null
-          path: unknown
-          priority_id: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_priority_unread: {
-        Row: {
-          priority_id: string | null
-          unread: boolean | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      user_twist: {
-        Row: {
-          archived_at: string | null
-          config: Json | null
-          created_at: string | null
-          id: string | null
-          name: string | null
-          owner_id: string | null
-          priority_id: string | null
-          twist_environment:
-            | Database["public"]["Enums"]["twist_environment"]
-            | null
-          twist_id: number | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child_twist"
-            referencedColumns: ["priority_child_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority_unread"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_twist_id_fkey"
-            columns: ["twist_id"]
-            isOneToOne: false
-            referencedRelation: "twist"
+            referencedRelation: "note_tags"
             referencedColumns: ["id"]
           },
         ]
       }
     }
     Functions: {
-      activate_invited_user: { Args: { p_user_id: string }; Returns: Json }
+      _ltree_compress: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      _ltree_gist_options: {
+        Args: {
+          "": unknown
+        }
+        Returns: undefined
+      }
+      activate_invited_user: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: Json
+      }
       actor:
         | {
-            Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
+            Args: {
+              "": unknown
+            }
             Returns: {
               archived_at: string | null
               avatar_url: string | null
@@ -2963,16 +2788,12 @@ export type Database = {
               name: string | null
               type: string | null
               updated_at: string | null
-            }
-            SetofOptions: {
-              from: "activity"
-              to: "actor"
-              isOneToOne: true
-              isSetofReturn: true
-            }
+            }[]
           }
         | {
-            Args: { "": Database["public"]["Views"]["activity_x"]["Row"] }
+            Args: {
+              "": unknown
+            }
             Returns: {
               archived_at: string | null
               avatar_url: string | null
@@ -2982,16 +2803,12 @@ export type Database = {
               name: string | null
               type: string | null
               updated_at: string | null
-            }
-            SetofOptions: {
-              from: "activity_x"
-              to: "actor"
-              isOneToOne: true
-              isSetofReturn: true
-            }
+            }[]
           }
         | {
-            Args: { "": Database["public"]["Tables"]["note"]["Row"] }
+            Args: {
+              "": unknown
+            }
             Returns: {
               archived_at: string | null
               avatar_url: string | null
@@ -3001,16 +2818,12 @@ export type Database = {
               name: string | null
               type: string | null
               updated_at: string | null
-            }
-            SetofOptions: {
-              from: "note"
-              to: "actor"
-              isOneToOne: true
-              isSetofReturn: true
-            }
+            }[]
           }
         | {
-            Args: { "": Database["public"]["Views"]["user_activity"]["Row"] }
+            Args: {
+              "": unknown
+            }
             Returns: {
               archived_at: string | null
               avatar_url: string | null
@@ -3020,17 +2833,12 @@ export type Database = {
               name: string | null
               type: string | null
               updated_at: string | null
-            }
-            SetofOptions: {
-              from: "user_activity"
-              to: "actor"
-              isOneToOne: true
-              isSetofReturn: true
-            }
+            }[]
           }
-      all_views_secure: { Args: never; Returns: boolean }
       assignee: {
-        Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
+        Args: {
+          "": unknown
+        }
         Returns: {
           archived_at: string | null
           avatar_url: string | null
@@ -3040,30 +2848,34 @@ export type Database = {
           name: string | null
           type: string | null
           updated_at: string | null
-        }
-        SetofOptions: {
-          from: "activity"
-          to: "actor"
-          isOneToOne: true
-          isSetofReturn: true
-        }
+        }[]
       }
-      call_twist_sync_api: {
-        Args: { priority_twist_ids: string[] }
-        Returns: undefined
+      binary_quantize:
+        | {
+            Args: {
+              "": string
+            }
+            Returns: unknown
+          }
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: unknown
+          }
+      count_not_null: {
+        Args: {
+          val: unknown
+        }
+        Returns: number
       }
-      call_user_sync_api: { Args: { user_ids: string[] }; Returns: undefined }
-      can_access_priority:
-        | { Args: { _priority_id: string }; Returns: boolean }
-        | { Args: { _priority_path: unknown }; Returns: boolean }
-      count_not_null: { Args: { val: unknown }; Returns: number }
       find_matching_activities_scored: {
         Args: {
-          activity_data?: Json
-          created_by_id: string
           query_embedding: string
+          created_by_id: string
           required_filters?: Json
           scored_fields?: Json
+          activity_data?: Json
           similarity_threshold?: number
         }
         Returns: {
@@ -3075,22 +2887,29 @@ export type Database = {
       }
       find_similar_activities: {
         Args: {
-          created_by_id: string
-          match_limit?: number
           query_embedding: string
+          match_limit?: number
           similarity_threshold?: number
+          created_by_id: string
         }
         Returns: {
-          id: string
-          priority_id: string
-          similarity: number
           title: string
+          priority_id: string
+          id: string
+          similarity: number
         }[]
       }
-      gen_random_uuid_v7: { Args: never; Returns: string }
-      generate_path: { Args: { parent?: unknown }; Returns: unknown }
+      generate_path: {
+        Args: {
+          parent?: unknown
+        }
+        Returns: unknown
+      }
       get_accessible_twists: {
-        Args: { p_priority_id: string; p_user_id: string }
+        Args: {
+          p_user_id: string
+          p_priority_id: string
+        }
         Returns: {
           archived_at: string | null
           created_at: string
@@ -3103,177 +2922,433 @@ export type Database = {
           updated_at: string
           version: string
         }[]
-        SetofOptions: {
-          from: "*"
-          to: "twist"
-          isOneToOne: false
-          isSetofReturn: true
-        }
       }
       get_activity_mentions: {
-        Args: { p_activity_id: string }
+        Args: {
+          p_activity_id: string
+        }
         Returns: string[]
       }
-      get_domain: { Args: { email: string }; Returns: string }
+      get_domain: {
+        Args: {
+          email: string
+        }
+        Returns: string
+      }
       get_invitation_token: {
-        Args: { p_contact_id: string; p_new_token: string }
+        Args: {
+          p_contact_id: string
+          p_new_token: string
+        }
         Returns: Json
       }
       get_pending_user_sync: {
-        Args: { p_user_id: string }
+        Args: {
+          p_user_id: string
+        }
         Returns: {
           entity: string
           last_update_at: string
         }[]
       }
-      get_primary_contact_id: { Args: { p_user_id: string }; Returns: string }
+      get_primary_contact_id: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: string
+      }
       get_priority_twist_owner_contact: {
-        Args: { p_priority_twist_id: string }
+        Args: {
+          p_priority_twist_id: string
+        }
         Returns: string
       }
       get_stale_twist_syncs: {
-        Args: { p_limit?: number; p_stale_threshold: string }
+        Args: {
+          p_limit?: number
+          p_stale_threshold: string
+        }
         Returns: {
           priority_twist_id: string
         }[]
       }
       get_stale_user_syncs: {
-        Args: { p_limit?: number; p_stale_threshold: string }
+        Args: {
+          p_limit?: number
+          p_stale_threshold: string
+        }
         Returns: {
           user_id: string
         }[]
       }
       get_tag_type: {
-        Args: { tag_id: number }
+        Args: {
+          tag_id: number
+        }
         Returns: Database["public"]["Enums"]["tag_type"]
       }
       get_users_with_priority_access: {
-        Args: { target_priority_id: string }
+        Args: {
+          target_priority_id: string
+        }
         Returns: {
           user_id: string
         }[]
       }
-      insert_domain: { Args: { email: string }; Returns: number }
+      halfvec_avg: {
+        Args: {
+          "": number[]
+        }
+        Returns: unknown
+      }
+      halfvec_out: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      halfvec_send: {
+        Args: {
+          "": unknown
+        }
+        Returns: string
+      }
+      halfvec_typmod_in: {
+        Args: {
+          "": unknown[]
+        }
+        Returns: number
+      }
+      hash_ltree: {
+        Args: {
+          "": unknown
+        }
+        Returns: number
+      }
+      hnsw_bit_support: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      hnsw_halfvec_support: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      hnsw_sparsevec_support: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      hnswhandler: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      insert_domain: {
+        Args: {
+          email: string
+        }
+        Returns: number
+      }
       is_accessible_twist: {
-        Args: { p_priority_id: string; p_twist_id: number; p_user_id: string }
+        Args: {
+          p_twist_id: number
+          p_priority_id: string
+          p_user_id: string
+        }
         Returns: boolean
       }
-      is_finite: { Args: { test: unknown }; Returns: boolean }
-      is_lower: { Args: { "": string }; Returns: boolean }
-      is_rsvp_tag: { Args: { tag_id: number }; Returns: boolean }
-      move_priority: {
-        Args: { p_new_parent_path: unknown; p_priority_id: string }
+      is_finite: {
+        Args: {
+          test: unknown
+        }
+        Returns: boolean
+      }
+      is_lower: {
+        Args: {
+          "": string
+        }
+        Returns: boolean
+      }
+      is_rsvp_tag: {
+        Args: {
+          tag_id: number
+        }
+        Returns: boolean
+      }
+      ivfflat_bit_support: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ivfflat_halfvec_support: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ivfflathandler: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      l2_norm:
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: number
+          }
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: number
+          }
+      l2_normalize:
+        | {
+            Args: {
+              "": string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: unknown
+          }
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: unknown
+          }
+      lca: {
+        Args: {
+          "": unknown[]
+        }
+        Returns: unknown
+      }
+      lquery_in: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      lquery_out: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      lquery_recv: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      lquery_send: {
+        Args: {
+          "": unknown
+        }
+        Returns: string
+      }
+      ltree_compress: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltree_decompress: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltree_gist_in: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltree_gist_options: {
+        Args: {
+          "": unknown
+        }
         Returns: undefined
       }
-      order_first: { Args: never; Returns: number }
+      ltree_gist_out: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltree_in: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltree_out: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltree_recv: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltree_send: {
+        Args: {
+          "": unknown
+        }
+        Returns: string
+      }
+      ltree2text: {
+        Args: {
+          "": unknown
+        }
+        Returns: string
+      }
+      ltxtq_in: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltxtq_out: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltxtq_recv: {
+        Args: {
+          "": unknown
+        }
+        Returns: unknown
+      }
+      ltxtq_send: {
+        Args: {
+          "": unknown
+        }
+        Returns: string
+      }
+      move_priority: {
+        Args: {
+          p_priority_id: string
+          p_new_parent_path: unknown
+        }
+        Returns: undefined
+      }
+      nlevel: {
+        Args: {
+          "": unknown
+        }
+        Returns: number
+      }
+      order_first: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
       organization: {
-        Args: { "": Database["public"]["Tables"]["contact"]["Row"] }
+        Args: {
+          "": unknown
+        }
         Returns: {
           created_at: string
           id: number
           name: string
-        }
-        SetofOptions: {
-          from: "contact"
-          to: "organization"
-          isOneToOne: true
-          isSetofReturn: true
-        }
+        }[]
       }
-      parent_path: { Args: { p: unknown }; Returns: unknown }
+      parent_path: {
+        Args: {
+          p: unknown
+        }
+        Returns: unknown
+      }
       redeem_invitation_token: {
-        Args: { p_token: string; p_user_id: string }
+        Args: {
+          p_token: string
+          p_user_id: string
+        }
         Returns: Json
       }
-      set_user_status: {
-        Args: { status: string; user_id: string }
-        Returns: undefined
-      }
       setup_help_feedback_priority: {
-        Args: { p_user_id?: string; p_user_name?: string }
+        Args: {
+          p_user_name?: string
+          p_user_id?: string
+        }
         Returns: Json
       }
       share_priority: {
         Args: {
           p_add_actor_ids: string[]
           p_priority_id: string
-          p_remove_actor_ids: string[]
           p_user_id: string
+          p_remove_actor_ids: string[]
         }
         Returns: Json
       }
-      sync_user_on_connect: { Args: { p_user_id: string }; Returns: undefined }
-      text2ltree: { Args: { "": string }; Returns: unknown }
-      tstzrange_to_daterange: {
-        Args: { p_range: unknown; p_timezone?: string }
+      sparsevec_out: {
+        Args: {
+          "": unknown
+        }
         Returns: unknown
       }
-      update_activity_tags: {
+      sparsevec_send: {
         Args: {
-          p_activity_id: string
-          p_actor_id: string
-          p_client_id: number
-          p_occurrence?: string
-          p_tag_updates: Json
+          "": unknown
+        }
+        Returns: string
+      }
+      sparsevec_typmod_in: {
+        Args: {
+          "": unknown[]
+        }
+        Returns: number
+      }
+      sync_user_on_connect: {
+        Args: {
+          p_user_id: string
         }
         Returns: undefined
+      }
+      text2ltree: {
+        Args: {
+          "": string
+        }
+        Returns: unknown
+      }
+      tstzrange_to_daterange: {
+        Args: {
+          p_range: unknown
+          p_timezone?: string
+        }
+        Returns: unknown
       }
       update_invitation_sent_at: {
-        Args: { p_contact_id: string }
-        Returns: undefined
-      }
-      update_note_tags: {
         Args: {
-          p_actor_id: string
-          p_client_id: number
-          p_note_id: string
-          p_tag_updates: Json
+          p_contact_id: string
         }
         Returns: undefined
       }
-      updated_by_uuid: { Args: { id: string }; Returns: number }
-      upsert_activity: {
-        Args: { p_activity: Json; p_defaults?: Json }
-        Returns: {
-          archived_at: string | null
-          assignee_id: string | null
-          at: unknown
-          author_id: string
-          created_at: string
-          created_by: string
-          created_by_twist_id: number | null
-          done_at: string | null
-          draft: boolean
-          duration: string | null
-          embedding: unknown
+      updated_by_uuid: {
+        Args: {
           id: string
-          kind: Database["public"]["Enums"]["activity_kind"] | null
-          last_note_created_at: string | null
-          last_note_source_created_at: string | null
-          meta: Json | null
-          on: unknown
-          order: number
-          pick_priority: Json | null
-          preview: string | null
-          priority_id: string
-          private: boolean
-          recurrence_exdates: string[] | null
-          recurrence_rule: string | null
-          source: string | null
-          source_created_at: string
-          source_priority_root: unknown
-          sync_depth: number | null
-          title: string | null
-          type: Database["public"]["Enums"]["activity_type"]
-          updated_at: string
-          updated_by: number
         }
-        SetofOptions: {
-          from: "*"
-          to: "activity"
-          isOneToOne: true
-          isSetofReturn: false
-        }
+        Returns: number
       }
       upsert_contacts:
         | {
@@ -3283,39 +3358,127 @@ export type Database = {
             Returns: undefined
           }
         | {
-            Args: { contacts: Json }
+            Args: {
+              contacts: Json
+            }
             Returns: {
+              user_id: string
               email: string
               id: string
               name: string
-              user_id: string
             }[]
           }
       upsert_user_contact: {
         Args: {
-          avatar_url: string
           user_email: string
           user_id: string
+          avatar_url: string
           user_name: string
         }
         Returns: string
       }
-      user_contact_id: { Args: never; Returns: string }
-      user_has_priority_access:
-        | {
-            Args: { target_priority_id: string; user_id: string }
-            Returns: boolean
-          }
-        | {
-            Args: { target_priority_path: unknown; user_id: string }
-            Returns: boolean
-          }
-      user_mentioned_in_activity: {
-        Args: { activity_id: string; user_id: string }
+      user_has_priority_access: {
+        Args: {
+          p_priority_id: string
+          p_user_id: string
+        }
         Returns: boolean
       }
-      user_timezone: { Args: never; Returns: string }
-      week_from_date: { Args: { d: string }; Returns: unknown }
+      uuid_generate_v1: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      uuid_generate_v1mc: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      uuid_generate_v3: {
+        Args: {
+          name: string
+          namespace: string
+        }
+        Returns: string
+      }
+      uuid_generate_v4: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      uuid_generate_v5: {
+        Args: {
+          name: string
+          namespace: string
+        }
+        Returns: string
+      }
+      uuid_nil: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      uuid_ns_dns: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      uuid_ns_oid: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      uuid_ns_url: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      uuid_ns_x500: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      vector_avg: {
+        Args: {
+          "": number[]
+        }
+        Returns: string
+      }
+      vector_dims:
+        | {
+            Args: {
+              "": string
+            }
+            Returns: number
+          }
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: number
+          }
+      vector_norm: {
+        Args: {
+          "": string
+        }
+        Returns: number
+      }
+      vector_out: {
+        Args: {
+          "": string
+        }
+        Returns: unknown
+      }
+      vector_send: {
+        Args: {
+          "": string
+        }
+        Returns: string
+      }
+      vector_typmod_in: {
+        Args: {
+          "": unknown[]
+        }
+        Returns: number
+      }
+      week_from_date: {
+        Args: {
+          d: string
+        }
+        Returns: unknown
+      }
     }
     Enums: {
       activity_kind:
@@ -3355,548 +3518,681 @@ export type Database = {
       }
     }
   }
-  storage: {
+  user: {
     Tables: {
-      buckets: {
-        Row: {
-          allowed_mime_types: string[] | null
-          avif_autodetection: boolean | null
-          created_at: string | null
-          file_size_limit: number | null
-          id: string
-          name: string
-          owner: string | null
-          owner_id: string | null
-          public: boolean | null
-          type: Database["storage"]["Enums"]["buckettype"]
-          updated_at: string | null
-        }
-        Insert: {
-          allowed_mime_types?: string[] | null
-          avif_autodetection?: boolean | null
-          created_at?: string | null
-          file_size_limit?: number | null
-          id: string
-          name: string
-          owner?: string | null
-          owner_id?: string | null
-          public?: boolean | null
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string | null
-        }
-        Update: {
-          allowed_mime_types?: string[] | null
-          avif_autodetection?: boolean | null
-          created_at?: string | null
-          file_size_limit?: number | null
-          id?: string
-          name?: string
-          owner?: string | null
-          owner_id?: string | null
-          public?: boolean | null
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string | null
-        }
-        Relationships: []
-      }
-      buckets_analytics: {
-        Row: {
-          created_at: string
-          format: string
-          id: string
-          type: Database["storage"]["Enums"]["buckettype"]
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          format?: string
-          id: string
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          format?: string
-          id?: string
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      iceberg_namespaces: {
-        Row: {
-          bucket_id: string
-          created_at: string
-          id: string
-          name: string
-          updated_at: string
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string
-          id?: string
-          name: string
-          updated_at?: string
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string
-          id?: string
-          name?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "iceberg_namespaces_bucket_id_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets_analytics"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      iceberg_tables: {
-        Row: {
-          bucket_id: string
-          created_at: string
-          id: string
-          location: string
-          name: string
-          namespace_id: string
-          updated_at: string
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string
-          id?: string
-          location: string
-          name: string
-          namespace_id: string
-          updated_at?: string
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string
-          id?: string
-          location?: string
-          name?: string
-          namespace_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "iceberg_tables_bucket_id_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets_analytics"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "iceberg_tables_namespace_id_fkey"
-            columns: ["namespace_id"]
-            isOneToOne: false
-            referencedRelation: "iceberg_namespaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      migrations: {
-        Row: {
-          executed_at: string | null
-          hash: string
-          id: number
-          name: string
-        }
-        Insert: {
-          executed_at?: string | null
-          hash: string
-          id: number
-          name: string
-        }
-        Update: {
-          executed_at?: string | null
-          hash?: string
-          id?: number
-          name?: string
-        }
-        Relationships: []
-      }
-      objects: {
-        Row: {
-          bucket_id: string | null
-          created_at: string | null
-          id: string
-          last_accessed_at: string | null
-          level: number | null
-          metadata: Json | null
-          name: string | null
-          owner: string | null
-          owner_id: string | null
-          path_tokens: string[] | null
-          updated_at: string | null
-          user_metadata: Json | null
-          version: string | null
-        }
-        Insert: {
-          bucket_id?: string | null
-          created_at?: string | null
-          id?: string
-          last_accessed_at?: string | null
-          level?: number | null
-          metadata?: Json | null
-          name?: string | null
-          owner?: string | null
-          owner_id?: string | null
-          path_tokens?: string[] | null
-          updated_at?: string | null
-          user_metadata?: Json | null
-          version?: string | null
-        }
-        Update: {
-          bucket_id?: string | null
-          created_at?: string | null
-          id?: string
-          last_accessed_at?: string | null
-          level?: number | null
-          metadata?: Json | null
-          name?: string | null
-          owner?: string | null
-          owner_id?: string | null
-          path_tokens?: string[] | null
-          updated_at?: string | null
-          user_metadata?: Json | null
-          version?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "objects_bucketId_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      prefixes: {
-        Row: {
-          bucket_id: string
-          created_at: string | null
-          level: number
-          name: string
-          updated_at: string | null
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string | null
-          level?: number
-          name: string
-          updated_at?: string | null
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string | null
-          level?: number
-          name?: string
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "prefixes_bucketId_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      s3_multipart_uploads: {
-        Row: {
-          bucket_id: string
-          created_at: string
-          id: string
-          in_progress_size: number
-          key: string
-          owner_id: string | null
-          upload_signature: string
-          user_metadata: Json | null
-          version: string
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string
-          id: string
-          in_progress_size?: number
-          key: string
-          owner_id?: string | null
-          upload_signature: string
-          user_metadata?: Json | null
-          version: string
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string
-          id?: string
-          in_progress_size?: number
-          key?: string
-          owner_id?: string | null
-          upload_signature?: string
-          user_metadata?: Json | null
-          version?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "s3_multipart_uploads_bucket_id_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      s3_multipart_uploads_parts: {
-        Row: {
-          bucket_id: string
-          created_at: string
-          etag: string
-          id: string
-          key: string
-          owner_id: string | null
-          part_number: number
-          size: number
-          upload_id: string
-          version: string
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string
-          etag: string
-          id?: string
-          key: string
-          owner_id?: string | null
-          part_number: number
-          size?: number
-          upload_id: string
-          version: string
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string
-          etag?: string
-          id?: string
-          key?: string
-          owner_id?: string | null
-          part_number?: number
-          size?: number
-          upload_id?: string
-          version?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "s3_multipart_uploads_parts_bucket_id_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "s3_multipart_uploads_parts_upload_id_fkey"
-            columns: ["upload_id"]
-            isOneToOne: false
-            referencedRelation: "s3_multipart_uploads"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-    }
-    Views: {
       [_ in never]: never
     }
+    Views: {
+      activity: {
+        Row: {
+          archived_at: string | null
+          assignee_id: string | null
+          at: unknown | null
+          author_id: string | null
+          created_at: string | null
+          created_by_twist_id: number | null
+          done_at: string | null
+          draft: boolean | null
+          duration: unknown | null
+          id: string | null
+          kind: Database["public"]["Enums"]["activity_kind"] | null
+          last_note_created_at: string | null
+          last_note_source_created_at: string | null
+          mentions: string[] | null
+          meta: Json | null
+          on: unknown | null
+          order: number | null
+          preview: string | null
+          priority_id: string | null
+          priority_path: unknown | null
+          private: boolean | null
+          range_at: unknown | null
+          range_on: unknown | null
+          recurrence_exdates: string[] | null
+          recurrence_rule: string | null
+          source: string | null
+          source_created_at: string | null
+          title: string | null
+          type: Database["public"]["Enums"]["activity_type"] | null
+          unread: boolean | null
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      activity_exception: {
+        Row: {
+          activity_id: string | null
+          archived_at: string | null
+          at: unknown | null
+          id: string | null
+          occurrence: string | null
+          on: unknown | null
+          preview: string | null
+          priority_path: unknown | null
+          range_at: unknown | null
+          range_on: unknown | null
+          title: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "priority_twist_activity_update"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      activity_tags: {
+        Row: {
+          archived_at: string | null
+          id: string | null
+          occurrence: string | null
+          priority_path: unknown | null
+          range_at: unknown | null
+          range_on: unknown | null
+          tags: Json | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      actor: {
+        Row: {
+          archived_at: string | null
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          name: string | null
+          self: boolean | null
+          type: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      note: {
+        Row: {
+          activity_id: string | null
+          archived_at: string | null
+          author_id: string | null
+          content: string | null
+          created_at: string | null
+          created_by: string | null
+          draft: boolean | null
+          id: string | null
+          links: Json | null
+          mentions: string[] | null
+          private: boolean | null
+          re_note_id: string | null
+          source_created_at: string | null
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      note_tags: {
+        Row: {
+          archived_at: string | null
+          id: string | null
+          priority_path: unknown | null
+          range_at: unknown | null
+          range_on: unknown | null
+          tags: Json | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      priority: {
+        Row: {
+          archived_at: string | null
+          color: number | null
+          created_at: string | null
+          created_by: string | null
+          global_path: unknown | null
+          id: string | null
+          key: string | null
+          order: number | null
+          path: unknown | null
+          personal: boolean | null
+          pomodoro: number | null
+          root: boolean | null
+          title: string | null
+          top_order: number | null
+          unread: boolean | null
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      priority_actor: {
+        Row: {
+          actor_id: string | null
+          archived_at: string | null
+          created_at: string | null
+          priority_path: unknown | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      priority_expanded: {
+        Row: {
+          archived_at: string | null
+          joined_at: string | null
+          path: unknown | null
+          priority_id: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      priority_unread: {
+        Row: {
+          priority_id: string | null
+          unread: boolean | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      twist: {
+        Row: {
+          archived_at: string | null
+          config: Json | null
+          created_at: string | null
+          id: string | null
+          name: string | null
+          owner_id: string | null
+          priority_id: string | null
+          twist_environment:
+            | Database["public"]["Enums"]["twist_environment"]
+            | null
+          twist_id: number | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_twist_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_unread"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_twist_id_fkey"
+            columns: ["twist_id"]
+            isOneToOne: false
+            referencedRelation: "twist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
     Functions: {
-      add_prefixes: {
-        Args: { _bucket_id: string; _name: string }
+      assert_priority_access: {
+        Args: {
+          user_id: string
+          priority_id: string
+        }
         Returns: undefined
       }
-      can_insert_object: {
-        Args: { bucketid: string; metadata: Json; name: string; owner: string }
+      delete_activity_read: {
+        Args: {
+          user_id: string
+          p_activity_id: string
+        }
         Returns: undefined
       }
-      delete_leaf_prefixes: {
-        Args: { bucket_ids: string[]; names: string[] }
-        Returns: undefined
-      }
-      delete_prefix: {
-        Args: { _bucket_id: string; _name: string }
+      has_priority_access: {
+        Args: {
+          priority_id: string
+          user_id: string
+        }
         Returns: boolean
       }
-      extension: { Args: { name: string }; Returns: string }
-      filename: { Args: { name: string }; Returns: string }
-      foldername: { Args: { name: string }; Returns: string[] }
-      get_level: { Args: { name: string }; Returns: number }
-      get_prefix: { Args: { name: string }; Returns: string }
-      get_prefixes: { Args: { name: string }; Returns: string[] }
-      get_size_by_bucket: {
-        Args: never
-        Returns: {
-          bucket_id: string
-          size: number
-        }[]
-      }
-      list_multipart_uploads_with_delimiter: {
+      mentioned_in_activity: {
         Args: {
-          bucket_id: string
-          delimiter_param: string
-          max_keys?: number
-          next_key_token?: string
-          next_upload_token?: string
-          prefix_param: string
+          user_id: string
+          activity_id: string
         }
-        Returns: {
-          created_at: string
-          id: string
-          key: string
-        }[]
+        Returns: boolean
       }
-      list_objects_with_delimiter: {
+      update_activity_tags: {
         Args: {
-          bucket_id: string
-          delimiter_param: string
-          max_keys?: number
-          next_token?: string
-          prefix_param: string
-          start_after?: string
+          p_activity_id: string
+          p_client_id: number
+          p_tag_updates: Json
+          p_occurrence?: string
+          p_actor_id: string
+          user_id: string
         }
-        Returns: {
-          id: string
-          metadata: Json
-          name: string
-          updated_at: string
-        }[]
-      }
-      lock_top_prefixes: {
-        Args: { bucket_ids: string[]; names: string[] }
         Returns: undefined
       }
-      operation: { Args: never; Returns: string }
-      search:
-        | {
-            Args: {
-              bucketname: string
-              levels?: number
-              limits?: number
-              offsets?: number
-              prefix: string
-            }
-            Returns: {
-              created_at: string
-              id: string
-              last_accessed_at: string
-              metadata: Json
-              name: string
-              updated_at: string
-            }[]
-          }
-        | {
-            Args: {
-              bucketname: string
-              levels?: number
-              limits?: number
-              offsets?: number
-              prefix: string
-              search?: string
-              sortcolumn?: string
-              sortorder?: string
-            }
-            Returns: {
-              created_at: string
-              id: string
-              last_accessed_at: string
-              metadata: Json
-              name: string
-              updated_at: string
-            }[]
-          }
-      search_legacy_v1: {
+      update_note_tags: {
         Args: {
-          bucketname: string
-          levels?: number
-          limits?: number
-          offsets?: number
-          prefix: string
-          search?: string
-          sortcolumn?: string
-          sortorder?: string
+          p_note_id: string
+          p_client_id: number
+          p_tag_updates: Json
+          p_actor_id: string
+          user_id: string
+        }
+        Returns: undefined
+      }
+      upsert_activity: {
+        Args: {
+          p_defaults?: Json
+          user_id: string
+          p_activity: Json
         }
         Returns: {
+          archived_at: string | null
+          assignee_id: string | null
+          at: unknown | null
+          author_id: string
           created_at: string
+          created_by: string
+          created_by_twist_id: number | null
+          done_at: string | null
+          draft: boolean
+          duration: unknown | null
+          embedding: unknown | null
           id: string
-          last_accessed_at: string
-          metadata: Json
-          name: string
+          kind: Database["public"]["Enums"]["activity_kind"] | null
+          last_note_created_at: string | null
+          last_note_source_created_at: string | null
+          meta: Json | null
+          on: unknown | null
+          order: number
+          pick_priority: Json | null
+          preview: string | null
+          priority_id: string
+          private: boolean
+          recurrence_exdates: string[] | null
+          recurrence_rule: string | null
+          source: string | null
+          source_created_at: string
+          source_priority_root: unknown | null
+          sync_depth: number | null
+          title: string | null
+          type: Database["public"]["Enums"]["activity_type"]
           updated_at: string
-        }[]
+          updated_by: number
+        }
       }
-      search_v1_optimised: {
+      upsert_activity_exception: {
         Args: {
-          bucketname: string
-          levels?: number
-          limits?: number
-          offsets?: number
-          prefix: string
-          search?: string
-          sortcolumn?: string
-          sortorder?: string
+          p_title?: string
+          user_id: string
+          p_id: string
+          p_activity_id: string
+          p_occurrence: string
+          p_archived_at?: string
+          p_updated_by?: number
+          p_at?: unknown
+          p_on?: unknown
+          p_duration?: unknown
+          p_done_at?: string
+          p_preview?: string
+          p_meta?: Json
         }
         Returns: {
+          activity_id: string
+          archived_at: string | null
+          at: unknown | null
+          created_at: string
+          done_at: string | null
+          duration: unknown | null
+          id: string
+          meta: Json | null
+          occurrence: string
+          on: unknown | null
+          preview: string | null
+          title: string | null
+          updated_at: string
+          updated_by: number
+        }
+      }
+      upsert_activity_read: {
+        Args: {
+          user_id: string
+          p_activity_id: string
+          p_read_at: string
+        }
+        Returns: {
+          activity_id: string
+          read_at: string
+          updated_at: string
+          user_id: string
+        }
+      }
+      upsert_activity_tag: {
+        Args: {
+          p_tag_id: number
+          p_occurrence?: string
+          user_id: string
+          p_archived_at?: string
+          p_updated_by?: number
+          p_actor_id: string
+          p_activity_id: string
+        }
+        Returns: {
+          activity_id: string
+          actor_id: string
+          archived_at: string | null
+          id: number
+          occurrence: string | null
+          sync_depth: number | null
+          tag_id: number
+          updated_at: string
+          updated_by: number
+        }
+      }
+      upsert_note: {
+        Args: {
+          p_id: string
+          p_author_id: string
+          p_created_by: string
+          p_archived_at: string
+          p_draft: boolean
+          p_private: boolean
+          p_content: string
+          p_links: Json
+          p_mentions: string[]
+          p_re_note_id: string
+          p_source_created_at: string
+          p_key: string
+          user_id: string
+          p_updated_by: number
+          p_activity_id: string
+        }
+        Returns: {
+          activity_id: string
+          archived_at: string | null
+          author_id: string
+          content: string | null
+          created_at: string
+          created_by: string
+          draft: boolean
+          id: string
+          key: string | null
+          links: Json | null
+          mentions: string[] | null
+          private: boolean
+          re_note_id: string | null
+          source_created_at: string
+          sync_depth: number | null
+          updated_at: string
+          updated_by: number
+        }
+      }
+      upsert_note_tag: {
+        Args: {
+          p_archived_at?: string
+          p_updated_by?: number
+          p_tag_id: number
+          p_note_id: string
+          p_actor_id: string
+          user_id: string
+        }
+        Returns: {
+          actor_id: string
+          archived_at: string | null
+          id: number
+          note_id: string
+          sync_depth: number | null
+          tag_id: number
+          updated_at: string
+          updated_by: number
+        }
+      }
+      upsert_priority: {
+        Args: {
+          p_priority: Json
+          user_id: string
+        }
+        Returns: {
+          archived_at: string | null
+          color: number | null
+          created_at: string | null
+          created_by: string | null
+          global_path: unknown | null
+          id: string | null
+          key: string | null
+          order: number | null
+          path: unknown | null
+          personal: boolean | null
+          pomodoro: number | null
+          root: boolean | null
+          title: string | null
+          top_order: number | null
+          unread: boolean | null
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+      }
+      upsert_priority_member: {
+        Args: {
+          user_id: string
+          p_contact_id: string
+          p_priority_id: string
+          p_invited_by: string
+          p_invited_at: string
+        }
+        Returns: {
+          archived_at: string | null
+          contact_id: string | null
+          created_at: string | null
+          invited_by: string | null
+          personal: boolean | null
+          priority_id: string | null
+          status: string | null
+          updated_at: string | null
+        }
+      }
+      upsert_priority_twist: {
+        Args: {
+          p_name: string
+          p_owner_id: string
+          p_twist_id: number
+          p_priority_id: string
+          p_id: string
+          user_id: string
+          p_archived_at: string
+          p_config: Json
+        }
+        Returns: {
+          archived_at: string | null
+          config: Json
           created_at: string
           id: string
-          last_accessed_at: string
-          metadata: Json
           name: string
+          owner_id: string
+          priority_id: string
+          suspended_at: string | null
+          twist_id: number
           updated_at: string
-        }[]
+        }
       }
-      search_v2:
-        | {
-            Args: {
-              bucket_name: string
-              levels?: number
-              limits?: number
-              prefix: string
-              start_after?: string
-            }
-            Returns: {
-              created_at: string
-              id: string
-              key: string
-              metadata: Json
-              name: string
-              updated_at: string
-            }[]
-          }
-        | {
-            Args: {
-              bucket_name: string
-              levels?: number
-              limits?: number
-              prefix: string
-              sort_column?: string
-              sort_column_after?: string
-              sort_order?: string
-              start_after?: string
-            }
-            Returns: {
-              created_at: string
-              id: string
-              key: string
-              last_accessed_at: string
-              metadata: Json
-              name: string
-              updated_at: string
-            }[]
-          }
+      upsert_priority_user: {
+        Args: {
+          p_priority_id: string
+          p_archived_at: string
+          p_personal: boolean
+          user_id: string
+        }
+        Returns: {
+          archived_at: string | null
+          created_at: string
+          personal: boolean
+          priority_id: string
+          updated_at: string
+          user_id: string
+        }
+      }
+      upsert_session: {
+        Args: {
+          p_precedence: number
+          p_pomodoro_at: string
+          p_pomodoro: number
+          p_archived_at: string
+          p_updated_by: number
+          user_id: string
+          p_id: string
+          p_priority_id: string
+          p_at: unknown
+        }
+        Returns: {
+          archived_at: string | null
+          at: unknown
+          created_at: string
+          id: string
+          pomodoro: number | null
+          pomodoro_at: string | null
+          precedence: number
+          priority_id: string | null
+          updated_at: string
+          updated_by: number
+          user_id: string
+        }
+      }
+      upsert_user_settings: {
+        Args: {
+          user_id: string
+          p_enter_behavior: Database["public"]["Enums"]["enter_behavior"]
+        }
+        Returns: {
+          enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
+          updated_at: string
+          user_id: string
+        }
+      }
+      user_contact_id: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: string
+      }
     }
     Enums: {
-      buckettype: "STANDARD" | "ANALYTICS"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3904,33 +4200,27 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type PublicSchema = Database[Extract<keyof Database, "public">]
 
 export type Tables<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+  PublicTableNameOrOptions extends
+    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+        Database[PublicTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
+        PublicSchema["Views"])
+    ? (PublicSchema["Tables"] &
+        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -3938,24 +4228,20 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -3963,24 +4249,20 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -3988,80 +4270,15 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+  PublicEnumNameOrOptions extends
+    | keyof PublicSchema["Enums"]
+    | { schema: keyof Database },
+  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+> = PublicEnumNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
+    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
     : never
-
-export type CompositeTypes<
-  PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
-
-export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
-  public: {
-    Enums: {
-      activity_kind: [
-        "document",
-        "messages",
-        "meeting",
-        "videoconference",
-        "phone",
-        "focus",
-        "meal",
-        "exercise",
-        "family",
-        "travel",
-        "social",
-        "entertainment",
-      ],
-      activity_type: ["action", "event", "note"],
-      enter_behavior: ["enter_newline", "enter_submits"],
-      subscription_plan: ["free"],
-      subscription_status: [
-        "active",
-        "canceled",
-        "past_due",
-        "trialing",
-        "incomplete",
-        "incomplete_expired",
-        "unpaid",
-      ],
-      sync_operation: ["create", "update"],
-      tag_type: ["toggle", "count", "compute"],
-      twist_environment: ["personal", "private", "review", "public"],
-    },
-  },
-  storage: {
-    Enums: {
-      buckettype: ["STANDARD", "ANALYTICS"],
-    },
-  },
-} as const
 

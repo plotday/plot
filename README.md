@@ -10,6 +10,9 @@
 1. [Install pgFormatter](https://github.com/darold/pgFormatter): `brew install pgformatter`
 1. `brew install postgresql`
 1. `brew install cocoapods`
+1. Install [Atlas](https://atlasgo.io/getting-started#installation) for database migrations: `brew install ariga/tap/atlas`
+1. Install [Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/sql-proxy) for connecting to the remote database: `brew install cloud-sql-proxy`
+1. Authenticate with Google Cloud: `gcloud auth login && gcloud auth application-default login`
 1. Get the public repo submodule: `git submodule update --init --recursive`
 1. `pnpm install`
 1. `pnpm get-env`
@@ -21,6 +24,20 @@ Note: The public repo is included as a git submodule in `public/` and linked as 
 
 `pnpm dev`
 
+### Database
+
+The local database runs as a Docker container (PostgreSQL) on port 54322. Start it with `pnpm --filter @plotday/db start`.
+
+To connect to the remote production database via Cloud SQL Auth Proxy:
+
+```bash
+# Start the proxy (uses your gcloud credentials, port 5433 to avoid conflicts)
+cloud-sql-proxy plot-core:northamerica-northeast2:plot-prod --port=5433
+
+# Connect
+psql "postgresql://migrator:PASSWORD@localhost:5433/plot"
+```
+
 ### Updating DB types
 
 After making local changes to the DB, run `pnpm types`. This generates
@@ -28,8 +45,9 @@ After making local changes to the DB, run `pnpm types`. This generates
 
 ### Generating a migration
 
-Migrations are applied by GitHub Actions. Generate a migration using `pnpm
-gen-migration MIGRATION_NAME` and include it with the relevant change.
+Migrations are generated with Atlas and applied by GitHub Actions. Generate a
+migration using `pnpm gen-migration -- MIGRATION_NAME` and include it with the
+relevant change. Apply locally with `pnpm apply-migrations`.
 
 ### Working with Twister types
 
@@ -56,6 +74,5 @@ Twister type definitions (Activity, Priority, Twist, Tool interfaces, etc.) are 
 - [GitHub](https://github.com/orgs/plotday/teams/development/members)
 - [1Password](https://plotco.1password.com/vaults/details/opfjdkmleais6inytphoetcf3y)
 - [Linear](https://linear.app/plotday/settings/members)
-- [Supabase](https://supabase.com/dashboard/org/zjomdxrdnixcnkpqxcmg/team)
 - [Cloudflare](https://dash.cloudflare.com/34ceb662899230b63c7e8114eaf9277c/members)
 - [PostHog](https://us.posthog.com/project/245802/products?next=%2Fdashboard%2F638240)

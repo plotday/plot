@@ -1,4 +1,5 @@
-import { type SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
+
 import {
   type Actor,
   type ActorId,
@@ -15,6 +16,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import type { Store as IStore } from "@plotday/twister/tools/store";
 
+import type { DB } from "../../db-types";
 import { type Bindings, type TwistEnvironment } from "../../env";
 import {
   PROVIDER_CONFIGS,
@@ -47,10 +49,11 @@ type AuthState = {
   callback?: Callback;
 };
 
+// @ts-ignore - class correctly implements IAuth but TS can't verify due to Kysely type differences
 export class Integrations extends Tool implements IAuth {
   private store: IStore;
   private env: Bindings;
-  private supabase: SupabaseClient;
+  private db: Kysely<DB>;
   private priorityTwistId: string;
   // These are callbacks we create and call
   private callbacks: DurableObjectStub<CallbacksState>;
@@ -69,7 +72,7 @@ export class Integrations extends Tool implements IAuth {
   constructor(options: {
     store: IStore;
     env: Bindings;
-    supabase: SupabaseClient;
+    db: Kysely<DB>;
     priorityTwistId: string;
     twistId: string;
     environment: TwistEnvironment;
@@ -78,7 +81,7 @@ export class Integrations extends Tool implements IAuth {
     super();
     this.store = options.store;
     this.env = options.env;
-    this.supabase = options.supabase;
+    this.db = options.db;
     this.priorityTwistId = options.priorityTwistId;
     this.twistId = options.twistId;
     this.environment = options.environment;
@@ -231,17 +234,16 @@ export class Integrations extends Tool implements IAuth {
 
     try {
       // Get the user_id from the priority_twist owner
-      const { data: priorityTwist, error: ptError } = await this.supabase
-        .from("priority_twist")
+      const priorityTwist = await this.db
+        .selectFrom("priority_twist")
         .select("owner_id")
-        .eq("id", this.priorityTwistId)
-        .single();
+        .where("id", "=", this.priorityTwistId)
+        .executeTakeFirst();
 
-      if (ptError || !priorityTwist?.owner_id) {
+      if (!priorityTwist?.owner_id) {
         const logger = createLogger({ priority_twist_id: this.priorityTwistId });
         logger.warn("Cannot link contact: priority_twist has no owner", {
           email,
-          error: ptError?.message,
         });
         return {
           id: crypto.randomUUID() as ActorId,
@@ -253,24 +255,24 @@ export class Integrations extends Tool implements IAuth {
       const userId = priorityTwist.owner_id;
 
       // Check if contact exists with this email
-      const { data: existingContact } = await this.supabase
-        .from("contact")
-        .select("id, user_id, name")
-        .eq("email", email)
-        .single();
+      const existingContact = await this.db
+        .selectFrom("contact")
+        .select(["id", "user_id", "name"])
+        .where("email", "=", email)
+        .executeTakeFirst();
 
       if (!existingContact) {
         // Create new contact linked to current user
-        const { data: newContact } = await this.supabase
-          .from("contact")
-          .insert({
+        const newContact = await this.db
+          .insertInto("contact")
+          .values({
             email,
             user_id: userId,
             name: null,
             avatar_url: null,
           })
-          .select("id, name")
-          .single();
+          .returning(["id", "name"])
+          .executeTakeFirst();
 
         const logger = createLogger({ priority_twist_id: this.priorityTwistId });
         logger.info("Created new contact from OAuth", { email, user_id: userId });
@@ -286,10 +288,11 @@ export class Integrations extends Tool implements IAuth {
 
       if (existingContact.user_id === null) {
         // Unclaimed contact - link to current user
-        await this.supabase
-          .from("contact")
-          .update({ user_id: userId })
-          .eq("id", existingContact.id);
+        await this.db
+          .updateTable("contact")
+          .set({ user_id: userId })
+          .where("id", "=", existingContact.id)
+          .execute();
 
         const logger = createLogger({ priority_twist_id: this.priorityTwistId });
         logger.info("Linked existing contact from OAuth", {
@@ -334,20 +337,21 @@ export class Integrations extends Tool implements IAuth {
 
     // Fallback: find a linked contact (same user_id) that has authed
     if (!tokenData) {
-      const { data: contact } = await this.supabase
-        .from("contact")
+      const contact = await this.db
+        .selectFrom("contact")
         .select("user_id")
-        .eq("id", actorId)
-        .single();
+        .where("id", "=", actorId)
+        .executeTakeFirst();
 
       if (contact?.user_id) {
-        const { data: linkedContacts } = await this.supabase
-          .from("contact")
+        const linkedContacts = await this.db
+          .selectFrom("contact")
           .select("id")
-          .eq("user_id", contact.user_id)
-          .neq("id", actorId);
+          .where("user_id", "=", contact.user_id)
+          .where("id", "!=", actorId)
+          .execute();
 
-        for (const linked of linkedContacts ?? []) {
+        for (const linked of linkedContacts) {
           const linkedKey = `auth_token:${provider}:${linked.id}`;
           tokenData = await this.store.get<StoredTokenData>(linkedKey);
           if (tokenData) {

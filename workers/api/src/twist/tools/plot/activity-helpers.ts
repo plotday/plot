@@ -14,6 +14,7 @@ import type {
 import { ActivityType } from "@plotday/twister/plot";
 
 import { createLogger } from "@plotday/worker-util";
+import { rpc } from "../../../rpc";
 import { addContacts } from "./contacts";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";
@@ -380,16 +381,15 @@ export async function processNewActorArray(
   // For existing actor IDs, check which ones are actually contacts
   const existingIdsToCheck = actorIds.filter((id) => !newContactIds.has(id));
   if (existingIdsToCheck.length > 0) {
-    const { data: validContacts } = await plot.supabase
-      .from("contact")
+    const validContacts = await plot.db
+      .selectFrom("contact")
       .select("id")
-      .in("id", existingIdsToCheck);
-    if (validContacts) {
-      const validIds = new Set(validContacts.map((c) => c.id));
-      contactIds = contactIds.concat(
-        existingIdsToCheck.filter((id) => validIds.has(id))
-      );
-    }
+      .where("id", "in", existingIdsToCheck)
+      .execute();
+    const validIds = new Set(validContacts.map((c) => c.id));
+    contactIds = contactIds.concat(
+      existingIdsToCheck.filter((id) => validIds.has(id))
+    );
   }
 
   if (contactIds.length > 0) {
@@ -398,15 +398,13 @@ export async function processNewActorArray(
       contact_id: actorId,
     }));
 
-    const { error } = await plot.supabase
-      .from("priority_contact")
-      .upsert(priorityContacts, {
-        onConflict: "priority_id,contact_id",
-      });
-
-    if (error) {
-      throw new Error(`Failed to link contacts to priority: ${error.message}`);
-    }
+    await plot.db
+      .insertInto("priority_contact")
+      .values(priorityContacts)
+      .onConflict((oc) =>
+        oc.columns(["priority_id", "contact_id"]).doNothing()
+      )
+      .execute();
   }
 
   return actorIds;
@@ -484,11 +482,11 @@ export async function processTagsActors(
 export async function getPriorityTwistOwnerContact(
   plot: Plot
 ): Promise<string | null | undefined> {
-  const result = await plot.supabase.rpc("get_priority_twist_owner_contact", {
+  // rpc() unwraps scalar results, so we get the uuid string directly
+  const result = await rpc(plot.db, "get_priority_twist_owner_contact", {
     p_priority_twist_id: plot.priorityTwistId,
   });
-  // We should always have an owner contact
-  return result.data ?? null;
+  return (result as string) ?? null;
 }
 
 /**
@@ -542,13 +540,13 @@ export async function markActivityReadForAuthorIfOwner(
 
   try {
     // Look up whether this contact is linked to a user
-    const contactResult = await plot.supabase
-      .from("contact")
+    const contact = await plot.db
+      .selectFrom("contact")
       .select("user_id")
-      .eq("id", authorId)
-      .maybeSingle();
+      .where("id", "=", authorId)
+      .executeTakeFirst();
 
-    const userId = contactResult.data?.user_id;
+    const userId = contact?.user_id;
     if (!userId) {
       return;
     }
@@ -560,20 +558,27 @@ export async function markActivityReadForAuthorIfOwner(
     }
 
     // Upsert a single activity_read entry for the author
-    const upsertResult = await plot.supabase
-      .from("activity_read")
-      .upsert(
-        { activity_id: activityId, user_id: userId, read_at: timestamp },
-        { onConflict: "user_id,activity_id" }
-      );
-
-    if (upsertResult.error) {
+    try {
+      await plot.db
+        .insertInto("activity_read")
+        .values({
+          activity_id: activityId,
+          user_id: userId,
+          read_at: timestamp,
+        })
+        .onConflict((oc) =>
+          oc.columns(["user_id", "activity_id"]).doUpdateSet((eb) => ({
+            read_at: eb.ref("excluded.read_at"),
+          }))
+        )
+        .execute();
+    } catch (upsertError) {
       const logger = createLogger({
         priority_twist_id: plot.priorityTwistId,
       });
       logger.error(
         "Failed to auto-mark activity as read for author",
-        upsertResult.error as Error,
+        upsertError as Error,
         { activity_id: activityId, user_id: userId }
       );
     }
@@ -688,25 +693,23 @@ export async function prepareActivityForDb(
     };
 
     // Call find_matching_activities_scored with configured filters and scoring
-    const matchResult = await plot.supabase.rpc(
-      "find_matching_activities_scored",
-      {
-        query_embedding: embedding ? JSON.stringify(embedding) : "[]",
-        created_by_id: plot.priorityTwistId,
-        required_filters: requiredFilters,
-        scored_fields: scoredFields,
-        activity_data: activityData,
-        similarity_threshold: 0.7, // Strong match threshold for required content
-      }
-    );
+    const matchResult = await rpc(plot.db, "find_matching_activities_scored", {
+      query_embedding: embedding ? JSON.stringify(embedding) : "[]",
+      created_by_id: plot.priorityTwistId,
+      required_filters: requiredFilters,
+      scored_fields: scoredFields,
+      activity_data: activityData,
+      similarity_threshold: 0.7, // Strong match threshold for required content
+    });
 
-    if (
-      matchResult.data &&
-      Array.isArray(matchResult.data) &&
-      matchResult.data.length > 0
-    ) {
+    const matchArray = Array.isArray(matchResult)
+      ? matchResult
+      : matchResult
+        ? [matchResult]
+        : [];
+    if (matchArray.length > 0) {
       // Use the priority from the best matching activity
-      targetPriorityId = matchResult.data[0].priority_id;
+      targetPriorityId = (matchArray[0] as any).priority_id;
     } else {
       // No matching activities found, use default
       targetPriorityId = plot.priorityId;

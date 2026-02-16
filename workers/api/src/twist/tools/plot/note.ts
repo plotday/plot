@@ -1,4 +1,4 @@
-import { type Database, safeQuery } from "@plotday/db";
+import type { Database } from "@plotday/db";
 import {
   type Activity,
   type ActivityLink,
@@ -13,6 +13,7 @@ import {
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
 import { createLogger } from "@plotday/worker-util";
+import { rpc } from "../../../rpc";
 import {
   convertNoteToMarkdown,
   handleDbOperationError,
@@ -91,18 +92,16 @@ export async function createNote(
     } else if ("source" in note.activity) {
       // Look up activity by source and priority root (composite unique key)
       const priorityRoot = await plot.getPriorityRoot();
-      const { data: existingActivity, error: fetchError } = await plot.supabase
-        .from("activity")
+      const existingActivity = await plot.db
+        .selectFrom("activity")
         .select("id")
-        .eq("source", note.activity.source)
-        .eq("source_priority_root", priorityRoot)
-        .single();
+        .where("source", "=", note.activity.source)
+        .where("source_priority_root", "=", priorityRoot)
+        .executeTakeFirst();
 
-      if (fetchError || !existingActivity) {
+      if (!existingActivity) {
         throw new Error(
-          `Activity not found with source "${note.activity.source}": ${
-            fetchError?.message ?? "Not found"
-          }`
+          `Activity not found with source "${note.activity.source}": Not found`
         );
       }
 
@@ -118,14 +117,14 @@ export async function createNote(
     if (activityContext) {
       priorityId = activityContext.priority_id;
     } else {
-      const { data: activityData, error: activityError } = await plot.supabase
-        .from("activity")
+      const activityData = await plot.db
+        .selectFrom("activity")
         .select("priority_id")
-        .eq("id", activityId)
-        .single();
+        .where("id", "=", activityId)
+        .executeTakeFirst();
 
-      if (activityError) {
-        throw new Error(`Activity not found: ${activityError.message}`);
+      if (!activityData) {
+        throw new Error(`Activity not found: ${activityId}`);
       }
 
       priorityId = activityData.priority_id;
@@ -190,15 +189,33 @@ export async function createNote(
 
     // Insert or upsert note based on whether key is provided
     // When key is provided, use upsert to handle duplicate keys within same activity
-    const dbResult = safeQuery(
-      dbNote.key
-        ? await plot.supabase
-            .from("note")
-            .upsert(dbNote, { onConflict: "activity_id,key" })
-            .select()
-            .single()
-        : await plot.supabase.from("note").insert(dbNote).select().single()
-    );
+    const dbResult = dbNote.key
+      ? await plot.db
+          .insertInto("note")
+          .values(dbNote)
+          .onConflict((oc) =>
+            oc.columns(["activity_id", "key"]).doUpdateSet((eb) => ({
+              author_id: eb.ref("excluded.author_id"),
+              created_by: eb.ref("excluded.created_by"),
+              source_created_at: eb.ref("excluded.source_created_at"),
+              draft: eb.ref("excluded.draft"),
+              private: eb.ref("excluded.private"),
+              content: eb.ref("excluded.content"),
+              links: eb.ref("excluded.links"),
+              mentions: eb.ref("excluded.mentions"),
+              updated_by: eb.ref("excluded.updated_by"),
+              sync_depth: eb.ref("excluded.sync_depth"),
+              archived_at: eb.ref("excluded.archived_at"),
+              re_note_id: eb.ref("excluded.re_note_id"),
+            }))
+          )
+          .returningAll()
+          .executeTakeFirstOrThrow()
+      : await plot.db
+          .insertInto("note")
+          .values(dbNote)
+          .returningAll()
+          .executeTakeFirstOrThrow();
 
     // Mark activity as read based on unread flag:
     // - false: mark read for ALL priority users (initial sync)
@@ -207,34 +224,39 @@ export async function createNote(
     // Skip if called from batch operations to avoid deadlock from parallel upserts
     if (!skipActivityRead && note?.unread === false) {
       // Mark read for ALL priority users
-      const usersResult = await plot.supabase.rpc(
-        "get_users_with_priority_access",
-        {
-          target_priority_id: priorityId,
-        }
-      );
+      // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
+      // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
+      const usersResult = await rpc(plot.db, "get_users_with_priority_access", {
+        target_priority_id: priorityId,
+      });
 
-      if (usersResult.data && usersResult.data.length > 0) {
-        const activityReadEntries = usersResult.data.map(
-          (pu: { user_id: string }) => ({
+      const userIds = (Array.isArray(usersResult) ? usersResult : usersResult ? [usersResult] : []) as unknown as string[];
+      if (userIds.length > 0) {
+        const activityReadEntries = userIds.map(
+          (userId) => ({
             activity_id: activityId,
-            user_id: pu.user_id,
+            user_id: userId,
             read_at: dbResult.created_at,
           })
         );
 
-        const upsertResult = await plot.supabase
-          .from("activity_read")
-          .upsert(activityReadEntries, {
-            onConflict: "user_id,activity_id",
-          });
-        if (upsertResult.error) {
+        try {
+          await plot.db
+            .insertInto("activity_read")
+            .values(activityReadEntries)
+            .onConflict((oc) =>
+              oc.columns(["user_id", "activity_id"]).doUpdateSet((eb) => ({
+                read_at: eb.ref("excluded.read_at"),
+              }))
+            )
+            .execute();
+        } catch (upsertError) {
           const logger = createLogger({
             priority_twist_id: plot.priorityTwistId,
           });
           logger.error(
             "Failed to upsert activity_read entries for note",
-            upsertResult.error as Error,
+            upsertError as Error,
             {
               activity_id: activityId,
               count: activityReadEntries.length,
@@ -248,7 +270,7 @@ export async function createNote(
         plot,
         authorId as string,
         activityId,
-        dbResult.created_at
+        String(dbResult.created_at)
       );
     }
 
@@ -286,7 +308,7 @@ export async function createNote(
         );
 
       if (tagInserts.length > 0) {
-        safeQuery(await plot.supabase.from("note_tag").insert(tagInserts));
+        await plot.db.insertInto("note_tag").values(tagInserts).execute();
       }
     }
 
@@ -358,12 +380,12 @@ export async function createNotes(
       activityId = firstNote.activity.id;
     } else if ("source" in firstNote.activity) {
       const priorityRoot = await plot.getPriorityRoot();
-      const { data } = await plot.supabase
-        .from("activity")
+      const data = await plot.db
+        .selectFrom("activity")
         .select("id")
-        .eq("source", firstNote.activity.source)
-        .eq("source_priority_root", priorityRoot)
-        .single();
+        .where("source", "=", firstNote.activity.source)
+        .where("source_priority_root", "=", priorityRoot)
+        .executeTakeFirst();
       activityId = data?.id;
     }
 
@@ -372,15 +394,16 @@ export async function createNotes(
       const keys = notesNeedingKeyResolution.map(
         ({ note }) => (note.reNote as { key: string }).key
       );
-      const { data: keyNotes } = await plot.supabase
-        .from("note")
-        .select("id, key")
-        .eq("activity_id", activityId)
-        .in("key", keys);
+      const keyNotes = await plot.db
+        .selectFrom("note")
+        .select(["id", "key"])
+        .where("activity_id", "=", activityId)
+        .where("key", "in", keys)
+        .execute();
 
-      if (keyNotes && keyNotes.length > 0) {
+      if (keyNotes.length > 0) {
         const keyToId = new Map(
-          keyNotes.map((n: any) => [n.key, n.id])
+          keyNotes.map((n) => [n.key, n.id])
         );
 
         for (const { note, index } of notesNeedingKeyResolution) {
@@ -388,10 +411,11 @@ export async function createNotes(
           const noteId = (results[index] as PromiseFulfilledResult<Uuid>)
             .value;
           if (parentId && noteId) {
-            await plot.supabase
-              .from("note")
-              .update({ re_note_id: parentId })
-              .eq("id", noteId);
+            await plot.db
+              .updateTable("note")
+              .set({ re_note_id: parentId })
+              .where("id", "=", noteId)
+              .execute();
           }
         }
       }
@@ -419,17 +443,15 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       // Note: We need the activity_id to look up by key, but NoteUpdate doesn't require it
       // We'll need to query by key alone since the unique constraint is (activity_id, key)
       // This means if the same key exists in multiple activities, this will fail
-      const { data: existingNote, error: fetchError } = await plot.supabase
-        .from("note")
+      const existingNote = await plot.db
+        .selectFrom("note")
         .select("id")
-        .eq("key", note.key)
-        .single();
+        .where("key", "=", note.key)
+        .executeTakeFirst();
 
-      if (fetchError || !existingNote) {
+      if (!existingNote) {
         throw new Error(
-          `Note not found with key "${note.key}": ${
-            fetchError?.message ?? "Not found"
-          }`
+          `Note not found with key "${note.key}": Not found`
         );
       }
 
@@ -439,25 +461,25 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     }
 
     // Validate access to the note's activity
-    const { data: noteData, error: noteError } = await plot.supabase
-      .from("note")
+    const noteData = await plot.db
+      .selectFrom("note")
       .select("activity_id")
-      .eq("id", noteId)
-      .single();
+      .where("id", "=", noteId)
+      .executeTakeFirst();
 
-    if (noteError) {
-      throw new Error(`Note not found: ${noteError.message}`);
+    if (!noteData) {
+      throw new Error(`Note not found: ${noteId}`);
     }
 
     // Validate access to the activity's priority
-    const { data: activityData, error: activityError } = await plot.supabase
-      .from("activity")
+    const activityData = await plot.db
+      .selectFrom("activity")
       .select("priority_id")
-      .eq("id", noteData.activity_id)
-      .single();
+      .where("id", "=", noteData.activity_id)
+      .executeTakeFirst();
 
-    if (activityError) {
-      throw new Error(`Activity not found: ${activityError.message}`);
+    if (!activityData) {
+      throw new Error(`Activity not found: ${noteData.activity_id}`);
     }
 
     const priorityId = activityData.priority_id;
@@ -523,16 +545,12 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
 
     // Execute the update only if there are meaningful changes
     if (hasMeaningfulUpdates) {
-      const { data: updatedNote, error: updateError } = await plot.supabase
-        .from("note")
-        .update(dbUpdate)
-        .eq("id", noteId)
-        .select("id")
-        .single();
-
-      if (updateError) {
-        throw new Error(`Note update failed: ${updateError.message}`);
-      }
+      const updatedNote = await plot.db
+        .updateTable("note")
+        .set(dbUpdate)
+        .where("id", "=", noteId)
+        .returning("id")
+        .executeTakeFirst();
 
       if (!updatedNote) {
         throw new Error(`Note not found: ${noteId}`);
@@ -542,16 +560,10 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     // Handle tags if provided
     if (note.tags !== undefined) {
       // Delete all existing tags for this note
-      const { error: deleteError } = await plot.supabase
-        .from("note_tag")
-        .delete()
-        .eq("note_id", noteId);
-
-      if (deleteError) {
-        throw new Error(
-          `Failed to delete existing tags: ${deleteError.message}`
-        );
-      }
+      await plot.db
+        .deleteFrom("note_tag")
+        .where("note_id", "=", noteId)
+        .execute();
 
       // Process tags - convert NewActor[] to ActorId[] for each tag
       const processedTags: Partial<Record<number, ActorId[]>> = {};
@@ -582,13 +594,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
         );
 
       if (newTags.length > 0) {
-        const { error: insertError } = await plot.supabase
-          .from("note_tag")
-          .insert(newTags);
-
-        if (insertError) {
-          throw new Error(`Failed to insert new tags: ${insertError.message}`);
-        }
+        await plot.db.insertInto("note_tag").values(newTags).execute();
       }
     }
 
@@ -612,63 +618,67 @@ export async function getNotes(
     await plot.validatePriorityAccess(activity.priority.id);
 
     // Get all notes for this activity
-    const { data, error } = await plot.supabase
-      .from("note")
-      .select(
-        `
-          id,
-          created_at,
-          source_created_at,
-          updated_at,
-          author_id,
-          created_by,
-          updated_by,
-          archived_at,
-          activity_id,
-          draft,
-          private,
-          content,
-          key,
-          links,
-          mentions,
-          re_note_id,
-          author:actor!author_id(
-            id,
-            name,
-            type,
-            email,
-            archived_at,
-            avatar_url,
-            created_at,
-            updated_at
-          )
-        `
-      )
-      .eq("activity_id", activity.id)
-      .order("created_at", { ascending: true });
+    const rows = await plot.db
+      .selectFrom("note")
+      .select([
+        "id",
+        "created_at",
+        "source_created_at",
+        "updated_at",
+        "author_id",
+        "created_by",
+        "updated_by",
+        "archived_at",
+        "activity_id",
+        "draft",
+        "private",
+        "content",
+        "key",
+        "links",
+        "mentions",
+        "re_note_id",
+      ])
+      .where("activity_id", "=", activity.id)
+      .orderBy("created_at", "asc")
+      .execute();
 
-    if (error) {
-      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-      logger.error("Failed to get notes", error as Error, {
-        activity_id: activity.id,
-      });
-      throw error;
-    }
+    // Fetch all unique author actors in one query
+    const authorIds = [...new Set(rows.map((r) => r.author_id))];
+    const authors =
+      authorIds.length > 0
+        ? await plot.db
+            .selectFrom("actor")
+            .select([
+              "id",
+              "name",
+              "type",
+              "email",
+              "archived_at",
+              "avatar_url",
+              "created_at",
+              "updated_at",
+            ])
+            .where("id", "in", authorIds)
+            .execute()
+        : [];
+    const authorMap = new Map(authors.map((a) => [a.id, a]));
 
     // Fetch tags for all notes
-    const noteIds = data.map((row: any) => row.id);
-    const { data: tagsData } = await plot.supabase
-      .from("note_tags")
-      .select("note_id, tags")
-      .in("note_id", noteIds);
+    const noteIds = rows.map((row) => row.id);
+    const tagsData =
+      noteIds.length > 0
+        ? await plot.db
+            .selectFrom("note_tags")
+            .select(["note_id", "tags"])
+            .where("note_id", "in", noteIds)
+            .execute()
+        : [];
 
     // Create a map of note_id to tags
     const tagsMap = new Map<string, any>();
-    if (tagsData) {
-      for (const tagRecord of tagsData) {
-        if (tagRecord.note_id) {
-          tagsMap.set(tagRecord.note_id, tagRecord.tags);
-        }
+    for (const tagRecord of tagsData) {
+      if (tagRecord.note_id) {
+        tagsMap.set(tagRecord.note_id, tagRecord.tags);
       }
     }
 
@@ -677,8 +687,9 @@ export async function getNotes(
       plot.plotOptions?.contact?.access !== undefined &&
       plot.plotOptions.contact.access >= ContactAccess.Read;
 
-    return data.map((row) => {
-      if (!row.author) {
+    return rows.map((row) => {
+      const author = authorMap.get(row.author_id);
+      if (!author) {
         throw new Error("Note author not found");
       }
       return {
@@ -689,10 +700,10 @@ export async function getNotes(
           : new Date(row.created_at),
         activity: activity, // Use the activity parameter passed to the function
         author: {
-          id: row.author.id as ActorId,
-          type: row.author.type as unknown as ActorType,
-          name: row.author.name ?? null,
-          email: includeAuthorEmail ? row.author.email ?? undefined : undefined,
+          id: author.id as ActorId,
+          type: author.type as unknown as ActorType,
+          name: author.name ?? null,
+          email: includeAuthorEmail ? author.email ?? undefined : undefined,
         },
         private: row.private,
         archived: row.archived_at !== null,

@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { createClient } from "@plotday/db";
-
+import { createDb } from "../db";
+import { rpc, rpcUser } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
+import { notifySync } from "../app/sync/notify";
 
 const priority = new Hono<{ Bindings: Bindings }>();
 
@@ -23,49 +24,53 @@ priority.get("/priorities", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+  const db = createDb(c.env);
 
-  // Get all priorities the user has access to via user_priority view
-  const { data: priorities, error } = await supabase
-    .from("user_priority")
-    .select("id, title, path")
-    .eq("user_id", user.id)
-    .is("archived_at", null)
-    .order("path", { ascending: true });
+  try {
+    // Get all priorities the user has access to via user.priority view
+    const priorities = await db
+      .selectFrom("user.priority")
+      .select(["id", "title", "path"])
+      .where("user_id", "=", user.id)
+      .where("archived_at", "is", null)
+      .orderBy("path", "asc")
+      .execute();
 
-  if (error) {
-    const logger = createLogger();
-    logger.error("Error fetching priorities", new Error(error.message), {
-      user_id: user.id,
-    });
-    return new Response(`Error fetching priorities: ${error.message}`, {
-      status: 500,
-    });
-  }
+    // Process priorities to extract parent ID from path
+    const result = priorities.map((p) => {
+      const path = p.path as string;
+      const pathParts = path.split(".");
 
-  // Process priorities to extract parent ID from path
-  const result = priorities.map((p) => {
-    const path = p.path as string;
-    const pathParts = path.split(".");
-
-    // Parent ID: find the priority with the parent path
-    let parentId = null;
-    if (pathParts.length > 1) {
-      const parentPath = pathParts.slice(0, -1).join(".");
-      const parent = priorities.find((pr) => pr.path === parentPath);
-      if (parent) {
-        parentId = parent.id;
+      // Parent ID: find the priority with the parent path
+      let parentId = null;
+      if (pathParts.length > 1) {
+        const parentPath = pathParts.slice(0, -1).join(".");
+        const parent = priorities.find((pr) => pr.path === parentPath);
+        if (parent) {
+          parentId = parent.id;
+        }
       }
-    }
 
-    return {
-      id: p.id,
-      title: p.title,
-      parentId,
-    };
-  });
+      return {
+        id: p.id,
+        title: p.title,
+        parentId,
+      };
+    });
 
-  return c.json(result);
+    return c.json(result);
+  } catch (error) {
+    const logger = createLogger();
+    logger.error(
+      "Error fetching priorities",
+      error instanceof Error ? error : new Error(String(error)),
+      { user_id: user.id }
+    );
+    return new Response(
+      `Error fetching priorities: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
+  }
 });
 
 // POST /priority - Create a new priority (user token-based auth)
@@ -86,16 +91,16 @@ priority.post("/priority", async (c) => {
 
   const { title, parentId } = parseResult.data;
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+  const db = createDb(c.env);
 
   let parentPath: string;
   let createdBy: string;
 
   if (parentId) {
     // Verify user has access to the parent priority
-    const { data: hasAccess } = await supabase.rpc("user_has_priority_access", {
+    const hasAccess = await rpcUser(db, "has_priority_access", {
       user_id: user.id,
-      target_priority_id: parentId,
+      priority_id: parentId,
     });
 
     if (!hasAccess) {
@@ -106,100 +111,111 @@ priority.post("/priority", async (c) => {
     }
 
     // Get parent priority details
-    const { data: parentPriority, error: parentError } = await supabase
-      .from("priority")
-      .select("path, created_by")
-      .eq("id", parentId)
-      .single();
+    try {
+      const parentPriority = await db
+        .selectFrom("priority")
+        .select(["path", "created_by"])
+        .where("id", "=", parentId)
+        .executeTakeFirstOrThrow();
 
-    if (parentError || !parentPriority) {
+      parentPath = parentPriority.path as string;
+      createdBy = parentPriority.created_by;
+    } catch (error) {
       const logger = createLogger();
-      logger.error("Error fetching parent priority", parentError ? new Error(parentError.message) : new Error("Unknown error"), {
-        parent_id: parentId,
-        user_id: user.id,
-      });
+      logger.error(
+        "Error fetching parent priority",
+        error instanceof Error ? error : new Error(String(error)),
+        { parent_id: parentId, user_id: user.id }
+      );
       return new Response(
-        `Error: Parent priority not found: ${parentError?.message}`,
+        `Error: Parent priority not found: ${error instanceof Error ? error.message : "Unknown error"}`,
         { status: 404 }
       );
     }
-
-    parentPath = parentPriority.path as string;
-    createdBy = parentPriority.created_by;
   } else {
-    // No parent specified - get user's root priority
-    const { data: rootPriorityUser, error: rootError } = await supabase
-      .from("priority_user")
-      .select("priority:priority_id(path)")
-      .eq("user_id", user.id)
-      .eq("personal", true)
-      .single();
+    // No parent specified - get user's root priority via a JOIN
+    try {
+      const rootPriorityUser = await db
+        .selectFrom("priority_user")
+        .innerJoin("priority", "priority.id", "priority_user.priority_id")
+        .select(["priority.path"])
+        .where("priority_user.user_id", "=", user.id)
+        .where("priority_user.personal", "=", true)
+        .executeTakeFirstOrThrow();
 
-    if (rootError || !rootPriorityUser) {
+      parentPath = rootPriorityUser.path as string;
+      createdBy = user.id;
+    } catch (error) {
       const logger = createLogger();
-      logger.error("Error fetching root priority", rootError ? new Error(rootError.message) : new Error("Unknown error"), {
-        user_id: user.id,
-      });
+      logger.error(
+        "Error fetching root priority",
+        error instanceof Error ? error : new Error(String(error)),
+        { user_id: user.id }
+      );
       return new Response(
-        `Error: User root priority not found: ${rootError?.message}`,
+        `Error: User root priority not found: ${error instanceof Error ? error.message : "Unknown error"}`,
         { status: 500 }
       );
     }
-
-    parentPath = (rootPriorityUser.priority as any).path as string;
-    createdBy = user.id;
   }
 
   // Generate child path using database function
-  const { data: childPath, error: pathError } = await supabase.rpc(
-    "generate_path",
-    {
+  // rpc() unwraps scalar results, so we get the path string directly
+  let childPath: string;
+  try {
+    childPath = await rpc(db, "generate_path", {
       parent: parentPath,
-    }
-  );
-
-  if (pathError || !childPath) {
+    }) as string;
+  } catch (error) {
     const logger = createLogger();
-    logger.error("Error generating path", pathError ? new Error(pathError.message) : new Error("Unknown error"), {
-      parent_path: parentPath,
-      user_id: user.id,
-    });
-    return new Response(`Error: Path generation failed: ${pathError?.message}`, {
-      status: 500,
-    });
-  }
-
-  // Create the priority
-  const { data: newPriority, error: createError } = await supabase
-    .from("priority")
-    .insert({
-      created_by: createdBy,
-      title: title,
-      path: childPath,
-      updated_by: 0,
-    })
-    .select()
-    .single();
-
-  if (createError || !newPriority) {
-    const logger = createLogger();
-    logger.error("Error creating priority", createError ? new Error(createError.message) : new Error("Unknown error"), {
-      title,
-      parent_path: parentPath,
-      created_by: createdBy,
-      user_id: user.id,
-    });
+    logger.error(
+      "Error generating path",
+      error instanceof Error ? error : new Error(String(error)),
+      { parent_path: parentPath, user_id: user.id }
+    );
     return new Response(
-      `Error creating priority: ${createError?.message}`,
+      `Error: Path generation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       { status: 500 }
     );
   }
 
-  return c.json({
-    id: newPriority.id,
-    title: newPriority.title,
-    created: newPriority.created_at,
-  });
+  // Create the priority
+  try {
+    const newPriority = await db
+      .insertInto("priority")
+      .values({
+        created_by: createdBy,
+        title: title,
+        path: childPath,
+        updated_by: 0,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    notifySync(c, newPriority.id);
+
+    return c.json({
+      id: newPriority.id,
+      title: newPriority.title,
+      created: newPriority.created_at,
+    });
+  } catch (error) {
+    const logger = createLogger();
+    logger.error(
+      "Error creating priority",
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        title,
+        parent_path: parentPath,
+        created_by: createdBy,
+        user_id: user.id,
+      }
+    );
+    return new Response(
+      `Error creating priority: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
+  }
 });
 
 export default priority;

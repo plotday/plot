@@ -213,7 +213,7 @@ export class AI extends Tool implements IAI {
       topP,
       system,
       ...(prompt ? { prompt: prompt! } : { messages: messages! }),
-      tools: transformedTools,
+      tools: transformedTools as any,
       experimental_output,
       toolChoice,
     });
@@ -230,6 +230,7 @@ export class AI extends Tool implements IAI {
       output: experimental_output
         ? (result.experimental_output as Static<SCHEMA>)
         : undefined,
+      // @ts-ignore - AI SDK ResponseMessage[] vs Twister AIMessage[] type mismatch due to duplicate type definitions
       response: result.response
         ? {
             id: result.response.id,

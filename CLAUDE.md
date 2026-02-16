@@ -19,14 +19,16 @@ Supported platforms:
 - Tool: Provide capabilities to twists. Some are built-in and implemented in the API, while others are available as separate packages. They tend to be unopinionated building blocks (e.g. watch and send Gmail messages).
 - Twist Creator aka Twister: The SDK for building twists and tools. Sometimes represented with 🌪️.
 - RSVP Tags: Special count tags (Attend, Skip, Undecided) that are mutually exclusive per actor. When an actor adds one RSVP tag, any other RSVP tags they have are automatically removed. This exclusivity is enforced at both the database level and in the Flutter app for offline support. The exclusivity respects occurrence boundaries for recurring events.
-- Count Tag Ownership: Count tags can only be added/removed by the user themselves. Users cannot modify count tags for other actors. This is enforced by RLS policies in the database and validated in the Flutter app.
+- Count Tag Ownership: Count tags can only be added/removed by the user themselves. Users cannot modify count tags for other actors. This is enforced by database trigger functions (`update_activity_tags`, `update_note_tags`) and validated in the Flutter app.
 
 ## Data
 
 The app is local-first, so it can function without an internet connection while syncing when one is available.
 Local storage uses the Drift package (which uses SQLite), with entities defined in "apps/plot/libs/store/".
-Data is synchronized to a remote Supabase (PostgreSQL) database for backup, multi-device sync, and collaboration.
-The Supabase database schema is defined in "libs/db/supabase/schemas/".
+Data is synchronized to a remote PostgreSQL database for backup, multi-device sync, and collaboration.
+The database schema is defined in "libs/db/schema/".
+The local development database runs as a Docker container (PostgreSQL 18.1) on port 54322.
+Atlas is used for schema diffing and migration management. Type generation uses `npx supabase gen types` (fetched on demand via npx, no package dependency).
 
 ## Code Structure
 
@@ -556,20 +558,20 @@ export class GoogleGmail extends Tool<GoogleGmail> {
 
 ### The Correct Schema Change Workflow
 
-1. **Make schema changes in `libs/db/supabase/schemas/` files ONLY**
+1. **Make schema changes in `libs/db/schema/` files ONLY**
 
    - The schema files are the source of truth
-   - Organize changes in the appropriate subdirectories (50-tables, 60-views, 70-rls, 80-triggers, etc.)
+   - Organize changes in the appropriate subdirectories (40-functions, 50-tables, 60-functions, 70-views, 90-user-schema, 95-triggers, 99-data, etc.)
    - Never modify migration files directly or create migrations manually
 
 2. **Generate a migration**
 
    ```bash
-   pnpm gen-migration <descriptive_migration_name>
+   pnpm gen-migration -- <descriptive_migration_name>
    ```
 
-   - This compares the schema files with existing migrations and generates a new timestamped migration file
-   - The migration will be created in `libs/db/supabase/migrations/`
+   - This uses Atlas to compare schema files with existing migrations and generates a new timestamped migration file
+   - The migration will be created in `libs/db/migrations/`
 
 3. **Add data migrations if needed (optional)**
 
@@ -583,16 +585,14 @@ export class GoogleGmail extends Tool<GoogleGmail> {
    pnpm apply-migrations
    ```
 
-   - This applies all pending migrations to the LOCAL database (localhost:54322)
-   - Migrations are automatically wrapped in transactions
-   - If a migration fails, the transaction rolls back - no partial changes
-   - Updates the migration history table to track which migrations have been applied
+   - This uses Atlas to apply all pending migrations to the LOCAL database (localhost:54322)
+   - Atlas tracks applied migrations in its `atlas_schema_revisions` table
    - You can modify the migration file and re-run until it succeeds
 
 5. **If migration fails or you need more schema changes**
 
    - Fix the migration file or make additional schema changes
-   - Generate another migration: `pnpm gen-migration <another_descriptive_name>`
+   - Generate another migration: `pnpm gen-migration -- <another_descriptive_name>`
    - Apply it: `pnpm apply-migrations`
    - Repeat as needed
 
@@ -608,13 +608,19 @@ export class GoogleGmail extends Tool<GoogleGmail> {
 ### Available Database Commands
 
 ```bash
-# Generate a new migration from schema changes
-pnpm gen-migration <name>
+# Start the local database (Docker Compose)
+pnpm --filter @plotday/db start
 
-# Apply all pending migrations to LOCAL database
+# Stop the local database
+pnpm --filter @plotday/db stop
+
+# Generate a new migration from schema changes (Atlas)
+pnpm gen-migration -- <name>
+
+# Apply all pending migrations to LOCAL database (Atlas)
 pnpm apply-migrations
 
-# Check that schema files match existing migrations
+# Check that schema files match existing migrations (Atlas)
 pnpm diff-schema-migrations
 
 # Check for pending migrations (used in CI)
@@ -622,37 +628,32 @@ pnpm --filter @plotday/db lint:pending-migrations
 
 # Regenerate TypeScript types from local database
 pnpm types
+
+# Full reset (destroys all data - requires user permission)
+pnpm reset
 ```
 
 ### Verifying Schema and Migrations Are In Sync
 
 **`pnpm diff-schema-migrations`**
 
-- Compares schema files with existing migration files
-- **Should return no changes** once all migrations have been generated
+- Uses Atlas to compare schema files with existing migration files
+- **Should produce no changes** once all migrations have been generated
 - If it shows differences, you have unapplied schema changes that need a new migration
-- **Formatting matters**: Function definitions must match the diff output formatting exactly
-  - If the diff shows formatting differences, update the schema file to match the diff
-  - This ensures the diff returns empty once everything is in sync
 - This is the source of truth for whether migrations are complete
 
 ### Critical Rules
 
 #### NEVER Touch the Remote Database
 
-- **NEVER push to remote database** - No `supabase db push`, no remote migrations, nothing
-- **NEVER reset remote database** - No `supabase db reset --linked`, ever
 - **NEVER modify remote database** - All work is LOCAL ONLY (localhost:54322)
-- **NEVER use `--linked` flag** - This targets remote database, which is forbidden
 - **ONLY work with local database** - Always use localhost:54322 connection
 
 #### Local Database Rules
 
-- **NEVER use `pnpm apply-schema`** - This is a dangerous emergency-only command that bypasses migrations
 - **NEVER do a database reset** (`pnpm reset`) without explicit user permission - it destroys all local data
 - **NEVER modify migration files** after they've been applied - create a new migration instead
-- **NEVER create migrations manually** - always generate them from schema changes
-- **ALWAYS use transactions** - migrations are automatically transactional via psql
+- **NEVER create migrations manually** - always generate them with `pnpm gen-migration`
 - **ALWAYS generate types** after schema changes: `pnpm types`
 - **ALWAYS verify** you're targeting local database (localhost:54322) before running SQL
 
@@ -666,29 +667,23 @@ pnpm types
 
 ### Common Mistakes to Avoid
 
-❌ **Wrong**: Running `supabase db push --linked` or any command with `--linked` flag
+❌ **Wrong**: Modifying the remote/production database directly
 ✅ **Correct**: Only work with local database at localhost:54322
 
-❌ **Wrong**: Pushing or resetting remote database
-✅ **Correct**: NEVER touch remote database under any circumstances
-
-❌ **Wrong**: Modifying the database directly with `apply-schema`
-✅ **Correct**: Make schema changes, generate migration, apply migration
-
 ❌ **Wrong**: Creating migration files manually
-✅ **Correct**: Modify schema files, then run `pnpm gen-migration`
+✅ **Correct**: Modify schema files, then run `pnpm gen-migration -- <name>`
 
 ❌ **Wrong**: Editing an already-applied migration
 ✅ **Correct**: Generate a new migration to make additional changes
 
 ❌ **Wrong**: Using `pnpm reset` to fix migration issues
-✅ **Correct**: Fix the migration file and re-apply with psql
+✅ **Correct**: Fix the migration file and re-apply
 
-### Triggers on `auth.*` Tables
+### Database Infrastructure
 
-**`pnpm gen-migration` only diffs the `public` schema.** Triggers, functions, or other objects on `auth.*` tables (e.g., `auth.users`) are invisible to migration generation. If you add or modify a trigger on an `auth` table in the schema files, you **must manually create the migration** — it will never be auto-generated.
+The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `libs/db/docker-compose.yml`. Schema files fully define database state (schemas, extensions, roles, functions).
 
-Symptoms of this being missed: the schema file defines the trigger, `pnpm diff-schema-migrations` shows no diff, but the trigger doesn't exist in the database.
+Atlas handles schema diffing and migration management. Type generation uses `npx supabase gen types` (fetched on demand via npx, no package dependency).
 
 ## Development Webhooks with Cloudflare Tunnel
 

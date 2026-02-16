@@ -3,6 +3,7 @@ export type CallbackErrorType =
   | "INVALID_TOKEN" // Empty or missing token
   | "NOT_FOUND" // Callback doesn't exist in storage
   | "EXPIRED" // Callback has passed expiration date
+  | "SUSPENDED" // Twist is suspended due to cost limits
   | "UNINITIALIZED"; // Webhook functionality not set up
 
 export interface CallbackErrorContext {
@@ -22,6 +23,7 @@ export class CallbackError extends Error {
       INVALID_TOKEN: "Invalid callback token",
       NOT_FOUND: "Callback not found",
       EXPIRED: "Callback has expired",
+      SUSPENDED: "Twist processing suspended due to high usage",
       UNINITIALIZED: "Webhook functionality not initialized",
     };
 
@@ -88,6 +90,7 @@ export function getCallbackErrorType(
       "Invalid callback token": "INVALID_TOKEN",
       "Callback not found": "NOT_FOUND",
       "Callback has expired": "EXPIRED",
+      "Twist processing suspended due to high usage": "SUSPENDED",
       "Webhook functionality not initialized": "UNINITIALIZED",
     };
     return messageToType[message];

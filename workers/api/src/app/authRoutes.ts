@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { createClient } from "@plotday/db";
 import type { Callback } from "@plotday/twister/tools/callbacks";
 import type { AuthProvider } from "@plotday/twister/tools/integrations";
 
@@ -15,8 +14,10 @@ import { authRateLimiter } from "../middleware/rate-limit";
 
 const authRoutes = new Hono<{ Bindings: Bindings }>();
 
-// Apply strict rate limiting to all auth routes (20 req/min)
-authRoutes.use("*", authRateLimiter);
+// Apply strict rate limiting to auth routes only (20 req/min)
+// Must scope to "/auth" — using "*" would match ALL /app/* requests
+// since this sub-app is mounted at "/" within appSection.
+authRoutes.use("/auth", authRateLimiter);
 
 // Schemas
 const AuthUrlRequestSchema = z.object({
@@ -25,10 +26,6 @@ const AuthUrlRequestSchema = z.object({
   callback: z.string().optional(),
   redirectUri: z.url(),
   platform: z.enum(["ios", "android", "desktop"]).optional(),
-});
-
-const SendCodeRequestSchema = z.object({
-  email: z.string().email(),
 });
 
 // POST /auth - Handle OAuth redirects
@@ -108,92 +105,6 @@ authRoutes.get("/auth", async (c) => {
       );
     }
     return captureServerError(c, error, "Internal server error");
-  }
-});
-
-// POST /auth/send-code - Send OTP code via email (public endpoint, no auth required)
-// Sends welcome email for new users, password reset for existing users
-// Always returns success to prevent account enumeration
-authRoutes.post("/auth/send-code", async (c) => {
-  try {
-    const parseResult = SendCodeRequestSchema.safeParse(await c.req.json());
-
-    if (!parseResult.success) {
-      return handleValidationError(parseResult.error);
-    }
-
-    const { email } = parseResult.data;
-
-    // Create admin client to check user existence and send emails
-    const supabaseAdmin = createClient(
-      c.env.SUPABASE_URL,
-      c.env.SUPABASE_SERVICE_KEY
-    );
-
-    // Check if user already exists
-    const { data: users, error: listError } =
-      await supabaseAdmin.auth.admin.listUsers();
-
-    if (listError) {
-      const logger = createLogger();
-      logger.error("Error checking user existence", new Error(listError.message));
-      // Return success anyway to prevent account enumeration
-      return c.json({ success: true });
-    }
-
-    const existingUser = users.users.find((user) => user.email === email);
-
-    if (existingUser) {
-      // User exists - send password reset email (recovery template with OTP)
-      const { error: resetError } =
-        await supabaseAdmin.auth.resetPasswordForEmail(email);
-
-      if (resetError) {
-        const logger = createLogger();
-        logger.error("Error sending password reset email", new Error(resetError.message), {
-          email,
-        });
-      }
-    } else {
-      // Check if this email is already linked to another user via OAuth/integration
-      const { data: linkedContact } = await supabaseAdmin
-        .from("contact")
-        .select("user_id")
-        .eq("email", email)
-        .not("user_id", "is", null)
-        .maybeSingle();
-
-      if (linkedContact) {
-        return c.json(
-          {
-            error: "email_linked",
-            message:
-              "This email is already associated with another account",
-          },
-          409
-        );
-      }
-
-      // New user - send signup OTP email (confirmation template)
-      const { error: signupError } = await supabaseAdmin.auth.signInWithOtp({
-        email: email,
-      });
-
-      if (signupError) {
-        const logger = createLogger();
-        logger.error("Error sending signup email", new Error(signupError.message), {
-          email,
-        });
-      }
-    }
-
-    // Always return success to prevent account enumeration
-    return c.json({ success: true });
-  } catch (error) {
-    const logger = createLogger();
-    logger.error("Error in send-code endpoint", error as Error);
-    // Return success even on error to prevent account enumeration
-    return c.json({ success: true });
   }
 });
 

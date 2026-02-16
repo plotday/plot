@@ -15,7 +15,11 @@ production) ;;
 esac
 
 shift
-VARS="$@ $npm_package_config_deploy_vars"
+if [ $# -gt 0 ]; then
+  VARS="$@"
+else
+  VARS="$npm_package_config_deploy_vars"
+fi
 
 filter_existing_paths() {
   local paths="$@"
@@ -80,6 +84,7 @@ get_var_value() {
 
 fail=0
 result=""
+seen_vars=""
 
 for var in $VARS; do
   var_ref=
@@ -98,6 +103,12 @@ for var in $VARS; do
     var_ref=$var
   fi
 
+  # Skip duplicate var names
+  case " $seen_vars " in
+    *" $var_name "*) continue ;;
+  esac
+  seen_vars="$seen_vars $var_name"
+
   if [ -n "$var_ref" ]; then
     got_val=$(get_var_value "$var_ref")
     if [ $? -eq 0 ]; then
@@ -111,7 +122,7 @@ for var in $VARS; do
     echo "!!! Environment variable $var not set" >&2
     fail=1
   fi
-  result="${result}${var_name}=${var_value}"$'\n'
+  result="${result}${var_name}=\"${var_value}\""$'\n'
 done
 
 if [ $fail -eq 1 ]; then

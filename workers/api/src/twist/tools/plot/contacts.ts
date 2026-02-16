@@ -2,6 +2,7 @@ import { type Actor, type ActorId, ActorType, type NewContact } from "@plotday/t
 import { ContactAccess } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 
+import { rpc } from "../../../rpc";
 import type { Plot } from "./index";
 
 function normalizeName(name: string | undefined | null): string | undefined {
@@ -49,16 +50,13 @@ export async function addContacts(
   }));
 
   // Use RPC function to support COALESCE - preserve existing name if new name is null
-  const result = await plot.supabase.rpc("upsert_contacts", {
+  const rpcResult = await rpc(plot.db, "upsert_contacts", {
     contacts: contactsToUpsert,
   });
 
-  if (result.error) {
-    throw new Error(`Failed to upsert contacts: ${result.error.message}`);
-  }
-
   // Map the upserted contacts to Actor type
-  const actors: Actor[] = (result.data || []).map((contact: any) => {
+  const rpcData = Array.isArray(rpcResult) ? rpcResult : rpcResult ? [rpcResult] : [];
+  const actors: Actor[] = rpcData.map((contact: any) => {
     const actor: Actor = {
       id: contact.id as ActorId,
       type: contact.user_id ? ActorType.User : ActorType.Contact,
@@ -94,24 +92,30 @@ export async function addContacts(
   }>;
 
   if (externalAccounts.length > 0) {
-    const { error: ceaError } = await plot.supabase
-      .from("contact_external_account")
-      .upsert(
-        externalAccounts.map((ea) => ({
-          contact_id: ea.contact_id,
-          provider: ea.provider,
-          account_id: ea.account_id,
-          data_fetched_at: new Date().toISOString(),
-        })),
-        { onConflict: "provider,account_id" }
-      );
-
-    if (ceaError) {
+    try {
+      await plot.db
+        .insertInto("contact_external_account")
+        .values(
+          externalAccounts.map((ea) => ({
+            contact_id: ea.contact_id,
+            provider: ea.provider,
+            account_id: ea.account_id,
+            data_fetched_at: new Date().toISOString(),
+          }))
+        )
+        .onConflict((oc) =>
+          oc.columns(["provider", "account_id"]).doUpdateSet((eb) => ({
+            contact_id: eb.ref("excluded.contact_id"),
+            data_fetched_at: eb.ref("excluded.data_fetched_at"),
+          }))
+        )
+        .execute();
+    } catch (ceaError) {
       // Log but don't fail the contact creation
       const logger = createLogger({ operation: "addContacts" });
       logger.error(
         "Failed to upsert contact_external_account",
-        new Error(ceaError.message)
+        ceaError instanceof Error ? ceaError : new Error(String(ceaError))
       );
     }
   }
@@ -129,17 +133,14 @@ export async function getActors(
   if (ids.length === 0) return [];
 
   // Query the actor view to get actors by IDs
-  const result = await plot.supabase
-    .from("actor")
-    .select("id, email, name, type")
-    .in("id", ids);
-
-  if (result.error) {
-    throw new Error(`Failed to fetch actors: ${result.error.message}`);
-  }
+  const result = await plot.db
+    .selectFrom("actor")
+    .select(["id", "email", "name", "type"])
+    .where("id", "in", ids)
+    .execute();
 
   // Map the database results to Actor type
-  const actors: Actor[] = (result.data || []).map((actor) => {
+  const actors: Actor[] = result.map((actor) => {
     const actorObj: Actor = {
       id: actor.id as ActorId,
       type:

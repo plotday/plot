@@ -1,76 +1,50 @@
 import type { MiddlewareHandler } from "hono";
 import type { PostHog } from "posthog-node";
+import type { Kysely } from "kysely";
 
-import { type SupabaseClient, createClient } from "@plotday/db";
-
+import { type DB, createDb } from "../db";
 import type { Bindings } from "../env";
+import { type AuthUser, getUser } from "../utils/auth";
 
 declare module "hono" {
   interface ContextVariableMap {
     postHog: PostHog;
-    supabase: SupabaseClient;
-    supabaseAdmin: SupabaseClient;
+    db: Kysely<DB>;
+    user: AuthUser;
   }
 }
 
 /**
  * Authentication middleware for sync endpoints
- * Verifies HMAC signature from database triggers
+ * Verifies Bearer token from authenticated clients
  */
-export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
-  c,
-  next
-) => {
-  const supabaseAdmin = createClient(
-    c.env.SUPABASE_URL,
-    c.env.SUPABASE_SERVICE_KEY
+export const syncAuthMiddleware: MiddlewareHandler<{
+  Bindings: Bindings;
+}> = async (c, next) => {
+  c.set("db", createDb(c.env));
+
+  // Allow OPTIONS requests through (CORS preflight)
+  if (c.req.method === "OPTIONS") {
+    return await next();
+  }
+
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response("Unauthorized: Missing Bearer token", { status: 401 });
+  }
+
+  const access_token = authHeader.replace(/\s*Bearer\s+/, "");
+
+  // Validate Clerk JWT using local PEM key (no network call)
+  const { user } = await getUser(
+    c.var.db,
+    access_token,
+    c.env.CLERK_JWT_KEY
   );
-  c.set("supabaseAdmin", supabaseAdmin);
-
-  // Authenticate requests from the DB using HMAC
-  const signature = c.req.header("X-Plot-Signature");
-  if (!signature || !signature.startsWith("sha256=")) {
-    return new Response("Unauthorized: Missing or invalid signature", {
-      status: 401,
-    });
+  if (!user) {
+    return new Response("Unauthorized: Invalid token", { status: 401 });
   }
 
-  let hmacSecret = c.env.API_HMAC_SECRET;
-  if (ENV === "development") {
-    hmacSecret ??= "dev-not-secret";
-  }
-  if (!hmacSecret) {
-    return new Response("Server configuration error", { status: 500 });
-  }
-
-  // Get the raw body for HMAC verification
-  const bodyText = await c.req.text();
-
-  // Generate expected signature
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(hmacSecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-
-  const expectedSignature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    encoder.encode(bodyText)
-  );
-
-  const expectedHex = Array.from(new Uint8Array(expectedSignature))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  const providedHex = signature.slice(7); // Remove "sha256=" prefix
-  if (expectedHex !== providedHex) {
-    return new Response("Unauthorized: Invalid signature", { status: 401 });
-  }
-
-  c.set("supabase", supabaseAdmin);
-
+  c.set("user", user);
   return await next();
 };

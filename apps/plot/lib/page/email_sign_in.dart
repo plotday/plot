@@ -1,15 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:auto_route/auto_route.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
-import 'package:plot/env.dart';
-import 'package:plot/state/user.dart';
-import 'package:plot/util/profile_preferences.dart';
+import 'package:plot/router.dart' show PasswordSetupRoute;
 import 'logging.dart';
 
 @RoutePage()
@@ -33,6 +30,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
   final _emailFocusNode = FocusNode();
   _AuthMode _mode = _AuthMode.signIn;
   bool _isLoading = false;
+  int _otpResetCounter = 0;
 
   @override
   void initState() {
@@ -49,6 +47,22 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     _otpController.dispose();
     _emailFocusNode.dispose();
     super.dispose();
+  }
+
+  void _showGenericError(Object error, StackTrace? stackTrace) {
+    Tracker.captureException(error, stackTrace);
+    if (!mounted) return;
+    setState(() {
+      _errorMessage = 'Something went wrong. Please try again.';
+      _isLoading = false;
+    });
+  }
+
+  String _clerkErrorMessage(clerk.ClerkError e) {
+    // For server errors, the human-readable message is in .argument
+    // (.message contains a raw '{arg}' template).
+    if (e.argument != null) return e.argument!;
+    return e.message;
   }
 
   Future<void> _handleSignIn() async {
@@ -75,23 +89,37 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      await Base.client.auth.signInWithPassword(
-        email: email,
+      // clerk_auth uses a two-step sign-in flow:
+      // 1. Identify with email
+      await Base.auth.attemptSignIn(
+        strategy: clerk.Strategy.emailAddress,
+        identifier: email,
+      );
+      // 2. Authenticate with password
+      await Base.auth.attemptSignIn(
+        strategy: clerk.Strategy.password,
         password: password,
       );
 
-      // Clear password setup flag for password sign-ins
-      // (they already have a password)
-      if (mounted) {
-        await context.read<UserBloc>().clearPasswordSetupRequired();
-      }
-    } on AuthException catch (e) {
-      log.warning('Error signing in with password', e);
+      // Call /activate to get user identity
+      await Base.resolveIdentity();
+      // UserBloc will pick up the emission and transition to UserReady
+    } on clerk.ClerkError catch (e, t) {
+      log.warning('Error signing in with password', e, t);
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.message;
+        _errorMessage = _clerkErrorMessage(e);
         _isLoading = false;
       });
+    } on NetworkException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Unable to connect. Please check your internet.';
+        _isLoading = false;
+      });
+    } catch (e, t) {
+      log.warning('Error signing in with password', e, t);
+      _showGenericError(e, t);
     }
   }
 
@@ -111,98 +139,42 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      // Send OTP code via API (handles both new users and existing users)
-      final response = await http.post(
-        Uri.parse('${Env.apiRoot}/auth/send-code'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email}),
+      // Start sign-up flow — Clerk sends the email code
+      await Base.auth.attemptSignUp(
+        strategy: clerk.Strategy.emailCode,
+        emailAddress: email,
       );
-
-      if (response.statusCode == 409) {
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-        setState(() {
-          _errorMessage =
-              body['message'] as String? ??
-              'This email is already associated with another account';
-          _isLoading = false;
-        });
-        return;
-      }
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to send verification code');
-      }
-
-      // Successfully sent OTP
       setState(() {
         _mode = _AuthMode.otpSent;
         _isLoading = false;
       });
-    } catch (e) {
-      log.warning('Error sending signup OTP', e);
+    } on clerk.ClerkError catch (e, t) {
+      log.warning('Error sending signup OTP', e, t);
+      if (!mounted) return;
       setState(() {
-        _errorMessage = 'Failed to send verification code: $e';
+        _errorMessage = _clerkErrorMessage(e);
         _isLoading = false;
       });
+    } on NetworkException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Unable to connect. Please check your internet.';
+        _isLoading = false;
+      });
+    } catch (e, t) {
+      log.warning('Error sending signup OTP', e, t);
+      _showGenericError(e, t);
     }
   }
 
   Future<void> _handlePasswordReset() async {
-    final email = _emailController.text.trim();
-
-    if (email.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter your email address';
-      });
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      // Send OTP via API (same endpoint as signup)
-      final response = await http.post(
-        Uri.parse('${Env.apiRoot}/auth/send-code'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email}),
-      );
-
-      if (response.statusCode == 409) {
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-        if (!mounted) return;
-        setState(() {
-          _errorMessage =
-              body['message'] as String? ??
-              'This email is already associated with another account';
-          _isLoading = false;
-        });
-        return;
-      }
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to send verification code');
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _mode = _AuthMode.otpSent;
-        _isLoading = false;
-      });
-    } catch (e) {
-      log.warning('Error sending password reset OTP', e);
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Failed to send verification code: $e';
-        _isLoading = false;
-      });
-    }
+    // Use the same OTP flow for password reset
+    await _handleSignUp();
   }
 
   Future<void> _handleVerifyOtp() async {
-    final email = _emailController.text.trim();
+    if (_isLoading) return;
+
     final token = _otpController.text.trim();
 
     if (token.isEmpty) {
@@ -218,89 +190,51 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      final response = await Base.client.auth.verifyOTP(
-        email: email,
-        token: token,
-        type: OtpType.email,
+      // Verify the email code
+      await Base.auth.attemptSignUp(
+        strategy: clerk.Strategy.emailCode,
+        code: token,
       );
 
-      if (!mounted) return;
-
-      // Check if user is new or existing
-      // New users won't have a full_name in their metadata yet
-      final user = response.user;
-      final isNewUser = user?.userMetadata?['full_name'] == null;
-
-      // Set local flag to indicate password setup is required
-      // This will trigger UserPasswordRequired state
-      // and navigate to the password setup page with the appropriate mode
-      await context.read<UserBloc>().setPasswordSetupRequired(true);
-
-      // Store whether this is a password reset (not a new signup)
-      // This will be used by the password setup page to show appropriate UI
-      final prefs = ProfilePreferences.instance;
-      await prefs.setBool('is_password_reset', !isNewUser);
-    } on AuthException catch (e) {
-      log.warning('Error verifying OTP', e);
+      if (Base.auth.isSignedIn) {
+        // Sign-up complete — call /activate to get user identity
+        await Base.resolveIdentity();
+        // UserBloc will pick up the emission and transition to UserReady
+      } else {
+        // Sign-up has missing requirements (e.g. password) —
+        // navigate to password setup to complete it.
+        if (!mounted) return;
+        context.router.replace(PasswordSetupRoute());
+        return;
+      }
+    } on clerk.ClerkError catch (e, t) {
+      log.warning('Error verifying OTP', e, t);
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.message;
+        _errorMessage = _clerkErrorMessage(e);
         _isLoading = false;
       });
-    } catch (e) {
+    } on NetworkException {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Failed to verify code: $e';
+        _errorMessage = 'Unable to connect. Please check your internet.';
         _isLoading = false;
       });
+    } catch (e, t) {
+      log.warning('Error verifying OTP', e, t);
+      _showGenericError(e, t);
     }
   }
 
   Future<void> _handleResendCode() async {
-    final email = _emailController.text.trim();
-
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+      _otpResetCounter++;
+      _otpController.clear();
     });
-
-    try {
-      // Resend OTP via API
-      final response = await http.post(
-        Uri.parse('${Env.apiRoot}/auth/send-code'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email}),
-      );
-
-      if (response.statusCode == 409) {
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-        if (!mounted) return;
-        setState(() {
-          _errorMessage =
-              body['message'] as String? ??
-              'This email is already associated with another account';
-          _isLoading = false;
-        });
-        return;
-      }
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to resend verification code');
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _otpController.clear();
-      });
-    } catch (e) {
-      log.warning('Error resending code', e);
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Failed to resend code: $e';
-        _isLoading = false;
-      });
-    }
+    // Reset the client to clear the stale sign-up state, otherwise
+    // attemptSignUp won't re-prepare verification for the same email.
+    await Base.auth.resetClient();
+    await _handleSignUp();
   }
 
   @override
@@ -349,6 +283,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
                 // OTP input field
                 OtpInput(
+                  key: ValueKey(_otpResetCounter),
                   controller: _otpController,
                   onComplete: _handleVerifyOtp,
                 ),
@@ -412,7 +347,8 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           FButton(
-                            onPress: _isLoading ? null : _handlePasswordReset,
+                            onPress:
+                                _isLoading ? null : _handlePasswordReset,
                             style: FButtonStyle.ghost(),
                             child: const Text('Reset password'),
                           ),

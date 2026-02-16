@@ -1,5 +1,6 @@
-import { type SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
 
+import type { DB } from "../db-types";
 import { type Bindings, type TwistEnvironment } from "../env";
 import { type CallbacksState } from "../state/callbacks";
 import { type LogSubscriptions } from "../state/log-subscriptions";
@@ -9,7 +10,7 @@ import TwistEntrypoint from "./entrypoint";
 export async function getTwist({
   env,
   ctx,
-  supabase,
+  db,
   id: providedId,
   environment: providedEnvironment,
   version,
@@ -22,7 +23,7 @@ export async function getTwist({
 }: {
   env: Bindings;
   ctx: { exports: ExecutionContext["exports"] };
-  supabase: SupabaseClient;
+  db: Kysely<DB>;
   id?: string;
   environment?: TwistEnvironment;
   version?: string;
@@ -43,35 +44,30 @@ export async function getTwist({
   } else {
     // Runtime mode: look up from priorityTwistId
     // Get twist_id from priority_twist
-    const { data: priorityTwistData, error: priorityTwistError } =
-      await supabase
-        .from("priority_twist")
-        .select("twist_id")
-        .eq("id", priorityTwistId)
-        .single();
+    const priorityTwistData = await db
+      .selectFrom("priority_twist")
+      .select("twist_id")
+      .where("id", "=", priorityTwistId)
+      .executeTakeFirst();
 
-    if (priorityTwistError || !priorityTwistData) {
+    if (!priorityTwistData) {
       throw new Error(
-        `Failed to fetch priority_twist: ${
-          priorityTwistError?.message || "No data found"
-        }`
+        `Failed to fetch priority_twist: No data found`
       );
     }
 
     const twistId = priorityTwistData.twist_id;
 
     // Get twist metadata and twist_admin_id
-    const { data: twistData, error: twistError } = await supabase
-      .from("twist")
-      .select("version,twist_admin_id,environment")
-      .eq("id", twistId)
-      .single();
+    const twistData = await db
+      .selectFrom("twist")
+      .select(["version", "twist_admin_id", "environment"])
+      .where("id", "=", twistId)
+      .executeTakeFirst();
 
-    if (twistError || !twistData) {
+    if (!twistData) {
       throw new Error(
-        `Failed to fetch twist metadata for twist_id ${twistId}: ${
-          twistError?.message || "No data found"
-        }`
+        `Failed to fetch twist metadata for twist_id ${twistId}: No data found`
       );
     }
 
@@ -79,17 +75,15 @@ export async function getTwist({
     environment = twistData.environment;
 
     // Get twist_package_id for R2 module loading
-    const { data: adminData, error: adminError } = await supabase
-      .from("twist_admin")
+    const adminData = await db
+      .selectFrom("twist_admin")
       .select("twist_package_id")
-      .eq("id", twistData.twist_admin_id)
-      .single();
+      .where("id", "=", twistData.twist_admin_id)
+      .executeTakeFirst();
 
-    if (adminError || !adminData) {
+    if (!adminData) {
       throw new Error(
-        `Failed to fetch twist_package_id: ${
-          adminError?.message || "No data found"
-        }`
+        `Failed to fetch twist_package_id: No data found`
       );
     }
 

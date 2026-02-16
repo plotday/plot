@@ -1,7 +1,9 @@
+import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:logging/logging.dart';
 
 import 'base.dart';
 import 'cli_args.dart';
+import 'util/profile_preferences.dart';
 
 /// Service for handling automatic sign-in from command-line arguments.
 ///
@@ -17,7 +19,7 @@ class AutoSignIn {
 
   /// Initializes auto sign-in based on CLI arguments.
   ///
-  /// Must be called after Base.init() to ensure Supabase is ready.
+  /// Must be called after Base.init() to ensure Clerk is ready.
   static Future<void> init() async {
     if (_initialized) {
       _log.warning('AutoSignIn already initialized');
@@ -35,10 +37,10 @@ class AutoSignIn {
 
     try {
       // Check current user
-      final currentUser = Base.client.auth.currentUser;
-      final currentEmail = currentUser?.email;
+      final isSignedIn = Base.signedIn;
+      final currentEmail = ProfilePreferences.instance.getString('clerk_user_email');
 
-      if (currentEmail != null) {
+      if (isSignedIn && currentEmail != null) {
         if (currentEmail.toLowerCase() == targetUser.toLowerCase()) {
           _log.info('Already signed in as target user: $targetUser');
           return;
@@ -59,10 +61,16 @@ class AutoSignIn {
         _signInInProgress = true;
 
         try {
-          await Base.client.auth.signInWithPassword(
-            email: targetUser,
+          // clerk_auth uses two-step sign-in
+          await Base.auth.attemptSignIn(
+            strategy: clerk.Strategy.emailAddress,
+            identifier: targetUser,
+          );
+          await Base.auth.attemptSignIn(
+            strategy: clerk.Strategy.password,
             password: password,
           );
+          await Base.resolveIdentity();
           _log.info('Auto sign-in successful');
         } catch (e) {
           _log.warning('Auto sign-in failed: $e');

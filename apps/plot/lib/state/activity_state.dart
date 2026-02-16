@@ -22,11 +22,7 @@ class ActivityState extends Equatable {
        hasOtherAuthors =
            notes.firstWhereOrNull((note) => !note.authorId.isCurrentUser) !=
            null,
-       draft = draft ?? Note.draft(activityId: activity.id) {
-    log.fine(
-      'ACTS: ${notes.map((n) => "[${n.authorId}, ${n.authorId.isCurrentUser}]")}',
-    );
-  }
+       draft = draft ?? Note.draft(activityId: activity.id);
 
   final Activity activity;
   final Note draft;

@@ -1,55 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@plotday/db/database.types";
-import type { TwistSource, Priority, Activity } from "@plotday/db/schema";
-
-/**
- * Mock Supabase client for testing
- */
-export function createMockSupabase(overrides?: {
-  twists?: TwistSource[];
-  priorities?: Priority[];
-  activities?: Activity[];
-}): SupabaseClient<Database> {
-  const twists = overrides?.twists ?? [];
-  const priorities = overrides?.priorities ?? [];
-  const activities = overrides?.activities ?? [];
-
-  return {
-    from: (table: string) => {
-      const data =
-        table === "twist_sources"
-          ? twists
-          : table === "priorities"
-            ? priorities
-            : table === "activities"
-              ? activities
-              : [];
-
-      return {
-        select: () => ({
-          eq: () => ({
-            single: () => Promise.resolve({ data: data[0] ?? null, error: null }),
-            limit: () => Promise.resolve({ data, error: null }),
-          }),
-          limit: () => Promise.resolve({ data, error: null }),
-          then: (resolve: any) => resolve({ data, error: null }),
-        }),
-        insert: (values: any) =>
-          Promise.resolve({ data: Array.isArray(values) ? values : [values], error: null }),
-        update: (values: any) => ({
-          eq: () => Promise.resolve({ data: [values], error: null }),
-        }),
-        delete: () => ({
-          eq: () => Promise.resolve({ data: [], error: null }),
-        }),
-        upsert: (values: any) =>
-          Promise.resolve({ data: Array.isArray(values) ? values : [values], error: null }),
-      };
-    },
-    rpc: () => Promise.resolve({ data: null, error: null }),
-  } as any;
-}
-
 /**
  * Mock DurableObject Storage
  */
@@ -222,7 +170,6 @@ export function createMockDurableObjectNamespace(
  */
 export function createMockEnv(overrides?: Partial<Env>): Env {
   return {
-    DB: createMockSupabase(),
     TWIST_MODULES: createMockR2Bucket(),
     CALLBACKS_STATE: createMockDurableObjectNamespace(createMockCallbacksStub),
     STORAGE: createMockDurableObjectNamespace(() => ({

@@ -1,27 +1,96 @@
-import { type SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
 
-export async function getUser(supabase: SupabaseClient, token?: string) {
-  // When a token is provided, use getClaims for fast local JWT validation
-  if (token) {
-    const { data, error } = await supabase.auth.getClaims(token);
-    if (error) {
-      return { user: null, error };
+import { verifyToken } from "@clerk/backend";
+
+import type { DB } from "../db-types";
+
+export type AuthUser = {
+  id: string; // UUID from public."user"
+  clerkId: string; // Clerk user ID (e.g., "user_2abc123")
+  email: string;
+  name: string | null;
+};
+
+/** Verified JWT claims from Clerk, returned even when DB user doesn't exist. */
+export type ClerkClaims = {
+  clerkId: string;
+  email: string | undefined;
+  name: string | undefined;
+};
+
+export type GetUserResult = {
+  user: AuthUser | null;
+  /** Non-null when JWT was verified but the DB user doesn't exist yet. */
+  claims: ClerkClaims | null;
+  error: any;
+};
+
+export async function getUser(
+  db: Kysely<DB>,
+  token: string,
+  jwtKey: string
+): Promise<GetUserResult> {
+  try {
+    const claims = await verifyToken(token, { jwtKey });
+    const clerkId = claims.sub;
+
+    // Check external_id first (set during activation via Clerk's updateUser)
+    let userId = (claims as any).external_id as string | undefined;
+    let email = (claims as any).email as string | undefined;
+    let name: string | null = null;
+
+    const clerkClaims: ClerkClaims = {
+      clerkId,
+      email,
+      name: (claims as any).name as string | undefined,
+    };
+
+    if (userId) {
+      // Fast path: UUID is in the JWT metadata
+      const row = await db
+        .selectFrom("user")
+        .select(["email", "name"])
+        .where("id", "=", userId)
+        .executeTakeFirst();
+      if (row) {
+        email = row.email;
+        name = row.name;
+      } else {
+        // external_id is stale or missing in DB; fall back to clerk_id lookup
+        userId = undefined;
+      }
     }
-    const user = data?.claims
-      ? {
-          ...data?.claims,
-          id: data.claims.sub,
-          email: data.claims.email,
-        }
-      : null;
-    return { user, error: null };
-  }
 
-  // Without a token, use getUser() which reads from the client's global
-  // Authorization header (set when creating the client with the user's JWT)
-  const { data, error } = await supabase.auth.getUser();
-  if (error) {
-    return { user: null, error };
+    if (!userId) {
+      // Fallback: look up by clerk_id in users table
+      const row = await db
+        .selectFrom("user")
+        .select(["id", "email", "name"])
+        .where("clerk_id", "=", clerkId)
+        .executeTakeFirst();
+      if (row) {
+        userId = row.id;
+        email = row.email;
+        name = row.name;
+      } else {
+        // New user — JWT is valid but user doesn't exist in DB yet.
+        // Return claims so /activate can create the user.
+        return { user: null, claims: clerkClaims, error: null };
+      }
+    }
+
+    return {
+      user: {
+        id: userId,
+        clerkId,
+        email: email ?? "",
+        name,
+      },
+      claims: null,
+      error: null,
+    };
+  } catch (error) {
+    // JWT verification failed
+    return { user: null, claims: null, error };
   }
-  return { user: data.user, error: null };
 }

@@ -98,7 +98,7 @@ class ActivitiesBase extends BaseTable {
   ActivitiesBase({this.priorityPath, this.initial = false})
     : super(
         table: 'user_activity',
-        writeTable: 'activity',
+        syncEndpoint: 'activities',
         name: "activities",
         filterName: priorityPath,
         ascending:
@@ -112,62 +112,35 @@ class ActivitiesBase extends BaseTable {
   final bool initial;
 
   @override
-  PostgrestFilterBuilder<T2> filterRange<T2>(
-    PostgrestFilterBuilder<T2> query,
-    DateTimeRange? range,
-  ) {
-    if (range == null) return query;
-
-    // Apply date range overlap filter for calendar-based filtering
-    // This checks if the activity's scheduled dates (range_at or range_on)
-    // overlap with the requested calendar date range.
-    // Note: We don't call super.filterRange() here because that applies
-    // created_at boundaries for pagination, which is handled separately
-    // by BaseTable.get() and the pull() logic.
-    final dateRange = range.toDateRange();
-    query = query.or(
-      'range_at.ov."${dateRange.toDb()}",range_on.ov."${dateRange.toDb()}"',
-    );
-
-    return query;
-  }
-
-  @override
-  PostgrestFilterBuilder<T2> filter<T2>(
-    PostgrestFilterBuilder<T2> query, {
+  Map<String, String> buildParams({
+    DateTime? updatedSince,
+    String? lastId,
     bool initial = false,
     bool archived = false,
   }) {
-    query = super.filter(query, initial: initial, archived: archived);
-
-    // Add priority path filtering if priorityPath is provided
-    // Use ltree 'cd' operator (contained in / descendant of)
+    final params = super.buildParams(
+      updatedSince: updatedSince,
+      lastId: lastId,
+      initial: initial,
+      archived: archived,
+    );
     if (priorityPath != null) {
-      query = query.filter('priority_path', 'cd', priorityPath);
+      params['priority_path'] = priorityPath!;
     }
+    return params;
+  }
 
-    // Initial pull (non-archived): fetch active OR unread activities
-    // Skip this filter for archived pulls (those use pullTo with archived=true)
-    if (initial && !archived) {
-      final now = DateTime.now().toUtc().toIso8601String();
-      final today = Date.today().toString();
-
-      // Build active filter conditions (to be ORed with unread)
-      // Active: type=action AND done_at IS NULL AND archived_at IS NULL
-      //         AND (range_at <= now OR range_on <= today OR both null)
-      final activeFilter =
-          'and(type.eq.action,done_at.is.null,archived_at.is.null,or(range_at.cs."[,$now)",range_on.cs."[,$today)",and(range_at.is.null,range_on.is.null)))';
-
-      // Build unread filter conditions
-      // Unread: unread=true AND archived_at IS NULL AND draft=false
-      final unreadFilter =
-          'and(unread.eq.true,archived_at.is.null,draft.eq.false)';
-
-      // Apply OR filter: (active) OR (unread)
-      query = query.or('$activeFilter,$unreadFilter');
+  @override
+  Map<String, String> buildRangeParams(DateTimeRange range) {
+    // Calendar overlap filtering via range_start/range_end
+    final params = <String, String>{};
+    if (range.start != null) {
+      params['range_start'] = range.start!.toIso8601String();
     }
-
-    return query;
+    if (range.end != null) {
+      params['range_end'] = range.end!.toIso8601String();
+    }
+    return params;
   }
 
   @override
@@ -263,8 +236,9 @@ class ActivitiesBase extends BaseTable {
     json.remove('start_on');
     json.remove('end_on');
 
-    // Remove author_id - it's set by the database trigger
-    json.remove('author_id');
+    // Convert author_id from ActorId bytes to UUID string for the API
+    // The client sets this correctly to Base.actorId (contact ID)
+    // Do NOT remove - the sync API needs it to set the correct author
 
     // Remove unread fields - they are managed separately
     json.remove('unread');
@@ -405,19 +379,20 @@ class Activity extends Equatable implements Comparable<Activity> {
             )
             .toList();
 
-        await Base.client
-            .from('activity_read')
-            .upsert(readRecords, onConflict: 'user_id,activity_id');
+        for (final record in readRecords) {
+          await api.post<dynamic>(
+            '/sync/activity-read',
+            body: record,
+          );
+        }
       }
 
       // Batch delete for marking as unread
       if (toMarkUnread.isNotEmpty) {
         for (final activity in toMarkUnread) {
-          await Base.client
-              .from('activity_read')
-              .delete()
-              .eq('user_id', Base.userId.toString())
-              .eq('activity_id', activity.id.toString());
+          await api.delete<dynamic>(
+            '/sync/activity-read?user_id=${Uri.encodeQueryComponent(Base.userId.toString())}&activity_id=${Uri.encodeQueryComponent(activity.id.toString())}',
+          );
         }
       }
 

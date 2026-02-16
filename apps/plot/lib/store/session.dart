@@ -31,7 +31,7 @@ class Sessions extends Table
 }
 
 class SessionsBase extends BaseTable {
-  SessionsBase() : super(table: 'session');
+  SessionsBase() : super(table: 'session', syncEndpoint: 'sessions');
 
   @override
   Map<String, dynamic> toBase(DataClass row) {

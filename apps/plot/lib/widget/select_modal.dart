@@ -191,6 +191,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
           .where((group) => group.items.isNotEmpty)
           .toList();
       _emptySearchCache = _groups;
+      final totalItems = _groups.fold<int>(
+        0,
+        (sum, group) => sum + group.items.length,
+      );
+      if (totalItems == 0) {
+        _error = widget.emptyMessage ?? 'No matches';
+      }
       _updateHighlightedIndex();
     } else {
       _initItems();

@@ -96,6 +96,8 @@ const getErrorMessage = (type: string): string => {
       return "Too many webhook requests. Please slow down.";
     case "sync":
       return "Too many database sync requests. System is under high load.";
+    case "app_sync":
+      return "Too many sync requests. Please try again shortly.";
     case "deployment":
       return "Too many deployment requests. Please try again later.";
     default:
@@ -178,6 +180,21 @@ export const webhookRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
       );
     },
     handler: createRateLimitHandler("webhook", 300, 60),
+  });
+
+/**
+ * Per-user rate limiter for app sync endpoints
+ * 300 requests per minute per user
+ *
+ * Applied after auth middleware so user ID is available for keying.
+ * Allows ~4 full syncs per minute comfortably (each ~14-18 calls).
+ * Per-user keying means multiple users behind the same NAT won't interfere.
+ */
+export const appSyncRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
+  cloudflareRateLimiter<{ Bindings: Bindings }>({
+    rateLimitBinding: (c) => c.env.APP_SYNC_RATE_LIMITER,
+    keyGenerator: getAuthKey,
+    handler: createRateLimitHandler("app_sync", 300, 60),
   });
 
 /**

@@ -1,6 +1,6 @@
 import pLimit from "p-limit";
 
-import { type Database, type Json, safeQuery } from "@plotday/db";
+import { type Database, type Json } from "@plotday/db";
 import { ActivityType } from "@plotday/twister/plot";
 import {
   type Activity,
@@ -21,6 +21,7 @@ import {
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
 import { createLogger } from "@plotday/worker-util";
+import { rpc, rpcUser } from "../../../rpc";
 import {
   handleDbOperationError,
   markActivityReadForAuthorIfOwner,
@@ -96,7 +97,7 @@ export async function createActivity(
     // Insert or upsert activity based on whether it has a source.
     let dbResult: {
       id: string;
-      created_at: string;
+      created_at: string | Date;
       priority_id: string;
     };
 
@@ -104,12 +105,12 @@ export async function createActivity(
       // Use database function for source-based upsert
       // RPC returns full activity row directly
       try {
-        dbResult = safeQuery(
-          await plot.supabase.rpc("upsert_activity", {
-            p_activity: prep.upsert as Json,
-            p_defaults: prep.defaults as Json,
-          })
-        );
+        const userId = await plot.getUserId();
+        dbResult = await rpcUser(plot.db, "upsert_activity", {
+          user_id: userId,
+          p_activity: prep.upsert as Json,
+          p_defaults: prep.defaults as Json,
+        });
       } catch (error) {
         const logger = createLogger({ component: "plot_tool" });
         logger.error("upsert_activity failed", error as Error, {
@@ -120,13 +121,12 @@ export async function createActivity(
       }
     } else {
       // Plain insert for activities without source
-      dbResult = safeQuery(
-        await plot.supabase
-          .from("activity")
-          .insert(prep.insert)
-          .select()
-          .single()
-      );
+      dbResult = await plot.db
+        .insertInto("activity")
+        // @ts-ignore - Database types define `at` as `unknown` but Kysely expects specific types
+        .values(prep.insert)
+        .returningAll()
+        .executeTakeFirstOrThrow();
     }
 
     // Process occurrences after insert/upsert (for field overrides and tags)
@@ -159,15 +159,18 @@ export async function createActivity(
         );
 
       if (newTags.length > 0) {
-        const { error: upsertError } = await plot.supabase
-          .from("activity_tag")
-          .upsert(newTags, {
-            onConflict: "actor_id,activity_id,occurrence,tag_id",
-          });
-
-        if (upsertError) {
-          throw new Error(`Failed to upsert tags: ${upsertError.message}`);
-        }
+        await plot.db
+          .insertInto("activity_tag")
+          .values(newTags)
+          .onConflict((oc) =>
+            oc
+              .columns(["actor_id", "activity_id", "occurrence", "tag_id"])
+              .doUpdateSet((eb) => ({
+                updated_by: eb.ref("excluded.updated_by"),
+                sync_depth: eb.ref("excluded.sync_depth"),
+              }))
+          )
+          .execute();
       }
     }
 
@@ -197,43 +200,56 @@ export async function createActivity(
 
     if (shouldMarkAllAsRead) {
       // Mark read for ALL priority users
-      const usersResult = await plot.supabase.rpc(
-        "get_users_with_priority_access",
-        {
-          target_priority_id: priorityId,
-        }
-      );
+      // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
+      // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
+      const usersData = await rpc(plot.db, "get_users_with_priority_access", {
+        target_priority_id: priorityId,
+      });
+      const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
 
-      if (usersResult.data && usersResult.data.length > 0) {
-        const latestNoteResult = await plot.supabase
-          .from("note")
+      if (userIds.length > 0) {
+        const latestNoteRow = await plot.db
+          .selectFrom("note")
           .select("created_at")
-          .eq("activity_id", dbResult.id)
-          .order("created_at", { ascending: false })
+          .where("activity_id", "=", dbResult.id)
+          .orderBy("created_at", "desc")
           .limit(1)
-          .maybeSingle();
+          .executeTakeFirst();
 
+        const dbCreatedAt =
+          dbResult.created_at instanceof Date
+            ? dbResult.created_at.toISOString()
+            : dbResult.created_at;
         const latestTimestamp =
-          latestNoteResult.data?.created_at ?? dbResult.created_at;
+          latestNoteRow?.created_at?.toString() ?? dbCreatedAt;
 
-        const activityReadEntries = usersResult.data.map(
-          (pu: { user_id: string }) => ({
+        const activityReadEntries = userIds.map(
+          (userId) => ({
             activity_id: dbResult.id,
-            user_id: pu.user_id,
+            user_id: userId,
             read_at: latestTimestamp,
           })
         );
 
-        const insertResult = await plot.supabase
-          .from("activity_read")
-          .upsert(activityReadEntries, { onConflict: "user_id,activity_id" });
-        if (insertResult.error) {
+        try {
+          await plot.db
+            .insertInto("activity_read")
+            .values(activityReadEntries)
+            .onConflict((oc) =>
+              oc
+                .columns(["user_id", "activity_id"])
+                .doUpdateSet((eb) => ({
+                  read_at: eb.ref("excluded.read_at"),
+                }))
+            )
+            .execute();
+        } catch (err) {
           const logger = createLogger({
             priority_twist_id: plot.priorityTwistId,
           });
           logger.error(
             "Failed to upsert activity_read entries",
-            insertResult.error as Error,
+            err as Error,
             {
               activity_id: dbResult.id,
               count: activityReadEntries.length,
@@ -243,16 +259,20 @@ export async function createActivity(
       }
     } else if (activity?.unread === undefined) {
       // Default: mark read for just the author if they are the twist owner
-      const latestNoteResult = await plot.supabase
-        .from("note")
+      const latestNoteRow = await plot.db
+        .selectFrom("note")
         .select("created_at")
-        .eq("activity_id", dbResult.id)
-        .order("created_at", { ascending: false })
+        .where("activity_id", "=", dbResult.id)
+        .orderBy("created_at", "desc")
         .limit(1)
-        .maybeSingle();
+        .executeTakeFirst();
 
+      const dbCreatedAt2 =
+        dbResult.created_at instanceof Date
+          ? dbResult.created_at.toISOString()
+          : dbResult.created_at;
       const readTimestamp =
-        latestNoteResult.data?.created_at ?? dbResult.created_at;
+        latestNoteRow?.created_at?.toString() ?? dbCreatedAt2;
 
       await markActivityReadForAuthorIfOwner(
         plot,
@@ -295,14 +315,14 @@ export async function updateActivity(
       // Look up activity by source and priority root (composite unique key)
       const priorityRoot = await plot.getPriorityRoot();
 
-      const { data: existingActivity, error: fetchError } = await plot.supabase
-        .from("activity")
+      const existingActivity = await plot.db
+        .selectFrom("activity")
         .select("id")
-        .eq("source", activity.source)
-        .eq("source_priority_root", priorityRoot)
-        .single();
+        .where("source", "=", activity.source)
+        .where("source_priority_root", "=", priorityRoot)
+        .executeTakeFirst();
 
-      if (fetchError || !existingActivity) {
+      if (!existingActivity) {
         throw new Error(`Activity not found for source: ${activity.source}`);
       }
       activityId = existingActivity.id;
@@ -378,13 +398,15 @@ export async function updateActivity(
       activity.recurrenceExdates === undefined
     ) {
       // Read current exdates from the database
-      const { data: currentActivity } = await plot.supabase
-        .from("activity")
+      const currentActivity = await plot.db
+        .selectFrom("activity")
         .select("recurrence_exdates")
-        .eq("id", activityId)
-        .single();
+        .where("id", "=", activityId)
+        .executeTakeFirstOrThrow();
 
-      const existing = (currentActivity?.recurrence_exdates ?? []) as string[];
+      const existing = (currentActivity.recurrence_exdates ?? []).map((d) =>
+        d instanceof Date ? d.toISOString() : String(d)
+      );
       const addSet = new Set(
         addExdates?.map((d) => d.toISOString()) ?? []
       );
@@ -445,16 +467,13 @@ export async function updateActivity(
 
     // Execute the update only if there are meaningful changes
     if (hasMeaningfulUpdates) {
-      const { data: updatedActivity, error: updateError } = await plot.supabase
-        .from("activity")
-        .update(dbUpdate)
-        .eq("id", activityId)
-        .select("id")
-        .single();
-
-      if (updateError) {
-        throw new Error(`Activity update failed: ${updateError.message}`);
-      }
+      const updatedActivity = await plot.db
+        .updateTable("activity")
+        // @ts-ignore - Database types define `at` as `unknown` but Kysely expects specific types
+        .set(dbUpdate)
+        .where("id", "=", activityId)
+        .returning("id")
+        .executeTakeFirst();
 
       if (!updatedActivity) {
         throw new Error(`Activity not found: ${activityId}`);
@@ -464,16 +483,14 @@ export async function updateActivity(
     // Handle full tags object replacement (only for activities created by this twist or another instance of the same twist)
     if (activity.tags !== undefined) {
       // Query for created_by and priority_id in a single query
-      const { data: activityData, error: queryError } = await plot.supabase
-        .from("activity")
-        .select("created_by, priority_id")
-        .eq("id", activityId)
-        .single();
+      const activityData = await plot.db
+        .selectFrom("activity")
+        .select(["created_by", "priority_id"])
+        .where("id", "=", activityId)
+        .executeTakeFirst();
 
-      if (queryError || !activityData) {
-        throw new Error(
-          `Failed to fetch activity: ${queryError?.message ?? "Not found"}`
-        );
+      if (!activityData) {
+        throw new Error("Failed to fetch activity: Not found");
       }
       const { created_by: createdBy, priority_id: priorityId } = activityData;
 
@@ -492,16 +509,10 @@ export async function updateActivity(
       }
 
       // Delete all existing tags for this activity
-      const { error: deleteError } = await plot.supabase
-        .from("activity_tag")
-        .delete()
-        .eq("activity_id", activityId);
-
-      if (deleteError) {
-        throw new Error(
-          `Failed to delete existing tags: ${deleteError.message}`
-        );
-      }
+      await plot.db
+        .deleteFrom("activity_tag")
+        .where("activity_id", "=", activityId)
+        .execute();
 
       // Process tags - convert NewActor[] to ActorId[] for each tag (batched)
       const processedTags = await processTagsActors(
@@ -527,15 +538,18 @@ export async function updateActivity(
         );
 
       if (newTags.length > 0) {
-        const { error: upsertError } = await plot.supabase
-          .from("activity_tag")
-          .upsert(newTags, {
-            onConflict: "actor_id,activity_id,occurrence,tag_id",
-          });
-
-        if (upsertError) {
-          throw new Error(`Failed to upsert new tags: ${upsertError.message}`);
-        }
+        await plot.db
+          .insertInto("activity_tag")
+          .values(newTags)
+          .onConflict((oc) =>
+            oc
+              .columns(["actor_id", "activity_id", "occurrence", "tag_id"])
+              .doUpdateSet((eb) => ({
+                updated_by: eb.ref("excluded.updated_by"),
+                sync_depth: eb.ref("excluded.sync_depth"),
+              }))
+          )
+          .execute();
       }
     }
 
@@ -544,14 +558,14 @@ export async function updateActivity(
     // the database function automatically removes conflicting RSVP tags.
     // Count tags can only be modified for the current user (enforced by RLS).
     if (activity.twistTags) {
-      safeQuery(
-        await plot.supabase.rpc("update_activity_tags", {
-          p_activity_id: activityId,
-          p_actor_id: plot.priorityTwistId,
-          p_client_id: plot.getUpdatedBy(),
-          p_tag_updates: activity.twistTags,
-        })
-      );
+      const userId = await plot.getUserId();
+      await rpcUser(plot.db, "update_activity_tags", {
+        user_id: userId,
+        p_activity_id: activityId,
+        p_actor_id: plot.priorityTwistId,
+        p_client_id: plot.getUpdatedBy(),
+        p_tag_updates: activity.twistTags,
+      });
     }
 
     // Process occurrences if provided (for recurring activities)
@@ -586,67 +600,105 @@ export async function getActivity(
   activity: { id: Uuid } | { source: string }
 ): Promise<Activity | null> {
   try {
-    // Query activities using the user_activity view
-    // This view automatically filters to activities the user has access to
-    let query = plot.supabase.from("user_activity").select(
-      `
-          *,
-          author:actor!author_id(
-            id,
-            name,
-            type,
-            email,
-            archived_at,
-            avatar_url,
-            created_at,
-            updated_at
-          ),
-          assignee:actor!assignee_id(
-            id,
-            name,
-            type,
-            email,
-            archived_at,
-            avatar_url,
-            created_at,
-            updated_at
-          )
-        `
-    );
+    // Query activities using the user.activity view
+    // Filter to activities the user has access to
+    let activityId: string | undefined;
 
     // Query by id or source (with priority root for source queries)
     if ("id" in activity) {
-      query = query.eq("id", activity.id);
+      activityId = activity.id;
     } else {
+      // source_priority_root is not in the user.activity view, so look up the id first
       const priorityRoot = await plot.getPriorityRoot();
-      query = query
-        .eq("source", activity.source)
-        .eq("source_priority_root", priorityRoot);
+      const found = await plot.db
+        .selectFrom("activity")
+        .select("id")
+        .where("source", "=", activity.source)
+        .where("source_priority_root", "=", priorityRoot)
+        .executeTakeFirst();
+      activityId = found?.id;
+    }
+
+    if (!activityId) {
+      return null;
     }
 
     // Always include archived activities (no filter on archived_at)
 
-    const { data, error } = await query.limit(1).maybeSingle();
+    const userId = await plot.getUserId();
+    const data = await plot.db
+      .selectFrom("user.activity")
+      .selectAll("user.activity")
+      .where("user_id", "=", userId)
+      .where("id", "=", activityId)
+      .limit(1)
+      .executeTakeFirst();
 
-    if (error) {
-      throw error;
-    }
     if (!data) {
       return null;
     }
 
-    if (!data.author) {
+    // Fetch author and assignee separately
+    const author = data.author_id
+      ? await plot.db
+          .selectFrom("actor")
+          .select([
+            "id",
+            "name",
+            "type",
+            "email",
+            "archived_at",
+            "avatar_url",
+            "created_at",
+            "updated_at",
+          ])
+          .where("id", "=", data.author_id)
+          .executeTakeFirst()
+      : null;
+
+    if (!author) {
       throw new Error(`Activity author not found`);
     }
 
+    const assignee = data.assignee_id
+      ? await plot.db
+          .selectFrom("actor")
+          .select([
+            "id",
+            "name",
+            "type",
+            "email",
+            "archived_at",
+            "avatar_url",
+            "created_at",
+            "updated_at",
+          ])
+          .where("id", "=", data.assignee_id)
+          .executeTakeFirst() ?? null
+      : null;
+
     // Store data with non-null author for type safety
-    // Add missing/nullable fields from the user_activity view with proper defaults
-    // Note: user_activity view doesn't include source_priority_root or sync_depth columns
+    // Add missing/nullable fields from the user.activity view with proper defaults
+    // Note: user.activity view doesn't include source_priority_root or sync_depth columns
+    // Kysely returns Date objects for timestamp columns, convert to ISO strings
+    const createdAtStr =
+      data.created_at instanceof Date
+        ? data.created_at.toISOString()
+        : (data.created_at ?? new Date().toISOString());
+    const updatedAtStr =
+      data.updated_at instanceof Date
+        ? data.updated_at.toISOString()
+        : (data.updated_at ?? new Date().toISOString());
+    const sourceCreatedAtStr =
+      data.source_created_at instanceof Date
+        ? data.source_created_at.toISOString()
+        : (data.source_created_at ?? new Date().toISOString());
+
     const dataWithAuthor = {
       ...data,
       id: data.id ?? "",
-      author_id: data.author_id ?? data.author.id ?? "",
-      created_at: data.created_at ?? new Date().toISOString(),
+      author_id: data.author_id ?? author.id ?? "",
+      created_at: createdAtStr,
       created_by: data.author_id ?? "",
       draft: data.draft ?? false,
       order: data.order ?? 0,
@@ -655,28 +707,30 @@ export async function getActivity(
       type: (data.type ??
         "note") as Database["public"]["Enums"]["activity_type"],
       kind: (data as any).kind ?? null,
-      updated_at: data.updated_at ?? new Date().toISOString(),
+      updated_at: updatedAtStr,
       updated_by: data.updated_by ?? 0,
-      author: data.author,
-      assignee: data.assignee ?? null,
+      // `actor` required by Database Row type (supabase relation), point to author
+      actor: author,
+      author: author,
+      assignee: assignee ?? null,
       assignee_id: null,
       embedding: null,
       pick_priority: null,
       active_source: null,
-      // Required by activity table Row type but not in user_activity view
-      source_created_at: data.source_created_at ?? new Date().toISOString(),
+      // Required by activity table Row type but not in user.activity view
+      source_created_at: sourceCreatedAtStr,
       source_priority_root: null,
       sync_depth: null,
     };
 
     // Fetch tags for the activity
-    const { data: tagsData } = data.id
-      ? await plot.supabase
-          .from("activity_tags")
+    const tagsData = data.id
+      ? await plot.db
+          .selectFrom("activity_tags")
           .select("tags")
-          .eq("activity_id", data.id)
-          .single()
-      : { data: null };
+          .where("activity_id", "=", data.id)
+          .executeTakeFirst()
+      : null;
 
     // Check if ContactAccess.Read permission is granted to include author email
     const includeAuthorEmail =
@@ -684,6 +738,7 @@ export async function getActivity(
       plot.plotOptions.contact.access >= ContactAccess.Read;
 
     return fromDbActivity(
+      // @ts-ignore - Kysely returns Date for timestamp columns, but fromDbActivity expects Supabase Row types with string timestamps
       {
         ...dataWithAuthor,
         tags: tagsData?.tags || null,
@@ -718,24 +773,20 @@ export async function getActivityOccurrence(
       : occurrenceDate.toISOString().substring(0, 10); // YYYY-MM-DD
 
     // Query for the activity_exception for this occurrence
-    const { data: exception, error: exceptionError } = await plot.supabase
-      .from("activity_exception")
-      .select("*")
-      .eq("activity_id", activityId)
-      .eq("occurrence", occurrenceStr)
-      .maybeSingle();
-
-    if (exceptionError) {
-      throw exceptionError;
-    }
+    const exception = await plot.db
+      .selectFrom("activity_exception")
+      .selectAll()
+      .where("activity_id", "=", activityId)
+      .where("occurrence", "=", occurrenceStr)
+      .executeTakeFirst();
 
     // Query for tags specific to this occurrence
-    const { data: tagsData } = await plot.supabase
-      .from("activity_tags")
+    const tagsData = await plot.db
+      .selectFrom("activity_tags")
       .select("tags")
-      .eq("activity_id", activityId)
-      .eq("occurrence", occurrenceStr)
-      .maybeSingle();
+      .where("activity_id", "=", activityId)
+      .where("occurrence", "=", occurrenceStr)
+      .executeTakeFirst();
 
     // Helper to parse PostgreSQL range types
     const parseRange = (
@@ -795,68 +846,71 @@ export async function getNote(
 ): Promise<Note | null> {
   try {
     // Build the query to fetch the note
-    let query = plot.supabase.from("note").select(
-      `
-          id,
-          created_at,
-          source_created_at,
-          updated_at,
-          author_id,
-          created_by,
-          updated_by,
-          archived_at,
-          activity_id,
-          draft,
-          private,
-          content,
-          key,
-          links,
-          mentions,
-          re_note_id,
-          author:actor!author_id(
-            id,
-            name,
-            type,
-            email,
-            archived_at,
-            avatar_url,
-            created_at,
-            updated_at
-          )
-        `
-    );
+    let query = plot.db
+      .selectFrom("note")
+      .select([
+        "id",
+        "created_at",
+        "source_created_at",
+        "updated_at",
+        "author_id",
+        "created_by",
+        "updated_by",
+        "archived_at",
+        "activity_id",
+        "draft",
+        "private",
+        "content",
+        "key",
+        "links",
+        "mentions",
+        "re_note_id",
+      ]);
 
     // Query by id or key
     if ("id" in note) {
-      query = query.eq("id", note.id);
+      query = query.where("id", "=", note.id);
     } else {
-      query = query.eq("key", note.key);
+      query = query.where("key", "=", note.key);
     }
 
     // Always include archived notes (no filter on archived_at)
 
-    const { data, error } = await query.limit(1).maybeSingle();
+    const data = await query.limit(1).executeTakeFirst();
 
-    if (error) {
-      throw error;
-    }
     if (!data) {
       return null;
     }
 
-    if (!data.author) {
+    // Fetch author separately
+    const author = await plot.db
+      .selectFrom("actor")
+      .select([
+        "id",
+        "name",
+        "type",
+        "email",
+        "archived_at",
+        "avatar_url",
+        "created_at",
+        "updated_at",
+      ])
+      .where("id", "=", data.author_id)
+      .executeTakeFirst();
+
+    if (!author) {
       throw new Error("Note author not found");
     }
 
     // Validate access to the priority via the activity
     // First fetch the activity to get the priority
-    const { data: activityData, error: activityError } = await plot.supabase
-      .from("activity")
+    const activityData = await plot.db
+      .selectFrom("activity")
       .select("priority_id")
-      .eq("id", data.activity_id)
-      .single();
+      .where("id", "=", data.activity_id)
+      .executeTakeFirst();
 
-    if (activityError || !activityData) {
+    if (!activityData) {
       throw new Error(`Activity not found for note`);
     }
 
@@ -869,11 +923,11 @@ export async function getNote(
     }
 
     // Fetch tags for the note
-    const { data: tagsData } = await plot.supabase
-      .from("note_tags")
+    const tagsData = await plot.db
+      .selectFrom("note_tags")
       .select("tags")
-      .eq("note_id", data.id)
-      .single();
+      .where("note_id", "=", data.id)
+      .executeTakeFirst();
 
     // Check if ContactAccess.Read permission is granted to include author email
     const includeAuthorEmail =
@@ -887,10 +941,10 @@ export async function getNote(
         : new Date(data.created_at),
       activity: activity,
       author: {
-        id: data.author.id as ActorId,
-        type: (data.author.type ?? ActorType.Contact) as ActorType,
-        name: data.author.name ?? null,
-        email: includeAuthorEmail ? data.author.email ?? undefined : undefined,
+        id: author.id as ActorId,
+        type: (author.type ?? ActorType.Contact) as ActorType,
+        name: author.name ?? null,
+        email: includeAuthorEmail ? author.email ?? undefined : undefined,
       },
       private: data.private,
       archived: data.archived_at !== null,
@@ -922,8 +976,7 @@ export async function createActivities(
       ensureIncreasingActivityCreatedTimestamps(activities);
 
     const limit = pLimit(5);
-    type ActivityRow = Database["public"]["Tables"]["activity"]["Row"];
-    type DbActivity = Pick<ActivityRow, "id" | "priority_id" | "created_at">;
+    type DbActivity = { id: string; priority_id: string; created_at: string | Date };
     const dbActivities: DbActivity[] = new Array(activities.length);
 
     const preparedActivities = await Promise.all(
@@ -933,19 +986,23 @@ export async function createActivities(
     );
 
     // Batch insert non-source activities
-    const nonSourceResults = safeQuery(
-      await plot.supabase
-        .from("activity")
-        .insert(
-          preparedActivities
-            .filter((pa) => "insert" in pa)
-            .map((pa) => pa.insert)
-        )
-        .select("id, priority_id, created_at")
-    ) as DbActivity[];
+    const nonSourceInserts = preparedActivities
+      .filter((pa) => "insert" in pa)
+      .map((pa) => pa.insert);
+
+    const nonSourceResults =
+      nonSourceInserts.length > 0
+        ? await plot.db
+            .insertInto("activity")
+            // @ts-ignore - Database types define `at` as `unknown` but Kysely expects specific types
+            .values(nonSourceInserts)
+            .returning(["id", "priority_id", "created_at"])
+            .execute()
+        : ([] as DbActivity[]);
 
     // Upsert source-based activities
     let nonSourceIndex = 0;
+    const userId = await plot.getUserId();
     await Promise.all(
       preparedActivities.map((prepared, index) =>
         limit(async () => {
@@ -954,12 +1011,11 @@ export async function createActivities(
             return;
           }
           const { upsert, defaults } = prepared;
-          const dbResult = safeQuery(
-            await plot.supabase.rpc("upsert_activity", {
-              p_activity: upsert as Json,
-              p_defaults: defaults as Json,
-            })
-          );
+          const dbResult = await rpcUser(plot.db, "upsert_activity", {
+            user_id: userId,
+            p_activity: upsert as Json,
+            p_defaults: defaults as Json,
+          });
           dbActivities[index] = dbResult as DbActivity;
         })
       )
@@ -1025,15 +1081,18 @@ export async function createActivities(
     });
 
     if (allTags.length > 0) {
-      const { error: upsertError } = await plot.supabase
-        .from("activity_tag")
-        .upsert(allTags, {
-          onConflict: "actor_id,activity_id,occurrence,tag_id",
-        });
-
-      if (upsertError) {
-        throw new Error(`Failed to upsert tags: ${upsertError.message}`);
-      }
+      await plot.db
+        .insertInto("activity_tag")
+        .values(allTags)
+        .onConflict((oc) =>
+          oc
+            .columns(["actor_id", "activity_id", "occurrence", "tag_id"])
+            .doUpdateSet((eb) => ({
+              updated_by: eb.ref("excluded.updated_by"),
+              sync_depth: eb.ref("excluded.sync_depth"),
+            }))
+        )
+        .execute();
     }
 
     // Create notes for all activities, grouped by priority to pass context
@@ -1120,17 +1179,22 @@ export async function createActivities(
       );
 
       // Query latest note timestamps per activity AFTER notes are created
-      const latestNotesResult = await plot.supabase
-        .from("note")
-        .select("activity_id, created_at")
-        .in("activity_id", activityIdsForUnread)
-        .order("created_at", { ascending: false });
+      const latestNotesRows = await plot.db
+        .selectFrom("note")
+        .select(["activity_id", "created_at"])
+        .where("activity_id", "in", activityIdsForUnread)
+        .orderBy("created_at", "desc")
+        .execute();
 
-      // Build map of activity_id -> latest timestamp
+      // Build map of activity_id -> latest timestamp (as ISO string)
       const latestNoteTimestamps = new Map<string, string>();
-      for (const note of latestNotesResult.data ?? []) {
-        if (!latestNoteTimestamps.has(note.activity_id)) {
-          latestNoteTimestamps.set(note.activity_id, note.created_at);
+      for (const noteRow of latestNotesRows) {
+        if (!latestNoteTimestamps.has(noteRow.activity_id)) {
+          const ts =
+            noteRow.created_at instanceof Date
+              ? noteRow.created_at.toISOString()
+              : noteRow.created_at;
+          latestNoteTimestamps.set(noteRow.activity_id, ts);
         }
       }
 
@@ -1152,43 +1216,57 @@ export async function createActivities(
         Array.from(activitiesByPriority.entries()).map(
           ([priorityId, priorityActivities]) =>
             limit(async () => {
-              const usersResult = await plot.supabase.rpc(
+              // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
+              // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
+              const usersData = await rpc(
+                plot.db,
                 "get_users_with_priority_access",
                 {
                   target_priority_id: priorityId,
                 }
               );
+              const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
 
-              if (!usersResult.data || usersResult.data.length === 0) {
+              if (userIds.length === 0) {
                 return;
               }
 
-              const activityReadEntries = priorityActivities.flatMap((item) =>
-                usersResult.data!.map((pu: { user_id: string }) => ({
+              const activityReadEntries = priorityActivities.flatMap((item) => {
+                const fallback =
+                  item.dbActivity.created_at instanceof Date
+                    ? item.dbActivity.created_at.toISOString()
+                    : item.dbActivity.created_at;
+                return userIds.map((userId) => ({
                   activity_id: item.dbActivity.id,
-                  user_id: pu.user_id,
+                  user_id: userId,
                   read_at:
-                    latestNoteTimestamps.get(item.dbActivity.id) ??
-                    item.dbActivity.created_at,
-                }))
-              );
+                    latestNoteTimestamps.get(item.dbActivity.id) ?? fallback,
+                }));
+              });
 
               if (activityReadEntries.length === 0) {
                 return;
               }
 
-              const insertResult = await plot.supabase
-                .from("activity_read")
-                .upsert(activityReadEntries, {
-                  onConflict: "user_id,activity_id",
-                });
-              if (insertResult.error) {
+              try {
+                await plot.db
+                  .insertInto("activity_read")
+                  .values(activityReadEntries)
+                  .onConflict((oc) =>
+                    oc
+                      .columns(["user_id", "activity_id"])
+                      .doUpdateSet((eb) => ({
+                        read_at: eb.ref("excluded.read_at"),
+                      }))
+                  )
+                  .execute();
+              } catch (err) {
                 const logger = createLogger({
                   priority_twist_id: plot.priorityTwistId,
                 });
                 logger.error(
                   "Failed to upsert activity_read entries for batch activities",
-                  insertResult.error,
+                  err as Error,
                   {
                     count: activityReadEntries.length,
                   }
@@ -1206,25 +1284,33 @@ export async function createActivities(
       );
 
       // Query latest note timestamps for these activities
-      const latestNotesResult = await plot.supabase
-        .from("note")
-        .select("activity_id, created_at")
-        .in("activity_id", authorActivityIds)
-        .order("created_at", { ascending: false });
+      const latestNotesRows = await plot.db
+        .selectFrom("note")
+        .select(["activity_id", "created_at"])
+        .where("activity_id", "in", authorActivityIds)
+        .orderBy("created_at", "desc")
+        .execute();
 
       const latestNoteTimestamps = new Map<string, string>();
-      for (const note of latestNotesResult.data ?? []) {
-        if (!latestNoteTimestamps.has(note.activity_id)) {
-          latestNoteTimestamps.set(note.activity_id, note.created_at);
+      for (const noteRow of latestNotesRows) {
+        if (!latestNoteTimestamps.has(noteRow.activity_id)) {
+          const ts =
+            noteRow.created_at instanceof Date
+              ? noteRow.created_at.toISOString()
+              : noteRow.created_at;
+          latestNoteTimestamps.set(noteRow.activity_id, ts);
         }
       }
 
       await Promise.all(
         activitiesToMarkAuthorAsRead.map((item) =>
           limit(async () => {
+            const fallback =
+              item.dbActivity.created_at instanceof Date
+                ? item.dbActivity.created_at.toISOString()
+                : item.dbActivity.created_at;
             const readTimestamp =
-              latestNoteTimestamps.get(item.dbActivity.id) ??
-              item.dbActivity.created_at;
+              latestNoteTimestamps.get(item.dbActivity.id) ?? fallback;
             await markActivityReadForAuthorIfOwner(
               plot,
               item.authorId,

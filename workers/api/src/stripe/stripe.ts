@@ -123,22 +123,23 @@ async function handleSubscriptionUpdate(
   const plan = subscription.metadata.plan as any;
 
   // Update user_subscription record
-  const { error } = await c.var.supabase
-    .from("user_subscription")
-    .update({
-      stripe_subscription_id: subscription.id,
-      plan,
-      status,
-      billing_cycle_start: start.toISOString(),
-      billing_cycle_end: end.toISOString(),
-    })
-    .eq("stripe_customer_id", customerId);
-
-  if (error) {
+  try {
+    await c.var.db
+      .updateTable("user_subscription")
+      .set({
+        stripe_subscription_id: subscription.id,
+        plan,
+        status,
+        billing_cycle_start: start.toISOString(),
+        billing_cycle_end: end.toISOString(),
+      })
+      .where("stripe_customer_id", "=", customerId)
+      .execute();
+  } catch (error) {
     logger.error("Failed to update user_subscription", error as Error, {
       customer_id: customerId,
     });
-    throw new Error(`Database update failed: ${error.message}`);
+    throw new Error(`Database update failed: ${(error as Error).message}`);
   }
 
   logger.info("Updated subscription for customer", {
@@ -162,22 +163,23 @@ async function handleSubscriptionDeleted(
   const { start, end } = createFreeTierBillingCycle();
 
   // Revert to free tier
-  const { error } = await c.var.supabase
-    .from("user_subscription")
-    .update({
-      stripe_subscription_id: null,
-      plan: "free",
-      status: "active",
-      billing_cycle_start: start.toISOString(),
-      billing_cycle_end: end.toISOString(),
-    })
-    .eq("stripe_customer_id", customerId);
-
-  if (error) {
+  try {
+    await c.var.db
+      .updateTable("user_subscription")
+      .set({
+        stripe_subscription_id: null,
+        plan: "free",
+        status: "active",
+        billing_cycle_start: start.toISOString(),
+        billing_cycle_end: end.toISOString(),
+      })
+      .where("stripe_customer_id", "=", customerId)
+      .execute();
+  } catch (error) {
     logger.error("Failed to update user_subscription", error as Error, {
       customer_id: customerId,
     });
-    throw new Error(`Database update failed: ${error.message}`);
+    throw new Error(`Database update failed: ${(error as Error).message}`);
   }
 
   logger.info("Reverted customer to free tier", {

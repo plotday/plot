@@ -139,7 +139,9 @@ export default function Pricing() {
           <Stack align="center" gap="lg" ta="center">
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Free to collaborate, value-based pricing
+                Free to collaborate
+                <br />
+                Value-based pricing
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>

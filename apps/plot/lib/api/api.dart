@@ -4,10 +4,9 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
-import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/app_info.dart';
 import 'package:plot/base.dart';
 import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
@@ -50,6 +49,21 @@ String _parseErrorMessage(http.Response response) {
   return response.body;
 }
 
+/// Extracts PostgreSQL error code from API response JSON (pg_code field)
+String? _parsePgCode(http.Response response) {
+  try {
+    if (_isJsonContentType(response.headers['content-type'])) {
+      final json = jsonDecode(response.body);
+      if (json is Map && json.containsKey('pg_code')) {
+        return json['pg_code'] as String;
+      }
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+  return null;
+}
+
 /// Maps HTTP status codes to user-friendly error titles
 String _getErrorTitle(int statusCode) {
   switch (statusCode) {
@@ -68,42 +82,25 @@ String _getErrorTitle(int statusCode) {
   }
 }
 
-/// Checks response for auth errors on 401 (Unauthorized)
-/// Attempts to refresh the session before signing out.
-/// Note: 403 (Forbidden) means user is authenticated but not authorized,
-/// so we just let it throw - the calling code can display an error to the user
+/// Checks response for auth errors on 401 (Unauthorized).
+/// clerk_auth handles token refresh automatically.
+/// If we got a 401, the token was expired and clerk couldn't refresh it.
 Future<void> _checkAuthError(http.Response response, String url) async {
   if (response.statusCode == 401) {
     log.warning("Auth error from API: 401 Unauthorized $url ${response.body}");
-    try {
-      await Base.refreshSession();
-      // Refresh succeeded — don't sign out. The ApiException still propagates
-      // to tell the caller this request failed, but the next request will use
-      // the refreshed token.
-      return;
-    } on supa.AuthRetryableFetchException {
-      // Network error — don't sign out, just return
-      return;
-    } on supa.AuthException catch (e) {
-      // Definitive auth failure — sign out
-      log.warning("Token refresh failed (AuthException: ${e.message}) - signing out");
-      try {
-        await Base.signOut();
-      } catch (signOutError, stackTrace) {
-        log.warning("Error during auth failure sign-out", signOutError, stackTrace);
-      }
-    } catch (e) {
-      // Unexpected error — don't sign out
-      log.warning("Unexpected error during token refresh ($e) - not signing out");
-    }
+    // clerk_auth handles token refresh automatically.
+    // Don't sign out automatically — let the user stay signed in locally.
+    // The next request will try to get a fresh token from clerk_auth.
   }
 }
 
-Map<String, String> getHeaders() {
-  final auth = 'Bearer ${Base.client.auth.currentSession?.accessToken}';
+Future<Map<String, String>> getHeaders() async {
+  final token = await Base.getSessionToken();
   return {
     'Content-Type': 'application/json; charset=UTF-8',
-    'Authorization': auth,
+    if (token != null) 'Authorization': 'Bearer $token',
+    'X-Plot-Client':
+        '${AppInfo.version}/${AppInfo.buildNumber} (${AppInfo.platform})',
   };
 }
 
@@ -111,7 +108,7 @@ Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
   try {
     final response = await http.post(
       Uri.parse(Env.apiRoot + url),
-      headers: getHeaders(),
+      headers: await getHeaders(),
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
@@ -122,6 +119,7 @@ Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
+        pgCode: _parsePgCode(response),
       );
     }
     return _parseResponse(response);
@@ -138,7 +136,7 @@ Future<T> put<T>(String url, {Map<String, dynamic> body = const {}}) async {
   try {
     final response = await http.put(
       Uri.parse(Env.apiRoot + url),
-      headers: getHeaders(),
+      headers: await getHeaders(),
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
@@ -149,6 +147,7 @@ Future<T> put<T>(String url, {Map<String, dynamic> body = const {}}) async {
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
+        pgCode: _parsePgCode(response),
       );
     }
     return _parseResponse(response);
@@ -165,7 +164,7 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
   try {
     final response = await http.patch(
       Uri.parse(Env.apiRoot + url),
-      headers: getHeaders(),
+      headers: await getHeaders(),
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
@@ -176,6 +175,7 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
+        pgCode: _parsePgCode(response),
       );
     }
     return _parseResponse(response);
@@ -192,7 +192,7 @@ Future<T> get<T>(String url) async {
   try {
     final response = await http.get(
       Uri.parse(Env.apiRoot + url),
-      headers: getHeaders(),
+      headers: await getHeaders(),
     );
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
@@ -202,6 +202,7 @@ Future<T> get<T>(String url) async {
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
+        pgCode: _parsePgCode(response),
       );
     }
     return _parseResponse(response);
@@ -218,7 +219,7 @@ Future<T> delete<T>(String url) async {
   try {
     final response = await http.delete(
       Uri.parse(Env.apiRoot + url),
-      headers: getHeaders(),
+      headers: await getHeaders(),
     );
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
@@ -228,6 +229,7 @@ Future<T> delete<T>(String url) async {
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
+        pgCode: _parsePgCode(response),
       );
     }
     return _parseResponse(response);
@@ -250,7 +252,7 @@ Future<Map<String, dynamic>> uploadFile({
   try {
     final uri = Uri.parse('${Env.apiRoot}/files');
     final request = http.MultipartRequest('POST', uri);
-    request.headers.addAll(getHeaders()..remove('Content-Type'));
+    request.headers.addAll(await getHeaders()..remove('Content-Type'));
     request.fields['priorityId'] = priorityId;
 
     final contentType = lookupMimeType(fileName);
@@ -297,7 +299,7 @@ Future<Map<String, dynamic>> uploadFile({
 /// Download a file attachment, returning the raw bytes.
 Future<Uint8List> getFileBytes(String fileId) async {
   try {
-    final headers = getHeaders()..remove('Content-Type');
+    final headers = await getHeaders()..remove('Content-Type');
     final response = await http.get(
       Uri.parse('${Env.apiRoot}/files/$fileId'),
       headers: headers,

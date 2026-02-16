@@ -2,8 +2,7 @@ import * as crypto from "crypto";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { createClient } from "@plotday/db";
-
+import { createDb } from "../db";
 import type { Bindings } from "../env";
 import { getUser } from "../utils/auth";
 import { handleValidationError } from "../utils/validation";
@@ -41,26 +40,27 @@ tokens.post("/token", tokenCreationRateLimiter, async (c) => {
   const tokenValue = crypto.randomBytes(32).toString("hex");
 
   // Store token in database
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
-  const { data: token, error } = await supabase
-    .from("token")
-    .insert({
-      user_id: userId,
-      token: tokenValue,
-      name: name || null,
-    })
-    .select()
-    .single();
+  const db = createDb(c.env);
+  try {
+    const token = await db
+      .insertInto("token")
+      .values({
+        user_id: userId,
+        token: tokenValue,
+        name: name || null,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
 
-  if (error) {
+    return c.json({ token: tokenValue, id: token.id });
+  } catch (error) {
     const logger = createLogger();
     logger.error("Error creating token", error as Error, { user_id: userId });
-    return new Response(`Error creating token: ${error.message}`, {
-      status: 500,
-    });
+    return new Response(
+      `Error creating token: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
   }
-
-  return c.json({ token: tokenValue, id: token.id });
 });
 
 // GET /tokens - List user's tokens (requires authentication)
@@ -70,23 +70,25 @@ tokens.get("/tokens", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
-  const { data: userTokens, error } = await supabase
-    .from("token")
-    .select("id, name, created_at, last_used_at")
-    .eq("user_id", userId)
-    .is("archived_at", null)
-    .order("created_at", { ascending: false });
+  const db = createDb(c.env);
+  try {
+    const userTokens = await db
+      .selectFrom("token")
+      .select(["id", "name", "created_at", "last_used_at"])
+      .where("user_id", "=", userId)
+      .where("archived_at", "is", null)
+      .orderBy("created_at", "desc")
+      .execute();
 
-  if (error) {
+    return c.json(userTokens);
+  } catch (error) {
     const logger = createLogger();
     logger.error("Error fetching tokens", error as Error, { user_id: userId });
-    return new Response(`Error fetching tokens: ${error.message}`, {
-      status: 500,
-    });
+    return new Response(
+      `Error fetching tokens: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
   }
-
-  return c.json(userTokens);
 });
 
 // DELETE /token/:id - Revoke token (requires authentication)
@@ -97,27 +99,29 @@ tokens.delete("/token/:id", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+  const db = createDb(c.env);
 
-  // Soft delete - set archived_at
-  const { error } = await supabase
-    .from("token")
-    .update({ archived_at: new Date().toISOString() })
-    .eq("id", tokenId)
-    .eq("user_id", userId);
+  try {
+    // Soft delete - set archived_at
+    await db
+      .updateTable("token")
+      .set({ archived_at: new Date().toISOString() })
+      .where("id", "=", tokenId)
+      .where("user_id", "=", userId)
+      .execute();
 
-  if (error) {
+    return c.json({ success: true });
+  } catch (error) {
     const logger = createLogger();
     logger.error("Error deleting token", error as Error, {
       user_id: userId,
-      token_id: tokenId
+      token_id: tokenId,
     });
-    return new Response(`Error deleting token: ${error.message}`, {
-      status: 500,
-    });
+    return new Response(
+      `Error deleting token: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
   }
-
-  return c.json({ success: true });
 });
 
 // GET /session/:sessionId - Poll for token completion (NO AUTH - public endpoint)
@@ -149,10 +153,10 @@ tokens.get("/session/:sessionId", async (c) => {
 
 // POST /session/authorize - Authorize a session
 // This is called from the site when user clicks "Authorize"
-// Validates Supabase session token to authenticate the user
+// Validates Clerk JWT to authenticate the user
 // Apply strict rate limiting (10 req/hour)
 tokens.post("/session/authorize", tokenCreationRateLimiter, async (c) => {
-  // Extract Supabase access token from Authorization header
+  // Extract access token from Authorization header
   const authHeader = c.req.header("Authorization");
 
   if (!authHeader?.startsWith("Bearer ")) {
@@ -163,12 +167,19 @@ tokens.post("/session/authorize", tokenCreationRateLimiter, async (c) => {
 
   const accessToken = authHeader.replace("Bearer ", "");
 
-  // Validate the Supabase session token
-  const supabaseAdmin = createClient(
-    c.env.SUPABASE_URL,
-    c.env.SUPABASE_SERVICE_KEY
+  // Validate the Clerk JWT using local PEM key (no network call)
+  const db = createDb(c.env);
+  const { user, claims, error: authError } = await getUser(
+    db,
+    accessToken,
+    c.env.CLERK_JWT_KEY
   );
-  const { user, error: authError } = await getUser(supabaseAdmin, accessToken);
+  if (claims && !user) {
+    return new Response("Please activate your account in the Plot app first.", {
+      status: 403,
+    });
+  }
+
   if (authError || !user) {
     const logger = createLogger();
     logger.error("Authentication error", authError as Error, {});
@@ -192,25 +203,26 @@ tokens.post("/session/authorize", tokenCreationRateLimiter, async (c) => {
   const tokenValue = crypto.randomBytes(32).toString("hex");
 
   // Store token in database
-  const { error } = await supabaseAdmin
-    .from("token")
-    .insert({
-      user_id: userId,
-      token: tokenValue,
-      name: "CLI Token",
-    })
-    .select()
-    .single();
-
-  if (error) {
+  try {
+    await db
+      .insertInto("token")
+      .values({
+        user_id: userId,
+        token: tokenValue,
+        name: "CLI Token",
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  } catch (error) {
     const logger = createLogger();
     logger.error("Error creating token", error as Error, {
       user_id: userId,
-      session_id: sessionId
+      session_id: sessionId,
     });
-    return new Response(`Error creating token: ${error.message}`, {
-      status: 500,
-    });
+    return new Response(
+      `Error creating token: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
   }
 
   // Store session with token for CLI to poll in Durable Object

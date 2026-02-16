@@ -143,7 +143,11 @@ class _OtpInputState extends State<OtpInput> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      // Distribute digits across fields starting from current index
+      // Distribute digits across fields starting from current index.
+      // Setting each controller's text fires onChange → _handleTextChanged,
+      // which calls _checkComplete() when the last field is filled. Don't
+      // call _checkComplete() again below to avoid triggering onComplete
+      // twice.
       for (var i = 0; i < digits.length && startIndex + i < 6; i++) {
         _controllers[startIndex + i].text = digits[i];
       }
@@ -154,7 +158,6 @@ class _OtpInputState extends State<OtpInput> {
         _focusNodes[lastFilledIndex + 1].requestFocus();
       } else {
         _focusNodes[lastFilledIndex].requestFocus();
-        _checkComplete();
       }
     });
   }

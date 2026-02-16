@@ -1,11 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 
-import { type SupabaseClient, createClient } from "@plotday/db";
-
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
-import { getUser } from "../utils/auth";
+import { verifyToken } from "@clerk/backend";
 
 interface QueuedMessage {
   message: any;
@@ -18,12 +16,10 @@ export class Broadcast extends DurableObject<Bindings> {
   private messageQueue: QueuedMessage[] = [];
   private lastMessageTime: number = 0;
   private batchTimeout: ReturnType<typeof setTimeout> | null = null;
-  private supabase: SupabaseClient;
   private userId: string | null = null;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
     // User ID will be set during first authentication
   }
 
@@ -43,6 +39,8 @@ export class Broadcast extends DurableObject<Bindings> {
   private async handleWebSocket(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const clientId = url.searchParams.get("clientId");
+    const clientVersion = url.searchParams.get("clientVersion");
+    const clientPlatform = url.searchParams.get("clientPlatform");
 
     // Extract userId from the URL path
     const pathParts = url.pathname.split("/");
@@ -64,37 +62,43 @@ export class Broadcast extends DurableObject<Bindings> {
       });
     }
 
-    // Parse protocols - format: "plot-v1, {access_token}" (or legacy "plot-v1, {access_token}|{refresh_token}")
+    // Parse protocols - format: "plot-v1, {access_token}"
     const protocolList = protocols.split(",").map((p) => p.trim());
     if (protocolList.length < 2 || protocolList[0] !== "plot-v1") {
       return new Response("Invalid protocol format", { status: 401 });
     }
 
-    const token = protocolList[1];
-    if (!token) {
+    const access_token = protocolList[1];
+    if (!access_token) {
       return new Response("Missing authentication token", { status: 401 });
     }
 
-    // Parse token (access_token or access_token|refresh_token format)
-    const [access_token] = token.split("|");
-    if (!access_token) {
-      return new Response("Invalid token format", { status: 401 });
-    }
-
-    // Validate the JWT locally (no token consumption, no network call)
+    // Validate the Clerk JWT locally (no network call)
     const logger = createLogger({
       durable_object: "Broadcast",
       operation: "handleWebSocket",
+      ...(clientVersion ? { client_version: clientVersion } : {}),
+      ...(clientPlatform ? { client_platform: clientPlatform } : {}),
     });
 
     try {
-      const { user, error } = await getUser(this.supabase, access_token);
-      if (error || !user) {
-        return new Response("Authentication failed", { status: 401 });
+      const claims = await verifyToken(access_token, {
+        jwtKey: this.env.CLERK_JWT_KEY,
+      });
+
+      // Get the user's UUID from Clerk external_id (set during activation)
+      const authenticatedUserId = (claims as any).external_id as
+        | string
+        | undefined;
+
+      if (!authenticatedUserId) {
+        return new Response("Authentication failed: missing user ID", {
+          status: 401,
+        });
       }
 
       // Validate that the authenticated user matches the userId in the path
-      if (user.id !== userIdFromPath) {
+      if (authenticatedUserId !== userIdFromPath) {
         return new Response("Unauthorized: User ID mismatch with path", {
           status: 403,
         });
@@ -102,8 +106,8 @@ export class Broadcast extends DurableObject<Bindings> {
 
       // Set or validate the user ID for this Durable Object instance
       if (this.userId === null) {
-        this.userId = user.id;
-      } else if (user.id !== this.userId) {
+        this.userId = authenticatedUserId;
+      } else if (authenticatedUserId !== this.userId) {
         return new Response("Unauthorized: User ID mismatch with DO", {
           status: 403,
         });

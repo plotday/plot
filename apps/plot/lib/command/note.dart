@@ -109,25 +109,15 @@ class StartTask extends NoteCommand {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final actorId = Base.actorId;
-      log.info('StartNote.run called - noteId: ${note.id}, actorId: $actorId');
 
       // Check if already assigned
-      final isAssigned = note.isAssignedTo(actorId);
-      log.info(
-        'StartNote - isAssigned: $isAssigned, current tags: ${note.tags}',
-      );
-
-      if (isAssigned) {
-        // Already assigned - skip
-        log.info('StartNote - note already assigned to user');
+      if (note.isAssignedTo(actorId)) {
         return const CommandMessage('Already assigned');
       }
 
       // Assign the note by adding Tag.now for current user
-      log.info('StartNote - calling note.assignTo($actorId)');
       final updatedNote = note.assignTo(actorId);
       await updatedNote.save();
-      log.info('StartNote - note.assignTo completed successfully');
 
       return const CommandDone();
     } catch (e, stackTrace) {

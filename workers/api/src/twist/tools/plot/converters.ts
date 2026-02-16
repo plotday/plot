@@ -179,10 +179,13 @@ export function fromDbActivity(
 }
 
 export function fromDbPriority(
-  dbPriority: Pick<
-    Database["public"]["Tables"]["priority"]["Row"],
-    "id" | "title" | "archived_at" | "key" | "color"
-  >
+  dbPriority: {
+    id: string;
+    title: string;
+    archived_at: Date | string | null;
+    key: string | null;
+    color: number | null;
+  }
 ): Priority {
   return {
     id: dbPriority.id as Uuid,

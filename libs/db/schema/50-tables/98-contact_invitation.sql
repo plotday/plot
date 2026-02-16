@@ -1,0 +1,17 @@
+CREATE TABLE "public"."contact_invitation" (
+    "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
+    "created_at" timestamptz NOT NULL DEFAULT now(),
+    "contact_id" uuid NOT NULL,
+    "token" text NOT NULL UNIQUE,
+    "sent_at" timestamptz NOT NULL DEFAULT now(),
+    "redeemed_at" timestamptz,
+    "redeemed_by" uuid REFERENCES "public"."user" ("id") ON DELETE SET NULL,
+    CONSTRAINT contact_invitation_contact_unique UNIQUE (contact_id)
+);
+
+CREATE INDEX idx_contact_invitation_token_redeemed ON contact_invitation (token, redeemed_at);
+
+ALTER TABLE "public"."contact_invitation"
+    ADD CONSTRAINT "contact_invitation_contact_id_fkey" FOREIGN KEY (contact_id) REFERENCES contact (id) ON DELETE CASCADE NOT VALID;
+
+ALTER TABLE "public"."contact_invitation" VALIDATE CONSTRAINT "contact_invitation_contact_id_fkey";

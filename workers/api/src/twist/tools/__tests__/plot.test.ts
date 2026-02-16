@@ -5,39 +5,83 @@ import { ActivityAccess } from "@plotday/twister/tools/plot";
 
 import { Plot } from "../plot";
 
-// Helper to create a chainable mock for Supabase queries
-function createSupabaseMock() {
-  const chainableMock: any = {};
-  const methods = [
-    "from",
-    "select",
-    "insert",
-    "update",
-    "upsert",
-    "delete",
-    "eq",
-    "in",
-    "single",
-    "maybeSingle",
-    "limit",
-    "order",
-    "rpc",
-  ];
+vi.mock("../../../rpc", () => ({
+  rpc: vi.fn(async (_db: unknown, fn: string) => {
+    if (fn === "find_matching_activities_scored") return [];
+    if (fn === "get_priority_twist_owner_contact") return "contact-1";
+    if (fn === "get_users_with_priority_access") return [];
+    return null;
+  }),
+  rpcUser: vi.fn(async () => {
+    throw new Error("rpcUser not expected in plot tests");
+  }),
+}));
 
-  // Make each method return the chainable mock by default
-  for (const method of methods) {
-    chainableMock[method] = vi.fn(() => chainableMock);
-  }
+type SelectResult = Record<string, any> | null;
 
-  // Set default response for terminal operations
-  chainableMock.single = vi.fn(() =>
-    Promise.resolve({ data: null, error: null })
+function createSelectQuery(result: SelectResult, executeResult?: any[]) {
+  const query: any = {};
+  query.select = vi.fn(() => query);
+  query.selectAll = vi.fn(() => query);
+  query.where = vi.fn(() => query);
+  query.orderBy = vi.fn(() => query);
+  query.limit = vi.fn(() => query);
+  query.execute = vi.fn(async () =>
+    executeResult ?? (Array.isArray(result) ? result : result ? [result] : [])
   );
-  chainableMock.maybeSingle = vi.fn(() =>
-    Promise.resolve({ data: null, error: null })
-  );
+  query.executeTakeFirst = vi.fn(async () => result);
+  query.executeTakeFirstOrThrow = vi.fn(async () => {
+    if (!result) throw new Error("Not found");
+    return result;
+  });
+  return query;
+}
 
-  return chainableMock;
+function createInsertQuery(result: any) {
+  const query: any = {};
+  query._values = undefined as any;
+  query._onConflictColumns = undefined as any;
+  query.values = vi.fn((values: any) => {
+    query._values = values;
+    return query;
+  });
+  query.onConflict = vi.fn((cb: (oc: any) => void) => {
+    if (cb) {
+      const action: any = {
+        doUpdateSet: vi.fn(() => query),
+        doNothing: vi.fn(() => query),
+      };
+      const ocBuilder: any = {
+        columns: vi.fn((cols: string[]) => {
+          query._onConflictColumns = cols;
+          return action;
+        }),
+      };
+      cb(ocBuilder);
+    }
+    return query;
+  });
+  query.returningAll = vi.fn(() => query);
+  query.returning = vi.fn(() => query);
+  query.execute = vi.fn(async () =>
+    Array.isArray(result) ? result : result ? [result] : []
+  );
+  query.executeTakeFirst = vi.fn(async () => result);
+  query.executeTakeFirstOrThrow = vi.fn(async () => {
+    if (!result) throw new Error("Not found");
+    return result;
+  });
+  return query;
+}
+
+// Helper to create a chainable mock for Kysely queries
+function createDbMock() {
+  return {
+    selectFrom: vi.fn(),
+    insertInto: vi.fn(),
+    updateTable: vi.fn(),
+    deleteFrom: vi.fn(),
+  } as any;
 }
 
 // Helper to create mock env bindings
@@ -64,18 +108,18 @@ function createEnvMock() {
 }
 
 describe("Plot", () => {
-  let supabaseMock: any;
+  let dbMock: any;
   let envMock: any;
 
   beforeEach(() => {
-    supabaseMock = createSupabaseMock();
+    dbMock = createDbMock();
     envMock = createEnvMock();
   });
 
   describe("Permission Validation", () => {
     it("requireActivityAccess throws when no access is granted", () => {
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {}, // No activity access configured
@@ -89,7 +133,7 @@ describe("Plot", () => {
 
     it("requireActivityAccess allows Create when Create is granted", () => {
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -108,7 +152,7 @@ describe("Plot", () => {
 
     it("ActivityAccess.Create includes Respond permissions", () => {
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -129,7 +173,7 @@ describe("Plot", () => {
   describe("Activity Creation", () => {
     it("createActivity requires ActivityAccess.Create permission", async () => {
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {}, // No activity access
@@ -145,13 +189,8 @@ describe("Plot", () => {
     });
 
     it("createActivity with Event type requires start time", async () => {
-      // Setup mocks for the flow before validation
-      supabaseMock.rpc = vi.fn(() =>
-        Promise.resolve({ data: [], error: null })
-      );
-
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -168,7 +207,7 @@ describe("Plot", () => {
           title: "Test Event",
           // No start time provided
         })
-      ).rejects.toThrow("Event activities must have a start time");
+      ).rejects.toThrow("Events must have a start and end.");
     });
 
     it("createActivity with Action type auto-assigns start", async () => {
@@ -176,15 +215,7 @@ describe("Plot", () => {
       vi.useFakeTimers();
       vi.setSystemTime(now);
 
-      // Setup the RPC mock for find_matching_activities_scored
-      supabaseMock.rpc = vi.fn((fnName: string) => {
-        if (fnName === "find_matching_activities_scored") {
-          return Promise.resolve({ data: [], error: null });
-        }
-        return Promise.resolve({ data: null, error: null });
-      });
-
-      // Setup the from().insert().select().single() chain for activity insert
+      // Setup the insert chain for activity insert
       const insertedActivity = {
         id: "activity-123",
         author_id: "pt-1",
@@ -196,54 +227,14 @@ describe("Plot", () => {
         updated_at: now.toISOString(),
       };
 
-      const insertSelectSingleMock = vi.fn(() =>
-        Promise.resolve({ data: insertedActivity, error: null })
-      );
-      const insertSelectMock = vi.fn(() => ({
-        single: insertSelectSingleMock,
-      }));
-      const insertMock = vi.fn(() => ({
-        select: insertSelectMock,
-      }));
-
-      // Setup from() to return different mocks based on table
-      supabaseMock.from = vi.fn((table: string) => {
-        if (table === "activity") {
-          return {
-            insert: insertMock,
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({ data: insertedActivity, error: null })
-                ),
-              })),
-            })),
-          };
-        }
-        if (table === "actor") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({
-                    data: {
-                      id: "pt-1",
-                      name: "Test Twist",
-                      type: "priority_twist",
-                      email: null,
-                    },
-                    error: null,
-                  })
-                ),
-              })),
-            })),
-          };
-        }
-        return supabaseMock;
+      const activityInsert = createInsertQuery(insertedActivity);
+      dbMock.insertInto = vi.fn((table: string) => {
+        if (table === "activity") return activityInsert;
+        return createInsertQuery(null);
       });
 
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -261,10 +252,10 @@ describe("Plot", () => {
       });
 
       // Verify insert was called
-      expect(insertMock).toHaveBeenCalled();
+      expect(activityInsert.values).toHaveBeenCalled();
 
       // Get the inserted data and verify start was assigned
-      const insertCall = insertMock.mock.calls[0]?.[0] as any;
+      const insertCall = activityInsert._values as any;
       // For Action type, start should be set, which means 'at' should have a value
       expect(insertCall?.at).not.toBeNull();
 
@@ -273,14 +264,6 @@ describe("Plot", () => {
 
     it("createActivity returns activity ID", async () => {
       const now = new Date();
-
-      // Setup the RPC mock
-      supabaseMock.rpc = vi.fn((fnName: string) => {
-        if (fnName === "find_matching_activities_scored") {
-          return Promise.resolve({ data: [], error: null });
-        }
-        return Promise.resolve({ data: null, error: null });
-      });
 
       // Setup the activity that will be "inserted"
       const insertedActivity = {
@@ -305,46 +288,14 @@ describe("Plot", () => {
         recurrence_exdates: null,
       };
 
-      const insertSelectSingleMock = vi.fn(() =>
-        Promise.resolve({ data: insertedActivity, error: null })
-      );
-      const insertSelectMock = vi.fn(() => ({
-        single: insertSelectSingleMock,
-      }));
-      const insertMock = vi.fn(() => ({
-        select: insertSelectMock,
-      }));
-
-      supabaseMock.from = vi.fn((table: string) => {
-        if (table === "activity") {
-          return {
-            insert: insertMock,
-          };
-        }
-        if (table === "actor") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({
-                    data: {
-                      id: "pt-1",
-                      name: "Test Twist",
-                      type: "priority_twist",
-                      email: null,
-                    },
-                    error: null,
-                  })
-                ),
-              })),
-            })),
-          };
-        }
-        return supabaseMock;
+      const activityInsert = createInsertQuery(insertedActivity);
+      dbMock.insertInto = vi.fn((table: string) => {
+        if (table === "activity") return activityInsert;
+        return createInsertQuery(null);
       });
 
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -367,53 +318,8 @@ describe("Plot", () => {
 
   describe("Note Operations", () => {
     it("createNote rejects fully empty notes", async () => {
-      // Setup mock to return activity data
-      supabaseMock.from = vi.fn((table: string) => {
-        if (table === "activity") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({
-                    data: {
-                      id: "activity-123",
-                      priority_id: "priority-1",
-                      created_by: "pt-1",
-                      mentions: null,
-                      author: {
-                        id: "pt-1",
-                        name: "Test",
-                        type: "priority_twist",
-                      },
-                    },
-                    error: null,
-                  })
-                ),
-              })),
-            })),
-          };
-        }
-        if (table === "priority_child") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn(() =>
-                    Promise.resolve({
-                      data: { child_id: "priority-1" },
-                      error: null,
-                    })
-                  ),
-                })),
-              })),
-            })),
-          };
-        }
-        return supabaseMock;
-      });
-
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -437,107 +343,35 @@ describe("Plot", () => {
     it("createNote with key performs upsert", async () => {
       const now = new Date();
 
-      // Track the upsert call
-      const upsertMock = vi.fn(() => ({
-        select: vi.fn(() => ({
-          single: vi.fn(() =>
-            Promise.resolve({
-              data: {
-                id: "note-123",
-                activity_id: "activity-123",
-                author_id: "pt-1",
-                created_by: "pt-1",
-                content: "Test content",
-                key: "test-key",
-                created_at: now.toISOString(),
-                source_created_at: now.toISOString(),
-                private: false,
-                links: null,
-                mentions: null,
-                archived_at: null,
-              },
-              error: null,
-            })
-          ),
-        })),
-      }));
+      const insertedNote = {
+        id: "note-123",
+        activity_id: "activity-123",
+        author_id: "pt-1",
+        created_by: "pt-1",
+        content: "Test content",
+        key: "test-key",
+        created_at: now.toISOString(),
+        source_created_at: now.toISOString(),
+        private: false,
+        links: null,
+        mentions: null,
+        archived_at: null,
+      };
 
-      supabaseMock.from = vi.fn((table: string) => {
-        if (table === "note") {
-          return {
-            upsert: upsertMock,
-            insert: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({ data: null, error: null })
-                ),
-              })),
-            })),
-          };
-        }
+      const noteInsert = createInsertQuery(insertedNote);
+      dbMock.insertInto = vi.fn((table: string) => {
+        if (table === "note") return noteInsert;
+        return createInsertQuery(null);
+      });
+      dbMock.selectFrom = vi.fn((table: string) => {
         if (table === "activity") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({
-                    data: {
-                      id: "activity-123",
-                      priority_id: "priority-1",
-                      created_by: "pt-1",
-                      mentions: null,
-                      author: {
-                        id: "pt-1",
-                        name: "Test",
-                        type: "priority_twist",
-                        email: null,
-                      },
-                      assignee: null,
-                      type: "note",
-                      title: "Test",
-                      at: null,
-                      on: null,
-                      duration: null,
-                      done_at: null,
-                      meta: null,
-                      private: false,
-                      draft: false,
-                      created_at: now.toISOString(),
-                      source_created_at: now.toISOString(),
-                      updated_at: now.toISOString(),
-                      archived_at: null,
-                    },
-                    error: null,
-                  })
-                ),
-              })),
-            })),
-          };
+          return createSelectQuery({ priority_id: "priority-1" });
         }
-        if (table === "actor") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({
-                    data: {
-                      id: "pt-1",
-                      name: "Test Twist",
-                      type: "priority_twist",
-                      email: null,
-                    },
-                    error: null,
-                  })
-                ),
-              })),
-            })),
-          };
-        }
-        return supabaseMock;
+        return createSelectQuery(null);
       });
 
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -554,109 +388,41 @@ describe("Plot", () => {
         key: "test-key",
       });
 
-      // Verify upsert was called with the correct onConflict option
-      expect(upsertMock).toHaveBeenCalled();
-      const upsertCall = upsertMock.mock.calls[0] as any[];
-      expect(upsertCall?.[1]).toEqual({ onConflict: "activity_id,key" });
+      // Verify onConflict was configured for activity_id,key
+      expect(noteInsert._onConflictColumns).toEqual(["activity_id", "key"]);
     });
 
     it("createNotes filters out empty notes silently", async () => {
       const now = new Date();
 
-      // Track successful note creations
-      const insertMock = vi.fn(() => ({
-        select: vi.fn(() => ({
-          single: vi.fn(() =>
-            Promise.resolve({
-              data: {
-                id: "note-123",
-                activity_id: "activity-123",
-                author_id: "pt-1",
-                created_by: "pt-1",
-                content: "Valid content",
-                key: null,
-                created_at: now.toISOString(),
-                source_created_at: now.toISOString(),
-                private: false,
-                links: null,
-                mentions: null,
-                archived_at: null,
-              },
-              error: null,
-            })
-          ),
-        })),
-      }));
+      const insertedNote = {
+        id: "note-123",
+        activity_id: "activity-123",
+        author_id: "pt-1",
+        created_by: "pt-1",
+        content: "Valid content",
+        key: null,
+        created_at: now.toISOString(),
+        source_created_at: now.toISOString(),
+        private: false,
+        links: null,
+        mentions: null,
+        archived_at: null,
+      };
 
-      supabaseMock.from = vi.fn((table: string) => {
-        if (table === "note") {
-          return {
-            insert: insertMock,
-          };
-        }
+      dbMock.insertInto = vi.fn((table: string) => {
+        if (table === "note") return createInsertQuery(insertedNote);
+        return createInsertQuery(null);
+      });
+      dbMock.selectFrom = vi.fn((table: string) => {
         if (table === "activity") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({
-                    data: {
-                      id: "activity-123",
-                      priority_id: "priority-1",
-                      created_by: "pt-1",
-                      mentions: null,
-                      author: {
-                        id: "pt-1",
-                        name: "Test",
-                        type: "priority_twist",
-                        email: null,
-                      },
-                      assignee: null,
-                      type: "note",
-                      title: "Test",
-                      at: null,
-                      on: null,
-                      duration: null,
-                      done_at: null,
-                      meta: null,
-                      private: false,
-                      draft: false,
-                      created_at: now.toISOString(),
-                      source_created_at: now.toISOString(),
-                      updated_at: now.toISOString(),
-                      archived_at: null,
-                    },
-                    error: null,
-                  })
-                ),
-              })),
-            })),
-          };
+          return createSelectQuery({ priority_id: "priority-1" });
         }
-        if (table === "actor") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({
-                    data: {
-                      id: "pt-1",
-                      name: "Test Twist",
-                      type: "priority_twist",
-                      email: null,
-                    },
-                    error: null,
-                  })
-                ),
-              })),
-            })),
-          };
-        }
-        return supabaseMock;
+        return createSelectQuery(null);
       });
 
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -685,102 +451,70 @@ describe("Plot", () => {
 
       // Only the valid note should be returned
       expect(results.length).toBe(1);
-      expect(results[0].content).toBe("Valid content");
+      expect(results[0]).toBe("note-123");
     });
   });
 
   describe("Source-Based Lookup", () => {
     it("getActivity retrieves by source identifier", async () => {
       const now = new Date();
+      const userActivityRow = {
+        id: "activity-123",
+        source: "external://item-456",
+        source_priority_root: "work",
+        priority_id: "priority-1",
+        author_id: "pt-1",
+        created_by: "pt-1",
+        type: "note",
+        title: "Test Activity",
+        at: null,
+        on: null,
+        duration: null,
+        done_at: null,
+        meta: null,
+        private: false,
+        draft: false,
+        created_at: now.toISOString(),
+        source_created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+        archived_at: null,
+      };
 
-      // Mock the priority path lookup
-      const prioritySelectMock = vi.fn(() => ({
-        eq: vi.fn(() => ({
-          single: vi.fn(() =>
-            Promise.resolve({
-              data: { path: "work.projects" },
-              error: null,
-            })
-          ),
-        })),
-      }));
+      const authorRow = {
+        id: "pt-1",
+        name: "Test Twist",
+        type: "priority_twist",
+        email: null,
+        archived_at: null,
+        avatar_url: null,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      };
 
-      // Mock the user_activity query
-      const userActivitySelectMock = vi.fn(() => ({
-        eq: vi.fn((_field: string, _value: string) => ({
-          eq: vi.fn((_field2: string, _value2: string) => ({
-            limit: vi.fn(() => ({
-              maybeSingle: vi.fn(() =>
-                Promise.resolve({
-                  data: {
-                    id: "activity-123",
-                    source: "external://item-456",
-                    source_priority_root: "work",
-                    priority_id: "priority-1",
-                    author_id: "pt-1",
-                    created_by: "pt-1",
-                    type: "note",
-                    title: "Test Activity",
-                    at: null,
-                    on: null,
-                    duration: null,
-                    done_at: null,
-                    meta: null,
-                    private: false,
-                    draft: false,
-                    created_at: now.toISOString(),
-                    source_created_at: now.toISOString(),
-                    updated_at: now.toISOString(),
-                    archived_at: null,
-                    author: {
-                      id: "pt-1",
-                      name: "Test Twist",
-                      type: "priority_twist",
-                      email: null,
-                    },
-                    assignee: null,
-                  },
-                  error: null,
-                })
-              ),
-            })),
-          })),
-        })),
-      }));
-
-      // Mock the activity_tags query
-      const activityTagsSelectMock = vi.fn(() => ({
-        eq: vi.fn(() => ({
-          single: vi.fn(() =>
-            Promise.resolve({
-              data: { tags: null },
-              error: null,
-            })
-          ),
-        })),
-      }));
-
-      supabaseMock.from = vi.fn((table: string) => {
-        if (table === "priority") {
-          return {
-            select: prioritySelectMock,
-          };
+      dbMock.selectFrom = vi.fn((table: string) => {
+        if (table === "priority_twist") {
+          return createSelectQuery({ owner_id: "user-1" });
         }
-        if (table === "user_activity") {
-          return {
-            select: userActivitySelectMock,
-          };
+        if (table === "priority") {
+          return createSelectQuery({ path: "work.projects" });
+        }
+        if (table === "activity") {
+          return createSelectQuery({ id: "activity-123" });
+        }
+        if (table === "user.activity") {
+          return createSelectQuery(userActivityRow);
+        }
+        if (table === "actor") {
+          return createSelectQuery(authorRow);
         }
         if (table === "activity_tags") {
-          return {
-            select: activityTagsSelectMock,
-          };
+          return createSelectQuery({ tags: null });
         }
-        return supabaseMock;
+        return createSelectQuery(null);
       });
 
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
@@ -797,15 +531,15 @@ describe("Plot", () => {
       expect(result).not.toBeNull();
       expect(result!.id).toBe("activity-123");
 
-      // Verify source and source_priority_root were used in the query
-      expect(userActivitySelectMock).toHaveBeenCalled();
+      // Verify user activity lookup was performed
+      expect(dbMock.selectFrom).toHaveBeenCalledWith("user.activity");
     });
   });
 
   describe("Contact Permissions", () => {
     it("addContacts requires ContactAccess.Write", async () => {
       const plot = new Plot({
-        supabase: supabaseMock,
+        db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {

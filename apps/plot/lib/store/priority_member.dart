@@ -18,11 +18,11 @@ class PriorityMembersBase extends BaseTable {
   PriorityMembersBase()
     : super(
         table: 'priority_member',
+        syncEndpoint: 'priority-members',
         name: "priority_members",
         order: 'created_at',
         ascending: false,
         cursorColumn: 'contact_id',
-        secondarySortColumns: const ['contact_id', 'priority_id'],
       );
 
   @override
@@ -30,18 +30,6 @@ class PriorityMembersBase extends BaseTable {
     json.remove('updated_by');
     json.remove('sync_depth');
     return PriorityMemberRow.fromJson(json);
-  }
-
-  @override
-  PostgrestFilterBuilder<T2> filter<T2>(
-    PostgrestFilterBuilder<T2> query, {
-    bool initial = false,
-    bool archived = false,
-  }) {
-    // No user_id filter - RLS policies handle access control
-    // Users see invitations they created (via user_has_priority_access)
-    // and invitations they received (via contact_id)
-    return query;
   }
 }
 

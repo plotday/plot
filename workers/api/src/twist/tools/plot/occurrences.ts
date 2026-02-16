@@ -1,4 +1,4 @@
-import { type Database, safeQuery } from "@plotday/db";
+import type { Database } from "@plotday/db";
 import {
   type Activity,
   type ActorId,
@@ -6,6 +6,7 @@ import {
   type NewActor,
 } from "@plotday/twister/plot";
 
+import { rpcUser } from "../../../rpc";
 import { handleDbOperationError, processNewActorArray } from "./activity-helpers";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";
@@ -104,31 +105,32 @@ export async function processOccurrences(
           );
 
         if (newTags.length > 0) {
-          const { error: upsertError } = await plot.supabase
-            .from("activity_tag")
-            .upsert(newTags, {
-              onConflict: "actor_id,activity_id,occurrence,tag_id",
-            });
-
-          if (upsertError) {
-            throw new Error(
-              `Failed to upsert occurrence tags: ${upsertError.message}`
-            );
-          }
+          await plot.db
+            .insertInto("activity_tag")
+            .values(newTags)
+            .onConflict((oc) =>
+              oc
+                .columns(["actor_id", "activity_id", "occurrence", "tag_id"])
+                .doUpdateSet((eb) => ({
+                  updated_by: eb.ref("excluded.updated_by"),
+                  sync_depth: eb.ref("excluded.sync_depth"),
+                }))
+            )
+            .execute();
         }
       }
 
       if (occ.twistTags) {
         // Use update_activity_tags RPC with occurrence
-        safeQuery(
-          await plot.supabase.rpc("update_activity_tags", {
-            p_activity_id: activityId,
-            p_actor_id: plot.priorityTwistId,
-            p_client_id: plot.getUpdatedBy(),
-            p_tag_updates: occ.twistTags,
-            p_occurrence: occurrenceStr,
-          })
-        );
+        const userId = await plot.getUserId();
+        await rpcUser(plot.db, "update_activity_tags", {
+          user_id: userId,
+          p_activity_id: activityId,
+          p_actor_id: plot.priorityTwistId,
+          p_client_id: plot.getUpdatedBy(),
+          p_tag_updates: occ.twistTags,
+          p_occurrence: occurrenceStr,
+        });
       }
     } else if (hasFieldOverrides || occ.tags || occ.twistTags) {
       // Field overrides path: Create/update activity_exception
@@ -202,19 +204,24 @@ export async function processOccurrences(
       }
 
       // Upsert exception (conflict on activity_id + occurrence)
-      const result = await plot.supabase
-        .from("activity_exception")
-        .upsert(dbException, {
-          onConflict: "activity_id,occurrence",
-        })
-        .select()
-        .single();
-
-      if (result.error) {
-        throw new Error(
-          `Failed to upsert activity exception: ${result.error.message}`
-        );
-      }
+      await plot.db
+        .insertInto("activity_exception")
+        .values(dbException as any)
+        .onConflict((oc) =>
+          oc.columns(["activity_id", "occurrence"]).doUpdateSet((eb) => ({
+            title: eb.ref("excluded.title"),
+            preview: eb.ref("excluded.preview"),
+            duration: eb.ref("excluded.duration"),
+            done_at: eb.ref("excluded.done_at"),
+            meta: eb.ref("excluded.meta"),
+            archived_at: eb.ref("excluded.archived_at"),
+            updated_by: eb.ref("excluded.updated_by"),
+            at: eb.ref("excluded.at"),
+            on: eb.ref("excluded.on"),
+          }))
+        )
+        .returningAll()
+        .executeTakeFirstOrThrow();
 
       // Process tags for this exception
       if (occ.tags) {
@@ -246,30 +253,31 @@ export async function processOccurrences(
           );
 
         if (newTags.length > 0) {
-          const { error: upsertError } = await plot.supabase
-            .from("activity_tag")
-            .upsert(newTags, {
-              onConflict: "actor_id,activity_id,occurrence,tag_id",
-            });
-
-          if (upsertError) {
-            throw new Error(
-              `Failed to upsert occurrence tags: ${upsertError.message}`
-            );
-          }
+          await plot.db
+            .insertInto("activity_tag")
+            .values(newTags)
+            .onConflict((oc) =>
+              oc
+                .columns(["actor_id", "activity_id", "occurrence", "tag_id"])
+                .doUpdateSet((eb) => ({
+                  updated_by: eb.ref("excluded.updated_by"),
+                  sync_depth: eb.ref("excluded.sync_depth"),
+                }))
+            )
+            .execute();
         }
       }
 
       if (occ.twistTags) {
-        safeQuery(
-          await plot.supabase.rpc("update_activity_tags", {
-            p_activity_id: activityId,
-            p_actor_id: plot.priorityTwistId,
-            p_client_id: plot.getUpdatedBy(),
-            p_tag_updates: occ.twistTags,
-            p_occurrence: occurrenceStr,
-          })
-        );
+        const userId = await plot.getUserId();
+        await rpcUser(plot.db, "update_activity_tags", {
+          user_id: userId,
+          p_activity_id: activityId,
+          p_actor_id: plot.priorityTwistId,
+          p_client_id: plot.getUpdatedBy(),
+          p_tag_updates: occ.twistTags,
+          p_occurrence: occurrenceStr,
+        });
       }
     }
   }

@@ -210,14 +210,11 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this twist can
 async function handleRemoveTwist(plot: Plot, note: Note): Promise<void> {
   try {
     // Set archived_at on the priority_twist record
-    const { error } = await plot.supabase
-      .from("priority_twist")
-      .update({ archived_at: new Date().toISOString() })
-      .eq("id", plot.priorityTwistId);
-
-    if (error) {
-      throw error;
-    }
+    await plot.db
+      .updateTable("priority_twist")
+      .set({ archived_at: new Date().toISOString() })
+      .where("id", "=", plot.priorityTwistId)
+      .execute();
 
     // Create farewell note
     await createNote(plot, {

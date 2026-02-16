@@ -13,8 +13,13 @@ on:
       workers:
         description: 'Workers to deploy (comma-separated, or "all" for all workers)'
         required: false
-        default: 'all'
+        default: "all"
         type: string
+      migrate_only:
+        description: "Only run migrations, skip worker deployment"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: deploy-workers-${{ github.ref }}
@@ -104,10 +109,52 @@ jobs:
             echo "Workers to deploy: ${WORKERS[*]}"
           fi
 
-  deploy:
+  migrate:
     needs: check-changes
     runs-on: ubuntu-latest
-    if: needs.check-changes.outputs.workers != '[]'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Atlas
+        uses: ariga/setup-atlas@v0
+
+      - name: Load database secrets
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GCP_SA_KEY: "op://Production/Database/service account/plot-ci-migrator-key.json"
+          MIGRATOR_PASSWORD: op://Production/Database/migrator/password
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ env.GCP_SA_KEY }}
+
+      - name: Setup Cloud SQL Proxy
+        uses: google-github-actions/setup-cloud-sql-proxy@v2
+
+      - name: Start Cloud SQL Proxy
+        run: |
+          cloud-sql-proxy plot-core:northamerica-northeast2:plot-prod \
+            --port=5432 &
+          sleep 3
+
+      - name: Apply pending migrations
+        working-directory: libs/db
+        run: |
+          atlas migrate apply \
+            --dir "file://migrations" \
+            --url "postgres://migrator:${MIGRATOR_PASSWORD}@localhost:5432/plot"
+
+  deploy:
+    needs: [check-changes, migrate]
+    runs-on: ubuntu-latest
+    if: |
+      needs.check-changes.outputs.workers != '[]' &&
+      github.event.inputs.migrate_only != 'true'
     strategy:
       matrix:
         worker: ${{ fromJson(needs.check-changes.outputs.workers) }}

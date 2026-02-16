@@ -1,4 +1,7 @@
-import type { Database, SupabaseClient } from "@plotday/db";
+import { type Kysely, sql } from "kysely";
+
+import type { DB } from "../db-types";
+import { rpc } from "../rpc";
 
 /**
  * Gets or creates the "Plot" priority for a user.
@@ -7,74 +10,54 @@ import type { Database, SupabaseClient } from "@plotday/db";
  */
 export async function getOrCreatePlotPriority(
   userId: string,
-  supabase: SupabaseClient
+  db: Kysely<DB>
 ): Promise<string> {
   // First get the user's root priority to scope the key lookup
-  const rootResult = await supabase
-    .from("priority_user")
-    .select("priority_id, priority:priority_id(path)")
-    .eq("user_id", userId)
-    .eq("personal", true)
-    .single();
+  const rootResult = await db
+    .selectFrom("priority_user")
+    .innerJoin("priority", "priority.id", "priority_user.priority_id")
+    .select(["priority_user.priority_id", "priority.path"])
+    .where("priority_user.user_id", "=", userId)
+    .where("priority_user.personal", "=", true)
+    .executeTakeFirstOrThrow();
 
-  if (rootResult.error) {
-    throw new Error(
-      `Failed to find user root priority: ${rootResult.error.message}`
-    );
-  }
-
-  const rootPath = (rootResult.data.priority as any).path;
-  const rootPathPart = (rootPath as string).split(".")[0];
+  const rootPath = rootResult.path as string;
+  const rootPathPart = rootPath.split(".")[0];
 
   // Try to find existing Plot priority by key, scoped to root
-  const existingResult = await supabase
-    .from("priority")
-    .select("id")
-    .eq("key", "@plot")
-    .filter("path", "cd", rootPathPart)
-    .maybeSingle();
+  const existingResult = await db
+    .selectFrom("priority")
+    .select(["id"])
+    .where("key", "=", "@plot")
+    .where(sql<boolean>`path <@ ${rootPathPart}::ltree`)
+    .executeTakeFirst();
 
-  if (existingResult.error) {
-    throw new Error(
-      `Failed to query Plot priority: ${existingResult.error.message}`
-    );
-  }
-
-  if (existingResult.data) {
-    return existingResult.data.id;
+  if (existingResult) {
+    return existingResult.id;
   }
 
   // Not found, need to create it
   // Generate child path
-  const pathResult = await supabase.rpc("generate_path", {
+  // rpc() unwraps scalar results, so we get the path string directly
+  const path = await rpc(db, "generate_path", {
     parent: rootPath,
   });
 
-  if (pathResult.error) {
-    throw new Error(`Path generation failed: ${pathResult.error.message}`);
-  }
-
   // Create the Plot priority
-  const createResult = await supabase
-    .from("priority")
-    .insert({
+  const createResult = await db
+    .insertInto("priority")
+    .values({
       created_by: userId,
       title: "Plot",
-      path: pathResult.data,
+      path: path as string,
       updated_by: 0,
       key: "@plot",
       color: 7, // Resolution color (blue-gray)
     })
-    .select("id")
-    .single();
+    .returning(["id"])
+    .executeTakeFirstOrThrow();
 
-  if (createResult.error) {
-    throw new Error(
-      `Failed to create Plot priority: ${createResult.error.message}`
-    );
-  }
-
-  return createResult.data.id;
+  return createResult.id;
 }
 
 /**
@@ -84,76 +67,55 @@ export async function getOrCreatePlotPriority(
  */
 export async function getOrCreateTwistDevelopmentPriority(
   userId: string,
-  supabase: SupabaseClient
+  db: Kysely<DB>
 ): Promise<string> {
   // First ensure the Plot priority exists and get its path
-  const plotPriorityId = await getOrCreatePlotPriority(userId, supabase);
+  const plotPriorityId = await getOrCreatePlotPriority(userId, db);
 
   // Get the Plot priority path to scope the key lookup
-  const plotResult = await supabase
-    .from("priority")
-    .select("path")
-    .eq("id", plotPriorityId)
-    .single();
+  const plotResult = await db
+    .selectFrom("priority")
+    .select(["path"])
+    .where("id", "=", plotPriorityId)
+    .executeTakeFirstOrThrow();
 
-  if (plotResult.error) {
-    throw new Error(
-      `Failed to get Plot priority: ${plotResult.error.message}`
-    );
-  }
-
-  const plotPath = plotResult.data.path as string;
+  const plotPath = plotResult.path as string;
   const rootPathPart = plotPath.split(".")[0];
 
   // Try to find existing Twist Development priority by key, scoped to root
-  const existingResult = await supabase
-    .from("priority")
-    .select("id")
-    .eq("key", "@plot.twist-dev")
-    .filter("path", "cd", rootPathPart)
-    .maybeSingle();
+  const existingResult = await db
+    .selectFrom("priority")
+    .select(["id"])
+    .where("key", "=", "@plot.twist-dev")
+    .where(sql<boolean>`path <@ ${rootPathPart}::ltree`)
+    .executeTakeFirst();
 
-  if (existingResult.error) {
-    throw new Error(
-      `Failed to query twist development priority: ${existingResult.error.message}`
-    );
-  }
-
-  if (existingResult.data) {
-    return existingResult.data.id;
+  if (existingResult) {
+    return existingResult.id;
   }
 
   // Not found, need to create it
 
   // Generate child path
-  const pathResult = await supabase.rpc("generate_path", {
-    parent: plotResult.data.path,
+  // rpc() unwraps scalar results, so we get the path string directly
+  const path = await rpc(db, "generate_path", {
+    parent: plotResult.path,
   });
 
-  if (pathResult.error) {
-    throw new Error(`Path generation failed: ${pathResult.error.message}`);
-  }
-
   // Create the Twist Development priority
-  const createResult = await supabase
-    .from("priority")
-    .insert({
+  const createResult = await db
+    .insertInto("priority")
+    .values({
       created_by: userId,
       title: "Twist Development",
-      path: pathResult.data,
+      path: path as string,
       updated_by: 0,
       key: "@plot.twist-dev",
     })
-    .select("id")
-    .single();
+    .returning(["id"])
+    .executeTakeFirstOrThrow();
 
-  if (createResult.error) {
-    throw new Error(
-      `Failed to create twist development priority: ${createResult.error.message}`
-    );
-  }
-
-  return createResult.data.id;
+  return createResult.id;
 }
 
 /**
@@ -167,33 +129,27 @@ export async function getOrCreateTwistPriority(
   twistPackageId: string,
   twistName: string,
   isPersonal: boolean,
-  supabase: SupabaseClient,
+  db: Kysely<DB>,
   publisherId?: number | null
 ): Promise<{ priorityId: string; twistAdminId: number; isNew: boolean }> {
   // Query twist_admin to see if this twist already has a priority
-  const query = supabase
-    .from("twist_admin")
-    .select("id, priority_id")
-    .eq("twist_package_id", twistPackageId);
+  let query = db
+    .selectFrom("twist_admin")
+    .select(["id", "priority_id"])
+    .where("twist_package_id", "=", twistPackageId);
 
   if (isPersonal) {
-    query.eq("user_id", userId);
+    query = query.where("user_id", "=", userId);
   } else {
-    query.is("user_id", null);
+    query = query.where("user_id", "is", null);
   }
 
-  const existingResult = await query.maybeSingle();
+  const existingResult = await query.executeTakeFirst();
 
-  if (existingResult.error) {
-    throw new Error(
-      `Failed to query twist_admin: ${existingResult.error.message}`
-    );
-  }
-
-  if (existingResult.data?.priority_id) {
+  if (existingResult?.priority_id) {
     return {
-      priorityId: existingResult.data.priority_id,
-      twistAdminId: existingResult.data.id,
+      priorityId: existingResult.priority_id,
+      twistAdminId: Number(existingResult.id),
       isNew: false,
     };
   }
@@ -202,80 +158,63 @@ export async function getOrCreateTwistPriority(
   // First ensure Twist Development priority exists
   const twistDevPriorityId = await getOrCreateTwistDevelopmentPriority(
     userId,
-    supabase
+    db
   );
 
   // Get the Twist Development priority path
-  const twistDevResult = await supabase
-    .from("priority")
-    .select("path, created_by")
-    .eq("id", twistDevPriorityId)
-    .single();
-
-  if (twistDevResult.error) {
-    throw new Error(
-      `Failed to get twist development priority: ${twistDevResult.error.message}`
-    );
-  }
+  const twistDevResult = await db
+    .selectFrom("priority")
+    .select(["path", "created_by"])
+    .where("id", "=", twistDevPriorityId)
+    .executeTakeFirstOrThrow();
 
   // Generate child path
-  const pathResult = await supabase.rpc("generate_path", {
-    parent: twistDevResult.data.path,
+  // rpc() unwraps scalar results, so we get the path string directly
+  const path = await rpc(db, "generate_path", {
+    parent: twistDevResult.path,
   });
-
-  if (pathResult.error) {
-    throw new Error(`Path generation failed: ${pathResult.error.message}`);
-  }
 
   // Create the twist-specific priority
   const priorityTitle = isPersonal ? `${twistName} (Personal)` : twistName;
-  const createPriorityResult = await supabase
-    .from("priority")
-    .insert({
-      created_by: twistDevResult.data.created_by,
+  const createPriorityResult = await db
+    .insertInto("priority")
+    .values({
+      created_by: twistDevResult.created_by,
       title: priorityTitle,
-      path: pathResult.data,
+      path: path as string,
       updated_by: 0,
     })
-    .select("id")
-    .single();
+    .returning(["id"])
+    .executeTakeFirstOrThrow();
 
-  if (createPriorityResult.error) {
-    throw new Error(
-      `Failed to create twist priority: ${createPriorityResult.error.message}`
-    );
-  }
-
-  const priorityId = createPriorityResult.data.id;
+  const priorityId = createPriorityResult.id;
 
   // Create or update twist_admin entry
-  if (existingResult.data) {
+  if (existingResult) {
     // twist_admin exists but priority_id was null - update it
-    const updateResult = await supabase
-      .from("twist_admin")
-      .update({ priority_id: priorityId })
-      .eq("id", existingResult.data.id)
-      .select("id")
-      .single();
-
-    if (updateResult.error) {
-      throw new Error(
-        `Failed to update twist_admin: ${updateResult.error.message}`
-      );
-    }
+    const updateResult = await db
+      .updateTable("twist_admin")
+      .set({ priority_id: priorityId })
+      .where("id", "=", existingResult.id)
+      .returning(["id"])
+      .executeTakeFirstOrThrow();
 
     return {
       priorityId,
-      twistAdminId: updateResult.data.id,
+      twistAdminId: Number(updateResult.id),
       isNew: true,
     };
   } else {
     // Create new twist_admin entry
-    const twistAdminData: Database["public"]["Tables"]["twist_admin"]["Insert"] =
-      {
-        twist_package_id: twistPackageId,
-        priority_id: priorityId,
-      };
+    const twistAdminData: {
+      twist_package_id: string;
+      priority_id: string;
+      user_id?: string;
+      publisher_id?: number | bigint | string;
+    } = {
+      twist_package_id: twistPackageId,
+      priority_id: priorityId,
+    };
 
     if (isPersonal) {
       twistAdminData.user_id = userId;
@@ -289,21 +228,15 @@ export async function getOrCreateTwistPriority(
       twistAdminData.publisher_id = publisherId;
     }
 
-    const createAdminResult = await supabase
-      .from("twist_admin")
-      .insert(twistAdminData)
-      .select("id")
-      .single();
-
-    if (createAdminResult.error) {
-      throw new Error(
-        `Failed to create twist_admin: ${createAdminResult.error.message}`
-      );
-    }
+    const createAdminResult = await db
+      .insertInto("twist_admin")
+      .values(twistAdminData)
+      .returning(["id"])
+      .executeTakeFirstOrThrow();
 
     return {
       priorityId,
-      twistAdminId: createAdminResult.data.id,
+      twistAdminId: Number(createAdminResult.id),
       isNew: true,
     };
   }
@@ -315,28 +248,22 @@ export async function getOrCreateTwistPriority(
  */
 export async function getAccessiblePublishers(
   userId: string,
-  supabase: SupabaseClient
+  db: Kysely<DB>
 ): Promise<Array<{ id: number; name: string; email: string | null; url: string | null }>> {
   // Get publishers from twist_admin where priority_id is accessible
   // We query twist_admin entries that have a publisher and priority
-  const result = await supabase
-    .from("twist_admin")
-    .select(
-      `
-      publisher:publisher_id (
-        id,
-        name,
-        email,
-        url
-      )
-    `
-    )
-    .not("publisher_id", "is", null)
-    .not("priority_id", "is", null);
-
-  if (result.error) {
-    throw new Error(`Failed to get publishers: ${result.error.message}`);
-  }
+  const results = await db
+    .selectFrom("twist_admin")
+    .innerJoin("publisher", "publisher.id", "twist_admin.publisher_id")
+    .select([
+      "publisher.id",
+      "publisher.name",
+      "publisher.email",
+      "publisher.url",
+    ])
+    .where("twist_admin.publisher_id", "is not", null)
+    .where("twist_admin.priority_id", "is not", null)
+    .execute();
 
   // Filter to unique publishers
   const publishers = new Map<
@@ -344,10 +271,15 @@ export async function getAccessiblePublishers(
     { id: number; name: string; email: string | null; url: string | null }
   >();
 
-  for (const row of result.data) {
-    const publisher = row.publisher as any;
-    if (publisher && !publishers.has(publisher.id)) {
-      publishers.set(publisher.id, publisher);
+  for (const row of results) {
+    const id = Number(row.id);
+    if (!publishers.has(id)) {
+      publishers.set(id, {
+        id,
+        name: row.name,
+        email: row.email,
+        url: row.url,
+      });
     }
   }
 
@@ -360,20 +292,21 @@ export async function getAccessiblePublishers(
 export async function createPublisher(
   name: string,
   url: string | null,
-  supabase: SupabaseClient
+  db: Kysely<DB>
 ): Promise<{ id: number; name: string; email: string | null; url: string | null }> {
-  const result = await supabase
-    .from("publisher")
-    .insert({
+  const result = await db
+    .insertInto("publisher")
+    .values({
       name,
       url,
     })
-    .select("id, name, email, url")
-    .single();
+    .returning(["id", "name", "email", "url"])
+    .executeTakeFirstOrThrow();
 
-  if (result.error) {
-    throw new Error(`Failed to create publisher: ${result.error.message}`);
-  }
-
-  return result.data;
+  return {
+    id: Number(result.id),
+    name: result.name,
+    email: result.email,
+    url: result.url,
+  };
 }

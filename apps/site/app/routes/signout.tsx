@@ -1,6 +1,6 @@
-import { redirect } from "react-router";
-import { createSupabaseServerClient } from "../lib/supabase.server";
-import type { Route } from "./+types/signout";
+import { useClerk } from "@clerk/react-router";
+import { useEffect } from "react";
+import { useSearchParams } from "react-router";
 
 /**
  * Validates that a returnTo URL is safe to redirect to.
@@ -14,19 +14,16 @@ function isValidReturnTo(returnTo: string): boolean {
   return false;
 }
 
-export async function loader({ request, context }: Route.LoaderArgs) {
-  const { supabase, headers } = createSupabaseServerClient(
-    request,
-    context.cloudflare.env,
-  );
+export default function SignOut() {
+  const { signOut } = useClerk();
+  const [searchParams] = useSearchParams();
 
-  // Sign out - this will automatically set cookies to clear the session
-  await supabase.auth.signOut();
-
-  // Get and validate returnTo parameter to prevent open redirect vulnerabilities
-  const url = new URL(request.url);
-  const requestedReturnTo = url.searchParams.get("returnTo") || "/";
+  const requestedReturnTo = searchParams.get("returnTo") || "/";
   const returnTo = isValidReturnTo(requestedReturnTo) ? requestedReturnTo : "/";
 
-  return redirect(returnTo, { headers });
+  useEffect(() => {
+    signOut({ redirectUrl: returnTo });
+  }, [signOut, returnTo]);
+
+  return null;
 }

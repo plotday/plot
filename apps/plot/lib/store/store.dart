@@ -9,7 +9,6 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:collection/collection.dart';
 import 'package:injector/injector.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:equatable/equatable.dart';
 import 'package:rrule/rrule.dart';
@@ -26,6 +25,7 @@ import 'package:plot/util/list.dart';
 import 'package:plot/util/async.dart';
 import 'package:plot/util/value.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/widget/icon.dart';
@@ -111,36 +111,31 @@ mixin UuidTable on Table {
 abstract class BaseTable {
   const BaseTable({
     required this.table,
-    this.writeTable,
+    required this.syncEndpoint,
     this.order = 'created_at',
     this.ascending = true,
-    this.upsertAsUpdate = false,
     this.supportsArchiving = true,
     String? name,
     this.filterName,
     this.limit,
     this.cursorColumn = 'id',
-    this.secondarySortColumns = const ['id'],
   }) : name = name ?? "${table}s";
 
   final String table;
 
-  /// Override the table for writes.
-  final String? writeTable;
+  /// The sync API endpoint path (e.g., 'activities', 'notes')
+  final String syncEndpoint;
+
   final String name;
   final String? filterName;
   String get fullName => "$name${filterName == null ? "" : ":$filterName"}";
   final String order;
   final bool ascending;
   final int? limit;
-  final bool upsertAsUpdate;
   final bool supportsArchiving;
 
   /// Column to use for composite cursor pagination (default: 'id')
   final String cursorColumn;
-
-  /// Columns to use for secondary sorting to ensure stable sort order (default: ['id'])
-  final List<String> secondarySortColumns;
 
   Map<String, dynamic> toBase(DataClass row) {
     final json = row.toJson();
@@ -161,6 +156,34 @@ abstract class BaseTable {
     return rows.toList();
   }
 
+  /// Build query params for the sync API call.
+  /// Subclasses override to add entity-specific params (e.g., priority_path).
+  Map<String, String> buildParams({
+    DateTime? updatedSince,
+    String? lastId,
+    bool initial = false,
+    bool archived = false,
+  }) {
+    final params = <String, String>{};
+    if (updatedSince != null) {
+      params['updated_since'] = updatedSince.toIso8601String();
+    }
+    if (lastId != null) params['cursor_id'] = lastId;
+    if (initial) params['initial'] = 'true';
+    if (supportsArchiving && updatedSince == null) {
+      params['archived'] = archived.toString();
+    }
+    if (limit != null) params['limit'] = limit.toString();
+    return params;
+  }
+
+  /// Build range query params for calendar/pagination filtering.
+  /// Override in subclasses for entity-specific range filtering (e.g., calendar overlap).
+  /// Default returns empty map (no range filtering).
+  Map<String, String> buildRangeParams(DateTimeRange range) {
+    return {};
+  }
+
   Future<
     (
       Iterable<Map<String, dynamic>> rows,
@@ -177,56 +200,39 @@ abstract class BaseTable {
     bool initial = false,
     bool archived = false,
   }) async {
-    var query = select();
-    query = filterRange(query, range);
-    if (updatedSince != null) {
-      if (lastId == null) {
-        // No lastId provided: keep exclusive comparison (> updated_at)
-        query = query.gt("updated_at", updatedSince);
-      } else {
-        // lastId provided: use composite cursor to handle same timestamps
-        // (updated_at > lastUpdated) OR (updated_at = lastUpdated AND cursorColumn > lastId)
-        query = query.or(
-          "updated_at.gt.${updatedSince.toIso8601String()},and(updated_at.eq.${updatedSince.toIso8601String()},$cursorColumn.gt.$lastId)",
-        );
-      }
+    final params = buildParams(
+      updatedSince: updatedSince,
+      lastId: lastId,
+      initial: initial,
+      archived: archived,
+    );
+
+    // For non-update pulls, add sort params so server sorts by entity's order column
+    if (updatedSince == null) {
+      params['sort_by'] = order;
+      params['sort_dir'] = ascending ? 'asc' : 'desc';
     }
 
-    // Apply base filter (user_id, etc.)
-    query = filter(query, initial: initial, archived: archived);
-
-    // Apply archived_at filtering:
-    // - Update pulls (updatedSince != null): include all items
-    // - Archived sync: only archived items (archived_at IS NOT NULL)
-    // - Regular sync: only non-archived items (archived_at IS NULL)
-    // Skip for tables that don't support archiving
-    if (supportsArchiving && updatedSince == null) {
-      if (archived) {
-        query = query.not("archived_at", "is", null);
-      } else {
-        query = query.filter("archived_at", "is", null);
-      }
+    // Add range params
+    if (range != null) {
+      params.addAll(buildRangeParams(range));
     }
 
-    // When pulling updates, sort by updated_at ASC, id ASC to align with
-    // the composite cursor filter (updated_at > X OR (updated_at = X AND id > lastId)).
-    // Using DESC order would cause the cursor to skip items sharing the same updated_at.
-    PostgrestTransformBuilder<PostgrestList> query2;
-    if (updatedSince != null) {
-      query2 = query
-          .order('updated_at', ascending: true)
-          .order(cursorColumn, ascending: true);
-    } else {
-      query2 = sort(query);
-    }
-    if (limit != null) {
-      query2 = query2.limit(limit!);
-    }
+    final queryString = params.entries
+        .where((e) => e.value.isNotEmpty)
+        .map(
+          (e) =>
+              '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}',
+        )
+        .join('&');
 
     // Execute query with auth error detection
     late final List<Map<String, dynamic>> rows;
     try {
-      rows = await query2;
+      final result = await api.get<List<dynamic>>(
+        '/sync/$syncEndpoint${queryString.isNotEmpty ? '?$queryString' : ''}',
+      );
+      rows = result.cast<Map<String, dynamic>>();
     } catch (e) {
       if (Store._isAuthError(e)) {
         await Store._handleAuthError();
@@ -286,74 +292,12 @@ abstract class BaseTable {
     return (rows, lastUpdated, returnLastId, returnRange, more);
   }
 
-  PostgrestFilterBuilder<PostgrestList> select() {
-    return Base.client.from(table).select();
-  }
-
-  /// Applies created_at boundary filters for pagination (PullType.more).
-  /// Uses exclusive bounds (gt/lt) to avoid fetching duplicate rows.
-  ///
-  /// For descending order (newest first):
-  /// - range.start: lower bound (older items) → created_at > start
-  /// - range.end: upper bound (newer items) → created_at < end
-  ///
-  /// For ascending order (oldest first):
-  /// - range.start: lower bound (older items) → created_at > start
-  /// - range.end: upper bound (newer items) → created_at < end
-  PostgrestFilterBuilder<T2> filterRange<T2>(
-    PostgrestFilterBuilder<T2> query,
-    DateTimeRange? range,
-  ) {
-    if (range == null) return query;
-
-    final from = range.start;
-    final to = range.end;
-
-    // Apply exclusive bounds to avoid duplicates
-    if (from != null) {
-      query = query.gt(order, from.toIso8601String());
-    }
-    if (to != null) {
-      query = query.lt(order, to.toIso8601String());
-    }
-    return query;
-  }
-
-  PostgrestFilterBuilder<T2> filter<T2>(
-    PostgrestFilterBuilder<T2> query, {
-    bool initial = false,
-    bool archived = false,
-  }) {
-    return query.eq("user_id", Base.userId.toString());
-  }
-
-  PostgrestTransformBuilder<T2> sort<T2>(PostgrestTransformBuilder<T2> query) {
-    // Add primary sort
-    query = query.order(order, ascending: ascending);
-
-    // Add secondary sort columns for stable ordering
-    for (final column in secondarySortColumns) {
-      query = query.order(column, ascending: ascending);
-    }
-
-    return query;
-  }
-
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
 
     try {
-      final id = rows.first['id'];
-      if (id is int) {
-        for (final row in rows) {
-          final id = row['id'] as Object;
-          final rest = Map<String, dynamic>.from(row)..remove('id');
-          await Base.client.from(writeTable ?? table).update(rest).eq('id', id);
-        }
-      } else if (upsertAsUpdate) {
-        await Base.client.from(writeTable ?? table).insert(rows.toList());
-      } else {
-        await Base.client.from(writeTable ?? table).upsert(rows.toList());
+      for (final row in rows) {
+        await api.post<Map<String, dynamic>>('/sync/$syncEndpoint', body: row);
       }
     } catch (e) {
       if (Store._isAuthError(e)) {
@@ -480,16 +424,9 @@ class Store extends _$Store {
   /// so it should NOT trigger sign-out. Similarly, RLS violations (code 42501)
   /// indicate authorization failures, not authentication failures.
   static bool _isAuthError(dynamic error) {
-    // Check for PostgrestException (from Supabase database operations)
-    if (error is PostgrestException) {
-      // Only JWT auth failures trigger sign-out
-      return error.code == 'PGRST301' || // JWT expired
-          error.code == 'PGRST302'; // JWT invalid
-    }
-
-    // Check for AuthException (excluding retryable network errors)
-    if (error is AuthException && error is! AuthRetryableFetchException) {
-      return true;
+    // Check for ApiException with 401 status (Unauthorized)
+    if (error is ApiException) {
+      return error.statusCode == 401;
     }
 
     return false;
@@ -500,10 +437,8 @@ class Store extends _$Store {
   /// to access data it shouldn't. These should NOT trigger sign-out but should
   /// be logged so developers can identify and fix the app bug.
   static bool _isRlsViolation(dynamic error) {
-    if (error is PostgrestException) {
-      // PostgreSQL error code 42501 = insufficient_privilege
-      // This includes RLS policy violations
-      return error.code == '42501';
+    if (error is ApiException) {
+      return error.statusCode == 403 || error.pgCode == '42501';
     }
     return false;
   }
@@ -512,26 +447,12 @@ class Store extends _$Store {
   /// These errors indicate invalid data that will never succeed on retry and
   /// should be reverted to the remote version instead.
   static bool _isPermanentError(dynamic error) {
-    if (error is PostgrestException) {
-      final code = error.code;
-      if (code == null) return false;
-
-      // PostgreSQL RAISE EXCEPTION (like our personal→shared move error)
-      if (code == 'P0001') return true;
-
-      // Foreign key constraint violation
-      if (code == '23503') return true;
-
-      // Unique constraint violation
-      if (code == '23505') return true;
-
-      // Check constraint violation
-      if (code == '23514') return true;
-
-      // RLS policy violation
-      if (code == '42501') return true;
-
-      return false;
+    if (error is ApiException) {
+      // 400 (Bad Request), 403 (Forbidden), 409 (Conflict), 422 (Unprocessable)
+      // are permanent errors that won't succeed on retry.
+      // Exclude 401 (auth), 408 (timeout), 429 (rate limit) which are transient.
+      const permanentStatuses = {400, 403, 409, 422};
+      return permanentStatuses.contains(error.statusCode);
     }
     return false;
   }
@@ -547,11 +468,13 @@ class Store extends _$Store {
     final id = localRow['id'] as Object;
 
     try {
-      // Fetch current remote version by ID
-      final response = await baseTable
-          .select()
-          .eq('id', id.toString())
-          .maybeSingle();
+      // Fetch current remote version by ID via sync API
+      final rows = await api.get<List<dynamic>>(
+        '/sync/${baseTable.syncEndpoint}?id=${Uri.encodeQueryComponent(id.toString())}',
+      );
+      final response = rows.isEmpty
+          ? null
+          : (rows.first as Map<String, dynamic>);
 
       if (response == null) {
         // Row doesn't exist remotely - delete local copy
@@ -587,36 +510,17 @@ class Store extends _$Store {
     }
   }
 
-  /// Handles authentication errors by attempting token refresh before signing out.
-  /// This triggers the auth state change listener which will update UserBloc.
+  /// Handles authentication errors by signing out.
+  /// Clerk handles token refresh automatically, so a 401 means definitive auth failure.
   static Future<void> _handleAuthError() async {
-    log.warning("Authentication failure detected - attempting token refresh");
+    log.warning("Authentication failure detected - signing out");
     try {
-      await Base.refreshSession();
-      log.info("Token refresh successful");
-      return;
-    } on AuthRetryableFetchException {
-      // Network error — don't sign out
-      log.info("Token refresh failed due to network error - not signing out");
-      return;
-    } on AuthException catch (e) {
-      // Definitive auth failure — sign out
+      await Base.signOut();
+    } catch (signOutError, stackTrace) {
       log.warning(
-        "Token refresh failed (AuthException: ${e.message}) - signing out",
-      );
-      try {
-        await Base.signOut();
-      } catch (signOutError, stackTrace) {
-        log.warning(
-          "Error during auth failure sign-out",
-          signOutError,
-          stackTrace,
-        );
-      }
-    } catch (e) {
-      // Unexpected error — don't sign out
-      log.warning(
-        "Unexpected error during token refresh ($e) - not signing out",
+        "Error during auth failure sign-out",
+        signOutError,
+        stackTrace,
       );
     }
   }
@@ -625,6 +529,8 @@ class Store extends _$Store {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
   bool _isOnline = false;
+  bool _isBufferingBroadcasts = false;
+  final _bufferedTables = <String>{};
 
   // Adaptive batch debouncer for sync requests per table
   late final BatchDebouncer<String> _syncDebouncer = BatchDebouncer(
@@ -800,8 +706,8 @@ class Store extends _$Store {
                   rethrow;
                 } else if (Store._isPermanentError(e)) {
                   // Permanent error - revert local change to remote version
-                  final errorMsg = e is PostgrestException
-                      ? (e.hint ?? e.message)
+                  final errorMsg = e is ApiException
+                      ? e.description
                       : 'Invalid local change';
                   log.warning(
                     "Permanent error during sync (${baseTable.table}): $errorMsg. Reverting row.",
@@ -820,7 +726,7 @@ class Store extends _$Store {
                 } else {
                   // Transient error - log and continue
                   log.warning(
-                    "Error pushing ${baseTable.toBase(data)} to ${baseTable.writeTable ?? baseTable.table}",
+                    "Error pushing ${baseTable.toBase(data)} to ${baseTable.syncEndpoint}",
                     e,
                     stackTrace,
                   );
@@ -1539,6 +1445,11 @@ class Store extends _$Store {
       return;
     }
 
+    if (_isBufferingBroadcasts) {
+      _bufferedTables.add(table);
+      return;
+    }
+
     _syncDebouncer(table);
   }
 
@@ -1583,11 +1494,22 @@ class Store extends _$Store {
     try {
       _unsubscribeFromUpdates();
       await _waitForNetworkConnectivity();
-      await _syncAll();
+
+      // Subscribe to WebSocket FIRST, buffering messages during sync
+      _isBufferingBroadcasts = true;
+      _bufferedTables.clear();
       await _subscribeToUpdates();
-      // Sync one more time in case something changed while we were syncing, before we subscribed
+
       await _syncAll();
+
+      // Process any messages received during sync
+      _isBufferingBroadcasts = false;
+      for (final table in _bufferedTables) {
+        _syncDebouncer(table);
+      }
+      _bufferedTables.clear();
     } finally {
+      _isBufferingBroadcasts = false;
       _isSyncing = false;
     }
   }

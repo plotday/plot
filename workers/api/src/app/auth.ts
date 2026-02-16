@@ -1,45 +1,35 @@
-import type { User } from "@supabase/supabase-js";
-
+import type { Kysely } from "kysely";
 import type { MiddlewareHandler } from "hono";
 import type { PostHog } from "posthog-node";
 
-import { type SupabaseClient, createClient } from "@plotday/db";
-
+import { type DB, createDb } from "../db";
 import type { Bindings } from "../env";
-import { getUser } from "../utils/auth";
+import { type AuthUser, type ClerkClaims, getUser } from "../utils/auth";
 
 declare module "hono" {
   interface ContextVariableMap {
     postHog: PostHog;
-    supabase: SupabaseClient;
-    supabaseAdmin: SupabaseClient;
-    user: User;
+    db: Kysely<DB>;
+    user: AuthUser;
+    /** Set when JWT is valid but user doesn't exist in DB (new user hitting /activate). */
+    clerkClaims: ClerkClaims;
   }
 }
 
 /**
  * Authentication middleware for app endpoints
- * Handles Supabase Bearer token verification
+ * Handles Clerk Bearer token verification
  * Special handling for WebSocket endpoints (/updates)
  */
 export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   c,
   next
 ) => {
-  const supabaseAdmin = createClient(
-    c.env.SUPABASE_URL,
-    c.env.SUPABASE_SERVICE_KEY
-  );
-  c.set("supabaseAdmin", supabaseAdmin);
+  c.set("db", createDb(c.env));
 
   // WebSocket protocol doesn't support custom headers, so we're using the
   // Sec-WebSocket-Protocol method, checked in the handler.
   if (c.req.path.startsWith("/app/updates")) {
-    return next();
-  }
-
-  // Allow public auth endpoints (no authentication required)
-  if (c.req.path === "/app/auth/send-code" && c.req.method === "POST") {
     return next();
   }
 
@@ -48,7 +38,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     return next();
   }
 
-  // Allow invitation lookup without auth (uses supabaseAdmin, no user identity needed)
+  // Allow invitation lookup without auth (no user identity needed)
   if (c.req.path.startsWith("/app/invitation/") && c.req.method === "GET") {
     return next();
   }
@@ -64,21 +54,23 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   }
   const access_token = authHeader.replace(/\s*Bearer\s+/, "");
 
-  // Validate JWT via getClaims — rejects expired tokens without ever
-  // consuming the client's refresh token (unlike setSession)
-  const { user, error } = await getUser(supabaseAdmin, access_token);
-  if (error || !user) {
-    return c.json({ message: "Unauthorized" }, 401);
+  // Validate Clerk JWT using local PEM key (no network call)
+  const { user, claims } = await getUser(
+    c.var.db,
+    access_token,
+    c.env.CLERK_JWT_KEY
+  );
+
+  if (user) {
+    c.set("user", user);
+    return next();
   }
 
-  // Create Supabase client with the user's token for RLS
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY, {
-    global: {
-      headers: { Authorization: `Bearer ${access_token}` },
-    },
-  });
+  // JWT was valid but user doesn't exist in DB — allow /activate to create them.
+  if (claims && c.req.path === "/app/activate" && c.req.method === "POST") {
+    c.set("clerkClaims", claims);
+    return next();
+  }
 
-  c.set("supabase", supabase);
-  c.set("user", user as unknown as User);
-  await next();
+  return c.json({ message: "Unauthorized" }, 401);
 };

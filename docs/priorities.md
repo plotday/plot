@@ -255,12 +255,12 @@ With translation:
 
 ## Access Control
 
-### RLS Policies
+### Authorization
 
-All queries use `user_priority` view which enforces access via JOINs:
+RLS is disabled on all tables. Authorization is enforced at the API layer. All queries use `user_priority` view which enforces access via JOINs:
 - Only returns priorities where user has `priority_user` entry for a root
 - Flutter app never queries `priority` table directly
-- RLS policies on `priority` table provide defense-in-depth
+- The API layer checks access before returning data
 
 ### Access Check Functions
 
@@ -278,12 +278,12 @@ RETURNS boolean AS $$
     )
 $$;
 
--- Used in RLS policies and trigger functions
-CREATE FUNCTION can_access_priority(priority_id uuid)
+-- Used in trigger functions (access control is enforced at the API layer, not via RLS)
+CREATE FUNCTION can_access_priority(p_user_id uuid, priority_id uuid)
 RETURNS boolean AS $$
     SELECT EXISTS (
         SELECT 1 FROM user_priority_expanded upe
-        WHERE upe.user_id = auth.uid()
+        WHERE upe.user_id = p_user_id
           AND upe.priority_id = priority_id
     )
 $$;
@@ -319,11 +319,11 @@ When priorities are inserted or updated, triggers fire to notify affected users:
 ### Querying Priorities
 
 ```sql
--- Get all priorities for current user (what Flutter does)
-SELECT * FROM user_priority WHERE user_id = auth.uid();
+-- Get all priorities for a user (what Flutter does via the API)
+SELECT * FROM user_priority WHERE user_id = 'user-id-here';
 
 -- Check if user can access specific priority
-SELECT can_access_priority('priority-id-here');
+SELECT user_has_priority_access('user-id-here', 'priority-id-here');
 
 -- Get all children of a priority
 SELECT * FROM priority_child WHERE priority_id = 'parent-id';
@@ -339,7 +339,7 @@ SELECT * FROM user_priority_expanded WHERE priority_id = 'priority-id';
 SELECT share_priority(
     priority_id := 'priority-to-share',
     contact_ids := ARRAY['contact-1', 'contact-2'],
-    user_id := auth.uid()
+    user_id := 'user-id-here'
 );
 ```
 
@@ -465,21 +465,17 @@ Visual path should be parent's visual path + priority's label, not parent's actu
 - Priority-contact table for sharing invitations
 - Priority settings table for user customizations
 
-**Views** (`60-views/`)
+**Views** (`70-views/`, `90-user-schema/`)
 - `priority_child` - Maps priorities to all descendants
-- `user_priority_expanded` - Expands access grants to include descendants
+- `user.priority_expanded` - Expands access grants to include descendants
 - `priority_settings_inherited` - Computes inherited settings from ancestors
-- `user_priority` - Main client view with visual paths and upsert trigger
+- `user.priority` - Main client view with visual paths and upsert trigger
 
-**Functions** (`65-functions/`)
+**Functions** (`40-functions/`, `60-functions/`)
 - `share_priority()` - Handles priority sharing workflow including extraction
 - Path generation functions for ltree operations
 
-**Row-Level Security** (`70-rls/`)
-- Access control policies on priority table
-- Access check functions used by policies and triggers
-
-**Sync System** (`30-functions/`, `80-triggers/`)
+**Sync System** (`90-user-schema/`, `95-triggers/`)
 - Sync broadcast functions to notify affected users
 - Triggers on priority changes to fire sync notifications
 

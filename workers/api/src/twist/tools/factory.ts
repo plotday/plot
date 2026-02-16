@@ -1,5 +1,6 @@
-import type { SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
 
+import type { DB } from "../../db-types";
 import { type TwistEnvironment, type Bindings } from "../../env";
 import { type ToolPermission } from "../permissions";
 import { Twists } from "./twists";
@@ -61,7 +62,7 @@ export function createTool(
   {
     twistId,
     environment,
-    supabase,
+    db,
     priorityId,
     priorityTwistId,
     env,
@@ -69,7 +70,7 @@ export function createTool(
   }: {
     twistId: string;
     environment: TwistEnvironment;
-    supabase: SupabaseClient;
+    db: Kysely<DB>;
     priorityId: string;
     priorityTwistId: string;
     env: Bindings;
@@ -79,7 +80,7 @@ export function createTool(
   switch (id) {
     case "Plot":
       return new Plot({
-        supabase,
+        db,
         priorityId,
         priorityTwistId,
         options,
@@ -111,7 +112,7 @@ export function createTool(
           priorityTwistId,
         }),
         env,
-        supabase,
+        db,
         priorityTwistId,
         twistId,
         environment,
@@ -143,7 +144,7 @@ export function createTool(
       return new Twists({
         env,
         ctx,
-        supabase,
+        db,
         priorityTwistId,
       });
     default:

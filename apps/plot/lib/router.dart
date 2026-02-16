@@ -78,7 +78,7 @@ class AppRouter extends RootStackRouter {
         AutoRoute(
           page: PasswordSetupRoute.page,
           path: 'account/password',
-          guards: [PlatformPickerGuard(), AuthGuard()],
+          guards: [PlatformPickerGuard()],
         ),
         AutoRoute(
           page: InviteRoute.page,
@@ -235,7 +235,6 @@ class AuthGuard extends AutoRouteGuard {
         if ([
           SignInRoute.page.name,
           EmailSignInRoute.page.name,
-          PasswordSetupRoute.page.name,
         ].contains(resolver.route.name)) {
           _logger.info('AuthGuard: Redirecting to Now');
           router.replaceAll([EmptyShellRoute("Now")()]);
@@ -243,15 +242,6 @@ class AuthGuard extends AutoRouteGuard {
           // User is authenticated and active, proceed with navigation
           // (includes InviteRoute for token redemption)
           resolver.next();
-        }
-        break;
-      case UserPasswordRequired():
-        if (resolver.route.name == PasswordSetupRoute.page.name ||
-            resolver.route.name == InviteRoute.page.name) {
-          resolver.next();
-        } else {
-          _logger.info('AuthGuard: Redirecting to PasswordSetupRoute');
-          resolver.redirectUntil(PasswordSetupRoute());
         }
         break;
       case UserSignedOut():

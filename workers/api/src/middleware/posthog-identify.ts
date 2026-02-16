@@ -24,15 +24,20 @@ export const postHogIdentifyMiddleware: MiddlewareHandler<{ Bindings: Bindings }
   const user = c.var.user;
 
   if (user) {
+    const clientInfo = c.var.clientInfo;
     c.var.postHog.identify({
       distinctId: user.id,
       properties: {
         $set: {
           email: user.email,
-          name: user.user_metadata?.name || user.user_metadata?.full_name,
-        },
-        $set_once: {
-          signed_up_time: user.created_at,
+          name: user.name,
+          ...(clientInfo
+            ? {
+                app_version: clientInfo.version,
+                app_build: clientInfo.buildNumber,
+                app_platform: clientInfo.platform,
+              }
+            : {}),
         },
       },
     });

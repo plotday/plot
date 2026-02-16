@@ -2,7 +2,7 @@ import { Heading, Text } from "@react-email/components";
 
 import EmailLayout from "./components/email-layout";
 
-export default function EmailConfirmation() {
+export default function EmailConfirmation({ code }: { code: string }) {
   return (
     <EmailLayout preview="Confirm your email address for Plot">
       <Heading style={h1}>Welcome to Plot!</Heading>
@@ -10,7 +10,7 @@ export default function EmailConfirmation() {
         Thanks for signing up! To get started, please confirm your email
         address by entering the verification code below:
       </Text>
-      <Text style={otpCode}>{"{{ .Token }}"}</Text>
+      <Text style={otpCode}>{code}</Text>
       <Text style={hint}>
         This code will expire in one hour for your security.
       </Text>

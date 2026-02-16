@@ -1,4 +1,5 @@
-import { type SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
+
 import {
   type Activity,
   type ActivityUpdate,
@@ -24,7 +25,9 @@ import {
 } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 
+import type { DB } from "../../../db-types";
 import type { Bindings } from "../../../env";
+import { rpc, rpcUser } from "../../../rpc";
 import { disposeRpc } from "../../../utils/rpc";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
@@ -89,7 +92,7 @@ export type DispatchItem =
     };
 
 export class Plot extends Tool implements IPlot {
-  public supabase: SupabaseClient;
+  public db: Kysely<DB>;
   public priorityId: string;
   public priorityTwistId: ActorId;
   public plotOptions?: typeof IPlot.Options;
@@ -161,20 +164,20 @@ export class Plot extends Tool implements IPlot {
   }
 
   constructor({
-    supabase,
+    db,
     priorityId,
     priorityTwistId,
     options,
     env,
   }: {
-    supabase: SupabaseClient;
+    db: Kysely<DB>;
     priorityId: string;
     priorityTwistId: string;
     options?: typeof IPlot.Options;
     env: Bindings;
   }) {
     super();
-    this.supabase = supabase;
+    this.db = db;
     this.priorityId = priorityId;
     this.priorityTwistId = priorityTwistId as ActorId;
     this.plotOptions = options;
@@ -188,24 +191,24 @@ export class Plot extends Tool implements IPlot {
    */
   async getActor(): Promise<Actor> {
     if (!this._actor) {
-      const { data, error } = await this.supabase
-        .from("actor")
-        .select("id, name, type, email")
-        .eq("id", this.priorityTwistId)
-        .single();
+      try {
+        const data = await this.db
+          .selectFrom("actor")
+          .select(["id", "name", "type", "email"])
+          .where("id", "=", this.priorityTwistId)
+          .executeTakeFirstOrThrow();
 
-      if (error || !data) {
+        this._actor = {
+          id: data.id as ActorId,
+          type: data.type as any,
+          name: data.name ?? null,
+          email: data.email ?? undefined,
+        };
+      } catch (error) {
         throw new Error(
-          `Failed to fetch twist actor: ${error?.message ?? "Actor not found"}`
+          `Failed to fetch twist actor: ${error instanceof Error ? error.message : "Actor not found"}`
         );
       }
-
-      this._actor = {
-        id: data.id as ActorId,
-        type: data.type as any,
-        name: data.name ?? null,
-        email: data.email ?? undefined,
-      };
     }
 
     return this._actor;
@@ -219,21 +222,25 @@ export class Plot extends Tool implements IPlot {
    */
   async getUserId(): Promise<string> {
     if (!this._userId) {
-      const { data, error } = await this.supabase
-        .from("priority_twist")
-        .select("owner_id")
-        .eq("id", this.priorityTwistId)
-        .single();
+      try {
+        const data = await this.db
+          .selectFrom("priority_twist")
+          .select("owner_id")
+          .where("id", "=", this.priorityTwistId)
+          .executeTakeFirstOrThrow();
 
-      if (error || !data?.owner_id) {
+        if (!data.owner_id) {
+          throw new Error("No owner_id found");
+        }
+
+        this._userId = data.owner_id;
+      } catch (error) {
         throw new Error(
           `Failed to fetch user ID for twist: ${
-            error?.message ?? "No owner_id found"
+            error instanceof Error ? error.message : "No owner_id found"
           }`
         );
       }
-
-      this._userId = data.owner_id;
     }
 
     return this._userId!;
@@ -248,24 +255,28 @@ export class Plot extends Tool implements IPlot {
    */
   async getPriorityRoot(): Promise<string> {
     if (!this._priorityRoot) {
-      const { data, error } = await this.supabase
-        .from("priority")
-        .select("path")
-        .eq("id", this.priorityId)
-        .single();
+      try {
+        const data = await this.db
+          .selectFrom("priority")
+          .select("path")
+          .where("id", "=", this.priorityId)
+          .executeTakeFirstOrThrow();
 
-      if (error || !data?.path) {
+        if (!data.path) {
+          throw new Error("No path found");
+        }
+
+        // Extract the first level of the ltree path (the root)
+        // For a path like "work.projects.alpha", this returns "work"
+        const pathParts = (data.path as string).split(".");
+        this._priorityRoot = pathParts[0]!;
+      } catch (error) {
         throw new Error(
           `Failed to fetch priority path for twist: ${
-            error?.message ?? "No path found"
+            error instanceof Error ? error.message : "No path found"
           }`
         );
       }
-
-      // Extract the first level of the ltree path (the root)
-      // For a path like "work.projects.alpha", this returns "work"
-      const pathParts = (data.path as string).split(".");
-      this._priorityRoot = pathParts[0]!;
     }
 
     return this._priorityRoot;
@@ -285,19 +296,21 @@ export class Plot extends Tool implements IPlot {
     }
 
     // Query database
-    const { data, error } = await this.supabase
-      .from("priority_twist")
+    const data = await this.db
+      .selectFrom("priority_twist")
       .select("twist_id")
-      .eq("id", priorityTwistId)
-      .single();
+      .where("id", "=", priorityTwistId)
+      .executeTakeFirst();
 
-    if (error || !data) {
+    if (!data) {
       return null;
     }
 
+    const twistId = Number(data.twist_id);
+
     // Cache the result
     TWIST_ID_CACHE.set(priorityTwistId, {
-      twist_id: data.twist_id,
+      twist_id: twistId,
       timestamp: Date.now(),
     });
 
@@ -306,7 +319,7 @@ export class Plot extends Tool implements IPlot {
       cleanupExpiredTwistIdCache();
     }
 
-    return data.twist_id;
+    return twistId;
   }
 
   /**
@@ -376,7 +389,9 @@ export class Plot extends Tool implements IPlot {
           // Built-in intent handled or no intent matched - notes already created
           // Remove tag immediately
           try {
-            await this.supabase.rpc("update_note_tags", {
+            const userId = await this.getUserId();
+            await rpcUser(this.db, "update_note_tags", {
+              user_id: userId,
               p_note_id: currentNote.id,
               p_actor_id: currentNote.author.id,
               p_client_id: 0, // API client
@@ -475,11 +490,12 @@ export class Plot extends Tool implements IPlot {
       // 1. Get all users with access to affected priorities
       const userIds = new Set<string>();
       for (const priorityId of priorityIds) {
-        const { data } = await this.supabase.rpc(
-          "get_users_with_priority_access",
-          { target_priority_id: priorityId }
-        );
-        if (data) for (const row of data) userIds.add(row.user_id);
+        // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
+        // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
+        const data = await rpc(this.db, "get_users_with_priority_access", {
+          target_priority_id: priorityId,
+        }) as unknown as string | string[] | null;
+        if (data) for (const userId of Array.isArray(data) ? data : [data]) userIds.add(userId);
       }
 
       // 2. Notify UserSync DOs (they debounce internally)
@@ -497,25 +513,24 @@ export class Plot extends Tool implements IPlot {
 
       // 3. Notify TwistSync DOs for other twists on these priorities
       //    (skip self — same echo prevention as triggers)
-      const { data: twists } = await this.supabase
-        .from("priority_twist")
+      const twists = await this.db
+        .selectFrom("priority_twist")
         .select("id")
-        .in("priority_id", Array.from(priorityIds))
-        .is("archived_at", null)
-        .neq("id", this.priorityTwistId);
+        .where("priority_id", "in", Array.from(priorityIds))
+        .where("archived_at", "is", null)
+        .where("id", "!=", this.priorityTwistId)
+        .execute();
 
-      if (twists) {
-        for (const twist of twists) {
-          const doId = this.env.TWIST_SYNC.idFromName(twist.id);
-          const twistSync = this.env.TWIST_SYNC.get(doId);
-          const result = await twistSync.fetch(
-            new Request("http://do/notify", {
-              method: "POST",
-              body: JSON.stringify({ id: twist.id }),
-            })
-          );
-          disposeRpc(result);
-        }
+      for (const twist of twists) {
+        const doId = this.env.TWIST_SYNC.idFromName(twist.id);
+        const twistSync = this.env.TWIST_SYNC.get(doId);
+        const result = await twistSync.fetch(
+          new Request("http://do/notify", {
+            method: "POST",
+            body: JSON.stringify({ id: twist.id }),
+          })
+        );
+        disposeRpc(result);
       }
     } catch (error) {
       // Log but don't fail — recovery system catches stale sync state within 30s
@@ -548,7 +563,9 @@ export class Plot extends Tool implements IPlot {
   async removeTagFromNote(noteId: string, actorId: string): Promise<void> {
     const logger = createLogger({ priority_twist_id: this.priorityTwistId });
     try {
-      await this.supabase.rpc("update_note_tags", {
+      const userId = await this.getUserId();
+      await rpcUser(this.db, "update_note_tags", {
+        user_id: userId,
         p_note_id: noteId,
         p_actor_id: actorId,
         p_client_id: 0, // API client
@@ -573,14 +590,14 @@ export class Plot extends Tool implements IPlot {
     }
 
     // Check if the priority is a child of the configured priority
-    const { data, error } = await this.supabase
-      .from("priority_child")
+    const data = await this.db
+      .selectFrom("priority_child")
       .select("child_id")
-      .eq("priority_id", this.priorityId)
-      .eq("child_id", priorityId)
-      .single();
+      .where("priority_id", "=", this.priorityId)
+      .where("child_id", "=", priorityId)
+      .executeTakeFirst();
 
-    if (error || !data) {
+    if (!data) {
       throw new Error(
         `Access denied: Priority ${priorityId} is not within ${this.priorityId}`
       );
@@ -704,18 +721,18 @@ export class Plot extends Tool implements IPlot {
       mentions = activityMetadata.mentions;
     } else {
       // Fetch the parent activity to check permissions (fallback for calls from twist code)
-      const { data: activity, error } = await this.supabase
-        .from("activity_x")
-        .select("id, author_id, created_by, mentions")
-        .eq("id", activityId)
-        .single();
+      try {
+        const activity = await this.db
+          .selectFrom("activity_x")
+          .select(["id", "author_id", "created_by", "mentions"])
+          .where("id", "=", activityId)
+          .executeTakeFirstOrThrow();
 
-      if (error || !activity) {
+        created_by = activity.created_by;
+        mentions = activity.mentions as string[] | null;
+      } catch {
         throw new Error(`Activity not found: ${activityId}`);
       }
-
-      created_by = activity.created_by;
-      mentions = activity.mentions;
     }
 
     // Check if the activity was created by this twist
@@ -763,18 +780,18 @@ export class Plot extends Tool implements IPlot {
       triggering_note_mentions = activityMetadata.triggering_note_mentions;
     } else {
       // Fetch the activity to check author and mentions (fallback for calls from twist code)
-      const { data: activity, error } = await this.supabase
-        .from("activity_x")
-        .select("id, author_id, created_by, mentions")
-        .eq("id", activityId)
-        .single();
+      try {
+        const activity = await this.db
+          .selectFrom("activity_x")
+          .select(["id", "author_id", "created_by", "mentions"])
+          .where("id", "=", activityId)
+          .executeTakeFirstOrThrow();
 
-      if (error || !activity) {
+        created_by = activity.created_by;
+        mentions = activity.mentions as string[] | null;
+      } catch {
         throw new Error(`Activity not found: ${activityId}`);
       }
-
-      created_by = activity.created_by;
-      mentions = activity.mentions;
     }
 
     // Check if the activity was created by this twist
@@ -844,7 +861,7 @@ export class Plot extends Tool implements IPlot {
   }
 
   // Priority operations
-  async createPriority(priority: NewPriority): Promise<Priority> {
+  async createPriority(priority: NewPriority): Promise<Priority & { created: boolean }> {
     return priorityOps.createPriority(this, priority);
   }
 

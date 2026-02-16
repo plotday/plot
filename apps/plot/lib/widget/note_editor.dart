@@ -147,7 +147,15 @@ class NoteEditorState extends State<NoteEditor> {
                 setState(() {
                   _saving = true;
                 });
-                await context.run(AddNote(note));
+                try {
+                  await context.run(AddNote(note));
+                } finally {
+                  if (mounted) {
+                    setState(() {
+                      _saving = false;
+                    });
+                  }
+                }
               },
             );
             return Padding(

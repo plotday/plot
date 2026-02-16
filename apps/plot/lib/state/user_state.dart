@@ -16,15 +16,6 @@ final class UserSignedOut extends UserState {
   const UserSignedOut();
 }
 
-final class UserPasswordRequired extends UserState {
-  const UserPasswordRequired(this.user);
-
-  final User user;
-
-  @override
-  List<Object?> get props => [user];
-}
-
 final class UserReady extends UserState {
   const UserReady(this.user);
 

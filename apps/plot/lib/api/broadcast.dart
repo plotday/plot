@@ -6,8 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-
+import 'package:plot/app_info.dart';
 import 'package:plot/base.dart';
 import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
@@ -48,8 +47,6 @@ class BroadcastClient with WidgetsBindingObserver {
   int _currentDelayMs = 1000; // Track current backoff delay
   MessageHandler? _messageHandler;
   int? _clientId;
-  bool _isRefreshingToken = false; // Prevent concurrent refresh attempts
-
   bool get isConnected => _isConnected;
 
   /// Initialize the broadcast client with a message handler
@@ -149,20 +146,22 @@ class BroadcastClient with WidgetsBindingObserver {
         return;
       }
 
-      // Get current session tokens
-      final session = Base.client.auth.currentSession;
-      if (session?.accessToken == null || session?.refreshToken == null) {
+      // Get current session token
+      final token = await Base.getSessionToken();
+      if (token == null) {
         _scheduleReconnect();
         return;
       }
-
-      final token = session!.accessToken;
-      final userId = session.user.id;
+      final userId = Base.userId.toString();
 
       // Build WebSocket URL
       final wsUri = Uri.parse(
         _wsScheme('${Env.apiRoot}/updates/$userId'),
-      ).replace(queryParameters: {'clientId': _clientId.toString()});
+      ).replace(queryParameters: {
+        'clientId': _clientId.toString(),
+        'clientVersion': '${AppInfo.version}/${AppInfo.buildNumber}',
+        'clientPlatform': AppInfo.platform,
+      });
 
       _channel = createWebSocketChannel(wsUri, ['plot-v1', token]);
 
@@ -264,7 +263,6 @@ class BroadcastClient with WidgetsBindingObserver {
     _offlineDebounceTimer = null;
     connectionState.value = true;
     _wasEverConnected = false;
-    _isRefreshingToken = false;
     _messageHandler = null;
     _clientId = null;
     _instance = null;
@@ -303,12 +301,10 @@ class BroadcastClient with WidgetsBindingObserver {
     return errorString.contains('401') || errorString.contains('unauthorized');
   }
 
-  /// Handle authentication errors by attempting token refresh before signing out
+  /// Handle authentication errors by scheduling a reconnect.
+  /// clerk_auth handles token refresh automatically.
   Future<void> _handleAuthError() async {
     // Clean up any existing broken channel before attempting reconnection
-    // This is critical: when _connect() fails with a 401 during await _channel!.ready,
-    // _channel is already set but points to a broken channel. Without this cleanup,
-    // _scheduleReconnect() will call _connect() which returns early due to _channel != null.
     if (_channel != null) {
       _messageSubscription?.cancel();
       _channel = null;
@@ -316,50 +312,9 @@ class BroadcastClient with WidgetsBindingObserver {
     _isConnected = false;
     _updateConnectionNotifier();
 
-    // Guard against concurrent refresh attempts
-    if (_isRefreshingToken) {
-      log.info("Token refresh already in progress, skipping");
-      return;
-    }
-
-    log.info("WebSocket auth failed - attempting token refresh");
-
-    _isRefreshingToken = true;
-    try {
-      await Base.refreshSession();
-      log.info("Token refresh successful - reconnecting WebSocket");
-
-      _shouldReconnect = true;
-      _isRefreshingToken = false;
-
-      _scheduleReconnect();
-    } on supa.AuthException catch (e) {
-      _isRefreshingToken = false;
-
-      if (e is supa.AuthRetryableFetchException) {
-        // Network error or server down — don't sign out, just retry
-        log.info("Token refresh failed due to network error ($e) - will retry");
-        _shouldReconnect = true;
-        _scheduleReconnect();
-      } else {
-        // Definitive auth failure (invalid/expired refresh token) — sign out
-        log.warning(
-          "Token refresh failed (AuthException: ${e.message}) - signing out user",
-        );
-        _shouldReconnect = false;
-        try {
-          await Base.signOut();
-        } catch (signOutError, stackTrace) {
-          log.warning("Error during sign-out", signOutError, stackTrace);
-        }
-      }
-    } catch (e) {
-      _isRefreshingToken = false;
-      // Unexpected error during refresh — retry, don't sign out
-      log.warning("Unexpected error during token refresh ($e) - will retry");
-      _shouldReconnect = true;
-      _scheduleReconnect();
-    }
+    log.info("WebSocket auth failed — will retry with fresh token");
+    _shouldReconnect = true;
+    _scheduleReconnect();
   }
 
   /// Handle WebSocket errors

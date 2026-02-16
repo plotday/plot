@@ -1,9 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { PostHog } from "posthog-node";
+import type { Kysely } from "kysely";
 
-import { DbError, type SupabaseClient, createClient, safeQuery } from "@plotday/db";
-
-import type { ActivityTagChange, Bindings } from "../env";
+import { type DB, createDb } from "../db";
+import type { ActivityTagChange, Bindings, TwistBatchMessage } from "../env";
 import { createLogger } from "@plotday/worker-util";
 
 // Debouncing configuration (compile-time constants)
@@ -21,8 +21,8 @@ interface TwistSyncState {
 interface SyncInfo {
   entity: string;
   operation: string;
-  last_sync_at: string;
-  last_update_at: string;
+  last_sync_at: Date;
+  last_update_at: Date;
 }
 
 interface TagChangeRow {
@@ -34,13 +34,13 @@ interface TagChangeRow {
 }
 
 export class TwistSync extends DurableObject<Bindings> {
-  private supabase: SupabaseClient;
+  private db: Kysely<DB>;
   private priorityTwistId: string | null = null;
   private state: TwistSyncState;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+    this.db = createDb(env);
     this.state = {
       lastNotifyTime: 0,
       lastSyncTime: 0,
@@ -141,16 +141,17 @@ export class TwistSync extends DurableObject<Bindings> {
       const now = Date.now();
 
       // Get the priority_twist with twist info
-      const priorityTwist = await safeQuery(
-        this.supabase
-          .from("priority_twist")
-          .select(
-            "priority_id, twist_id, created_at, archived_at, twist:twist_id(version, environment)"
-          )
-          .eq("id", this.priorityTwistId)
-          .single(),
-        { table: "priority_twist" }
-      );
+      const priorityTwist = await this.db
+        .selectFrom("priority_twist")
+        .select([
+          "priority_twist.priority_id",
+          "priority_twist.twist_id",
+          "priority_twist.created_at",
+          "priority_twist.archived_at",
+          "priority_twist.suspended_at",
+        ])
+        .where("priority_twist.id", "=", this.priorityTwistId)
+        .executeTakeFirstOrThrow();
 
       // Skip sync for archived priority_twists
       if (priorityTwist.archived_at) {
@@ -160,10 +161,20 @@ export class TwistSync extends DurableObject<Bindings> {
         return;
       }
 
-      // Extract twist info
-      const twist = Array.isArray(priorityTwist.twist)
-        ? priorityTwist.twist[0]
-        : priorityTwist.twist;
+      // Skip sync for suspended twists (timestamps don't advance, enabling catch-up on resume)
+      if (priorityTwist.suspended_at) {
+        logger.info("Skipping sync for suspended priority_twist", {
+          priority_twist_id: this.priorityTwistId,
+        });
+        return;
+      }
+
+      // Fetch twist info separately
+      const twist = await this.db
+        .selectFrom("twist")
+        .select(["version", "environment"])
+        .where("id", "=", priorityTwist.twist_id)
+        .executeTakeFirst();
       if (!twist) {
         const error = new Error("No twist info found");
         logger.error(error.message, error, {
@@ -174,19 +185,17 @@ export class TwistSync extends DurableObject<Bindings> {
       }
 
       // Get sync timestamps for each operation type
-      const syncInfos: SyncInfo[] = await safeQuery(
-        this.supabase
-          .from("priority_twist_sync")
-          .select("entity, operation, last_sync_at, last_update_at")
-          .eq("priority_twist_id", this.priorityTwistId),
-        { table: "priority_twist_sync" }
-      );
+      const syncInfos: SyncInfo[] = await this.db
+        .selectFrom("priority_twist_sync")
+        .select(["entity", "operation", "last_sync_at", "last_update_at"])
+        .where("priority_twist_id", "=", this.priorityTwistId)
+        .execute();
 
       // Use the priority_twist's created_at as the minimum sync time
       // This ensures we don't send notifications for items that existed before the twist was added
       const minSyncAt = priorityTwist.created_at;
 
-      const getSyncAt = (entity: string, operation: string): string => {
+      const getSyncAt = (entity: string, operation: string): Date => {
         const info = syncInfos.find(
           (s) => s.entity === entity && s.operation === operation
         );
@@ -213,59 +222,51 @@ export class TwistSync extends DurableObject<Bindings> {
       const results = await Promise.allSettled([
         // Query new activities (for activity.created callback)
         // Uses priority_twist_activity_create view which filters by created_by = twist_id
-        safeQuery(
-          this.supabase
-            .from("priority_twist_activity_create")
-            .select("*")
-            .eq("priority_twist_id", this.priorityTwistId)
-            .gt("created_at", activityCreateLastSyncAt)
-            .order("created_at", { ascending: true })
-            .limit(100),
-          { table: "priority_twist_activity_create" }
-        ),
+        this.db
+          .selectFrom("priority_twist_activity_create")
+          .selectAll()
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("created_at", ">", activityCreateLastSyncAt)
+          .orderBy("created_at", "asc")
+          .limit(100)
+          .execute(),
 
         // Query updated activities (for activity.updated callback)
         // Uses priority_twist_activity_update view which filters by created_by = twist_id
         // Note: No created_at filter needed - twists get updates for activities they created,
         // even if they haven't been through a "create" sync (they don't get create callbacks for their own activities)
-        safeQuery(
-          this.supabase
-            .from("priority_twist_activity_update")
-            .select("*")
-            .eq("priority_twist_id", this.priorityTwistId)
-            .gt("updated_at", activityUpdateLastSyncAt)
-            .order("updated_at", { ascending: true })
-            .limit(100),
-          { table: "priority_twist_activity_update" }
-        ),
+        this.db
+          .selectFrom("priority_twist_activity_update")
+          .selectAll()
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("updated_at", ">", activityUpdateLastSyncAt)
+          .orderBy("updated_at", "asc")
+          .limit(100)
+          .execute(),
 
         // Query new notes (for note.created callback and mention handling)
         // Uses priority_twist_note_create view which filters by:
         // - twist created the activity, OR
         // - twist is mentioned AND note was created on/after first mention
-        safeQuery(
-          this.supabase
-            .from("priority_twist_note_create")
-            .select("*")
-            .eq("priority_twist_id", this.priorityTwistId)
-            .gt("created_at", noteCreateLastSyncAt)
-            .order("created_at", { ascending: true })
-            .limit(100),
-          { table: "priority_twist_note_create" }
-        ),
+        this.db
+          .selectFrom("priority_twist_note_create")
+          .selectAll()
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("created_at", ">", noteCreateLastSyncAt)
+          .orderBy("created_at", "asc")
+          .limit(100)
+          .execute(),
 
         // Query updated notes (for notes the twist created)
         // Uses priority_twist_note_update view which filters by created_by = twist_id
-        safeQuery(
-          this.supabase
-            .from("priority_twist_note_update")
-            .select("*")
-            .eq("priority_twist_id", this.priorityTwistId)
-            .gt("updated_at", noteUpdateLastSyncAt)
-            .order("updated_at", { ascending: true })
-            .limit(100),
-          { table: "priority_twist_note_update" }
-        ),
+        this.db
+          .selectFrom("priority_twist_note_update")
+          .selectAll()
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("updated_at", ">", noteUpdateLastSyncAt)
+          .orderBy("updated_at", "asc")
+          .limit(100)
+          .execute(),
       ]);
 
       // Extract successful results, defaulting to [] for failures
@@ -274,15 +275,12 @@ export class TwistSync extends DurableObject<Bindings> {
           return result.value;
         }
         const error = result.reason;
-        const dbContext = error instanceof DbError ? error.toLogContext() : {};
         logger.error(`Failed to query ${viewNames[index]}`, error as Error, {
           priority_twist_id: this.priorityTwistId!,
           view: viewNames[index],
-          ...dbContext,
         });
         this.captureException(error as Error, {
           view: viewNames[index],
-          ...dbContext,
         });
         return [];
       };
@@ -332,13 +330,13 @@ export class TwistSync extends DurableObject<Bindings> {
       const getMaxTimestamp = (
         items: any[],
         timestampField: "created_at" | "updated_at",
-        fallback: string
-      ): string => {
+        fallback: Date
+      ): Date => {
         if (items.length === 0) return fallback;
 
         const timestamps = items
           .map((item) => item[timestampField])
-          .filter((ts): ts is string => ts !== null && ts !== undefined);
+          .filter((ts): ts is Date => ts !== null && ts !== undefined);
 
         if (timestamps.length === 0) return fallback;
 
@@ -375,7 +373,7 @@ export class TwistSync extends DurableObject<Bindings> {
       // This represents the most recent change detected by database triggers
       const currentSyncTimestamp = syncInfos.reduce((max, info) => {
         return info.last_update_at > max ? info.last_update_at : max;
-      }, syncInfos[0]?.last_update_at ?? new Date(0).toISOString());
+      }, syncInfos[0]?.last_update_at ?? new Date(0));
 
       // Query tag changes for the activity update time range
       // This provides tagsAdded/tagsRemoved data for the activity.updated callback
@@ -383,15 +381,13 @@ export class TwistSync extends DurableObject<Bindings> {
       // after activity updates (since tag changes update activity_tag.updated_at, not activity.updated_at)
       let activityTagChanges: ActivityTagChange[] = [];
       try {
-        const tagChanges: TagChangeRow[] = await safeQuery(
-          this.supabase
-            .from("priority_twist_activity_tag_change")
-            .select("activity_id, occurrence, tag_id, actor_id, change_type")
-            .eq("priority_twist_id", this.priorityTwistId)
-            .gt("updated_at", activityUpdateLastSyncAt)
-            .lte("updated_at", currentSyncTimestamp),
-          { table: "priority_twist_activity_tag_change" }
-        );
+        const tagChanges: TagChangeRow[] = await this.db
+          .selectFrom("priority_twist_activity_tag_change")
+          .select(["activity_id", "occurrence", "tag_id", "actor_id", "change_type"])
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("updated_at", ">", activityUpdateLastSyncAt)
+          .where("updated_at", "<=", currentSyncTimestamp)
+          .execute();
 
         // Transform tag changes into the expected format, filtering out any with null required fields
         activityTagChanges = tagChanges
@@ -410,15 +406,12 @@ export class TwistSync extends DurableObject<Bindings> {
             changeType: tc.change_type as "added" | "removed",
           }));
       } catch (error) {
-        const dbContext = error instanceof DbError ? (error as DbError).toLogContext() : {};
         logger.error("Failed to query priority_twist_activity_tag_change", error as Error, {
           priority_twist_id: this.priorityTwistId,
           view: "priority_twist_activity_tag_change",
-          ...dbContext,
         });
         this.captureException(error as Error, {
           view: "priority_twist_activity_tag_change",
-          ...dbContext,
         });
       }
 
@@ -480,10 +473,13 @@ export class TwistSync extends DurableObject<Bindings> {
           batchActivityIds.has(tc.activityId)
         );
 
+        // Note: Kysely returns Date objects for timestamps, but TwistBatchMessage uses
+        // supabase view types with string timestamps. The queue serializes to JSON anyway,
+        // so the data is equivalent.
         const message = {
           type: "twist_batch" as const,
           priorityTwistId: this.priorityTwistId,
-          twistId: priorityTwist.twist_id,
+          twistId: Number(priorityTwist.twist_id),
           environment: twist.environment,
           version: twist.version,
           newNotes: batchNewNotes,
@@ -492,7 +488,7 @@ export class TwistSync extends DurableObject<Bindings> {
           updatedActivities: batchUpdatedActivities,
           activityTagChanges: batchTagChanges,
           priorityTwist: null, // TODO: Handle priority_twist config updates
-        };
+        } as TwistBatchMessage;
 
         try {
           await this.env.UPDATES_QUEUE.send(message);
@@ -527,42 +523,34 @@ export class TwistSync extends DurableObject<Bindings> {
       ] as const;
 
       const syncUpdateResults = await Promise.allSettled([
-        safeQuery(
-          this.supabase
-            .from("priority_twist_sync")
-            .update({ last_sync_at: activityCreateSyncAt })
-            .eq("priority_twist_id", this.priorityTwistId)
-            .eq("entity", "activity")
-            .eq("operation", "create"),
-          { table: "priority_twist_sync", operation: "update", description: "activity create sync" }
-        ),
-        safeQuery(
-          this.supabase
-            .from("priority_twist_sync")
-            .update({ last_sync_at: activityUpdateSyncAt })
-            .eq("priority_twist_id", this.priorityTwistId)
-            .eq("entity", "activity")
-            .eq("operation", "update"),
-          { table: "priority_twist_sync", operation: "update", description: "activity update sync" }
-        ),
-        safeQuery(
-          this.supabase
-            .from("priority_twist_sync")
-            .update({ last_sync_at: noteCreateSyncAt })
-            .eq("priority_twist_id", this.priorityTwistId)
-            .eq("entity", "note")
-            .eq("operation", "create"),
-          { table: "priority_twist_sync", operation: "update", description: "note create sync" }
-        ),
-        safeQuery(
-          this.supabase
-            .from("priority_twist_sync")
-            .update({ last_sync_at: noteUpdateSyncAt })
-            .eq("priority_twist_id", this.priorityTwistId)
-            .eq("entity", "note")
-            .eq("operation", "update"),
-          { table: "priority_twist_sync", operation: "update", description: "note update sync" }
-        ),
+        this.db
+          .updateTable("priority_twist_sync")
+          .set({ last_sync_at: activityCreateSyncAt })
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("entity", "=", "activity")
+          .where("operation", "=", "create")
+          .execute(),
+        this.db
+          .updateTable("priority_twist_sync")
+          .set({ last_sync_at: activityUpdateSyncAt })
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("entity", "=", "activity")
+          .where("operation", "=", "update")
+          .execute(),
+        this.db
+          .updateTable("priority_twist_sync")
+          .set({ last_sync_at: noteCreateSyncAt })
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("entity", "=", "note")
+          .where("operation", "=", "create")
+          .execute(),
+        this.db
+          .updateTable("priority_twist_sync")
+          .set({ last_sync_at: noteUpdateSyncAt })
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("entity", "=", "note")
+          .where("operation", "=", "update")
+          .execute(),
       ]);
 
       // Log any failed sync timestamp updates
@@ -570,14 +558,11 @@ export class TwistSync extends DurableObject<Bindings> {
         const result = syncUpdateResults[i];
         if (result.status === "rejected") {
           const error = result.reason;
-          const dbContext = error instanceof DbError ? error.toLogContext() : {};
           logger.error(`Failed to update ${syncUpdateNames[i]}`, error as Error, {
             priority_twist_id: this.priorityTwistId!,
-            ...dbContext,
           });
           this.captureException(error as Error, {
             sync_update: syncUpdateNames[i],
-            ...dbContext,
           });
         }
       }
@@ -597,12 +582,10 @@ export class TwistSync extends DurableObject<Bindings> {
 
       this.state.lastSyncTime = now;
     } catch (error) {
-      const dbContext = error instanceof DbError ? (error as DbError).toLogContext() : {};
       logger.error("Error in TwistSync alarm", error as Error, {
         priority_twist_id: this.priorityTwistId,
-        ...dbContext,
       });
-      this.captureException(error as Error, dbContext);
+      this.captureException(error as Error);
     }
   }
 }

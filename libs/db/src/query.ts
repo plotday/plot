@@ -1,13 +1,15 @@
-import type {
-  PostgrestError,
-  PostgrestSingleResponse,
-} from "@supabase/supabase-js";
-
 export interface DbErrorContext {
   table?: string;
   operation?: string;
   description?: string;
   identifiers?: Record<string, unknown>;
+}
+
+interface DatabaseError {
+  message: string;
+  code?: string;
+  hint?: string;
+  details?: string;
 }
 
 export class DbError extends Error {
@@ -19,14 +21,14 @@ export class DbError extends Error {
   readonly hint?: string;
   readonly details?: string;
 
-  constructor(cause: PostgrestError, context?: DbErrorContext) {
+  constructor(cause: DatabaseError, context?: DbErrorContext) {
     const message = cause.message ?? "Database error";
     // Pass remaining arguments (including vendor specific ones) to parent constructor
     super(message, { cause });
 
     this.name = "DbError";
 
-    // Extract PostgrestError details
+    // Extract database error details
     this.code = cause.code;
     this.hint = cause.hint;
     this.details = cause.details;
@@ -59,28 +61,5 @@ export class DbError extends Error {
     }
 
     return context;
-  }
-}
-
-export function safeQuery<T>(
-  response: PostgrestSingleResponse<T>,
-  context?: DbErrorContext
-): T;
-export function safeQuery<T>(
-  response: PromiseLike<PostgrestSingleResponse<T>>,
-  context?: DbErrorContext
-): PromiseLike<T>;
-
-export function safeQuery<T>(
-  response: PostgrestSingleResponse<T> | PromiseLike<PostgrestSingleResponse<T>>,
-  context?: DbErrorContext
-): T | PromiseLike<T> {
-  if ("then" in response) {
-    return response.then((r) => safeQuery<T>(r, context));
-  } else {
-    if (response.error) {
-      throw new DbError(response.error, context);
-    }
-    return response.data;
   }
 }

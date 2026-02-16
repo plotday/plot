@@ -1,7 +1,11 @@
 import { Hono } from "hono";
+import { sql } from "kysely";
+import { createClerkClient } from "@clerk/backend";
 
 import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
+import type { AuthUser } from "../utils/auth";
+import { rpc } from "../rpc";
 import {
   createFreeSubscription,
   createFreeTierBillingCycle,
@@ -14,29 +18,162 @@ import * as twistManagement from "../twist/management";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
+import { notifySync } from "./sync/notify";
 
 const account = new Hono<{ Bindings: Bindings }>();
 
 
 // POST /activate - Set up user account (idempotent)
+// This is the only endpoint that can create new users. The auth middleware
+// allows requests through even when the user doesn't exist in the DB yet,
+// as long as the Clerk JWT is valid (clerkClaims will be set).
 account.post("/activate", async (c) => {
-  const user = c.var.user;
+  let user: AuthUser | undefined = c.var.user;
 
+  // New user: JWT was valid but user doesn't exist in DB.
+  // The auth middleware verified the JWT and set clerkClaims.
   if (!user) {
-    return c.json({ message: "Unauthorized" }, 401);
+    const claims = c.var.clerkClaims;
+    if (!claims) {
+      return c.json({ message: "Unauthorized" }, 401);
+    }
+
+    let { clerkId, email, name } = claims;
+
+    // Clerk JWTs may not include the email claim (e.g. OAuth "already signed in" path).
+    // Fall back to fetching the user from Clerk's API.
+    if (!email) {
+      try {
+        const clerk = createClerkClient({ secretKey: c.env.CLERK_SECRET_KEY });
+        const clerkUser = await clerk.users.getUser(clerkId);
+        email = clerkUser.emailAddresses.find(
+          (e) => e.id === clerkUser.primaryEmailAddressId
+        )?.emailAddress;
+        if (!name) {
+          name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || undefined;
+        }
+      } catch (err) {
+        const context = extractRequestContext(c);
+        const logger = createLogger(context);
+        logger.error("Failed to fetch user from Clerk API", err as Error, { clerk_id: clerkId });
+      }
+    }
+
+    if (!email) {
+      return c.json({ message: "Email is required for activation" }, 400);
+    }
+
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.info("Creating new user from Clerk JWT", { clerk_id: clerkId, email });
+
+    // Upsert user: try by clerk_id first, fall back to linking by email
+    // (handles existing users signing in with Clerk for the first time)
+    try {
+      // First, try to link by email if user already exists without this clerk_id
+      const existingByEmail = await c.var.db
+        .selectFrom("user")
+        .select(["id", "email", "name", "clerk_id"])
+        .where("email", "=", email)
+        .executeTakeFirst();
+
+      let row: { id: string; email: string; name: string | null };
+
+      if (existingByEmail && existingByEmail.clerk_id !== clerkId) {
+        // Existing user with different/no clerk_id — link them
+        row = await c.var.db
+          .updateTable("user")
+          .set({ clerk_id: clerkId, name: name ?? existingByEmail.name })
+          .where("id", "=", existingByEmail.id)
+          .returning(["id", "email", "name"])
+          .executeTakeFirstOrThrow();
+      } else {
+        // New user or same clerk_id — normal upsert
+        row = await c.var.db
+          .insertInto("user")
+          .values({
+            clerk_id: clerkId,
+            email,
+            name: name ?? null,
+          })
+          .onConflict((oc) =>
+            oc.column("clerk_id").doUpdateSet({
+              email,
+              name: name ?? null,
+            })
+          )
+          .returning(["id", "email", "name"])
+          .executeTakeFirstOrThrow();
+      }
+
+      user = {
+        id: row.id,
+        clerkId,
+        email: row.email,
+        name: row.name,
+      };
+    } catch (err) {
+      return captureServerError(c, err as Error, `Failed to create user: ${(err as Error).message}`);
+    }
+
+    // Create primary contact for the user (if not exists)
+    try {
+      await c.var.db
+        .insertInto("contact")
+        .values({
+          email,
+          name: name ?? null,
+          user_id: user.id,
+          primary: true,
+        })
+        .onConflict((oc) => oc.column("email").doUpdateSet({
+          name: name ?? null,
+          user_id: user!.id,
+          primary: true,
+        }))
+        .execute();
+    } catch (err) {
+      const logger2 = createLogger(extractRequestContext(c));
+      logger2.error("Failed to create primary contact (non-blocking)", err as Error, {
+        user_id: user.id,
+      });
+    }
+
+    // Set external_id and contact_id on Clerk user so future JWTs include them
+    // (done after contact creation so we can include contact_id in publicMetadata)
+    try {
+      const contact = await c.var.db
+        .selectFrom("contact")
+        .select("id")
+        .where("user_id", "=", user.id)
+        .where("primary", "=", true)
+        .executeTakeFirst();
+
+      const clerk = createClerkClient({ secretKey: c.env.CLERK_SECRET_KEY });
+      await clerk.users.updateUser(clerkId, {
+        externalId: user.id,
+        publicMetadata: { contact_id: contact?.id ?? null },
+      });
+    } catch (err) {
+      const logger2 = createLogger(extractRequestContext(c));
+      logger2.error("Failed to set Clerk external_id/publicMetadata (non-blocking)", err as Error, {
+        user_id: user.id,
+        clerk_id: clerkId,
+      });
+    }
   }
 
   // Step 1: Check if root priority already exists
-  const { data: existingPriorityUser, error: existingPriorityError } =
-    await c.var.supabaseAdmin
-      .from("priority_user")
+  let existingPriorityUser: { priority_id: string } | undefined;
+  try {
+    existingPriorityUser = await c.var.db
+      .selectFrom("priority_user")
       .select("priority_id")
-      .eq("user_id", user.id)
-      .eq("personal", true)
-      .maybeSingle();
-
-  if (existingPriorityError) {
-    return captureServerError(c, new Error(existingPriorityError.message), `Failed to check for existing priority: ${existingPriorityError.message}`, {
+      .where("user_id", "=", user.id)
+      .where("personal", "=", true)
+      .executeTakeFirst();
+  } catch (err) {
+    return captureServerError(c, err as Error, `Failed to check for existing priority: ${(err as Error).message}`, {
       user_id: user.id,
     });
   }
@@ -54,44 +191,49 @@ account.post("/activate", async (c) => {
     priority = { id: existingPriorityUser.priority_id };
   } else {
     // Step 2: Generate path for root priority
-    const { data: pathData, error: pathError } = await c.var.supabase.rpc(
-      "generate_path",
-      { parent: null }
-    );
+    // rpc() unwraps scalar results, so we get the path string directly
+    let rootPath: string;
+    try {
+      rootPath = await rpc(c.var.db, "generate_path", { parent: null }) as string;
+    } catch (err) {
+      return captureServerError(c, err as Error, `Failed to generate path: ${(err as Error).message}`);
+    }
 
-    if (pathError || !pathData) {
-      return captureServerError(c, pathError ? new Error(pathError.message) : new Error("Unknown error"), `Failed to generate path: ${pathError?.message || "Unknown error"}`);
+    if (!rootPath) {
+      return captureServerError(c, new Error("Unknown error"), "Failed to generate path: Unknown error");
     }
 
     // Step 3: Create root priority
-    const { data: newPriority, error: priorityError } =
-      await c.var.supabaseAdmin
-        .from("priority")
-        .insert({
+    let newPriority: { id: string };
+    try {
+      newPriority = await c.var.db
+        .insertInto("priority")
+        .values({
           created_by: user.id,
           title: "Everything",
-          path: pathData,
+          path: rootPath,
           color: 0,
+          updated_by: 0,
         })
-        .select()
-        .single();
-
-    if (priorityError || !newPriority) {
-      return captureServerError(c, priorityError ? new Error(priorityError.message) : new Error("Unknown error"), `Failed to create root priority: ${priorityError?.message || "Unknown error"}`, {
+        .returning("id")
+        .executeTakeFirstOrThrow();
+    } catch (err) {
+      return captureServerError(c, err as Error, `Failed to create root priority: ${(err as Error).message}`, {
         user_id: user.id,
       });
     }
 
     // Step 3.5: Mark the priority_user entry as root
     // The insert_priority_user trigger already created a priority_user entry
-    const { error: keyError } = await c.var.supabaseAdmin
-      .from("priority_user")
-      .update({ personal: true })
-      .eq("user_id", user.id)
-      .eq("priority_id", newPriority.id);
-
-    if (keyError) {
-      return captureServerError(c, new Error(keyError.message), `Failed to set personal flag: ${keyError.message}`, {
+    try {
+      await c.var.db
+        .updateTable("priority_user")
+        .set({ personal: true })
+        .where("user_id", "=", user.id)
+        .where("priority_id", "=", newPriority.id)
+        .execute();
+    } catch (err) {
+      return captureServerError(c, err as Error, `Failed to set personal flag: ${(err as Error).message}`, {
         user_id: user.id,
         priority_id: newPriority.id,
       });
@@ -101,31 +243,32 @@ account.post("/activate", async (c) => {
   }
 
   // Step 4: Create priority settings (if they don't exist)
-  const { data: existingSettings, error: existingSettingsError } =
-    await c.var.supabaseAdmin
-      .from("priority_settings")
+  let existingSettings: { user_id: string } | undefined;
+  try {
+    existingSettings = await c.var.db
+      .selectFrom("priority_settings")
       .select("user_id")
-      .eq("user_id", user.id)
-      .eq("priority_id", priority.id)
-      .maybeSingle();
-
-  if (existingSettingsError) {
-    return captureServerError(c, new Error(existingSettingsError.message), `Failed to check for existing priority settings: ${existingSettingsError.message}`, {
+      .where("user_id", "=", user.id)
+      .where("priority_id", "=", priority.id)
+      .executeTakeFirst();
+  } catch (err) {
+    return captureServerError(c, err as Error, `Failed to check for existing priority settings: ${(err as Error).message}`, {
       user_id: user.id,
       priority_id: priority.id,
     });
   }
 
   if (!existingSettings) {
-    const { error: settingsError } = await c.var.supabaseAdmin
-      .from("priority_settings")
-      .insert({
-        user_id: user.id,
-        priority_id: priority.id,
-      });
-
-    if (settingsError) {
-      return captureServerError(c, new Error(settingsError.message), `Failed to create priority settings: ${settingsError.message}`, {
+    try {
+      await c.var.db
+        .insertInto("priority_settings")
+        .values({
+          user_id: user.id,
+          priority_id: priority.id,
+        })
+        .execute();
+    } catch (err) {
+      return captureServerError(c, err as Error, `Failed to create priority settings: ${(err as Error).message}`, {
         user_id: user.id,
         priority_id: priority.id,
       });
@@ -151,8 +294,8 @@ account.post("/activate", async (c) => {
 
     const customer = await createStripeCustomer(stripe, {
       userId: user.id,
-      email: user.email!,
-      name: user.user_metadata?.name,
+      email: user.email,
+      name: user.name ?? undefined,
     });
     stripeCustomerId = customer.id;
     const context1 = extractRequestContext(c);
@@ -208,29 +351,38 @@ account.post("/activate", async (c) => {
 
   // Step 6: Upsert user_subscription record with whatever Stripe data we have
   // Use upsert to make this idempotent in case of retries after failed activations
-  const { error: subscriptionError } = await c.var.supabaseAdmin
-    .from("user_subscription")
-    .upsert({
-      user_id: user.id,
-      stripe_customer_id: stripeCustomerId,
-      stripe_subscription_id: stripeSubscriptionId,
-      plan: "free",
-      status: "active",
-      billing_cycle_start: billingStart.toISOString(),
-      billing_cycle_end: billingEnd.toISOString(),
-    }, {
-      onConflict: 'user_id'
-    });
-
-  if (subscriptionError) {
+  try {
+    await c.var.db
+      .insertInto("user_subscription")
+      .values({
+        user_id: user.id,
+        stripe_customer_id: stripeCustomerId,
+        stripe_subscription_id: stripeSubscriptionId,
+        plan: "free",
+        status: "active",
+        billing_cycle_start: billingStart.toISOString(),
+        billing_cycle_end: billingEnd.toISOString(),
+      })
+      .onConflict((oc) =>
+        oc.column("user_id").doUpdateSet({
+          stripe_customer_id: stripeCustomerId,
+          stripe_subscription_id: stripeSubscriptionId,
+          plan: "free",
+          status: "active",
+          billing_cycle_start: billingStart.toISOString(),
+          billing_cycle_end: billingEnd.toISOString(),
+        })
+      )
+      .execute();
+  } catch (err) {
     const context5 = extractRequestContext(c);
     const logger5 = createLogger(context5);
-    logger5.error("Failed to create user_subscription", new Error(subscriptionError.message), {
+    logger5.error("Failed to create user_subscription", err as Error, {
       user_id: user.id,
     });
     return c.json(
       {
-        message: `Failed to create subscription record: ${subscriptionError.message}`,
+        message: `Failed to create subscription record: ${(err as Error).message}`,
       },
       400
     );
@@ -238,14 +390,15 @@ account.post("/activate", async (c) => {
 
   // Step 7: Create Plot priority if it doesn't exist
   // Get root priority path to search for @plot priority
-  const { data: rootPriorityData, error: rootError } = await c.var.supabaseAdmin
-    .from("priority")
-    .select("path")
-    .eq("id", priority.id)
-    .single();
-
-  if (rootError || !rootPriorityData) {
-    return captureServerError(c, rootError ? new Error(rootError.message) : new Error("Unknown error"), `Failed to get root priority path: ${rootError?.message || "Unknown error"}`, {
+  let rootPriorityData: { path: unknown } | undefined;
+  try {
+    rootPriorityData = await c.var.db
+      .selectFrom("priority")
+      .select("path")
+      .where("id", "=", priority.id)
+      .executeTakeFirstOrThrow();
+  } catch (err) {
+    return captureServerError(c, err as Error, `Failed to get root priority path: ${(err as Error).message}`, {
       user_id: user.id,
       priority_id: priority.id,
     });
@@ -255,15 +408,16 @@ account.post("/activate", async (c) => {
   const rootPathPart = rootPath.split(".")[0];
 
   // Check if @plot priority already exists
-  const { data: existingPlotPriority, error: plotCheckError } = await c.var.supabaseAdmin
-    .from("priority")
-    .select("id")
-    .eq("key", "@plot")
-    .filter("path", "cd", rootPathPart)
-    .maybeSingle();
-
-  if (plotCheckError) {
-    return captureServerError(c, new Error(plotCheckError.message), `Failed to check for existing Plot priority: ${plotCheckError.message}`, {
+  let existingPlotPriority: { id: string } | undefined;
+  try {
+    existingPlotPriority = await c.var.db
+      .selectFrom("priority")
+      .select("id")
+      .where("key", "=", "@plot")
+      .where(sql<boolean>`path <@ ${rootPathPart}::ltree`)
+      .executeTakeFirst();
+  } catch (err) {
+    return captureServerError(c, err as Error, `Failed to check for existing Plot priority: ${(err as Error).message}`, {
       user_id: user.id,
     });
   }
@@ -282,31 +436,35 @@ account.post("/activate", async (c) => {
   } else {
     // Create Plot priority
     // Generate path for Plot priority as child of root
-    const { data: plotPathData, error: plotPathError } = await c.var.supabase.rpc(
-      "generate_path",
-      { parent: rootPath }
-    );
+    // rpc() unwraps scalar results, so we get the path string directly
+    let plotPath: string;
+    try {
+      plotPath = await rpc(c.var.db, "generate_path", { parent: rootPath }) as string;
+    } catch (err) {
+      return captureServerError(c, err as Error, `Failed to generate path for Plot priority: ${(err as Error).message}`);
+    }
 
-    if (plotPathError || !plotPathData) {
-      return captureServerError(c, plotPathError ? new Error(plotPathError.message) : new Error("Unknown error"), `Failed to generate path for Plot priority: ${plotPathError?.message || "Unknown error"}`);
+    if (!plotPath) {
+      return captureServerError(c, new Error("Unknown error"), "Failed to generate path for Plot priority: Unknown error");
     }
 
     // Create Plot priority
-    const { data: newPlotPriority, error: plotPriorityError } =
-      await c.var.supabaseAdmin
-        .from("priority")
-        .insert({
+    let newPlotPriority: { id: string };
+    try {
+      newPlotPriority = await c.var.db
+        .insertInto("priority")
+        .values({
           created_by: user.id,
           title: "Plot",
-          path: plotPathData,
+          path: plotPath,
           color: 7, // Resolution color (blue-gray)
           key: "@plot",
+          updated_by: 0,
         })
-        .select("id")
-        .single();
-
-    if (plotPriorityError || !newPlotPriority) {
-      return captureServerError(c, plotPriorityError ? new Error(plotPriorityError.message) : new Error("Unknown error"), `Failed to create Plot priority: ${plotPriorityError?.message || "Unknown error"}`, {
+        .returning("id")
+        .executeTakeFirstOrThrow();
+    } catch (err) {
+      return captureServerError(c, err as Error, `Failed to create Plot priority: ${(err as Error).message}`, {
         user_id: user.id,
       });
     }
@@ -316,18 +474,22 @@ account.post("/activate", async (c) => {
 
   // Step 8: Install and activate Plot twist on root priority if not already installed
   // First, look up the Plot twist
-  const { data: plotTwist, error: plotTwistError } = await c.var.supabase
-    .from("twist")
-    .select("id,version")
-    .eq("name", "Plot")
-    .eq("environment", "public")
-    .is("archived_at", null)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (plotTwistError) {
-    return captureServerError(c, new Error(plotTwistError.message), `Failed to look up Plot twist: ${plotTwistError.message}`, {
+  let plotTwist: { id: number; version: string } | undefined;
+  try {
+    const result = await c.var.db
+      .selectFrom("twist")
+      .select(["id", "version"])
+      .where("name", "=", "Plot")
+      .where("environment", "=", "public")
+      .where("archived_at", "is", null)
+      .orderBy("created_at", "asc")
+      .limit(1)
+      .executeTakeFirst();
+    if (result) {
+      plotTwist = { id: Number(result.id), version: result.version };
+    }
+  } catch (err) {
+    return captureServerError(c, err as Error, `Failed to look up Plot twist: ${(err as Error).message}`, {
       user_id: user.id,
     });
   }
@@ -338,16 +500,17 @@ account.post("/activate", async (c) => {
     logger6.warn("Plot twist not found, skipping installation");
   } else {
     // Check if Plot twist is already installed on the root priority
-    const { data: existingPriorityTwist, error: twistCheckError } = await c.var.supabaseAdmin
-      .from("priority_twist")
-      .select("id")
-      .eq("priority_id", priority.id)
-      .eq("twist_id", plotTwist.id)
-      .is("archived_at", null)
-      .maybeSingle();
-
-    if (twistCheckError) {
-      return captureServerError(c, new Error(twistCheckError.message), `Failed to check for existing Plot twist: ${twistCheckError.message}`, {
+    let existingPriorityTwist: { id: string } | undefined;
+    try {
+      existingPriorityTwist = await c.var.db
+        .selectFrom("priority_twist")
+        .select("id")
+        .where("priority_id", "=", priority.id)
+        .where("twist_id", "=", String(plotTwist.id))
+        .where("archived_at", "is", null)
+        .executeTakeFirst();
+    } catch (err) {
+      return captureServerError(c, err as Error, `Failed to check for existing Plot twist: ${(err as Error).message}`, {
         user_id: user.id,
         priority_id: priority.id,
       });
@@ -366,8 +529,8 @@ account.post("/activate", async (c) => {
       // Install Plot twist
       try {
         await twistManagement.add(
-          c.var.supabase,
-          c.var.supabaseAdmin,
+          c.var.db,
+          user.id,
           priority.id,
           plotTwist.id,
           "public",
@@ -377,7 +540,7 @@ account.post("/activate", async (c) => {
             twistFactory: twistFactory({
               env: c.env,
               ctx: c.executionCtx as ExecutionContext,
-              supabase: c.var.supabaseAdmin,
+              db: c.var.db,
             }),
             version: plotTwist.version,
           }
@@ -395,29 +558,17 @@ account.post("/activate", async (c) => {
 
   // Step 9: Set up Help & Feedback priority using database function
   try {
-    const { data: helpFeedbackResult, error: helpFeedbackError } = await c.var.supabaseAdmin.rpc(
-      'setup_help_feedback_priority',
-      {
-        p_user_name: user.user_metadata?.name,
-        p_user_id: user.id
-      }
-    );
+    const helpFeedbackResult = await rpc(c.var.db, "setup_help_feedback_priority", {
+      p_user_name: user.name ?? undefined,
+      p_user_id: user.id,
+    });
 
-    if (helpFeedbackError) {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.error("Failed to set up Help & Feedback priority", new Error(helpFeedbackError.message), {
-        user_id: user.id,
-        error: helpFeedbackError.message,
-      });
-    } else {
-      const context = extractRequestContext(c);
-      const logger = createLogger(context);
-      logger.info("Successfully set up Help & Feedback priority", {
-        user_id: user.id,
-        result: helpFeedbackResult,
-      });
-    }
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.info("Successfully set up Help & Feedback priority", {
+      user_id: user.id,
+      result: helpFeedbackResult,
+    });
   } catch (error) {
     // Fail open - log but don't block activation
     const context = extractRequestContext(c);
@@ -427,7 +578,32 @@ account.post("/activate", async (c) => {
     });
   }
 
-  return c.json({ success: true });
+  notifySync(c, priority.id);
+
+  // Look up the user's primary contact ID for the response
+  let contactId: string | null = null;
+  try {
+    const contact = await c.var.db
+      .selectFrom("contact")
+      .select("id")
+      .where("user_id", "=", user.id)
+      .where("primary", "=", true)
+      .executeTakeFirst();
+    contactId = contact?.id ?? null;
+  } catch (err) {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Failed to look up primary contact (non-blocking)", err as Error, {
+      user_id: user.id,
+    });
+  }
+
+  return c.json({
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    contactId,
+  });
 });
 
 // DELETE /account - Delete user account
@@ -440,16 +616,17 @@ account.delete("/", async (c) => {
 
   try {
     // Step 1: Get user subscription to find Stripe info
-    const { data: subscription, error: subError } = await c.var.supabase
-      .from("user_subscription")
-      .select("stripe_subscription_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (subError) {
+    let subscription: { stripe_subscription_id: string | null } | undefined;
+    try {
+      subscription = await c.var.db
+        .selectFrom("user_subscription")
+        .select("stripe_subscription_id")
+        .where("user_id", "=", user.id)
+        .executeTakeFirst();
+    } catch (subError) {
       const context10 = extractRequestContext(c);
       const logger10 = createLogger(context10);
-      logger10.error("Failed to fetch user subscription", new Error(subError.message), {
+      logger10.error("Failed to fetch user subscription", subError as Error, {
         user_id: user.id,
       });
     }
@@ -476,39 +653,21 @@ account.delete("/", async (c) => {
       }
     }
 
-    // Step 3: Ban the user account for 14 days
-    // Set banned_until to 14 days from now
+    // Step 3: Ban the user in Clerk for 14 days
     const bannedUntil = new Date();
     bannedUntil.setDate(bannedUntil.getDate() + 14);
 
-    const { error: banError } =
-      await c.var.supabaseAdmin.auth.admin.updateUserById(user.id, {
-        ban_duration: "336h", // 14 days in hours
-      });
-
-    if (banError) {
+    try {
+      const clerk = createClerkClient({ secretKey: c.env.CLERK_SECRET_KEY });
+      await clerk.users.banUser(user.clerkId);
+    } catch (banError) {
       const context13 = extractRequestContext(c);
       const logger13 = createLogger(context13);
-      logger13.error("Failed to ban user", new Error(banError.message), {
+      logger13.error("Failed to ban user in Clerk", banError as Error, {
         user_id: user.id,
+        clerk_id: user.clerkId,
       });
       // Continue with other deletion steps
-    }
-
-    // Step 4: Set user status to deleted
-    // Using supabaseAdmin since function is revoked from authenticated
-    const { error: statusError } = await c.var.supabaseAdmin.rpc("set_user_status", {
-      user_id: user.id,
-      status: "deleted",
-    });
-
-    if (statusError) {
-      const context14 = extractRequestContext(c);
-      const logger14 = createLogger(context14);
-      logger14.error("Failed to set user status", new Error(statusError.message), {
-        user_id: user.id,
-        status: "deleted",
-      });
     }
 
     // Step 5: Send notification email to team@plot.day

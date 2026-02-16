@@ -123,6 +123,15 @@ export const theme: MantineThemeOverride = createTheme({
   },
 });
 
+// Shared Clerk appearance variables (brand colors). The dark base theme
+// is layered on top at runtime in root.tsx based on the computed color scheme.
+export const clerkAppearance = {
+  variables: {
+    colorPrimary: "#01845e",
+    fontFamily: "Inter, sans-serif",
+  },
+} as const;
+
 export const resolver: CSSVariablesResolver = (theme) => ({
   variables: {},
   light: {

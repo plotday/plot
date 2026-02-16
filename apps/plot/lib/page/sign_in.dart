@@ -1,17 +1,16 @@
-import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
-import 'package:plot/state/user.dart';
 import 'package:plot/router.dart' show EmailSignInRoute;
 import 'package:plot/page/invite.dart';
 import 'package:plot/page/loading.dart';
@@ -30,6 +29,25 @@ class SignInPage extends StatefulWidget {
 class _SignInPageState extends State<SignInPage> {
   String? _errorMessage;
   bool _isLoading = false;
+
+  bool _isExternalAccountNotFound(clerk.ClerkError error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('external account') && message.contains('not found');
+  }
+
+  bool _isAlreadySignedIn(clerk.ClerkError error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('already signed in');
+  }
+
+  void _showGenericError(Object error, StackTrace? stackTrace) {
+    Tracker.captureException(error, stackTrace);
+    if (!mounted) return;
+    setState(() {
+      _errorMessage = 'Something went wrong. Try again later.';
+      _isLoading = false;
+    });
+  }
 
   @override
   void initState() {
@@ -53,6 +71,95 @@ class _SignInPageState extends State<SignInPage> {
       log.warning('Failed to fetch invitation info', e);
     } on NetworkException catch (e) {
       log.warning('Network error fetching invitation info', e);
+    }
+  }
+
+  Future<void> _handleOAuthSignIn({
+    required clerk.IdTokenProvider provider,
+    required String idToken,
+  }) async {
+    if (mounted) {
+      setState(() {
+        _errorMessage = null;
+        _isLoading = true;
+      });
+    }
+
+    try {
+      await Base.auth.idTokenSignIn(
+        provider: provider,
+        idToken: idToken,
+      );
+
+      // If Clerk indicates this should become a sign-up, transfer the flow.
+      await Base.auth.transfer();
+
+      // Call /activate to get user identity
+      await Base.resolveIdentity();
+      // UserBloc will pick up the emission and transition to UserReady
+    } on clerk.ClerkError catch (e, t) {
+      clerk.ClerkError errorToShow = e;
+      if (_isAlreadySignedIn(e)) {
+        // Clerk already has a session — just activate to set up identity
+        try {
+          await Base.resolveIdentity();
+          return;
+        } catch (activateError) {
+          log.warning('Failed to activate existing session', activateError);
+        }
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = null;
+          _isLoading = false;
+        });
+        return;
+      }
+      log.warning('Error signing in with OAuth', e, t);
+      if (_isExternalAccountNotFound(e)) {
+        try {
+          log.info('External account not found, attempting sign-up');
+          await Base.auth.idTokenSignUp(
+            provider: provider,
+            idToken: idToken,
+          );
+          await Base.auth.transfer();
+          await Base.resolveIdentity();
+          return;
+        } on clerk.ClerkError catch (signUpError, signUpTrace) {
+          log.warning('Error signing up with OAuth', signUpError, signUpTrace);
+          errorToShow = signUpError;
+        } catch (signUpError, signUpTrace) {
+          log.warning('Error during OAuth sign-up', signUpError, signUpTrace);
+          _showGenericError(signUpError, signUpTrace);
+          return;
+        }
+      }
+      if (!mounted) return;
+      String message = errorToShow.toString();
+      if (message.contains('google_one_tap') ||
+          errorToShow.code == clerk.ClerkErrorCode.noSuchFirstFactorStrategy ||
+          errorToShow.code == clerk.ClerkErrorCode.noAssociatedStrategy) {
+        message =
+            'Google sign-in is not enabled for this environment. Please try another method.';
+      }
+      if (message.contains('email_already_linked') ||
+          message.contains('already associated')) {
+        message =
+            'This email is already associated with another account. '
+            'Please sign in with the email you originally registered with.';
+      }
+      if (errorToShow.code == clerk.ClerkErrorCode.serverErrorResponse ||
+          message.contains('error received from server')) {
+        _showGenericError(errorToShow, t);
+        return;
+      }
+      setState(() {
+        _errorMessage = message;
+        _isLoading = false;
+      });
+    } catch (e, t) {
+      log.warning('Error during sign-in', e, t);
+      _showGenericError(e, t);
     }
   }
 
@@ -136,42 +243,10 @@ class _SignInPageState extends State<SignInPage> {
                 provider: AuthProvider.google,
                 autoSignIn: false,
                 onAuth: ({required idToken, accessToken}) async {
-                  if (mounted) {
-                    setState(() {
-                      _errorMessage = null;
-                      _isLoading = true;
-                    });
-                  }
-
-                  try {
-                    await Base.client.auth.signInWithIdToken(
-                      provider: OAuthProvider.google,
-                      idToken: idToken,
-                      accessToken: accessToken,
-                    );
-
-                    // Clear password setup flag for OAuth sign-ins
-                    // (they already have a password via OAuth provider)
-                    if (context.mounted) {
-                      await context
-                          .read<UserBloc>()
-                          .clearPasswordSetupRequired();
-                    }
-                  } on AuthException catch (e, t) {
-                    log.warning('Error signing into Google', e, t);
-                    if (!mounted) return;
-                    String message = e.message;
-                    if (message.contains('email_already_linked') ||
-                        message.contains('already associated')) {
-                      message =
-                          'This email is already associated with another account. '
-                          'Please sign in with the email you originally registered with.';
-                    }
-                    setState(() {
-                      _errorMessage = message;
-                      _isLoading = false;
-                    });
-                  }
+                  await _handleOAuthSignIn(
+                    provider: clerk.IdTokenProvider.google,
+                    idToken: idToken,
+                  );
                 },
                 onError: (error) {
                   if (mounted) {
@@ -187,42 +262,10 @@ class _SignInPageState extends State<SignInPage> {
                   provider: AuthProvider.apple,
                   autoSignIn: false,
                   onAuth: ({required idToken, accessToken}) async {
-                    if (mounted) {
-                      setState(() {
-                        _errorMessage = null;
-                        _isLoading = true;
-                      });
-                    }
-
-                    try {
-                      await Base.client.auth.signInWithIdToken(
-                        provider: OAuthProvider.apple,
-                        idToken: idToken,
-                        accessToken: accessToken,
-                      );
-
-                      // Clear password setup flag for OAuth sign-ins
-                      // (they already have a password via OAuth provider)
-                      if (context.mounted) {
-                        await context
-                            .read<UserBloc>()
-                            .clearPasswordSetupRequired();
-                      }
-                    } on AuthException catch (e, t) {
-                      log.warning('Error signing into Apple', e, t);
-                      if (!mounted) return;
-                      String message = e.message;
-                      if (message.contains('email_already_linked') ||
-                          message.contains('already associated')) {
-                        message =
-                            'This email is already associated with another account. '
-                            'Please sign in with the email you originally registered with.';
-                      }
-                      setState(() {
-                        _errorMessage = message;
-                        _isLoading = false;
-                      });
-                    }
+                    await _handleOAuthSignIn(
+                      provider: clerk.IdTokenProvider.apple,
+                      idToken: idToken,
+                    );
                   },
                   onError: (error) {
                     if (mounted) {

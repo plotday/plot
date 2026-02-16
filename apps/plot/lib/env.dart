@@ -15,8 +15,7 @@ abstract class Env {
     posthogApiKey = getEnvOrThrow('POSTHOG_API_KEY');
     posthogHost = getEnvOrThrow('POSTHOG_PROXY');
 
-    supabaseUrl = _translateUrl(getEnvOrThrow('SUPABASE_URL'));
-    supabaseAnonKey = getEnvOrThrow('SUPABASE_ANON_KEY');
+    clerkPublishableKey = getEnvOrThrow('CLERK_PUBLISHABLE_KEY');
 
     apiRoot = _translateUrl('${getEnvOrThrow('API_ROOT')}/app');
     authServerCallbackUrl = getEnvOrThrow('AUTH_GOOGLE_URI');
@@ -54,8 +53,7 @@ abstract class Env {
   static late final String posthogApiKey;
   static late final String posthogHost;
 
-  static late final String supabaseUrl;
-  static late final String supabaseAnonKey;
+  static late final String clerkPublishableKey;
 
   static late final String apiRoot;
   static late final String authCallbackUrl;

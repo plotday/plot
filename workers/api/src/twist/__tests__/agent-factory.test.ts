@@ -2,13 +2,11 @@ import { env as testEnv } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { twistFactory } from "../factory";
-import { createTwistSource, mockPriority } from "./utils/fixtures";
-import { createMockSupabase } from "./utils/mocks";
 import { generateTestTwistModule } from "./utils/test-twists";
 
 describe("twistFactory", () => {
   let ctx: any;
-  let supabase: any;
+  let db: any;
   const testTwistModule = generateTestTwistModule("TestTwist");
 
   beforeEach(async () => {
@@ -36,23 +34,14 @@ describe("twistFactory", () => {
       exports: testEnv,
     };
 
-    supabase = createMockSupabase({
-      twists: [
-        createTwistSource({
-          id: "test-twist",
-          version: "1.0.0",
-          module_url: "test-twist/1.0.0/module.js",
-        }),
-      ],
-      priorities: [mockPriority],
-    });
+    db = {} as any;
   });
 
   it("should create twist factory function", async () => {
     const factory = twistFactory({
       env: testEnv,
       ctx,
-      supabase,
+      db,
       checkPermissions: false,
     });
 
@@ -63,7 +52,7 @@ describe("twistFactory", () => {
     const factory = twistFactory({
       env: testEnv,
       ctx,
-      supabase,
+      db,
       checkPermissions: false,
       module: testTwistModule,
     });
@@ -88,7 +77,7 @@ describe("twistFactory", () => {
     const factory = twistFactory({
       env: testEnv,
       ctx,
-      supabase,
+      db,
       checkPermissions: false,
       module: testTwistModule,
     });
@@ -109,7 +98,7 @@ describe("twistFactory", () => {
     const factory = twistFactory({
       env: testEnv,
       ctx,
-      supabase,
+      db,
       checkPermissions: true,
       module: testTwistModule,
     });
@@ -140,7 +129,7 @@ describe("twistFactory", () => {
     const factory = twistFactory({
       env: testEnv,
       ctx,
-      supabase,
+      db,
       checkPermissions: true,
       module: testTwistModule,
     });
@@ -173,7 +162,7 @@ describe("twistFactory", () => {
     const factory = twistFactory({
       env: testEnv,
       ctx,
-      supabase,
+      db,
       checkPermissions: true,
       module: testTwistModule,
     });
@@ -197,7 +186,7 @@ describe("twistFactory", () => {
       twistFactory({
         env: testEnv,
         ctx: { exports: undefined as any },
-        supabase,
+        db,
       })
     ).toThrow("ExecutionContext exports missing");
   });
@@ -206,7 +195,7 @@ describe("twistFactory", () => {
     const factory = twistFactory({
       env: testEnv,
       ctx,
-      supabase,
+      db,
       checkPermissions: false,
       module: testTwistModule,
     });

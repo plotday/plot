@@ -15,6 +15,5 @@ onlyBuiltDependencies:
   - fast-folder-size
   - nx
   - sharp
-  - supabase
   - utf-8-validate
   - workerd

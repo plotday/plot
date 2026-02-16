@@ -1,30 +1,6 @@
-import type {
-  SupabaseClient as _SupabaseClient,
-  SupabaseClientOptions,
-} from "@supabase/supabase-js";
-import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
-
 import { toDate } from "@plotday/tz";
 
-import type { Database } from "./types";
-
 export type { Database, Json } from "./types";
-export type SupabaseClient = _SupabaseClient<Database>;
-
-// Create a non-session client.
-// Use supabase/ssr for sessions.
-export function createClient(
-  supabaseUrl: string,
-  supabaseKey: string,
-  options?: SupabaseClientOptions<"public">
-) {
-  return supabaseCreateClient<Database>(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: false,
-    },
-    ...options,
-  });
-}
 
 export function parseDateRange(range: string | unknown) {
   const [start, end] = (range as string).replaceAll(/["[\]()]/g, "").split(",");
@@ -46,5 +22,5 @@ export function formatDatetimeRange(start: Date, end: Date) {
   return `[${start.toISOString()},${end.toISOString()})`;
 }
 
-export { DbError, safeQuery, type DbErrorContext } from "./query";
+export { DbError, type DbErrorContext } from "./query";
 export * from "./path";

@@ -528,14 +528,11 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
 
   static Future<int> _getActivityCount(Uuid priorityTwistId) async {
     try {
-      final result =
-          await Base.client
-                  .from('user_activity')
-                  .select('id')
-                  .eq('created_by', priorityTwistId.toString())
-                  .isFilter('archived_at', null)
-              as List<dynamic>;
-
+      final authorId = ActorId(priorityTwistId);
+      final query = Store.get.select(Store.get.activities)
+        ..where((a) => a.authorId.equalsValue(authorId))
+        ..where((a) => a.archivedAt.isNull());
+      final result = await query.get();
       return result.length;
     } catch (e, t) {
       log.warning('Failed to count activities', e, t);
@@ -559,12 +556,15 @@ class _ArchiveActivitiesCommand extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // Execute bulk archive operation
-      await Base.client
-          .from('activity')
-          .update({'archived_at': DateTime.now().toUtc().toIso8601String()})
-          .eq('created_by', twist.id.toString())
-          .isFilter('archived_at', null);
+      final authorId = ActorId(twist.id);
+      final now = DateTime.now();
+      await (Store.get.update(Store.get.activities)
+            ..where((a) => a.authorId.equalsValue(authorId))
+            ..where((a) => a.archivedAt.isNull()))
+          .write(ActivitiesCompanion(archivedAt: Value(now)));
+
+      // Trigger sync to push archived changes to server
+      Activity.push();
 
       return CommandMessage(
         count == 1 ? '1 activity archived' : '$count activities archived',

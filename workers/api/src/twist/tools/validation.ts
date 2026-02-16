@@ -2,8 +2,8 @@
  * Utilities for validating values before serialization or storage
  *
  * Uses SuperJSON for serialization, which supports:
- * - Primitives: string, number, boolean, null, undefined
- * - Complex types: Date, RegExp, Map, Set, Error, URL, BigInt
+ * - Primitives: string, number, boolean, null
+ * - Complex types: Date, RegExp, Map, Set, Error, URL
  * - Collections: Arrays and objects (recursively)
  *
  * NOT supported (will throw validation errors):
@@ -58,7 +58,20 @@ export function findNonSerializable(
     };
   }
 
-  // Note: undefined and BigInt are now supported by SuperJSON
+  if (value === undefined) {
+    return {
+      path,
+      type: "undefined",
+    };
+  }
+
+  if (typeof value === "bigint") {
+    return {
+      path,
+      type: "bigint",
+      value: value.toString(),
+    };
+  }
 
   // Check for special objects that might have RPC properties
   if (value !== null && typeof value === "object") {
@@ -131,6 +144,9 @@ export function createSerializationError(
   } else if (info.type === "circular reference") {
     message += `Found circular reference at path "${info.path}".\n`;
     message += `Objects with circular references cannot be serialized.`;
+  } else if (info.type === "undefined") {
+    message += `Found undefined at path "${info.path}".\n`;
+    message += `Use null instead of undefined.`;
   } else {
     message += `Found non-serializable ${info.type} at path "${info.path}".\n`;
     if (info.value) {
@@ -149,4 +165,15 @@ export function validateSerializable(operation: string, value: any): void {
   if (nonSerializable) {
     throw createSerializationError(operation, nonSerializable);
   }
+}
+
+/**
+ * Removes undefined values from the end of an array while preserving order.
+ */
+export function stripTrailingUndefined<T>(values: T[]): T[] {
+  let end = values.length;
+  while (end > 0 && values[end - 1] === undefined) {
+    end -= 1;
+  }
+  return values.slice(0, end);
 }

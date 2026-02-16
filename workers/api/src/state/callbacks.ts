@@ -1,8 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import superjson from "superjson";
+import type { Kysely } from "kysely";
 
-import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
-
+import { type DB, createDb } from "../db";
 import { type Bindings } from "../env";
 import { CallbackError } from "../errors";
 import { twistFactory } from "../twist";
@@ -46,16 +46,13 @@ function isValidDoId(id: string): boolean {
 
 export class CallbacksState extends DurableObject<Bindings> {
   private sql: SqlStorage;
-  private supabase: SupabaseClient;
+  private db: Kysely<DB>;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.initializeTable();
-    this.supabase = createClient(
-      this.env.SUPABASE_URL,
-      this.env.SUPABASE_SERVICE_KEY
-    );
+    this.db = createDb(this.env);
   }
 
   /**
@@ -151,31 +148,27 @@ export class CallbacksState extends DurableObject<Bindings> {
 
     // Fetch twist_id, environment, and version from database if version not provided
     if (!version) {
-      const { data: ptData, error: ptError } = await this.supabase
-        .from("priority_twist")
+      const ptData = await this.db
+        .selectFrom("priority_twist")
         .select("twist_id")
-        .eq("id", priorityTwistId)
-        .single();
+        .where("id", "=", priorityTwistId)
+        .executeTakeFirst();
 
-      if (ptError || !ptData) {
+      if (!ptData) {
         throw new Error(
-          `Failed to fetch priority_twist ${priorityTwistId}: ${
-            ptError?.message || "No data found"
-          }`
+          `Failed to fetch priority_twist ${priorityTwistId}: No data found`
         );
       }
 
-      const { data, error } = await this.supabase
-        .from("twist")
-        .select("version,environment")
-        .eq("id", ptData.twist_id)
-        .single();
+      const data = await this.db
+        .selectFrom("twist")
+        .select(["version", "environment"])
+        .where("id", "=", ptData.twist_id)
+        .executeTakeFirst();
 
-      if (error || !data?.version) {
+      if (!data?.version) {
         throw new Error(
-          `Failed to fetch version for twist_id ${ptData.twist_id}: ${
-            error?.message || "No version found"
-          }`
+          `Failed to fetch version for twist_id ${ptData.twist_id}: No version found`
         );
       }
       version = data.version;
@@ -300,19 +293,11 @@ export class CallbacksState extends DurableObject<Bindings> {
       dbLookupStart = Date.now();
     }
 
-    const priorityTwist = safeQuery(
-      await this.supabase
-        .from("priority_twist")
-        .select("priority_id, twist_id, archived_at")
-        .eq("id", callback.priorityTwistId)
-        .maybeSingle(),
-      {
-        table: "priority_twist",
-        operation: "SELECT",
-        description: "Fetch priority and twist_id for callback execution",
-        identifiers: { priorityTwistId: callback.priorityTwistId },
-      }
-    );
+    const priorityTwist = await this.db
+      .selectFrom("priority_twist")
+      .select(["priority_id", "twist_id", "archived_at", "suspended_at"])
+      .where("id", "=", callback.priorityTwistId)
+      .executeTakeFirst();
 
     // If priority_twist was deleted, clean up callback and return error object
     if (!priorityTwist) {
@@ -345,20 +330,25 @@ export class CallbacksState extends DurableObject<Bindings> {
       };
     }
 
+    // If priority_twist is suspended, block without deleting callback (allows retry after resume)
+    if (priorityTwist.suspended_at) {
+      return {
+        __error: true,
+        type: "SUSPENDED",
+        context: {
+          operation: "callCallback",
+          priorityTwistId: callback.priorityTwistId,
+          reason: "Twist processing suspended due to high usage",
+        },
+      };
+    }
+
     // Fetch twist metadata including environment
-    const twistMeta = safeQuery(
-      await this.supabase
-        .from("twist")
-        .select("environment")
-        .eq("id", priorityTwist.twist_id)
-        .maybeSingle(),
-      {
-        table: "twist",
-        operation: "SELECT",
-        description: "Fetch twist environment for callback error logging",
-        identifiers: { twistId: priorityTwist.twist_id },
-      }
-    );
+    const twistMeta = await this.db
+      .selectFrom("twist")
+      .select("environment")
+      .where("id", "=", priorityTwist.twist_id)
+      .executeTakeFirst();
 
     // If twist was deleted, clean up callback and return
     if (!twistMeta) {
@@ -380,7 +370,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const factory = twistFactory({
       env: this.env,
       ctx: this.ctx,
-      supabase: this.supabase,
+      db: this.db,
     });
     const twistWrapper = await factory({
       version: callback.version,

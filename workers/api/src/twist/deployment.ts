@@ -1,5 +1,6 @@
-import type { SupabaseClient } from "@plotday/db";
+import type { Kysely } from "kysely";
 
+import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { buildTwist } from "./builder";
@@ -14,7 +15,7 @@ export type DeploymentInput =
 export interface DeployTwistOptions {
   env: Bindings;
   ctx: { exports: ExecutionContext["exports"] };
-  supabase: SupabaseClient;
+  db: Kysely<DB>;
   twistAdminId: number;
   input: DeploymentInput;
   environment: Exclude<TwistEnvironment, "public">;
@@ -47,7 +48,7 @@ export interface DeployTwistResult {
 export async function deployTwist({
   env,
   ctx,
-  supabase,
+  db,
   twistAdminId,
   input,
   environment,
@@ -123,17 +124,11 @@ export async function deployTwist({
     }
 
     // Get twist_package_id for storage
-    const { data: adminData, error: adminError } = await supabase
-      .from("twist_admin")
+    const adminData = await db
+      .selectFrom("twist_admin")
       .select("twist_package_id")
-      .eq("id", twistAdminId)
-      .single();
-
-    if (adminError || !adminData) {
-      throw new Error(
-        `Failed to fetch twist configuration: ${adminError?.message || "Not found"}`
-      );
-    }
+      .where("id", "=", String(twistAdminId))
+      .executeTakeFirstOrThrow();
 
     const storeResult = await storeTwistModule({
       env,
@@ -142,7 +137,7 @@ export async function deployTwist({
       module: moduleCode,
       sourcemap: sourcemapCode,
       environment,
-      supabase,
+      db,
       dryRun,
     });
     version = storeResult.version;
@@ -168,19 +163,12 @@ export async function deployTwist({
   }
 
   // Check if twist already exists for this admin+environment
-  const { data: existingTwist, error: existingError } = await supabase
-    .from("twist")
-    .select("id, name, version")
-    .eq("twist_admin_id", twistAdminId)
-    .eq("environment", environment)
-    .maybeSingle();
-
-  if (existingError) {
-    logger.error("Error checking for existing twist", existingError as Error);
-    throw new Error(
-      `Failed to check existing twist: ${existingError.message}`
-    );
-  }
+  const existingTwist = await db
+    .selectFrom("twist")
+    .select(["id", "name", "version"])
+    .where("twist_admin_id", "=", String(twistAdminId))
+    .where("environment", "=", environment)
+    .executeTakeFirst();
 
   logger.info("Deploying twist", {
     name,
@@ -194,52 +182,34 @@ export async function deployTwist({
 
   if (existingTwist) {
     // Update existing twist - use UPDATE to avoid unique constraint issues
-    const { data: updatedTwist, error: updateError } = await supabase
-      .from("twist")
-      .update({
+    twist = await db
+      .updateTable("twist")
+      .set({
         name,
         description,
         version,
-        permissions: permissions as any,
+        permissions: JSON.stringify(permissions),
       })
-      .eq("id", existingTwist.id)
-      .select()
-      .single();
+      .where("id", "=", existingTwist.id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
 
-    if (updateError || !updatedTwist) {
-      logger.error("Failed to update twist in database", updateError as Error);
-      throw new Error(
-        `Failed to save twist update: ${
-          updateError?.message || "Database error"
-        }`
-      );
-    }
-
-    twist = updatedTwist;
     logger.info("Updated twist", { twist_id: String(twist.id) });
   } else {
     // Create new twist - use INSERT
-    const { data: newTwist, error: insertError } = await supabase
-      .from("twist")
-      .insert({
+    twist = await db
+      .insertInto("twist")
+      .values({
         twist_admin_id: twistAdminId,
         environment,
         name,
         description,
         version,
-        permissions: permissions as any,
+        permissions: JSON.stringify(permissions),
       })
-      .select()
-      .single();
+      .returningAll()
+      .executeTakeFirstOrThrow();
 
-    if (insertError || !newTwist) {
-      logger.error("Failed to create twist in database", insertError as Error);
-      throw new Error(
-        `Failed to save new twist: ${insertError?.message || "Database error"}`
-      );
-    }
-
-    twist = newTwist;
     logger.info("Created new twist", { twist_id: String(twist.id) });
   }
 
@@ -247,21 +217,20 @@ export async function deployTwist({
   // This only matters for updates - new twists won't have priority_twists yet
   onProgress?.("Upgrading active twists");
   try {
-    const { data: priorityTwists, error: fetchError } = await supabase
-      .from("priority_twist")
-      .select("id, priority_id, twist_id")
-      .eq("twist_id", twist.id)
-      .is("archived_at", null);
+    const priorityTwists = await db
+      .selectFrom("priority_twist")
+      .select(["id", "priority_id", "twist_id"])
+      .where("twist_id", "=", twist.id)
+      .where("archived_at", "is", null)
+      .execute();
 
-    if (fetchError) {
-      logger.error("Error fetching priority twists for upgrade", fetchError as Error);
-    } else if (priorityTwists && priorityTwists.length > 0) {
+    if (priorityTwists.length > 0) {
       logger.info("Calling upgrade on active priority twists", {
         count: priorityTwists.length,
       });
 
       const { twistFactory } = await import("./index");
-      const factory = twistFactory({ env, ctx, supabase });
+      const factory = twistFactory({ env, ctx, db });
 
       // Use allSettled to handle errors without blocking other upgrades
       const upgradeResults = await Promise.allSettled(
@@ -316,48 +285,52 @@ export async function deployTwist({
   // If deploying to review and auto_approve is true, also deploy to public
   let autoApproved = false;
   if (environment === "review") {
-    const { data: twistAdmin, error: adminFetchError } = await supabase
-      .from("twist_admin")
+    const twistAdmin = await db
+      .selectFrom("twist_admin")
       .select("auto_approve")
-      .eq("id", twistAdminId)
-      .single();
+      .where("id", "=", String(twistAdminId))
+      .executeTakeFirst();
 
-    if (!adminFetchError && twistAdmin?.auto_approve) {
+    if (twistAdmin?.auto_approve) {
       logger.info("Auto-approving twist to public environment");
 
       // Get or create the public twist - need to fetch ID for callback upgrade
-      const { data: publicTwist, error: upsertPublicError } = await supabase.from("twist").upsert(
-        {
-          twist_admin_id: twistAdminId,
-          environment: "public",
-          name,
-          description,
-          version,
-          permissions: permissions as any,
-        },
-        {
-          onConflict: "twist_admin_id,environment",
-        }
-      ).select().single();
+      try {
+        const publicTwist = await db
+          .insertInto("twist")
+          .values({
+            twist_admin_id: twistAdminId,
+            environment: "public",
+            name,
+            description,
+            version,
+            permissions: JSON.stringify(permissions),
+          })
+          .onConflict((oc) =>
+            oc.columns(["twist_admin_id", "environment"]).doUpdateSet({
+              name,
+              description,
+              version,
+              permissions: JSON.stringify(permissions),
+            })
+          )
+          .returningAll()
+          .executeTakeFirstOrThrow();
 
-      if (upsertPublicError || !publicTwist) {
-        logger.error("Error auto-deploying to public", upsertPublicError as Error);
-      } else {
         logger.info("Successfully auto-deployed twist to public environment");
         autoApproved = true;
 
         // Upgrade callbacks for PUBLIC priority_twists too
         // This ensures webhooks execute with the new twist version
         try {
-          const { data: publicPriorityTwists, error: publicFetchError } = await supabase
-            .from("priority_twist")
-            .select("id, priority_id, twist_id")
-            .eq("twist_id", publicTwist.id)
-            .is("archived_at", null);
+          const publicPriorityTwists = await db
+            .selectFrom("priority_twist")
+            .select(["id", "priority_id", "twist_id"])
+            .where("twist_id", "=", publicTwist.id)
+            .where("archived_at", "is", null)
+            .execute();
 
-          if (publicFetchError) {
-            logger.error("Error fetching public priority twists for upgrade", publicFetchError as Error);
-          } else if (publicPriorityTwists && publicPriorityTwists.length > 0) {
+          if (publicPriorityTwists.length > 0) {
             logger.info("Upgrading callbacks for public priority twists", {
               count: publicPriorityTwists.length,
             });
@@ -388,20 +361,22 @@ export async function deployTwist({
           // Log error but continue with deployment
           logger.error("Error during public callback upgrade (continuing with deployment)", publicUpgradeError as Error);
         }
+      } catch (upsertPublicError) {
+        logger.error("Error auto-deploying to public", upsertPublicError as Error);
       }
     }
   }
 
   // Add release note for successful deployment
   try {
-    const { data: adminForRelease } = await supabase
-      .from("twist_admin")
-      .select("twist_package_id, priority_id")
-      .eq("id", twistAdminId)
-      .single();
+    const adminForRelease = await db
+      .selectFrom("twist_admin")
+      .select(["twist_package_id", "priority_id"])
+      .where("id", "=", String(twistAdminId))
+      .executeTakeFirst();
 
     if (adminForRelease?.priority_id) {
-      await addReleaseNote(supabase, adminForRelease.twist_package_id, adminForRelease.priority_id, {
+      await addReleaseNote(db, adminForRelease.twist_package_id, adminForRelease.priority_id, {
         userName,
         userEmail,
         userId: userId || undefined,

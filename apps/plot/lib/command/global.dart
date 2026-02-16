@@ -42,9 +42,7 @@ class GlobalShortcuts extends StatelessWidget {
     return BlocBuilder<UserBloc, UserState>(
       builder: (context, state) {
         // Determine if signed in based on UserState
-        final signedIn =
-            state is UserReady ||
-            state is UserPasswordRequired;
+        final signedIn = state is UserReady;
 
         return CommandScope(commands: _getCommands(signedIn), child: child);
       },
