@@ -130,6 +130,8 @@ export async function getTwist({
     return {
       twist: mockWorker.getEntrypoint() as any,
       version,
+      id,
+      environment,
     };
   }
 

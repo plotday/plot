@@ -77,8 +77,8 @@ function createInsertQuery(result: any) {
 // Helper to create a chainable mock for Kysely queries
 function createDbMock() {
   return {
-    selectFrom: vi.fn(),
-    insertInto: vi.fn(),
+    selectFrom: vi.fn(() => createSelectQuery(null)),
+    insertInto: vi.fn(() => createInsertQuery(null)),
     updateTable: vi.fn(),
     deleteFrom: vi.fn(),
   } as any;
@@ -87,7 +87,7 @@ function createDbMock() {
 // Helper to create mock env bindings
 function createEnvMock() {
   const usageStub = {
-    init: vi.fn(),
+    init: vi.fn().mockResolvedValue(undefined),
     track: vi.fn(),
     getUsage: vi.fn().mockResolvedValue({ tokens: 0, cost: 0 }),
   };

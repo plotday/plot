@@ -73,7 +73,7 @@ describe("Callbacks", () => {
       );
     });
 
-    it("should strip trailing undefined from callback arguments", async () => {
+    it("should pass trailing undefined in callback arguments", async () => {
       const testFunction = async function testCallback() {
         return "result";
       };
@@ -88,12 +88,12 @@ describe("Callbacks", () => {
       );
 
       expect(token).toBe("cb_test_token_123");
-      // extraArgs should have trailing undefined values stripped
+      // extraArgs are passed through as-is
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
         priorityTwistId: "pa-1",
         path: ["Tool1"],
         functionName: "testCallback",
-        extraArgs: ["arg1", "arg2"],
+        extraArgs: ["arg1", "arg2", undefined, undefined],
       });
     });
 
@@ -133,12 +133,12 @@ describe("Callbacks", () => {
       );
 
       expect(token).toBe("cb_test_token_123");
-      // All undefined should result in empty extraArgs
+      // extraArgs are passed through as-is
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
         priorityTwistId: "pa-1",
         path: ["Tool1"],
         functionName: "testCallback",
-        extraArgs: [],
+        extraArgs: [undefined, undefined],
       });
     });
   });

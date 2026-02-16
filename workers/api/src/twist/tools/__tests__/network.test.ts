@@ -101,7 +101,7 @@ describe("Network", () => {
       const callback = async function testCallback() {};
 
       await expect(
-        network.createWebhook({ callback })
+        network.createWebhook({}, callback)
       ).rejects.toThrow("Webhook functionality not initialized");
     });
 
@@ -128,7 +128,7 @@ describe("Network", () => {
         return { received: true };
       };
 
-      const webhookUrl = await network.createWebhook({ callback });
+      const webhookUrl = await network.createWebhook({}, callback);
 
       expect(webhookUrl).toContain("https://api.plot.com/hook/");
       expect(mockCallbacksStub.create).toHaveBeenCalled();

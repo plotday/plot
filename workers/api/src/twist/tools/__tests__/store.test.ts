@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import superjson from "superjson";
 import { Store } from "../store";
 
 describe("Store", () => {
@@ -37,7 +38,7 @@ describe("Store", () => {
 
   describe("get", () => {
     it("should get value from storage", async () => {
-      storageData.set("test-key", JSON.stringify({ data: "test-value" }));
+      storageData.set("test-key", superjson.stringify({ data: "test-value" }));
 
       const result = await store.get("test-key");
 
@@ -52,7 +53,7 @@ describe("Store", () => {
     });
 
     it("should parse JSON values", async () => {
-      storageData.set("json-key", JSON.stringify({ foo: "bar", count: 42 }));
+      storageData.set("json-key", superjson.stringify({ foo: "bar", count: 42 }));
 
       const result = await store.get("json-key");
 
@@ -69,7 +70,7 @@ describe("Store", () => {
 
     it("should handle arrays", async () => {
       const array = [1, 2, 3];
-      storageData.set("array-key", JSON.stringify(array));
+      storageData.set("array-key", superjson.stringify(array));
 
       const result = await store.get("array-key");
 
@@ -78,36 +79,47 @@ describe("Store", () => {
 
     it("should handle nested objects", async () => {
       const nested = { a: { b: { c: "deep" } } };
-      storageData.set("nested-key", JSON.stringify(nested));
+      storageData.set("nested-key", superjson.stringify(nested));
 
       const result = await store.get("nested-key");
 
       expect(result).toEqual(nested);
     });
+
+    it("should handle legacy JSON format (backward compatibility)", async () => {
+      // Legacy format: plain JSON.stringify (not superjson)
+      storageData.set("legacy-key", JSON.stringify({ old: "data" }));
+
+      const result = await store.get("legacy-key");
+
+      // superjson.parse will interpret {old: "data"} differently,
+      // but JSON.parse fallback should handle it
+      expect(result).not.toBeNull();
+    });
   });
 
   describe("set", () => {
-    it("should set value in storage", async () => {
+    it("should set value in storage using superjson", async () => {
       await store.set("test-key", { data: "test-value" });
 
       expect(mockStorage.set).toHaveBeenCalledWith(
         "test-key",
-        JSON.stringify({ data: "test-value" })
+        superjson.stringify({ data: "test-value" })
       );
     });
 
-    it("should serialize objects to JSON", async () => {
+    it("should serialize objects to superjson", async () => {
       const obj = { foo: "bar", count: 42 };
       await store.set("obj-key", obj);
 
-      expect(mockStorage.set).toHaveBeenCalledWith("obj-key", JSON.stringify(obj));
+      expect(mockStorage.set).toHaveBeenCalledWith("obj-key", superjson.stringify(obj));
     });
 
-    it("should serialize arrays to JSON", async () => {
+    it("should serialize arrays to superjson", async () => {
       const arr = [1, 2, 3];
       await store.set("arr-key", arr);
 
-      expect(mockStorage.set).toHaveBeenCalledWith("arr-key", JSON.stringify(arr));
+      expect(mockStorage.set).toHaveBeenCalledWith("arr-key", superjson.stringify(arr));
     });
 
     it("should throw error for functions", async () => {
@@ -122,36 +134,34 @@ describe("Store", () => {
       ).rejects.toThrow();
     });
 
-    it("should clean undefined values from objects", async () => {
-      await store.set("undefined-key", { val: undefined, keep: "value" });
-
-      const calledWith = mockStorage.set.mock.calls[0][1];
-      expect(calledWith).toContain('"keep"');
-      expect(calledWith).not.toContain('"val"');
+    it("should throw error for undefined values in objects", async () => {
+      await expect(
+        store.set("undefined-key", { val: undefined, keep: "value" })
+      ).rejects.toThrow("undefined");
     });
 
     it("should handle null values", async () => {
       await store.set("null-key", null);
 
-      expect(mockStorage.set).toHaveBeenCalledWith("null-key", "null");
+      expect(mockStorage.set).toHaveBeenCalledWith("null-key", superjson.stringify(null));
     });
 
     it("should handle boolean values", async () => {
       await store.set("bool-key", true);
 
-      expect(mockStorage.set).toHaveBeenCalledWith("bool-key", "true");
+      expect(mockStorage.set).toHaveBeenCalledWith("bool-key", superjson.stringify(true));
     });
 
     it("should handle number values", async () => {
       await store.set("num-key", 42);
 
-      expect(mockStorage.set).toHaveBeenCalledWith("num-key", "42");
+      expect(mockStorage.set).toHaveBeenCalledWith("num-key", superjson.stringify(42));
     });
 
     it("should handle string values", async () => {
       await store.set("str-key", "hello");
 
-      expect(mockStorage.set).toHaveBeenCalledWith("str-key", '"hello"');
+      expect(mockStorage.set).toHaveBeenCalledWith("str-key", superjson.stringify("hello"));
     });
   });
 

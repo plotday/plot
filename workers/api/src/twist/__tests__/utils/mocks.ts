@@ -185,7 +185,7 @@ export function createMockEnv(overrides?: Partial<Env>): Env {
     USAGE: createMockDurableObjectNamespace(() => ({
       id: { toString: () => "mock-usage-id", name: "mock-priority-twist-id" } as any,
       fetch: async () => new Response("OK"),
-      init: (_priorityTwistId: string) => {},
+      init: (_priorityTwistId: string) => Promise.resolve(),
       spend: () => {},
     }) as any),
     TWIST_LOGS_QUEUE: { send: () => Promise.resolve() } as any,
