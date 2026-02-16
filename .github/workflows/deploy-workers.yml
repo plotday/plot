@@ -133,12 +133,11 @@ jobs:
         with:
           credentials_json: ${{ env.GCP_SA_KEY }}
 
-      - name: Setup Cloud SQL Proxy
-        uses: google-github-actions/setup-cloud-sql-proxy@v2
-
-      - name: Start Cloud SQL Proxy
+      - name: Download and start Cloud SQL Proxy
         run: |
-          cloud-sql-proxy plot-core:northamerica-northeast2:plot-prod \
+          curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.21.0/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy plot-core:northamerica-northeast2:plot-prod \
             --port=5432 &
           sleep 3
 
