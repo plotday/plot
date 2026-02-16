@@ -168,7 +168,7 @@ export async function createNote(
       draft: false,
       private: note.private ?? false,
       content: contentToStore,
-      links: note.links ?? null,
+      links: note.links ? JSON.stringify(note.links) : null,
       mentions: mentionIds,
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
@@ -507,7 +507,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       }
     }
     if (note.links !== undefined) {
-      dbUpdate.links = note.links;
+      dbUpdate.links = note.links ? JSON.stringify(note.links) : note.links;
     }
     if (note.private !== undefined) {
       dbUpdate.private = note.private;
