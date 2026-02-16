@@ -79,7 +79,7 @@ The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `
 
 - **Local database port**: 54322 (Docker maps 54322:5432)
 - **Schema management**: Atlas handles diffing, migration generation, and migration application
-- **Type generation**: Uses `npx supabase gen types` (fetched on demand via npx, no package dependency)
+- **Type generation**: Uses `@supabase/postgres-meta` as a library (via `pnpm types`)
 - **Atlas config**: `atlas.hcl` defines the local environment, schema sources, and migration directory
 
 ## CRITICAL: When Modifying Synced Tables

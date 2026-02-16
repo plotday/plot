@@ -28,7 +28,7 @@ Local storage uses the Drift package (which uses SQLite), with entities defined 
 Data is synchronized to a remote PostgreSQL database for backup, multi-device sync, and collaboration.
 The database schema is defined in "libs/db/schema/".
 The local development database runs as a Docker container (PostgreSQL 18.1) on port 54322.
-Atlas is used for schema diffing and migration management. Type generation uses `npx supabase gen types` (fetched on demand via npx, no package dependency).
+Atlas is used for schema diffing and migration management. Type generation uses `@supabase/postgres-meta` as a library (via `pnpm types`).
 
 ## Code Structure
 
@@ -683,7 +683,7 @@ pnpm reset
 
 The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `libs/db/docker-compose.yml`. Schema files fully define database state (schemas, extensions, roles, functions).
 
-Atlas handles schema diffing and migration management. Type generation uses `npx supabase gen types` (fetched on demand via npx, no package dependency).
+Atlas handles schema diffing and migration management. Type generation uses `@supabase/postgres-meta` as a library (via `pnpm types`).
 
 ## Development Webhooks with Cloudflare Tunnel
 

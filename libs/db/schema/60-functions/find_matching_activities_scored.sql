@@ -16,7 +16,6 @@ BEGIN
             a.priority_id,
             a.title,
             a.type,
-            a.mentions,
             a.meta,
             a.embedding
         FROM
@@ -31,7 +30,7 @@ BEGIN
                 OR NOT (required_filters ? 'content'))
             -- Type exact match (when type is required)
             AND ((required_filters ? 'type'
-                    AND a.type = (activity_data ->> 'type')::int)
+                    AND a.type = (activity_data ->> 'type')::activity_type)
                 OR NOT (required_filters ? 'type'))
             -- Meta field exact matches (when meta.field is required)
             AND (
@@ -65,29 +64,11 @@ scored_activities AS (
             -- Type exact match score
             COALESCE(
                 CASE WHEN scored_fields ? 'type' THEN
-                    CASE WHEN fa.type = (activity_data ->> 'type')::int THEN
+                    CASE WHEN fa.type = (activity_data ->> 'type')::activity_type THEN
                         (scored_fields ->> 'type')::float
                     ELSE
                         0
                 END
-                ELSE
-                    0
-                END, 0) +
-            -- Mentions array overlap score
-            COALESCE(
-                CASE WHEN scored_fields ? 'mentions'
-                    AND fa.mentions IS NOT NULL
-                    AND jsonb_array_length(activity_data -> 'mentions') > 0 THEN
-                    (scored_fields ->> 'mentions')::float * (
-                        -- Count matching elements / length of existing array
-                        (
-                            SELECT
-                                COUNT(*)::float
-                            FROM jsonb_array_elements_text(fa.mentions::jsonb) existing_mention
-                            WHERE
-                                existing_mention IN (
-                                    SELECT
-                                        jsonb_array_elements_text(activity_data -> 'mentions'))) / jsonb_array_length(fa.mentions::jsonb))
                 ELSE
                     0
                 END, 0) +
@@ -121,4 +102,3 @@ ORDER BY
 LIMIT 1;
 END;
 $function$;
-

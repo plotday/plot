@@ -8,6 +8,7 @@ docker "postgres" "dev" {
     CREATE SCHEMA IF NOT EXISTS "extensions";
     CREATE SCHEMA IF NOT EXISTS "admin";
     CREATE SCHEMA IF NOT EXISTS "user";
+    CREATE ROLE "api" WITH LOGIN;
   SQL
 }
 
