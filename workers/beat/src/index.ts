@@ -8,26 +8,49 @@ export interface Env {
   readonly POSTHOG_ASSET_HOST: string;
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+function addCorsHeaders(response: Response): Response {
+  const newResponse = new Response(response.body, response);
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    newResponse.headers.set(key, value);
+  }
+  return newResponse;
+}
+
 async function handleRequest(
   request: Request,
   ctx: ExecutionContext,
   env: Env
 ): Promise<Response> {
   try {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
+
     const url = new URL(request.url);
     const pathname = url.pathname;
     const search = url.search;
     const pathWithParams = pathname + search;
 
+    let response: Response;
     if (pathname.startsWith("/static/")) {
-      return await retrieveStatic(request, pathWithParams, ctx, env);
+      response = await retrieveStatic(request, pathWithParams, ctx, env);
     } else {
-      return await forwardRequest(request, pathWithParams, env);
+      response = await forwardRequest(request, pathWithParams, env);
     }
+    return addCorsHeaders(response);
   } catch (error) {
     const logger = createLogger({ component: "beat" });
     logger.error("Error in handleRequest", error as Error);
-    return new Response("Internal Server Error", { status: 500 });
+    return new Response("Internal Server Error", {
+      status: 500,
+      headers: CORS_HEADERS,
+    });
   }
 }
 
