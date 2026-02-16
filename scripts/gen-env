@@ -129,31 +129,8 @@ if [ $fail -eq 1 ]; then
   exit 1
 fi
 
-# Inject 1Password references, then quote any multiline values.
-# op inject can expand a single-line op:// reference into a multiline value;
-# dotenv (.dev.vars) requires multiline values to be double-quoted.
-printf "%s" "$result" | op --account plotco inject | awk '
-  function flush() {
-    if (key == "") return
-    if (multiline)
-      printf "%s=\"%s\"\n", key, val
-    else
-      printf "%s=%s\n", key, val
-  }
-  /^[a-zA-Z_][a-zA-Z0-9_]*=/ {
-    flush()
-    eq = index($0, "=")
-    key = substr($0, 1, eq - 1)
-    val = substr($0, eq + 1)
-    multiline = 0
-    next
-  }
-  {
-    val = val "\n" $0
-    multiline = 1
-  }
-  END { flush() }
-'
+# Inject 1Password references.
+printf "%s" "$result" | op --account plotco inject
 
 # Generate key.properties for Android production builds
 if [ "$ENV" = "production" ]; then

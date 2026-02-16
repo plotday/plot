@@ -32,7 +32,7 @@ export async function getUser(
 ): Promise<GetUserResult> {
   try {
     const claims = await verifyToken(token, {
-      jwtKey: jwtKey.replace(/^"|"$/g, ""),
+      jwtKey: atob(jwtKey),
     });
     const clerkId = claims.sub;
 

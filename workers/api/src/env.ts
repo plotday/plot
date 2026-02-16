@@ -87,7 +87,7 @@ export type Bindings = {
 
   // Clerk authentication
   readonly CLERK_SECRET_KEY: string;
-  readonly CLERK_JWT_KEY: string; // PEM public key for networkless JWT verification
+  readonly CLERK_JWT_KEY: string; // Base64-encoded PEM public key for networkless JWT verification
   readonly CLERK_WEBHOOK_SIGNING_SECRET: string;
 
   readonly AUTH_GOOGLE_ID: string;

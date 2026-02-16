@@ -83,7 +83,7 @@ export class Broadcast extends DurableObject<Bindings> {
 
     try {
       const claims = await verifyToken(access_token, {
-        jwtKey: this.env.CLERK_JWT_KEY.replace(/^"|"$/g, ""),
+        jwtKey: atob(this.env.CLERK_JWT_KEY),
       });
 
       // Get the user's UUID from Clerk external_id (set during activation)
