@@ -75,13 +75,9 @@
         "RELEASE": "\"dev\"",
         "PACKAGE": "\"api\""
       },
-      "hyperdrive": [
-        {
-          "binding": "HYPERDRIVE",
-          "id": "placeholder-dev",
-          "localConnectionString": "postgresql://postgres:postgres@localhost:54322/postgres"
-        }
-      ],
+      "vars": {
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:54322/postgres"
+      },
       "kv_namespaces": [
         {
           "binding": "TWIST_CONFIG",
@@ -270,7 +266,7 @@
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",
-          "id": "placeholder-prod",
+          "id": "831ea7d10ef54346b084baaa1a46dfa6",
           "localConnectionString": "postgresql://postgres:postgres@localhost:54322/postgres"
         }
       ],

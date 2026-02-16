@@ -9,11 +9,13 @@ import type { Bindings } from "./env";
 export type { DB };
 export { sql };
 
-/** Create a Kysely instance from Hyperdrive. Call once per request. */
+/** Create a Kysely instance from Hyperdrive or direct connection. Call once per request. */
 export function createDb(env: Bindings) {
-  const pool = new pg.Pool({
-    connectionString: env.HYPERDRIVE.connectionString,
-  });
+  const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("No database connection: set HYPERDRIVE or DATABASE_URL");
+  }
+  const pool = new pg.Pool({ connectionString });
 
   // Prevent pool-level errors from crashing the worker.
   // Query errors are still propagated via promise rejections.

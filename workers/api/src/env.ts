@@ -80,7 +80,8 @@ export type TwistBatchMessage = {
 export type QueueMessage = RunMessage | TwistBatchMessage | LogMessage;
 
 export type Bindings = {
-  readonly HYPERDRIVE: Hyperdrive;
+  readonly HYPERDRIVE?: Hyperdrive;
+  readonly DATABASE_URL?: string;
   readonly POSTHOG_API_KEY: string;
   readonly POSTHOG_HOST: string;
 
