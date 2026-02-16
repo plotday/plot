@@ -31,7 +31,9 @@ export async function getUser(
   jwtKey: string
 ): Promise<GetUserResult> {
   try {
-    const claims = await verifyToken(token, { jwtKey });
+    const claims = await verifyToken(token, {
+      jwtKey: jwtKey.replace(/^"|"$/g, ""),
+    });
     const clerkId = claims.sub;
 
     // Check external_id first (set during activation via Clerk's updateUser)
