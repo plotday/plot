@@ -90,7 +90,7 @@ export async function getUser(
       error: null,
     };
   } catch (error) {
-    // JWT verification failed
+    console.error("JWT verification failed:", error);
     return { user: null, claims: null, error };
   }
 }

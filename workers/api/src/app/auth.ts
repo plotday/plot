@@ -50,12 +50,13 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
 
   const authHeader = c.req.header("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
+    console.warn(`Auth rejected: missing Bearer token on ${c.req.method} ${c.req.path}`);
     return c.json({ message: "Unauthorized" }, 401);
   }
   const access_token = authHeader.replace(/\s*Bearer\s+/, "");
 
   // Validate Clerk JWT using local PEM key (no network call)
-  const { user, claims } = await getUser(
+  const { user, claims, error } = await getUser(
     c.var.db,
     access_token,
     c.env.CLERK_JWT_KEY
@@ -72,5 +73,9 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     return next();
   }
 
+  console.warn(
+    `Auth rejected on ${c.req.method} ${c.req.path}:`,
+    error ? `JWT error: ${error}` : "no user and no claims"
+  );
   return c.json({ message: "Unauthorized" }, 401);
 };
