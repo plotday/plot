@@ -343,11 +343,12 @@ export class CallbacksState extends DurableObject<Bindings> {
       };
     }
 
-    // Fetch twist metadata including environment
+    // Fetch twist metadata including environment and twist_package_id (for log routing)
     const twistMeta = await this.db
       .selectFrom("twist")
-      .select("environment")
-      .where("id", "=", priorityTwist.twist_id)
+      .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+      .select(["twist.environment", "twist_admin.twist_package_id"])
+      .where("twist.id", "=", priorityTwist.twist_id)
       .executeTakeFirst();
 
     // If twist was deleted, clean up callback and return
@@ -398,7 +399,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       },
       {
         env: this.env,
-        id: String(priorityTwist.twist_id),
+        id: twistMeta.twist_package_id,
         version: callback.version,
         environment: twistMeta.environment,
       }
