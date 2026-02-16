@@ -146,7 +146,7 @@ jobs:
         run: |
           atlas migrate apply \
             --dir "file://migrations" \
-            --url "postgres://migrator:${MIGRATOR_PASSWORD}@localhost:5432/plot"
+            --url "postgres://migrator:${MIGRATOR_PASSWORD}@localhost:5432/plot?sslmode=disable"
 
   deploy:
     needs: [check-changes, migrate]
