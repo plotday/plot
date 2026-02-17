@@ -15,6 +15,7 @@ import {
   type NewActivityWithNotes,
   type NewNote,
   Serializable,
+  type SyncToolOptions,
 } from "@plotday/twister";
 import type {
   Project,
@@ -59,6 +60,8 @@ type SyncState = {
 export class Linear extends Tool<Linear> implements ProjectTool {
   static readonly PROVIDER = AuthProvider.Linear;
   static readonly SCOPES = ["read", "write", "admin"];
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
 
   build(build: ToolBuilder) {
     return {
@@ -102,17 +105,58 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Called when a syncable resource is enabled for syncing
+   * Called when a syncable resource is enabled for syncing.
+   * Creates callback tokens from options and auto-starts sync.
    */
   async onSyncEnabled(syncable: Syncable): Promise<void> {
     await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        { meta: { syncProvider: "linear", syncableId: syncable.id } }
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
+    }
+
+    // Auto-start sync: setup webhook and begin batch sync
+    await this.setupLinearWebhook(syncable.id);
+    await this.startBatchSync(syncable.id);
   }
 
   /**
-   * Called when a syncable resource is disabled
+   * Called when a syncable resource is disabled.
+   * Runs the disable callback, then cleans up all stored state.
    */
   async onSyncDisabled(syncable: Syncable): Promise<void> {
     await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.tools.callbacks.delete(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.tools.callbacks.delete(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
     await this.clear(`sync_enabled_${syncable.id}`);
   }
 
@@ -154,7 +198,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       callback,
       ...extraArgs
     );
-    await this.set(`callback_${projectId}`, callbackToken);
+    await this.set(`item_callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
     await this.startBatchSync(projectId, { timeMin });
@@ -245,7 +289,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     // Retrieve callback token from storage
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (!callbackToken) {
       throw new Error(`Callback token not found for project ${projectId}`);
     }
@@ -275,6 +319,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       );
 
       if (activity) {
+        // Inject sync metadata for bulk operations (e.g. disable filtering)
+        activity.meta = { ...activity.meta, syncProvider: "linear", syncableId: projectId };
         // Execute the callback using the callback token
         await this.tools.callbacks.run(callbackToken, activity);
       }
@@ -627,7 +673,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     // Get callback token
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (!callbackToken) {
       console.warn("No callback token found for project:", projectId);
       return;
@@ -709,6 +755,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       meta: {
         linearId: issue.id,
         projectId,
+        syncProvider: "linear",
+        syncableId: projectId,
       },
       preview: issue.description || null,
     };
@@ -766,6 +814,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       meta: {
         linearId: issueId,
         projectId,
+        syncProvider: "linear",
+        syncableId: projectId,
       },
     };
 
@@ -791,11 +841,18 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     // Cleanup webhook secret
     await this.clear(`webhook_secret_${projectId}`);
 
-    // Cleanup callback
+    // Cleanup callback (legacy key for backward compatibility)
     const callbackToken = await this.get<Callback>(`callback_${projectId}`);
     if (callbackToken) {
       await this.deleteCallback(callbackToken);
       await this.clear(`callback_${projectId}`);
+    }
+
+    // Cleanup item callback (new key)
+    const itemCallbackToken = await this.get<Callback>(`item_callback_${projectId}`);
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${projectId}`);
     }
 
     // Cleanup sync state

@@ -13,6 +13,7 @@ import {
   type NewContact,
   type NewNote,
   Serializable,
+  type SyncToolOptions,
   Tag,
   Tool,
   type ToolBuilder,
@@ -115,6 +116,8 @@ export class OutlookCalendar
 {
   static readonly PROVIDER = AuthProvider.Microsoft;
   static readonly SCOPES = ["https://graph.microsoft.com/calendars.readwrite"];
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
 
   build(build: ToolBuilder) {
     return {
@@ -146,17 +149,74 @@ export class OutlookCalendar
 
   /**
    * Called when a syncable calendar is enabled for syncing.
+   * Creates callback tokens from options and auto-starts sync.
    */
   async onSyncEnabled(syncable: Syncable): Promise<void> {
     await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem option
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if the parent provided one
+    if (this.options.onSyncableDisabled) {
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        { meta: { syncProvider: "microsoft", syncableId: syncable.id } }
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
+    }
+
+    // Auto-start sync: setup watch and queue first batch
+    await this.setupOutlookWatch(syncable.id);
+
+    // Determine default sync range (2 years into the past)
+    const now = new Date();
+    const min = new Date(now.getFullYear() - 2, 0, 1);
+
+    await this.set(`outlook_sync_state_${syncable.id}`, {
+      calendarId: syncable.id,
+      min,
+      sequence: 1,
+    } as SyncState);
+
+    const syncCallback = await this.callback(
+      this.syncOutlookBatch,
+      syncable.id,
+      true, // initialSync
+      1 // batchNumber
+    );
+    await this.runTask(syncCallback);
   }
 
   /**
    * Called when a syncable calendar is disabled.
+   * Cleans up callback tokens and stops sync.
    */
   async onSyncDisabled(syncable: Syncable): Promise<void> {
     await this.stopSync(syncable.id);
     await this.clear(`sync_enabled_${syncable.id}`);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.deleteCallback(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
   }
 
   private async getApi(calendarId: string): Promise<GraphApi> {
@@ -213,7 +273,7 @@ export class OutlookCalendar
       callback,
       ...extraArgs
     );
-    await this.set("event_callback_token", callbackToken);
+    await this.set(`item_callback_${calendarId}`, callbackToken);
 
     // Setup webhook for this calendar
     await this.setupOutlookWatch(calendarId);
@@ -337,7 +397,7 @@ export class OutlookCalendar
     }
 
     // Hoist callback token retrieval outside event loop - saves N-1 subrequests
-    const callbackToken = await this.get<Callback>("event_callback_token");
+    const callbackToken = await this.get<Callback>(`item_callback_${calendarId}`);
     if (!callbackToken) {
       console.warn("No callback token found, skipping event processing");
       return;
@@ -436,6 +496,7 @@ export class OutlookCalendar
               : new Date(),
             preview: "Cancelled",
             source,
+            meta: { syncProvider: "microsoft", syncableId: calendarId },
             notes: [cancelNote],
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
@@ -587,7 +648,7 @@ export class OutlookCalendar
         const activityWithNotes: NewActivityWithNotes = {
           ...activity,
           author: authorContact,
-          meta: activity.meta,
+          meta: { ...activity.meta, syncProvider: "microsoft", syncableId: calendarId },
           tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
           notes,
           preview: hasDescription ? outlookEvent.body!.content! : null,
@@ -644,6 +705,7 @@ export class OutlookCalendar
       const occurrenceUpdate = {
         type: ActivityType.Event,
         source: masterCanonicalUrl,
+        meta: { syncProvider: "microsoft", syncableId: calendarId },
         start: start,
         end: end,
         addRecurrenceExdates: [new Date(originalStart)],
@@ -718,6 +780,7 @@ export class OutlookCalendar
     const occurrenceUpdate = {
       type: ActivityType.Event,
       source: masterCanonicalUrl,
+      meta: { syncProvider: "microsoft", syncableId: calendarId },
       occurrences: [occurrence],
     };
 

@@ -2,6 +2,7 @@ import * as asana from "asana";
 
 import {
   type Activity,
+  type ActivityFilter,
   type ActivityLink,
   ActivityLinkType,
   ActivityMeta,
@@ -10,6 +11,7 @@ import {
   type NewActivityWithNotes,
   type NewNote,
   type Serializable,
+  type SyncToolOptions,
 } from "@plotday/twister";
 import type {
   Project,
@@ -46,6 +48,8 @@ type SyncState = {
 export class Asana extends Tool<Asana> implements ProjectTool {
   static readonly PROVIDER = AuthProvider.Asana;
   static readonly SCOPES = ["default"];
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
 
   build(build: ToolBuilder) {
     return {
@@ -93,17 +97,61 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   }
 
   /**
-   * Handle syncable enabled
+   * Called when a syncable project is enabled for syncing.
+   * Creates callback tokens from options and auto-starts sync.
    */
   async onSyncEnabled(syncable: Syncable): Promise<void> {
     await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const filter: ActivityFilter = {
+        meta: { syncProvider: "asana", syncableId: syncable.id },
+      };
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        filter
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
+    }
+
+    // Auto-start sync: setup webhook and begin batch sync
+    await this.setupAsanaWebhook(syncable.id);
+    await this.startBatchSync(syncable.id);
   }
 
   /**
-   * Handle syncable disabled
+   * Called when a syncable project is disabled.
+   * Stops sync, runs disable callback, and cleans up stored tokens.
    */
   async onSyncDisabled(syncable: Syncable): Promise<void> {
     await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.deleteCallback(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
     await this.clear(`sync_enabled_${syncable.id}`);
   }
 
@@ -160,7 +208,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       callback,
       ...extraArgs
     );
-    await this.set(`callback_${projectId}`, callbackToken);
+    await this.set(`item_callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
     await this.startBatchSync(projectId, { timeMin });
@@ -247,7 +295,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     }
 
     // Retrieve callback token from storage
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (!callbackToken) {
       throw new Error(`Callback token not found for project ${projectId}`);
     }
@@ -400,6 +448,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       meta: {
         taskGid: task.gid,
         projectId,
+        syncProvider: "asana",
+        syncableId: projectId,
       },
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned tasks
@@ -551,7 +601,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     }
 
     // Get callback token (needed by both handlers)
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (!callbackToken) {
       console.warn("No callback token found for project:", projectId);
       return;
@@ -656,6 +706,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         meta: {
           taskGid: task.gid,
           projectId,
+          syncProvider: "asana",
+          syncableId: projectId,
         },
         author: authorContact,
         assignee: assigneeContact ?? null,
@@ -739,6 +791,8 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         meta: {
           taskGid,
           projectId,
+          syncProvider: "asana",
+          syncableId: projectId,
         },
       };
 
@@ -765,10 +819,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     }
 
     // Cleanup callback
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (callbackToken) {
       await this.deleteCallback(callbackToken);
-      await this.clear(`callback_${projectId}`);
+      await this.clear(`item_callback_${projectId}`);
     }
 
     // Cleanup sync state

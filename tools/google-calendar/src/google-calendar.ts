@@ -13,6 +13,7 @@ import {
   type NewContact,
   type NewNote,
   Serializable,
+  type SyncToolOptions,
   Tag,
   Tool,
   type ToolBuilder,
@@ -124,6 +125,8 @@ export class GoogleCalendar
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
     "https://www.googleapis.com/auth/calendar.events",
   ];
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
 
   build(build: ToolBuilder) {
     return {
@@ -168,18 +171,90 @@ export class GoogleCalendar
 
   /**
    * Called when a syncable calendar is enabled for syncing.
+   * Creates callback tokens and auto-starts sync for the calendar.
    */
   async onSyncEnabled(syncable: Syncable): Promise<void> {
-    // Store the syncable ID for later use (e.g., webhook handling)
-    await this.set(`sync_enabled_${syncable.id}`, true);
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback token if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        { meta: { syncProvider: "google", syncableId: syncable.id } }
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
+    }
+
+    // Resolve "primary" to actual calendar ID for consistent storage keys
+    const resolvedCalendarId = await this.resolveCalendarId(syncable.id);
+
+    // Check if sync is already in progress
+    const syncInProgress = await this.get<boolean>(
+      `sync_lock_${resolvedCalendarId}`
+    );
+    if (syncInProgress) {
+      return;
+    }
+
+    // Set sync lock
+    await this.set(`sync_lock_${resolvedCalendarId}`, true);
+
+    // Setup webhook for this calendar
+    await this.setupCalendarWatch(resolvedCalendarId);
+
+    // Default sync range: 2 years back
+    const now = new Date();
+    const min = new Date(now.getFullYear() - 2, 0, 1);
+
+    const initialState: SyncState = {
+      calendarId: resolvedCalendarId,
+      min,
+      max: null,
+      sequence: 1,
+    };
+
+    await this.set(`sync_state_${resolvedCalendarId}`, initialState);
+
+    // Start first sync batch
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "full",
+      resolvedCalendarId,
+      true // initialSync = true
+    );
+    await this.runTask(syncCallback);
   }
 
   /**
    * Called when a syncable calendar is disabled.
+   * Stops sync, runs the disable callback, and cleans up stored tokens.
    */
   async onSyncDisabled(syncable: Syncable): Promise<void> {
     await this.stopSync(syncable.id);
-    await this.clear(`sync_enabled_${syncable.id}`);
+
+    // Run and clean up the disable callback if it exists
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.tools.callbacks.delete(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up the item callback token
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.tools.callbacks.delete(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
   }
 
   private async getApi(calendarId: string): Promise<GoogleApi> {
@@ -617,7 +692,13 @@ export class GoogleCalendar
     initialSync: boolean
   ): Promise<void> {
     // Hoist callback token retrieval outside loop - saves N-1 subrequests
-    const callbackToken = await this.get<Callback>("event_callback_token");
+    // Try per-syncable key first, fall back to legacy key for backward compatibility
+    let callbackToken = await this.get<Callback>(
+      `item_callback_${calendarId}`
+    );
+    if (!callbackToken) {
+      callbackToken = await this.get<Callback>("event_callback_token");
+    }
     if (!callbackToken) {
       console.warn("No callback token found, skipping event processing");
       return;
@@ -690,6 +771,9 @@ export class GoogleCalendar
               ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
               ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
             };
+
+            // Inject sync metadata for the parent to identify the source
+            activity.meta = { ...activity.meta, syncProvider: "google", syncableId: calendarId };
 
             // Send activity - database handles upsert automatically
             await this.tools.callbacks.run(callbackToken, activity);
@@ -828,6 +912,9 @@ export class GoogleCalendar
                 ? { type: ActivityType.Event, ...shared }
                 : { type: ActivityType.Note, ...shared };
 
+          // Inject sync metadata for the parent to identify the source
+          activity.meta = { ...activity.meta, syncProvider: "google", syncableId: calendarId };
+
           // Send activity - database handles upsert automatically
           await this.tools.callbacks.run(callbackToken, activity);
         }
@@ -887,6 +974,7 @@ export class GoogleCalendar
         source: masterCanonicalUrl,
         start: start,
         end: end,
+        meta: { syncProvider: "google", syncableId: calendarId },
         addRecurrenceExdates: [new Date(originalStartTime)],
       };
 
@@ -955,6 +1043,7 @@ export class GoogleCalendar
     const occurrenceUpdate = {
       type: ActivityType.Event,
       source: masterCanonicalUrl,
+      meta: { syncProvider: "google", syncableId: calendarId },
       occurrences: [occurrence],
     };
 

@@ -1,4 +1,9 @@
-import { type Actor, type Priority } from "./plot";
+import {
+  type Actor,
+  type ActivityFilter,
+  type NewActivityWithNotes,
+  type Priority,
+} from "./plot";
 import type { Callback } from "./tools/callbacks";
 import type {
   InferOptions,
@@ -9,6 +14,21 @@ import type {
 } from "./utils/types";
 
 export type { ToolBuilder };
+
+/**
+ * Options for tools that sync activities from external services.
+ *
+ * @example
+ * ```typescript
+ * static readonly Options: SyncToolOptions;
+ * ```
+ */
+export type SyncToolOptions = {
+  /** Callback invoked for each synced item. The tool adds sync metadata before passing it. */
+  onItem: (item: NewActivityWithNotes) => Promise<void>;
+  /** Callback invoked when a syncable is disabled, receiving an ActivityFilter for bulk operations. */
+  onSyncableDisabled?: (filter: ActivityFilter) => Promise<void>;
+};
 
 /**
  * Abstrtact parent for both built-in tools and regular Tools.

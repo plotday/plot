@@ -1,5 +1,6 @@
 import GoogleContacts from "@plotday/tool-google-contacts";
 import {
+  type ActivityFilter,
   type ActivityLink,
   ActivityLinkType,
   ActivityKind,
@@ -8,6 +9,7 @@ import {
   type NewContact,
   type NewNote,
   Serializable,
+  type SyncToolOptions,
   Tag,
   Tool,
   type ToolBuilder,
@@ -67,6 +69,8 @@ export class GoogleDrive
   implements DocumentTool
 {
   static readonly PROVIDER = AuthProvider.Google;
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/drive",
   ];
@@ -110,16 +114,79 @@ export class GoogleDrive
 
   /**
    * Called when a syncable folder is enabled for syncing.
+   * Creates callback tokens from options and auto-starts sync.
    */
   async onSyncEnabled(syncable: Syncable): Promise<void> {
     await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const filter: ActivityFilter = {
+        meta: { syncProvider: "google", syncableId: syncable.id },
+      };
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        filter
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
+    }
+
+    // Auto-start sync: setup watch and queue first batch
+    await this.set(`sync_lock_${syncable.id}`, true);
+
+    const api = await this.getApi(syncable.id);
+    const changesToken = await getChangesStartToken(api);
+
+    const initialState: SyncState = {
+      folderId: syncable.id,
+      changesToken,
+      sequence: 1,
+    };
+
+    await this.set(`sync_state_${syncable.id}`, initialState);
+    await this.setupDriveWatch(syncable.id);
+
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      syncable.id,
+      true // initialSync
+    );
+    await this.runTask(syncCallback);
   }
 
   /**
    * Called when a syncable folder is disabled.
+   * Stops sync, runs disable callback, and cleans up stored tokens.
    */
   async onSyncDisabled(syncable: Syncable): Promise<void> {
     await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.deleteCallback(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
     await this.clear(`sync_enabled_${syncable.id}`);
   }
 
@@ -177,7 +244,7 @@ export class GoogleDrive
       callback,
       ...extraArgs
     );
-    await this.set(`callback_${folderId}`, callbackToken);
+    await this.set(`item_callback_${folderId}`, callbackToken);
 
     // Get changes start token for future incremental syncs
     const api = await this.getApi(folderId);
@@ -226,7 +293,7 @@ export class GoogleDrive
     await this.clear(`drive_watch_${folderId}`);
     await this.clear(`sync_state_${folderId}`);
     await this.clear(`sync_lock_${folderId}`);
-    await this.clear(`callback_${folderId}`);
+    await this.clear(`item_callback_${folderId}`);
   }
 
   async addDocumentComment(
@@ -455,7 +522,7 @@ export class GoogleDrive
       const result = await listFilesInFolder(api, folderId, state.pageToken);
 
       // Process files in this batch
-      const callbackToken = await this.get<Callback>(`callback_${folderId}`);
+      const callbackToken = await this.get<Callback>(`item_callback_${folderId}`);
       if (!callbackToken) {
         console.warn("No callback token found, skipping file processing");
         return;
@@ -516,7 +583,7 @@ export class GoogleDrive
 
       console.log(`[GDRIVE] Incremental sync: ${result.changes.length} changes, token=${changesToken.substring(0, 20)}...`);
 
-      const callbackToken = await this.get<Callback>(`callback_${folderId}`);
+      const callbackToken = await this.get<Callback>(`item_callback_${folderId}`);
       if (!callbackToken) {
         console.warn("No callback token found, skipping incremental sync");
         await this.clear(`sync_lock_${folderId}`);
@@ -672,6 +739,8 @@ export class GoogleDrive
         folderId,
         mimeType: file.mimeType,
         webViewLink: file.webViewLink || null,
+        syncProvider: "google",
+        syncableId: folderId,
       },
       notes,
       preview: file.description || null,

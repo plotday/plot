@@ -9,6 +9,7 @@ import {
   type NewActivityWithNotes,
   NewContact,
   Serializable,
+  type SyncToolOptions,
 } from "@plotday/twister";
 import type {
   Project,
@@ -44,6 +45,8 @@ type SyncState = {
 export class Jira extends Tool<Jira> implements ProjectTool {
   static readonly PROVIDER = AuthProvider.Atlassian;
   static readonly SCOPES = ["read:jira-work", "write:jira-work", "read:jira-user"];
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
 
   build(build: ToolBuilder) {
     return {
@@ -105,17 +108,54 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   }
 
   /**
-   * Handle syncable resource being enabled
+   * Handle syncable resource being enabled.
+   * Creates callback tokens for the sync lifecycle and auto-starts sync.
    */
   async onSyncEnabled(syncable: Syncable): Promise<void> {
     await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem handler
+    const itemCallback = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallback);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const disableCallback = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        { meta: { syncProvider: "atlassian", syncableId: syncable.id } }
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallback);
+    }
+
+    // Auto-start sync: setup webhook and queue first batch
+    await this.setupJiraWebhook(syncable.id);
+    await this.startBatchSync(syncable.id);
   }
 
   /**
-   * Handle syncable resource being disabled
+   * Handle syncable resource being disabled.
+   * Stops sync, runs disable callback, and cleans up all stored tokens.
    */
   async onSyncDisabled(syncable: Syncable): Promise<void> {
     await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallback = await this.get<Callback>(`disable_callback_${syncable.id}`);
+    if (disableCallback) {
+      await this.tools.callbacks.run(disableCallback);
+      await this.deleteCallback(disableCallback);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallback = await this.get<Callback>(`item_callback_${syncable.id}`);
+    if (itemCallback) {
+      await this.deleteCallback(itemCallback);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
     await this.clear(`sync_enabled_${syncable.id}`);
   }
 
@@ -161,7 +201,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       callback,
       ...extraArgs
     );
-    await this.set(`callback_${projectId}`, callbackToken);
+    await this.set(`item_callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
     await this.startBatchSync(projectId, { timeMin });
@@ -241,7 +281,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     }
 
     // Retrieve callback token from storage
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (!callbackToken) {
       throw new Error(`Callback token not found for project ${projectId}`);
     }
@@ -283,6 +323,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       );
       // Set unread based on sync type (false for initial sync to avoid notification overload)
       activityWithNotes.unread = !state.initialSync;
+      // Inject sync metadata for filtering on disable
+      activityWithNotes.meta = { ...activityWithNotes.meta, syncProvider: "atlassian", syncableId: projectId };
       // Execute the callback using the callback token
       await this.tools.callbacks.run(callbackToken, activityWithNotes);
     }
@@ -629,7 +671,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     const payload = request.body as any;
 
     // Get callback token (needed by both handlers)
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (!callbackToken) {
       console.warn("No callback token found for project:", projectId);
       return;
@@ -822,10 +864,10 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     await this.clear(`webhook_id_${projectId}`);
 
     // Cleanup callback
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (callbackToken) {
       await this.deleteCallback(callbackToken);
-      await this.clear(`callback_${projectId}`);
+      await this.clear(`item_callback_${projectId}`);
     }
 
     // Cleanup sync state

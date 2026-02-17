@@ -1,6 +1,8 @@
 import {
+  type ActivityFilter,
   type NewActivityWithNotes,
   Serializable,
+  type SyncToolOptions,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -80,6 +82,8 @@ import {
  */
 export class Gmail extends Tool<Gmail> implements MessagingTool {
   static readonly PROVIDER = AuthProvider.Google;
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.modify",
@@ -126,10 +130,65 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
   async onSyncEnabled(syncable: Syncable): Promise<void> {
     await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const filter: ActivityFilter = {
+        meta: { syncProvider: "google", syncableId: syncable.id },
+      };
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        filter
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
+    }
+
+    // Auto-start sync: setup webhook and queue first batch
+    await this.setupChannelWebhook(syncable.id);
+
+    const initialState: SyncState = {
+      channelId: syncable.id,
+    };
+
+    await this.set(`sync_state_${syncable.id}`, initialState);
+
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "full",
+      syncable.id
+    );
+    await this.run(syncCallback);
   }
 
   async onSyncDisabled(syncable: Syncable): Promise<void> {
     await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.deleteCallback(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
     await this.clear(`sync_enabled_${syncable.id}`);
   }
 
@@ -198,7 +257,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
       callback,
       ...extraArgs
     );
-    await this.set(`thread_callback_token_${channelId}`, callbackToken);
+    await this.set(`item_callback_${channelId}`, callbackToken);
 
     // Setup webhook for this channel (Gmail Push Notifications)
     await this.setupChannelWebhook(channelId);
@@ -240,7 +299,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     await this.clear(`sync_state_${channelId}`);
 
     // Clear callback token
-    await this.clear(`thread_callback_token_${channelId}`);
+    await this.clear(`item_callback_${channelId}`);
   }
 
   private async setupChannelWebhook(channelId: string): Promise<void> {
@@ -322,7 +381,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     channelId: string
   ): Promise<void> {
     const callbackToken = await this.get<Callback>(
-      `thread_callback_token_${channelId}`
+      `item_callback_${channelId}`
     );
 
     if (!callbackToken) {
@@ -336,6 +395,9 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
         const activityThread = transformGmailThread(thread);
 
         if (activityThread.notes.length === 0) continue;
+
+        // Inject sync metadata for the parent to identify the source
+        activityThread.meta = { ...activityThread.meta, syncProvider: "google", syncableId: channelId };
 
         // Call parent callback with the thread (contacts will be created by the API)
         await this.run(callbackToken, activityThread);

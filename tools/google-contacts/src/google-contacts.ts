@@ -14,7 +14,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 
-import type { GoogleContacts as IGoogleContacts } from "./types";
+import type { GoogleContacts as IGoogleContacts, GoogleContactsOptions } from "./types";
 
 type ContactTokens = {
   connections?: {
@@ -257,6 +257,8 @@ export default class GoogleContacts
   static readonly id = "google-contacts";
 
   static readonly PROVIDER = AuthProvider.Google;
+  static readonly Options: GoogleContactsOptions;
+  declare readonly Options: GoogleContactsOptions;
 
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/contacts.readonly",
@@ -284,12 +286,43 @@ export default class GoogleContacts
     return [{ id: "contacts", title: "Contacts" }];
   }
 
-  async onSyncEnabled(_syncable: Syncable): Promise<void> {
-    // Syncable is now enabled; sync will start when startSync is called
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Auto-start sync
+    const token = await this.tools.integrations.get(
+      GoogleContacts.PROVIDER,
+      syncable.id
+    );
+    if (!token) {
+      throw new Error("No Google authentication token available");
+    }
+
+    const initialState: ContactSyncState = {
+      more: false,
+    };
+
+    await this.set(`sync_state:${syncable.id}`, initialState);
+
+    const syncCallback = await this.callback(this.syncBatch, 1, syncable.id);
+    await this.run(syncCallback);
   }
 
   async onSyncDisabled(syncable: Syncable): Promise<void> {
     await this.stopSync(syncable.id);
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
   }
 
   async getContacts(syncableId: string): Promise<NewContact[]> {
@@ -330,7 +363,7 @@ export default class GoogleContacts
       callback,
       ...extraArgs
     );
-    await this.set(`contacts_callback_token:${syncableId}`, callbackToken);
+    await this.set(`item_callback_${syncableId}`, callbackToken);
 
     // Start initial sync
     const initialState: ContactSyncState = {
@@ -347,7 +380,7 @@ export default class GoogleContacts
   async stopSync(syncableId: string): Promise<void> {
     // Clear sync state for this specific syncable
     await this.clear(`sync_state:${syncableId}`);
-    await this.clear(`contacts_callback_token:${syncableId}`);
+    await this.clear(`item_callback_${syncableId}`);
   }
 
   async syncBatch(batchNumber: number, syncableId: string): Promise<void> {
@@ -402,7 +435,7 @@ export default class GoogleContacts
     syncableId: string
   ): Promise<void> {
     const callbackToken = await this.get<Callback>(
-      `contacts_callback_token:${syncableId}`
+      `item_callback_${syncableId}`
     );
     if (callbackToken) {
       await this.run(callbackToken, contacts);
