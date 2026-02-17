@@ -1,8 +1,8 @@
 import GoogleContacts from "@plotday/tool-google-contacts";
 import {
   type Activity,
-  type ActivityLink,
   ActivityLinkType,
+  type ActivityLink,
   type ActivityOccurrence,
   ActivityType,
   type ActorId,
@@ -19,15 +19,16 @@ import {
 } from "@plotday/twister";
 import {
   type Calendar,
-  type CalendarAuth,
   type CalendarTool,
   type SyncOptions,
 } from "@plotday/twister/common/calendar";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
+  type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
@@ -46,13 +47,6 @@ import {
   transformGoogleEvent,
 } from "./google-api";
 
-type PendingSyncItem = {
-  type: "rsvp";
-  calendarId: string;
-  eventId: string;
-  status: "accepted" | "declined" | "tentative" | "needsAction";
-  activityId: string;
-};
 
 /**
  * Google Calendar integration tool.
@@ -125,6 +119,7 @@ export class GoogleCalendar
   extends Tool<GoogleCalendar>
   implements CalendarTool
 {
+  static readonly PROVIDER = AuthProvider.Google;
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
     "https://www.googleapis.com/auth/calendar.events",
@@ -132,7 +127,20 @@ export class GoogleCalendar
 
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
+      integrations: build(Integrations, {
+        providers: [
+          {
+            provider: GoogleCalendar.PROVIDER,
+            scopes: Integrations.MergeScopes(
+              GoogleCalendar.SCOPES,
+              GoogleContacts.SCOPES
+            ),
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
+      }),
       network: build(Network, {
         urls: ["https://www.googleapis.com/calendar/*"],
       }),
@@ -149,48 +157,37 @@ export class GoogleCalendar
     };
   }
 
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: CalendarAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    // Combine calendar and contacts scopes for single OAuth flow
-    const combinedScopes = [...GoogleCalendar.SCOPES, ...GoogleContacts.SCOPES];
-
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request auth and return the activity link
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Google,
-        scopes: combinedScopes,
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  /**
+   * Returns available calendars as syncable resources after authorization.
+   */
+  async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+    const api = new GoogleApi(token.token);
+    const calendars = await this.listCalendarsWithApi(api);
+    return calendars.map((c) => ({ id: c.id, title: c.name }));
   }
 
-  private async getApi(authToken: string): Promise<GoogleApi> {
-    // Try new pattern: authToken is the actorId directly
-    let token = await this.tools.integrations.get(
-      AuthProvider.Google,
-      authToken as ActorId
-    );
+  /**
+   * Called when a syncable calendar is enabled for syncing.
+   */
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    // Store the syncable ID for later use (e.g., webhook handling)
+    await this.set(`sync_enabled_${syncable.id}`, true);
+  }
 
-    // Fall back to legacy opaque token pattern for existing callbacks
-    if (!token) {
-      const authorization = await this.get<Authorization>(
-        `authorization:${authToken}`
-      );
-      if (authorization) {
-        token = await this.tools.integrations.get(
-          authorization.provider,
-          authorization.actor.id
-        );
-      }
-    }
+  /**
+   * Called when a syncable calendar is disabled.
+   */
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+    await this.clear(`sync_enabled_${syncable.id}`);
+  }
+
+  private async getApi(calendarId: string): Promise<GoogleApi> {
+    // Get token for the syncable (calendar) from integrations
+    const token = await this.tools.integrations.get(
+      GoogleCalendar.PROVIDER,
+      calendarId
+    );
 
     if (!token) {
       throw new Error("Authorization no longer available");
@@ -199,8 +196,29 @@ export class GoogleCalendar
     return new GoogleApi(token.token);
   }
 
-  private async getUserEmail(authToken: string): Promise<string> {
-    const api = await this.getApi(authToken);
+  private async listCalendarsWithApi(api: GoogleApi): Promise<Calendar[]> {
+    const data = (await api.call(
+      "GET",
+      "https://www.googleapis.com/calendar/v3/users/me/calendarList"
+    )) as {
+      items: Array<{
+        id: string;
+        summary: string;
+        description?: string;
+        primary?: boolean;
+      }>;
+    };
+
+    return data.items.map((item) => ({
+      id: item.id,
+      name: item.summary,
+      description: item.description || null,
+      primary: item.primary || false,
+    }));
+  }
+
+  private async getUserEmail(calendarId: string): Promise<string> {
+    const api = await this.getApi(calendarId);
 
     // Use the Calendar API's primary calendar to get the email
     const calendarList = (await api.call(
@@ -211,7 +229,7 @@ export class GoogleCalendar
     return calendarList.id; // The primary calendar ID is the user's email
   }
 
-  private async ensureUserIdentity(authToken: string): Promise<string> {
+  private async ensureUserIdentity(calendarId: string): Promise<string> {
     // Check if we already have the user email stored
     const stored = await this.get<string>("user_email");
     if (stored) {
@@ -219,7 +237,7 @@ export class GoogleCalendar
     }
 
     // Fetch user email from Google
-    const email = await this.getUserEmail(authToken);
+    const email = await this.getUserEmail(calendarId);
 
     // Store for future use
     await this.set("user_email", email);
@@ -230,16 +248,13 @@ export class GoogleCalendar
    * Resolves "primary" calendar ID to the actual calendar ID (user's email).
    * Returns the calendarId unchanged if it's not "primary".
    */
-  private async resolveCalendarId(
-    authToken: string,
-    calendarId: string
-  ): Promise<string> {
+  private async resolveCalendarId(calendarId: string): Promise<string> {
     if (calendarId !== "primary") {
       return calendarId;
     }
 
     // Get actual calendar ID from Google
-    const api = await this.getApi(authToken);
+    const api = await this.getApi(calendarId);
     const calendar = (await api.call(
       "GET",
       `https://www.googleapis.com/calendar/v3/calendars/primary`
@@ -275,19 +290,15 @@ export class GoogleCalendar
     TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       calendarId: string;
     } & SyncOptions,
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, calendarId, timeMin, timeMax } = options;
+    const { calendarId, timeMin, timeMax } = options;
 
     // Resolve "primary" to actual calendar ID to ensure consistent storage keys
-    const resolvedCalendarId = await this.resolveCalendarId(
-      authToken,
-      calendarId
-    );
+    const resolvedCalendarId = await this.resolveCalendarId(calendarId);
 
     // Check if sync is already in progress for this calendar
     const syncInProgress = await this.get<boolean>(
@@ -307,28 +318,21 @@ export class GoogleCalendar
     );
     await this.set("event_callback_token", callbackToken);
 
-    // Store auth token for calendar for later RSVP updates
-    await this.set(`auth_token_${resolvedCalendarId}`, authToken);
-
     // Setup webhook for this calendar
-    await this.setupCalendarWatch(authToken, resolvedCalendarId, authToken);
+    await this.setupCalendarWatch(resolvedCalendarId);
 
     // Determine sync range
-    let min: Date | undefined;
+    let min: Date | null;
     if (timeMin === null) {
-      // null means sync all history
-      min = undefined;
+      min = null;
     } else if (timeMin !== undefined) {
-      // User provided a specific minimum date
       min = timeMin;
     } else {
-      // Default to 2 years into the past
       const now = new Date();
       min = new Date(now.getFullYear() - 2, 0, 1);
     }
 
-    // Handle timeMax (null means no limit, same as undefined)
-    let max: Date | undefined;
+    let max: Date | null = null;
     if (timeMax !== null && timeMax !== undefined) {
       max = timeMax;
     }
@@ -342,62 +346,39 @@ export class GoogleCalendar
 
     await this.set(`sync_state_${resolvedCalendarId}`, initialState);
 
-    // Start sync batch using run tool for long-running operation
+    // Start sync batch
     const syncCallback = await this.callback(
       this.syncBatch,
       1,
       "full",
-      authToken,
       resolvedCalendarId,
-      true // initialSync = true for initial sync
+      true // initialSync = true
     );
     await this.runTask(syncCallback);
   }
 
-  async stopSync(_authToken: string, calendarId: string): Promise<void> {
-    // Get auth token first so we can resolve the calendar ID
-    let authToken = await this.get<string>(`auth_token_${calendarId}`);
-
-    // Resolve calendar ID to handle "primary" alias
-    let resolvedCalendarId = calendarId;
-    if (authToken) {
-      try {
-        resolvedCalendarId = await this.resolveCalendarId(
-          authToken,
-          calendarId
-        );
-      } catch (error) {
-        console.warn(
-          "Failed to resolve calendar ID, using provided value",
-          error
-        );
-      }
-    }
-
+  async stopSync(calendarId: string): Promise<void> {
     // 1. Cancel scheduled renewal task
     const renewalTask = await this.get<string>(
-      `watch_renewal_task_${resolvedCalendarId}`
+      `watch_renewal_task_${calendarId}`
     );
     if (renewalTask) {
       await this.cancelTask(renewalTask);
-      await this.clear(`watch_renewal_task_${resolvedCalendarId}`);
+      await this.clear(`watch_renewal_task_${calendarId}`);
     }
 
-    // 2. Stop watch via Google API
-    if (authToken) {
-      try {
-        await this.stopCalendarWatch(authToken, resolvedCalendarId);
-      } catch (error) {
-        console.error("Failed to stop calendar watch:", error);
-        // Continue with cleanup even if API call fails
-      }
+    // 2. Stop watch via Google API (best effort)
+    try {
+      await this.stopCalendarWatch(calendarId);
+    } catch (error) {
+      console.error("Failed to stop calendar watch:", error);
     }
 
     // 3. Clear sync-related storage
-    await this.clear(`calendar_watch_${resolvedCalendarId}`);
-    await this.clear(`sync_state_${resolvedCalendarId}`);
-    await this.clear(`sync_lock_${resolvedCalendarId}`);
-    // NOTE: We keep auth_token_${resolvedCalendarId} so RSVP callbacks on existing activities continue to work
+    await this.clear(`calendar_watch_${calendarId}`);
+    await this.clear(`sync_state_${calendarId}`);
+    await this.clear(`sync_lock_${calendarId}`);
+    await this.clear(`auth_token_${calendarId}`);
   }
 
   /**
@@ -407,15 +388,15 @@ export class GoogleCalendar
    * @private
    */
   private async stopCalendarWatch(
-    authToken: string,
-    calendarId: string
+    calendarId: string,
+    existingApi?: GoogleApi
   ): Promise<void> {
     const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
     if (!watchData) {
       return;
     }
 
-    const api = await this.getApi(authToken);
+    const api = existingApi ?? (await this.getApi(calendarId));
 
     // Call Google Calendar API to stop the watch
     // https://developers.google.com/calendar/api/v3/reference/channels/stop
@@ -479,15 +460,6 @@ export class GoogleCalendar
    */
   private async renewCalendarWatch(calendarId: string): Promise<void> {
     try {
-      // Get auth token
-      const authToken = await this.get<string>(`auth_token_${calendarId}`);
-      if (!authToken) {
-        console.error(
-          `No auth token found for calendar ${calendarId}, cannot renew watch`
-        );
-        return;
-      }
-
       // Get existing watch data
       const oldWatchData = await this.get<any>(`calendar_watch_${calendarId}`);
       if (!oldWatchData) {
@@ -499,30 +471,23 @@ export class GoogleCalendar
 
       // Stop the old watch (best effort - don't fail if this errors)
       try {
-        await this.stopCalendarWatch(authToken, calendarId);
+        await this.stopCalendarWatch(calendarId);
       } catch (error) {
         console.warn(`Failed to stop old watch for ${calendarId}:`, error);
-        // Continue with renewal anyway
       }
 
-      // Create new watch (reuses existing webhook URL and callback)
-      await this.setupCalendarWatch(authToken, calendarId, authToken);
+      // Create new watch
+      await this.setupCalendarWatch(calendarId);
     } catch (error) {
       console.error(`Failed to renew watch for calendar ${calendarId}:`, error);
-      // Don't throw - let reactive checking handle it as fallback
     }
   }
 
-  private async setupCalendarWatch(
-    authToken: string,
-    calendarId: string,
-    opaqueAuthToken: string
-  ): Promise<void> {
+  private async setupCalendarWatch(calendarId: string): Promise<void> {
     const webhookUrl = await this.tools.network.createWebhook(
       {},
       this.onCalendarWebhook,
-      calendarId,
-      opaqueAuthToken
+      calendarId
     );
 
     // Check if webhook URL is localhost
@@ -531,7 +496,7 @@ export class GoogleCalendar
     }
 
     try {
-      const api = await this.getApi(authToken);
+      const api = await this.getApi(calendarId);
 
       // Setup watch for calendar
       const watchId = crypto.randomUUID();
@@ -571,24 +536,21 @@ export class GoogleCalendar
   async syncBatch(
     batchNumber: number,
     mode: "full" | "incremental",
-    authToken: string,
     calendarId: string,
     initialSync: boolean
   ): Promise<void> {
     try {
       // Ensure we have the user's identity for RSVP tagging
       if (batchNumber === 1) {
-        await this.ensureUserIdentity(authToken);
+        await this.ensureUserIdentity(calendarId);
       }
 
       const state = await this.get<SyncState>(`sync_state_${calendarId}`);
       if (!state) {
-        // Check if sync lock is also cleared - if so, sync completed normally
         const syncLock = await this.get<boolean>(`sync_lock_${calendarId}`);
         if (!syncLock) {
-          // Both state and lock are cleared - sync completed normally, this is a stale callback
+          // Both state and lock are cleared - sync completed normally, stale callback
         } else {
-          // State missing but lock still set - sync may have been superseded
           console.warn(
             `No sync state found for calendar ${calendarId}, sync may have been superseded`
           );
@@ -601,8 +563,11 @@ export class GoogleCalendar
       if (state.min && typeof state.min === "string") {
         state.min = new Date(state.min);
       }
+      if (state.max && typeof state.max === "string") {
+        state.max = new Date(state.max);
+      }
 
-      const api = await this.getApi(authToken);
+      const api = await this.getApi(calendarId);
       const result = await syncGoogleCalendar(api, calendarId, state);
 
       if (result.events.length > 0) {
@@ -620,9 +585,8 @@ export class GoogleCalendar
           this.syncBatch,
           batchNumber + 1,
           mode,
-          authToken,
           calendarId,
-          initialSync // Pass through the initialSync boolean
+          initialSync
         );
         await this.runTask(syncCallback);
       } else {
@@ -999,11 +963,8 @@ export class GoogleCalendar
 
   async onCalendarWebhook(
     request: WebhookRequest,
-    calendarId: string,
-    authToken: string
+    calendarId: string
   ): Promise<void> {
-    // Validate webhook authenticity
-    // Headers are normalized to lowercase by HTTP standards
     const channelId = request.headers["x-goog-channel-id"];
     const channelToken = request.headers["x-goog-channel-token"];
 
@@ -1026,14 +987,13 @@ export class GoogleCalendar
       return;
     }
 
-    // Reactive expiry check (backup for missed scheduled renewal)
+    // Reactive expiry check
     const expiration = new Date(watchData.expiry);
     const now = new Date();
     const hoursUntilExpiry =
       (expiration.getTime() - now.getTime()) / (1000 * 60 * 60);
 
     if (hoursUntilExpiry < 24) {
-      // Don't await - let renewal happen async (don't block webhook)
       this.renewCalendarWatch(calendarId).catch((error) => {
         console.error(
           `Failed to reactively renew watch for ${calendarId}:`,
@@ -1042,15 +1002,10 @@ export class GoogleCalendar
       });
     }
 
-    // Trigger incremental sync
-    await this.startIncrementalSync(calendarId, authToken);
+    await this.startIncrementalSync(calendarId);
   }
 
-  private async startIncrementalSync(
-    calendarId: string,
-    authToken: string
-  ): Promise<void> {
-    // Check if initial sync is still in progress
+  private async startIncrementalSync(calendarId: string): Promise<void> {
     const syncInProgress = await this.get<boolean>(`sync_lock_${calendarId}`);
     if (syncInProgress) {
       return;
@@ -1070,9 +1025,8 @@ export class GoogleCalendar
           state: syncToken,
         }
       : {
-          // No stored sync token - fall back to recent time window
           calendarId: watchData.calendarId,
-          min: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
+          min: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
           sequence: 1,
         };
 
@@ -1081,62 +1035,10 @@ export class GoogleCalendar
       this.syncBatch,
       1,
       "incremental",
-      authToken,
       calendarId,
-      false // initialSync = false for incremental updates
+      false
     );
     await this.runTask(syncCallback);
-  }
-
-  async onAuthSuccess(
-    authResult: Authorization,
-    callbackToken: Callback
-  ): Promise<void> {
-    // Use actor ID as the auth token — integrations.get(provider, actorId) is all we need
-    const actorId = authResult.actor.id as string;
-
-    // Trigger contacts sync with the same authorization
-    // This happens automatically when calendar auth succeeds
-    try {
-      const token = await this.tools.integrations.get(
-        authResult.provider,
-        authResult.actor.id
-      );
-      if (token) {
-        await this.tools.googleContacts.syncWithAuth(
-          authResult,
-          token,
-          this.onContactsSynced
-        );
-      } else {
-        console.error("Failed to retrieve auth token for contacts sync");
-      }
-    } catch (error) {
-      // Log error but don't fail calendar auth
-      console.error("Failed to start contacts sync:", error);
-    }
-
-    const authSuccessResult: CalendarAuth = {
-      authToken: actorId,
-    };
-
-    await this.run(callbackToken, authSuccessResult);
-  }
-
-  /**
-   * Callback invoked when contacts are synced from Google Contacts.
-   * Adds the synced contacts to Plot for enriching calendar event attendees.
-   */
-  async onContactsSynced(contacts: NewContact[]): Promise<void> {
-    if (contacts.length === 0) {
-      return;
-    }
-
-    try {
-      await this.tools.plot.addContacts(contacts);
-    } catch (error) {
-      console.error("Failed to add contacts to Plot:", error);
-    }
   }
 
   /**
@@ -1286,40 +1188,20 @@ export class GoogleCalendar
         );
       }
 
-      // For each actor who changed RSVP, try to sync with their credentials
+      // For each actor who changed RSVP, use actAs() to sync with their credentials.
+      // If the actor has auth, the callback fires immediately.
+      // If not, actAs() creates a private auth note automatically.
       for (const actorId of actorIds) {
-        const token = await this.tools.integrations.get(
-          AuthProvider.Google,
-          actorId
+        await this.tools.integrations.actAs(
+          GoogleCalendar.PROVIDER,
+          actorId,
+          activity.id,
+          this.syncActorRSVP,
+          calendarId as string,
+          eventId,
+          newStatus,
+          actorId as string
         );
-
-        if (token) {
-          // Actor has auth — sync their RSVP directly
-          try {
-            const api = new GoogleApi(token.token);
-            await this.updateEventRSVPWithApi(
-              api,
-              calendarId,
-              eventId,
-              newStatus,
-              actorId
-            );
-          } catch (error) {
-            console.error("[RSVP Sync] Failed to update RSVP for actor", {
-              actor_id: actorId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        } else {
-          // Actor lacks auth — queue pending sync and create auth request
-          await this.queuePendingSync(actorId, {
-            type: "rsvp",
-            calendarId,
-            eventId,
-            status: newStatus,
-            activityId: activity.id,
-          });
-        }
       }
     } catch (error) {
       console.error("[RSVP Sync] Error in callback", {
@@ -1331,99 +1213,32 @@ export class GoogleCalendar
   }
 
   /**
-   * Queue a pending write-back action for an unauthenticated actor.
-   * Creates a private auth-request activity if one doesn't exist (deduped by source).
+   * Sync RSVP for an actor. If the actor has auth, this is called immediately.
+   * If not, actAs() creates a private auth note and calls this when they authorize.
    */
-  private async queuePendingSync(
-    actorId: ActorId,
-    action: PendingSyncItem
+  async syncActorRSVP(
+    token: AuthToken,
+    calendarId: string,
+    eventId: string,
+    status: "accepted" | "declined" | "tentative" | "needsAction",
+    actorId: string
   ): Promise<void> {
-    // Add to pending queue
-    const key = `pending_sync:${actorId}`;
-    const pending = (await this.get<PendingSyncItem[]>(key)) || [];
-    pending.push(action);
-    await this.set(key, pending);
-
-    // Create auth-request activity (upsert by source to dedup)
-    const authLink = await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Google,
-        scopes: GoogleCalendar.SCOPES,
-      },
-      this.onActorAuth,
-      actorId as string
-    );
-
-    await this.tools.plot.createActivity({
-      source: `auth:${actorId}`,
-      type: ActivityType.Action,
-      title: "Connect your Google Calendar",
-      private: true,
-      start: new Date(),
-      end: null,
-      notes: [
-        {
-          content:
-            "To sync your RSVP responses, please connect your Google Calendar.",
-          links: [authLink],
-          mentions: [{ id: actorId }],
-        },
-      ],
-    });
-  }
-
-  /**
-   * Callback for when an additional user authorizes.
-   * Applies any pending write-back actions. Does NOT start a sync.
-   */
-  async onActorAuth(
-    authorization: Authorization,
-    actorIdStr: string
-  ): Promise<void> {
-    const actorId = actorIdStr as ActorId;
-    const key = `pending_sync:${actorId}`;
-    const pending = await this.get<PendingSyncItem[]>(key);
-
-    if (!pending || pending.length === 0) {
-      return;
-    }
-
-    const token = await this.tools.integrations.get(
-      authorization.provider,
-      authorization.actor.id
-    );
-    if (!token) {
-      console.error("[RSVP Sync] Failed to get token after actor auth", {
+    try {
+      const api = new GoogleApi(token.token);
+      await this.updateEventRSVPWithApi(
+        api,
+        calendarId,
+        eventId,
+        status,
+        actorId as ActorId
+      );
+    } catch (error) {
+      console.error("[RSVP Sync] Failed to sync RSVP", {
         actor_id: actorId,
+        event_id: eventId,
+        error: error instanceof Error ? error.message : String(error),
       });
-      return;
     }
-
-    const api = new GoogleApi(token.token);
-
-    // Apply pending write-backs
-    for (const item of pending) {
-      if (item.type === "rsvp") {
-        try {
-          await this.updateEventRSVPWithApi(
-            api,
-            item.calendarId,
-            item.eventId,
-            item.status,
-            actorId
-          );
-        } catch (error) {
-          console.error("[RSVP Sync] Failed to apply pending RSVP", {
-            actor_id: actorId,
-            event_id: item.eventId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    }
-
-    // Clear pending queue
-    await this.clear(key);
   }
 
   /**

@@ -6,7 +6,6 @@ import {
   ActivityLinkType,
   ActivityMeta,
   ActivityType,
-  type ActorId,
   type NewActivity,
   type NewActivityWithNotes,
   type NewNote,
@@ -14,7 +13,6 @@ import {
 } from "@plotday/twister";
 import type {
   Project,
-  ProjectAuth,
   ProjectSyncOptions,
   ProjectTool,
 } from "@plotday/twister/common/projects";
@@ -23,8 +21,10 @@ import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
+  type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
@@ -44,9 +44,20 @@ type SyncState = {
  * with Plot activities.
  */
 export class Asana extends Tool<Asana> implements ProjectTool {
+  static readonly PROVIDER = AuthProvider.Asana;
+  static readonly SCOPES = ["default"];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
+      integrations: build(Integrations, {
+        providers: [{
+          provider: Asana.PROVIDER,
+          scopes: Asana.SCOPES,
+          getSyncables: this.getSyncables,
+          onSyncEnabled: this.onSyncEnabled,
+          onSyncDisabled: this.onSyncDisabled,
+        }],
+      }),
       network: build(Network, { urls: ["https://app.asana.com/*"] }),
       callbacks: build(Callbacks),
       tasks: build(Tasks),
@@ -57,69 +68,50 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   /**
    * Create Asana API client with auth token
    */
-  private async getClient(authToken: string): Promise<asana.Client> {
-    // Try new flow: look up by provider + actor ID
-    let token = await this.tools.integrations.get(AuthProvider.Asana, authToken as ActorId);
-
-    // Fall back to legacy authorization lookup
+  private async getClient(projectId: string): Promise<asana.Client> {
+    const token = await this.tools.integrations.get(Asana.PROVIDER, projectId);
     if (!token) {
-      const authorization = await this.get<Authorization>(
-        `authorization:${authToken}`
-      );
-      if (!authorization) {
-        throw new Error("Authorization no longer available");
-      }
-
-      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
-      if (!token) {
-        throw new Error("Authorization no longer available");
-      }
+      throw new Error("No Asana authentication token available");
     }
-
     return asana.Client.create().useAccessToken(token.token);
   }
 
   /**
-   * Request Asana OAuth authorization
+   * Returns available Asana projects as syncable resources.
    */
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: ProjectAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    const asanaScopes = ["default"];
-
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request auth and return the activity link
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Asana,
-        scopes: asanaScopes,
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+    const client = asana.Client.create().useAccessToken(token.token);
+    const workspaces = await client.workspaces.getWorkspaces();
+    const allProjects: Syncable[] = [];
+    for (const workspace of workspaces.data) {
+      const projects = await client.projects.findByWorkspace(workspace.gid, { limit: 100 });
+      for (const project of projects.data) {
+        allProjects.push({ id: project.gid, title: project.name });
+      }
+    }
+    return allProjects;
   }
 
   /**
-   * Handle successful OAuth authorization
+   * Handle syncable enabled
    */
-  private async onAuthSuccess(
-    authorization: Authorization,
-    callbackToken: Callback
-  ): Promise<void> {
-    // Execute the callback with the actor ID as auth token
-    await this.run(callbackToken, { authToken: authorization.actor.id as string });
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    await this.set(`sync_enabled_${syncable.id}`, true);
+  }
+
+  /**
+   * Handle syncable disabled
+   */
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+    await this.clear(`sync_enabled_${syncable.id}`);
   }
 
   /**
    * Get list of Asana projects
    */
-  async getProjects(authToken: string): Promise<Project[]> {
-    const client = await this.getClient(authToken);
+  async getProjects(projectId: string): Promise<Project[]> {
+    const client = await this.getClient(projectId);
 
     // Get user's workspaces first
     const workspaces = await client.workspaces.getWorkspaces();
@@ -153,16 +145,15 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     TCallback extends (task: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       projectId: string;
     } & ProjectSyncOptions,
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, projectId, timeMin } = options;
+    const { projectId, timeMin } = options;
 
     // Setup webhook for real-time updates
-    await this.setupAsanaWebhook(authToken, projectId);
+    await this.setupAsanaWebhook(projectId);
 
     // Store callback for webhook processing
     const callbackToken = await this.tools.callbacks.createFromParent(
@@ -172,25 +163,23 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     await this.set(`callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
-    await this.startBatchSync(authToken, projectId, { timeMin });
+    await this.startBatchSync(projectId, { timeMin });
   }
 
   /**
    * Setup Asana webhook for real-time updates
    */
   private async setupAsanaWebhook(
-    authToken: string,
     projectId: string
   ): Promise<void> {
     try {
-      const client = await this.getClient(authToken);
+      const client = await this.getClient(projectId);
 
       // Create webhook URL first
       const webhookUrl = await this.tools.network.createWebhook(
         {},
         this.onWebhook,
-        projectId,
-        authToken
+        projectId
       );
 
       // Skip webhook setup for localhost (development mode)
@@ -224,7 +213,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Initialize batch sync process
    */
   private async startBatchSync(
-    authToken: string,
     projectId: string,
     options?: ProjectSyncOptions
   ): Promise<void> {
@@ -239,7 +227,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     // Queue first batch
     const batchCallback = await this.callback(
       this.syncBatch,
-      authToken,
       projectId,
       options
     );
@@ -251,7 +238,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    * Process a batch of tasks
    */
   private async syncBatch(
-    authToken: string,
     projectId: string,
     options?: ProjectSyncOptions
   ): Promise<void> {
@@ -266,7 +252,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       throw new Error(`Callback token not found for project ${projectId}`);
     }
 
-    const client = await this.getClient(authToken);
+    const client = await this.getClient(projectId);
 
     // Build request params
     const batchSize = 50;
@@ -336,7 +322,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       // Queue next batch
       const nextBatch = await this.callback(
         this.syncBatch,
-        authToken,
         projectId,
         options
       );
@@ -430,17 +415,20 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   /**
    * Update task with new values
    *
-   * @param authToken - Authorization token
    * @param activity - The updated activity
    */
-  async updateIssue(authToken: string, activity: Activity): Promise<void> {
-    // Extract Asana task GID from meta
+  async updateIssue(activity: Activity): Promise<void> {
+    // Extract Asana task GID and project ID from meta
     const taskGid = activity.meta?.taskGid as string | undefined;
     if (!taskGid) {
       throw new Error("Asana task GID not found in activity meta");
     }
+    const projectId = activity.meta?.projectId as string | undefined;
+    if (!projectId) {
+      throw new Error("Asana project ID not found in activity meta");
+    }
 
-    const client = await this.getClient(authToken);
+    const client = await this.getClient(projectId);
     const updateFields: any = {};
 
     // Handle title
@@ -465,12 +453,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   /**
    * Add a comment (story) to an Asana task
    *
-   * @param authToken - Authorization token
-   * @param meta - Activity metadata containing taskGid
+   * @param meta - Activity metadata containing taskGid and projectId
    * @param body - Comment text (markdown not directly supported, plain text)
    */
   async addIssueComment(
-    authToken: string,
     meta: ActivityMeta,
     body: string
   ): Promise<string | void> {
@@ -478,7 +464,11 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     if (!taskGid) {
       throw new Error("Asana task GID not found in activity meta");
     }
-    const client = await this.getClient(authToken);
+    const projectId = meta.projectId as string | undefined;
+    if (!projectId) {
+      throw new Error("Asana project ID not found in activity meta");
+    }
+    const client = await this.getClient(projectId);
 
     const result = await client.tasks.addComment(taskGid, {
       text: body,
@@ -532,8 +522,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    */
   private async onWebhook(
     request: WebhookRequest,
-    projectId: string,
-    authToken: string
+    projectId: string
   ): Promise<void> {
     const payload = request.body as any;
 
@@ -580,7 +569,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
             await this.handleStoryWebhook(
               event,
               projectId,
-              authToken,
               callbackToken
             );
           } else {
@@ -588,7 +576,6 @@ export class Asana extends Tool<Asana> implements ProjectTool {
             await this.handleTaskWebhook(
               event,
               projectId,
-              authToken,
               callbackToken
             );
           }
@@ -603,11 +590,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   private async handleTaskWebhook(
     event: any,
     projectId: string,
-    authToken: string,
     callbackToken: Callback
   ): Promise<void> {
 
-    const client = await this.getClient(authToken);
+    const client = await this.getClient(projectId);
 
     try {
       // Fetch only task metadata (no stories)
@@ -692,11 +678,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   private async handleStoryWebhook(
     event: any,
     projectId: string,
-    authToken: string,
     callbackToken: Callback
   ): Promise<void> {
 
-    const client = await this.getClient(authToken);
+    const client = await this.getClient(projectId);
     const taskGid = event.resource.gid;
 
     try {
@@ -766,12 +751,12 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   /**
    * Stop syncing an Asana project
    */
-  async stopSync(authToken: string, projectId: string): Promise<void> {
+  async stopSync(projectId: string): Promise<void> {
     // Delete webhook
     const webhookId = await this.get<string>(`webhook_id_${projectId}`);
     if (webhookId) {
       try {
-        const client = await this.getClient(authToken);
+        const client = await this.getClient(projectId);
         await client.webhooks.deleteById(webhookId);
       } catch (error) {
         console.warn("Failed to delete Asana webhook:", error);

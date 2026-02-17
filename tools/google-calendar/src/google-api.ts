@@ -68,8 +68,8 @@ export type SyncState = {
   calendarId: string;
   state?: string;
   more?: boolean;
-  min?: Date;
-  max?: Date;
+  min?: Date | null;
+  max?: Date | null;
   sequence?: number;
 };
 
