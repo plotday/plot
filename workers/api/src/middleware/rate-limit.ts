@@ -60,9 +60,8 @@ const createRateLimitHandler = (
       "unknown";
 
     logger.warn(`${limiterType} rate limit exceeded`, { ip, ...context });
-    c.var.postHog?.captureException(
+    c.var.tracker?.captureException(
       new Error(`${limiterType} rate limit exceeded`),
-      undefined,
       {
         ...context,
         ip,

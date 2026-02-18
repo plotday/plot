@@ -208,7 +208,7 @@ share.post("/priority/:id/share", async (c) => {
               logger.error("Email send rejected", error, {
                 contact_id: contactId,
               });
-              c.var.postHog.captureException(error, undefined, {
+              c.var.tracker.captureException(error, {
                 contact_id: contactId,
                 priority_id: priorityId,
                 inviter_user_id: user.id,
@@ -221,7 +221,7 @@ share.post("/priority/:id/share", async (c) => {
                 contact_id: contactId,
                 error_message: result.value.error,
               });
-              c.var.postHog.captureException(error, undefined, {
+              c.var.tracker.captureException(error, {
                 contact_id: contactId,
                 priority_id: priorityId,
                 inviter_user_id: user.id,
@@ -235,7 +235,7 @@ share.post("/priority/:id/share", async (c) => {
           const logger = createLogger({ component: "share" });
           const err = error instanceof Error ? error : new Error(String(error));
           logger.error("Unexpected error sending invitation emails", err);
-          c.var.postHog.captureException(err, undefined, {
+          c.var.tracker.captureException(err, {
             priority_id: priorityId,
             inviter_user_id: user.id,
             error_context: "invitation_email_unexpected_error",

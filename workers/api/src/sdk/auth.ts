@@ -1,10 +1,10 @@
 import type { Kysely } from "kysely";
 import type { MiddlewareHandler } from "hono";
-import type { PostHog } from "posthog-node";
 
 import { type DB, createDb } from "../db";
 import type { Bindings } from "../env";
 import type { AuthUser } from "../utils/auth";
+import type { Tracker } from "../utils/tracker";
 
 /**
  * Authentication middleware for SDK endpoints
@@ -48,9 +48,8 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   } catch (error) {
     // Transient database error — log and return 503
     console.error("Token lookup failed:", error);
-    c.var.postHog?.captureException(
+    c.var.tracker?.captureException(
       new Error(`Token lookup failed: ${error instanceof Error ? error.message : "Unknown error"}`),
-      undefined,
       { path: c.req.path }
     );
     return new Response("Service temporarily unavailable", { status: 503 });
@@ -82,9 +81,8 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     } catch (error) {
       // Transient database error — log and return 503
       console.error("User lookup failed:", error);
-      c.var.postHog?.captureException(
+      c.var.tracker?.captureException(
         new Error(`User lookup failed: ${error instanceof Error ? error.message : "Unknown error"}`),
-        undefined,
         { path: c.req.path }
       );
       return new Response("Service temporarily unavailable", { status: 503 });
@@ -122,9 +120,8 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     } catch (error) {
       // Transient database error — log and return 503
       console.error("Publisher lookup failed:", error);
-      c.var.postHog?.captureException(
+      c.var.tracker?.captureException(
         new Error(`Publisher lookup failed: ${error instanceof Error ? error.message : "Unknown error"}`),
-        undefined,
         { path: c.req.path }
       );
       return new Response("Service temporarily unavailable", { status: 503 });
@@ -157,7 +154,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
 
 declare module "hono" {
   interface ContextVariableMap {
-    postHog: PostHog;
+    tracker: Tracker;
     db: Kysely<DB>;
     user: AuthUser;
     userToken: {

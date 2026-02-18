@@ -1,14 +1,14 @@
 import type { Kysely } from "kysely";
 import type { MiddlewareHandler } from "hono";
-import type { PostHog } from "posthog-node";
 
 import { type DB, createDb } from "../db";
 import type { Bindings } from "../env";
 import { type AuthUser, type ClerkClaims, getUser } from "../utils/auth";
+import type { Tracker } from "../utils/tracker";
 
 declare module "hono" {
   interface ContextVariableMap {
-    postHog: PostHog;
+    tracker: Tracker;
     db: Kysely<DB>;
     user: AuthUser;
     /** Set when JWT is valid but user doesn't exist in DB (new user hitting /activate). */

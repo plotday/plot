@@ -2,6 +2,7 @@ import { Container } from "@cloudflare/containers";
 import { Hono } from "hono";
 import { PostHog } from "posthog-node";
 
+import { Tracker } from "./utils/tracker";
 import account from "./app/account";
 import invitation from "./app/invitation";
 import share from "./app/share";
@@ -18,7 +19,7 @@ import summary from "./app/summary";
 import updates from "./app/updates";
 import type { Bindings } from "./env";
 import { clientVersionMiddleware } from "./middleware/client-version";
-import { postHogIdentifyMiddleware } from "./middleware/posthog-identify";
+import { trackerIdentifyMiddleware } from "./middleware/posthog-identify";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { queue } from "./queue";
 import twist from "./sdk/twist";
@@ -64,19 +65,18 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use("*", requestIdMiddleware);
 app.use("*", clientVersionMiddleware);
 
-// Apply PostHog middleware
+// Create request-scoped tracker (wraps PostHog with optional distinctId)
 app.use("*", async (c, next) => {
   const postHog = new PostHog(c.env.POSTHOG_API_KEY, {
     host: c.env.POSTHOG_HOST,
     flushAt: 5,
     flushInterval: 10,
   });
-  c.set("postHog", postHog);
+  c.set("tracker", new Tracker(postHog));
   try {
     await next();
   } finally {
-    // This runs after response, even if there's an error
-    c.executionCtx.waitUntil(postHog.shutdown());
+    c.executionCtx.waitUntil(Promise.resolve(c.var.tracker.shutdown()));
   }
 });
 
@@ -96,7 +96,7 @@ app.onError(async (err, c) => {
     logger.error("Unhandled error in request", err, context);
 
     // Capture in PostHog with same context
-    c.var.postHog.captureException(err, undefined, {
+    c.var.tracker.captureException(err, {
       ...context,
       path: c.req.path,
       method: c.req.method,
@@ -133,7 +133,7 @@ appSection.use("*", async (c, next) => {
 });
 appSection.use(appCorsMiddleware);
 appSection.use("*", appAuthMiddleware);
-appSection.use("*", postHogIdentifyMiddleware);
+appSection.use("*", trackerIdentifyMiddleware);
 appSection.route("/", account);
 appSection.route("/", invitation);
 appSection.route("/", share);
@@ -151,14 +151,14 @@ appSection.route("/", files);
 const appSyncSection = new Hono<{ Bindings: Bindings }>();
 appSyncSection.use(appCorsMiddleware);
 appSyncSection.use("*", appSyncRateLimiter);
-appSyncSection.use("*", postHogIdentifyMiddleware);
+appSyncSection.use("*", trackerIdentifyMiddleware);
 appSyncSection.route("/", appSync);
 
 // SDK section - endpoints called by plot CLI
 const sdkSection = new Hono<{ Bindings: Bindings }>();
 sdkSection.use("*", generalRateLimiter);
 sdkSection.use("*", sdkAuthMiddleware);
-sdkSection.use("*", postHogIdentifyMiddleware);
+sdkSection.use("*", trackerIdentifyMiddleware);
 sdkSection.route("/", twist);
 sdkSection.route("/", priority);
 sdkSection.route("/", tokens);

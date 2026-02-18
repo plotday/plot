@@ -53,7 +53,7 @@ export function captureServerError(
     logger.error(message, err, context);
 
     // Capture in PostHog with same context
-    c.var.postHog.captureException(err, undefined, {
+    c.var.tracker.captureException(err, {
       ...context,
       path: c.req.path,
       method: c.req.method,
