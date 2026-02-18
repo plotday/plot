@@ -438,6 +438,9 @@ export default class extends WorkerEntrypoint {
 
       // Navigate through the tool tree to find the target tool and its options
       const { tool, options } = tools.getByPath(path);
+      if (!tool) {
+        throw new Error("Tool not found at path [" + path.join(" > ") + "]. The tool may have been removed or renamed.");
+      }
       const result = await callCallback(tool, functionName, ...args);
 
       // Handle dispatch-style returns from built-in tools.
