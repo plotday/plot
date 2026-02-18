@@ -4,7 +4,6 @@ import type { Kysely } from "kysely";
 import type { DB } from "../../db";
 import type { Bindings } from "../../env";
 import { createLogger } from "@plotday/worker-util";
-import { disposeRpc } from "../../utils/rpc";
 
 /**
  * Notify SyncNotify DO for a priority-scoped change.
@@ -16,13 +15,12 @@ export function notifySync(c: Context<{ Bindings: Bindings }>, priorityId: strin
       try {
         const syncNotifyId = c.env.SYNC_NOTIFY.idFromName(priorityId);
         const syncNotifyDO = c.env.SYNC_NOTIFY.get(syncNotifyId);
-        const result = await syncNotifyDO.fetch(
+        await syncNotifyDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
             body: JSON.stringify({ priorityId }),
           })
         );
-        disposeRpc(result);
       } catch (error) {
         const logger = createLogger({ operation: "notifySync" });
         logger.error("Error notifying SyncNotify DO", error as Error, {
@@ -43,13 +41,12 @@ export function notifyUserSync(c: Context<{ Bindings: Bindings }>, userId: strin
       try {
         const userSyncId = c.env.USER_SYNC.idFromName(userId);
         const userSyncDO = c.env.USER_SYNC.get(userSyncId);
-        const result = await userSyncDO.fetch(
+        await userSyncDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
             body: JSON.stringify({ id: userId }),
           })
         );
-        disposeRpc(result);
       } catch (error) {
         const logger = createLogger({ operation: "notifyUserSync" });
         logger.error("Error notifying UserSync DO", error as Error, {

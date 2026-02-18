@@ -14,7 +14,7 @@ export default function NewDeviceSignIn() {
         If you didn't sign in recently, your account may be compromised. Please
         change your password immediately and contact us at team@plot.day
       </Text>
-      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day.</Text>
     </EmailLayout>
   );
 }

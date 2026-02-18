@@ -14,7 +14,7 @@ export default function PasswordRemoved() {
         If you didn't make this change, please contact us immediately at
         team@plot.day
       </Text>
-      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day.</Text>
     </EmailLayout>
   );
 }

@@ -236,7 +236,7 @@ export async function createNote(
           (userId) => ({
             activity_id: activityId,
             user_id: userId,
-            read_at: dbResult.created_at,
+            read_at: dbResult.source_created_at,
           })
         );
 
@@ -270,7 +270,7 @@ export async function createNote(
         plot,
         authorId as string,
         activityId,
-        String(dbResult.created_at)
+        String(dbResult.source_created_at)
       );
     }
 

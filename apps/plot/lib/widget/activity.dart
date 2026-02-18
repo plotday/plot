@@ -66,7 +66,7 @@ class ActivityWidget extends StatelessWidget {
             Positioned(
               top: 0,
               bottom: 0,
-              left: 6,
+              left: (buildContext.theme.spacing.xl - 6) / 2,
               width: 6,
               child: UnreadIndicator(
                 color: activity.priority.displayColor,
@@ -75,7 +75,9 @@ class ActivityWidget extends StatelessWidget {
             ),
             Padding(
               padding: EdgeInsets.only(
-                left: buildContext.theme.spacing.md,
+                // Subtract FButton.icon's internal padding (7.5) so the
+                // visual icon edge aligns with the header text at xl.
+                left: buildContext.theme.spacing.xl - 7.5,
                 right: buildContext.theme.spacing.sm,
               ),
               child: Button.icon(
@@ -149,7 +151,7 @@ class ActivityWidget extends StatelessWidget {
         padding: EdgeInsets.only(
           right: (isTouchDevice && reorderableIndex != null)
               ? 0
-              : buildContext.theme.spacing.md,
+              : buildContext.theme.spacing.xl,
         ),
         child: ActivityCommands(
           activity: activity,

@@ -50,7 +50,7 @@ class FormTileLayout extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
                     label,
-                    style: context.theme.typography.xs.copyWith(
+                    style: context.theme.typography.sm.copyWith(
                       color: isActive
                           ? context.theme.colors.foreground
                           : context.theme.plotColors.muted,

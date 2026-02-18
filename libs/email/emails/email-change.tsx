@@ -19,7 +19,7 @@ export default function EmailChange({ code }: { code: string }) {
         email address will remain unchanged. If you're concerned about your
         account security, contact us at team@plot.day
       </Text>
-      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day.</Text>
     </EmailLayout>
   );
 }

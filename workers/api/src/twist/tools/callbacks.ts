@@ -48,6 +48,7 @@ export class Callbacks extends Tool implements ICallbackTool {
 
   async create(fn: Function, ...extraArgs: any[]): Promise<Callback> {
     const functionName = await getRpcFunctionName(fn);
+    disposeRpc(fn);
     if (!functionName) {
       throw new Error(
         "Cannot create callback: function has no name. Use named functions or methods."
@@ -60,14 +61,12 @@ export class Callbacks extends Tool implements ICallbackTool {
       functionName,
       extraArgs,
     });
-    // Dispose RPC result (token is a string primitive, safely ignored)
-    disposeRpc(token);
-
     return token as Callback;
   }
 
   async createFromParent(fn: Function, ...extraArgs: any[]): Promise<Callback> {
     const functionName = await getRpcFunctionName(fn);
+    disposeRpc(fn);
     if (!functionName) {
       throw new Error(
         "Cannot create callback: function has no name. Use named functions or methods."
@@ -80,9 +79,6 @@ export class Callbacks extends Tool implements ICallbackTool {
       functionName,
       extraArgs,
     });
-    // Dispose RPC result (token is a string primitive, safely ignored)
-    disposeRpc(token);
-
     return token as Callback;
   }
 
@@ -113,8 +109,13 @@ export class Callbacks extends Tool implements ICallbackTool {
    */
   async resolve(callback: Callback): Promise<ResolvedCallback | null> {
     const result = await this.callbacks.resolve(callback);
-    disposeRpc(result);
-    return result;
+    if (!result) return result;
+    const resolved = {
+      ...result,
+      path: [...result.path],
+      extraArgs: result.extraArgs ? [...result.extraArgs] : undefined,
+    };
+    return resolved;
   }
 
   /**
@@ -130,21 +131,18 @@ export class Callbacks extends Tool implements ICallbackTool {
    */
   async run(callback: Callback, ...args: any[]): Promise<any> {
     const result = await this.callbacks.callCallback(callback, ...(args ?? []));
-    disposeRpc(result);
     return result;
   }
 
   async delete(callback: Callback): Promise<void> {
-    const result = await this.callbacks.delete(callback);
-    disposeRpc(result);
+    await this.callbacks.delete(callback);
   }
 
   async deleteAll(): Promise<void> {
-    const result = await this.callbacks.deleteAll({
+    await this.callbacks.deleteAll({
       priorityTwistId: this.priorityTwistId,
       path: this.path,
     });
-    disposeRpc(result);
   }
 
   /**

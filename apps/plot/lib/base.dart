@@ -10,17 +10,13 @@ import 'package:plot/util/uuid.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/network_exception.dart';
 import 'env.dart';
 import 'cli_args.dart';
 import 'logging.dart';
 
 class User extends Equatable {
-  const User({
-    required this.id,
-    this.primaryEmail,
-    this.name,
-    this.contactId,
-  });
+  const User({required this.id, this.primaryEmail, this.name, this.contactId});
 
   final String id; // UUID from public."user"
   final String? primaryEmail;
@@ -82,7 +78,9 @@ class Base {
       // If Clerk has a session but local identity wasn't restored (e.g. first
       // sign-in with Clerk, or preferences were cleared), activate via API.
       if (!base._currentUserController.hasValue && authService.isSignedIn) {
-        log.info('Clerk session found without local identity, resolving identity');
+        log.info(
+          'Clerk session found without local identity, resolving identity',
+        );
         try {
           await Base.resolveIdentity();
         } catch (e, stack) {
@@ -130,9 +128,11 @@ class Base {
     final parts = token.split('.');
     if (parts.length != 3) return null;
     try {
-      final payload = jsonDecode(
-        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
-      ) as Map<String, dynamic>;
+      final payload =
+          jsonDecode(
+                utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+              )
+              as Map<String, dynamic>;
       final userId = payload['external_id'] as String?;
       final contactId = payload['contact_id'] as String?;
       if (userId == null || contactId == null) return null;
@@ -148,10 +148,41 @@ class Base {
     }
   }
 
-  /// Resolve identity: try JWT decode first, fall back to /activate.
-  /// After /activate, refresh the Clerk client so the cached JWT
-  /// picks up the newly-set publicMetadata (contact_id).
+  /// Resolve identity by calling /activate — server is the source of truth.
+  /// This handles stale JWTs (e.g. after a database reset) by always asking
+  /// the server for the correct user ID. Falls back to JWT on network error.
   static Future<void> resolveIdentity() async {
+    // Try /activate first — server is the source of truth for user identity.
+    try {
+      final result = await api.post<Map<String, dynamic>>('/activate');
+      final userId = result['userId'] as String;
+
+      await Injector.appInstance.get<Base>().setIdentity(
+        userId: userId,
+        email: result['email'] as String?,
+        name: result['name'] as String?,
+        contactId: result['contactId'] as String?,
+      );
+
+      // If the server assigned a different user ID than what's in the JWT,
+      // refresh the Clerk client so future JWTs have the correct external_id.
+      final jwtUser = await identityFromJwt();
+      if (jwtUser == null || jwtUser.id != userId) {
+        try {
+          await auth.refreshClient();
+        } catch (e) {
+          log.warning(
+            'Failed to refresh Clerk client after identity change: $e',
+          );
+        }
+      }
+      return;
+    } on NetworkException {
+      // Network unavailable — fall back to JWT identity
+      log.info('Cannot reach /activate, falling back to JWT identity');
+    }
+
+    // Fallback: use JWT claims directly (original fast path)
     final jwtUser = await identityFromJwt();
     if (jwtUser != null) {
       await Injector.appInstance.get<Base>().setIdentity(
@@ -162,14 +193,11 @@ class Base {
       );
       return;
     }
-    // New user or missing metadata — full activate
-    await activate();
-    // Refresh client so Clerk issues a fresh JWT with the new publicMetadata
-    try {
-      await auth.refreshClient();
-    } catch (e) {
-      log.warning('Failed to refresh Clerk client after activate (non-blocking)', e);
-    }
+
+    // Neither /activate nor JWT worked
+    throw Exception(
+      'Unable to resolve identity: /activate failed and JWT has no identity',
+    );
   }
 
   /// Signs out the current user explicitly.
@@ -247,7 +275,9 @@ class Base {
         contactId: storedContactId,
       );
 
-      log.info('Restored user identity from local storage: ${user.primaryEmail}');
+      log.info(
+        'Restored user identity from local storage: ${user.primaryEmail}',
+      );
       _currentUserController.add(user);
     }
   }

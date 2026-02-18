@@ -50,6 +50,7 @@ export 'time.dart';
 export 'toast.dart';
 export 'toggle.dart';
 export 'twist_details.dart';
+export 'twist_integrations.dart';
 export 'unread_indicator.dart';
 
 // Style exports

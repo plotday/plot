@@ -28,15 +28,15 @@ SELECT
                     AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
         THEN
             GREATEST (COALESCE(CASE WHEN ar.read_at >= (CASE WHEN a.created_by = upe.user_id THEN
-                                a.last_note_created_at
+                                a.last_note_source_created_at
                             ELSE
-                                COALESCE(a.last_note_created_at, a.created_at)
+                                COALESCE(a.last_note_source_created_at, a.source_created_at)
                             END) THEN
                         ar.updated_at
                     END, 'epoch'::timestamptz), CASE WHEN a.created_by = upe.user_id THEN
-                    COALESCE(a.last_note_created_at, 'epoch'::timestamptz)
+                    COALESCE(a.last_note_source_created_at, 'epoch'::timestamptz)
                 ELSE
-                    COALESCE(a.last_note_created_at, a.created_at)
+                    COALESCE(a.last_note_source_created_at, a.source_created_at)
                 END)
         ELSE
             'epoch'::timestamptz
@@ -117,9 +117,9 @@ SELECT
         THEN
             ar.read_at IS NULL
             OR ar.read_at < (CASE WHEN a.created_by = upe.user_id THEN
-                    a.last_note_created_at
+                    a.last_note_source_created_at
                 ELSE
-                    COALESCE(a.last_note_created_at, a.created_at)
+                    COALESCE(a.last_note_source_created_at, a.source_created_at)
                 END)
         ELSE
             FALSE

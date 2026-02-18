@@ -905,7 +905,7 @@ class DurationConverter extends TypeConverter<Duration, int>
 }
 
 class IntervalConverter extends TypeConverter<Duration, int>
-    with JsonTypeConverter2<Duration, int, String> {
+    with JsonTypeConverter2<Duration, int, Object> {
   const IntervalConverter();
 
   @override
@@ -919,12 +919,24 @@ class IntervalConverter extends TypeConverter<Duration, int>
   }
 
   @override
-  Duration fromJson(String json) {
-    return durationFromString(json);
+  Duration fromJson(Object json) {
+    if (json is String) {
+      return durationFromString(json);
+    }
+    if (json is Map) {
+      return Duration(
+        days: (json['days'] as num?)?.toInt() ?? 0,
+        hours: (json['hours'] as num?)?.toInt() ?? 0,
+        minutes: (json['minutes'] as num?)?.toInt() ?? 0,
+        seconds: (json['seconds'] as num?)?.toInt() ?? 0,
+        milliseconds: (json['milliseconds'] as num?)?.toInt() ?? 0,
+      );
+    }
+    throw FormatException('Invalid interval format: $json');
   }
 
   @override
-  String toJson(Duration value) {
+  Object toJson(Duration value) {
     return value.toDb();
   }
 }

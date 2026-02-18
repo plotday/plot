@@ -179,21 +179,21 @@ class ActivitiesBase extends BaseTable {
     for (final row in rows) {
       final activityRow = row as ActivityRow;
       // Check if local has a pending unread change
-      final local = await (store.select(store.activities)
-            ..where((t) => t.id.equals(activityRow.id.toBytes())))
-          .getSingleOrNull();
+      final local = await (store.select(
+        store.activities,
+      )..where((t) => t.id.equals(activityRow.id.toBytes()))).getSingleOrNull();
       if (local != null && local.unreadUpdated == true) {
         if (activityRow.unread == local.unread) {
           // Server confirms our local unread state - clear the pending flag
-          result.add(activityRow.copyWith(
-            unreadUpdated: const Value(null),
-          ));
+          result.add(activityRow.copyWith(unreadUpdated: const Value(null)));
         } else {
           // Server still has stale data - preserve local unread state
-          result.add(activityRow.copyWith(
-            unread: local.unread,
-            unreadUpdated: const Value(true),
-          ));
+          result.add(
+            activityRow.copyWith(
+              unread: local.unread,
+              unreadUpdated: const Value(true),
+            ),
+          );
         }
       } else {
         result.add(row);
@@ -380,10 +380,7 @@ class Activity extends Equatable implements Comparable<Activity> {
             .toList();
 
         for (final record in readRecords) {
-          await api.post<dynamic>(
-            '/sync/activity-read',
-            body: record,
-          );
+          await api.post<dynamic>('/sync/activity-read', body: record);
         }
       }
 

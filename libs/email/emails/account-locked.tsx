@@ -18,7 +18,7 @@ export default function AccountLocked() {
         If you didn't attempt to sign in, someone may be trying to access your
         account. We recommend changing your password as soon as possible.
       </Text>
-      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day.</Text>
     </EmailLayout>
   );
 }

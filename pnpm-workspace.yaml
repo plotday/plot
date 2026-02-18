@@ -8,7 +8,7 @@ packages:
   - public/twists/*
 
 onlyBuiltDependencies:
-  - "@posthog/cli"
+  - '@posthog/cli'
   - bufferutil
   - es5-ext
   - esbuild
@@ -17,3 +17,6 @@ onlyBuiltDependencies:
   - sharp
   - utf-8-validate
   - workerd
+
+patchedDependencies:
+  pg-cloudflare@1.3.0: patches/pg-cloudflare@1.3.0.patch

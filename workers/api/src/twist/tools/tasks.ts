@@ -128,8 +128,7 @@ export class Tasks extends Tool implements IRun {
           env.CALLBACKS,
           message.body.priorityTwistId
         );
-        // @ts-ignore - TypeScript type recursion workaround
-        await callbacks.callCallback(message.body.token);
+        using _result = await callbacks.callCallback(message.body.token);
         message.ack();
       } catch (error) {
         const context = extractRunQueueContext(message.body, batch.queue);

@@ -693,26 +693,32 @@ export async function prepareActivityForDb(
     };
 
     // Call find_matching_activities_scored with configured filters and scoring
-    const matchResult = await rpc(plot.db, "find_matching_activities_scored", {
-      query_embedding: embedding ? JSON.stringify(embedding) : "[]",
-      created_by_id: plot.priorityTwistId,
-      required_filters: requiredFilters,
-      scored_fields: scoredFields,
-      activity_data: activityData,
-      similarity_threshold: 0.7, // Strong match threshold for required content
-    });
-
-    const matchArray = Array.isArray(matchResult)
-      ? matchResult
-      : matchResult
-        ? [matchResult]
-        : [];
-    if (matchArray.length > 0) {
-      // Use the priority from the best matching activity
-      targetPriorityId = (matchArray[0] as any).priority_id;
-    } else {
-      // No matching activities found, use default
+    // Skip RPC when embedding is missing but content matching is required/scored
+    if (!embedding && (requiredFilters.content || scoredFields.content)) {
+      // Can't match on content without embedding, fall back to default
       targetPriorityId = plot.priorityId;
+    } else {
+      const matchResult = await rpc(plot.db, "find_matching_activities_scored", {
+        query_embedding: embedding ? JSON.stringify(embedding) : "[]",
+        created_by_id: plot.priorityTwistId,
+        required_filters: requiredFilters,
+        scored_fields: scoredFields,
+        activity_data: activityData,
+        similarity_threshold: 0.7, // Strong match threshold for required content
+      });
+
+      const matchArray = Array.isArray(matchResult)
+        ? matchResult
+        : matchResult
+          ? [matchResult]
+          : [];
+      if (matchArray.length > 0) {
+        // Use the priority from the best matching activity
+        targetPriorityId = (matchArray[0] as any).priority_id;
+      } else {
+        // No matching activities found, use default
+        targetPriorityId = plot.priorityId;
+      }
     }
   } else {
     // Explicit priority specified or use default

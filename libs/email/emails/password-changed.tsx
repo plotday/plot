@@ -7,14 +7,14 @@ export default function PasswordChanged() {
     <EmailLayout preview="Your Plot password has been changed">
       <Heading style={h1}>Your password has been changed</Heading>
       <Text style={text}>
-        The password for your Plot account was recently changed. If you made this
-        change, no further action is needed.
+        The password for your Plot account was recently changed. If you made
+        this change, no further action is needed.
       </Text>
       <Text style={hint}>
         If you didn't change your password, please reset it immediately and
         contact us at team@plot.day
       </Text>
-      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day.</Text>
     </EmailLayout>
   );
 }

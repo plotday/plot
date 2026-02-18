@@ -140,7 +140,7 @@ class _SelectTileState extends State<SelectTile> {
                 Expanded(
                   child: Text(
                     displayText,
-                    style: context.theme.typography.sm.copyWith(
+                    style: context.theme.typography.base.copyWith(
                       color: widget.enabled
                           ? (hasValue
                                 ? context.theme.colors.foreground

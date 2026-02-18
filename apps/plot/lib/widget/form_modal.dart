@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/style/spacing.dart';
+import 'icon.dart';
 import 'modal.dart';
 import 'logging.dart';
 
@@ -59,6 +62,8 @@ class FormModalState extends State<_FormModal> {
   int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
   final Map<FormButton, FormButtonController> _buttonControllers = {};
   final ScrollController _scrollController = ScrollController();
+  int _lastModalStackDepth = 0;
+  ValueNotifier<int>? _modalStackNotifier;
 
   @override
   void initState() {
@@ -67,7 +72,33 @@ class FormModalState extends State<_FormModal> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = ModalProvider.of(context).modalStackNotifier;
+    _lastModalStackDepth = notifier.value;
+    _modalStackNotifier?.removeListener(_onModalStackChanged);
+    _modalStackNotifier = notifier;
+    notifier.addListener(_onModalStackChanged);
+  }
+
+  void _onModalStackChanged() {
+    final newDepth = _modalStackNotifier!.value;
+    final previousDepth = _lastModalStackDepth;
+    _lastModalStackDepth = newDepth;
+
+    // A child modal was popped — restore focus to our highlighted item
+    if (newDepth < previousDepth && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _highlightedIndex < _focusNodes.length) {
+          _focusNodes[_highlightedIndex].requestFocus();
+        }
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _modalStackNotifier?.removeListener(_onModalStackChanged);
     // Remove listeners from text input controllers and select fields
     // Note: We don't dispose the controllers here because the FormItem instances
     // might be reused if another dialog (like SelectBar) was on top and closes.
@@ -366,7 +397,6 @@ class FormModalState extends State<_FormModal> {
     }
   }
 
-
   void _cancel() {
     Modal.pop<CommandReturn>(context, Value.absent());
   }
@@ -395,8 +425,13 @@ class FormModalState extends State<_FormModal> {
             // Intercept Tab/Shift-Tab to handle custom navigation
             if (event is KeyDownEvent) {
               if (event.logicalKey == LogicalKeyboardKey.tab) {
-                final isShiftPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftLeft) ||
-                    HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftRight);
+                final isShiftPressed =
+                    HardwareKeyboard.instance.logicalKeysPressed.contains(
+                      LogicalKeyboardKey.shiftLeft,
+                    ) ||
+                    HardwareKeyboard.instance.logicalKeysPressed.contains(
+                      LogicalKeyboardKey.shiftRight,
+                    );
                 if (isShiftPressed) {
                   _moveHighlight(-1);
                 } else {
@@ -421,7 +456,9 @@ class FormModalState extends State<_FormModal> {
                   MoveListSelectionIntent(-1),
               SingleActivator(LogicalKeyboardKey.arrowDown):
                   MoveListSelectionIntent(1),
-              SingleActivator(LogicalKeyboardKey.tab): MoveListSelectionIntent(1),
+              SingleActivator(LogicalKeyboardKey.tab): MoveListSelectionIntent(
+                1,
+              ),
               SingleActivator(LogicalKeyboardKey.tab, shift: true):
                   MoveListSelectionIntent(-1),
               SingleActivator(LogicalKeyboardKey.enter):
@@ -429,184 +466,208 @@ class FormModalState extends State<_FormModal> {
               SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
             },
             child: Actions(
-            actions: {
-              MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
-                onInvoke: (intent) {
-                  _moveHighlight(intent.offset);
-                  return KeyEventResult.handled;
-                },
-              ),
-              ActivateListSelectionIntent: CallbackAction<ActivateListSelectionIntent>(
-                onInvoke: (intent) {
-                  if (_allItemsCount() > 0) {
-                    final item = _getItemAtIndex(_highlightedIndex);
-                    if (item is FormButton) {
-                      // Run the specific button that's focused
-                      final controller = _buttonControllers[item];
-                      if (controller != null) {
-                        controller.run();
-                      }
-                    } else if (item is FormTextInput) {
-                      // For text inputs, trigger primary button (first button)
-                      _submitForm();
-                    } else if (item is FormSelect) {
-                      final indexToRestore = _highlightedIndex;
-                      log.info(
-                        'FormSelect activated, will restore to index $indexToRestore',
-                      );
-                      item.activate(context).then((_) {
+              actions: {
+                MoveListSelectionIntent:
+                    CallbackAction<MoveListSelectionIntent>(
+                      onInvoke: (intent) {
+                        _moveHighlight(intent.offset);
+                        return KeyEventResult.handled;
+                      },
+                    ),
+                ActivateListSelectionIntent: CallbackAction<ActivateListSelectionIntent>(
+                  onInvoke: (intent) {
+                    if (_allItemsCount() > 0) {
+                      final item = _getItemAtIndex(_highlightedIndex);
+                      if (item is FormButton) {
+                        // Run the specific button that's focused
+                        final controller = _buttonControllers[item];
+                        if (controller != null) {
+                          controller.run();
+                        }
+                      } else if (item is FormTextInput) {
+                        // For text inputs, trigger primary button (first button)
+                        _submitForm();
+                      } else if (item is FormSelect) {
+                        final indexToRestore = _highlightedIndex;
                         log.info(
-                          'FormSelect.activate returned, scheduling focus restore',
+                          'FormSelect activated, will restore to index $indexToRestore',
                         );
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                        item.activate(context).then((_) {
                           log.info(
-                            'Post-frame callback: mounted=$mounted, indexToRestore=$indexToRestore, focusNodes.length=${_focusNodes.length}',
+                            'FormSelect.activate returned, scheduling focus restore',
                           );
-                          if (mounted && indexToRestore < _focusNodes.length) {
-                            final node = _focusNodes[indexToRestore];
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
                             log.info(
-                              'Requesting focus on node: hasFocus=${node.hasFocus}, canRequestFocus=${node.canRequestFocus}',
+                              'Post-frame callback: mounted=$mounted, indexToRestore=$indexToRestore, focusNodes.length=${_focusNodes.length}',
                             );
-                            node.requestFocus();
-                            log.info(
-                              'After requestFocus: hasFocus=${node.hasFocus}',
-                            );
-                          }
+                            if (mounted &&
+                                indexToRestore < _focusNodes.length) {
+                              final node = _focusNodes[indexToRestore];
+                              log.info(
+                                'Requesting focus on node: hasFocus=${node.hasFocus}, canRequestFocus=${node.canRequestFocus}',
+                              );
+                              node.requestFocus();
+                              log.info(
+                                'After requestFocus: hasFocus=${node.hasFocus}',
+                              );
+                            }
+                          });
                         });
-                      });
+                      }
+                      return KeyEventResult.handled;
                     }
+                    return KeyEventResult.ignored;
+                  },
+                ),
+                DismissIntent: CallbackAction<DismissIntent>(
+                  onInvoke: (intent) {
+                    _cancel();
                     return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-              ),
-              DismissIntent: CallbackAction<DismissIntent>(
-                onInvoke: (intent) {
-                  _cancel();
-                  return KeyEventResult.handled;
-                },
-              ),
-            },
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // Calculate available height for content (reserve space for header + padding)
-                final headerHeight = 60.0; // Approximate header height
-                final availableContentHeight =
-                    constraints.maxHeight - headerHeight - 16.0;
+                  },
+                ),
+              },
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Calculate available height for content (reserve space for header + padding)
+                  final headerHeight = 60.0; // Approximate header height
+                  final availableContentHeight =
+                      constraints.maxHeight - headerHeight - 16.0;
 
-                return FormScope(
-                  values: _collectFormValues(),
-                  validate: _isFormValid,
-                  child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Title header
-                    Container(
-                      padding: widgetPadding,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: context.theme.colors.border,
-                            width: 1,
+                  return FormScope(
+                    values: _collectFormValues(),
+                    validate: _isFormValid,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Title header
+                        Container(
+                          padding: widgetPadding,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: context.theme.colors.border,
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          child: ValueListenableBuilder<int>(
+                            valueListenable: ModalProvider.of(
+                              context,
+                            ).modalStackNotifier,
+                            builder: (context, stackLength, _) => Row(
+                              children: [
+                                if (stackLength > 1)
+                                  FButton.icon(
+                                    style: FButtonStyle.ghost(),
+                                    onPress: () => Modal.pop<CommandReturn>(
+                                      context,
+                                      Value.absent(),
+                                    ),
+                                    child: Icon(
+                                      PlotIcon.left,
+                                      size: context.theme.iconSizes.sm,
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Text(
+                                    widget.form.title,
+                                    style: context.theme.typography.base
+                                        .copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              widget.form.title,
-                              style: context.theme.typography.base.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                        // Content list - constrained to available height
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: availableContentHeight,
                           ),
-                        ],
-                      ),
-                    ),
-                    // Content list - constrained to available height
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: availableContentHeight,
-                      ),
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        shrinkWrap: true,
-                        itemCount: totalItemCount,
-                        itemBuilder: (context, index) {
-                          final group = _getGroupAtIndex(index);
-                          final item = _getItemAtIndex(index);
-                          Widget? header;
-
-                          if (group.title != null &&
-                              (index == 0 ||
-                                  group != _getGroupAtIndex(index - 1))) {
-                            header = Padding(
-                              padding: widgetPaddingSm,
-                              child: Text(
-                                group.title!,
-                                style: TextStyle(
-                                  color: context.theme.colors.mutedForeground,
-                                  fontSize:
-                                      context.theme.typography.sm.fontSize,
-                                ),
-                              ),
-                            );
-                          }
-
-                          return GestureDetector(
-                            onTap: () async {
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            shrinkWrap: true,
+                            itemCount: totalItemCount,
+                            itemBuilder: (context, index) {
+                              final group = _getGroupAtIndex(index);
                               final item = _getItemAtIndex(index);
-                              // FormButton handles its own taps via ListTile
-                              if (item is FormSelect) {
-                                if (item.enabled) {
-                                  await item.activate(context);
-                                }
-                              }
-                            },
-                            child: MouseRegion(
-                              cursor: item is FormButton || item is FormSelect
-                                  ? SystemMouseCursors.click
-                                  : SystemMouseCursors.basic,
-                              onEnter: (_) => listController.setHovered(index),
-                              onExit: (_) => listController.setHovered(null),
-                              child: Column(
-                                key: ValueKey(index),
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (header != null) header,
-                                  item.build(
-                                    context,
-                                    index == _highlightedIndex &&
-                                        hasPhysicalKeyboard(),
-                                    enabled: item is FormButton
-                                        ? _isFormValid()
-                                        : true,
-                                    focusNode: index < _focusNodes.length
-                                        ? _focusNodes[index]
-                                        : null,
-                                    controller: item is FormButton
-                                        ? _buttonControllers.putIfAbsent(
-                                            item,
-                                            () => FormButtonController(),
-                                          )
-                                        : null,
+                              Widget? header;
+
+                              if (group.title != null &&
+                                  (index == 0 ||
+                                      group != _getGroupAtIndex(index - 1))) {
+                                header = Padding(
+                                  padding: widgetPaddingSm,
+                                  child: Text(
+                                    group.title!,
+                                    style: TextStyle(
+                                      color:
+                                          context.theme.colors.mutedForeground,
+                                      fontSize:
+                                          context.theme.typography.sm.fontSize,
+                                    ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                                );
+                              }
+
+                              return GestureDetector(
+                                onTap: () async {
+                                  final item = _getItemAtIndex(index);
+                                  // FormButton handles its own taps via ListTile
+                                  if (item is FormSelect) {
+                                    if (item.enabled) {
+                                      await item.activate(context);
+                                    }
+                                  }
+                                },
+                                child: MouseRegion(
+                                  cursor:
+                                      item is FormButton || item is FormSelect
+                                      ? SystemMouseCursors.click
+                                      : SystemMouseCursors.basic,
+                                  onEnter: (_) =>
+                                      listController.setHovered(index),
+                                  onExit: (_) =>
+                                      listController.setHovered(null),
+                                  child: Column(
+                                    key: ValueKey(index),
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (header != null) header,
+                                      item.build(
+                                        context,
+                                        index == _highlightedIndex &&
+                                            hasPhysicalKeyboard(),
+                                        enabled: item is FormButton
+                                            ? _isFormValid()
+                                            : true,
+                                        focusNode: index < _focusNodes.length
+                                            ? _focusNodes[index]
+                                            : null,
+                                        controller: item is FormButton
+                                            ? _buttonControllers.putIfAbsent(
+                                                item,
+                                                () => FormButtonController(),
+                                              )
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        SizedBox(height: context.theme.spacing.md),
+                      ],
                     ),
-                  ],
-                ),
-              );
-              },
+                  );
+                },
+              ),
             ),
-          ),
           ),
         );
       },

@@ -13,7 +13,13 @@ import {
   comparePermissions,
   mergeToolPermissions,
 } from "./permissions";
-import { collectToolPermissions, createTool } from "./tools/factory";
+import {
+  type ProviderDeclaration,
+  collectToolPermissions,
+  collectToolProviders,
+  createTool,
+  mergeProviderDeclarations,
+} from "./tools/factory";
 import { type Tool } from "./tools/tool";
 
 export function twistFactory({
@@ -164,9 +170,11 @@ export function twistFactory({
       builtInToolFactory,
     };
 
-    // Initialize twist and collect/validate permissions
+    // Initialize twist and collect/validate permissions and providers
     let permissions: MergedPermissions = {};
     let toolPermissionsMap: Record<string, ToolPermission[]> = {};
+    let providers: ProviderDeclaration[] = [];
+    let integrationsMap: Record<string, string> = {};
 
     if (!checkPermissions) {
       // DEPLOYMENT: Initialize twist to build tools and collect permissions
@@ -237,6 +245,31 @@ export function twistFactory({
           options
         );
       }
+
+      // Collect and merge provider declarations from all Integrations instances
+      const allProviders: ProviderDeclaration[] = [];
+      for (const { id: toolId, options } of toolInstances) {
+        allProviders.push(...collectToolProviders(toolId, options));
+      }
+      providers = mergeProviderDeclarations(allProviders);
+
+      // Collect integrations provider-to-path mapping.
+      // When multiple Integrations instances register the same provider
+      // (e.g., GoogleCalendar and GoogleContacts both register "google"),
+      // prefer the shallowest path since child tools share the parent's auth.
+      for (const { path, id: toolId, options } of toolInstances) {
+        if (toolId === "Integrations" && (options as any)?.providers) {
+          const pathString = path.join(":");
+          for (const p of (options as any).providers) {
+            if (p.provider) {
+              const existing = integrationsMap[p.provider];
+              if (!existing || path.length < existing.split(":").length) {
+                integrationsMap[p.provider] = pathString;
+              }
+            }
+          }
+        }
+      }
     } else {
       // RUNTIME: Tools are validated per-path in builtInToolFactory as they're created
       // Use stored permissions without rebuilding twist
@@ -246,6 +279,8 @@ export function twistFactory({
     return {
       permissions,
       toolPermissions: toolPermissionsMap,
+      providers,
+      integrationsMap,
       activate: async (priority: Pick<Priority, "id">, context?: { actor: { id: string; type: number } }) => {
         await env.TWIST_LOGS_QUEUE.send({
           twistRootId: id,

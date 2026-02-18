@@ -355,7 +355,7 @@ webhook.post("/hook/slack", async (c) => {
     });
 
     // Route to callbacks
-    await Network.HandleSlackWebhook(c.env.CALLBACKS, {
+    using _slackResult = await Network.HandleSlackWebhook(c.env.CALLBACKS, {
       method: "POST",
       headers,
       params,
@@ -459,7 +459,7 @@ webhook.post("/hook/gmail/:topicId", async (c) => {
 
     // Call the callback using the decoded token
     // The callback token encodes the DO shard and callback info
-    await Network.HandleGmailWebhook(
+    using _gmailResult = await Network.HandleGmailWebhook(
       c.env.CALLBACKS,
       callbackToken,
       webhookRequest
@@ -524,7 +524,7 @@ webhook.all(Network.PATH, async (c) => {
       }
     }
 
-    const result = await Network.HandleWebhook(c.env.CALLBACKS, token, {
+    using result = await Network.HandleWebhook(c.env.CALLBACKS, token, {
       method,
       headers,
       params,

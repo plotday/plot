@@ -375,7 +375,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     });
     const twistWrapper = await factory({
       version: callback.version,
-      priorityId: priorityTwist.priority_id,
+      priorityId: priorityTwist.priority_id!,
       priorityTwistId: callback.priorityTwistId,
     });
 

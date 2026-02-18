@@ -116,6 +116,7 @@ export function createTool(
         priorityTwistId,
         twistId,
         environment,
+        integrationOptions: options as any,
       });
     case "Store":
       return new Store({
@@ -172,4 +173,46 @@ export function collectToolPermissions(
 
   // Tool doesn't require permissions
   return [];
+}
+
+export type ProviderDeclaration = {
+  provider: string;
+  scopes: string[];
+};
+
+/**
+ * Collects provider declarations from a tool by calling its static Providers method.
+ * Only the Integrations tool implements this.
+ */
+export function collectToolProviders(
+  toolId: string,
+  options: any
+): ProviderDeclaration[] {
+  if (toolId !== "Integrations") return [];
+  return Integrations.Providers(options);
+}
+
+/**
+ * Merges provider declarations from multiple tools, deduplicating scopes per provider.
+ */
+export function mergeProviderDeclarations(
+  declarations: ProviderDeclaration[]
+): ProviderDeclaration[] {
+  const byProvider = new Map<string, Set<string>>();
+
+  for (const decl of declarations) {
+    if (!byProvider.has(decl.provider)) {
+      byProvider.set(decl.provider, new Set());
+    }
+    for (const scope of decl.scopes) {
+      byProvider.get(decl.provider)!.add(scope);
+    }
+  }
+
+  return Array.from(byProvider.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([provider, scopes]) => ({
+      provider,
+      scopes: Array.from(scopes).sort(),
+    }));
 }

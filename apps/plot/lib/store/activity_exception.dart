@@ -30,7 +30,7 @@ class ActivityExceptions extends Table with SyncableTable, UuidTable {
   TextColumn get endOn =>
       text().nullable().nullable().map(const DateConverter())();
   IntColumn get duration =>
-      integer().nullable().map(const DurationConverter())();
+      integer().nullable().map(const IntervalConverter())();
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get title => text().nullable()();

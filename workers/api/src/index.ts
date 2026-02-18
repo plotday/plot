@@ -6,6 +6,7 @@ import account from "./app/account";
 import invitation from "./app/invitation";
 import share from "./app/share";
 import twists from "./app/twists";
+import twistIntegrations from "./app/twist-integrations";
 // Import app routes and middleware
 import { authMiddleware as appAuthMiddleware } from "./app/auth";
 import authRoutes from "./app/authRoutes";
@@ -28,11 +29,8 @@ import tokens from "./sdk/tokens";
 // Import Stripe routes and middleware
 import { stripeMiddleware } from "./stripe/middleware";
 import stripe from "./stripe/stripe";
-// Import sync routes and middleware
-import { syncAuthMiddleware } from "./sync/auth";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
-import { disposeRpc } from "./utils/rpc";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
@@ -128,7 +126,11 @@ app.onError(async (err, c) => {
 
 // App section - endpoints called by the Flutter app
 const appSection = new Hono<{ Bindings: Bindings }>();
-appSection.use("*", generalRateLimiter);
+appSection.use("*", async (c, next) => {
+  // Sync endpoints use appSyncRateLimiter instead
+  if (c.req.path.startsWith("/app/sync")) return next();
+  return generalRateLimiter(c, next);
+});
 appSection.use(appCorsMiddleware);
 appSection.use("*", appAuthMiddleware);
 appSection.use("*", postHogIdentifyMiddleware);
@@ -136,18 +138,18 @@ appSection.route("/", account);
 appSection.route("/", invitation);
 appSection.route("/", share);
 appSection.route("/", twists);
+appSection.route("/", twistIntegrations);
 appSection.route("/", authRoutes);
 appSection.route("/", callbacks);
 appSection.route("/", summary);
 appSection.route("/", updates);
 appSection.route("/", files);
-// Note: /app/sync routes are mounted separately with syncAuthMiddleware.
+// Note: /app/sync routes are mounted separately with appSyncRateLimiter.
 
 // App sync section - public sync endpoints (user-authenticated)
 // Auth runs before rate limiter to enable per-user keying (not per-IP)
 const appSyncSection = new Hono<{ Bindings: Bindings }>();
 appSyncSection.use(appCorsMiddleware);
-appSyncSection.use("*", syncAuthMiddleware);
 appSyncSection.use("*", appSyncRateLimiter);
 appSyncSection.use("*", postHogIdentifyMiddleware);
 appSyncSection.route("/", appSync);
@@ -189,10 +191,9 @@ async function scheduled(
     const syncRecoveryId = env.SYNC_RECOVERY.idFromName("singleton");
     const syncRecoveryDO = env.SYNC_RECOVERY.get(syncRecoveryId);
 
-    const result = await syncRecoveryDO.fetch(
+    await syncRecoveryDO.fetch(
       new Request("http://do/trigger", { method: "POST" })
     );
-    disposeRpc(result);
 
     logger.info("Sync recovery triggered by cron");
   } catch (error) {
@@ -202,10 +203,9 @@ async function scheduled(
   try {
     const privacyId = env.PRIVACY_REPORTING.idFromName("singleton");
     const privacyDO = env.PRIVACY_REPORTING.get(privacyId);
-    const privacyResult = await privacyDO.fetch(
+    await privacyDO.fetch(
       new Request("http://do/trigger", { method: "POST" })
     );
-    disposeRpc(privacyResult);
   } catch (error) {
     logger.error("Error in privacy reporting handler", error as Error);
   }

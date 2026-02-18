@@ -1,0 +1,26 @@
+diff --git a/dist/index.js b/dist/index.js
+index 032339873e23b17aacd1867ddee73a427d80ff2c..7a5eb9c7813d1a4196e3c95fea35923c072b8e48 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -94,7 +94,7 @@ class CloudflareSocket extends events_1.EventEmitter {
+     end(data = Buffer.alloc(0), encoding = 'utf8', callback = () => { }) {
+         log('ending CF socket');
+         this.write(data, encoding, (err) => {
+-            this._cfSocket.close();
++            this._cfSocket?.close();
+             if (callback)
+                 callback(err);
+         });
+diff --git a/src/index.ts b/src/index.ts
+index d83882efe101ebcc8f0043403bb04d34768192ac..dcd822d37101bc21d4b6812421aa773ea68ca3e6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -107,7 +107,7 @@ export class CloudflareSocket extends EventEmitter {
+   end(data = Buffer.alloc(0), encoding: BufferEncoding = 'utf8', callback: (...args: unknown[]) => void = () => {}) {
+     log('ending CF socket')
+     this.write(data, encoding, (err) => {
+-      this._cfSocket!.close()
++      this._cfSocket?.close()
+       if (callback) callback(err)
+     })
+     return this

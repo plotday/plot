@@ -34,9 +34,8 @@ export async function processLogs(
 
       // Get subscribers for this twist
       const subscribersResult = await logSubscriptions.getSubscribers(twistRootId);
-      // Copy array before disposing RPC result
+      // Copy array for local use
       const subscribers = [...subscribersResult];
-      disposeRpc(subscribersResult);
 
       // Convert logs to the format expected by the callback
       const formattedLogs = logs.map((log) => ({
@@ -50,11 +49,12 @@ export async function processLogs(
       if (subscribers.length > 0) {
         for (const callbackToken of subscribers) {
           try {
-            await Callbacks.CallCallback(
+            const result = await Callbacks.CallCallback(
               env.CALLBACKS,
               callbackToken as Callback,
               formattedLogs
             );
+            disposeRpc(result);
           } catch (error) {
             const context = extractLogQueueContext(logs[0], batch.queue);
             const logger = createLogger(context);
@@ -73,8 +73,7 @@ export async function processLogs(
       try {
         const logStreamId = env.LOG_STREAM.idFromName(twistRootId);
         const logStream = env.LOG_STREAM.get(logStreamId);
-        const sendResult = await logStream.sendLogs(logs);
-        disposeRpc(sendResult);
+        await logStream.sendLogs(logs);
       } catch (error) {
         const context = extractLogQueueContext(logs[0], batch.queue);
         const logger = createLogger(context);

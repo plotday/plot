@@ -5,7 +5,6 @@ import { type DB, createDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
-import { disposeRpc } from "../utils/rpc";
 
 const BATCH_WINDOW_MS = 100;
 
@@ -96,13 +95,12 @@ export class SyncNotify extends DurableObject<Bindings> {
       try {
         const userSyncId = this.env.USER_SYNC.idFromName(userId);
         const userSyncDO = this.env.USER_SYNC.get(userSyncId);
-        const result = await userSyncDO.fetch(
+        await userSyncDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
             body: JSON.stringify({ id: userId }),
           })
         );
-        disposeRpc(result);
       } catch (error) {
         logger.error("Error notifying UserSync DO", error as Error, {
           user_id: userId,
@@ -138,13 +136,12 @@ export class SyncNotify extends DurableObject<Bindings> {
       try {
         const twistSyncId = this.env.TWIST_SYNC.idFromName(twist.id);
         const twistSyncDO = this.env.TWIST_SYNC.get(twistSyncId);
-        const result = await twistSyncDO.fetch(
+        await twistSyncDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
             body: JSON.stringify({ id: twist.id }),
           })
         );
-        disposeRpc(result);
       } catch (error) {
         logger.error("Error notifying TwistSync DO", error as Error, {
           priority_twist_id: twist.id,

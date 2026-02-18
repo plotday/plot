@@ -19,7 +19,7 @@ export default function PasswordReset({ code }: { code: string }) {
         email. Your password will remain unchanged. If you're concerned about
         your account security, contact us at team@plot.day
       </Text>
-      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day.</Text>
     </EmailLayout>
   );
 }

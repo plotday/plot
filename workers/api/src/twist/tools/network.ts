@@ -15,7 +15,7 @@ import {
   deleteSubscription,
   deleteTopic,
 } from "../../utils/pubsub";
-import { getRpcFunctionName } from "../../utils/rpc";
+import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { type ToolPermission } from "../permissions";
 import { Tool } from "./tool";
 
@@ -165,7 +165,10 @@ export class Network extends Tool implements INetwork {
 
     // Get callbacks for this team
     const callbacksStub = Network.GetCallbacksStub(callbacks, teamId);
-    const teamCallbacks = await callbacksStub.get(teamId);
+    const teamCallbacksResult = await callbacksStub.get(teamId);
+    const teamCallbacks = teamCallbacksResult
+      ? [...teamCallbacksResult]
+      : teamCallbacksResult;
 
     if (!teamCallbacks || teamCallbacks.length === 0) {
       const logger = createLogger();
@@ -193,8 +196,15 @@ export class Network extends Tool implements INetwork {
     // Call all matching callbacks in parallel
     const results = await Promise.allSettled(
       matchingCallbacks.map(
-        (cb: { callback: string; meta?: Record<string, any> }) =>
-          CallbacksState.CallCallback(callbacks, cb.callback, request)
+        async (cb: { callback: string; meta?: Record<string, any> }) => {
+          const result = await CallbacksState.CallCallback(
+            callbacks,
+            cb.callback,
+            request
+          );
+          disposeRpc(result);
+          return true;
+        }
       )
     );
 
@@ -459,6 +469,7 @@ export class Network extends Tool implements INetwork {
     // Create callback token from the provided function
     // The callback is to a function on the parent, so use parent path
     const callbackFunctionName = await getRpcFunctionName(callback);
+    disposeRpc(callback);
     if (!callbackFunctionName) {
       throw new Error(
         "Cannot create callback: function has no name. Use named functions or methods."

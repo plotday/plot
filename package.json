@@ -58,5 +58,10 @@
     "vitest": "^0.33.0",
     "wrangler": "^4.61.1"
   },
-  "nx": {}
+  "nx": {},
+  "pnpm": {
+    "patchedDependencies": {
+      "pg-cloudflare@1.3.0": "patches/pg-cloudflare@1.3.0.patch"
+    }
+  }
 }

@@ -4,6 +4,7 @@ import { type Database, type Json } from "@plotday/db";
 import { ActivityType } from "@plotday/twister/plot";
 import {
   type Activity,
+  type ActivityFilter,
   type ActivityLink,
   type ActivityMeta,
   type ActivityOccurrence,
@@ -21,6 +22,7 @@ import {
 import { ContactAccess } from "@plotday/twister/tools/plot";
 
 import { createLogger } from "@plotday/worker-util";
+import { sql } from "kysely";
 import { rpc, rpcUser } from "../../../rpc";
 import {
   handleDbOperationError,
@@ -98,6 +100,7 @@ export async function createActivity(
     let dbResult: {
       id: string;
       created_at: string | Date;
+      source_created_at: string | Date;
       priority_id: string;
     };
 
@@ -210,18 +213,21 @@ export async function createActivity(
       if (userIds.length > 0) {
         const latestNoteRow = await plot.db
           .selectFrom("note")
-          .select("created_at")
+          .select("source_created_at")
           .where("activity_id", "=", dbResult.id)
-          .orderBy("created_at", "desc")
+          .orderBy("source_created_at", "desc")
           .limit(1)
           .executeTakeFirst();
 
-        const dbCreatedAt =
-          dbResult.created_at instanceof Date
-            ? dbResult.created_at.toISOString()
-            : dbResult.created_at;
-        const latestTimestamp =
-          latestNoteRow?.created_at?.toString() ?? dbCreatedAt;
+        const dbSourceCreatedAt =
+          dbResult.source_created_at instanceof Date
+            ? dbResult.source_created_at.toISOString()
+            : dbResult.source_created_at;
+        const noteSourceCreatedAt =
+          latestNoteRow?.source_created_at instanceof Date
+            ? latestNoteRow.source_created_at.toISOString()
+            : latestNoteRow?.source_created_at;
+        const latestTimestamp = noteSourceCreatedAt ?? dbSourceCreatedAt;
 
         const activityReadEntries = userIds.map(
           (userId) => ({
@@ -261,18 +267,18 @@ export async function createActivity(
       // Default: mark read for just the author if they are the twist owner
       const latestNoteRow = await plot.db
         .selectFrom("note")
-        .select("created_at")
+        .select("source_created_at")
         .where("activity_id", "=", dbResult.id)
-        .orderBy("created_at", "desc")
+        .orderBy("source_created_at", "desc")
         .limit(1)
         .executeTakeFirst();
 
-      const dbCreatedAt2 =
-        dbResult.created_at instanceof Date
-          ? dbResult.created_at.toISOString()
-          : dbResult.created_at;
+      const dbSourceCreatedAt2 =
+        dbResult.source_created_at instanceof Date
+          ? dbResult.source_created_at.toISOString()
+          : dbResult.source_created_at;
       const readTimestamp =
-        latestNoteRow?.created_at?.toString() ?? dbCreatedAt2;
+        latestNoteRow?.source_created_at?.toString() ?? dbSourceCreatedAt2;
 
       await markActivityReadForAuthorIfOwner(
         plot,
@@ -300,11 +306,123 @@ export async function createActivity(
   }
 }
 
+async function updateActivitiesByMatch(
+  plot: Plot,
+  activity: ActivityUpdate & { match: ActivityFilter }
+): Promise<void> {
+  const { match } = activity;
+
+  // Filter to activities created by this twist instance
+  let query = plot.db
+    .updateTable("activity")
+    .where("created_by", "=", plot.priorityTwistId);
+
+  // Apply meta filter using jsonb containment
+  if (match.meta) {
+    query = query.where(
+      sql<boolean>`meta @> ${JSON.stringify(match.meta)}::jsonb`
+    );
+  }
+
+  // Apply type filter
+  if (match.type !== undefined) {
+    let dbType: string;
+    switch (match.type) {
+      case ActorType.User:
+        dbType = "note";
+        break;
+      case ActorType.Contact:
+        dbType = "action";
+        break;
+      case ActorType.Twist:
+        dbType = "event";
+        break;
+      default:
+        throw new Error(`Unknown activity type in filter: ${match.type}`);
+    }
+    // @ts-ignore - type column is an enum
+    query = query.where("type", "=", dbType);
+  }
+
+  // Build update object - only scalar fields for bulk updates
+  const dbUpdate: Database["public"]["Tables"]["activity"]["Update"] = {
+    updated_by: plot.getUpdatedBy(),
+    sync_depth: plot.syncDepth + 1,
+  };
+
+  if (activity.archived !== undefined) {
+    dbUpdate.archived_at = activity.archived
+      ? new Date().toISOString()
+      : null;
+  }
+  if (activity.done !== undefined) {
+    dbUpdate.done_at = activity.done ? activity.done.toISOString() : null;
+    if (activity.done && activity.type === undefined) {
+      dbUpdate.type = "action";
+    }
+  }
+  if (activity.type !== undefined) {
+    switch (activity.type) {
+      case ActivityType.Note:
+        dbUpdate.type = "note";
+        break;
+      case ActivityType.Action:
+        dbUpdate.type = "action";
+        break;
+      case ActivityType.Event:
+        dbUpdate.type = "event";
+        break;
+    }
+  }
+  if (activity.title !== undefined) {
+    dbUpdate.title =
+      activity.title && activity.title.trim() !== "" ? activity.title : null;
+  }
+  if (activity.private !== undefined) {
+    dbUpdate.private = activity.private;
+  }
+  if (activity.meta !== undefined) {
+    dbUpdate.meta = activity.meta;
+  }
+  if (activity.kind !== undefined) {
+    dbUpdate.kind = activity.kind;
+  }
+  if (activity.order !== undefined) {
+    dbUpdate.order = activity.order;
+  }
+
+  // Check if there are meaningful updates
+  const meaningfulKeys = Object.keys(dbUpdate).filter(
+    (key) => !["updated_by", "sync_depth"].includes(key)
+  );
+  if (meaningfulKeys.length === 0) {
+    return;
+  }
+
+  // Execute bulk update, returning affected priority IDs for sync notification
+  const results = await query
+    // @ts-ignore - Database types define `at` as `unknown` but Kysely expects specific types
+    .set(dbUpdate)
+    .returning("priority_id")
+    .execute();
+
+  // Notify sync DOs for affected priorities
+  if (results.length > 0) {
+    const affectedPriorityIds = new Set(results.map((r) => r.priority_id));
+    await plot.notifySyncDOs(affectedPriorityIds);
+  }
+}
+
 export async function updateActivity(
   plot: Plot,
   activity: ActivityUpdate
 ): Promise<void> {
   try {
+    // Handle bulk update by match filter
+    if ("match" in activity && activity.match) {
+      return updateActivitiesByMatch(plot, activity as ActivityUpdate & { match: ActivityFilter });
+    }
+
     // Determine activity ID - either provided directly or looked up by source
     let activityId: string;
 
@@ -976,7 +1094,7 @@ export async function createActivities(
       ensureIncreasingActivityCreatedTimestamps(activities);
 
     const limit = pLimit(5);
-    type DbActivity = { id: string; priority_id: string; created_at: string | Date };
+    type DbActivity = { id: string; priority_id: string; created_at: string | Date; source_created_at: string | Date };
     const dbActivities: DbActivity[] = new Array(activities.length);
 
     const preparedActivities = await Promise.all(
@@ -996,7 +1114,7 @@ export async function createActivities(
             .insertInto("activity")
             // @ts-ignore - Database types define `at` as `unknown` but Kysely expects specific types
             .values(nonSourceInserts)
-            .returning(["id", "priority_id", "created_at"])
+            .returning(["id", "priority_id", "created_at", "source_created_at"])
             .execute()
         : ([] as DbActivity[]);
 
@@ -1181,9 +1299,9 @@ export async function createActivities(
       // Query latest note timestamps per activity AFTER notes are created
       const latestNotesRows = await plot.db
         .selectFrom("note")
-        .select(["activity_id", "created_at"])
+        .select(["activity_id", "source_created_at"])
         .where("activity_id", "in", activityIdsForUnread)
-        .orderBy("created_at", "desc")
+        .orderBy("source_created_at", "desc")
         .execute();
 
       // Build map of activity_id -> latest timestamp (as ISO string)
@@ -1191,9 +1309,9 @@ export async function createActivities(
       for (const noteRow of latestNotesRows) {
         if (!latestNoteTimestamps.has(noteRow.activity_id)) {
           const ts =
-            noteRow.created_at instanceof Date
-              ? noteRow.created_at.toISOString()
-              : noteRow.created_at;
+            noteRow.source_created_at instanceof Date
+              ? noteRow.source_created_at.toISOString()
+              : noteRow.source_created_at;
           latestNoteTimestamps.set(noteRow.activity_id, ts);
         }
       }
@@ -1233,9 +1351,9 @@ export async function createActivities(
 
               const activityReadEntries = priorityActivities.flatMap((item) => {
                 const fallback =
-                  item.dbActivity.created_at instanceof Date
-                    ? item.dbActivity.created_at.toISOString()
-                    : item.dbActivity.created_at;
+                  item.dbActivity.source_created_at instanceof Date
+                    ? item.dbActivity.source_created_at.toISOString()
+                    : item.dbActivity.source_created_at;
                 return userIds.map((userId) => ({
                   activity_id: item.dbActivity.id,
                   user_id: userId,
@@ -1286,18 +1404,18 @@ export async function createActivities(
       // Query latest note timestamps for these activities
       const latestNotesRows = await plot.db
         .selectFrom("note")
-        .select(["activity_id", "created_at"])
+        .select(["activity_id", "source_created_at"])
         .where("activity_id", "in", authorActivityIds)
-        .orderBy("created_at", "desc")
+        .orderBy("source_created_at", "desc")
         .execute();
 
       const latestNoteTimestamps = new Map<string, string>();
       for (const noteRow of latestNotesRows) {
         if (!latestNoteTimestamps.has(noteRow.activity_id)) {
           const ts =
-            noteRow.created_at instanceof Date
-              ? noteRow.created_at.toISOString()
-              : noteRow.created_at;
+            noteRow.source_created_at instanceof Date
+              ? noteRow.source_created_at.toISOString()
+              : noteRow.source_created_at;
           latestNoteTimestamps.set(noteRow.activity_id, ts);
         }
       }
@@ -1306,9 +1424,9 @@ export async function createActivities(
         activitiesToMarkAuthorAsRead.map((item) =>
           limit(async () => {
             const fallback =
-              item.dbActivity.created_at instanceof Date
-                ? item.dbActivity.created_at.toISOString()
-                : item.dbActivity.created_at;
+              item.dbActivity.source_created_at instanceof Date
+                ? item.dbActivity.source_created_at.toISOString()
+                : item.dbActivity.source_created_at;
             const readTimestamp =
               latestNoteTimestamps.get(item.dbActivity.id) ?? fallback;
             await markActivityReadForAuthorIfOwner(

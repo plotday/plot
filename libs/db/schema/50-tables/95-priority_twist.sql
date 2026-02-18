@@ -1,7 +1,7 @@
 CREATE TABLE "public"."priority_twist" (
     -- While we could use a bigint here, we use uuid so this can also be used as an actor_id
     "id" uuid PRIMARY KEY DEFAULT uuidv7 () NOT NULL,
-    "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
+    "priority_id" uuid REFERENCES public.priority ON DELETE CASCADE,
     "twist_id" bigint NOT NULL REFERENCES public.twist (id) ON DELETE CASCADE,
     "owner_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     "name" text NOT NULL,

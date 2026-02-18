@@ -1,14 +1,24 @@
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/store/types.dart' show AuthProvider;
+import 'package:plot/widget/auth_button.dart'
+    show getAuthProviderConfig, buildAuthButtonStyle;
 import 'package:plot/store/store.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/api/twist_api.dart';
+import 'package:plot/env.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
 
@@ -53,7 +63,7 @@ class ManageTwists extends ShowCommands {
     // Fetch priorities for each twist to get their paths
     final editCommandsFutures = priorityTwists.map((twist) async {
       final twistPriority = await Priority.getOne(twist.priorityId);
-      return EditTwistCommand(twist, priority: twistPriority);
+      return EditTwist(twist, priority: twistPriority);
     });
     final editCommands = await Future.wait(editCommandsFutures);
 
@@ -123,8 +133,12 @@ class ManageTwists extends ShowCommands {
   }
 }
 
-class EditTwistCommand extends ShowForm {
-  EditTwistCommand(this.priorityTwist, {this.priority})
+// ============================================================================
+// Edit Twist (existing twist)
+// ============================================================================
+
+class EditTwist extends ShowForm {
+  EditTwist(this.priorityTwist, {this.priority})
     : super(
         title: priorityTwist.name,
         subtitle: priority?.root == true
@@ -142,17 +156,32 @@ class EditTwistCommand extends ShowForm {
     PriorityTwist priorityTwist,
     Priority? priority,
   ) async {
-    // Fetch the full Twist data to show details
     try {
       // Load priority if not provided
       final loadedPriority =
           priority ?? await Priority.getOne(priorityTwist.priorityId);
 
-      // Fetch all twists to find the matching one
-      final allTwists = await TwistApi.getAllTwists(loadedPriority);
+      // Fetch all twists and integrations in parallel
+      final results = await Future.wait([
+        TwistApi.getAllTwists(loadedPriority),
+        TwistApi.getIntegrations(priorityTwist.id.toString()),
+      ]);
+      final allTwists = results[0] as List<Twist>;
+      final integrations = results[1] as TwistIntegrations;
       final matchingTwist = allTwists.firstWhere(
         (a) => a.id == priorityTwist.twistId.toString(),
         orElse: () => throw Exception('Twist not found'),
+      );
+
+      // Compute initially enabled syncables from server state
+      final initialEnabled = integrations.syncables
+          .where((s) => s.enabled)
+          .map((s) => '${s.provider.name}:${s.id}')
+          .toSet();
+
+      final refreshNotifier = ValueNotifier<int>(0);
+      var integrationChanges = IntegrationChanges(
+        selectedSyncables: Set.of(initialEnabled),
       );
 
       return FormData(
@@ -166,25 +195,47 @@ class EditTwistCommand extends ShowForm {
                 initialValue: priorityTwist.name,
                 required: true,
               ),
+              FormInfo(
+                key: 'integrations',
+                divider: false,
+                builder: (context) => TwistIntegrationsWidget(
+                  priorityTwistId: priorityTwist.id.toString(),
+                  initialData: integrations,
+                  refreshNotifier: refreshNotifier,
+                  onChanged: (changes) {
+                    integrationChanges = changes;
+                  },
+                ),
+              ),
+              if (integrations.providers.isNotEmpty)
+                FormButton(
+                  key: 'add_account',
+                  buildCommand: (_) => ShowAddIntegrationAccount(
+                    priorityTwistId: priorityTwist.id.toString(),
+                    onAccountAdded: () => refreshNotifier.value++,
+                  ),
+                ),
+              FormDivider(key: 'divider'),
               FormButton(
                 key: 'save',
                 buildCommand: (values) {
                   final name = values['name'] as String;
-                  return EditTwistName(priorityTwist, name: name);
+                  return SaveTwist(
+                    priorityTwist: priorityTwist,
+                    name: name,
+                    initialEnabled: initialEnabled,
+                    changes: integrationChanges,
+                  );
                 },
               ),
-              FormDivider(key: 'divider'),
+              FormButton(
+                key: 'details',
+                buildCommand: (_) =>
+                    ShowTwistDetails(matchingTwist, priority: loadedPriority),
+              ),
               FormButton(
                 key: 'archive',
                 buildCommand: (_) => PromptToArchiveTwist(priorityTwist),
-              ),
-              FormInfo(
-                key: 'info',
-                divider: false,
-                builder: (context) => TwistDetails(
-                  twist: matchingTwist,
-                  priority: loadedPriority,
-                ),
               ),
             ],
           ),
@@ -204,6 +255,7 @@ class EditTwistCommand extends ShowForm {
                 initialValue: priorityTwist.name,
                 required: true,
               ),
+              FormDivider(key: 'divider'),
               FormButton(
                 key: 'save',
                 buildCommand: (values) {
@@ -211,7 +263,6 @@ class EditTwistCommand extends ShowForm {
                   return EditTwistName(priorityTwist, name: name);
                 },
               ),
-              FormDivider(key: 'divider'),
               FormButton(
                 key: 'archive',
                 buildCommand: (_) => PromptToArchiveTwist(priorityTwist),
@@ -224,6 +275,41 @@ class EditTwistCommand extends ShowForm {
   }
 }
 
+// ============================================================================
+// Show Twist Info (details only) + Setup Twist (add flow)
+// ============================================================================
+
+class ShowTwistDetails extends ShowForm {
+  ShowTwistDetails(this.twist, {this.priority})
+    : super(
+        title: 'View twist details',
+        icon: PlotIcon.twist,
+        form: (context) => _buildForm(twist, priority),
+      );
+
+  final Twist twist;
+  final Priority? priority;
+
+  static Future<FormData> _buildForm(Twist twist, Priority? priority) async {
+    return FormData(
+      title: twist.name,
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'details',
+              divider: false,
+              builder: (context) =>
+                  TwistDetails(twist: twist, priority: priority),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Shows twist details (description, author, permissions) with an "Add Twist" button.
 class ShowTwistInfo extends ShowForm {
   ShowTwistInfo(this.twist, {Priority? defaultPriority})
     : super(
@@ -235,6 +321,103 @@ class ShowTwistInfo extends ShowForm {
 
   final Twist twist;
 
+  static Future<FormData> _buildForm(
+    BuildContext context,
+    Twist twist,
+    Priority? defaultPriority,
+  ) async {
+    return FormData(
+      title: twist.name,
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'info',
+              divider: true,
+              builder: (context) => TwistDetails(twist: twist),
+            ),
+            FormButton(
+              key: 'add',
+              buildCommand: (_) =>
+                  SetupTwist(twist, defaultPriority: defaultPriority),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Formats twist name with environment label if not public
+  static String _formatTwistName(String name, String environment) {
+    if (environment == 'public') {
+      return name;
+    }
+    final envLabel = environment[0].toUpperCase() + environment.substring(1);
+    return '$name ($envLabel)';
+  }
+}
+
+// ============================================================================
+// Setup Twist (add flow with draft)
+// ============================================================================
+
+/// Opens the setup modal with priority selector, name, integrations, and syncables.
+/// Creates a draft twist for the auth flow, then activates it on submit.
+class SetupTwist extends ShowForm {
+  SetupTwist(this.twist, {this.defaultPriority})
+    : super(
+        title: 'Add Twist',
+        icon: PlotIcon.add,
+        form: (context) => _buildForm(context, twist, defaultPriority),
+      );
+
+  final Twist twist;
+  final Priority? defaultPriority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Create draft before opening form
+    String? draftId;
+    try {
+      draftId = await TwistApi.createDraft(
+        twistId: twist.id,
+        twistEnvironment: twist.environment,
+        name: twist.name,
+      );
+    } catch (e, t) {
+      log.warning('Failed to create draft twist', e, t);
+      return CommandMessage(
+        'Failed to set up twist. Please try again.',
+        isError: true,
+      );
+    }
+
+    // Store draftId for the form builder via a static variable
+    _currentDraftId = draftId;
+
+    final result = await super.run(context);
+
+    // If the form was dismissed without activation, delete the draft
+    if (_currentDraftId != null) {
+      try {
+        await TwistApi.deleteDraft(draftId);
+      } catch (e, t) {
+        log.warning('Failed to delete draft twist', e, t);
+      }
+      _currentDraftId = null;
+    }
+
+    return result;
+  }
+
+  /// Current draft ID, set before opening the form.
+  static String? _currentDraftId;
+
+  /// Called by ActivateDraftCommand to clear the draft ID after successful activation.
+  static void clearDraft() {
+    _currentDraftId = null;
+  }
+
   static bool _isUnderPlot(Priority priority, Priority plotPriority) {
     return priority.id == plotPriority.id ||
         plotPriority.path.isParent(priority.path);
@@ -245,6 +428,20 @@ class ShowTwistInfo extends ShowForm {
     Twist twist,
     Priority? defaultPriority,
   ) async {
+    final draftId = _currentDraftId;
+    if (draftId == null) {
+      return FormData(
+        title: twist.name,
+        groups: [
+          StaticFormGroup(
+            items: [
+              FormInfo(key: 'error', text: 'Failed to create draft twist.'),
+            ],
+          ),
+        ],
+      );
+    }
+
     // Get default priority from context
     final nowBloc = context.read<NowBloc>();
     final currentPriority = nowBloc.state is NowLoaded
@@ -262,8 +459,15 @@ class ShowTwistInfo extends ShowForm {
       initialPriority = await Priority.getDefault();
     }
 
+    // Pre-fetch integrations for the draft
+    final integrations = await TwistApi.getIntegrations(draftId);
+    final refreshNotifier = ValueNotifier<int>(0);
+
+    // Track integration changes from the integrations widget
+    var integrationChanges = const IntegrationChanges();
+
     return FormData(
-      title: twist.name,
+      title: 'Set up ${twist.name}',
       groups: [
         StaticFormGroup(
           items: [
@@ -293,65 +497,463 @@ class ShowTwistInfo extends ShowForm {
               initialValue: twist.name,
               required: true,
             ),
+            FormInfo(
+              key: 'integrations',
+              divider: false,
+              builder: (context) => TwistIntegrationsWidget(
+                priorityTwistId: draftId,
+                setupMode: true,
+                initialData: integrations,
+                refreshNotifier: refreshNotifier,
+                onChanged: (changes) {
+                  integrationChanges = changes;
+                },
+              ),
+            ),
+            if (integrations.providers.isNotEmpty)
+              FormButton(
+                key: 'add_account',
+                buildCommand: (_) => ShowAddIntegrationAccount(
+                  priorityTwistId: draftId,
+                  onAccountAdded: () => refreshNotifier.value++,
+                ),
+              ),
+            FormDivider(key: 'divider'),
             FormButton(
               key: 'add',
               buildCommand: (values) {
                 final selectedPriority = values['priority'] as Priority;
                 final name = values['name'] as String;
-                return AddTwist(selectedPriority, twist, name: name);
+                // Convert IntegrationChanges to SelectedSyncable list
+                final selectedSyncables = integrationChanges.selectedSyncables
+                    .map((key) {
+                      final parts = key.split(':');
+                      return SelectedSyncable(
+                        provider: parts[0],
+                        syncableId: parts.sublist(1).join(':'),
+                      );
+                    })
+                    .toList();
+                return ActivateTwist(
+                  draftId: draftId,
+                  priority: selectedPriority,
+                  name: name,
+                  syncables: selectedSyncables,
+                );
               },
-            ),
-            FormInfo(
-              key: 'info',
-              divider: false,
-              builder: (context) => TwistDetails(twist: twist),
             ),
           ],
         ),
       ],
     );
   }
-
-  /// Formats twist name with environment label if not public
-  static String _formatTwistName(String name, String environment) {
-    if (environment == 'public') {
-      return name;
-    }
-    final envLabel = environment[0].toUpperCase() + environment.substring(1);
-    return '$name ($envLabel)';
-  }
 }
 
-class AddTwist extends Command {
-  AddTwist(this.priority, this.twist, {required this.name})
-    : super(
-        title: 'Add Twist',
-        icon: PlotIcon.add,
-        eventObject: EventObject.twist,
-        eventAction: EventAction.added,
-      );
+/// Activates a draft twist: assigns priority, calls activate, enables syncables.
+class ActivateTwist extends Command {
+  ActivateTwist({
+    required this.draftId,
+    required this.priority,
+    required this.name,
+    required this.syncables,
+  }) : super(
+         title: 'Activate Twist',
+         icon: PlotIcon.twist,
+         eventObject: EventObject.twist,
+         eventAction: EventAction.added,
+       );
 
+  final String draftId;
   final Priority priority;
-  final Twist twist;
   final String name;
+  final List<SelectedSyncable> syncables;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await TwistApi.addTwist(
+      await TwistApi.activateDraft(
+        draftId: draftId,
         priorityId: priority.id.toString(),
-        twistId: twist.id,
-        twistEnvironment: twist.environment,
         name: name,
+        syncables: syncables.isNotEmpty
+            ? syncables
+                  .map(
+                    (s) => {
+                      'provider': s.provider,
+                      'syncableId': s.syncableId,
+                    },
+                  )
+                  .toList()
+            : null,
       );
 
-      return CommandMessage('Twist "$name" added successfully');
+      // Mark the draft as activated so cleanup doesn't delete it
+      SetupTwist.clearDraft();
+
+      // Sync new twist to local DB
+      await PriorityTwist.pull();
+
+      // Pop all modals and reopen ManageTwists
+      if (context.mounted) {
+        Modal.popAll(context);
+        // Schedule ManageTwists to open after the modal stack clears
+        Future.microtask(() {
+          if (context.mounted) {
+            ManageTwists().run(context);
+          }
+        });
+      }
+
+      return const CommandDone();
     } catch (e, t) {
-      log.warning('Failed to add twist', e, t);
+      log.warning('Failed to activate twist', e, t);
       return CommandMessage(
         'Failed to add twist. Please try again.',
         isError: true,
       );
+    }
+  }
+}
+
+// ============================================================================
+// Add Integration Account (sub-modal)
+// ============================================================================
+
+/// Shows branded auth buttons for available providers.
+/// When a provider is authenticated, pops back and refreshes integrations.
+class ShowAddIntegrationAccount extends ShowForm {
+  ShowAddIntegrationAccount({
+    required String priorityTwistId,
+    required VoidCallback onAccountAdded,
+  }) : super(
+         title: 'Add account',
+         icon: PlotIcon.add,
+         form: (context) => _buildForm(priorityTwistId, onAccountAdded),
+       );
+
+  static Future<FormData> _buildForm(
+    String priorityTwistId,
+    VoidCallback onAccountAdded,
+  ) async {
+    final integrations = await TwistApi.getIntegrations(priorityTwistId);
+    return FormData(
+      title: 'Add account',
+      groups: [
+        StaticFormGroup(
+          items: integrations.providers
+              .map(
+                (provider) => FormInfo(
+                  key: 'auth_${provider.provider.name}',
+                  divider: false,
+                  builder: (formContext) => Padding(
+                    padding: widgetPadding.copyWith(top: 0),
+                    child: _IntegrationAuthButton(
+                      provider: provider,
+                      hasExistingAccount: integrations.accounts.any(
+                        (a) => a.provider == provider.provider,
+                      ),
+                      priorityTwistId: priorityTwistId,
+                      onSuccess: () {
+                        onAccountAdded();
+                        if (formContext.mounted) {
+                          Modal.pop<CommandReturn>(
+                            formContext,
+                            Value(const CommandSkipped()),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _IntegrationAuthButton extends StatefulWidget {
+  const _IntegrationAuthButton({
+    required this.provider,
+    required this.hasExistingAccount,
+    required this.priorityTwistId,
+    required this.onSuccess,
+  });
+
+  final TwistProvider provider;
+  final bool hasExistingAccount;
+  final String priorityTwistId;
+  final VoidCallback onSuccess;
+
+  @override
+  State<_IntegrationAuthButton> createState() => _IntegrationAuthButtonState();
+}
+
+class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
+  bool _isLoading = false;
+
+  /// Whether native Google Sign-In is supported on this platform.
+  bool get _useNativeGoogleSignIn =>
+      !kIsWeb &&
+      widget.provider.provider == AuthProvider.google &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.android);
+
+  Future<void> _startAuth() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    final redirectUri = kIsWeb
+        ? Env.authCallbackUrl
+        : 'plotday://auth/callback';
+
+    String? platform;
+    if (!kIsWeb) {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        platform = 'android';
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        platform = 'ios';
+      } else {
+        platform = 'desktop';
+      }
+    }
+
+    try {
+      // Create the server-side callback for this auth flow
+      final authUrl = await TwistApi.getAuthUrl(
+        priorityTwistId: widget.priorityTwistId,
+        provider: widget.provider.provider.name,
+        redirectUri: redirectUri,
+        platform: platform,
+      );
+
+      if (_useNativeGoogleSignIn) {
+        await _startNativeGoogleAuth(authUrl);
+      } else {
+        await _startBrowserAuth(authUrl, redirectUri);
+      }
+
+      widget.onSuccess();
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        log.info('Google sign-in cancelled');
+        return;
+      }
+      log.warning('OAuth flow failed', e);
+      if (mounted) _showAuthError();
+    } catch (e, t) {
+      log.warning('OAuth flow failed', e, t);
+      if (mounted) _showAuthError();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Use native Google Sign-In SDK on macOS/iOS/Android.
+  Future<void> _startNativeGoogleAuth(TwistAuthUrl authUrl) async {
+    final scopes = widget.provider.scopes;
+
+    await GoogleSignIn.instance.signOut();
+    final account = await GoogleSignIn.instance.authenticate(
+      scopeHint: scopes,
+    );
+
+    final serverAuth = await account.authorizationClient.authorizeServer(
+      scopes,
+    );
+    final code = serverAuth?.serverAuthCode;
+    if (code == null) {
+      throw Exception('No server auth code received from Google');
+    }
+
+    final callbackUri = Uri(
+      path: '/auth',
+      queryParameters: {
+        'code': code,
+        'clientId': Env.googleClientId,
+        'redirectUri': Env.authServerCallbackUrl,
+        'provider': 'google',
+        'scopes': scopes.join(','),
+        'callback': authUrl.callback,
+      },
+    );
+    await api.post<Map<String, dynamic>>(callbackUri.toString());
+  }
+
+  /// Use FlutterWebAuth2 browser-based OAuth flow.
+  Future<void> _startBrowserAuth(
+    TwistAuthUrl authUrl,
+    String redirectUri,
+  ) async {
+    final result = await FlutterWebAuth2.authenticate(
+      url: authUrl.url,
+      callbackUrlScheme: redirectUri.split(':').first,
+    );
+
+    final responseUri = Uri.parse(result);
+    final params = responseUri.queryParameters;
+    final code = params['code'];
+
+    if (code != null) {
+      final callbackUri = Uri(
+        path: '/auth',
+        queryParameters: {
+          'code': code,
+          'clientId': authUrl.clientId,
+          'redirectUri': redirectUri,
+          'state': authUrl.state,
+        },
+      );
+      await api.post<Map<String, dynamic>>(callbackUri.toString());
+    }
+  }
+
+  void _showAuthError() {
+    final providerName =
+        widget.provider.provider.name[0].toUpperCase() +
+        widget.provider.provider.name.substring(1);
+    context.showToast(
+      message: 'Unable to connect with $providerName. Please try again.',
+      isError: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final config = getAuthProviderConfig(widget.provider.provider);
+    final providerName =
+        widget.provider.provider.name[0].toUpperCase() +
+        widget.provider.provider.name.substring(1);
+    final label = widget.hasExistingAccount
+        ? 'Add another $providerName account'
+        : config.buttonText;
+
+    return FButton(
+      mainAxisSize: .max,
+      style: buildAuthButtonStyle(context, config),
+      onPress: _isLoading ? null : _startAuth,
+      prefix: _isLoading
+          ? Spinner(color: config.loadingColor, size: config.iconSize)
+          : _buildProviderIcon(widget.provider.provider, config.iconSize),
+      child: Text(
+        label,
+        style: context.theme.typography.base.copyWith(
+          fontWeight: config.fontWeight,
+          fontFamily: config.fontFamily,
+          color: _isLoading ? config.disabledTextColor : config.textColor,
+          height: 1,
+        ),
+      ),
+    );
+  }
+
+  static Widget _buildProviderIcon(AuthProvider provider, double size) {
+    final icon = switch (provider) {
+      AuthProvider.google => 'assets/google.svg',
+      AuthProvider.microsoft => 'assets/microsoft.svg',
+      AuthProvider.slack => 'assets/slack.svg',
+      AuthProvider.atlassian => 'assets/atlassian.svg',
+      AuthProvider.linear => 'assets/linear.svg',
+      AuthProvider.asana => 'assets/asana.svg',
+      _ => null,
+    };
+    if (icon == null) return SizedBox(width: size, height: size);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Center(
+        child: SvgPicture.asset(icon, width: size, height: size),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// Edit/Update/Remove commands
+// ============================================================================
+
+/// Saves all edit twist changes: name, syncable toggles, and account removals.
+class SaveTwist extends Command {
+  SaveTwist({
+    required this.priorityTwist,
+    required this.name,
+    required this.initialEnabled,
+    required this.changes,
+  }) : super(
+         title: 'Save',
+         icon: FontAwesomeIcons.check,
+         eventObject: EventObject.twist,
+         eventAction: EventAction.updated,
+       );
+
+  final PriorityTwist priorityTwist;
+  final String? name;
+  final Set<String> initialEnabled;
+  final IntegrationChanges changes;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      if (name == null) {
+        return CommandMessage('Name is required', isError: true);
+      }
+
+      final ptId = priorityTwist.id.toString();
+
+      // 1. Update name
+      await TwistApi.updateTwist(priorityTwistId: ptId, name: name!);
+
+      // 2. Compute providers being removed (skip their syncable changes)
+      final removedProviders = changes.removedAccounts
+          .map((k) => k.split(':').first)
+          .toSet();
+
+      // 3. Enable/disable syncables (skip removed providers)
+      final toEnable = changes.selectedSyncables.difference(initialEnabled);
+      final toDisable = initialEnabled.difference(changes.selectedSyncables);
+
+      for (final key in toEnable) {
+        final parts = key.split(':');
+        final provider = parts[0];
+        if (removedProviders.contains(provider)) continue;
+        final syncableId = parts.sublist(1).join(':');
+        await TwistApi.enableSyncable(
+          priorityTwistId: ptId,
+          provider: provider,
+          syncableId: syncableId,
+        );
+      }
+
+      for (final key in toDisable) {
+        final parts = key.split(':');
+        final provider = parts[0];
+        if (removedProviders.contains(provider)) continue;
+        final syncableId = parts.sublist(1).join(':');
+        await TwistApi.disableSyncable(
+          priorityTwistId: ptId,
+          provider: provider,
+          syncableId: syncableId,
+        );
+      }
+
+      // 4. Remove accounts
+      for (final accountKey in changes.removedAccounts) {
+        final parts = accountKey.split(':');
+        final provider = parts[0];
+        final actorId = parts.sublist(1).join(':');
+        await TwistApi.removeIntegration(
+          priorityTwistId: ptId,
+          provider: provider,
+          actorId: actorId,
+        );
+      }
+
+      return CommandMessage('Twist "${name!}" saved');
+    } catch (e, t) {
+      log.warning('Failed to save twist', e, t);
+      return CommandMessage('Failed to save twist', isError: true);
     }
   }
 }
@@ -440,7 +1042,7 @@ class PromptToArchiveTwist extends ShowForm {
             FormDivider(key: 'divider'),
             FormButton(
               key: 'archive',
-              buildCommand: (_) => _ArchiveTwistCommand(twist),
+              buildCommand: (_) => ArchiveTwist(twist),
             ),
           ],
         ),
@@ -449,8 +1051,8 @@ class PromptToArchiveTwist extends ShowForm {
   }
 }
 
-class _ArchiveTwistCommand extends Command {
-  _ArchiveTwistCommand(this.twist)
+class ArchiveTwist extends Command {
+  ArchiveTwist(this.twist)
     : super(
         title: 'Archive Twist',
         icon: PlotIcon.archived,

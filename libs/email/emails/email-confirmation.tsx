@@ -7,8 +7,8 @@ export default function EmailConfirmation({ code }: { code: string }) {
     <EmailLayout preview="Confirm your email address for Plot">
       <Heading style={h1}>Welcome to Plot!</Heading>
       <Text style={text}>
-        Thanks for signing up! To get started, please confirm your email
-        address by entering the verification code below:
+        Thanks for signing up! To get started, please confirm your email address
+        by entering the verification code below:
       </Text>
       <Text style={otpCode}>{code}</Text>
       <Text style={hint}>
@@ -18,7 +18,7 @@ export default function EmailConfirmation({ code }: { code: string }) {
         If you didn't create a Plot account, you can safely ignore this email
         and no account will be created.
       </Text>
-      <Text style={hint}>Questions? Contact us at team@plot.day</Text>
+      <Text style={hint}>Questions? Contact us at team@plot.day.</Text>
     </EmailLayout>
   );
 }

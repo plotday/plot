@@ -6,7 +6,6 @@ import { type DB, createDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
-import { disposeRpc } from "../utils/rpc";
 
 // Configuration
 const STALE_THRESHOLD_MS = 30_000; // 30 seconds
@@ -202,13 +201,12 @@ export class SyncRecovery extends DurableObject<Bindings> {
       try {
         const userSyncId = this.env.USER_SYNC.idFromName(userId);
         const userSyncDO = this.env.USER_SYNC.get(userSyncId);
-        const result = await userSyncDO.fetch(
+        await userSyncDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
             body: JSON.stringify({ id: userId }),
           })
         );
-        disposeRpc(result);
         return { success: true, user_id: userId };
       } catch (error) {
         logger.error("Error notifying UserSync DO", error as Error, {
@@ -278,13 +276,12 @@ export class SyncRecovery extends DurableObject<Bindings> {
       try {
         const twistSyncId = this.env.TWIST_SYNC.idFromName(priorityTwistId);
         const twistSyncDO = this.env.TWIST_SYNC.get(twistSyncId);
-        const result = await twistSyncDO.fetch(
+        await twistSyncDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
             body: JSON.stringify({ id: priorityTwistId }),
           })
         );
-        disposeRpc(result);
         return { success: true, priority_twist_id: priorityTwistId };
       } catch (error) {
         logger.error("Error notifying TwistSync DO", error as Error, {

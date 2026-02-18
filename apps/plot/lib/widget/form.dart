@@ -497,7 +497,9 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
           Modal.pop<CommandReturn>(context, Value(result));
         } else if (result is CommandRoute) {
           await Modal.popAll(context);
-          result.go(context);
+          if (context.mounted) {
+            result.go(context);
+          }
         } else if (result is! CommandSkipped) {
           Modal.pop<CommandReturn>(context, Value(result));
         }

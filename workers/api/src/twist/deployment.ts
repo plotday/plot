@@ -112,10 +112,11 @@ export async function deployTwist({
     sourcemapCode = input.sourcemap;
   }
 
-  // Store twist module in R2 and get version + permissions
+  // Store twist module in R2 and get version + permissions + providers
   // (or just collect permissions in dry-run mode)
   let version: string;
   let permissions: TwistPermissions;
+  let providers: Array<{ provider: string; scopes: string[] }> = [];
   try {
     if (dryRun) {
       onProgress?.("Analyzing permissions");
@@ -142,6 +143,7 @@ export async function deployTwist({
     });
     version = storeResult.version;
     permissions = storeResult.permissions;
+    providers = storeResult.providers;
   } catch (error) {
     logger.error("Error storing twist module", error as Error);
     // Provide user-friendly error message
@@ -182,13 +184,16 @@ export async function deployTwist({
 
   if (existingTwist) {
     // Update existing twist - use UPDATE to avoid unique constraint issues
+    const twistPermissions = providers.length > 0
+      ? { ...permissions, _providers: providers }
+      : permissions;
     twist = await db
       .updateTable("twist")
       .set({
         name,
         description,
         version,
-        permissions: JSON.stringify(permissions),
+        permissions: JSON.stringify(twistPermissions),
       })
       .where("id", "=", existingTwist.id)
       .returningAll()
@@ -197,6 +202,9 @@ export async function deployTwist({
     logger.info("Updated twist", { twist_id: String(twist.id) });
   } else {
     // Create new twist - use INSERT
+    const newTwistPermissions = providers.length > 0
+      ? { ...permissions, _providers: providers }
+      : permissions;
     twist = await db
       .insertInto("twist")
       .values({
@@ -205,7 +213,7 @@ export async function deployTwist({
         name,
         description,
         version,
-        permissions: JSON.stringify(permissions),
+        permissions: JSON.stringify(newTwistPermissions),
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -237,7 +245,7 @@ export async function deployTwist({
         priorityTwists.map(async (pa) => {
           const twistWrapper = await factory({
             version, // Use NEW version
-            priorityId: pa.priority_id,
+            priorityId: pa.priority_id!,
             priorityTwistId: pa.id,
           });
           return twistWrapper.upgrade();
@@ -295,6 +303,9 @@ export async function deployTwist({
       logger.info("Auto-approving twist to public environment");
 
       // Get or create the public twist - need to fetch ID for callback upgrade
+      const publicPermissions = providers.length > 0
+        ? { ...permissions, _providers: providers }
+        : permissions;
       try {
         const publicTwist = await db
           .insertInto("twist")
@@ -304,14 +315,14 @@ export async function deployTwist({
             name,
             description,
             version,
-            permissions: JSON.stringify(permissions),
+            permissions: JSON.stringify(publicPermissions),
           })
           .onConflict((oc) =>
             oc.columns(["twist_admin_id", "environment"]).doUpdateSet({
               name,
               description,
               version,
-              permissions: JSON.stringify(permissions),
+              permissions: JSON.stringify(publicPermissions),
             })
           )
           .returningAll()

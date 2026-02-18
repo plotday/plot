@@ -532,7 +532,10 @@ class _ModalStackDisplayState extends State<_ModalStackDisplay> {
         for (int i = 0; i < widget.modalStack.length; i++)
           Offstage(
             offstage: i != widget.modalStack.length - 1,
-            child: widget.modalStack[i].modal,
+            child: ExcludeFocus(
+              excluding: i != widget.modalStack.length - 1,
+              child: widget.modalStack[i].modal,
+            ),
           ),
       ],
     );

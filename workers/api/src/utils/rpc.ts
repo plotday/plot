@@ -129,7 +129,11 @@ export function isRpcStub(value: unknown): value is Rpc.Stub<any> {
  * @see https://developers.cloudflare.com/workers/runtime-apis/rpc/lifecycle/
  */
 export function disposeRpc(value: unknown): void {
-  if (value != null && typeof value === "object" && Symbol.dispose in value) {
+  if (
+    value != null &&
+    (typeof value === "object" || typeof value === "function") &&
+    Symbol.dispose in value
+  ) {
     try {
       (value as { [Symbol.dispose]: () => void })[Symbol.dispose]();
     } catch {

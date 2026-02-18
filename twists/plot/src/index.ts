@@ -44,7 +44,7 @@ class PlotTwist extends Twist<PlotTwist> {
       notes: [
         {
           content: `Plot is a workspace for making progress on what matters most to you. **Priorities**, **Activities**, and **Notes** are the core building blocks of Plot:\n\n
-- **Priorities**: These are the roles, goals, and projects in your life; they are the areas you direct you focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.
+- **Priorities**: These are the roles, goals, and projects in your life; they are the areas you direct your focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.
 - **Activities**: This is what you do to make progress in your priorities. They include what has happened and what's coming next, all laid out on a timeline. More about the types of activities below.
 - **Notes**: All activities can have notes, which include private notes, shared messages, and updates from connected apps. Notes give you context on progress for that activity.`,
         },
@@ -61,7 +61,7 @@ class PlotTwist extends Twist<PlotTwist> {
         },
       ],
       preview: `Plot is a workspace for making progress on what matters most to you. **Priorities**, **Activities**, and **Notes** are the core building blocks of Plot:\n\n
-- **Priorities**: These are the roles, goals, and projects in your life; they are the areas you direct you focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.
+- **Priorities**: These are the roles, goals, and projects in your life; they are the areas you direct your focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.
 - **Activities**: This is what you do to make progress in your priorities. They include what has happened and what's coming next, all laid out on a timeline. More about the types of activities below.
 - **Notes**: All activities can have notes, which include private notes, shared messages, and updates from connected apps. Notes give you context on progress for that activity.`,
       priority: onboardingPriority,

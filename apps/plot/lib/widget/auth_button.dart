@@ -419,11 +419,11 @@ class _AuthButtonState extends State<AuthButton> {
       return _cachedWebButton!;
     }
 
-    final config = _getProviderConfig(widget.provider);
+    final config = getAuthProviderConfig(widget.provider);
     return FButton(
       mainAxisSize: .min,
       onPress: _isLoading ? null : _onPress,
-      style: _buildButtonStyle(context, config),
+      style: buildAuthButtonStyle(context, config),
       prefix: _isLoading
           ? Spinner(color: config.textColor, size: config.iconSize)
           : _ProviderIcon(provider: widget.provider, size: config.iconSize),
@@ -436,58 +436,6 @@ class _AuthButtonState extends State<AuthButton> {
           height: 1,
         ),
       ),
-    );
-  }
-
-  FButtonStyle _buildButtonStyle(BuildContext context, _ProviderConfig config) {
-    return FButtonStyle(
-      decoration: FWidgetStateMap({
-        WidgetState.any: BoxDecoration(
-          color: config.backgroundColor,
-          border: Border.all(color: config.borderColor, width: 1),
-          borderRadius: tileBorderRadius,
-        ),
-        WidgetState.hovered: BoxDecoration(
-          color: config.hoverColor,
-          border: Border.all(color: config.borderColor, width: 1),
-          borderRadius: tileBorderRadius,
-        ),
-        WidgetState.focused: BoxDecoration(
-          color: config.backgroundColor,
-          border: Border.all(color: config.focusColor, width: 1),
-          borderRadius: tileBorderRadius,
-        ),
-        WidgetState.disabled: BoxDecoration(
-          color: config.backgroundColor.withValues(alpha: 0.6),
-          border: Border.all(
-            color: config.borderColor.withValues(alpha: 0.6),
-            width: 1,
-          ),
-          borderRadius: tileBorderRadius,
-        ),
-      }),
-      contentStyle: FButtonContentStyle(
-        padding: context.theme.buttonStyles.secondary.contentStyle.padding,
-        textStyle: FWidgetStateMap.all(
-          context.theme.typography.base.copyWith(
-            fontWeight: config.fontWeight,
-            fontFamily: config.fontFamily,
-            height: 1,
-          ),
-        ),
-        iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
-        circularProgressStyle: FWidgetStateMap.all(
-          context.theme.circularProgressStyle,
-        ),
-      ),
-      iconContentStyle: FButtonIconContentStyle(
-        iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
-      ),
-      focusedOutlineStyle: FFocusedOutlineStyle(
-        borderRadius: tileBorderRadius,
-        color: config.focusColor,
-      ),
-      tappableStyle: FTappableStyle(),
     );
   }
 
@@ -596,254 +544,306 @@ class _AuthButtonState extends State<AuthButton> {
     }
   }
 
-  _ProviderConfig _getProviderConfig(AuthProvider provider) {
-    // Uniform sizing for all buttons
-    const iconSize = 18.0;
-    const spacing = 12.0;
-    const fontSize = 14.0;
-    const fontWeight = FontWeight.w500;
-    const horizontalPadding = 12.0;
+}
 
-    switch (provider) {
-      case AuthProvider.google:
-        return _ProviderConfig(
-          backgroundColor: Colors.white,
-          textColor: const Color(0xFF3C4043),
-          borderColor: const Color(0xFFDADBDD),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFFF8F9FA),
-          focusColor: const Color(0xFF4285F4),
-          loadingColor: const Color(0xFF4285F4),
-          disabledTextColor: const Color(0xFF9AA0A6),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'Roboto',
-          buttonText: 'Continue with Google',
-        );
+FButtonStyle buildAuthButtonStyle(BuildContext context, AuthProviderConfig config) {
+  return FButtonStyle(
+    decoration: FWidgetStateMap({
+      WidgetState.any: BoxDecoration(
+        color: config.backgroundColor,
+        border: Border.all(color: config.borderColor, width: 1),
+        borderRadius: tileBorderRadius,
+      ),
+      WidgetState.hovered: BoxDecoration(
+        color: config.hoverColor,
+        border: Border.all(color: config.borderColor, width: 1),
+        borderRadius: tileBorderRadius,
+      ),
+      WidgetState.focused: BoxDecoration(
+        color: config.backgroundColor,
+        border: Border.all(color: config.focusColor, width: 1),
+        borderRadius: tileBorderRadius,
+      ),
+      WidgetState.disabled: BoxDecoration(
+        color: config.backgroundColor.withValues(alpha: 0.6),
+        border: Border.all(
+          color: config.borderColor.withValues(alpha: 0.6),
+          width: 1,
+        ),
+        borderRadius: tileBorderRadius,
+      ),
+    }),
+    contentStyle: FButtonContentStyle(
+      padding: context.theme.buttonStyles.secondary.contentStyle.padding,
+      textStyle: FWidgetStateMap.all(
+        context.theme.typography.base.copyWith(
+          fontWeight: config.fontWeight,
+          fontFamily: config.fontFamily,
+          height: 1,
+        ),
+      ),
+      iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
+      circularProgressStyle: FWidgetStateMap.all(
+        context.theme.circularProgressStyle,
+      ),
+    ),
+    iconContentStyle: FButtonIconContentStyle(
+      iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
+    ),
+    focusedOutlineStyle: FFocusedOutlineStyle(
+      borderRadius: tileBorderRadius,
+      color: config.focusColor,
+    ),
+    tappableStyle: FTappableStyle(),
+  );
+}
 
-      case AuthProvider.microsoft:
-        return _ProviderConfig(
-          backgroundColor: Colors.white,
-          textColor: const Color(0xFF5E5E5E),
-          borderColor: const Color(0xFF8C8C8C),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFFF3F2F1),
-          focusColor: const Color(0xFF0078D4),
-          loadingColor: const Color(0xFF0078D4),
-          disabledTextColor: const Color(0xFFA19F9D),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'Segoe UI',
-          buttonText: 'Continue with Microsoft',
-        );
+AuthProviderConfig getAuthProviderConfig(AuthProvider provider) {
+  const iconSize = 18.0;
+  const spacing = 12.0;
+  const fontSize = 14.0;
+  const fontWeight = FontWeight.w500;
+  const horizontalPadding = 12.0;
 
-      case AuthProvider.slack:
-        return _ProviderConfig(
-          backgroundColor: const Color(0xFF4A154B),
-          textColor: Colors.white,
-          borderColor: const Color(0xFF4A154B),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFF611F69),
-          focusColor: const Color(0xFF611F69),
-          loadingColor: Colors.white,
-          disabledTextColor: const Color(0xFFB8A5BA),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'Lato',
-          buttonText: 'Continue with Slack',
-        );
+  switch (provider) {
+    case AuthProvider.google:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF3C4043),
+        borderColor: const Color(0xFFDADBDD),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFF8F9FA),
+        focusColor: const Color(0xFF4285F4),
+        loadingColor: const Color(0xFF4285F4),
+        disabledTextColor: const Color(0xFF9AA0A6),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'Roboto',
+        buttonText: 'Continue with Google',
+      );
 
-      case AuthProvider.apple:
-        return _ProviderConfig(
-          backgroundColor: Colors.white,
-          textColor: Colors.black,
-          borderColor: const Color(0xFFDADBDD),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFF1D1D1F),
-          focusColor: const Color(0xFF0071E3),
-          loadingColor: Colors.white,
-          disabledTextColor: const Color(0xFF86868B),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'SF Pro Text',
-          buttonText: 'Continue with Apple',
-        );
+    case AuthProvider.microsoft:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF5E5E5E),
+        borderColor: const Color(0xFF8C8C8C),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFF3F2F1),
+        focusColor: const Color(0xFF0078D4),
+        loadingColor: const Color(0xFF0078D4),
+        disabledTextColor: const Color(0xFFA19F9D),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'Segoe UI',
+        buttonText: 'Continue with Microsoft',
+      );
 
-      case AuthProvider.github:
-        return _ProviderConfig(
-          backgroundColor: const Color(0xFF24292E),
-          textColor: Colors.white,
-          borderColor: const Color(0xFF24292E),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFF2F363D),
-          focusColor: const Color(0xFF0366D6),
-          loadingColor: Colors.white,
-          disabledTextColor: const Color(0xFF959DA5),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'system-ui',
-          buttonText: 'Continue with GitHub',
-        );
+    case AuthProvider.slack:
+      return AuthProviderConfig(
+        backgroundColor: const Color(0xFF4A154B),
+        textColor: Colors.white,
+        borderColor: const Color(0xFF4A154B),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFF611F69),
+        focusColor: const Color(0xFF611F69),
+        loadingColor: Colors.white,
+        disabledTextColor: const Color(0xFFB8A5BA),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'Lato',
+        buttonText: 'Continue with Slack',
+      );
 
-      case AuthProvider.discord:
-        return _ProviderConfig(
-          backgroundColor: const Color(0xFF5865F2),
-          textColor: Colors.white,
-          borderColor: const Color(0xFF5865F2),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFF4752C4),
-          focusColor: const Color(0xFF4752C4),
-          loadingColor: Colors.white,
-          disabledTextColor: const Color(0xFFB5BAF2),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'system-ui',
-          buttonText: 'Continue with Discord',
-        );
+    case AuthProvider.apple:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+        borderColor: const Color(0xFFDADBDD),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFF1D1D1F),
+        focusColor: const Color(0xFF0071E3),
+        loadingColor: Colors.white,
+        disabledTextColor: const Color(0xFF86868B),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'SF Pro Text',
+        buttonText: 'Continue with Apple',
+      );
 
-      case AuthProvider.notion:
-        return _ProviderConfig(
-          backgroundColor: Colors.white,
-          textColor: Colors.black,
-          borderColor: const Color(0xFFDADBDD),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFFF7F6F3),
-          focusColor: const Color(0xFF000000),
-          loadingColor: const Color(0xFF000000),
-          disabledTextColor: const Color(0xFF9AA0A6),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'system-ui',
-          buttonText: 'Continue with Notion',
-        );
+    case AuthProvider.github:
+      return AuthProviderConfig(
+        backgroundColor: const Color(0xFF24292E),
+        textColor: Colors.white,
+        borderColor: const Color(0xFF24292E),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFF2F363D),
+        focusColor: const Color(0xFF0366D6),
+        loadingColor: Colors.white,
+        disabledTextColor: const Color(0xFF959DA5),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with GitHub',
+      );
 
-      case AuthProvider.atlassian:
-        return _ProviderConfig(
-          backgroundColor: Colors.white,
-          textColor: const Color(0xFF172B4D),
-          borderColor: const Color(0xFFDFE1E6),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFFF4F5F7),
-          focusColor: const Color(0xFF0052CC),
-          loadingColor: const Color(0xFF0052CC),
-          disabledTextColor: const Color(0xFF8993A4),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'system-ui',
-          buttonText: 'Continue with Atlassian',
-        );
+    case AuthProvider.discord:
+      return AuthProviderConfig(
+        backgroundColor: const Color(0xFF5865F2),
+        textColor: Colors.white,
+        borderColor: const Color(0xFF5865F2),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFF4752C4),
+        focusColor: const Color(0xFF4752C4),
+        loadingColor: Colors.white,
+        disabledTextColor: const Color(0xFFB5BAF2),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Discord',
+      );
 
-      case AuthProvider.linear:
-        return _ProviderConfig(
-          backgroundColor: const Color(0xFF5E6AD2),
-          textColor: Colors.white,
-          borderColor: const Color(0xFF5E6AD2),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFF505AC0),
-          focusColor: const Color(0xFF505AC0),
-          loadingColor: Colors.white,
-          disabledTextColor: const Color(0xFFB5B9E8),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'system-ui',
-          buttonText: 'Continue with Linear',
-        );
+    case AuthProvider.notion:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+        borderColor: const Color(0xFFDADBDD),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFF7F6F3),
+        focusColor: const Color(0xFF000000),
+        loadingColor: const Color(0xFF000000),
+        disabledTextColor: const Color(0xFF9AA0A6),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Notion',
+      );
 
-      case AuthProvider.monday:
-        return _ProviderConfig(
-          backgroundColor: const Color(0xFFFF3D57),
-          textColor: Colors.white,
-          borderColor: const Color(0xFFFF3D57),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFFE63549),
-          focusColor: const Color(0xFFE63549),
-          loadingColor: Colors.white,
-          disabledTextColor: const Color(0xFFFFB5BF),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'system-ui',
-          buttonText: 'Continue with Monday',
-        );
+    case AuthProvider.atlassian:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF172B4D),
+        borderColor: const Color(0xFFDFE1E6),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFF4F5F7),
+        focusColor: const Color(0xFF0052CC),
+        loadingColor: const Color(0xFF0052CC),
+        disabledTextColor: const Color(0xFF8993A4),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Atlassian',
+      );
 
-      case AuthProvider.asana:
-        return _ProviderConfig(
-          backgroundColor: Colors.white,
-          textColor: const Color(0xFF151B26),
-          borderColor: const Color(0xFFE8ECEE),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFFFCF1F0),
-          focusColor: const Color(0xFFF95353),
-          loadingColor: const Color(0xFFF95353),
-          disabledTextColor: const Color(0xFF9CA6AF),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'system-ui',
-          buttonText: 'Continue with Asana',
-        );
+    case AuthProvider.linear:
+      return AuthProviderConfig(
+        backgroundColor: const Color(0xFF5E6AD2),
+        textColor: Colors.white,
+        borderColor: const Color(0xFF5E6AD2),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFF505AC0),
+        focusColor: const Color(0xFF505AC0),
+        loadingColor: Colors.white,
+        disabledTextColor: const Color(0xFFB5B9E8),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Linear',
+      );
 
-      case AuthProvider.hubspot:
-        return _ProviderConfig(
-          backgroundColor: Colors.white,
-          textColor: const Color(0xFF33475B),
-          borderColor: const Color(0xFFCBD6E2),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFFF5F8FA),
-          focusColor: const Color(0xFFFF7A59),
-          loadingColor: const Color(0xFFFF7A59),
-          disabledTextColor: const Color(0xFF99ACC2),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'system-ui',
-          buttonText: 'Continue with HubSpot',
-        );
+    case AuthProvider.monday:
+      return AuthProviderConfig(
+        backgroundColor: const Color(0xFFFF3D57),
+        textColor: Colors.white,
+        borderColor: const Color(0xFFFF3D57),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFE63549),
+        focusColor: const Color(0xFFE63549),
+        loadingColor: Colors.white,
+        disabledTextColor: const Color(0xFFFFB5BF),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Monday',
+      );
 
-      default:
-        return _ProviderConfig(
-          backgroundColor: Colors.white,
-          textColor: const Color(0xFF3C4043),
-          borderColor: const Color(0xFFDADBDD),
-          horizontalPadding: horizontalPadding,
-          hoverColor: const Color(0xFFF8F9FA),
-          focusColor: const Color(0xFF4285F4),
-          loadingColor: const Color(0xFF4285F4),
-          disabledTextColor: const Color(0xFF9AA0A6),
-          iconSize: iconSize,
-          spacing: spacing,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          fontFamily: 'Roboto',
-          buttonText:
-              'Continue with ${provider.name[0].toUpperCase()}${provider.name.substring(1)}',
-        );
-    }
+    case AuthProvider.asana:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF151B26),
+        borderColor: const Color(0xFFE8ECEE),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFFCF1F0),
+        focusColor: const Color(0xFFF95353),
+        loadingColor: const Color(0xFFF95353),
+        disabledTextColor: const Color(0xFF9CA6AF),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Asana',
+      );
+
+    case AuthProvider.hubspot:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF33475B),
+        borderColor: const Color(0xFFCBD6E2),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFF5F8FA),
+        focusColor: const Color(0xFFFF7A59),
+        loadingColor: const Color(0xFFFF7A59),
+        disabledTextColor: const Color(0xFF99ACC2),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with HubSpot',
+      );
+
+    default:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF3C4043),
+        borderColor: const Color(0xFFDADBDD),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFF8F9FA),
+        focusColor: const Color(0xFF4285F4),
+        loadingColor: const Color(0xFF4285F4),
+        disabledTextColor: const Color(0xFF9AA0A6),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'Roboto',
+        buttonText:
+            'Continue with ${provider.name[0].toUpperCase()}${provider.name.substring(1)}',
+      );
   }
 }
 
-class _ProviderConfig {
+class AuthProviderConfig {
   final Color backgroundColor;
   final Color textColor;
   final Color borderColor;
@@ -859,7 +859,7 @@ class _ProviderConfig {
   final String fontFamily;
   final String buttonText;
 
-  const _ProviderConfig({
+  const AuthProviderConfig({
     required this.backgroundColor,
     required this.textColor,
     required this.borderColor,

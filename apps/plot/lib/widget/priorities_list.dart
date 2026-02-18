@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 
 class PrioritiesList extends StatefulWidget {
@@ -30,6 +31,7 @@ class _PrioritiesListState extends State<PrioritiesList>
   final Map<String, AnimationController> _controllers = {};
   final Map<String, bool> _expansionState = {};
   bool _isFirstBuild = true;
+  final Set<String> _showAllChildren = {};
 
   @override
   void initState() {
@@ -80,6 +82,7 @@ class _PrioritiesListState extends State<PrioritiesList>
           controller.forward();
         } else {
           controller.reverse();
+          _showAllChildren.remove(priorityId);
         }
       }
     }
@@ -245,6 +248,9 @@ class _PrioritiesListState extends State<PrioritiesList>
           if (priorities.length == 1) {
             final priority = priorities.first;
             final priorityExpanded = shouldExpand(priority);
+            final parentId = priority.id.toString();
+            final truncated = _truncatedChildren(parentId, priority.children);
+            final visibleChildren = truncated ?? priority.children;
 
             return [
               PriorityWidget(
@@ -264,13 +270,22 @@ class _PrioritiesListState extends State<PrioritiesList>
               ),
               if (priority.children.isNotEmpty)
                 _AnimatedPriorityChildren(
-                  controller: _getOrCreateController(priority.id.toString()),
-                  children: buildReorderablePriorityItems(
-                    context,
-                    priority.children,
-                    indentLevel: indentLevel + 1,
-                    textStyle: textStyle,
-                  ),
+                  controller: _getOrCreateController(parentId),
+                  children: [
+                    ...buildReorderablePriorityItems(
+                      context,
+                      visibleChildren,
+                      indentLevel: indentLevel + 1,
+                      textStyle: textStyle,
+                    ),
+                    if (truncated != null)
+                      _ShowMoreItem(
+                        indentLevel: indentLevel + 1,
+                        textStyle: textStyle,
+                        onTap: () =>
+                            setState(() => _showAllChildren.add(parentId)),
+                      ),
+                  ],
                 ),
             ];
           }
@@ -281,6 +296,12 @@ class _PrioritiesListState extends State<PrioritiesList>
               shrinkWrap: true,
               itemBuilder: (context, priority, reorderableIndex) {
                 final priorityExpanded = shouldExpand(priority);
+                final parentId = priority.id.toString();
+                final truncated = _truncatedChildren(
+                  parentId,
+                  priority.children,
+                );
+                final visibleChildren = truncated ?? priority.children;
 
                 return Column(
                   key: ValueKey('all-${priority.id}'),
@@ -306,15 +327,23 @@ class _PrioritiesListState extends State<PrioritiesList>
                     ),
                     if (priority.children.isNotEmpty)
                       _AnimatedPriorityChildren(
-                        controller: _getOrCreateController(
-                          priority.id.toString(),
-                        ),
-                        children: buildReorderablePriorityItems(
-                          context,
-                          priority.children,
-                          indentLevel: indentLevel + 1,
-                          textStyle: textStyle,
-                        ),
+                        controller: _getOrCreateController(parentId),
+                        children: [
+                          ...buildReorderablePriorityItems(
+                            context,
+                            visibleChildren,
+                            indentLevel: indentLevel + 1,
+                            textStyle: textStyle,
+                          ),
+                          if (truncated != null)
+                            _ShowMoreItem(
+                              indentLevel: indentLevel + 1,
+                              textStyle: textStyle,
+                              onTap: () => setState(
+                                () => _showAllChildren.add(parentId),
+                              ),
+                            ),
+                        ],
                       ),
                   ],
                 );
@@ -465,6 +494,36 @@ class _PrioritiesListState extends State<PrioritiesList>
     return priority.descendants().any((p) => p.unread);
   }
 
+  /// Returns the visible subset of children when truncating, or null if no truncation needed.
+  List<Priority>? _truncatedChildren(String parentId, List<Priority> children) {
+    if (children.length <= 5) return null;
+    if (_showAllChildren.contains(parentId)) return null;
+
+    final unreadChildren = children
+        .where((c) => _hasDescendantUnread(c))
+        .toList();
+
+    // Case 1: All children are unread — show top 4 by order
+    if (unreadChildren.length == children.length) {
+      return children.take(4).toList();
+    }
+
+    // Case 2: 5+ unread (but not all) — show all unread
+    if (unreadChildren.length >= 5) {
+      return unreadChildren;
+    }
+
+    // Case 3: <5 unread — fill 4 slots with top-by-order first, unread bubbling up
+    final slotsForOrdered = 4 - unreadChildren.length;
+    final topByOrder = children
+        .where((c) => !_hasDescendantUnread(c))
+        .take(slotsForOrdered)
+        .toList();
+    final visible = <Priority>{...topByOrder, ...unreadChildren};
+    // Return in natural (original) order
+    return children.where((c) => visible.contains(c)).toList();
+  }
+
   Future<void> _onReorderPriority(
     List<Priority> peers,
     int oldIndex,
@@ -512,6 +571,59 @@ class _AnimatedPriorityChildren extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,
+        ),
+      ),
+    );
+  }
+}
+
+class _ShowMoreItem extends StatefulWidget {
+  final int indentLevel;
+  final VoidCallback onTap;
+  final TextStyle? textStyle;
+
+  const _ShowMoreItem({
+    required this.indentLevel,
+    required this.onTap,
+    this.textStyle,
+  });
+
+  @override
+  State<_ShowMoreItem> createState() => _ShowMoreItemState();
+}
+
+class _ShowMoreItemState extends State<_ShowMoreItem> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _isHovered ? context.theme.plotColors.highlight : null,
+          ),
+          padding: EdgeInsets.only(left: widget.indentLevel * 16),
+          child: Row(
+            children: [
+              SizedBox(width: 20),
+              Expanded(
+                child: Padding(
+                  padding: widgetPaddingSm.copyWith(left: 0, right: 0),
+                  child: Text(
+                    'More\u2026',
+                    style: (widget.textStyle ?? context.theme.typography.sm)
+                        .copyWith(color: context.theme.colors.mutedForeground),
+                  ),
+                ),
+              ),
+              SizedBox(width: 20),
+            ],
+          ),
         ),
       ),
     );

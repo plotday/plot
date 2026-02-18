@@ -899,7 +899,7 @@ export type Database = {
           id: string
           name: string
           owner_id: string
-          priority_id: string
+          priority_id: string | null
           suspended_at: string | null
           twist_id: number
           updated_at: string
@@ -911,7 +911,7 @@ export type Database = {
           id?: string
           name: string
           owner_id: string
-          priority_id: string
+          priority_id?: string | null
           suspended_at?: string | null
           twist_id: number
           updated_at?: string
@@ -923,7 +923,7 @@ export type Database = {
           id?: string
           name?: string
           owner_id?: string
-          priority_id?: string
+          priority_id?: string | null
           suspended_at?: string | null
           twist_id?: number
           updated_at?: string

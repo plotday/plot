@@ -28,7 +28,6 @@ import { createLogger } from "@plotday/worker-util";
 import type { DB } from "../../../db-types";
 import type { Bindings } from "../../../env";
 import { rpc, rpcUser } from "../../../rpc";
-import { disposeRpc } from "../../../utils/rpc";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
 import type { EnrichedActivity, EnrichedNote } from "../../view-types";
@@ -502,13 +501,12 @@ export class Plot extends Tool implements IPlot {
       for (const userId of userIds) {
         const doId = this.env.USER_SYNC.idFromName(userId);
         const userSync = this.env.USER_SYNC.get(doId);
-        const result = await userSync.fetch(
+        await userSync.fetch(
           new Request("http://do/notify", {
             method: "POST",
             body: JSON.stringify({ id: userId }),
           })
         );
-        disposeRpc(result);
       }
 
       // 3. Notify TwistSync DOs for other twists on these priorities
@@ -524,13 +522,12 @@ export class Plot extends Tool implements IPlot {
       for (const twist of twists) {
         const doId = this.env.TWIST_SYNC.idFromName(twist.id);
         const twistSync = this.env.TWIST_SYNC.get(doId);
-        const result = await twistSync.fetch(
+        await twistSync.fetch(
           new Request("http://do/notify", {
             method: "POST",
             body: JSON.stringify({ id: twist.id }),
           })
         );
-        disposeRpc(result);
       }
     } catch (error) {
       // Log but don't fail — recovery system catches stale sync state within 30s

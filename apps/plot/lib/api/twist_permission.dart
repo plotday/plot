@@ -40,6 +40,7 @@ class TwistPermissions {
 
     for (final domainEntry in json.entries) {
       final domain = domainEntry.key;
+      if (domainEntry.value is! Map<String, dynamic>) continue;
       final entities = domainEntry.value as Map<String, dynamic>;
 
       final entityMap = <String, List<PermissionFlag>>{};
@@ -103,11 +104,13 @@ class TwistPermissions {
       return 'No permissions';
     }
 
-    final entries = domainPerms.entries.map((e) {
-      final entity = e.key;
-      final flags = e.value.map((f) => f.name).join(', ');
-      return '$entity: $flags';
-    }).join('\n');
+    final entries = domainPerms.entries
+        .map((e) {
+          final entity = e.key;
+          final flags = e.value.map((f) => f.name).join(', ');
+          return '$entity: $flags';
+        })
+        .join('\n');
 
     return entries;
   }

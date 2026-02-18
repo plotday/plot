@@ -256,7 +256,52 @@ async function callPreLifecycle(toolBuilder, methodName, ...args) {
     // Then call on the current tool
     // RpcStubs are functions, regular tools are objects
     const isBuiltIn = typeof tool === 'function';
-    if (!isBuiltIn && typeof tool[methodName] === 'function') {
+    if (isBuiltIn) {
+      // Built-in tools: tryCallCallback returns undefined if method doesn't exist
+      const result = await tool.tryCallCallback(methodName, ...args);
+
+      // Handle __dispatch returns from built-in tool lifecycle methods
+      if (result && result.__dispatch && Array.isArray(result.__dispatch)) {
+        const options = toolBuilder.options.get(toolId);
+        const toolPath = toolBuilder.path.concat([toolId]);
+
+        for (const callbackInfo of result.__dispatch) {
+          if (callbackInfo?.optionPath && callbackInfo?.args && options) {
+            let cb = options;
+            for (const key of callbackInfo.optionPath) {
+              cb = cb?.[key];
+              if (!cb) break;
+            }
+
+            if (typeof cb === 'function') {
+              // Context: parent tool or twist (root)
+              let context;
+              if (toolPath.length > 1) {
+                const parentPath = toolPath.slice(0, -1);
+                context = toolBuilder.rootToolShed.getByPath(parentPath).tool;
+              } else {
+                context = toolBuilder.rootToolShed.twist;
+              }
+
+              try {
+                if (callbackInfo.forwardTo) {
+                  const cbResult = await cb.call(context, ...callbackInfo.args);
+                  await tool.callCallback(
+                    callbackInfo.forwardTo.functionName,
+                    ...callbackInfo.forwardTo.prependArgs,
+                    cbResult
+                  );
+                } else {
+                  await cb.call(context, ...callbackInfo.args);
+                }
+              } catch (error) {
+                console.error('Error in lifecycle dispatch callback:', error);
+              }
+            }
+          }
+        }
+      }
+    } else if (typeof tool[methodName] === 'function') {
       await tool[methodName](...args);
     }
   }
@@ -268,7 +313,10 @@ async function callPostLifecycle(toolBuilder, methodName, ...args) {
     // Call on the current tool first
     // RpcStubs are functions, regular tools are objects
     const isBuiltIn = typeof tool === 'function';
-    if (!isBuiltIn && typeof tool[methodName] === 'function') {
+    if (isBuiltIn) {
+      // Built-in tools: tryCallCallback returns undefined if method doesn't exist
+      await tool.tryCallCallback(methodName, ...args);
+    } else if (typeof tool[methodName] === 'function') {
       await tool[methodName](...args);
     }
 
@@ -388,10 +436,59 @@ export default class extends WorkerEntrypoint {
         return callCallback(twist, functionName, ...args);
       }
 
-      // Navigate through the tool tree to find the target tool
-      const { tool } = tools.getByPath(path);
+      // Navigate through the tool tree to find the target tool and its options
+      const { tool, options } = tools.getByPath(path);
+      const result = await callCallback(tool, functionName, ...args);
 
-      return callCallback(tool, functionName, ...args);
+      // Handle dispatch-style returns from built-in tools.
+      // Built-in tools return { __dispatch: [...] } when they need callbacks
+      // invoked locally on the twist worker with proper \`this\` binding.
+      // This solves the RPC stub \`this\` binding issue where callbacks like
+      // onSyncEnabled/onSyncDisabled lose their context when called via RPC.
+      if (result && result.__dispatch && Array.isArray(result.__dispatch)) {
+        for (const callbackInfo of result.__dispatch) {
+          if (callbackInfo?.optionPath && callbackInfo?.args && options) {
+            // Navigate the option path to find the callback function
+            let cb = options;
+            for (const key of callbackInfo.optionPath) {
+              cb = cb?.[key];
+              if (!cb) break;
+            }
+
+            if (typeof cb === 'function') {
+              // Determine the correct this context:
+              // If path has > 1 element, the parent tool owns the callback
+              // If path has 1 element, the twist owns the callback
+              let context;
+              if (path.length > 1) {
+                const parentPath = path.slice(0, -1);
+                context = tools.getByPath(parentPath).tool;
+              } else {
+                context = twist;
+              }
+
+              try {
+                if (callbackInfo.forwardTo) {
+                  // forwardTo: call callback locally, then forward result to built-in tool
+                  const cbResult = await cb.call(context, ...callbackInfo.args);
+                  await tool.callCallback(
+                    callbackInfo.forwardTo.functionName,
+                    ...callbackInfo.forwardTo.prependArgs,
+                    cbResult
+                  );
+                } else {
+                  const cbResult = await cb.call(context, ...callbackInfo.args);
+                }
+              } catch (error) {
+                console.error('[callCallback] Error in callback dispatch:', error);
+              }
+            }
+          }
+        }
+        return result.value;
+      }
+
+      return result;
     } catch (error) {
       // Wrap in TwistError to preserve stack across RPC boundary
       // Encode all error data in the message since custom properties don't survive RPC

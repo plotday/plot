@@ -34,12 +34,12 @@ class Scaffold extends StatelessWidget {
   Widget _buildBody(BuildContext context) {
     // Center mode: wrap in scrollable centered layout
     if (center) {
-      return SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight: MediaQuery.of(context).size.height,
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: body),
           ),
-          child: Center(child: body),
         ),
       );
     }
@@ -78,9 +78,8 @@ class Scaffold extends StatelessWidget {
     final footer = _buildFooter(context);
 
     // On Windows, when no header is provided, add a minimal drag bar with app name
-    final effectiveHeader = header ?? (Platform.instance.isWindows
-        ? _WindowsDragBar()
-        : null);
+    final effectiveHeader =
+        header ?? (Platform.instance.isWindows ? _WindowsDragBar() : null);
 
     final scaffold = FScaffold(
       header: effectiveHeader,
@@ -96,7 +95,9 @@ class Scaffold extends StatelessWidget {
       builder: (_) => Directionality(
         textDirection: TextDirection.ltr,
         child: material.Material(
-          color: translucent ? material.Colors.transparent : context.theme.colors.background,
+          color: translucent
+              ? material.Colors.transparent
+              : context.theme.colors.background,
           child: scaffold,
         ),
       ),
@@ -126,10 +127,7 @@ class _WindowsDragBar extends StatelessWidget {
             child: SizedBox(
               height: Window.toolbarHeight,
               child: Padding(
-                padding: EdgeInsets.only(
-                  left: 12,
-                  right: toolbarPadding.right,
-                ),
+                padding: EdgeInsets.only(left: 12, right: toolbarPadding.right),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(

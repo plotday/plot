@@ -5,7 +5,6 @@ import { type DB, createDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
-import { disposeRpc } from "../utils/rpc";
 
 // Debouncing configuration (compile-time constants)
 const MIN_WAIT_MS = 100; // Minimum time to wait before sending, allowing batching
@@ -143,7 +142,6 @@ export class UserSync extends DurableObject<Bindings> {
         new Request("http://do/hasConnectedClients")
       );
       const broadcastData: any = await broadcastResponse.json();
-      disposeRpc(broadcastResponse);
       const hasClients = broadcastData.hasConnectedClients;
 
       if (!hasClients) {
@@ -183,11 +181,10 @@ export class UserSync extends DurableObject<Bindings> {
 
       // Send sync messages for each entity
       for (const update of pendingUpdates) {
-        const result = await broadcast.send({
+        await broadcast.send({
           type: "sync",
           table: update.entity,
         });
-        disposeRpc(result);
       }
 
       // Update last_sync_at for the entities we just synced using the max timestamp from the query

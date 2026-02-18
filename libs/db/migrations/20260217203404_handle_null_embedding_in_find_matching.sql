@@ -1,13 +1,5 @@
--- Function to find matching activities based on configurable scoring rules
--- Supports both required exact matches and weighted similarity scoring
-CREATE OR REPLACE FUNCTION public.find_matching_activities_scored (query_embedding text, created_by_id uuid, required_filters jsonb DEFAULT '{}' ::jsonb, scored_fields jsonb DEFAULT '{}' ::jsonb, activity_data jsonb DEFAULT '{}' ::jsonb, similarity_threshold double precision DEFAULT 0.7)
-    RETURNS TABLE (
-        id uuid,
-        priority_id uuid,
-        title text,
-        total_score double precision)
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "find_matching_activities_scored" function
+CREATE OR REPLACE FUNCTION "public"."find_matching_activities_scored" ("query_embedding" text, "created_by_id" uuid, "required_filters" jsonb DEFAULT '{}', "scored_fields" jsonb DEFAULT '{}', "activity_data" jsonb DEFAULT '{}', "similarity_threshold" double precision DEFAULT 0.7) RETURNS TABLE ("id" uuid, "priority_id" uuid, "title" text, "total_score" double precision) LANGUAGE plpgsql AS $$
 BEGIN
     RETURN QUERY WITH filtered_activities AS (
         -- First filter by required exact matches
@@ -108,4 +100,4 @@ ORDER BY
     sa.total_score DESC
 LIMIT 1;
 END;
-$function$;
+$$;

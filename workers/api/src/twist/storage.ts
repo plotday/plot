@@ -26,8 +26,8 @@ export async function storeTwistModule({
   // Generate timestamp version (or placeholder for dry-run)
   const version = dryRun ? "dry-run" : Date.now().toString();
 
-  // Initialize twist to collect permissions
-  const { permissions, toolPermissions } = await twistFactory({
+  // Initialize twist to collect permissions and provider declarations
+  const { permissions, toolPermissions, providers, integrationsMap } = await twistFactory({
     env,
     ctx,
     db,
@@ -52,12 +52,14 @@ export async function storeTwistModule({
 
     await env.TWIST_CONFIG.put(
       `${id}:${version}`,
-      JSON.stringify({ permissions, toolPermissions })
+      JSON.stringify({ permissions, toolPermissions, providers, integrationsMap })
     );
   }
 
   return {
     version,
     permissions,
+    providers,
+    integrationsMap,
   };
 }

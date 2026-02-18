@@ -3,14 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/style/spacing.dart';
+import 'icon.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
 import 'modal.dart';
 import 'spinner.dart';
 import 'logging.dart';
+import 'toast.dart';
 
 /// A group of items to display in a SelectModal.
 class SelectGroup<T> {
@@ -176,7 +180,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   bool _isLoading = false;
   int _requestId = 0; // For canceling stale requests
   int _highlightedIndex = 0;
-  bool _enterHandled = false; // Prevents double-fire between Shortcuts and onSubmit
+  bool _enterHandled =
+      false; // Prevents double-fire between Shortcuts and onSubmit
 
   @override
   void initState() {
@@ -446,6 +451,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         }
       } catch (e, t) {
         log.warning('onSelect threw', e, t);
+        if (mounted) {
+          context.showToast(message: 'Something went wrong.', isError: true);
+        }
         return;
       }
     }
@@ -466,10 +474,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           children: [
-            Spinner(
-              size: 12,
-              color: context.theme.colors.mutedForeground,
-            ),
+            Spinner(size: 12, color: context.theme.colors.mutedForeground),
             const SizedBox(width: 8),
             Text(
               'Searching...',
@@ -549,18 +554,62 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                   if (widget.showFilter ?? hasPhysicalKeyboard())
                     EditableArea(
                       position: EditableAreaPosition.top,
-                      padding: true,
+                      padding: false,
                       autofocus: true,
-                      builder: (context, focusNode) => TextField(
-                        maxLines: 1,
-                        style: TextFieldStyle.ghost,
-                        controller: _controller,
-                        autofocus: true,
-                        label: "${widget.prompt}...",
-                        focusNode: focusNode,
-                        onChanged: (text) => _initItems(),
-                        onSubmitted: (_) => _handleEnter(),
+                      builder: (context, focusNode) => Padding(
+                        padding: widgetPadding,
+                        child: ValueListenableBuilder<int>(
+                          valueListenable: ModalProvider.of(
+                            context,
+                          ).modalStackNotifier,
+                          builder: (context, stackLength, child) => Row(
+                            children: [
+                              if (stackLength > 1)
+                                FButton.icon(
+                                  style: FButtonStyle.ghost(),
+                                  onPress: _cancel,
+                                  child: Icon(
+                                    PlotIcon.left,
+                                    size: context.theme.iconSizes.sm,
+                                  ),
+                                ),
+                              Expanded(
+                                child: TextField(
+                                  maxLines: 1,
+                                  style: TextFieldStyle.ghost,
+                                  controller: _controller,
+                                  autofocus: true,
+                                  label: "${widget.prompt}...",
+                                  focusNode: focusNode,
+                                  onChanged: (text) => _initItems(),
+                                  onSubmitted: (_) => _handleEnter(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
+                    )
+                  else
+                    ValueListenableBuilder<int>(
+                      valueListenable: ModalProvider.of(
+                        context,
+                      ).modalStackNotifier,
+                      builder: (context, stackLength, _) {
+                        if (stackLength <= 1) return const SizedBox.shrink();
+                        return Container(
+                          padding: widgetPaddingSm,
+                          alignment: Alignment.centerLeft,
+                          child: FButton.icon(
+                            style: FButtonStyle.ghost(),
+                            onPress: _cancel,
+                            child: Icon(
+                              PlotIcon.left,
+                              size: context.theme.iconSizes.sm,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   if (loadingIndicator != null) loadingIndicator,
                   if (errorBox != null) errorBox,
@@ -593,7 +642,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           if (group.title != null) {
                             // Check if this group has a shortcut (metadata will be ShortcutActivator)
                             header = Padding(
-                              padding: widgetPaddingSm,
+                              padding: widgetPaddingSm.copyWith(
+                                right: context.theme.spacing.xxl,
+                              ),
                               child: Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,

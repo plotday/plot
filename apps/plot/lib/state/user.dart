@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import 'package:plot/api/api.dart' as api;
 import 'package:plot/store/store.dart';
 import 'logging.dart';
 
@@ -24,16 +23,6 @@ class UserBloc extends Cubit<UserState> {
       }
 
       log.info('User signed in: ${user.primaryEmail}');
-
-      // Only call /activate for fresh sign-ins (not restored from local storage)
-      // to ensure account setup (Stripe, twist, etc.) is complete.
-      if (Base.isFreshSignIn) {
-        try {
-          await api.post<Map<String, dynamic>>('/activate');
-        } catch (e) {
-          log.warning('Account setup call failed (non-blocking): $e');
-        }
-      }
 
       await Store.start(user);
       // Ensure Actor cache is populated before app becomes interactive

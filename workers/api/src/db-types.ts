@@ -521,7 +521,7 @@ export interface PriorityTwist {
   id: Generated<string>;
   name: string;
   owner_id: string;
-  priority_id: string;
+  priority_id: string | null;
   suspended_at: Timestamp | null;
   twist_id: Int8;
   updated_at: Generated<Timestamp>;

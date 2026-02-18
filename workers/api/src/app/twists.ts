@@ -4,8 +4,11 @@ import { z } from "zod";
 import type { Bindings } from "../env";
 import { twistFactory } from "../twist";
 import {
+  activateDraft,
   add as addTwist,
   archiveAndDeleteTwist,
+  createDraft,
+  deleteDraft,
   deleteTwist,
   getAll as getAllTwists,
   getById as getTwistById,
@@ -34,6 +37,28 @@ const TwistRequestSchema = z.object({
 const TwistUpdateRequestSchema = z.object({
   name: z.string().optional(),
   config: z.record(z.string(), z.any()).optional(),
+});
+
+const DraftRequestSchema = z.object({
+  twistId: z.coerce.number(),
+  twistEnvironment: z
+    .enum(["personal", "private", "review", "public"])
+    .optional()
+    .default("public"),
+  name: z.string().optional(),
+});
+
+const ActivateDraftSchema = z.object({
+  priorityId: z.string(),
+  name: z.string(),
+  syncables: z
+    .array(
+      z.object({
+        provider: z.string(),
+        syncableId: z.string(),
+      })
+    )
+    .optional(),
 });
 
 // GET /twists - List all twists accessible to user for a priority
@@ -107,6 +132,91 @@ twists.post("/twist", async (c) => {
     });
     if (error instanceof Error) {
       return c.json({ message: `Error adding twist: ${error.message}` }, 400);
+    }
+    throw error;
+  }
+});
+
+// POST /twist/draft - Create a draft twist (no priority)
+twists.post("/twist/draft", async (c) => {
+  const rawBody = await c.req.json();
+  const parseResult = DraftRequestSchema.safeParse(rawBody);
+  if (!parseResult.success) {
+    return handleValidationError(parseResult.error);
+  }
+  const body = parseResult.data;
+  try {
+    const draft = await createDraft(
+      c.var.db,
+      c.var.user.id,
+      body.twistId,
+      body.twistEnvironment,
+      body.name
+    );
+    return c.json({ id: draft.id });
+  } catch (error) {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Error creating draft twist", error as Error);
+    if (error instanceof Error) {
+      return c.json({ message: `Error creating draft: ${error.message}` }, 400);
+    }
+    throw error;
+  }
+});
+
+// POST /twist/draft/:id/activate - Activate a draft twist
+twists.post("/twist/draft/:id/activate", async (c) => {
+  const draftId = c.req.param("id");
+  const rawBody = await c.req.json();
+  const parseResult = ActivateDraftSchema.safeParse(rawBody);
+  if (!parseResult.success) {
+    return handleValidationError(parseResult.error);
+  }
+  const body = parseResult.data;
+  try {
+    await activateDraft(
+      c.var.db,
+      c.env,
+      draftId,
+      body.priorityId,
+      body.name,
+      body.syncables,
+      {
+        twistFactory: twistFactory({
+          env: c.env,
+          ctx: c.executionCtx as ExecutionContext,
+          db: c.var.db,
+        }),
+      }
+    );
+
+    notifySync(c, body.priorityId);
+
+    return c.json({ success: true });
+  } catch (error) {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Error activating draft twist", error as Error);
+    if (error instanceof Error) {
+      return c.json({ message: `Error activating draft: ${error.message}` }, 400);
+    }
+    throw error;
+  }
+});
+
+// DELETE /twist/draft/:id - Delete a draft twist
+twists.delete("/twist/draft/:id", async (c) => {
+  const draftId = c.req.param("id");
+  try {
+    await deleteDraft(c.var.db, draftId);
+    return c.json({ success: true });
+  } catch (error) {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Error deleting draft twist", error as Error);
+    if (error instanceof Error) {
+      return c.json({ message: `Error deleting draft: ${error.message}` }, 400);
     }
     throw error;
   }

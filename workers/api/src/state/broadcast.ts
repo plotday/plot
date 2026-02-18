@@ -2,7 +2,6 @@ import { DurableObject } from "cloudflare:workers";
 
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
-import { disposeRpc } from "../utils/rpc";
 import { verifyToken } from "@clerk/backend";
 
 interface QueuedMessage {
@@ -144,13 +143,12 @@ export class Broadcast extends DurableObject<Bindings> {
     try {
       const userSyncId = this.env.USER_SYNC.idFromName(this.userId);
       const userSync = this.env.USER_SYNC.get(userSyncId);
-      const result = await userSync.fetch(
+      await userSync.fetch(
         new Request("http://do/onClientConnected", {
           method: "POST",
           body: JSON.stringify({ userId: this.userId }),
         })
       );
-      disposeRpc(result);
     } catch (error) {
       logger.error("Error notifying UserSync of client connection", error as Error, {
         user_id: this.userId,

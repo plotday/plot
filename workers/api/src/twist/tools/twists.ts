@@ -247,6 +247,6 @@ export class Twists extends Tool implements ITwists {
       this.logSubscriptionsNamespace.get(logSubscriptionsId);
 
     // Subscribe to logs for the provided twist package_id
-    logSubscriptions.subscribe(twistPackageId, callback);
+    await logSubscriptions.subscribe(twistPackageId, callback);
   }
 }

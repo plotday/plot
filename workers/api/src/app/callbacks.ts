@@ -19,7 +19,7 @@ callbacks.post("/callback/:token", async (c) => {
       return c.json({ message: "Bad request (missing link data)" }, 400);
     }
 
-    const result = await Callbacks.HandleLinkCallback(
+    using result = await Callbacks.HandleLinkCallback(
       c.env.CALLBACKS,
       token,
       link

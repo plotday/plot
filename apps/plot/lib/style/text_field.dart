@@ -8,6 +8,7 @@ FTextFieldStyle buildTextFieldStyle(
   ColourSchemeData colourScheme,
   BorderRadius borderRadius,
   double borderWidth,
+  FTypography typography,
 ) {
   // ignore: unused_result
   return baseStyle.copyWith(
@@ -24,7 +25,10 @@ FTextFieldStyle buildTextFieldStyle(
       ),
     }),
     contentTextStyle: baseStyle.contentTextStyle.map(
-      (style) => style.copyWith(color: colourScheme.foreground),
+      (style) => style.copyWith(
+        color: colourScheme.foreground,
+        fontSize: typography.base.fontSize,
+      ),
     ),
   );
 }

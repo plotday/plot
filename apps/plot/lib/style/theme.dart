@@ -42,6 +42,7 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
     colourScheme,
     theme.style.borderRadius,
     theme.style.borderWidth,
+    typography,
   );
 
   theme = theme.copyWith(

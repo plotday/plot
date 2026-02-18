@@ -69,6 +69,14 @@ export class Storage extends DurableObject {
     );
   }
 
+  list(prefix: string): string[] {
+    const results = this.sql.exec(
+      "SELECT key FROM store WHERE key LIKE ?",
+      `${prefix}%`
+    );
+    return [...results].map((r) => r.key as string);
+  }
+
   clear(key: string) {
     this.sql.exec("DELETE FROM store WHERE key = ?", key);
   }

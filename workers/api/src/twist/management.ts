@@ -3,7 +3,7 @@ import type { Uuid } from "@plotday/twister/plot";
 
 import type { twistFactory } from ".";
 import type { DB } from "../db-types";
-import { type TwistEnvironment } from "../env";
+import { type TwistEnvironment, type Bindings } from "../env";
 import { rpc } from "../rpc";
 import { createLogger } from "@plotday/worker-util";
 
@@ -480,7 +480,7 @@ export async function deleteTwist(
             const twistWrapper = await deactivate.twistFactory({
               id: adminData.twist_package_id,
               environment: priorityTwist.environment,
-              priorityId: priorityTwist.priority_id,
+              priorityId: priorityTwist.priority_id!,
               priorityTwistId: priority_twist_id,
             });
             await twistWrapper.deactivate();
@@ -504,6 +504,270 @@ export async function deleteTwist(
     logger.error("Error deleting twist", error as Error);
     throw error;
   }
+}
+
+/**
+ * Create a draft twist (priority_id = NULL).
+ * Used during the setup flow before the user picks a priority.
+ */
+export async function createDraft(
+  db: Kysely<DB>,
+  userId: string,
+  twist_id: number,
+  twist_environment: TwistEnvironment,
+  name?: string
+) {
+  try {
+    if (twist_id === undefined || twist_id === null || typeof twist_id !== "number") {
+      throw new Error("twist_id is required and must be a number");
+    }
+
+    // Get twist metadata for the name
+    const { name: twistName } = await db
+      .selectFrom("twist")
+      .select(["name"])
+      .where("id", "=", String(twist_id))
+      .executeTakeFirstOrThrow();
+    if (!twistName) {
+      throw new Error(`Twist with id ${twist_id} not found`);
+    }
+    name ??= twistName;
+
+    // Insert priority_twist with NULL priority_id (draft)
+    const priorityTwist = await db
+      .insertInto("priority_twist")
+      .values({
+        priority_id: null,
+        twist_id: twist_id,
+        name: name,
+        owner_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return priorityTwist;
+  } catch (error) {
+    const logger = createLogger({ twist_id: String(twist_id), environment: twist_environment });
+    logger.error("Error creating draft twist", error as Error);
+    throw error;
+  }
+}
+
+/**
+ * Activate a draft twist: assign priority, call activate lifecycle, enable syncables.
+ */
+export async function activateDraft(
+  db: Kysely<DB>,
+  env: Bindings,
+  draftId: string,
+  priorityId: string,
+  name: string,
+  syncables: Array<{ provider: string; syncableId: string }> | undefined,
+  activate: {
+    twistFactory: ReturnType<typeof twistFactory>;
+  }
+) {
+  const logger = createLogger({ priority_twist_id: draftId });
+
+  // Verify draft exists and is actually a draft (priority_id IS NULL)
+  const draft = await db
+    .selectFrom("priority_twist")
+    .selectAll()
+    .where("id", "=", draftId)
+    .where("priority_id", "is", null)
+    .where("archived_at", "is", null)
+    .executeTakeFirst();
+
+  if (!draft) {
+    throw new Error("Draft not found or already activated");
+  }
+
+  // Check for name conflicts on the target priority
+  const existingTwist = await db
+    .selectFrom("priority_twist")
+    .select(["id"])
+    .where("priority_id", "=", priorityId)
+    .where("name", "=", name)
+    .where("archived_at", "is", null)
+    .executeTakeFirst();
+  if (existingTwist) {
+    throw new Error(`Twist with name "${name}" already exists for this priority.`);
+  }
+
+  // Set priority_id and name
+  await db
+    .updateTable("priority_twist")
+    .set({ priority_id: priorityId, name })
+    .where("id", "=", draftId)
+    .execute();
+
+  // Call activate lifecycle
+  try {
+    const twistWrapper = await activate.twistFactory({
+      priorityId,
+      priorityTwistId: draftId,
+    });
+    await twistWrapper.activate(
+      { id: priorityId as Uuid },
+      { actor: { id: draft.owner_id, type: 0 /* ActorType.User */ } }
+    );
+  } catch (activationError) {
+    logger.error("Twist activation failed during draft activation", activationError as Error);
+
+    // Rollback: set priority_id back to NULL (keep draft alive for retry)
+    await db
+      .updateTable("priority_twist")
+      .set({ priority_id: null })
+      .where("id", "=", draftId)
+      .execute();
+
+    throw new Error(
+      `Failed to activate twist: ${
+        activationError instanceof Error ? activationError.message : String(activationError)
+      }`
+    );
+  }
+
+  // Enable selected syncables via callCallback to the Integrations tool
+  if (syncables && syncables.length > 0) {
+    logger.info("activateDraft: enabling syncables", {
+      syncable_count: syncables.length,
+      syncables: syncables.map(s => `${s.provider}:${s.syncableId}`),
+    });
+
+    // Look up integrationsMap from twist config KV
+    const twistInfo = await db
+      .selectFrom("priority_twist")
+      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+      .select([
+        "twist.version",
+        "twist_admin.twist_package_id as twistPackageId",
+      ])
+      .where("priority_twist.id", "=", draftId)
+      .executeTakeFirst();
+
+    logger.info("activateDraft: twist info lookup", {
+      twist_package_id: twistInfo?.twistPackageId,
+      version: twistInfo?.version,
+    });
+
+    const configKey = twistInfo ? `${twistInfo.twistPackageId}:${twistInfo.version}` : null;
+    const configStr = configKey
+      ? await env.TWIST_CONFIG.get(configKey)
+      : null;
+    const integrationsMap: Record<string, string> = configStr
+      ? (JSON.parse(configStr).integrationsMap ?? {})
+      : {};
+
+    logger.info("activateDraft: integrationsMap", {
+      config_key: configKey,
+      has_config: !!configStr,
+      integrations_map: integrationsMap,
+    });
+
+    // Get current user's contact for the actor ID
+    const contact = await db
+      .selectFrom("contact")
+      .select("id")
+      .where("user_id", "=", draft.owner_id)
+      .executeTakeFirst();
+
+    logger.info("activateDraft: contact lookup", {
+      owner_id: draft.owner_id,
+      contact_id: contact?.id,
+    });
+
+    if (contact) {
+      const twistWrapper = await activate.twistFactory({
+        priorityId,
+        priorityTwistId: draftId,
+      });
+
+      for (const { provider, syncableId } of syncables) {
+        const integrationsPath = integrationsMap[provider];
+        if (!integrationsPath) {
+          logger.warn("No integrations path found for provider during activation", {
+            provider,
+            syncable_id: syncableId,
+            available_providers: Object.keys(integrationsMap),
+          });
+          continue;
+        }
+
+        logger.info("activateDraft: calling enableSync", {
+          provider,
+          syncable_id: syncableId,
+          integrations_path: integrationsPath,
+          actor_id: contact.id,
+        });
+
+        try {
+          const result = await twistWrapper.callCallback(
+            integrationsPath.split(":"),
+            "enableSync",
+            provider,
+            syncableId,
+            contact.id
+          );
+          logger.info("activateDraft: enableSync result", {
+            provider,
+            syncable_id: syncableId,
+            has_result: !!result,
+            result_type: typeof result,
+          });
+          if (result && typeof result === "object" && Symbol.dispose in result) {
+            (result as any)[Symbol.dispose]();
+          }
+        } catch (error) {
+          logger.warn("Failed to enable syncable during activation", {
+            provider,
+            syncable_id: syncableId,
+            error_message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  } else {
+    logger.info("activateDraft: no syncables to enable", {
+      has_syncables: !!syncables,
+      syncable_count: syncables?.length ?? 0,
+    });
+  }
+
+  return draft;
+}
+
+/**
+ * Delete a draft twist (hard delete since it was never activated).
+ */
+export async function deleteDraft(
+  db: Kysely<DB>,
+  draftId: string
+) {
+  const logger = createLogger({ priority_twist_id: draftId });
+
+  // Verify it's actually a draft
+  const draft = await db
+    .selectFrom("priority_twist")
+    .selectAll()
+    .where("id", "=", draftId)
+    .where("priority_id", "is", null)
+    .executeTakeFirst();
+
+  if (!draft) {
+    // Not a draft or doesn't exist - no-op
+    return;
+  }
+
+  // Hard-delete the draft row
+  await db
+    .deleteFrom("priority_twist")
+    .where("id", "=", draftId)
+    .where("priority_id", "is", null)
+    .execute();
+
+  logger.info("Draft twist deleted", { draft_id: draftId });
 }
 
 export async function archiveAndDeleteTwist(
