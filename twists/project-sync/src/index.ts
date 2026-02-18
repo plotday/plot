@@ -3,6 +3,7 @@ import { Jira } from "@plotday/tool-jira";
 import { Linear } from "@plotday/tool-linear";
 import {
   type Activity,
+  type ActivityFilter,
   ActorType,
   type NewActivityWithNotes,
   type Note,
@@ -24,9 +25,18 @@ type ProjectProvider = "linear" | "jira" | "asana";
 export default class ProjectSync extends Twist<ProjectSync> {
   build(build: ToolBuilder) {
     return {
-      linear: build(Linear),
-      jira: build(Jira),
-      asana: build(Asana),
+      linear: build(Linear, {
+        onItem: this.onLinearItem,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
+      jira: build(Jira, {
+        onItem: this.onJiraItem,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
+      asana: build(Asana, {
+        onItem: this.onAsanaItem,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
       plot: build(Plot, {
         activity: {
           access: ActivityAccess.Create,
@@ -59,6 +69,22 @@ export default class ProjectSync extends Twist<ProjectSync> {
     // Auth and project selection are now handled in the twist edit modal.
   }
 
+  async onLinearItem(item: NewActivityWithNotes) {
+    return this.onIssue(item, "linear");
+  }
+
+  async onJiraItem(item: NewActivityWithNotes) {
+    return this.onIssue(item, "jira");
+  }
+
+  async onAsanaItem(item: NewActivityWithNotes) {
+    return this.onIssue(item, "asana");
+  }
+
+  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+    await this.tools.plot.updateActivity({ match: filter, archived: true });
+  }
+
   /**
    * Check if a note is fully empty (no content, no links, no mentions)
    */
@@ -80,8 +106,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
    */
   async onIssue(
     issue: NewActivityWithNotes,
-    provider: ProjectProvider,
-    _projectId: string
+    provider: ProjectProvider
   ) {
     // Add provider to meta for routing updates back to the correct tool
     issue.meta = { ...issue.meta, provider };

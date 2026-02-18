@@ -66,13 +66,15 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations, {
-        providers: [{
-          provider: Linear.PROVIDER,
-          scopes: Linear.SCOPES,
-          getSyncables: this.getSyncables,
-          onSyncEnabled: this.onSyncEnabled,
-          onSyncDisabled: this.onSyncDisabled,
-        }],
+        providers: [
+          {
+            provider: Linear.PROVIDER,
+            scopes: Linear.SCOPES,
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
       }),
       network: build(Network, { urls: ["https://api.linear.app/*"] }),
       callbacks: build(Callbacks),
@@ -95,7 +97,10 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   /**
    * Returns available Linear teams as syncable resources.
    */
-  async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
     const client = new LinearClient({ accessToken: token.token });
     const teams = await client.teams();
     return teams.nodes.map((team) => ({
@@ -207,9 +212,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   /**
    * Setup Linear webhook for real-time updates
    */
-  private async setupLinearWebhook(
-    projectId: string
-  ): Promise<void> {
+  private async setupLinearWebhook(projectId: string): Promise<void> {
     try {
       const client = await this.getClient(projectId);
 
@@ -270,7 +273,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     const batchCallback = await this.callback(
       this.syncBatch,
       projectId,
-      options
+      options ?? null
     );
 
     await this.tools.tasks.runTask(batchCallback);
@@ -281,7 +284,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    */
   private async syncBatch(
     projectId: string,
-    options?: ProjectSyncOptions
+    options?: ProjectSyncOptions | null
   ): Promise<void> {
     const state = await this.get<SyncState>(`sync_state_${projectId}`);
     if (!state) {
@@ -289,7 +292,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     // Retrieve callback token from storage
-    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(
+      `item_callback_${projectId}`
+    );
     if (!callbackToken) {
       throw new Error(`Callback token not found for project ${projectId}`);
     }
@@ -320,7 +325,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
 
       if (activity) {
         // Inject sync metadata for bulk operations (e.g. disable filtering)
-        activity.meta = { ...activity.meta, syncProvider: "linear", syncableId: projectId };
+        activity.meta = {
+          ...activity.meta,
+          syncProvider: "linear",
+          syncableId: projectId,
+        };
         // Execute the callback using the callback token
         await this.tools.callbacks.run(callbackToken, activity);
       }
@@ -339,7 +348,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       const nextBatch = await this.callback(
         this.syncBatch,
         projectId,
-        options
+        options ?? null
       );
       await this.tools.tasks.runTask(nextBatch);
     } else {
@@ -673,7 +682,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     // Get callback token
-    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(
+      `item_callback_${projectId}`
+    );
     if (!callbackToken) {
       console.warn("No callback token found for project:", projectId);
       return;
@@ -849,7 +860,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     // Cleanup item callback (new key)
-    const itemCallbackToken = await this.get<Callback>(`item_callback_${projectId}`);
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${projectId}`
+    );
     if (itemCallbackToken) {
       await this.deleteCallback(itemCallbackToken);
       await this.clear(`item_callback_${projectId}`);

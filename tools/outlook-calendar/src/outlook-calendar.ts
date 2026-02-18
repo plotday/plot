@@ -122,18 +122,23 @@ export class OutlookCalendar
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations, {
-        providers: [{
-          provider: OutlookCalendar.PROVIDER,
-          scopes: OutlookCalendar.SCOPES,
-          getSyncables: this.getSyncables,
-          onSyncEnabled: this.onSyncEnabled,
-          onSyncDisabled: this.onSyncDisabled,
-        }],
+        providers: [
+          {
+            provider: OutlookCalendar.PROVIDER,
+            scopes: OutlookCalendar.SCOPES,
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
       }),
       network: build(Network, { urls: ["https://graph.microsoft.com/*"] }),
       plot: build(Plot, {
         contact: { access: ContactAccess.Write },
-        activity: { access: ActivityAccess.Create, updated: this.onActivityUpdated },
+        activity: {
+          access: ActivityAccess.Create,
+          updated: this.onActivityUpdated,
+        },
       }),
     };
   }
@@ -141,7 +146,10 @@ export class OutlookCalendar
   /**
    * Returns available Outlook calendars as syncable resources.
    */
-  async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
     const api = new GraphApi(token.token);
     const calendars = await api.getCalendars();
     return calendars.map((c) => ({ id: c.id, title: c.name }));
@@ -220,7 +228,10 @@ export class OutlookCalendar
   }
 
   private async getApi(calendarId: string): Promise<GraphApi> {
-    const token = await this.tools.integrations.get(OutlookCalendar.PROVIDER, calendarId);
+    const token = await this.tools.integrations.get(
+      OutlookCalendar.PROVIDER,
+      calendarId
+    );
     if (!token) {
       throw new Error("No Microsoft authentication token available");
     }
@@ -334,9 +345,7 @@ export class OutlookCalendar
     await this.clear(`outlook_sync_state_${calendarId}`);
   }
 
-  private async setupOutlookWatch(
-    calendarId: string
-  ): Promise<void> {
+  private async setupOutlookWatch(calendarId: string): Promise<void> {
     const api = await this.getApi(calendarId);
 
     const webhookUrl = await this.tools.network.createWebhook(
@@ -384,10 +393,7 @@ export class OutlookCalendar
     try {
       api = await this.getApi(calendarId);
     } catch (error) {
-      console.error(
-        "No Microsoft credentials found for calendar:",
-        error
-      );
+      console.error("No Microsoft credentials found for calendar:", error);
       return;
     }
 
@@ -397,7 +403,9 @@ export class OutlookCalendar
     }
 
     // Hoist callback token retrieval outside event loop - saves N-1 subrequests
-    const callbackToken = await this.get<Callback>(`item_callback_${calendarId}`);
+    const callbackToken = await this.get<Callback>(
+      `item_callback_${calendarId}`
+    );
     if (!callbackToken) {
       console.warn("No callback token found, skipping event processing");
       return;
@@ -648,7 +656,11 @@ export class OutlookCalendar
         const activityWithNotes: NewActivityWithNotes = {
           ...activity,
           author: authorContact,
-          meta: { ...activity.meta, syncProvider: "microsoft", syncableId: calendarId },
+          meta: {
+            ...activity.meta,
+            syncProvider: "microsoft",
+            syncableId: calendarId,
+          },
           tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
           notes,
           preview: hasDescription ? outlookEvent.body!.content! : null,
@@ -816,16 +828,11 @@ export class OutlookCalendar
     }
   }
 
-  private async startIncrementalSync(
-    calendarId: string
-  ): Promise<void> {
+  private async startIncrementalSync(calendarId: string): Promise<void> {
     try {
       await this.getApi(calendarId);
     } catch (error) {
-      console.error(
-        "No Microsoft credentials found for calendar:",
-        error
-      );
+      console.error("No Microsoft credentials found for calendar:", error);
       return;
     }
 

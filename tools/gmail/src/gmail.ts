@@ -116,7 +116,10 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     };
   }
 
-  async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
     const api = new GmailApi(token.token);
     const labels = await api.getLabels();
     return labels
@@ -193,10 +196,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   }
 
   private async getApi(channelId: string): Promise<GmailApi> {
-    const token = await this.tools.integrations.get(
-      Gmail.PROVIDER,
-      channelId
-    );
+    const token = await this.tools.integrations.get(Gmail.PROVIDER, channelId);
     if (!token) {
       throw new Error("No Google authentication token available");
     }
@@ -397,7 +397,11 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
         if (activityThread.notes.length === 0) continue;
 
         // Inject sync metadata for the parent to identify the source
-        activityThread.meta = { ...activityThread.meta, syncProvider: "google", syncableId: channelId };
+        activityThread.meta = {
+          ...activityThread.meta,
+          syncProvider: "google",
+          syncableId: channelId,
+        };
 
         // Call parent callback with the thread (contacts will be created by the API)
         await this.run(callbackToken, activityThread);

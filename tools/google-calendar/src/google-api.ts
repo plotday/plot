@@ -108,7 +108,7 @@ export class GoogleApi {
       case 200:
         return await response.json();
       default:
-        throw new Error(await response.text());
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
     }
   }
 }

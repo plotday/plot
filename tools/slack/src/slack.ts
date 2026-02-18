@@ -127,13 +127,15 @@ export class Slack extends Tool<Slack> implements MessagingTool {
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations, {
-        providers: [{
-          provider: Slack.PROVIDER,
-          scopes: Slack.SCOPES,
-          getSyncables: this.getSyncables,
-          onSyncEnabled: this.onSyncEnabled,
-          onSyncDisabled: this.onSyncDisabled,
-        }],
+        providers: [
+          {
+            provider: Slack.PROVIDER,
+            scopes: Slack.SCOPES,
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
       }),
       network: build(Network, { urls: ["https://slack.com/api/*"] }),
       plot: build(Plot, {
@@ -143,7 +145,10 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     };
   }
 
-  async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
     const api = new SlackApi(token.token);
     const channels = await api.getChannels();
     return channels
@@ -305,9 +310,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     await this.clear(`item_callback_${channelId}`);
   }
 
-  private async setupChannelWebhook(
-    channelId: string
-  ): Promise<void> {
+  private async setupChannelWebhook(channelId: string): Promise<void> {
     const webhookUrl = await this.tools.network.createWebhook(
       {},
       this.onSlackWebhook,
@@ -327,7 +330,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       channelId,
       created: new Date().toISOString(),
     });
-
   }
 
   async syncBatch(
@@ -394,7 +396,11 @@ export class Slack extends Tool<Slack> implements MessagingTool {
         if (activityThread.notes.length === 0) continue;
 
         // Inject sync metadata for the parent to identify the source
-        activityThread.meta = { ...activityThread.meta, syncProvider: "slack", syncableId: channelId };
+        activityThread.meta = {
+          ...activityThread.meta,
+          syncProvider: "slack",
+          syncableId: channelId,
+        };
 
         // Call parent callback with the thread (contacts will be created by the API)
         await this.run(callbackToken, activityThread);
@@ -443,9 +449,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     }
   }
 
-  private async startIncrementalSync(
-    channelId: string
-  ): Promise<void> {
+  private async startIncrementalSync(channelId: string): Promise<void> {
     const webhookData = await this.get<any>(`channel_webhook_${channelId}`);
     if (!webhookData) {
       console.error("No channel webhook data found");
@@ -468,7 +472,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     );
     await this.run(syncCallback);
   }
-
 }
 
 export default Slack;

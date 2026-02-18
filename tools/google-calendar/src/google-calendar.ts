@@ -160,6 +160,13 @@ export class GoogleCalendar
     };
   }
 
+  async preUpgrade(): Promise<void> {
+    const keys = await this.list("sync_lock_");
+    for (const key of keys) {
+      await this.clear(key);
+    }
+  }
+
   /**
    * Returns available calendars as syncable resources after authorization.
    */
@@ -446,7 +453,10 @@ export class GoogleCalendar
     try {
       await this.stopCalendarWatch(calendarId);
     } catch (error) {
-      console.error("Failed to stop calendar watch:", error);
+      console.warn(
+        "Failed to stop calendar watch:",
+        error instanceof Error ? error.message : error
+      );
     }
 
     // 3. Clear sync-related storage

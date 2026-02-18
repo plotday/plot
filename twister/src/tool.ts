@@ -220,6 +220,16 @@ export abstract class Tool<TSelf> implements ITool {
   }
 
   /**
+   * Lists all storage keys matching a prefix.
+   *
+   * @param prefix - The prefix to match keys against
+   * @returns Promise resolving to an array of matching key strings
+   */
+  protected async list(prefix: string): Promise<string[]> {
+    return this.tools.store.list(prefix);
+  }
+
+  /**
    * Removes a specific key from persistent storage.
    *
    * @param key - The storage key to remove

@@ -1,5 +1,6 @@
 import { GoogleDrive } from "@plotday/tool-google-drive";
 import {
+  type ActivityFilter,
   type NewActivityWithNotes,
   type Note,
   type Priority,
@@ -21,7 +22,10 @@ import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
 export default class DocumentActions extends Twist<DocumentActions> {
   build(build: ToolBuilder) {
     return {
-      googleDrive: build(GoogleDrive),
+      googleDrive: build(GoogleDrive, {
+        onItem: this.onDocument,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
       plot: build(Plot, {
         activity: {
           access: ActivityAccess.Create,
@@ -43,6 +47,10 @@ export default class DocumentActions extends Twist<DocumentActions> {
 
   async activate(_priority: Pick<Priority, "id">) {
     // Auth and folder selection are now handled in the twist edit modal.
+  }
+
+  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+    await this.tools.plot.updateActivity({ match: filter, archived: true });
   }
 
   /**

@@ -2,6 +2,7 @@ import { Type } from "typebox";
 
 import { Slack } from "@plotday/tool-slack";
 import {
+  type ActivityFilter,
   ActivityType,
   type NewActivityWithNotes,
   type Priority,
@@ -24,7 +25,10 @@ type ThreadTask = {
 export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   build(build: ToolBuilder) {
     return {
-      slack: build(Slack),
+      slack: build(Slack, {
+        onItem: this.onSlackThread,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
       ai: build(AI),
       plot: build(Plot, {
         activity: {
@@ -36,6 +40,15 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
   async activate(_priority: Pick<Priority, "id">) {
     // Auth and channel selection are now handled in the twist edit modal.
+  }
+
+  async onSlackThread(thread: NewActivityWithNotes): Promise<void> {
+    const channelId = thread.meta?.syncableId as string;
+    return this.onMessageThread(thread, "slack", channelId);
+  }
+
+  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+    await this.tools.plot.updateActivity({ match: filter, archived: true });
   }
 
   // ============================================================================
