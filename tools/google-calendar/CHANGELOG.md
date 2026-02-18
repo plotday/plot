@@ -1,5 +1,14 @@
 # @plotday/tool-google-calendar
 
+## 0.14.0
+
+### Changed
+
+- BREAKING: Rewrite of the Integrations tool and all sync tools to support much improved sync configuration when installing or editing a twist ([#93](https://github.com/plotday/plot/pull/93) [`f3ccb2f`](https://github.com/plotday/plot/commit/f3ccb2f91344b927536d367cea467e4cc2efefe3))
+- Updated dependencies:
+- @plotday/twister@0.35.0
+- @plotday/tool-google-contacts@0.6.0
+
 ## 0.13.1
 
 ### Changed

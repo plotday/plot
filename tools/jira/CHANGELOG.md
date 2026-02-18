@@ -1,5 +1,13 @@
 # @plotday/tool-jira
 
+## 0.8.0
+
+### Changed
+
+- BREAKING: Rewrite of the Integrations tool and all sync tools to support much improved sync configuration when installing or editing a twist ([#93](https://github.com/plotday/plot/pull/93) [`f3ccb2f`](https://github.com/plotday/plot/commit/f3ccb2f91344b927536d367cea467e4cc2efefe3))
+- Updated dependencies:
+- @plotday/twister@0.35.0
+
 ## 0.7.0
 
 ### Added
