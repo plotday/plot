@@ -43,3 +43,4 @@ coverage
 .bundle/
 vendor/bundle
 Gemfile.lock
+.worktrees
