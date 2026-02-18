@@ -1,21 +1,8 @@
 import type {
-  ActivityLink,
   ActivityMeta,
   NewActivityWithNotes,
   Serializable,
 } from "../index";
-
-/**
- * Represents a successful document service authorization.
- *
- * Returned by document tools when authorization completes successfully.
- * The auth token is an opaque identifier that can be used for subsequent
- * document operations.
- */
-export type DocumentAuth = {
-  /** Opaque token for document operations */
-  authToken: string;
-};
 
 /**
  * Represents a folder from an external document service.
@@ -52,6 +39,20 @@ export type DocumentSyncOptions = {
  * All synced documents are converted to ActivityWithNotes objects.
  * Each document becomes an Activity with Notes for the description and comments.
  *
+ * **Architecture: Tools Build, Twists Save**
+ *
+ * Document tools follow Plot's core architectural principle:
+ * - **Tools**: Fetch external data and transform it into Plot format (NewActivity objects)
+ * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
+ *
+ * **Implementation Pattern:**
+ * 1. Authorization is handled via the twist edit modal (Integrations provider config)
+ * 2. Tool declares providers and lifecycle callbacks in build()
+ * 3. onAuthorized lists available folders and calls setSyncables()
+ * 4. User enables folders in the modal → onSyncEnabled fires
+ * 5. **Tool builds NewActivity objects** and passes them to the twist via callback
+ * 6. **Twist decides** whether to save using createActivity/updateActivity
+ *
  * **Recommended Data Sync Strategy:**
  * Use Activity.source and Note.key for automatic upserts.
  *
@@ -66,44 +67,21 @@ export type DocumentSyncOptions = {
  */
 export type DocumentTool = {
   /**
-   * Initiates the authorization flow for the document service.
-   *
-   * @param callback - Function receiving (auth, ...extraArgs) when auth completes
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
-   * @returns Promise resolving to an ActivityLink to initiate the auth flow
-   */
-  requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: DocumentAuth, ...args: TArgs) => any
-  >(
-    callback: TCallback,
-    ...extraArgs: TArgs
-  ): Promise<ActivityLink>;
-
-  /**
    * Retrieves the list of folders accessible to the user.
    *
-   * @param authToken - Authorization token from successful auth flow
+   * @param folderId - A folder ID to use for auth lookup
    * @returns Promise resolving to array of available folders
    */
-  getFolders(authToken: string): Promise<DocumentFolder[]>;
+  getFolders(folderId: string): Promise<DocumentFolder[]>;
 
   /**
    * Begins synchronizing documents from a specific folder.
    *
    * Documents are converted to NewActivityWithNotes objects.
    *
-   * **Recommended Implementation:**
-   * - Set Activity.source to `"{provider}:file:{fileId}"`
-   * - Use Note.key for document details:
-   *   - key: "summary" for description (upserts on changes)
-   *   - key: "comment-{commentId}" for individual comments (unique per comment)
-   *   - key: "reply-{commentId}-{replyId}" for comment replies
-   * - Send NewActivityWithNotes for all documents (creates new or updates existing)
-   * - Set activity.unread = false for initial sync, omit for incremental updates
+   * Auth is obtained automatically via integrations.get(provider, folderId).
    *
    * @param options - Sync configuration options
-   * @param options.authToken - Authorization token for access
    * @param options.folderId - ID of the folder to sync
    * @param options.timeMin - Earliest date to sync documents from (inclusive)
    * @param callback - Function receiving (activity, ...extraArgs) for each synced document
@@ -115,7 +93,6 @@ export type DocumentTool = {
     TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       folderId: string;
     } & DocumentSyncOptions,
     callback: TCallback,
@@ -125,11 +102,10 @@ export type DocumentTool = {
   /**
    * Stops synchronizing documents from a specific folder.
    *
-   * @param authToken - Authorization token for access
    * @param folderId - ID of the folder to stop syncing
    * @returns Promise that resolves when sync is stopped
    */
-  stopSync(authToken: string, folderId: string): Promise<void>;
+  stopSync(folderId: string): Promise<void>;
 
   /**
    * Adds a comment to a document.
@@ -137,16 +113,15 @@ export type DocumentTool = {
    * Optional method for bidirectional sync. When implemented, allows Plot to
    * sync notes added to activities back as comments on the external document.
    *
-   * The tool should extract its own ID from meta (e.g., fileId).
+   * Auth is obtained automatically. The tool should extract its own ID
+   * from meta (e.g., fileId).
    *
-   * @param authToken - Authorization token for access
    * @param meta - Activity metadata containing the tool's document identifier
    * @param body - The comment text content
    * @param noteId - Optional Plot note ID for deduplication
    * @returns The external comment key (e.g. "comment-123") for dedup, or void
    */
   addDocumentComment?(
-    authToken: string,
     meta: ActivityMeta,
     body: string,
     noteId?: string,
@@ -155,7 +130,9 @@ export type DocumentTool = {
   /**
    * Adds a reply to an existing comment thread on a document.
    *
-   * @param authToken - Authorization token for access
+   * Auth is obtained automatically. The tool should extract its own ID
+   * from meta (e.g., fileId).
+   *
    * @param meta - Activity metadata containing the tool's document identifier
    * @param commentId - The external comment ID to reply to
    * @param body - The reply text content
@@ -163,7 +140,6 @@ export type DocumentTool = {
    * @returns The external reply key (e.g. "reply-123-456") for dedup, or void
    */
   addDocumentReply?(
-    authToken: string,
     meta: ActivityMeta,
     commentId: string,
     body: string,

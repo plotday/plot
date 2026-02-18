@@ -447,7 +447,7 @@ export abstract class Plot extends ITool {
    * @returns Promise resolving to the complete created priority
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createPriority(priority: NewPriority): Promise<Priority>;
+  abstract createPriority(priority: NewPriority): Promise<Priority & { created: boolean }>;
 
   /**
    * Retrieves a priority by ID or key.

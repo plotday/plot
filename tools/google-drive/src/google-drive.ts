@@ -1,20 +1,20 @@
 import GoogleContacts from "@plotday/tool-google-contacts";
 import {
+  type ActivityFilter,
+  ActivityKind,
   type ActivityLink,
   ActivityLinkType,
-  ActivityKind,
   ActivityType,
-  type ActorId,
   type NewActivityWithNotes,
   type NewContact,
   type NewNote,
   Serializable,
+  type SyncToolOptions,
   Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
 import {
-  type DocumentAuth,
   type DocumentFolder,
   type DocumentSyncOptions,
   type DocumentTool,
@@ -22,14 +22,13 @@ import {
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
+  type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import {
-  ContactAccess,
-  Plot,
-} from "@plotday/twister/tools/plot";
+import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 
 import {
   GoogleApi,
@@ -62,17 +61,28 @@ import {
  * **Required OAuth Scopes:**
  * - `https://www.googleapis.com/auth/drive` - Read/write files, folders, comments
  */
-export class GoogleDrive
-  extends Tool<GoogleDrive>
-  implements DocumentTool
-{
-  static readonly SCOPES = [
-    "https://www.googleapis.com/auth/drive",
-  ];
+export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
+  static readonly PROVIDER = AuthProvider.Google;
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
+  static readonly SCOPES = ["https://www.googleapis.com/auth/drive"];
 
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
+      integrations: build(Integrations, {
+        providers: [
+          {
+            provider: GoogleDrive.PROVIDER,
+            scopes: Integrations.MergeScopes(
+              GoogleDrive.SCOPES,
+              GoogleContacts.SCOPES
+            ),
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
+      }),
       network: build(Network, {
         urls: ["https://www.googleapis.com/drive/*"],
       }),
@@ -85,48 +95,102 @@ export class GoogleDrive
     };
   }
 
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: DocumentAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    // Combine drive and contacts scopes for single OAuth flow
-    const combinedScopes = [...GoogleDrive.SCOPES, ...GoogleContacts.SCOPES];
-
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request auth and return the activity link
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Google,
-        scopes: combinedScopes,
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  /**
+   * Returns available Google Drive folders as syncable resources.
+   */
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
+    const api = new GoogleApi(token.token);
+    const files = await listFolders(api);
+    return files.map((f) => ({ id: f.id, title: f.name }));
   }
 
-  private async getApi(authToken: string): Promise<GoogleApi> {
-    // Try new pattern: authToken is the actorId directly
-    let token = await this.tools.integrations.get(
-      AuthProvider.Google,
-      authToken as ActorId
-    );
+  /**
+   * Called when a syncable folder is enabled for syncing.
+   * Creates callback tokens from options and auto-starts sync.
+   */
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    await this.set(`sync_enabled_${syncable.id}`, true);
 
-    // Fall back to legacy opaque token pattern for existing callbacks
-    if (!token) {
-      const authorization = await this.get<Authorization>(
-        `authorization:${authToken}`
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const filter: ActivityFilter = {
+        meta: { syncProvider: "google", syncableId: syncable.id },
+      };
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        filter
       );
-      if (authorization) {
-        token = await this.tools.integrations.get(
-          authorization.provider,
-          authorization.actor.id
-        );
-      }
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
     }
+
+    // Auto-start sync: setup watch and queue first batch
+    await this.set(`sync_lock_${syncable.id}`, true);
+
+    const api = await this.getApi(syncable.id);
+    const changesToken = await getChangesStartToken(api);
+
+    const initialState: SyncState = {
+      folderId: syncable.id,
+      changesToken,
+      sequence: 1,
+    };
+
+    await this.set(`sync_state_${syncable.id}`, initialState);
+    await this.setupDriveWatch(syncable.id);
+
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      syncable.id,
+      true // initialSync
+    );
+    await this.runTask(syncCallback);
+  }
+
+  /**
+   * Called when a syncable folder is disabled.
+   * Stops sync, runs disable callback, and cleans up stored tokens.
+   */
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.deleteCallback(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
+    await this.clear(`sync_enabled_${syncable.id}`);
+  }
+
+  private async getApi(folderId: string): Promise<GoogleApi> {
+    // Get token for the syncable (folder) from integrations
+    const token = await this.tools.integrations.get(
+      GoogleDrive.PROVIDER,
+      folderId
+    );
 
     if (!token) {
       throw new Error("Authorization no longer available");
@@ -135,11 +199,10 @@ export class GoogleDrive
     return new GoogleApi(token.token);
   }
 
-  async getFolders(authToken: string): Promise<DocumentFolder[]> {
-    const api = await this.getApi(authToken);
+  async getFolders(folderId: string): Promise<DocumentFolder[]> {
+    const api = await this.getApi(folderId);
     const files = await listFolders(api);
 
-    // Determine root folders (those without parents or with "My Drive" as parent)
     return files.map((file) => ({
       id: file.id,
       name: file.name,
@@ -153,18 +216,15 @@ export class GoogleDrive
     TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       folderId: string;
     } & DocumentSyncOptions,
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, folderId } = options;
+    const { folderId } = options;
 
     // Check if sync is already in progress for this folder
-    const syncInProgress = await this.get<boolean>(
-      `sync_lock_${folderId}`
-    );
+    const syncInProgress = await this.get<boolean>(`sync_lock_${folderId}`);
     if (syncInProgress) {
       return;
     }
@@ -177,13 +237,10 @@ export class GoogleDrive
       callback,
       ...extraArgs
     );
-    await this.set(`callback_${folderId}`, callbackToken);
-
-    // Store auth token for this folder
-    await this.set(`auth_token_${folderId}`, authToken);
+    await this.set(`item_callback_${folderId}`, callbackToken);
 
     // Get changes start token for future incremental syncs
-    const api = await this.getApi(authToken);
+    const api = await this.getApi(folderId);
     const changesToken = await getChangesStartToken(api);
 
     const initialState: SyncState = {
@@ -196,20 +253,19 @@ export class GoogleDrive
     await this.set(`sync_state_${folderId}`, initialState);
 
     // Setup webhook for change notifications
-    await this.setupDriveWatch(authToken, folderId);
+    await this.setupDriveWatch(folderId);
 
     // Start initial sync batch
     const syncCallback = await this.callback(
       this.syncBatch,
       1,
-      authToken,
       folderId,
       true // initialSync
     );
     await this.runTask(syncCallback);
   }
 
-  async stopSync(_authToken: string, folderId: string): Promise<void> {
+  async stopSync(folderId: string): Promise<void> {
     // Cancel scheduled renewal task
     const renewalTask = await this.get<string>(
       `watch_renewal_task_${folderId}`
@@ -220,113 +276,61 @@ export class GoogleDrive
     }
 
     // Stop watch via Google API
-    const authToken = await this.get<string>(`auth_token_${folderId}`);
-    if (authToken) {
-      try {
-        await this.stopDriveWatch(authToken, folderId);
-      } catch (error) {
-        console.error("Failed to stop drive watch:", error);
-      }
+    try {
+      await this.stopDriveWatch(folderId);
+    } catch (error) {
+      console.error("Failed to stop drive watch:", error);
     }
 
     // Clear sync-related storage
     await this.clear(`drive_watch_${folderId}`);
     await this.clear(`sync_state_${folderId}`);
     await this.clear(`sync_lock_${folderId}`);
-    await this.clear(`callback_${folderId}`);
-    await this.clear(`auth_token_${folderId}`);
+    await this.clear(`item_callback_${folderId}`);
   }
 
   async addDocumentComment(
-    authToken: string,
     meta: Record<string, unknown>,
     body: string,
     _noteId?: string
   ): Promise<string | void> {
     const fileId = meta.fileId as string | undefined;
-    if (!fileId) {
-      console.warn("No fileId in activity meta, cannot add comment");
+    const folderId = meta.folderId as string | undefined;
+    if (!fileId || !folderId) {
+      console.warn("No fileId/folderId in activity meta, cannot add comment");
       return;
     }
 
-    const api = await this.getApi(authToken);
+    const api = await this.getApi(folderId);
     const comment = await createComment(api, fileId, body);
     return `comment-${comment.id}`;
   }
 
   async addDocumentReply(
-    authToken: string,
     meta: Record<string, unknown>,
     commentId: string,
     body: string,
     _noteId?: string
   ): Promise<string | void> {
     const fileId = meta.fileId as string | undefined;
-    if (!fileId) {
-      console.warn("No fileId in activity meta, cannot add reply");
+    const folderId = meta.folderId as string | undefined;
+    if (!fileId || !folderId) {
+      console.warn("No fileId/folderId in activity meta, cannot add reply");
       return;
     }
 
-    const api = await this.getApi(authToken);
+    const api = await this.getApi(folderId);
     const reply = await createReply(api, fileId, commentId, body);
     return `reply-${commentId}-${reply.id}`;
   }
 
-  // --- Auth ---
-
-  async onAuthSuccess(
-    authResult: Authorization,
-    callbackToken: Callback
-  ): Promise<void> {
-    const actorId = authResult.actor.id as string;
-
-    // Trigger contacts sync with the same authorization
-    try {
-      const token = await this.tools.integrations.get(
-        authResult.provider,
-        authResult.actor.id
-      );
-      if (token) {
-        await this.tools.googleContacts.syncWithAuth(
-          authResult,
-          token,
-          this.onContactsSynced
-        );
-      }
-    } catch (error) {
-      console.error("Failed to start contacts sync:", error);
-    }
-
-    const authSuccessResult: DocumentAuth = {
-      authToken: actorId,
-    };
-
-    await this.run(callbackToken, authSuccessResult);
-  }
-
-  async onContactsSynced(contacts: NewContact[]): Promise<void> {
-    if (contacts.length === 0) {
-      return;
-    }
-
-    try {
-      await this.tools.plot.addContacts(contacts);
-    } catch (error) {
-      console.error("Failed to add contacts to Plot:", error);
-    }
-  }
-
   // --- Webhooks ---
 
-  private async setupDriveWatch(
-    authToken: string,
-    folderId: string
-  ): Promise<void> {
+  private async setupDriveWatch(folderId: string): Promise<void> {
     const webhookUrl = await this.tools.network.createWebhook(
       {},
       this.onDriveWebhook,
-      folderId,
-      authToken
+      folderId
     );
 
     // Skip webhook setup for localhost (local development)
@@ -335,7 +339,7 @@ export class GoogleDrive
     }
 
     try {
-      const api = await this.getApi(authToken);
+      const api = await this.getApi(folderId);
       const watchId = crypto.randomUUID();
 
       // Watch for changes using the Drive changes API
@@ -352,8 +356,8 @@ export class GoogleDrive
       )) as { expiration: string; resourceId: string };
 
       const expiry = new Date(parseInt(watchData.expiration));
-      const hoursUntilExpiry = (expiry.getTime() - Date.now()) / (1000 * 60 * 60);
-      console.log(`[GDRIVE] Watch created for folder ${folderId}: watchId=${watchId}, expiry=${expiry.toISOString()} (${hoursUntilExpiry.toFixed(1)}h from now)`);
+      const hoursUntilExpiry =
+        (expiry.getTime() - Date.now()) / (1000 * 60 * 60);
 
       await this.set(`drive_watch_${folderId}`, {
         watchId,
@@ -366,21 +370,21 @@ export class GoogleDrive
       // Schedule proactive renewal
       await this.scheduleWatchRenewal(folderId);
     } catch (error) {
-      console.error(`Failed to setup drive watch for folder ${folderId}:`, error);
+      console.error(
+        `Failed to setup drive watch for folder ${folderId}:`,
+        error
+      );
       throw error;
     }
   }
 
-  private async stopDriveWatch(
-    authToken: string,
-    folderId: string
-  ): Promise<void> {
+  private async stopDriveWatch(folderId: string): Promise<void> {
     const watchData = await this.get<any>(`drive_watch_${folderId}`);
     if (!watchData) {
       return;
     }
 
-    const api = await this.getApi(authToken);
+    const api = await this.getApi(folderId);
     await api.call(
       "POST",
       "https://www.googleapis.com/drive/v3/channels/stop",
@@ -407,18 +411,11 @@ export class GoogleDrive
 
     // Don't schedule if the watch has already expired
     if (renewalTime <= new Date()) {
-      console.log(`[GDRIVE] Watch already expired or expiring too soon, skipping renewal scheduling`);
       return;
     }
 
-    console.log(`[GDRIVE] scheduleWatchRenewal: expiry=${expiry.toISOString()}, renewalTime=${renewalTime.toISOString()}`);
-
     // Always schedule as a task to avoid recursive loops
-    // (renewDriveWatch -> setupDriveWatch -> scheduleWatchRenewal -> renewDriveWatch)
-    const renewalCallback = await this.callback(
-      this.renewDriveWatch,
-      folderId
-    );
+    const renewalCallback = await this.callback(this.renewDriveWatch, folderId);
 
     const taskToken = await this.runTask(renewalCallback, {
       runAt: renewalTime,
@@ -430,21 +427,14 @@ export class GoogleDrive
   }
 
   private async renewDriveWatch(folderId: string): Promise<void> {
-    console.log(`[GDRIVE] renewDriveWatch called for folder ${folderId}`);
     try {
-      const authToken = await this.get<string>(`auth_token_${folderId}`);
-      if (!authToken) {
-        console.error(`No auth token found for folder ${folderId}`);
-        return;
-      }
-
       try {
-        await this.stopDriveWatch(authToken, folderId);
+        await this.stopDriveWatch(folderId);
       } catch {
         // Expected if old watch already expired
       }
 
-      await this.setupDriveWatch(authToken, folderId);
+      await this.setupDriveWatch(folderId);
     } catch (error) {
       console.error(`Failed to renew watch for folder ${folderId}:`, error);
     }
@@ -452,32 +442,23 @@ export class GoogleDrive
 
   async onDriveWebhook(
     _request: WebhookRequest,
-    folderId: string,
-    authToken: string
+    folderId: string
   ): Promise<void> {
-    console.log(`[GDRIVE] Webhook received for folder ${folderId}`);
     const watchData = await this.get<any>(`drive_watch_${folderId}`);
     if (!watchData) {
-      console.log(`[GDRIVE] No watch data found, ignoring webhook`);
       return;
     }
 
     // Trigger incremental sync
-    await this.startIncrementalSync(folderId, authToken);
+    await this.startIncrementalSync(folderId);
   }
 
-  private async startIncrementalSync(
-    folderId: string,
-    authToken: string
-  ): Promise<void> {
+  private async startIncrementalSync(folderId: string): Promise<void> {
     // Check if initial sync is still in progress
     const syncInProgress = await this.get<boolean>(`sync_lock_${folderId}`);
     if (syncInProgress) {
-      console.log(`[GDRIVE] Sync lock active for folder ${folderId}, skipping`);
       return;
     }
-
-    console.log(`[GDRIVE] Starting incremental sync for folder ${folderId}`);
 
     // Set sync lock for incremental
     await this.set(`sync_lock_${folderId}`, true);
@@ -491,7 +472,6 @@ export class GoogleDrive
 
     const syncCallback = await this.callback(
       this.incrementalSyncBatch,
-      authToken,
       folderId,
       state.changesToken
     );
@@ -502,7 +482,6 @@ export class GoogleDrive
 
   async syncBatch(
     batchNumber: number,
-    authToken: string,
     folderId: string,
     initialSync: boolean
   ): Promise<void> {
@@ -517,11 +496,13 @@ export class GoogleDrive
         return;
       }
 
-      const api = await this.getApi(authToken);
+      const api = await this.getApi(folderId);
       const result = await listFilesInFolder(api, folderId, state.pageToken);
 
       // Process files in this batch
-      const callbackToken = await this.get<Callback>(`callback_${folderId}`);
+      const callbackToken = await this.get<Callback>(
+        `item_callback_${folderId}`
+      );
       if (!callbackToken) {
         console.warn("No callback token found, skipping file processing");
         return;
@@ -551,7 +532,6 @@ export class GoogleDrive
         const syncCallback = await this.callback(
           this.syncBatch,
           batchNumber + 1,
-          authToken,
           folderId,
           initialSync
         );
@@ -574,17 +554,16 @@ export class GoogleDrive
   }
 
   async incrementalSyncBatch(
-    authToken: string,
     folderId: string,
     changesToken: string
   ): Promise<void> {
     try {
-      const api = await this.getApi(authToken);
+      const api = await this.getApi(folderId);
       const result = await listChanges(api, changesToken);
 
-      console.log(`[GDRIVE] Incremental sync: ${result.changes.length} changes, token=${changesToken.substring(0, 20)}...`);
-
-      const callbackToken = await this.get<Callback>(`callback_${folderId}`);
+      const callbackToken = await this.get<Callback>(
+        `item_callback_${folderId}`
+      );
       if (!callbackToken) {
         console.warn("No callback token found, skipping incremental sync");
         await this.clear(`sync_lock_${folderId}`);
@@ -600,10 +579,10 @@ export class GoogleDrive
         if (!change.file.parents?.includes(folderId)) continue;
 
         // Skip folders
-        if (change.file.mimeType === "application/vnd.google-apps.folder") continue;
+        if (change.file.mimeType === "application/vnd.google-apps.folder")
+          continue;
 
         processedCount++;
-        console.log(`[GDRIVE] Processing changed file: ${change.file.name} (${change.file.id})`);
 
         try {
           const activity = await this.buildActivityFromFile(
@@ -612,20 +591,19 @@ export class GoogleDrive
             folderId,
             false // incremental sync
           );
-          console.log(`[GDRIVE] Built activity with ${activity.notes?.length ?? 0} notes for file ${change.file.name}`);
           await this.tools.callbacks.run(callbackToken, activity);
         } catch (error) {
-          console.error(`Failed to process changed file ${change.fileId}:`, error);
+          console.error(
+            `Failed to process changed file ${change.fileId}:`,
+            error
+          );
         }
       }
-
-      console.log(`[GDRIVE] Processed ${processedCount} files in folder from ${result.changes.length} total changes`);
 
       if (result.nextPageToken) {
         // More change pages
         const syncCallback = await this.callback(
           this.incrementalSyncBatch,
-          authToken,
           folderId,
           result.nextPageToken
         );
@@ -633,7 +611,6 @@ export class GoogleDrive
       } else {
         // Update stored changes token for next incremental sync
         const newToken = result.newStartPageToken || changesToken;
-        console.log(`[GDRIVE] Sync complete, new token=${newToken.substring(0, 20)}... (changed=${newToken !== changesToken})`);
         const state = await this.get<SyncState>(`sync_state_${folderId}`);
         if (state) {
           await this.set(`sync_state_${folderId}`, {
@@ -700,13 +677,20 @@ export class GoogleDrive
     try {
       const comments = await listComments(api, file.id);
       for (const comment of comments) {
-        notes.push(this.buildCommentNote(canonicalSource, comment, emailByName));
+        notes.push(
+          this.buildCommentNote(canonicalSource, comment, emailByName)
+        );
 
         // Add replies
         if (comment.replies) {
           for (const reply of comment.replies) {
             notes.push(
-              this.buildReplyNote(canonicalSource, comment.id, reply, emailByName)
+              this.buildReplyNote(
+                canonicalSource,
+                comment.id,
+                reply,
+                emailByName
+              )
             );
           }
         }
@@ -741,6 +725,8 @@ export class GoogleDrive
         folderId,
         mimeType: file.mimeType,
         webViewLink: file.webViewLink || null,
+        syncProvider: "google",
+        syncableId: folderId,
       },
       notes,
       preview: file.description || null,
@@ -785,7 +771,9 @@ export class GoogleDrive
   private buildReplyNote(
     canonicalSource: string,
     commentId: string,
-    reply: GoogleDriveComment["replies"] extends (infer R)[] | undefined ? R : never,
+    reply: GoogleDriveComment["replies"] extends (infer R)[] | undefined
+      ? R
+      : never,
     emailByName: Map<string, string>
   ): NewNote {
     const email =

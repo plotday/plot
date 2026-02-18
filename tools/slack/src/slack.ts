@@ -1,22 +1,23 @@
 import {
-  type ActorId,
-  type ActivityLink,
+  type ActivityFilter,
   type NewActivityWithNotes,
   Serializable,
+  type SyncToolOptions,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
 import {
   type MessageChannel,
   type MessageSyncOptions,
-  type MessagingAuth,
   type MessagingTool,
 } from "@plotday/twister/common/messaging";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
+  type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
@@ -108,82 +109,133 @@ import {
  * ```
  */
 export class Slack extends Tool<Slack> implements MessagingTool {
+  static readonly PROVIDER = AuthProvider.Slack;
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
+  static readonly SCOPES = [
+    "channels:history",
+    "channels:read",
+    "groups:history",
+    "groups:read",
+    "users:read",
+    "users:read.email",
+    "chat:write",
+    "im:history",
+    "mpim:history",
+  ];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
-      network: build(Network, {
-        urls: ["https://slack.com/api/*"],
+      integrations: build(Integrations, {
+        providers: [
+          {
+            provider: Slack.PROVIDER,
+            scopes: Slack.SCOPES,
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
       }),
+      network: build(Network, { urls: ["https://slack.com/api/*"] }),
       plot: build(Plot, {
-        contact: {
-          access: ContactAccess.Write,
-        },
-        activity: {
-          access: ActivityAccess.Create,
-        },
+        contact: { access: ContactAccess.Write },
+        activity: { access: ActivityAccess.Create },
       }),
     };
   }
 
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: MessagingAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    // Bot scopes for workspace-level "Add to Slack" installation
-    // These are the scopes the bot token will have
-    const slackScopes = [
-      "channels:history", // Read messages in public channels
-      "channels:read", // View basic channel info
-      "groups:history", // Read messages in private channels (if bot is added)
-      "groups:read", // View basic private channel info
-      "users:read", // View users in workspace
-      "users:read.email", // View user email addresses
-      "chat:write", // Send messages as the bot
-      "im:history", // Read direct messages with the bot
-      "mpim:history", // Read group direct messages
-    ];
-
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request auth and return the activity link
-    // Use Priority level for workspace-scoped authorization
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Slack,
-        scopes: slackScopes,
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
+    const api = new SlackApi(token.token);
+    const channels = await api.getChannels();
+    return channels
+      .filter((c: SlackChannel) => c.is_member && !c.is_archived)
+      .map((c: SlackChannel) => ({ id: c.id, title: c.name }));
   }
 
-  private async getApi(authToken: string): Promise<SlackApi> {
-    // Try new flow: authToken is an ActorId
-    let token = await this.tools.integrations.get(AuthProvider.Slack, authToken as ActorId);
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    await this.set(`sync_enabled_${syncable.id}`, true);
 
-    // Fall back to legacy authorization lookup
-    if (!token) {
-      const authorization = await this.get<Authorization>(
-        `authorization:${authToken}`
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const filter: ActivityFilter = {
+        meta: { syncProvider: "slack", syncableId: syncable.id },
+      };
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        filter
       );
-      if (!authorization) {
-        throw new Error("Authorization no longer available");
-      }
-
-      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
-      if (!token) {
-        throw new Error("Authorization no longer available");
-      }
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
     }
 
+    // Auto-start sync: setup webhook and queue first batch
+    await this.setupChannelWebhook(syncable.id);
+
+    let oldest: string | undefined;
+    // Default to 30 days of history
+    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    oldest = (timeMin.getTime() / 1000).toString();
+
+    const initialState: SyncState = {
+      channelId: syncable.id,
+      oldest,
+    };
+
+    await this.set(`sync_state_${syncable.id}`, initialState);
+
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "full",
+      syncable.id
+    );
+    await this.run(syncCallback);
+  }
+
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.deleteCallback(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
+    await this.clear(`sync_enabled_${syncable.id}`);
+  }
+
+  private async getApi(channelId: string): Promise<SlackApi> {
+    const token = await this.tools.integrations.get(Slack.PROVIDER, channelId);
+    if (!token) {
+      throw new Error("No Slack authentication token available");
+    }
     return new SlackApi(token.token);
   }
 
-  async getChannels(authToken: string): Promise<MessageChannel[]> {
-    const api = await this.getApi(authToken);
+  async getChannels(channelId: string): Promise<MessageChannel[]> {
+    const api = await this.getApi(channelId);
     const channels = await api.getChannels();
 
     return channels
@@ -203,26 +255,22 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     TCallback extends (thread: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       channelId: string;
     } & MessageSyncOptions,
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, channelId } = options;
+    const { channelId } = options;
 
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
-    await this.set(`thread_callback_token_${channelId}`, callbackToken);
-
-    // Store auth token for channel
-    await this.set(`auth_token_${channelId}`, authToken);
+    await this.set(`item_callback_${channelId}`, callbackToken);
 
     // Setup webhook for this channel (Slack Events API)
-    await this.setupChannelWebhook(authToken, channelId);
+    await this.setupChannelWebhook(channelId);
 
     // Calculate oldest timestamp for sync
     let oldest: string | undefined;
@@ -246,13 +294,12 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       this.syncBatch,
       1,
       "full",
-      authToken,
       channelId
     );
     await this.run(syncCallback);
   }
 
-  async stopSync(authToken: string, channelId: string): Promise<void> {
+  async stopSync(channelId: string): Promise<void> {
     // Clear webhook
     await this.clear(`channel_webhook_${channelId}`);
 
@@ -260,21 +307,14 @@ export class Slack extends Tool<Slack> implements MessagingTool {
     await this.clear(`sync_state_${channelId}`);
 
     // Clear callback token
-    await this.clear(`thread_callback_token_${channelId}`);
-
-    // Clear auth token
-    await this.clear(`auth_token_${channelId}`);
+    await this.clear(`item_callback_${channelId}`);
   }
 
-  private async setupChannelWebhook(
-    authToken: string,
-    channelId: string
-  ): Promise<void> {
+  private async setupChannelWebhook(channelId: string): Promise<void> {
     const webhookUrl = await this.tools.network.createWebhook(
       {},
       this.onSlackWebhook,
-      channelId,
-      authToken
+      channelId
     );
 
     // Check if webhook URL is localhost
@@ -290,13 +330,11 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       channelId,
       created: new Date().toISOString(),
     });
-
   }
 
   async syncBatch(
     batchNumber: number,
     mode: "full" | "incremental",
-    authToken: string,
     channelId: string
   ): Promise<void> {
     try {
@@ -305,11 +343,11 @@ export class Slack extends Tool<Slack> implements MessagingTool {
         throw new Error("No sync state found");
       }
 
-      const api = await this.getApi(authToken);
+      const api = await this.getApi(channelId);
       const result = await syncSlackChannel(api, state);
 
       if (result.threads.length > 0) {
-        await this.processMessageThreads(result.threads, channelId, authToken);
+        await this.processMessageThreads(result.threads, channelId);
       }
 
       await this.set(`sync_state_${channelId}`, result.state);
@@ -319,7 +357,6 @@ export class Slack extends Tool<Slack> implements MessagingTool {
           this.syncBatch,
           batchNumber + 1,
           mode,
-          authToken,
           channelId
         );
         await this.run(syncCallback);
@@ -340,12 +377,10 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
   private async processMessageThreads(
     threads: SlackMessage[][],
-    channelId: string,
-    authToken: string
+    channelId: string
   ): Promise<void> {
-    const api = await this.getApi(authToken);
     const callbackToken = await this.get<Callback>(
-      `thread_callback_token_${channelId}`
+      `item_callback_${channelId}`
     );
 
     if (!callbackToken) {
@@ -360,6 +395,13 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
         if (activityThread.notes.length === 0) continue;
 
+        // Inject sync metadata for the parent to identify the source
+        activityThread.meta = {
+          ...activityThread.meta,
+          syncProvider: "slack",
+          syncableId: channelId,
+        };
+
         // Call parent callback with the thread (contacts will be created by the API)
         await this.run(callbackToken, activityThread);
       } catch (error) {
@@ -371,8 +413,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
   async onSlackWebhook(
     request: WebhookRequest,
-    channelId: string,
-    authToken: string
+    channelId: string
   ): Promise<void> {
     const body = request.body;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -404,14 +445,11 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       !event.subtype // Ignore bot messages and special subtypes
     ) {
       // Trigger incremental sync
-      await this.startIncrementalSync(channelId, authToken);
+      await this.startIncrementalSync(channelId);
     }
   }
 
-  private async startIncrementalSync(
-    channelId: string,
-    authToken: string
-  ): Promise<void> {
+  private async startIncrementalSync(channelId: string): Promise<void> {
     const webhookData = await this.get<any>(`channel_webhook_${channelId}`);
     if (!webhookData) {
       console.error("No channel webhook data found");
@@ -430,21 +468,9 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       this.syncBatch,
       1,
       "incremental",
-      authToken,
       channelId
     );
     await this.run(syncCallback);
-  }
-
-  async onAuthSuccess(
-    authResult: Authorization,
-    callback: Callback
-  ): Promise<void> {
-    const authSuccessResult: MessagingAuth = {
-      authToken: authResult.actor.id as string,
-    };
-
-    await this.run(callback, authSuccessResult);
   }
 }
 

@@ -13,21 +13,23 @@ import {
   type NewContact,
   type NewNote,
   Serializable,
+  type SyncToolOptions,
   Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
 import type {
   Calendar,
-  CalendarAuth,
   CalendarTool,
   SyncOptions,
 } from "@plotday/twister/common/calendar";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
+  type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
@@ -69,14 +71,6 @@ function detectConferencingProvider(url: string): ConferencingProvider {
   return ConferencingProvider.microsoftTeams;
 }
 
-type OutlookPendingSyncItem = {
-  type: "rsvp";
-  calendarId: string;
-  eventId: string;
-  status: "accepted" | "declined" | "tentativelyAccepted";
-  activityId: string;
-};
-
 type WatchState = {
   subscriptionId: string;
   calendarId: string;
@@ -104,48 +98,15 @@ type WatchState = {
  * @example
  * ```typescript
  * class CalendarSyncTwist extends Twist {
- *   private outlookCalendar: OutlookCalendar;
- *
- *   constructor(id: string, tools: Tools) {
- *     super();
- *     this.outlookCalendar = tools.get(OutlookCalendar);
+ *   build(build: ToolBuilder) {
+ *     return {
+ *       outlookCalendar: build(OutlookCalendar),
+ *       plot: build(Plot, { activity: { access: ActivityAccess.Create } }),
+ *     };
  *   }
  *
- *   async activate() {
- *     const authLink = await this.outlookCalendar.requestAuth("onOutlookAuth", {
- *       provider: "outlook"
- *     });
- *
- *     await this.plot.createActivity({
- *       type: ActivityType.Action,
- *       title: "Connect Outlook Calendar",
- *       links: [authLink]
- *     });
- *   }
- *
- *   async onOutlookAuth(auth: CalendarAuth, context: any) {
- *     const calendars = await this.outlookCalendar.getCalendars(auth.authToken);
- *
- *     // Start syncing primary calendar
- *     const primary = calendars.find(c => c.primary);
- *     if (primary) {
- *       await this.outlookCalendar.startSync(
- *         auth.authToken,
- *         primary.id,
- *         "onCalendarEvent",
- *         {
- *           options: {
- *             timeMin: new Date(), // Only sync future events
- *           }
- *         }
- *       );
- *     }
- *   }
- *
- *   async onCalendarEvent(activity: Activity, context: any) {
- *     // Process Outlook Calendar events
- *     await this.plot.createActivity(activity);
- *   }
+ *   // Auth and calendar selection handled in the twist edit modal.
+ *   // Events are delivered via the startSync callback.
  * }
  * ```
  */
@@ -153,18 +114,27 @@ export class OutlookCalendar
   extends Tool<OutlookCalendar>
   implements CalendarTool
 {
+  static readonly PROVIDER = AuthProvider.Microsoft;
   static readonly SCOPES = ["https://graph.microsoft.com/calendars.readwrite"];
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
 
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
-      network: build(Network, {
-        urls: ["https://graph.microsoft.com/*"],
+      integrations: build(Integrations, {
+        providers: [
+          {
+            provider: OutlookCalendar.PROVIDER,
+            scopes: OutlookCalendar.SCOPES,
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
       }),
+      network: build(Network, { urls: ["https://graph.microsoft.com/*"] }),
       plot: build(Plot, {
-        contact: {
-          access: ContactAccess.Write,
-        },
+        contact: { access: ContactAccess.Write },
         activity: {
           access: ActivityAccess.Create,
           updated: this.onActivityUpdated,
@@ -173,57 +143,103 @@ export class OutlookCalendar
     };
   }
 
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: CalendarAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    // Create callback token for parent
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request Microsoft authentication and return the activity link
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Microsoft,
-        scopes: ["https://graph.microsoft.com/calendars.readwrite"],
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  /**
+   * Returns available Outlook calendars as syncable resources.
+   */
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
+    const api = new GraphApi(token.token);
+    const calendars = await api.getCalendars();
+    return calendars.map((c) => ({ id: c.id, title: c.name }));
   }
 
-  private async getApi(authToken: string): Promise<GraphApi> {
-    // Try new flow: authToken is an ActorId, look up directly
-    let token = await this.tools.integrations.get(
-      AuthProvider.Microsoft,
-      authToken as ActorId
+  /**
+   * Called when a syncable calendar is enabled for syncing.
+   * Creates callback tokens from options and auto-starts sync.
+   */
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem option
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
     );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
 
-    // Fall back to legacy flow: authToken is opaque UUID mapped to stored authorization
-    if (!token) {
-      const authorization = await this.get<Authorization>(
-        `authorization:${authToken}`
+    // Create disable callback if the parent provided one
+    if (this.options.onSyncableDisabled) {
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        { meta: { syncProvider: "microsoft", syncableId: syncable.id } }
       );
-      if (!authorization) {
-        throw new Error("Authorization no longer available");
-      }
-
-      token = await this.tools.integrations.get(
-        authorization.provider,
-        authorization.actor.id
-      );
-      if (!token) {
-        throw new Error("Authorization no longer available");
-      }
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
     }
 
+    // Auto-start sync: setup watch and queue first batch
+    await this.setupOutlookWatch(syncable.id);
+
+    // Determine default sync range (2 years into the past)
+    const now = new Date();
+    const min = new Date(now.getFullYear() - 2, 0, 1);
+
+    await this.set(`outlook_sync_state_${syncable.id}`, {
+      calendarId: syncable.id,
+      min,
+      sequence: 1,
+    } as SyncState);
+
+    const syncCallback = await this.callback(
+      this.syncOutlookBatch,
+      syncable.id,
+      true, // initialSync
+      1 // batchNumber
+    );
+    await this.runTask(syncCallback);
+  }
+
+  /**
+   * Called when a syncable calendar is disabled.
+   * Cleans up callback tokens and stops sync.
+   */
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+    await this.clear(`sync_enabled_${syncable.id}`);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.deleteCallback(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+  }
+
+  private async getApi(calendarId: string): Promise<GraphApi> {
+    const token = await this.tools.integrations.get(
+      OutlookCalendar.PROVIDER,
+      calendarId
+    );
+    if (!token) {
+      throw new Error("No Microsoft authentication token available");
+    }
     return new GraphApi(token.token);
   }
 
-  private async getUserEmail(authToken: string): Promise<string> {
-    const api = await this.getApi(authToken);
+  private async getUserEmail(calendarId: string): Promise<string> {
+    const api = await this.getApi(calendarId);
     const data = (await api.call(
       "GET",
       "https://graph.microsoft.com/v1.0/me"
@@ -232,7 +248,7 @@ export class OutlookCalendar
     return data.mail || data.userPrincipalName || "";
   }
 
-  private async ensureUserIdentity(authToken: string): Promise<string> {
+  private async ensureUserIdentity(calendarId: string): Promise<string> {
     // Check if we already have the user email stored
     const stored = await this.get<string>("user_email");
     if (stored) {
@@ -240,15 +256,15 @@ export class OutlookCalendar
     }
 
     // Fetch user email from Microsoft Graph
-    const email = await this.getUserEmail(authToken);
+    const email = await this.getUserEmail(calendarId);
 
     // Store for future use
     await this.set("user_email", email);
     return email;
   }
 
-  async getCalendars(authToken: string): Promise<Calendar[]> {
-    const api = await this.getApi(authToken);
+  async getCalendars(calendarId: string): Promise<Calendar[]> {
+    const api = await this.getApi(calendarId);
     return await api.getCalendars();
   }
 
@@ -257,25 +273,21 @@ export class OutlookCalendar
     TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       calendarId: string;
     } & SyncOptions,
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, calendarId, timeMin, timeMax } = options;
+    const { calendarId, timeMin, timeMax } = options;
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
-    await this.set("event_callback_token", callbackToken);
-
-    // Store auth token for calendar for later RSVP updates
-    await this.set(`auth_token_${calendarId}`, authToken);
+    await this.set(`item_callback_${calendarId}`, callbackToken);
 
     // Setup webhook for this calendar
-    await this.setupOutlookWatch(authToken, calendarId, authToken);
+    await this.setupOutlookWatch(calendarId);
 
     // Determine sync range
     let min: Date | undefined;
@@ -309,19 +321,18 @@ export class OutlookCalendar
     const syncCallback = await this.callback(
       this.syncOutlookBatch,
       calendarId,
-      authToken,
       true, // initialSync = true for initial sync
       1 // batchNumber = 1 for first batch
     );
     await this.runTask(syncCallback);
   }
 
-  async stopSync(authToken: string, calendarId: string): Promise<void> {
+  async stopSync(calendarId: string): Promise<void> {
     // Stop webhook
     const watchData = await this.get<WatchState>(`outlook_watch_${calendarId}`);
     if (watchData?.subscriptionId) {
       try {
-        const api = await this.getApi(authToken);
+        const api = await this.getApi(calendarId);
         await api.deleteSubscription(watchData.subscriptionId);
       } catch (error) {
         console.error("Failed to delete Outlook subscription:", error);
@@ -334,18 +345,13 @@ export class OutlookCalendar
     await this.clear(`outlook_sync_state_${calendarId}`);
   }
 
-  private async setupOutlookWatch(
-    authToken: string,
-    calendarId: string,
-    opaqueAuthToken: string
-  ): Promise<void> {
-    const api = await this.getApi(authToken);
+  private async setupOutlookWatch(calendarId: string): Promise<void> {
+    const api = await this.getApi(calendarId);
 
     const webhookUrl = await this.tools.network.createWebhook(
       {},
       this.onOutlookWebhook,
-      calendarId,
-      opaqueAuthToken
+      calendarId
     );
 
     // Skip webhook setup for localhost (development mode)
@@ -379,29 +385,27 @@ export class OutlookCalendar
 
   async syncOutlookBatch(
     calendarId: string,
-    authToken: string,
     initialSync: boolean,
     batchNumber: number = 1
   ): Promise<void> {
     let api: GraphApi;
 
     try {
-      api = await this.getApi(authToken);
+      api = await this.getApi(calendarId);
     } catch (error) {
-      console.error(
-        "No Microsoft credentials found for the provided authToken:",
-        error
-      );
+      console.error("No Microsoft credentials found for calendar:", error);
       return;
     }
 
     // Ensure we have the user's identity for RSVP tagging (only on first batch)
     if (batchNumber === 1) {
-      await this.ensureUserIdentity(authToken);
+      await this.ensureUserIdentity(calendarId);
     }
 
     // Hoist callback token retrieval outside event loop - saves N-1 subrequests
-    const callbackToken = await this.get<Callback>("event_callback_token");
+    const callbackToken = await this.get<Callback>(
+      `item_callback_${calendarId}`
+    );
     if (!callbackToken) {
       console.warn("No callback token found, skipping event processing");
       return;
@@ -441,7 +445,6 @@ export class OutlookCalendar
         const syncCallback = await this.callback(
           this.syncOutlookBatch,
           calendarId,
-          authToken,
           initialSync,
           batchNumber + 1
         );
@@ -501,6 +504,7 @@ export class OutlookCalendar
               : new Date(),
             preview: "Cancelled",
             source,
+            meta: { syncProvider: "microsoft", syncableId: calendarId },
             notes: [cancelNote],
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
@@ -652,7 +656,11 @@ export class OutlookCalendar
         const activityWithNotes: NewActivityWithNotes = {
           ...activity,
           author: authorContact,
-          meta: activity.meta,
+          meta: {
+            ...activity.meta,
+            syncProvider: "microsoft",
+            syncableId: calendarId,
+          },
           tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
           notes,
           preview: hasDescription ? outlookEvent.body!.content! : null,
@@ -709,6 +717,7 @@ export class OutlookCalendar
       const occurrenceUpdate = {
         type: ActivityType.Event,
         source: masterCanonicalUrl,
+        meta: { syncProvider: "microsoft", syncableId: calendarId },
         start: start,
         end: end,
         addRecurrenceExdates: [new Date(originalStart)],
@@ -783,6 +792,7 @@ export class OutlookCalendar
     const occurrenceUpdate = {
       type: ActivityType.Event,
       source: masterCanonicalUrl,
+      meta: { syncProvider: "microsoft", syncableId: calendarId },
       occurrences: [occurrence],
     };
 
@@ -791,8 +801,7 @@ export class OutlookCalendar
 
   async onOutlookWebhook(
     request: WebhookRequest,
-    calendarId: string,
-    authToken: string
+    calendarId: string
   ): Promise<void> {
     if (request.params?.validationToken) {
       // Return validation token for webhook verification
@@ -814,44 +823,26 @@ export class OutlookCalendar
     for (const notification of notifications) {
       if (notification.changeType) {
         // Trigger incremental sync
-        await this.startIncrementalSync(calendarId, authToken);
+        await this.startIncrementalSync(calendarId);
       }
     }
   }
 
-  private async startIncrementalSync(
-    calendarId: string,
-    authToken: string
-  ): Promise<void> {
+  private async startIncrementalSync(calendarId: string): Promise<void> {
     try {
-      await this.getApi(authToken);
+      await this.getApi(calendarId);
     } catch (error) {
-      console.error(
-        "No Microsoft credentials found for the provided authToken:",
-        error
-      );
+      console.error("No Microsoft credentials found for calendar:", error);
       return;
     }
 
     const callback = await this.callback(
       this.syncOutlookBatch,
       calendarId,
-      authToken,
       false, // initialSync = false for incremental updates
       1 // batchNumber = 1 for first batch
     );
     await this.runTask(callback);
-  }
-
-  async onAuthSuccess(
-    authResult: Authorization,
-    callbackToken: Callback
-  ): Promise<void> {
-    const authSuccessResult: CalendarAuth = {
-      authToken: authResult.actor.id as string,
-    };
-
-    await this.run(callbackToken, authSuccessResult);
   }
 
   async onActivityUpdated(
@@ -973,106 +964,42 @@ export class OutlookCalendar
             ? changes.occurrence.occurrence
             : new Date(changes.occurrence.occurrence);
 
-        // Use the first actor's token to look up the instance ID
-        const firstActorId = actorIds.values().next().value;
-        if (!firstActorId) {
-          return;
-        }
-
-        const lookupToken = await this.tools.integrations.get(
-          AuthProvider.Microsoft,
-          firstActorId
-        );
-
-        if (!lookupToken) {
-          // Fall back to stored auth token for instance lookup
-          const storedAuthToken = await this.get<string>(
-            `auth_token_${calendarId}`
+        try {
+          const api = await this.getApi(calendarId as string);
+          const instanceId = await this.getEventInstanceIdWithApi(
+            api,
+            calendarId as string,
+            baseEventId,
+            occurrenceDate
           );
-          if (storedAuthToken) {
-            try {
-              const instanceId = await this.getEventInstanceId(
-                storedAuthToken,
-                calendarId,
-                baseEventId,
-                occurrenceDate
-              );
-              if (instanceId) {
-                eventId = instanceId;
-              } else {
-                console.warn(
-                  `Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`
-                );
-                return;
-              }
-            } catch (error) {
-              console.error(`Failed to look up instance ID:`, error);
-              return;
-            }
+          if (instanceId) {
+            eventId = instanceId;
           } else {
             console.warn(
-              "[RSVP Sync] No auth available for instance ID lookup"
+              `Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`
             );
             return;
           }
-        } else {
-          try {
-            const api = new GraphApi(lookupToken.token);
-            const instanceId = await this.getEventInstanceIdWithApi(
-              api,
-              calendarId,
-              baseEventId,
-              occurrenceDate
-            );
-            if (instanceId) {
-              eventId = instanceId;
-            } else {
-              console.warn(
-                `Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`
-              );
-              return;
-            }
-          } catch (error) {
-            console.error(`Failed to look up instance ID:`, error);
-            return;
-          }
+        } catch (error) {
+          console.error(`Failed to look up instance ID:`, error);
+          return;
         }
       }
 
-      // For each actor who changed RSVP, try to sync with their credentials
+      // For each actor who changed RSVP, use actAs() to sync with their credentials.
+      // If the actor has auth, the callback fires immediately.
+      // If not, actAs() creates a private auth note automatically.
       for (const actorId of actorIds) {
-        const token = await this.tools.integrations.get(
-          AuthProvider.Microsoft,
-          actorId
+        await this.tools.integrations.actAs(
+          OutlookCalendar.PROVIDER,
+          actorId,
+          activity.id,
+          this.syncActorRSVP,
+          calendarId as string,
+          eventId,
+          newStatus,
+          actorId as string
         );
-
-        if (token) {
-          // Actor has auth - sync their RSVP directly
-          try {
-            const api = new GraphApi(token.token);
-            await this.updateEventRSVPWithApi(
-              api,
-              calendarId,
-              eventId,
-              newStatus,
-              actorId
-            );
-          } catch (error) {
-            console.error("[RSVP Sync] Failed to update RSVP for actor", {
-              actor_id: actorId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        } else {
-          // Actor lacks auth - queue pending sync and create auth request
-          await this.queuePendingSync(actorId, {
-            type: "rsvp",
-            calendarId,
-            eventId,
-            status: newStatus,
-            activityId: activity.id,
-          });
-        }
       }
     } catch (error) {
       console.error("[RSVP Sync] Error in callback", {
@@ -1084,118 +1011,32 @@ export class OutlookCalendar
   }
 
   /**
-   * Queue a pending write-back action for an unauthenticated actor.
-   * Creates a private auth-request activity if one doesn't exist (deduped by source).
+   * Sync RSVP for an actor. If the actor has auth, this is called immediately.
+   * If not, actAs() creates a private auth note and calls this when they authorize.
    */
-  private async queuePendingSync(
-    actorId: ActorId,
-    action: OutlookPendingSyncItem
-  ): Promise<void> {
-    // Add to pending queue
-    const key = `pending_sync:${actorId}`;
-    const pending = (await this.get<OutlookPendingSyncItem[]>(key)) || [];
-    pending.push(action);
-    await this.set(key, pending);
-
-    // Create auth-request activity (upsert by source to dedup)
-    const authLink = await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Microsoft,
-        scopes: OutlookCalendar.SCOPES,
-      },
-      this.onActorAuth,
-      actorId as string
-    );
-
-    await this.tools.plot.createActivity({
-      source: `auth:${actorId}`,
-      type: ActivityType.Action,
-      title: "Connect your Outlook Calendar",
-      private: true,
-      start: new Date(),
-      end: null,
-      notes: [
-        {
-          content:
-            "To sync your RSVP responses, please connect your Outlook Calendar.",
-          links: [authLink],
-          mentions: [{ id: actorId }],
-        },
-      ],
-    });
-  }
-
-  /**
-   * Callback for when an additional user authorizes.
-   * Applies any pending write-back actions. Does NOT start a sync.
-   */
-  async onActorAuth(
-    authorization: Authorization,
-    actorIdStr: string
-  ): Promise<void> {
-    const actorId = actorIdStr as ActorId;
-    const key = `pending_sync:${actorId}`;
-    const pending = await this.get<OutlookPendingSyncItem[]>(key);
-
-    if (!pending || pending.length === 0) {
-      return;
-    }
-
-    const token = await this.tools.integrations.get(
-      authorization.provider,
-      authorization.actor.id
-    );
-    if (!token) {
-      console.error("[RSVP Sync] Failed to get token after actor auth", {
-        actor_id: actorId,
-      });
-      return;
-    }
-
-    const api = new GraphApi(token.token);
-
-    // Apply pending write-backs
-    for (const item of pending) {
-      if (item.type === "rsvp") {
-        try {
-          await this.updateEventRSVPWithApi(
-            api,
-            item.calendarId,
-            item.eventId,
-            item.status,
-            actorId
-          );
-        } catch (error) {
-          console.error("[RSVP Sync] Failed to apply pending RSVP", {
-            actor_id: actorId,
-            event_id: item.eventId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    }
-
-    // Clear pending queue
-    await this.clear(key);
-  }
-
-  /**
-   * Look up the instance ID for a specific occurrence of a recurring event.
-   * Uses the Microsoft Graph instances endpoint to find the matching occurrence.
-   */
-  private async getEventInstanceId(
-    authToken: string,
+  async syncActorRSVP(
+    token: AuthToken,
     calendarId: string,
-    seriesMasterId: string,
-    occurrenceDate: Date
-  ): Promise<string | null> {
-    const api = await this.getApi(authToken);
-    return this.getEventInstanceIdWithApi(
-      api,
-      calendarId,
-      seriesMasterId,
-      occurrenceDate
-    );
+    eventId: string,
+    status: "accepted" | "declined" | "tentativelyAccepted",
+    actorId: string
+  ): Promise<void> {
+    try {
+      const api = new GraphApi(token.token);
+      await this.updateEventRSVPWithApi(
+        api,
+        calendarId,
+        eventId,
+        status,
+        actorId as ActorId
+      );
+    } catch (error) {
+      console.error("[RSVP Sync] Failed to sync RSVP", {
+        actor_id: actorId,
+        event_id: eventId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

@@ -114,6 +114,18 @@ export abstract class Store extends ITool {
   abstract set<T extends Serializable>(key: string, value: T): Promise<void>;
 
   /**
+   * Lists all storage keys matching a prefix.
+   *
+   * Returns an array of key strings that start with the given prefix.
+   * Useful for finding all keys in a namespace (e.g., all sync locks).
+   *
+   * @param prefix - The prefix to match keys against
+   * @returns Promise resolving to an array of matching key strings
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract list(prefix: string): Promise<string[]>;
+
+  /**
    * Removes a specific key from storage.
    *
    * After this operation, get() calls for this key will return null.

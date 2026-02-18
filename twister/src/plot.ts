@@ -786,13 +786,7 @@ export type NewActivity = (
   Partial<
     Omit<
       ActivityFields,
-      | "author"
-      | "assignee"
-      | "priority"
-      | "tags"
-      | "mentions"
-      | "id"
-      | "source"
+      "author" | "assignee" | "priority" | "tags" | "mentions" | "id" | "source"
     >
   > &
   (
@@ -923,45 +917,46 @@ export type NewActivity = (
     removeRecurrenceExdates?: Date[];
   };
 
-export type ActivityUpdate = (
-  | {
-      /**
-       * Unique identifier for the activity.
-       */
-      id: Uuid;
-    }
-  | {
-      /**
-       * Canonical URL for the item in an external system.
-       */
-      source: string;
-    }
-) &
+export type ActivityFilter = {
+  type?: ActorType;
+  meta?: {
+    [key: string]: JSONValue;
+  };
+};
+
+/**
+ * Fields supported by bulk updates via `match`. Only simple scalar fields
+ * that can be applied uniformly across many activities are included.
+ */
+type ActivityBulkUpdateFields = Partial<
+  Pick<ActivityFields, "kind" | "title" | "private" | "archived" | "meta" | "order">
+> & {
+  /** Update the type of all matching activities. */
+  type?: ActivityType;
+  /**
+   * Timestamp when the activities were marked as complete. Null to clear.
+   * Setting done will automatically set the type to Action if not already.
+   */
+  done?: Date | null;
+};
+
+/**
+ * Fields supported by single-activity updates via `id` or `source`.
+ * Includes all bulk fields plus scheduling, recurrence, tags, and occurrences.
+ */
+type ActivitySingleUpdateFields = ActivityBulkUpdateFields &
   Partial<
     Pick<
       ActivityFields,
-      | "kind"
       | "start"
       | "end"
-      | "title"
       | "assignee"
-      | "private"
-      | "archived"
-      | "meta"
-      | "order"
       | "recurrenceRule"
       | "recurrenceExdates"
       | "recurrenceUntil"
       | "recurrenceCount"
     >
   > & {
-    /** Update the type of the activity. */
-    type?: ActivityType;
-    /**
-     * Timestamp when the activity was marked as complete. Null if not completed.
-     * Setting done will automatically set the type to Action if not already.
-     */
-    done?: Date | null;
     /**
      * Tags to change on the activity. Use an empty array of NewActor to remove a tag.
      * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
@@ -1032,6 +1027,16 @@ export type ActivityUpdate = (
     removeRecurrenceExdates?: Date[];
   };
 
+export type ActivityUpdate =
+  | (({ id: Uuid } | { source: string }) & ActivitySingleUpdateFields)
+  | ({
+      /**
+       * Update all activities matching the specified criteria. Only activities
+       * that match all provided fields and were created by the twist will be updated.
+       */
+      match: ActivityFilter;
+    } & ActivityBulkUpdateFields);
+
 /**
  * Represents a note within an activity.
  *
@@ -1075,7 +1080,10 @@ export type Note = ActivityCommon & {
  * - neither: A new note with auto-generated UUID will be created
  */
 export type NewNote = Partial<
-  Omit<Note, "author" | "activity" | "tags" | "mentions" | "id" | "key" | "reNote">
+  Omit<
+    Note,
+    "author" | "activity" | "tags" | "mentions" | "id" | "key" | "reNote"
+  >
 > &
   ({ id: Uuid } | { key: string } | {}) & {
     /** Reference to the parent activity (required) */
@@ -1136,7 +1144,9 @@ export type NewNote = Partial<
  * Must provide either id or key to identify the note to update.
  */
 export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
-  Partial<Pick<Note, "private" | "archived" | "content" | "links" | "reNote">> & {
+  Partial<
+    Pick<Note, "private" | "archived" | "content" | "links" | "reNote">
+  > & {
     /**
      * Format of the note content. Determines how the note is processed:
      * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)

@@ -1,22 +1,11 @@
-import type { ActivityLink, NewActivityWithNotes, Serializable } from "../index";
-
-/**
- * Represents a successful messaging service authorization.
- *
- * Returned by messaging tools when authorization completes successfully.
- * The auth token is an opaque identifier that can be used for subsequent
- * messaging operations.
- */
-export type MessagingAuth = {
-  /** Opaque token for messaging operations */
-  authToken: string;
-};
+import type { NewActivityWithNotes, Serializable } from "../index";
 
 /**
  * Represents a channel from an external messaging service.
  *
  * Contains metadata about a specific channel that can be synced
- * with Plot.
+ * with Plot. Different messaging providers may have additional
+ * provider-specific properties.
  */
 export type MessageChannel = {
   /** Unique identifier for the channel within the provider */
@@ -46,53 +35,39 @@ export type MessageSyncOptions = {
  * All synced messages/emails are converted to ActivityWithNotes objects.
  * Each email thread or chat conversation becomes an Activity with Notes for each message.
  *
+ * **Architecture: Tools Build, Twists Save**
+ *
+ * Messaging tools follow Plot's core architectural principle:
+ * - **Tools**: Fetch external data and transform it into Plot format (NewActivity objects)
+ * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
+ *
+ * **Implementation Pattern:**
+ * 1. Authorization is handled via the twist edit modal (Integrations provider config)
+ * 2. Tool declares providers and lifecycle callbacks in build()
+ * 3. onAuthorized lists available channels and calls setSyncables()
+ * 4. User enables channels in the modal → onSyncEnabled fires
+ * 5. **Tool builds NewActivity objects** and passes them to the twist via callback
+ * 6. **Twist decides** whether to save using createActivity/updateActivity
+ *
  * **Recommended Data Sync Strategy:**
  * Use Activity.source (thread URL or ID) and Note.key (message ID) for automatic upserts.
  * See SYNC_STRATEGIES.md for detailed patterns.
  */
 export type MessagingTool = {
   /**
-   * Initiates the authorization flow for the service.
-   *
-   * @param callback - Function receiving (auth, ...extraArgs) when auth completes
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
-   * @returns Promise resolving to an ActivityLink to initiate the auth flow
-   */
-  requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: MessagingAuth, ...args: TArgs) => any
-  >(
-    callback: TCallback,
-    ...extraArgs: TArgs
-  ): Promise<ActivityLink>;
-
-  /**
    * Retrieves the list of conversation channels (inboxes, channels) accessible to the user.
    *
-   * @param authToken - Authorization token from successful auth flow
+   * @param channelId - A channel ID to use for auth lookup
    * @returns Promise resolving to array of available conversation channels
    */
-  getChannels(authToken: string): Promise<MessageChannel[]>;
+  getChannels(channelId: string): Promise<MessageChannel[]>;
 
   /**
    * Begins synchronizing messages from a specific channel.
    *
-   * Email threads and chat conversations are converted to NewActivityWithNotes objects.
-   *
-   * **Recommended Implementation** (Strategy 2 - Upsert via Source/Key):
-   * - Set Activity.source to the thread/conversation URL or stable ID (e.g., "slack:{channelId}:{threadTs}")
-   * - Use Note.key for individual messages (e.g., "message-{messageId}")
-   * - Each message becomes a separate note with unique key for upserts
-   * - No manual ID tracking needed - Plot handles deduplication automatically
-   * - Send NewActivityWithNotes for all threads (creates new or updates existing)
-   * - Set activity.unread = false for initial sync, omit for incremental updates
-   *
-   * **Alternative** (Strategy 3 - Advanced cases):
-   * - Use Uuid.Generate() and store ID mappings when creating multiple activities per thread
-   * - See SYNC_STRATEGIES.md for when this is appropriate
+   * Auth is obtained automatically via integrations.get(provider, channelId).
    *
    * @param options - Sync configuration options
-   * @param options.authToken - Authorization token for access
    * @param options.channelId - ID of the channel (e.g., channel, inbox) to sync
    * @param options.timeMin - Earliest date to sync events from (inclusive)
    * @param callback - Function receiving (thread, ...extraArgs) for each synced conversation
@@ -104,7 +79,6 @@ export type MessagingTool = {
     TCallback extends (thread: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       channelId: string;
     } & MessageSyncOptions,
     callback: TCallback,
@@ -114,9 +88,8 @@ export type MessagingTool = {
   /**
    * Stops synchronizing messages from a specific channel.
    *
-   * @param authToken - Authorization token for access
    * @param channelId - ID of the channel to stop syncing
    * @returns Promise that resolves when sync is stopped
    */
-  stopSync(authToken: string, channelId: string): Promise<void>;
+  stopSync(channelId: string): Promise<void>;
 };

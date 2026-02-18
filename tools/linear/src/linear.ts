@@ -15,11 +15,10 @@ import {
   type NewActivityWithNotes,
   type NewNote,
   Serializable,
-  type ActorId,
+  type SyncToolOptions,
 } from "@plotday/twister";
 import type {
   Project,
-  ProjectAuth,
   ProjectSyncOptions,
   ProjectTool,
 } from "@plotday/twister/common/projects";
@@ -28,8 +27,10 @@ import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
+  type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
@@ -57,9 +58,24 @@ type SyncState = {
  * with Plot activities.
  */
 export class Linear extends Tool<Linear> implements ProjectTool {
+  static readonly PROVIDER = AuthProvider.Linear;
+  static readonly SCOPES = ["read", "write", "admin"];
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
+      integrations: build(Integrations, {
+        providers: [
+          {
+            provider: Linear.PROVIDER,
+            scopes: Linear.SCOPES,
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
+      }),
       network: build(Network, { urls: ["https://api.linear.app/*"] }),
       callbacks: build(Callbacks),
       tasks: build(Tasks),
@@ -68,72 +84,92 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Create Linear API client with auth token
+   * Create Linear API client using syncable-based auth
    */
-  private async getClient(authToken: string): Promise<LinearClient> {
-    // Try new flow: authToken is an ActorId
-    const token = await this.tools.integrations.get(AuthProvider.Linear, authToken as ActorId);
-    if (token) {
-      return new LinearClient({ accessToken: token.token });
+  private async getClient(projectId: string): Promise<LinearClient> {
+    const token = await this.tools.integrations.get(Linear.PROVIDER, projectId);
+    if (!token) {
+      throw new Error("No Linear authentication token available");
     }
-
-    // Fall back to legacy flow: authToken is a UUID mapped to stored authorization
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
-    );
-    if (!authorization) {
-      throw new Error("Authorization no longer available");
-    }
-
-    const legacyToken = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
-    if (!legacyToken) {
-      throw new Error("Authorization no longer available");
-    }
-
-    return new LinearClient({ accessToken: legacyToken.token });
+    return new LinearClient({ accessToken: token.token });
   }
 
   /**
-   * Request Linear OAuth authorization
+   * Returns available Linear teams as syncable resources.
    */
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: ProjectAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    const linearScopes = ["read", "write", "admin"];
-
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request auth and return the activity link
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Linear,
-        scopes: linearScopes,
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
+    const client = new LinearClient({ accessToken: token.token });
+    const teams = await client.teams();
+    return teams.nodes.map((team) => ({
+      id: team.id,
+      title: team.name,
+    }));
   }
 
   /**
-   * Handle successful OAuth authorization
+   * Called when a syncable resource is enabled for syncing.
+   * Creates callback tokens from options and auto-starts sync.
    */
-  private async onAuthSuccess(
-    authorization: Authorization,
-    callbackToken: Callback
-  ): Promise<void> {
-    // Execute the callback with the auth token
-    await this.run(callbackToken, { authToken: authorization.actor.id as string });
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        { meta: { syncProvider: "linear", syncableId: syncable.id } }
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
+    }
+
+    // Auto-start sync: setup webhook and begin batch sync
+    await this.setupLinearWebhook(syncable.id);
+    await this.startBatchSync(syncable.id);
+  }
+
+  /**
+   * Called when a syncable resource is disabled.
+   * Runs the disable callback, then cleans up all stored state.
+   */
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.tools.callbacks.delete(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.tools.callbacks.delete(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
+    await this.clear(`sync_enabled_${syncable.id}`);
   }
 
   /**
    * Get list of Linear teams (projects)
    */
-  async getProjects(authToken: string): Promise<Project[]> {
-    const client = await this.getClient(authToken);
+  async getProjects(projectId: string): Promise<Project[]> {
+    const client = await this.getClient(projectId);
     const teams = await client.teams();
 
     return teams.nodes.map((team) => ({
@@ -152,44 +188,39 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     TCallback extends (issue: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       projectId: string;
     } & ProjectSyncOptions,
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, projectId, timeMin } = options;
+    const { projectId, timeMin } = options;
 
     // Setup webhook for real-time updates
-    await this.setupLinearWebhook(authToken, projectId);
+    await this.setupLinearWebhook(projectId);
 
     // Store callback for webhook processing
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
-    await this.set(`callback_${projectId}`, callbackToken);
+    await this.set(`item_callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
-    await this.startBatchSync(authToken, projectId, { timeMin });
+    await this.startBatchSync(projectId, { timeMin });
   }
 
   /**
    * Setup Linear webhook for real-time updates
    */
-  private async setupLinearWebhook(
-    authToken: string,
-    projectId: string
-  ): Promise<void> {
+  private async setupLinearWebhook(projectId: string): Promise<void> {
     try {
-      const client = await this.getClient(authToken);
+      const client = await this.getClient(projectId);
 
       // Create webhook URL first (Linear requires valid URL at creation time)
       const webhookUrl = await this.tools.network.createWebhook(
         {},
         this.onWebhook,
-        projectId,
-        authToken
+        projectId
       );
 
       // Skip webhook setup for localhost (development mode)
@@ -227,7 +258,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Initialize batch sync process
    */
   private async startBatchSync(
-    authToken: string,
     projectId: string,
     options?: ProjectSyncOptions
   ): Promise<void> {
@@ -242,9 +272,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     // Queue first batch
     const batchCallback = await this.callback(
       this.syncBatch,
-      authToken,
       projectId,
-      options
+      options ?? null
     );
 
     await this.tools.tasks.runTask(batchCallback);
@@ -254,9 +283,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    * Process a batch of issues
    */
   private async syncBatch(
-    authToken: string,
     projectId: string,
-    options?: ProjectSyncOptions
+    options?: ProjectSyncOptions | null
   ): Promise<void> {
     const state = await this.get<SyncState>(`sync_state_${projectId}`);
     if (!state) {
@@ -264,12 +292,14 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     // Retrieve callback token from storage
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(
+      `item_callback_${projectId}`
+    );
     if (!callbackToken) {
       throw new Error(`Callback token not found for project ${projectId}`);
     }
 
-    const client = await this.getClient(authToken);
+    const client = await this.getClient(projectId);
     const team = await client.team(projectId);
 
     // Build filter
@@ -294,6 +324,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       );
 
       if (activity) {
+        // Inject sync metadata for bulk operations (e.g. disable filtering)
+        activity.meta = {
+          ...activity.meta,
+          syncProvider: "linear",
+          syncableId: projectId,
+        };
         // Execute the callback using the callback token
         await this.tools.callbacks.run(callbackToken, activity);
       }
@@ -311,9 +347,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       // Queue next batch
       const nextBatch = await this.callback(
         this.syncBatch,
-        authToken,
         projectId,
-        options
+        options ?? null
       );
       await this.tools.tasks.runTask(nextBatch);
     } else {
@@ -460,11 +495,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   /**
    * Update issue with new values
    *
-   * @param authToken - Authorization token
    * @param activity - The updated activity
    */
   async updateIssue(
-    authToken: string,
     activity: import("@plotday/twister").Activity
   ): Promise<void> {
     // Get the Linear issue ID from activity meta
@@ -473,7 +506,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       throw new Error("Linear issue ID not found in activity meta");
     }
 
-    const client = await this.getClient(authToken);
+    const projectId = activity.meta?.projectId as string | undefined;
+    if (!projectId) {
+      throw new Error("Project ID not found in activity meta");
+    }
+
+    const client = await this.getClient(projectId);
     const issue = await client.issue(issueId);
     const updateFields: any = {};
 
@@ -570,12 +608,10 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   /**
    * Add a comment to a Linear issue
    *
-   * @param authToken - Authorization token
-   * @param meta - Activity metadata containing linearId
+   * @param meta - Activity metadata containing linearId and projectId
    * @param body - Comment text (markdown supported)
    */
   async addIssueComment(
-    authToken: string,
     meta: ActivityMeta,
     body: string
   ): Promise<string | void> {
@@ -583,7 +619,13 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     if (!issueId) {
       throw new Error("Linear issue ID not found in activity meta");
     }
-    const client = await this.getClient(authToken);
+
+    const projectId = meta.projectId as string | undefined;
+    if (!projectId) {
+      throw new Error("Project ID not found in activity meta");
+    }
+
+    const client = await this.getClient(projectId);
 
     const payload = await client.createComment({
       issueId,
@@ -601,13 +643,10 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    */
   private async onWebhook(
     request: WebhookRequest,
-    projectId: string,
-    authToken: string,
-    webhookSecret?: string
+    projectId: string
   ): Promise<void> {
     // Retrieve secret
-    const secret =
-      webhookSecret || (await this.get<string>(`webhook_secret_${projectId}`));
+    const secret = await this.get<string>(`webhook_secret_${projectId}`);
 
     if (!secret) {
       console.warn("Linear webhook secret not found, skipping verification");
@@ -643,7 +682,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     }
 
     // Get callback token
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(
+      `item_callback_${projectId}`
+    );
     if (!callbackToken) {
       console.warn("No callback token found for project:", projectId);
       return;
@@ -654,14 +695,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       await this.handleIssueWebhook(
         payload as EntityWebhookPayloadWithIssueData,
         projectId,
-        authToken,
         callbackToken
       );
     } else if (payload.type === "Comment") {
       await this.handleCommentWebhook(
         payload as EntityWebhookPayloadWithCommentData,
         projectId,
-        authToken,
         callbackToken
       );
     }
@@ -673,7 +712,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   private async handleIssueWebhook(
     payload: EntityWebhookPayloadWithIssueData,
     projectId: string,
-    _authToken: string,
     callbackToken: Callback
   ): Promise<void> {
     const issue = payload.data;
@@ -728,6 +766,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       meta: {
         linearId: issue.id,
         projectId,
+        syncProvider: "linear",
+        syncableId: projectId,
       },
       preview: issue.description || null,
     };
@@ -741,7 +781,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   private async handleCommentWebhook(
     payload: EntityWebhookPayloadWithCommentData,
     projectId: string,
-    authToken: string,
     callbackToken: Callback
   ): Promise<void> {
     const comment = payload.data;
@@ -786,6 +825,8 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       meta: {
         linearId: issueId,
         projectId,
+        syncProvider: "linear",
+        syncableId: projectId,
       },
     };
 
@@ -795,12 +836,12 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   /**
    * Stop syncing a Linear team
    */
-  async stopSync(authToken: string, projectId: string): Promise<void> {
+  async stopSync(projectId: string): Promise<void> {
     // Remove webhook
     const webhookId = await this.get<string>(`webhook_id_${projectId}`);
     if (webhookId) {
       try {
-        const client = await this.getClient(authToken);
+        const client = await this.getClient(projectId);
         await client.deleteWebhook(webhookId);
       } catch (error) {
         console.warn("Failed to delete Linear webhook:", error);
@@ -811,11 +852,20 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     // Cleanup webhook secret
     await this.clear(`webhook_secret_${projectId}`);
 
-    // Cleanup callback
+    // Cleanup callback (legacy key for backward compatibility)
     const callbackToken = await this.get<Callback>(`callback_${projectId}`);
     if (callbackToken) {
       await this.deleteCallback(callbackToken);
       await this.clear(`callback_${projectId}`);
+    }
+
+    // Cleanup item callback (new key)
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${projectId}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${projectId}`);
     }
 
     // Cleanup sync state

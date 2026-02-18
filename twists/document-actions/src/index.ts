@@ -1,23 +1,15 @@
 import { GoogleDrive } from "@plotday/tool-google-drive";
 import {
-  type Activity,
-  type ActivityLink,
-  ActivityLinkType,
-  ActivityType,
-  ActorType,
+  type ActivityFilter,
   type NewActivityWithNotes,
   type Note,
   type Priority,
-  type Actor,
+  ActorType,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import type {
-  DocumentAuth,
-  DocumentTool,
-} from "@plotday/twister/common/documents";
+import type { DocumentTool } from "@plotday/twister/common/documents";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
-import { Uuid } from "@plotday/twister/utils/uuid";
 
 /**
  * Document Actions Twist
@@ -30,7 +22,10 @@ import { Uuid } from "@plotday/twister/utils/uuid";
 export default class DocumentActions extends Twist<DocumentActions> {
   build(build: ToolBuilder) {
     return {
-      googleDrive: build(GoogleDrive),
+      googleDrive: build(GoogleDrive, {
+        onItem: this.onDocument,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
       plot: build(Plot, {
         activity: {
           access: ActivityAccess.Create,
@@ -50,111 +45,12 @@ export default class DocumentActions extends Twist<DocumentActions> {
     return this.tools.googleDrive;
   }
 
-  // --- Lifecycle ---
-
-  /**
-   * Called when twist is activated.
-   * Creates a private onboarding activity with Google Drive auth link.
-   */
-  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
-    const authLink = await this.tools.googleDrive.requestAuth(
-      this.onAuthComplete,
-      "google-drive"
-    );
-
-    const activityId = await this.tools.plot.createActivity({
-      type: ActivityType.Action,
-      title: "Connect Google Drive",
-      private: true,
-      notes: [
-        {
-          content:
-            "Connect your Google Drive account to sync documents and comments to Plot.",
-          links: [authLink],
-          ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
-        },
-      ],
-    });
-
-    await this.set("onboarding_activity_id", activityId);
+  async activate(_priority: Pick<Priority, "id">) {
+    // Auth and folder selection are now handled in the twist edit modal.
   }
 
-  /**
-   * Called when OAuth completes.
-   * Fetches available folders and presents selection UI.
-   */
-  async onAuthComplete(auth: DocumentAuth, _provider: string) {
-    await this.set("auth_token", auth.authToken);
-
-    // Fetch folders
-    const folders = await this.tools.googleDrive.getFolders(auth.authToken);
-
-    if (folders.length === 0) {
-      await this.updateOnboardingActivity("No Google Drive folders found.");
-      return;
-    }
-
-    // Create folder selection links
-    const links: Array<ActivityLink> = await Promise.all(
-      folders.map(async (folder) => ({
-        type: ActivityLinkType.callback as const,
-        title: folder.name,
-        callback: await this.linkCallback(
-          this.onFolderSelected,
-          folder.id,
-          folder.name
-        ),
-      }))
-    );
-
-    // Add folder selection to onboarding activity
-    const activity = await this.getParentActivity();
-    if (activity) {
-      await this.tools.plot.createNote({
-        activity,
-        content: "Choose which Google Drive folders to sync:",
-        links,
-      });
-    }
-  }
-
-  /**
-   * Called when user selects a folder to sync.
-   */
-  async onFolderSelected(
-    _link: ActivityLink,
-    folderId: string,
-    folderName: string
-  ) {
-    const authToken = await this.get<string>("auth_token");
-    if (!authToken) {
-      throw new Error("No auth token found");
-    }
-
-    // Track synced folders
-    const synced = (await this.get<string[]>("synced_folders")) || [];
-    if (!synced.includes(folderId)) {
-      synced.push(folderId);
-      await this.set("synced_folders", synced);
-    }
-
-    // Notify user
-    const activity = await this.getParentActivity();
-    if (activity) {
-      await this.tools.plot.createNote({
-        activity,
-        content: `Syncing documents from "${folderName}". They will appear shortly.`,
-      });
-    }
-
-    // Start sync
-    await this.tools.googleDrive.startSync(
-      {
-        authToken,
-        folderId,
-      },
-      this.onDocument
-    );
+  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+    await this.tools.plot.updateActivity({ match: filter, archived: true });
   }
 
   /**
@@ -198,57 +94,32 @@ export default class DocumentActions extends Twist<DocumentActions> {
       commentId = await this.resolveCommentId(note);
     }
 
-    // Try the note author's credentials first, then fall back to installer auth
-    const actorId = note.author.id as string;
-    const installerAuthToken = await this.get<string>("auth_token");
-
-    const authTokensToTry = [
-      actorId,
-      ...(installerAuthToken && installerAuthToken !== actorId
-        ? [installerAuthToken]
-        : []),
-    ];
-
-    for (const authToken of authTokensToTry) {
-      try {
-        let commentKey: string | void;
-        if (commentId && tool.addDocumentReply) {
-          // Reply to existing comment thread
-          commentKey = await tool.addDocumentReply(
-            authToken,
-            activity.meta,
-            commentId,
-            note.content,
-            note.id
-          );
-        } else if (tool.addDocumentComment) {
-          // Top-level comment
-          commentKey = await tool.addDocumentComment(
-            authToken,
-            activity.meta,
-            note.content,
-            note.id
-          );
-        } else {
-          return;
-        }
-        if (commentKey) {
-          await this.tools.plot.updateNote({ id: note.id, key: commentKey });
-        }
-        return; // Success
-      } catch (error) {
-        if (
-          authToken === actorId &&
-          installerAuthToken &&
-          installerAuthToken !== actorId
-        ) {
-          console.warn(
-            `Actor ${actorId} has no auth, falling back to installer`
-          );
-          continue;
-        }
-        console.error("Failed to sync note to provider:", error);
+    try {
+      // Tool resolves auth token internally via integrations
+      let commentKey: string | void;
+      if (commentId && tool.addDocumentReply) {
+        // Reply to existing comment thread
+        commentKey = await tool.addDocumentReply(
+          activity.meta,
+          commentId,
+          note.content,
+          note.id
+        );
+      } else if (tool.addDocumentComment) {
+        // Top-level comment
+        commentKey = await tool.addDocumentComment(
+          activity.meta,
+          note.content,
+          note.id
+        );
+      } else {
+        return;
       }
+      if (commentKey) {
+        await this.tools.plot.updateNote({ id: note.id, key: commentKey });
+      }
+    } catch (error) {
+      console.error("Failed to sync note to provider:", error);
     }
   }
 
@@ -292,48 +163,5 @@ export default class DocumentActions extends Twist<DocumentActions> {
     }
 
     return null;
-  }
-
-  /**
-   * Called when twist is deactivated.
-   * Stops all syncs and cleans up state.
-   */
-  async deactivate() {
-    const synced = (await this.get<string[]>("synced_folders")) || [];
-    const authToken = await this.get<string>("auth_token");
-
-    if (authToken) {
-      for (const folderId of synced) {
-        try {
-          await this.tools.googleDrive.stopSync(authToken, folderId);
-        } catch (error) {
-          console.warn(
-            `Failed to stop sync for folder ${folderId}:`,
-            error
-          );
-        }
-      }
-    }
-
-    await this.clear("auth_token");
-    await this.clear("synced_folders");
-    await this.clear("onboarding_activity_id");
-  }
-
-  // --- Helpers ---
-
-  private async getParentActivity(): Promise<Pick<Activity, "id"> | undefined> {
-    const id = await this.get<Uuid>("onboarding_activity_id");
-    return id ? { id } : undefined;
-  }
-
-  private async updateOnboardingActivity(message: string) {
-    const activity = await this.getParentActivity();
-    if (activity) {
-      await this.tools.plot.createNote({
-        activity,
-        content: message,
-      });
-    }
   }
 }

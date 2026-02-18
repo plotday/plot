@@ -2,38 +2,18 @@ import { Type } from "typebox";
 
 import { Slack } from "@plotday/tool-slack";
 import {
-  type Activity,
-  type ActivityLink,
-  ActivityLinkType,
+  type ActivityFilter,
   ActivityType,
-  type Actor,
   type NewActivityWithNotes,
   type Priority,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import type {
-  MessageChannel,
-  MessagingAuth,
-  MessagingTool,
-} from "@plotday/twister/common/messaging";
 import { AI, type AIMessage } from "@plotday/twister/tools/ai";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
 import { Uuid } from "@plotday/twister/utils/uuid";
 
 type MessageProvider = "slack";
-
-type StoredMessagingAuth = {
-  provider: MessageProvider;
-  authToken: string;
-};
-
-type ChannelConfig = {
-  provider: MessageProvider;
-  channelId: string;
-  channelName: string;
-  authToken: string;
-};
 
 type ThreadTask = {
   threadId: string;
@@ -45,7 +25,10 @@ type ThreadTask = {
 export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   build(build: ToolBuilder) {
     return {
-      slack: build(Slack),
+      slack: build(Slack, {
+        onItem: this.onSlackThread,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
       ai: build(AI),
       plot: build(Plot, {
         activity: {
@@ -55,68 +38,22 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     };
   }
 
-  // ============================================================================
-  // Provider Tool Helper
-  // ============================================================================
+  async activate(_priority: Pick<Priority, "id">) {
+    // Auth and channel selection are now handled in the twist edit modal.
+  }
 
-  private getProviderTool(provider: MessageProvider): MessagingTool {
-    switch (provider) {
-      case "slack":
-        return this.tools.slack;
-      default:
-        throw new Error(`Unknown messaging provider: ${provider}`);
-    }
+  async onSlackThread(thread: NewActivityWithNotes): Promise<void> {
+    const channelId = thread.meta?.syncableId as string;
+    return this.onMessageThread(thread, "slack", channelId);
+  }
+
+  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+    await this.tools.plot.updateActivity({ match: filter, archived: true });
   }
 
   // ============================================================================
-  // Storage Helpers
+  // Thread Task Storage
   // ============================================================================
-
-  private async getOnboardingActivity(): Promise<
-    Pick<Activity, "id"> | undefined
-  > {
-    const id = await this.get<Uuid>("onboarding_activity_id");
-    return id ? { id } : undefined;
-  }
-
-  private async getStoredAuths(): Promise<StoredMessagingAuth[]> {
-    return (await this.get<StoredMessagingAuth[]>("messaging_auths")) || [];
-  }
-
-  private async addStoredAuth(
-    provider: MessageProvider,
-    authToken: string
-  ): Promise<void> {
-    const auths = await this.getStoredAuths();
-    const existingIndex = auths.findIndex((a) => a.provider === provider);
-
-    if (existingIndex >= 0) {
-      auths[existingIndex].authToken = authToken;
-    } else {
-      auths.push({ provider, authToken });
-    }
-
-    await this.set("messaging_auths", auths);
-  }
-
-  private async getChannelConfigs(): Promise<ChannelConfig[]> {
-    return (await this.get<ChannelConfig[]>("channel_configs")) || [];
-  }
-
-  private async addChannelConfig(config: ChannelConfig): Promise<void> {
-    const configs = await this.getChannelConfigs();
-    const existingIndex = configs.findIndex(
-      (c) => c.provider === config.provider && c.channelId === config.channelId
-    );
-
-    if (existingIndex >= 0) {
-      configs[existingIndex] = config;
-    } else {
-      configs.push(config);
-    }
-
-    await this.set("channel_configs", configs);
-  }
 
   private async getThreadTask(threadId: string): Promise<ThreadTask | null> {
     const tasks = (await this.get<ThreadTask[]>("thread_tasks")) || [];
@@ -144,183 +81,6 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   }
 
   // ============================================================================
-  // Activation & Onboarding
-  // ============================================================================
-
-  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
-    // Request auth from Slack
-    const slackAuthLink = await this.tools.slack.requestAuth(
-      this.onAuthComplete,
-      "slack"
-    );
-
-    // Create onboarding activity — private so only the installing user sees it
-    const connectActivityId = await this.tools.plot.createActivity({
-      type: ActivityType.Action,
-      title: "Connect messaging to create tasks",
-      private: true,
-      start: new Date(),
-      notes: [
-        {
-          content:
-            "I'll analyze your message threads and create tasks when action is needed.",
-          links: [slackAuthLink],
-          ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
-        },
-      ],
-    });
-
-    // Store for parent relationship
-    await this.set("onboarding_activity_id", connectActivityId);
-  }
-
-  // ============================================================================
-  // Auth Flow
-  // ============================================================================
-
-  async onAuthComplete(
-    authResult: MessagingAuth,
-    provider: MessageProvider
-  ): Promise<void> {
-    if (!provider) {
-      console.error("No provider specified in auth context");
-      return;
-    }
-
-    // Store auth token
-    await this.addStoredAuth(provider, authResult.authToken);
-
-    try {
-      // Fetch available channels
-      const tool = this.getProviderTool(provider);
-      const channels = await tool.getChannels(authResult.authToken);
-
-      if (channels.length === 0) {
-        const activity = await this.getOnboardingActivity();
-        if (activity) {
-          await this.tools.plot.createNote({
-            activity,
-            content: `No channels found for ${provider}.`,
-          });
-        }
-        return;
-      }
-
-      // Create channel selection activity
-      await this.createChannelSelectionActivity(
-        provider,
-        channels,
-        authResult.authToken
-      );
-    } catch (error) {
-      console.error(`Failed to fetch channels for ${provider}:`, error);
-      const activity = await this.getOnboardingActivity();
-      if (activity) {
-        await this.tools.plot.createNote({
-          activity,
-          content: `Failed to connect to ${provider}. Please try again.`,
-        });
-      }
-    }
-  }
-
-  private async createChannelSelectionActivity(
-    provider: MessageProvider,
-    channels: MessageChannel[],
-    authToken: string
-  ): Promise<void> {
-    const links: ActivityLink[] = [];
-
-    // Create callback link for each channel
-    for (const channel of channels) {
-      const token = await this.linkCallback(
-        this.onChannelSelected,
-        provider,
-        channel.id,
-        channel.name,
-        authToken
-      );
-
-      if (channel.primary) {
-        links.unshift({
-          title: `💬 ${channel.name} (Primary)`,
-          type: ActivityLinkType.callback,
-          callback: token,
-        });
-      } else {
-        links.push({
-          title: `💬 ${channel.name}`,
-          type: ActivityLinkType.callback,
-          callback: token,
-        });
-      }
-    }
-
-    // Create the channel selection activity
-    const activity = await this.getOnboardingActivity();
-    if (activity) {
-      await this.tools.plot.createNote({
-        activity,
-        content: `Which ${provider} channels should I monitor?`,
-        links,
-      });
-    }
-  }
-
-  async onChannelSelected(
-    _link: ActivityLink,
-    provider: MessageProvider,
-    channelId: string,
-    channelName: string,
-    authToken: string
-  ): Promise<void> {
-    try {
-      // Store channel config
-      await this.addChannelConfig({
-        provider,
-        channelId,
-        channelName,
-        authToken,
-      });
-
-      // Start syncing the channel
-      const tool = this.getProviderTool(provider);
-
-      await tool.startSync(
-        {
-          authToken,
-          channelId,
-          timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
-        },
-        this.onMessageThread,
-        provider,
-        channelId
-      );
-
-
-      const activity = await this.getOnboardingActivity();
-      if (activity) {
-        await this.tools.plot.createNote({
-          activity,
-          content: `Now monitoring #${channelName} for actionable threads`,
-        });
-      }
-    } catch (error) {
-      console.error(
-        `Failed to start monitoring channel ${channelName}:`,
-        error
-      );
-      const activity = await this.getOnboardingActivity();
-      if (activity) {
-        await this.tools.plot.createNote({
-          activity,
-          content: `Failed to monitor #${channelName}. Please try again.`,
-        });
-      }
-    }
-  }
-
-  // ============================================================================
   // Message Thread Processing
   // ============================================================================
 
@@ -337,7 +97,6 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       return;
     }
 
-
     // Check if we already have a task for this thread
     const existingTask = await this.getThreadTask(threadId);
 
@@ -351,9 +110,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     // Analyze thread with AI to see if it needs a task
     const analysis = await this.analyzeThread(thread);
 
-
     if (!analysis.needsTask || analysis.confidence < 0.6) {
-      // No task needed or low confidence
       return;
     }
 
@@ -468,7 +225,7 @@ If a task is needed, create a clear, actionable title that describes what the us
       taskNote: string | null;
       confidence: number;
     },
-    provider: MessageProvider,
+    _provider: MessageProvider,
     channelId: string
   ): Promise<void> {
     const threadId = "source" in thread ? thread.source : undefined;
@@ -476,13 +233,6 @@ If a task is needed, create a clear, actionable title that describes what the us
       console.warn("Thread has no source, skipping task creation");
       return;
     }
-
-    // Get channel name for context
-    const configs = await this.getChannelConfigs();
-    const channelConfig = configs.find(
-      (c) => c.provider === provider && c.channelId === channelId
-    );
-    const channelName = channelConfig?.channelName || channelId;
 
     // Create task activity - database handles upsert automatically
     const taskId = await this.tools.plot.createActivity({
@@ -493,27 +243,24 @@ If a task is needed, create a clear, actionable title that describes what the us
       notes: analysis.taskNote
         ? [
             {
-              content: `${analysis.taskNote}\n\n---\nFrom #${channelName}`,
+              content: `${analysis.taskNote}\n\n---\nFrom #${channelId}`,
             },
           ]
         : [
             {
-              content: `From #${channelName}`,
+              content: `From #${channelId}`,
             },
           ],
       preview: analysis.taskNote
-        ? `${analysis.taskNote}\n\n---\nFrom #${channelName}`
-        : `From #${channelName}`,
+        ? `${analysis.taskNote}\n\n---\nFrom #${channelId}`
+        : `From #${channelId}`,
       meta: {
         originalThreadId: threadId,
-        provider,
         channelId,
-        channelName,
       },
       // Use pickPriority for automatic priority matching
       pickPriority: { content: 50, mentions: 50 },
     });
-
 
     // Store mapping
     await this.storeThreadTask(threadId, taskId);

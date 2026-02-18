@@ -1,37 +1,25 @@
 import { GoogleCalendar } from "@plotday/tool-google-calendar";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
 import {
-  type Activity,
-  type ActivityLink,
-  ActivityLinkType,
-  ActivityType,
-  type Actor,
+  type ActivityFilter,
   type NewActivityWithNotes,
   type Priority,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import type {
-  Calendar,
-  CalendarAuth,
-  CalendarTool,
-  SyncOptions,
-} from "@plotday/twister/common/calendar";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
-import { Uuid } from "@plotday/twister/utils/uuid";
-
-type CalendarProvider = "google" | "outlook";
-
-type StoredCalendarAuth = {
-  provider: CalendarProvider;
-  authToken: string;
-};
 
 export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
   build(build: ToolBuilder) {
     return {
-      googleCalendar: build(GoogleCalendar),
-      outlookCalendar: build(OutlookCalendar),
+      googleCalendar: build(GoogleCalendar, {
+        onItem: this.handleEvent,
+        onSyncableDisabled: this.handleSyncableDisabled,
+      }),
+      outlookCalendar: build(OutlookCalendar, {
+        onItem: this.handleEvent,
+        onSyncableDisabled: this.handleSyncableDisabled,
+      }),
       plot: build(Plot, {
         activity: {
           access: ActivityAccess.Create,
@@ -40,286 +28,17 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
     };
   }
 
-  private getProviderTool(provider: CalendarProvider): CalendarTool {
-    switch (provider) {
-      case "google":
-        return this.tools.googleCalendar;
-      case "outlook":
-        return this.tools.outlookCalendar;
-      default:
-        throw new Error(`Unknown calendar provider: ${provider}`);
-    }
+  async activate(_priority: Pick<Priority, "id">) {
+    // Auth and calendar selection are now handled in the twist edit modal.
   }
 
-  private async getStoredAuths(): Promise<StoredCalendarAuth[]> {
-    const stored = await this.get<StoredCalendarAuth[]>("calendar_auths");
-    return stored || [];
+  async handleSyncableDisabled(filter: ActivityFilter): Promise<void> {
+    await this.tools.plot.updateActivity({ match: filter, archived: true });
   }
 
-  private async addStoredAuth(
-    provider: CalendarProvider,
-    authToken: string
-  ): Promise<void> {
-    const auths = await this.getStoredAuths();
-    const existingIndex = auths.findIndex((auth) => auth.provider === provider);
-
-    if (existingIndex >= 0) {
-      auths[existingIndex].authToken = authToken;
-    } else {
-      auths.push({ provider, authToken });
-    }
-
-    await this.set("calendar_auths", auths);
-  }
-
-  private async getAuthToken(
-    provider: CalendarProvider
-  ): Promise<string | null> {
-    const auths = await this.getStoredAuths();
-    const auth = auths.find((auth) => auth.provider === provider);
-    return auth?.authToken || null;
-  }
-
-  private async getParentActivity(): Promise<Pick<Activity, "id"> | undefined> {
-    const id = await this.get<Uuid>("connect_calendar_activity_id");
-    return id ? { id } : undefined;
-  }
-
-  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
-    // Get auth links from both calendar tools
-    const googleAuthLink = await this.tools.googleCalendar.requestAuth(
-      this.onAuthComplete,
-      "google"
-    );
-    const outlookAuthLink = await this.tools.outlookCalendar.requestAuth(
-      this.onAuthComplete,
-      "outlook"
-    );
-
-    // Create onboarding activity — private so only the installing user sees it
-    const connectActivityId = await this.tools.plot.createActivity({
-      type: ActivityType.Action,
-      title: "Connect your calendar",
-      private: true,
-      start: new Date(),
-      end: null,
-      notes: [
-        {
-          content:
-            "Connect a calendar account to get started. You can connect as many as you like.",
-          links: [googleAuthLink, outlookAuthLink],
-          ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
-        },
-      ],
-    });
-
-    // Store the original activity ID for use as parent
-    await this.set("connect_calendar_activity_id", connectActivityId);
-  }
-
-  async getCalendars(provider: CalendarProvider): Promise<Calendar[]> {
-    const authToken = await this.getAuthToken(provider);
-    if (!authToken) {
-      throw new Error(`${provider} Calendar not authenticated`);
-    }
-
-    const tool = this.getProviderTool(provider);
-    return await tool.getCalendars(authToken);
-  }
-
-  async startSync(
-    provider: CalendarProvider,
-    calendarId: string,
-    _options?: SyncOptions
-  ): Promise<void> {
-    const authToken = await this.getAuthToken(provider);
-    if (!authToken) {
-      throw new Error(`${provider} Calendar not authenticated`);
-    }
-
-    const tool = this.getProviderTool(provider);
-
-    // Start sync with event handling callback
-    await tool.startSync(
-      {
-        authToken,
-        calendarId,
-      },
-      this.handleEvent,
-      provider,
-      calendarId
-    );
-  }
-
-  async stopSync(
-    provider: CalendarProvider,
-    calendarId: string
-  ): Promise<void> {
-    const authToken = await this.getAuthToken(provider);
-    if (!authToken) {
-      throw new Error(`${provider} Calendar not authenticated`);
-    }
-
-    const tool = this.getProviderTool(provider);
-    await tool.stopSync(authToken, calendarId);
-  }
-
-  async getAllCalendars(): Promise<
-    { provider: CalendarProvider; calendars: Calendar[] }[]
-  > {
-    const results = [];
-    const auths = await this.getStoredAuths();
-
-    for (const auth of auths) {
-      try {
-        const calendars = await this.getCalendars(auth.provider);
-        results.push({ provider: auth.provider, calendars });
-      } catch (error) {
-        console.warn(`Failed to get ${auth.provider} calendars:`, error);
-      }
-    }
-
-    return results;
-  }
-
-  async handleEvent(
-    activity: NewActivityWithNotes,
-    provider: CalendarProvider,
-    _calendarId: string
-  ): Promise<void> {
-
-    // Add provider to meta for routing updates back to the correct tool
-    activity.meta = { ...activity.meta, provider };
-
+  async handleEvent(activity: NewActivityWithNotes): Promise<void> {
     // Just create/upsert - database handles everything automatically
     // Note: The unread field is already set by the tool based on sync type
     await this.tools.plot.createActivity(activity);
-  }
-
-  async onAuthComplete(
-    authResult: CalendarAuth,
-    provider: CalendarProvider
-  ): Promise<void> {
-    if (!provider) {
-      console.error("No provider specified in auth context");
-      return;
-    }
-
-    // Store the auth token for later use
-    await this.addStoredAuth(provider, authResult.authToken);
-
-    try {
-      // Fetch available calendars for this provider
-      const tool = this.getProviderTool(provider);
-      const calendars = await tool.getCalendars(authResult.authToken);
-
-      if (calendars.length === 0) {
-        const activity = await this.getParentActivity();
-        if (activity) {
-          await this.tools.plot.createNote({
-            activity,
-            content: `I couldn't find any calendars for that account.`,
-          });
-        } else {
-          console.warn("No parent activity found for no calendars note");
-        }
-        return;
-      }
-
-      // Create calendar selection activity
-      await this.createCalendarSelectionActivity(
-        provider,
-        calendars,
-        authResult.authToken
-      );
-    } catch (error) {
-      console.error(`Failed to fetch calendars for ${provider}:`, error);
-    }
-  }
-
-  private async createCalendarSelectionActivity(
-    provider: CalendarProvider,
-    calendars: Calendar[],
-    authToken: string
-  ): Promise<void> {
-    const activity = await this.getParentActivity();
-    if (!activity) {
-      console.error("No parent activity found for calendar selection note");
-      return;
-    }
-
-    const links: ActivityLink[] = [];
-
-    // Create callback links for each calendar
-    for (const calendar of calendars) {
-      const token = await this.linkCallback(
-        this.onCalendarSelected,
-        provider,
-        calendar.id,
-        calendar.name,
-        authToken
-      );
-
-      if (calendar.primary) {
-        links.unshift({
-          title: `📅 ${calendar.name} (Primary)`,
-          type: ActivityLinkType.callback,
-          callback: token,
-        });
-      } else {
-        links.push({
-          title: `📅 ${calendar.name}`,
-          type: ActivityLinkType.callback,
-          callback: token,
-        });
-      }
-    }
-
-    // Create the calendar selection activity
-    const providerName = provider === "google" ? "Google" : "Outlook";
-    await this.tools.plot.createNote({
-      activity,
-      content: `Which ${providerName} calendars you'd like to sync?`,
-      links,
-    });
-  }
-
-  async onCalendarSelected(
-    _link: ActivityLink,
-    provider: CalendarProvider,
-    calendarId: string,
-    calendarName: string,
-    authToken: string
-  ): Promise<void> {
-    try {
-      // Start sync for the selected calendar
-      const tool = this.getProviderTool(provider);
-
-      // Start sync with event handling callback
-      await tool.startSync(
-        {
-          authToken,
-          calendarId,
-        },
-        this.handleEvent,
-        provider,
-        calendarId
-      );
-
-      const activity = await this.getParentActivity();
-      if (!activity) {
-        console.warn("No parent activity found for calendar sync note");
-        return;
-      }
-      await this.tools.plot.createNote({
-        activity,
-        content: `Reading your ${calendarName} calendar.`,
-      });
-    } catch (error) {
-      console.error(
-        `Failed to start sync for calendar ${calendarName}:`,
-        error
-      );
-    }
   }
 }

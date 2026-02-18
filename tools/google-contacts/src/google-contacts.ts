@@ -1,5 +1,4 @@
 import {
-  type ActorId,
   type NewContact,
   Serializable,
   Tool,
@@ -11,10 +10,11 @@ import {
   type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 
-import type { ContactAuth, GoogleContacts as IGoogleContacts } from "./types";
+import type { GoogleContacts as IGoogleContacts, GoogleContactsOptions } from "./types";
 
 type ContactTokens = {
   connections?: {
@@ -256,6 +256,10 @@ export default class GoogleContacts
 {
   static readonly id = "google-contacts";
 
+  static readonly PROVIDER = AuthProvider.Google;
+  static readonly Options: GoogleContactsOptions;
+  declare readonly Options: GoogleContactsOptions;
+
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/contacts.readonly",
     "https://www.googleapis.com/auth/contacts.other.readonly",
@@ -263,50 +267,77 @@ export default class GoogleContacts
 
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
+      integrations: build(Integrations, {
+        providers: [{
+          provider: GoogleContacts.PROVIDER,
+          scopes: GoogleContacts.SCOPES,
+          getSyncables: this.getSyncables,
+          onSyncEnabled: this.onSyncEnabled,
+          onSyncDisabled: this.onSyncDisabled,
+        }],
+      }),
       network: build(Network, {
         urls: ["https://people.googleapis.com/*"],
       }),
     };
   }
 
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: ContactAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<any> {
-    // Create callback token for parent
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request auth and return the activity link
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Google,
-        scopes: GoogleContacts.SCOPES,
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  async getSyncables(_auth: Authorization, _token: AuthToken): Promise<Syncable[]> {
+    return [{ id: "contacts", title: "Contacts" }];
   }
 
-  async getContacts(authToken: string): Promise<NewContact[]> {
-    let storedAuthToken = await this.tools.integrations.get(
-      AuthProvider.Google,
-      authToken as ActorId
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
     );
-    if (!storedAuthToken) {
-      storedAuthToken = await this.get<AuthToken>(`auth_token:${authToken}`);
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Auto-start sync
+    const token = await this.tools.integrations.get(
+      GoogleContacts.PROVIDER,
+      syncable.id
+    );
+    if (!token) {
+      throw new Error("No Google authentication token available");
     }
-    if (!storedAuthToken) {
+
+    const initialState: ContactSyncState = {
+      more: false,
+    };
+
+    await this.set(`sync_state:${syncable.id}`, initialState);
+
+    const syncCallback = await this.callback(this.syncBatch, 1, syncable.id);
+    await this.run(syncCallback);
+  }
+
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+  }
+
+  async getContacts(syncableId: string): Promise<NewContact[]> {
+    const token = await this.tools.integrations.get(
+      GoogleContacts.PROVIDER,
+      syncableId
+    );
+    if (!token) {
       throw new Error(
-        "No Google authentication token available for the provided authToken"
+        "No Google authentication token available for the provided syncableId"
       );
     }
 
-    const api = new GoogleApi(storedAuthToken.token);
-    const result = await getGoogleContacts(api, storedAuthToken.scopes, {
+    const api = new GoogleApi(token.token);
+    const result = await getGoogleContacts(api, token.scopes, {
       more: false,
     });
 
@@ -316,17 +347,14 @@ export default class GoogleContacts
   async startSync<
     TArgs extends Serializable[],
     TCallback extends (contacts: NewContact[], ...args: TArgs) => any
-  >(authToken: string, callback: TCallback, ...extraArgs: TArgs): Promise<void> {
-    let storedAuthToken = await this.tools.integrations.get(
-      AuthProvider.Google,
-      authToken as ActorId
+  >(syncableId: string, callback: TCallback, ...extraArgs: TArgs): Promise<void> {
+    const token = await this.tools.integrations.get(
+      GoogleContacts.PROVIDER,
+      syncableId
     );
-    if (!storedAuthToken) {
-      storedAuthToken = await this.get<AuthToken>(`auth_token:${authToken}`);
-    }
-    if (!storedAuthToken) {
+    if (!token) {
       throw new Error(
-        "No Google authentication token available for the provided authToken"
+        "No Google authentication token available for the provided syncableId"
       );
     }
 
@@ -335,128 +363,65 @@ export default class GoogleContacts
       callback,
       ...extraArgs
     );
-    await this.set(`contacts_callback_token:${authToken}`, callbackToken);
+    await this.set(`item_callback_${syncableId}`, callbackToken);
 
     // Start initial sync
     const initialState: ContactSyncState = {
       more: false,
     };
 
-    await this.set(`sync_state:${authToken}`, initialState);
+    await this.set(`sync_state:${syncableId}`, initialState);
 
     // Start sync batch using run tool for long-running operation
-    const syncCallback = await this.callback(this.syncBatch, 1, authToken);
+    const syncCallback = await this.callback(this.syncBatch, 1, syncableId);
     await this.run(syncCallback);
   }
 
-  /**
-   * Start contact sync using an existing Authorization and AuthToken from another tool.
-   * This enables other Google tools (like calendar) to trigger contact syncing
-   * after they've obtained auth with combined scopes.
-   *
-   * @param authorization - Authorization object containing provider and scopes
-   * @param authToken - Actual auth token data retrieved by the calling tool
-   * @param callback - Optional callback to invoke with synced contacts
-   * @param extraArgs - Additional arguments to pass to the callback
-   */
-  async syncWithAuth<
-    TArgs extends Serializable[],
-    TCallback extends (contacts: NewContact[], ...args: TArgs) => any
-  >(
-    authorization: Authorization,
-    authToken: AuthToken,
-    callback?: TCallback,
-    ...extraArgs: TArgs
-  ): Promise<void> {
-    // Validate authorization has required contacts scopes
-    const hasRequiredScopes = GoogleContacts.SCOPES.every((scope) =>
-      authorization.scopes.includes(scope)
-    );
-
-    if (!hasRequiredScopes) {
-      throw new Error(
-        `Authorization missing required contacts scopes. Required: ${GoogleContacts.SCOPES.join(
-          ", "
-        )}. Got: ${authorization.scopes.join(", ")}`
-      );
-    }
-
-    // Use actor ID as the auth token identifier
-    const authTokenId = authorization.actor.id as string;
-
-    // Store the auth token data (passed directly from caller)
-    await this.set(`auth_token:${authTokenId}`, authToken);
-
-    // Setup callback if provided
-    if (callback) {
-      const callbackToken = await this.tools.callbacks.createFromParent(
-        callback,
-        ...extraArgs
-      );
-      await this.set(`contacts_callback_token:${authTokenId}`, callbackToken);
-    }
-
-    // Initialize sync state
-    const initialState: ContactSyncState = {
-      more: false,
-    };
-    await this.set(`sync_state:${authTokenId}`, initialState);
-
-    // Start sync batch
-    const syncCallback = await this.callback(this.syncBatch, 1, authTokenId);
-    await this.runTask(syncCallback);
+  async stopSync(syncableId: string): Promise<void> {
+    // Clear sync state for this specific syncable
+    await this.clear(`sync_state:${syncableId}`);
+    await this.clear(`item_callback_${syncableId}`);
   }
 
-  async stopSync(authToken: string): Promise<void> {
-    // Clear sync state for this specific auth token
-    await this.clear(`sync_state:${authToken}`);
-    await this.clear(`contacts_callback_token:${authToken}`);
-  }
-
-  async syncBatch(batchNumber: number, authToken: string): Promise<void> {
+  async syncBatch(batchNumber: number, syncableId: string): Promise<void> {
     try {
-      let storedAuthToken = await this.tools.integrations.get(
-        AuthProvider.Google,
-        authToken as ActorId
+      const token = await this.tools.integrations.get(
+        GoogleContacts.PROVIDER,
+        syncableId
       );
-      if (!storedAuthToken) {
-        storedAuthToken = await this.get<AuthToken>(
-          `auth_token:${authToken}`
-        );
-      }
-      if (!storedAuthToken) {
+      if (!token) {
         throw new Error(
-          "No authentication token available for the provided authToken"
+          "No authentication token available for the provided syncableId"
         );
       }
 
-      const state = await this.get<ContactSyncState>(`sync_state:${authToken}`);
+      const state = await this.get<ContactSyncState>(`sync_state:${syncableId}`);
       if (!state) {
         throw new Error("No sync state found");
       }
 
-      const api = new GoogleApi(storedAuthToken.token);
+      const api = new GoogleApi(token.token);
       const result = await getGoogleContacts(
         api,
-        storedAuthToken.scopes,
+        token.scopes,
         state
       );
 
       if (result.contacts.length > 0) {
-        await this.processContacts(result.contacts, authToken);
+        await this.processContacts(result.contacts, syncableId);
       }
 
-      await this.set(`sync_state:${authToken}`, result.state);
+      await this.set(`sync_state:${syncableId}`, result.state);
 
       if (result.state.more) {
         const nextCallback = await this.callback(
           this.syncBatch,
           batchNumber + 1,
-          authToken
+          syncableId
         );
         await this.run(nextCallback);
       } else {
-        await this.clear(`sync_state:${authToken}`);
+        await this.clear(`sync_state:${syncableId}`);
       }
     } catch (error) {
       console.error(`Error in sync batch ${batchNumber}:`, error);
@@ -467,24 +432,13 @@ export default class GoogleContacts
 
   private async processContacts(
     contacts: NewContact[],
-    authToken: string
+    syncableId: string
   ): Promise<void> {
     const callbackToken = await this.get<Callback>(
-      `contacts_callback_token:${authToken}`
+      `item_callback_${syncableId}`
     );
     if (callbackToken) {
       await this.run(callbackToken, contacts);
     }
-  }
-
-  async onAuthSuccess(
-    authResult: Authorization,
-    callbackToken: Callback
-  ): Promise<void> {
-    const authSuccessResult: ContactAuth = {
-      authToken: authResult.actor.id as string,
-    };
-
-    await this.run(callbackToken, authSuccessResult);
   }
 }

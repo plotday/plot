@@ -5,15 +5,14 @@ import {
   type ActivityLink,
   ActivityLinkType,
   ActivityType,
-  type ActorId,
   type NewActivity,
   type NewActivityWithNotes,
   NewContact,
   Serializable,
+  type SyncToolOptions,
 } from "@plotday/twister";
 import type {
   Project,
-  ProjectAuth,
   ProjectSyncOptions,
   ProjectTool,
 } from "@plotday/twister/common/projects";
@@ -21,8 +20,10 @@ import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
+  type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
@@ -42,9 +43,22 @@ type SyncState = {
  * with Plot activities.
  */
 export class Jira extends Tool<Jira> implements ProjectTool {
+  static readonly PROVIDER = AuthProvider.Atlassian;
+  static readonly SCOPES = ["read:jira-work", "write:jira-work", "read:jira-user"];
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
+      integrations: build(Integrations, {
+        providers: [{
+          provider: Jira.PROVIDER,
+          scopes: Jira.SCOPES,
+          getSyncables: this.getSyncables,
+          onSyncEnabled: this.onSyncEnabled,
+          onSyncDisabled: this.onSyncDisabled,
+        }],
+      }),
       network: build(Network, { urls: ["https://*.atlassian.net/*"] }),
       callbacks: build(Callbacks),
       tasks: build(Tasks),
@@ -53,34 +67,17 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   }
 
   /**
-   * Create Jira API client with auth token
+   * Create Jira API client using syncable-based auth
    */
-  private async getClient(authToken: string): Promise<Version3Client> {
-    // Try new pattern first (authToken is an ActorId)
-    let token = await this.tools.integrations.get(AuthProvider.Atlassian, authToken as ActorId);
-
-    // Fall back to legacy authorization lookup
+  private async getClient(projectId: string): Promise<Version3Client> {
+    const token = await this.tools.integrations.get(Jira.PROVIDER, projectId);
     if (!token) {
-      const authorization = await this.get<Authorization>(
-        `authorization:${authToken}`
-      );
-      if (!authorization) {
-        throw new Error("Authorization no longer available");
-      }
-
-      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
+      throw new Error("No Jira authentication token available");
     }
-
-    if (!token) {
-      throw new Error("Authorization no longer available");
-    }
-
-    // Get the cloud ID from provider metadata
     const cloudId = token.provider?.cloud_id;
     if (!cloudId) {
       throw new Error("Jira cloud ID not found in authorization");
     }
-
     return new Version3Client({
       host: `https://api.atlassian.com/ex/jira/${cloudId}`,
       authentication: {
@@ -92,46 +89,81 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   }
 
   /**
-   * Request Jira OAuth authorization
+   * Returns available Jira projects as syncable resources.
    */
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: ProjectAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    const jiraScopes = ["read:jira-work", "write:jira-work", "read:jira-user"];
-
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request auth and return the activity link
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Atlassian,
-        scopes: jiraScopes,
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+    const cloudId = token.provider?.cloud_id;
+    if (!cloudId) {
+      throw new Error("No Jira cloud ID in authorization");
+    }
+    const client = new Version3Client({
+      host: `https://api.atlassian.com/ex/jira/${cloudId}`,
+      authentication: { oauth2: { accessToken: token.token } },
+    });
+    const projects = await client.projects.searchProjects({ maxResults: 100 });
+    return (projects.values || []).map((p) => ({
+      id: p.id,
+      title: p.name,
+    }));
   }
 
   /**
-   * Handle successful OAuth authorization
+   * Handle syncable resource being enabled.
+   * Creates callback tokens for the sync lifecycle and auto-starts sync.
    */
-  private async onAuthSuccess(
-    authorization: Authorization,
-    callbackToken: Callback
-  ): Promise<void> {
-    // Execute the callback with the auth token (actor ID)
-    await this.run(callbackToken, { authToken: authorization.actor.id as string });
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    await this.set(`sync_enabled_${syncable.id}`, true);
+
+    // Create item callback token from parent's onItem handler
+    const itemCallback = await this.tools.callbacks.createFromParent(
+      this.options.onItem
+    );
+    await this.set(`item_callback_${syncable.id}`, itemCallback);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const disableCallback = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        { meta: { syncProvider: "atlassian", syncableId: syncable.id } }
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallback);
+    }
+
+    // Auto-start sync: setup webhook and queue first batch
+    await this.setupJiraWebhook(syncable.id);
+    await this.startBatchSync(syncable.id);
+  }
+
+  /**
+   * Handle syncable resource being disabled.
+   * Stops sync, runs disable callback, and cleans up all stored tokens.
+   */
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallback = await this.get<Callback>(`disable_callback_${syncable.id}`);
+    if (disableCallback) {
+      await this.tools.callbacks.run(disableCallback);
+      await this.deleteCallback(disableCallback);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallback = await this.get<Callback>(`item_callback_${syncable.id}`);
+    if (itemCallback) {
+      await this.deleteCallback(itemCallback);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
+    await this.clear(`sync_enabled_${syncable.id}`);
   }
 
   /**
    * Get list of Jira projects
    */
-  async getProjects(authToken: string): Promise<Project[]> {
-    const client = await this.getClient(authToken);
+  async getProjects(projectId: string): Promise<Project[]> {
+    const client = await this.getClient(projectId);
 
     // Get all projects the user has access to
     const projects = await client.projects.searchProjects({
@@ -154,26 +186,25 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     TCallback extends (issue: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       projectId: string;
     } & ProjectSyncOptions,
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, projectId, timeMin } = options;
+    const { projectId, timeMin } = options;
 
     // Setup webhook for real-time updates
-    await this.setupJiraWebhook(authToken, projectId);
+    await this.setupJiraWebhook(projectId);
 
     // Store callback for webhook processing
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
-    await this.set(`callback_${projectId}`, callbackToken);
+    await this.set(`item_callback_${projectId}`, callbackToken);
 
     // Start initial batch sync
-    await this.startBatchSync(authToken, projectId, { timeMin });
+    await this.startBatchSync(projectId, { timeMin });
   }
 
   /**
@@ -190,7 +221,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * 5. Set JQL filter: project = {projectId}
    */
   private async setupJiraWebhook(
-    authToken: string,
     projectId: string
   ): Promise<void> {
     try {
@@ -198,8 +228,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       const webhookUrl = await this.tools.network.createWebhook(
         {},
         this.onWebhook,
-        projectId,
-        authToken
+        projectId
       );
 
       // Store webhook URL for reference
@@ -217,7 +246,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Initialize batch sync process
    */
   private async startBatchSync(
-    authToken: string,
     projectId: string,
     options?: ProjectSyncOptions
   ): Promise<void> {
@@ -233,7 +261,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     // Queue first batch
     const batchCallback = await this.callback(
       this.syncBatch,
-      authToken,
       projectId,
       options
     );
@@ -245,7 +272,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    * Process a batch of issues
    */
   private async syncBatch(
-    authToken: string,
     projectId: string,
     options?: ProjectSyncOptions
   ): Promise<void> {
@@ -255,12 +281,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     }
 
     // Retrieve callback token from storage
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (!callbackToken) {
       throw new Error(`Callback token not found for project ${projectId}`);
     }
 
-    const client = await this.getClient(authToken);
+    const client = await this.getClient(projectId);
 
     // Build JQL query
     let jql = `project = ${projectId}`;
@@ -293,11 +319,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     for (const issue of searchResult.issues || []) {
       const activityWithNotes = await this.convertIssueToActivity(
         issue,
-        projectId,
-        authToken
+        projectId
       );
       // Set unread based on sync type (false for initial sync to avoid notification overload)
       activityWithNotes.unread = !state.initialSync;
+      // Inject sync metadata for filtering on disable
+      activityWithNotes.meta = { ...activityWithNotes.meta, syncProvider: "atlassian", syncableId: projectId };
       // Execute the callback using the callback token
       await this.tools.callbacks.run(callbackToken, activityWithNotes);
     }
@@ -318,7 +345,6 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       // Queue next batch
       const nextBatch = await this.callback(
         this.syncBatch,
-        authToken,
         projectId,
         options
       );
@@ -330,33 +356,13 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   }
 
   /**
-   * Get the cloud ID from stored authorization
+   * Get the cloud ID using syncable-based auth
    */
-  private async getCloudId(authToken: string): Promise<string> {
-    // Try new pattern first (authToken is an ActorId)
-    let token = await this.tools.integrations.get(AuthProvider.Atlassian, authToken as ActorId);
-
-    // Fall back to legacy authorization lookup
-    if (!token) {
-      const authorization = await this.get<Authorization>(
-        `authorization:${authToken}`
-      );
-      if (!authorization) {
-        throw new Error("Authorization no longer available");
-      }
-
-      token = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
-    }
-
-    if (!token) {
-      throw new Error("Authorization no longer available");
-    }
-
+  private async getCloudId(projectId: string): Promise<string> {
+    const token = await this.tools.integrations.get(Jira.PROVIDER, projectId);
+    if (!token) throw new Error("No Jira token available");
     const cloudId = token.provider?.cloud_id;
-    if (!cloudId) {
-      throw new Error("Jira cloud ID not found in authorization");
-    }
-
+    if (!cloudId) throw new Error("Jira cloud ID not found");
     return cloudId;
   }
 
@@ -365,8 +371,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    */
   private async convertIssueToActivity(
     issue: any,
-    projectId: string,
-    authToken?: string
+    projectId: string
   ): Promise<NewActivityWithNotes> {
     const fields = issue.fields || {};
     const comments = fields.comment?.comments || [];
@@ -397,13 +402,11 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     // Get cloud ID for constructing stable source identifier and issue URL
     let cloudId: string | undefined;
     let issueUrl: string | undefined;
-    if (authToken) {
-      try {
-        cloudId = await this.getCloudId(authToken);
-        issueUrl = `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issue.key}`;
-      } catch (error) {
-        console.error("Failed to get cloud ID for issue URL:", error);
-      }
+    try {
+      cloudId = await this.getCloudId(projectId);
+      issueUrl = `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issue.key}`;
+    } catch (error) {
+      console.error("Failed to get cloud ID for issue URL:", error);
     }
 
     // Build notes array: always create initial note with description and link
@@ -521,17 +524,17 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   /**
    * Update issue with new values
    *
-   * @param authToken - Authorization token
    * @param activity - The updated activity
    */
-  async updateIssue(authToken: string, activity: Activity): Promise<void> {
-    // Extract Jira issue key from meta
+  async updateIssue(activity: Activity): Promise<void> {
+    // Extract Jira issue key and project ID from meta
     const issueKey = activity.meta?.issueKey as string | undefined;
     if (!issueKey) {
       throw new Error("Jira issue key not found in activity meta");
     }
+    const projectId = activity.meta?.projectId as string;
 
-    const client = await this.getClient(authToken);
+    const client = await this.getClient(projectId);
 
     // Handle field updates (title, assignee)
     const updateFields: any = {};
@@ -606,12 +609,11 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   /**
    * Add a comment to a Jira issue
    *
-   * @param authToken - Authorization token
-   * @param meta - Activity metadata containing issueKey
+   * @param meta - Activity metadata containing issueKey and projectId
    * @param body - Comment text (converted to ADF format)
+   * @param noteId - Optional Plot note ID for dedup
    */
   async addIssueComment(
-    authToken: string,
     meta: import("@plotday/twister").ActivityMeta,
     body: string,
     noteId?: string,
@@ -620,7 +622,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     if (!issueKey) {
       throw new Error("Jira issue key not found in activity meta");
     }
-    const client = await this.getClient(authToken);
+    const projectId = meta.projectId as string;
+    const client = await this.getClient(projectId);
 
     // Convert plain text to Atlassian Document Format (ADF)
     const adfBody = this.convertTextToADF(body);
@@ -663,13 +666,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    */
   private async onWebhook(
     request: WebhookRequest,
-    projectId: string,
-    authToken: string
+    projectId: string
   ): Promise<void> {
     const payload = request.body as any;
 
     // Get callback token (needed by both handlers)
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (!callbackToken) {
       console.warn("No callback token found for project:", projectId);
       return;
@@ -680,14 +682,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       await this.handleIssueWebhook(
         payload,
         projectId,
-        authToken,
         callbackToken
       );
     } else if (payload.webhookEvent?.startsWith("comment_")) {
       await this.handleCommentWebhook(
         payload,
         projectId,
-        authToken,
         callbackToken
       );
     } else {
@@ -701,10 +701,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   private async handleIssueWebhook(
     payload: any,
     projectId: string,
-    authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-
     const issue = payload.issue;
     if (!issue) {
       console.error("No issue in webhook payload");
@@ -739,7 +737,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     // Get cloud ID for constructing stable source identifier
     let cloudId: string | undefined;
     try {
-      cloudId = await this.getCloudId(authToken);
+      cloudId = await this.getCloudId(projectId);
     } catch (error) {
       console.error("Failed to get cloud ID for source identifier:", error);
     }
@@ -786,10 +784,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   private async handleCommentWebhook(
     payload: any,
     projectId: string,
-    authToken: string,
     callbackToken: Callback
   ): Promise<void> {
-
     const comment = payload.comment;
     const issue = payload.issue;
 
@@ -801,7 +797,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     // Get cloud ID for constructing stable source identifier
     let cloudId: string | undefined;
     try {
-      cloudId = await this.getCloudId(authToken);
+      cloudId = await this.getCloudId(projectId);
     } catch (error) {
       console.error("Failed to get cloud ID for source identifier:", error);
     }
@@ -862,16 +858,16 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   /**
    * Stop syncing a Jira project
    */
-  async stopSync(_authToken: string, projectId: string): Promise<void> {
+  async stopSync(projectId: string): Promise<void> {
     // Cleanup webhook URL
     await this.clear(`webhook_url_${projectId}`);
     await this.clear(`webhook_id_${projectId}`);
 
     // Cleanup callback
-    const callbackToken = await this.get<Callback>(`callback_${projectId}`);
+    const callbackToken = await this.get<Callback>(`item_callback_${projectId}`);
     if (callbackToken) {
       await this.deleteCallback(callbackToken);
-      await this.clear(`callback_${projectId}`);
+      await this.clear(`item_callback_${projectId}`);
     }
 
     // Cleanup sync state

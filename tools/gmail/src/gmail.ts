@@ -1,22 +1,23 @@
 import {
-  type ActorId,
-  type ActivityLink,
+  type ActivityFilter,
   type NewActivityWithNotes,
   Serializable,
+  type SyncToolOptions,
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
 import {
   type MessageChannel,
   type MessageSyncOptions,
-  type MessagingAuth,
   type MessagingTool,
 } from "@plotday/twister/common/messaging";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
+  type AuthToken,
   type Authorization,
   Integrations,
+  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
@@ -37,6 +38,8 @@ import {
  * Gmail integration tool implementing the MessagingTool interface.
  *
  * Supports inbox, labels, and search filters as channels.
+ * Auth is managed declaratively via provider config in build() and
+ * handled through the twist edit modal.
  *
  * **Required OAuth Scopes:**
  * - `https://www.googleapis.com/auth/gmail.readonly` - Read emails
@@ -52,31 +55,15 @@ import {
  *     this.gmail = tools.get(Gmail);
  *   }
  *
- *   async activate() {
- *     const authLink = await this.gmail.requestAuth(this.onGmailAuth);
+ *   // Auth is handled via the twist edit modal.
+ *   // When sync is enabled on a channel, onSyncEnabled fires and
+ *   // the twist can start syncing:
  *
- *     await this.plot.createActivity({
- *       type: ActivityType.Action,
- *       title: "Connect Gmail",
- *       links: [authLink]
- *     });
- *   }
- *
- *   async onGmailAuth(auth: MessagingAuth) {
- *     const channels = await this.gmail.getChannels(auth.authToken);
- *
- *     // Start syncing inbox
- *     const inbox = channels.find(c => c.primary);
- *     if (inbox) {
- *       await this.gmail.startSync(
- *         auth.authToken,
- *         inbox.id,
- *         this.onGmailThread,
- *         {
- *           timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // Last 7 days
- *         }
- *       );
- *     }
+ *   async onGmailSyncEnabled(channelId: string) {
+ *     await this.gmail.startSync(
+ *       { channelId, timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+ *       this.onGmailThread
+ *     );
  *   }
  *
  *   async onGmailThread(thread: ActivityWithNotes) {
@@ -94,9 +81,27 @@ import {
  * ```
  */
 export class Gmail extends Tool<Gmail> implements MessagingTool {
+  static readonly PROVIDER = AuthProvider.Google;
+  static readonly Options: SyncToolOptions;
+  declare readonly Options: SyncToolOptions;
+  static readonly SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
+  ];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations),
+      integrations: build(Integrations, {
+        providers: [
+          {
+            provider: Gmail.PROVIDER,
+            scopes: Gmail.SCOPES,
+            getSyncables: this.getSyncables,
+            onSyncEnabled: this.onSyncEnabled,
+            onSyncDisabled: this.onSyncDisabled,
+          },
+        ],
+      }),
       network: build(Network, {
         urls: ["https://gmail.googleapis.com/gmail/v1/*"],
       }),
@@ -111,58 +116,95 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     };
   }
 
-  async requestAuth<
-    TArgs extends Serializable[],
-    TCallback extends (auth: MessagingAuth, ...args: TArgs) => any
-  >(callback: TCallback, ...extraArgs: TArgs): Promise<ActivityLink> {
-    // Gmail OAuth scopes for read-only access
-    const gmailScopes = [
-      "https://www.googleapis.com/auth/gmail.readonly",
-      "https://www.googleapis.com/auth/gmail.modify",
-    ];
-
-    const callbackToken = await this.tools.callbacks.createFromParent(
-      callback,
-      ...extraArgs
-    );
-
-    // Request auth and return the activity link
-    // Use User level for user-scoped Gmail authorization
-    return await this.tools.integrations.request(
-      {
-        provider: AuthProvider.Google,
-        scopes: gmailScopes,
-      },
-      this.onAuthSuccess,
-      callbackToken
-    );
+  async getSyncables(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Syncable[]> {
+    const api = new GmailApi(token.token);
+    const labels = await api.getLabels();
+    return labels
+      .filter(
+        (l: any) =>
+          l.type !== "system" ||
+          ["INBOX", "SENT", "DRAFT", "IMPORTANT", "STARRED"].includes(l.id)
+      )
+      .map((l: any) => ({ id: l.id, title: l.name }));
   }
 
-  private async getApi(authToken: string): Promise<GmailApi> {
-    // Try new flow: authToken is an ActorId
-    const token = await this.tools.integrations.get(AuthProvider.Google, authToken as ActorId);
-    if (token) {
-      return new GmailApi(token.token);
-    }
+  async onSyncEnabled(syncable: Syncable): Promise<void> {
+    await this.set(`sync_enabled_${syncable.id}`, true);
 
-    // Fall back to legacy flow: authToken is an opaque key
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
+    // Create item callback token from parent's onItem handler
+    const itemCallbackToken = await this.tools.callbacks.createFromParent(
+      this.options.onItem
     );
-    if (!authorization) {
-      throw new Error("Authorization no longer available");
+    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+
+    // Create disable callback if parent provided onSyncableDisabled
+    if (this.options.onSyncableDisabled) {
+      const filter: ActivityFilter = {
+        meta: { syncProvider: "google", syncableId: syncable.id },
+      };
+      const disableCallbackToken = await this.tools.callbacks.createFromParent(
+        this.options.onSyncableDisabled,
+        filter
+      );
+      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
     }
 
-    const legacyToken = await this.tools.integrations.get(authorization.provider, authorization.actor.id);
-    if (!legacyToken) {
-      throw new Error("Authorization no longer available");
-    }
+    // Auto-start sync: setup webhook and queue first batch
+    await this.setupChannelWebhook(syncable.id);
 
-    return new GmailApi(legacyToken.token);
+    const initialState: SyncState = {
+      channelId: syncable.id,
+    };
+
+    await this.set(`sync_state_${syncable.id}`, initialState);
+
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "full",
+      syncable.id
+    );
+    await this.run(syncCallback);
   }
 
-  async getChannels(authToken: string): Promise<MessageChannel[]> {
-    const api = await this.getApi(authToken);
+  async onSyncDisabled(syncable: Syncable): Promise<void> {
+    await this.stopSync(syncable.id);
+
+    // Run and clean up disable callback
+    const disableCallbackToken = await this.get<Callback>(
+      `disable_callback_${syncable.id}`
+    );
+    if (disableCallbackToken) {
+      await this.tools.callbacks.run(disableCallbackToken);
+      await this.deleteCallback(disableCallbackToken);
+      await this.clear(`disable_callback_${syncable.id}`);
+    }
+
+    // Clean up item callback
+    const itemCallbackToken = await this.get<Callback>(
+      `item_callback_${syncable.id}`
+    );
+    if (itemCallbackToken) {
+      await this.deleteCallback(itemCallbackToken);
+      await this.clear(`item_callback_${syncable.id}`);
+    }
+
+    await this.clear(`sync_enabled_${syncable.id}`);
+  }
+
+  private async getApi(channelId: string): Promise<GmailApi> {
+    const token = await this.tools.integrations.get(Gmail.PROVIDER, channelId);
+    if (!token) {
+      throw new Error("No Google authentication token available");
+    }
+    return new GmailApi(token.token);
+  }
+
+  async getChannels(channelId: string): Promise<MessageChannel[]> {
+    const api = await this.getApi(channelId);
     const labels = await api.getLabels();
 
     const channels: MessageChannel[] = [];
@@ -203,26 +245,22 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     TCallback extends (thread: NewActivityWithNotes, ...args: TArgs) => any
   >(
     options: {
-      authToken: string;
       channelId: string;
     } & MessageSyncOptions,
     callback: TCallback,
     ...extraArgs: TArgs
   ): Promise<void> {
-    const { authToken, channelId, timeMin } = options;
+    const { channelId, timeMin } = options;
 
     // Create callback token for parent
     const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
-    await this.set(`thread_callback_token_${channelId}`, callbackToken);
-
-    // Store auth token for channel
-    await this.set(`auth_token_${channelId}`, authToken);
+    await this.set(`item_callback_${channelId}`, callbackToken);
 
     // Setup webhook for this channel (Gmail Push Notifications)
-    await this.setupChannelWebhook(authToken, channelId);
+    await this.setupChannelWebhook(channelId);
 
     const initialState: SyncState = {
       channelId,
@@ -240,15 +278,14 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
       this.syncBatch,
       1,
       "full",
-      authToken,
       channelId
     );
     await this.run(syncCallback);
   }
 
-  async stopSync(authToken: string, channelId: string): Promise<void> {
+  async stopSync(channelId: string): Promise<void> {
     // Stop watching for push notifications
-    const api = await this.getApi(authToken);
+    const api = await this.getApi(channelId);
     try {
       await api.stopWatch();
     } catch (error) {
@@ -262,37 +299,19 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     await this.clear(`sync_state_${channelId}`);
 
     // Clear callback token
-    await this.clear(`thread_callback_token_${channelId}`);
-
-    // Clear auth token
-    await this.clear(`auth_token_${channelId}`);
+    await this.clear(`item_callback_${channelId}`);
   }
 
-  private async setupChannelWebhook(
-    authToken: string,
-    channelId: string
-  ): Promise<void> {
-    // Retrieve the authorization for this auth token
-    const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`
-    );
-    if (!authorization) {
-      throw new Error("Authorization not found for Gmail webhook setup");
-    }
-
+  private async setupChannelWebhook(channelId: string): Promise<void> {
     // Create Gmail webhook (returns Pub/Sub topic name, not a URL)
     // When provider is Google with Gmail scopes, createWebhook returns a Pub/Sub topic name
     const topicName = await this.tools.network.createWebhook(
-      {
-        provider: AuthProvider.Google,
-        authorization,
-      },
+      {},
       this.onGmailWebhook,
-      channelId,
-      authToken
+      channelId
     );
 
-    const api = await this.getApi(authToken);
+    const api = await this.getApi(channelId);
 
     try {
       // Setup Gmail watch with the Pub/Sub topic name
@@ -315,7 +334,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
   async syncBatch(
     batchNumber: number,
     mode: "full" | "incremental",
-    authToken: string,
     channelId: string
   ): Promise<void> {
     try {
@@ -324,13 +342,13 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
         throw new Error("No sync state found");
       }
 
-      const api = await this.getApi(authToken);
+      const api = await this.getApi(channelId);
 
       // Use smaller batch size for Gmail (20 threads) to avoid timeouts
       const result = await syncGmailChannel(api, state, 20);
 
       if (result.threads.length > 0) {
-        await this.processEmailThreads(result.threads, channelId, authToken);
+        await this.processEmailThreads(result.threads, channelId);
       }
 
       await this.set(`sync_state_${channelId}`, result.state);
@@ -340,7 +358,6 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
           this.syncBatch,
           batchNumber + 1,
           mode,
-          authToken,
           channelId
         );
         await this.run(syncCallback);
@@ -361,11 +378,10 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
   private async processEmailThreads(
     threads: GmailThread[],
-    channelId: string,
-    _authToken: string
+    channelId: string
   ): Promise<void> {
     const callbackToken = await this.get<Callback>(
-      `thread_callback_token_${channelId}`
+      `item_callback_${channelId}`
     );
 
     if (!callbackToken) {
@@ -380,6 +396,13 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
         if (activityThread.notes.length === 0) continue;
 
+        // Inject sync metadata for the parent to identify the source
+        activityThread.meta = {
+          ...activityThread.meta,
+          syncProvider: "google",
+          syncableId: channelId,
+        };
+
         // Call parent callback with the thread (contacts will be created by the API)
         await this.run(callbackToken, activityThread);
       } catch (error) {
@@ -391,8 +414,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
   async onGmailWebhook(
     request: WebhookRequest,
-    channelId: string,
-    authToken: string
+    channelId: string
   ): Promise<void> {
     // Gmail sends push notifications via Cloud Pub/Sub
     // The message body is base64-encoded
@@ -415,13 +437,12 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
     // Gmail notifications contain historyId for incremental sync
     if (data.historyId) {
-      await this.startIncrementalSync(channelId, authToken, data.historyId);
+      await this.startIncrementalSync(channelId, data.historyId);
     }
   }
 
   private async startIncrementalSync(
     channelId: string,
-    authToken: string,
     historyId: string
   ): Promise<void> {
     const webhookData = await this.get<any>(`channel_webhook_${channelId}`);
@@ -433,7 +454,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
     // Check if watch has expired and renew if needed
     const expiration = new Date(webhookData.expiration);
     if (expiration < new Date()) {
-      await this.setupChannelWebhook(authToken, channelId);
+      await this.setupChannelWebhook(channelId);
     }
 
     // For incremental sync, use the historyId from the notification
@@ -448,21 +469,9 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
       this.syncBatch,
       1,
       "incremental",
-      authToken,
       channelId
     );
     await this.run(syncCallback);
-  }
-
-  async onAuthSuccess(
-    authResult: Authorization,
-    callback: Callback
-  ): Promise<void> {
-    const authSuccessResult: MessagingAuth = {
-      authToken: authResult.actor.id as string,
-    };
-
-    await this.run(callback, authSuccessResult);
   }
 }
 

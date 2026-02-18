@@ -1,81 +1,130 @@
-import { type Actor, type ActorId, type ActivityLink, ITool, Serializable } from "..";
+import { type Actor, type ActorId, ITool, Serializable } from "..";
+import type { Uuid } from "../utils/uuid";
 
 /**
- * Built-in tool for managing OAuth authentication flows.
+ * A resource that can be synced (e.g., a calendar, project, channel).
+ * Returned by getSyncables() and managed by users in the twist setup/edit modal.
+ */
+export type Syncable = {
+  /** External ID shared across users (e.g., Google calendar ID) */
+  id: string;
+  /** Display name shown in the UI */
+  title: string;
+};
+
+/**
+ * Configuration for an OAuth provider in a tool's build options.
+ * Declares the provider, scopes, and lifecycle callbacks.
+ */
+export type IntegrationProviderConfig = {
+  /** The OAuth provider */
+  provider: AuthProvider;
+  /** OAuth scopes to request */
+  scopes: string[];
+  /** Returns available syncables for the authorized actor. Must not use Plot tool. */
+  getSyncables: (auth: Authorization, token: AuthToken) => Promise<Syncable[]>;
+  /** Called when a syncable resource is enabled for syncing */
+  onSyncEnabled: (syncable: Syncable) => Promise<void>;
+  /** Called when a syncable resource is disabled */
+  onSyncDisabled: (syncable: Syncable) => Promise<void>;
+};
+
+/**
+ * Options passed to Integrations in the build() method.
+ */
+export type IntegrationOptions = {
+  /** Provider configurations with lifecycle callbacks */
+  providers: IntegrationProviderConfig[];
+};
+
+/**
+ * Built-in tool for managing OAuth authentication and syncable resources.
  *
- * The Integrations tool provides a unified interface for requesting user authorization
- * from external service providers like Google and Microsoft. It handles the
- * OAuth flow creation, token management, and callback integration.
+ * The redesigned Integrations tool:
+ * 1. Declares providers/scopes in build options with lifecycle callbacks
+ * 2. Manages syncable resources (calendars, projects, etc.) per actor
+ * 3. Returns tokens for the user who enabled sync on a syncable
+ * 4. Supports per-actor auth via actAs() for write-back operations
+ *
+ * Auth and syncable management is handled in the twist edit modal in Flutter,
+ * removing the need for tools to create auth activities or selection UIs.
  *
  * @example
  * ```typescript
- * class CalendarTool extends Tool {
- *   private auth: Integrations;
+ * class CalendarTool extends Tool<CalendarTool> {
+ *   static readonly PROVIDER = AuthProvider.Google;
+ *   static readonly SCOPES = ["https://www.googleapis.com/auth/calendar"];
  *
- *   constructor(id: string, tools: ToolBuilder) {
- *     super();
- *     this.integrations = tools.get(Integrations);
+ *   build(build: ToolBuilder) {
+ *     return {
+ *       integrations: build(Integrations, {
+ *         providers: [{
+ *           provider: AuthProvider.Google,
+ *           scopes: CalendarTool.SCOPES,
+ *           getSyncables: this.getSyncables,
+ *           onSyncEnabled: this.onSyncEnabled,
+ *           onSyncDisabled: this.onSyncDisabled,
+ *         }]
+ *       }),
+ *     };
  *   }
  *
- *   async requestAuth() {
- *     return await this.integrations.request({
- *       provider: AuthProvider.Google,
- *       scopes: ["https://www.googleapis.com/auth/calendar.readonly"]
- *     }, {
- *       functionName: "onAuthComplete",
- *       context: { provider: "google" }
- *     });
- *   }
- *
- *   async onAuthComplete(authResult: Authorization, context: any) {
- *     const authToken = await this.integrations.get(authResult.provider, authResult.actor.id);
+ *   async getSyncables(auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+ *     const calendars = await this.listCalendars(token);
+ *     return calendars.map(c => ({ id: c.id, title: c.name }));
  *   }
  * }
  * ```
  */
 export abstract class Integrations extends ITool {
   /**
-   * Initiates an OAuth authentication flow.
+   * Merge scopes from multiple tools, deduplicating.
    *
-   * Creates an authentication link that users can click to authorize access
-   * to the specified provider with the requested scopes. When authorization
-   * completes, the callback will be invoked with the Authorization and any extraArgs.
-   *
-   * @param auth - Authentication configuration
-   * @param auth.provider - The OAuth provider to authenticate with
-   * @param auth.scopes - Array of OAuth scopes to request
-   * @param callback - Function receiving (authorization, ...extraArgs)
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked, must be serializable)
-   * @returns Promise resolving to an ActivityLink for the auth flow
+   * @param scopeArrays - Arrays of scopes to merge
+   * @returns Deduplicated array of scopes
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract request<
-    TArgs extends Serializable[],
-    TCallback extends (auth: Authorization, ...args: TArgs) => any
-  >(
-    auth: {
-      provider: AuthProvider;
-      scopes: string[];
-    },
-    callback: TCallback,
-    ...extraArgs: TArgs
-  ): Promise<ActivityLink>;
+  static MergeScopes(...scopeArrays: string[][]): string[] {
+    return Array.from(new Set(scopeArrays.flat()));
+  }
 
   /**
-   * Retrieves an access token (refreshing it first if necessary).
+   * Retrieves an access token for a syncable resource.
    *
-   * Looks up the token by provider and actor ID. If the given actor hasn't
-   * directly authenticated but is linked (same user_id) to a contact that has,
-   * returns that linked contact's token.
+   * Returns the token of the user who enabled sync on the given syncable.
+   * If the syncable is not enabled or the token is expired/invalid, returns null.
    *
-   * Returns null if no valid token is found.
-   *
-   * @param provider - The OAuth provider to retrieve a token for
-   * @param actorId - The actor (contact) ID to look up
-   * @returns Promise resolving to the access token or null if no longer available
+   * @param provider - The OAuth provider
+   * @param syncableId - The syncable resource ID (e.g., calendar ID)
+   * @returns Promise resolving to the access token or null
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract get(provider: AuthProvider, actorId: ActorId): Promise<AuthToken | null>;
+  abstract get(provider: AuthProvider, syncableId: string): Promise<AuthToken | null>;
+
+  /**
+   * Execute a callback as a specific actor, requesting auth if needed.
+   *
+   * If the actor has a valid token, calls the callback immediately with it.
+   * If the actor has no token, creates a private auth note in the specified
+   * activity prompting them to connect. Once they authorize, this callback fires.
+   *
+   * @param provider - The OAuth provider
+   * @param actorId - The actor to act as
+   * @param activityId - The activity to create an auth note in (if needed)
+   * @param callback - Function to call with the token
+   * @param extraArgs - Additional arguments to pass to the callback
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract actAs<
+    TArgs extends Serializable[],
+    TCallback extends (token: AuthToken, ...args: TArgs) => any
+  >(
+    provider: AuthProvider,
+    actorId: ActorId,
+    activityId: Uuid,
+    callback: TCallback,
+    ...extraArgs: TArgs
+  ): Promise<void>;
+
 }
 
 /**
