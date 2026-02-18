@@ -4,7 +4,7 @@ import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { parseReadParams } from "./helpers";
 import { rpcUser } from "../../rpc";
-import { notifySync } from "./notify";
+import { notifySync, notifyUserSync } from "./notify";
 
 const priorities = new Hono<{ Bindings: Bindings }>();
 
@@ -63,6 +63,21 @@ priorities.post("/sync/priorities", async (c) => {
   });
 
   notifySync(c, body.id);
+
+  // Notify users who lost access to this priority (displaced by a move).
+  // The DB function already wrote to priority_user + user_sync; fire real-time
+  // WebSocket pushes so displaced users don't have to wait for their next poll.
+  const displacedUsers = await withUserDb(c.var.db, userId, async (trx) => {
+    return trx
+      .selectFrom("priority_user")
+      .select("user_id")
+      .where("priority_id", "=", body.id)
+      .where("archived_at", "is not", null)
+      .execute();
+  });
+  for (const row of displacedUsers) {
+    notifyUserSync(c, row.user_id);
+  }
 
   return c.json(result as any);
 });

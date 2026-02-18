@@ -38,6 +38,93 @@ class PriorityUser extends PriorityUserRow {
   static Future<void> pull() async {
     await Store.get.pull(table, PriorityUsersBase(), initial: true);
     await Store.get.pull(table, PriorityUsersBase());
+    // After pull, delete local data for priorities we no longer have access to
+    await _cleanupArchivedPriorities();
+  }
+
+  /// Deletes local data for any priority tree where the user's access has been revoked.
+  /// This handles both explicit share removals and priority moves that displaced the user.
+  static Future<void> _cleanupArchivedPriorities() async {
+    final db = Store.get;
+    final archivedEntries = await (db.select(db.priorityUsers)
+          ..where((pu) => pu.archivedAt.isNotNull()))
+        .get();
+
+    for (final entry in archivedEntries) {
+      final priority = await (db.select(db.priorities)
+            ..where((p) => p.id.equalsValue(entry.priorityId)))
+          .getSingleOrNull();
+      if (priority != null) {
+        await _cascadeDeletePriorityTree(db, priority.path.value);
+      }
+    }
+  }
+
+  /// Deletes all local data for a priority tree (self + descendants):
+  /// note tags, activity tags, activity exceptions, notes, activities,
+  /// priority twists, and the priorities themselves.
+  ///
+  /// Sessions are intentionally left intact as user focus history.
+  static Future<void> _cascadeDeletePriorityTree(
+      Store db, String rootPath) async {
+    // Find all priorities in this tree (root + descendants)
+    final allPriorities = await db.select(db.priorities).get();
+    final treePriorities = allPriorities.where((p) {
+      final pPath = p.path.value;
+      return pPath == rootPath || pPath.startsWith('$rootPath.');
+    }).toList();
+
+    final treeIdBytes = treePriorities.map((p) => p.id.toBytes()).toList();
+    if (treeIdBytes.isEmpty) return;
+
+    // Find all activities in this tree
+    final activities = await (db.select(db.activities)
+          ..where((a) => a.priorityId.isIn(treeIdBytes)))
+        .get();
+    final activityIdBytes = activities.map((a) => a.id.toBytes()).toList();
+
+    // Find all notes in this tree (needed for note tag cleanup)
+    List<Uint8List> noteIdBytes = [];
+    if (activityIdBytes.isNotEmpty) {
+      final notes = await (db.select(db.notes)
+            ..where((n) => n.activityId.isIn(activityIdBytes)))
+          .get();
+      noteIdBytes = notes.map((n) => n.id.toBytes()).toList();
+    }
+
+    // Delete in FK-safe order
+    if (noteIdBytes.isNotEmpty) {
+      await (db.delete(db.noteTags)
+            ..where((nt) => nt.id.isIn(noteIdBytes)))
+          .go();
+    }
+    if (activityIdBytes.isNotEmpty) {
+      await (db.delete(db.activityTags)
+            ..where((at) => at.id.isIn(activityIdBytes)))
+          .go();
+      await (db.delete(db.activityExceptions)
+            ..where((ae) => ae.activityId.isIn(activityIdBytes)))
+          .go();
+      await (db.delete(db.notes)
+            ..where((n) => n.activityId.isIn(activityIdBytes)))
+          .go();
+      await (db.delete(db.activities)
+            ..where((a) => a.priorityId.isIn(treeIdBytes)))
+          .go();
+    }
+
+    await (db.delete(db.priorityTwists)
+          ..where((pt) => pt.priorityId.isIn(treeIdBytes)))
+        .go();
+
+    // Delete priorities deepest-first to respect any FK constraints
+    final sorted = List<PriorityRow>.from(treePriorities)
+      ..sort((a, b) => b.path.value.length.compareTo(a.path.value.length));
+    for (final p in sorted) {
+      await (db.delete(db.priorities)
+            ..where((row) => row.id.equalsValue(p.id)))
+          .go();
+    }
   }
 
   PriorityUser(PriorityUserRow row)

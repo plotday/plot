@@ -2470,6 +2470,16 @@ export type Database = {
         Args: { p_new_parent_path: unknown; p_priority_id: string }
         Returns: undefined
       }
+      notify_displaced_priority_users: {
+        Args: {
+          p_new_parent_path: unknown
+          p_old_path: unknown
+          p_priority_id: string
+        }
+        Returns: {
+          displaced_user_id: string
+        }[]
+      }
       order_first: { Args: never; Returns: number }
       organization: {
         Args: { "": Database["public"]["Tables"]["contact"]["Row"] }
@@ -2536,22 +2546,6 @@ export type Database = {
         Args: { p_priority_id: string; p_user_id: string }
         Returns: boolean
       }
-      uuid_generate_v1: { Args: never; Returns: string }
-      uuid_generate_v1mc: { Args: never; Returns: string }
-      uuid_generate_v3: {
-        Args: { name: string; namespace: string }
-        Returns: string
-      }
-      uuid_generate_v4: { Args: never; Returns: string }
-      uuid_generate_v5: {
-        Args: { name: string; namespace: string }
-        Returns: string
-      }
-      uuid_nil: { Args: never; Returns: string }
-      uuid_ns_dns: { Args: never; Returns: string }
-      uuid_ns_oid: { Args: never; Returns: string }
-      uuid_ns_url: { Args: never; Returns: string }
-      uuid_ns_x500: { Args: never; Returns: string }
       week_from_date: { Args: { d: string }; Returns: unknown }
     }
     Enums: {

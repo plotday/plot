@@ -536,23 +536,43 @@ BEGIN
             END IF;
         END IF;
         -- Determine move type and execute appropriate action
-        IF (_old_is_personal AND _new_is_personal) OR (NOT _old_is_personal AND NOT _new_is_personal) THEN
-            -- Type 1: Actual move (within personal tree or within/between shared trees)
+        IF _old_is_personal AND _new_is_personal THEN
+            -- Type 1a: Actual move within personal tree
+            PERFORM
+                move_priority (_input.id, _parent_actual_path);
+            _actual_path := NULL;
+        ELSIF NOT _old_is_personal AND NOT _new_is_personal THEN
+            -- Type 1b: Actual move within/between shared trees
+            -- Notify users who lose access if the priority moves to a different shared tree
+            PERFORM
+                notify_displaced_priority_users (_input.id, _old_actual_path, _parent_actual_path);
             PERFORM
                 move_priority (_input.id, _parent_actual_path);
             _actual_path := NULL;
         ELSIF NOT _old_is_personal
                 AND _new_is_personal
                 AND _within_aliased_tree THEN
-                -- Type 3: Actual move within aliased tree
+                -- Type 3: Actual move within aliased tree (no displacement - same root)
                 PERFORM
                     move_priority (_input.id, _parent_actual_path);
             _actual_path := NULL;
         ELSIF NOT _old_is_personal
                 AND _new_is_personal THEN
-                -- Type 2: Visual move (aliasing shared priority under personal root)
+                -- Type 4: Actual move from shared tree into personal tree
+                -- (was Type 2: visual alias; now corrected to a real path move)
+                PERFORM
+                    notify_displaced_priority_users (_input.id, _old_actual_path, _parent_actual_path);
+                PERFORM
+                    move_priority (_input.id, _parent_actual_path);
                 _actual_path := NULL;
-            _is_visual_move := TRUE;
+                -- Clear any existing visual alias now that priority is in the personal tree
+                UPDATE
+                    priority_settings
+                SET
+                    path = NULL
+                WHERE
+                    user_id = upsert_priority.user_id
+                    AND priority_id = _input.id;
         ELSIF _old_is_personal
                 AND NOT _new_is_personal THEN
                 RAISE EXCEPTION 'Cannot move personal priority into shared tree'
