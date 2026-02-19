@@ -73,9 +73,10 @@ export class GoogleApi {
       }
     }
 
-    const query = Object.keys(filteredParams).length > 0
-      ? `?${new URLSearchParams(filteredParams)}`
-      : "";
+    const query =
+      Object.keys(filteredParams).length > 0
+        ? `?${new URLSearchParams(filteredParams)}`
+        : "";
     const headers = {
       Authorization: `Bearer ${this.accessToken}`,
       Accept: "application/json",
@@ -109,7 +110,7 @@ export class GoogleApi {
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 
 /**
- * List folders accessible by the user, including shared drive folders.
+ * List folders accessible by the user, including those in shared drives.
  */
 export async function listFolders(api: GoogleApi): Promise<GoogleDriveFile[]> {
   const folders: GoogleDriveFile[] = [];
@@ -118,10 +119,11 @@ export async function listFolders(api: GoogleApi): Promise<GoogleDriveFile[]> {
   do {
     const data = (await api.call("GET", `${DRIVE_API}/files`, {
       q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
-      fields: "nextPageToken,files(id,name,description,parents)",
-      pageSize: 100,
+      corpora: "allDrives",
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
+      fields: "nextPageToken,files(id,name,description,parents)",
+      pageSize: 100,
       pageToken,
     })) as { files: GoogleDriveFile[]; nextPageToken?: string } | null;
 
@@ -169,6 +171,8 @@ export async function listFilesInFolder(
 ): Promise<{ files: GoogleDriveFile[]; nextPageToken?: string }> {
   const data = (await api.call("GET", `${DRIVE_API}/files`, {
     q: `'${folderId}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
     fields:
       "nextPageToken,files(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents)",
     pageSize: 50,
@@ -245,13 +249,10 @@ export async function createReply(
 /**
  * Get the changes start page token for incremental sync.
  */
-export async function getChangesStartToken(
-  api: GoogleApi
-): Promise<string> {
-  const data = (await api.call(
-    "GET",
-    `${DRIVE_API}/changes/startPageToken`
-  )) as { startPageToken: string };
+export async function getChangesStartToken(api: GoogleApi): Promise<string> {
+  const data = (await api.call("GET", `${DRIVE_API}/changes/startPageToken`, {
+    supportsAllDrives: true,
+  })) as { startPageToken: string };
   return data.startPageToken;
 }
 
@@ -272,6 +273,8 @@ export async function listChanges(
 }> {
   const data = (await api.call("GET", `${DRIVE_API}/changes`, {
     pageToken,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
     fields:
       "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents))",
     pageSize: 100,

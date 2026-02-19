@@ -259,13 +259,21 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
 
   async getFolders(folderId: string): Promise<DocumentFolder[]> {
     const api = await this.getApi(folderId);
-    const files = await listFolders(api);
+    const [files, drives] = await Promise.all([
+      listFolders(api),
+      listSharedDrives(api),
+    ]);
+
+    const driveIds = new Set(drives.map((d) => d.id));
 
     return files.map((file) => ({
       id: file.id,
       name: file.name,
       description: file.description || null,
-      root: !file.parents || file.parents.length === 0,
+      root:
+        !file.parents ||
+        file.parents.length === 0 ||
+        file.parents.every((p) => driveIds.has(p)),
     }));
   }
 
@@ -405,7 +413,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
       const watchData = (await api.call(
         "POST",
         "https://www.googleapis.com/drive/v3/changes/watch",
-        { pageToken: changesToken },
+        { pageToken: changesToken, supportsAllDrives: true },
         {
           id: watchId,
           type: "web_hook",
