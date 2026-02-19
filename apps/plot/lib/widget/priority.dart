@@ -86,9 +86,11 @@ class PriorityWidget extends StatelessWidget {
       textStyle: textStyle,
       leadingBuilder: (isHovered, hasFocus) => SizedBox(
         width: 20,
-        child: UnreadIndicator(
-          color: priority.displayColor,
-          unread: unread ?? priority.unread,
+        child: Center(
+          child: UnreadIndicator(
+            color: priority.displayColor,
+            unread: unread ?? priority.unread,
+          ),
         ),
       ),
     );
