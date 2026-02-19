@@ -24,8 +24,8 @@
     "test:run": "pg_prove -d ${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres} tests/*.sql",
     "gen-seed": "tsx seeds/generate-seed.ts",
     "apply-seed": "tsx seeds/generate-seed.ts --apply",
-    "prod-db-connect": "docker run -d --name cloud-sql-proxy -p 127.0.0.1:5433:5432 -v ~/.config/gcloud/application_default_credentials.json:/config/adc.json -e GOOGLE_APPLICATION_CREDENTIALS=/config/adc.json gcr.io/cloud-sql-connectors/cloud-sql-proxy:latest --address 0.0.0.0 plot-core:northamerica-northeast2:plot-prod",
-    "prod-db-disconnect": "docker stop cloud-sql-proxy",
+    "prod-db-connect": "docker rm -f cloud-sql-proxy 2>/dev/null; docker run -d --name cloud-sql-proxy -p 127.0.0.1:5433:5432 -v ~/.config/gcloud/application_default_credentials.json:/config/adc.json -e GOOGLE_APPLICATION_CREDENTIALS=/config/adc.json gcr.io/cloud-sql-connectors/cloud-sql-proxy:latest --address 0.0.0.0 plot-core:northamerica-northeast2:plot-prod",
+    "prod-db-disconnect": "docker rm -f cloud-sql-proxy",
     "prod-db-logs": "docker logs cloud-sql-proxy"
   },
   "devDependencies": {
