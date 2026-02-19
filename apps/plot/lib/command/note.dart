@@ -295,17 +295,25 @@ class SplitNoteToNewActivity extends NoteCommand {
       // Look up parent activity to get its priority
       final parentActivity = await Activity.getOne(note.activityId);
 
+      // Determine activity type: if note has task tags, make it an action
+      final type = note.assignees.isNotEmpty
+          ? ActivityType.action
+          : parentActivity.type;
+
       // Create a new activity in the same priority with preview from note content
       final newActivity = Activity(
         priority: parentActivity.priority,
+        type: type,
         draft: false,
         preview: note.content,
         title: note.content,
       );
       await newActivity.save();
 
-      // Move the note to the new activity
-      await note.copyWith(activityId: newActivity.id).save();
+      // Move the note to the new activity and unarchive it
+      await note
+          .copyWith(activityId: newActivity.id, clearArchivedAt: true)
+          .save();
 
       // Fire-and-forget AI title generation
       if (note.content != null && note.content!.trim().isNotEmpty) {

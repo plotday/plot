@@ -782,6 +782,7 @@ class Note extends Equatable implements Comparable<Note> {
     NoteId? reNoteId,
     bool clearReNoteId = false,
     NoteTagsRow? tags,
+    bool clearArchivedAt = false,
   }) {
     final now = DateTime.now();
 
@@ -847,7 +848,7 @@ class Note extends Equatable implements Comparable<Note> {
         reNoteId: clearReNoteId ? null : (reNoteId ?? this.reNoteId),
         createdAt: isPublishing ? now : createdAt,
         updatedAt: DateTime.now(),
-        archivedAt: archivedAt,
+        archivedAt: clearArchivedAt ? null : archivedAt,
       ),
       tags: effectiveTags,
     );
