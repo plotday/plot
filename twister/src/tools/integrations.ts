@@ -10,6 +10,8 @@ export type Syncable = {
   id: string;
   /** Display name shown in the UI */
   title: string;
+  /** Optional nested syncable resources (e.g., subfolders) */
+  children?: Syncable[];
 };
 
 /**
