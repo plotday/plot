@@ -269,7 +269,7 @@ class _AuthButtonState extends State<AuthButton> {
         webAuthenticationOptions: kIsWeb
             ? WebAuthenticationOptions(
                 clientId: Env.appleClientId,
-                redirectUri: Uri.parse(Env.authCallbackUrl),
+                redirectUri: Uri.parse(Env.webAuthCallbackUrl),
               )
             : null,
       );
@@ -320,7 +320,7 @@ class _AuthButtonState extends State<AuthButton> {
 
     // On non-web platforms, use the custom URL scheme so FlutterWebAuth2
     // intercepts the callback directly instead of navigating to a web page.
-    final redirectUri = kIsWeb ? Env.authCallbackUrl : _appCallbackUrl;
+    final redirectUri = kIsWeb ? Env.webAuthCallbackUrl : _appCallbackUrl;
 
     try {
       final authUrl = await _generateAuthUrl(redirectUri: redirectUri);
@@ -512,7 +512,7 @@ class _AuthButtonState extends State<AuthButton> {
     setState(() => _isLoading = true);
     try {
       final clientId = Env.googleClientId;
-      final redirectUri = Env.authCallbackUrl;
+      final redirectUri = Env.webAuthCallbackUrl;
 
       final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
         'client_id': clientId,

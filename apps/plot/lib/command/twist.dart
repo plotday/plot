@@ -706,7 +706,7 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
     setState(() => _isLoading = true);
 
     final redirectUri = kIsWeb
-        ? Env.authCallbackUrl
+        ? Env.webAuthCallbackUrl
         : 'plotday://auth/callback';
 
     String? platform;

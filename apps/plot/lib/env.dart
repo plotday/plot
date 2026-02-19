@@ -59,6 +59,13 @@ abstract class Env {
   static late final String authCallbackUrl;
   static late final String authServerCallbackUrl;
 
+  /// The callback URL for web OAuth flows.
+  /// In release mode, uses [authCallbackUrl] (registered with OAuth providers).
+  /// In debug mode, derives from [Uri.base] since the Flutter dev server
+  /// doesn't have Netlify-style rewrites (/auth/callback → /auth.html).
+  static String get webAuthCallbackUrl =>
+      kReleaseMode ? authCallbackUrl : '${Uri.base.origin}/auth.html';
+
   static late final String googleClientId;
   static late final String googleIosClientId;
   static late final String googleAndroidClientId;

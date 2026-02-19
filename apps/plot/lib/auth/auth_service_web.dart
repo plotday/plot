@@ -342,7 +342,14 @@ class ClerkJsAuthService implements AuthService {
 
   @override
   Future<void> transfer() => _guard(() async {
-        // Attempt to transfer a pending sign-up into a sign-in session.
+        // Only transfer if needed — mirrors the native clerk_auth behavior
+        // which checks isTransferable before calling the API. If the sign-in
+        // already completed (e.g. google_one_tap), calling transfer would fail
+        // with "not authorized" since the session is already active.
+        if (_pendingSignIn?.status == 'complete' ||
+            _pendingSignUp?.status == 'complete') {
+          return;
+        }
         final result = _asSignIn(await _clerk.client!.signIn!
             .create(jsObj({'transfer': true}))
             .toDart);
