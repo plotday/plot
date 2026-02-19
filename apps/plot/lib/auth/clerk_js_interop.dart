@@ -32,20 +32,20 @@ extension type ClientJS._(JSObject _) implements JSObject {
 
 /// Clerk SignIn resource.
 extension type SignInJS._(JSObject _) implements JSObject {
-  external JSPromise<SignInJS> create(JSObject params);
-  external JSPromise<SignInJS> attemptFirstFactor(JSObject params);
-  external JSPromise<SignInJS> prepareSecondFactor(JSObject params);
-  external JSPromise<SignInJS> attemptSecondFactor(JSObject params);
+  external JSPromise<JSAny?> create(JSObject params);
+  external JSPromise<JSAny?> attemptFirstFactor(JSObject params);
+  external JSPromise<JSAny?> prepareSecondFactor(JSObject params);
+  external JSPromise<JSAny?> attemptSecondFactor(JSObject params);
   external String? get status;
   external String? get createdSessionId;
 }
 
 /// Clerk SignUp resource.
 extension type SignUpJS._(JSObject _) implements JSObject {
-  external JSPromise<SignUpJS> create(JSObject params);
-  external JSPromise<SignUpJS> update(JSObject params);
-  external JSPromise<SignUpJS> prepareEmailAddressVerification(JSObject params);
-  external JSPromise<SignUpJS> attemptEmailAddressVerification(JSObject params);
+  external JSPromise<JSAny?> create(JSObject params);
+  external JSPromise<JSAny?> update(JSObject params);
+  external JSPromise<JSAny?> prepareEmailAddressVerification(JSObject params);
+  external JSPromise<JSAny?> attemptEmailAddressVerification(JSObject params);
   external String? get status;
   external String? get createdSessionId;
   external JSArray<JSString>? get missingFields;

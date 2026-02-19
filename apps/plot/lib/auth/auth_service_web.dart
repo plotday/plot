@@ -107,6 +107,19 @@ Future<T> _guard<T>(Future<T> Function() fn) async {
   }
 }
 
+/// Safely casts a [JSAny?] to a [SignInJS], throwing [AuthError] if the
+/// result is not the expected type (e.g. Clerk returned an error object).
+SignInJS _asSignIn(JSAny? result) {
+  if (result != null && result.isA<JSObject>()) return result as SignInJS;
+  throw AuthError(message: 'Unexpected sign-in response from Clerk');
+}
+
+/// Safely casts a [JSAny?] to a [SignUpJS].
+SignUpJS _asSignUp(JSAny? result) {
+  if (result != null && result.isA<JSObject>()) return result as SignUpJS;
+  throw AuthError(message: 'Unexpected sign-up response from Clerk');
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -172,12 +185,12 @@ class ClerkJsAuthService implements AuthService {
           IdTokenProvider.apple => 'oauth_token_apple',
         };
 
-        final result = await _clerk.client!.signIn!
+        final result = _asSignIn(await _clerk.client!.signIn!
             .create(jsObj({
               'strategy': strategy,
               'token': idToken,
             }))
-            .toDart;
+            .toDart);
 
         _pendingSignIn = result;
         await _activateIfComplete(result.status, result.createdSessionId);
@@ -194,12 +207,12 @@ class ClerkJsAuthService implements AuthService {
           IdTokenProvider.apple => 'oauth_token_apple',
         };
 
-        final result = await _clerk.client!.signUp!
+        final result = _asSignUp(await _clerk.client!.signUp!
             .create(jsObj({
               'strategy': strategy,
               'token': idToken,
             }))
-            .toDart;
+            .toDart);
 
         _pendingSignUp = result;
         await _activateIfComplete(result.status, result.createdSessionId);
@@ -215,20 +228,20 @@ class ClerkJsAuthService implements AuthService {
         switch (strategy) {
           case AuthStrategy.emailAddress:
             // Step 1: identify by email — creates a sign-in resource.
-            final result = await _clerk.client!.signIn!
+            final result = _asSignIn(await _clerk.client!.signIn!
                 .create(jsObj({'identifier': identifier}))
-                .toDart;
+                .toDart);
             _pendingSignIn = result;
 
           case AuthStrategy.password:
             // Step 2: attempt first factor with password.
             final si = _pendingSignIn ?? _clerk.client!.signIn!;
-            final result = await si
+            final result = _asSignIn(await si
                 .attemptFirstFactor(jsObj({
                   'strategy': 'password',
                   'password': password,
                 }))
-                .toDart;
+                .toDart);
             _pendingSignIn = result;
             await _activateIfComplete(result.status, result.createdSessionId);
 
@@ -244,9 +257,9 @@ class ClerkJsAuthService implements AuthService {
         if (si == null) {
           throw AuthError(message: 'No active sign-in session');
         }
-        _pendingSignIn = await si
+        _pendingSignIn = _asSignIn(await si
             .prepareSecondFactor(jsObj({'strategy': 'email_code'}))
-            .toDart;
+            .toDart);
       });
 
   @override
@@ -256,10 +269,10 @@ class ClerkJsAuthService implements AuthService {
         if (si == null) {
           throw AuthError(message: 'No active sign-in session');
         }
-        final result = await si
+        final result = _asSignIn(await si
             .attemptSecondFactor(
                 jsObj({'strategy': 'email_code', 'code': code}))
-            .toDart;
+            .toDart);
         _pendingSignIn = result;
         await _activateIfComplete(result.status, result.createdSessionId);
       });
@@ -278,15 +291,15 @@ class ClerkJsAuthService implements AuthService {
         switch (strategy) {
           case AuthStrategy.emailCode when emailAddress != null:
             // Start sign-up + prepare email verification in one go.
-            final signUp = await _clerk.client!.signUp!
+            final signUp = _asSignUp(await _clerk.client!.signUp!
                 .create(jsObj({'emailAddress': emailAddress}))
-                .toDart;
+                .toDart);
             _pendingSignUp = signUp;
             // Ask Clerk to send the verification code.
-            _pendingSignUp = await signUp
+            _pendingSignUp = _asSignUp(await signUp
                 .prepareEmailAddressVerification(
                     jsObj({'strategy': 'email_code'}))
-                .toDart;
+                .toDart);
 
           case AuthStrategy.emailCode when code != null:
             // Verify the emailed OTP code.
@@ -294,8 +307,8 @@ class ClerkJsAuthService implements AuthService {
             if (su == null) {
               throw AuthError(message: 'No active sign-up session');
             }
-            final result =
-                await su.attemptEmailAddressVerification(jsObj({'code': code})).toDart;
+            final result = _asSignUp(
+                await su.attemptEmailAddressVerification(jsObj({'code': code})).toDart);
             _pendingSignUp = result;
             await _activateIfComplete(result.status, result.createdSessionId);
 
@@ -309,7 +322,7 @@ class ClerkJsAuthService implements AuthService {
             if (su == null) {
               throw AuthError(message: 'No active sign-up session');
             }
-            final result = await su
+            final result = _asSignUp(await su
                 .update(jsObj({
                   'password': password,
                   if (passwordConfirmation != null)
@@ -317,7 +330,7 @@ class ClerkJsAuthService implements AuthService {
                   if (firstName != null) 'firstName': firstName,
                   if (lastName != null) 'lastName': lastName,
                 }))
-                .toDart;
+                .toDart);
             _pendingSignUp = result;
             await _activateIfComplete(result.status, result.createdSessionId);
 
@@ -330,9 +343,9 @@ class ClerkJsAuthService implements AuthService {
   @override
   Future<void> transfer() => _guard(() async {
         // Attempt to transfer a pending sign-up into a sign-in session.
-        final result = await _clerk.client!.signIn!
+        final result = _asSignIn(await _clerk.client!.signIn!
             .create(jsObj({'transfer': true}))
-            .toDart;
+            .toDart);
         _pendingSignIn = result;
         await _activateIfComplete(result.status, result.createdSessionId);
       });
