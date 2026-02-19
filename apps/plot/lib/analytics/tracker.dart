@@ -5,7 +5,8 @@
 ///
 /// Supports multiple platforms:
 /// - iOS/Android/macOS: Uses posthog_flutter SDK
-/// - Web/Windows: Uses PostHog HTTP API directly
+/// - Web: Uses posthog_flutter SDK (native web support since v5.12.0)
+/// - Windows: Uses PostHog HTTP API directly
 
 library;
 
@@ -221,8 +222,8 @@ class Tracker {
     if (_initialized) return;
 
     // Select backend based on platform
-    if (kIsWeb || Platform.isWindows) {
-      _log.info('Initializing PostHog HTTP API backend (web/Windows)');
+    if (!kIsWeb && Platform.isWindows) {
+      _log.info('Initializing PostHog HTTP API backend (Windows)');
       _backend = PostHogApiBackend(Env.posthogApiKey, Env.posthogHost);
     } else {
       _log.info('Initializing PostHog SDK backend (native)');
@@ -232,7 +233,6 @@ class Tracker {
       final config = PostHogConfig(Env.posthogApiKey)
         ..host = Env.posthogHost
         ..captureApplicationLifecycleEvents = true
-        ..errorTrackingConfig.captureFlutterErrors = true
         ..personProfiles = PostHogPersonProfiles.identifiedOnly;
       await Posthog().setup(config);
     }
