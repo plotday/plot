@@ -169,7 +169,7 @@ class ClerkJsAuthService implements AuthService {
       _guard(() async {
         final strategy = switch (provider) {
           IdTokenProvider.google => 'google_one_tap',
-          IdTokenProvider.apple => 'oauth_token',
+          IdTokenProvider.apple => 'oauth_token_apple',
         };
 
         final result = await _clerk.client!.signIn!
@@ -191,7 +191,7 @@ class ClerkJsAuthService implements AuthService {
       _guard(() async {
         final strategy = switch (provider) {
           IdTokenProvider.google => 'google_one_tap',
-          IdTokenProvider.apple => 'oauth_token',
+          IdTokenProvider.apple => 'oauth_token_apple',
         };
 
         final result = await _clerk.client!.signUp!
