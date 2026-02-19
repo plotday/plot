@@ -20,7 +20,7 @@ class EmailSignInPage extends StatefulWidget {
   State<EmailSignInPage> createState() => _EmailSignInPageState();
 }
 
-enum _AuthMode { signIn, signUp, otpSent }
+enum _AuthMode { signIn, signUp, otpSent, secondFactor }
 
 class _EmailSignInPageState extends State<EmailSignInPage> {
   String? _errorMessage;
@@ -100,6 +100,17 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         strategy: AuthStrategy.password,
         password: password,
       );
+
+      // Check if second factor is required (e.g. untrusted device)
+      if (Base.auth.needsSecondFactor) {
+        await Base.auth.prepareSecondFactor();
+        if (!mounted) return;
+        setState(() {
+          _mode = _AuthMode.secondFactor;
+          _isLoading = false;
+        });
+        return;
+      }
 
       // Call /activate to get user identity
       await Base.resolveIdentity();
@@ -226,6 +237,73 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     }
   }
 
+  Future<void> _handleVerifySecondFactor() async {
+    if (_isLoading) return;
+
+    final code = _otpController.text.trim();
+
+    if (code.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter the verification code';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await Base.auth.attemptSecondFactor(code: code);
+
+      // Call /activate to get user identity
+      await Base.resolveIdentity();
+      // UserBloc will pick up the emission and transition to UserReady
+    } on AuthError catch (e, t) {
+      log.warning('Error verifying second factor', e, t);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = _authErrorMessage(e);
+        _isLoading = false;
+      });
+    } on NetworkException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Unable to connect. Please check your internet.';
+        _isLoading = false;
+      });
+    } catch (e, t) {
+      log.warning('Error verifying second factor', e, t);
+      _showGenericError(e, t);
+    }
+  }
+
+  Future<void> _handleResendSecondFactor() async {
+    setState(() {
+      _otpResetCounter++;
+      _otpController.clear();
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await Base.auth.prepareSecondFactor();
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    } on AuthError catch (e, t) {
+      log.warning('Error resending second factor code', e, t);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = _authErrorMessage(e);
+        _isLoading = false;
+      });
+    } catch (e, t) {
+      log.warning('Error resending second factor code', e, t);
+      _showGenericError(e, t);
+    }
+  }
+
   Future<void> _handleResendCode() async {
     setState(() {
       _otpResetCounter++;
@@ -252,17 +330,75 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
             children: [
               // Title
               Text(
-                _mode == _AuthMode.signUp
-                    ? 'Create your account'
-                    : 'Sign in to Plot',
+                switch (_mode) {
+                  _AuthMode.signUp => 'Create your account',
+                  _AuthMode.secondFactor => 'Verify your identity',
+                  _ => 'Sign in to Plot',
+                },
                 style: context.theme.typography.xl.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
               ),
 
-              // OTP sent confirmation with code entry
-              if (_mode == _AuthMode.otpSent) ...[
+              // Second factor verification code entry
+              if (_mode == _AuthMode.secondFactor) ...[
+                FAlert(
+                  title: const Text(
+                    'Check your email!\nWe sent a verification code to',
+                  ),
+                  subtitle: Text(
+                    _emailController.text.trim(),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  'Enter the 6-digit code from your email:',
+                  style: context.theme.typography.base,
+                  textAlign: TextAlign.center,
+                ),
+
+                // OTP input field
+                OtpInput(
+                  key: ValueKey('sf_$_otpResetCounter'),
+                  controller: _otpController,
+                  onComplete: _handleVerifySecondFactor,
+                ),
+
+                const SizedBox(height: 8),
+
+                // Resend and cancel buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FButton(
+                      onPress:
+                          _isLoading ? null : _handleResendSecondFactor,
+                      style: FButtonStyle.ghost(),
+                      child: const Text('Resend code'),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('•'),
+                    const SizedBox(width: 8),
+                    FButton(
+                      onPress: () {
+                        setState(() {
+                          _mode = _AuthMode.signIn;
+                          _errorMessage = null;
+                          _otpController.clear();
+                        });
+                      },
+                      style: FButtonStyle.ghost(),
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+
+              // OTP sent confirmation with code entry (sign-up flow)
+              ] else if (_mode == _AuthMode.otpSent) ...[
                 FAlert(
                   title: const Text(
                     'Check your email!\nWe sent a verification code to',

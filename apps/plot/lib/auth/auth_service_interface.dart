@@ -91,6 +91,10 @@ abstract class AuthService {
     required String idToken,
   });
 
+  /// Whether the current sign-in requires a second factor (e.g. email code
+  /// verification on an untrusted device).
+  bool get needsSecondFactor;
+
   /// Two-step email/password sign-in.
   ///
   /// Step 1: `attemptSignIn(strategy: .emailAddress, identifier: email)`
@@ -100,6 +104,12 @@ abstract class AuthService {
     String? identifier,
     String? password,
   });
+
+  /// Prepare second-factor verification (sends email code).
+  Future<void> prepareSecondFactor();
+
+  /// Attempt second-factor verification with the emailed code.
+  Future<void> attemptSecondFactor({required String code});
 
   /// Progressive sign-up (email code + password).
   Future<void> attemptSignUp({

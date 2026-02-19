@@ -137,6 +137,9 @@ class ClerkJsAuthService implements AuthService {
   }
 
   @override
+  bool get needsSecondFactor => _pendingSignIn?.status == 'needs_second_factor';
+
+  @override
   Future<String?> getSessionToken() async {
     final session = _clerk.session;
     if (session == null) return null;
@@ -233,6 +236,32 @@ class ClerkJsAuthService implements AuthService {
             // Not used for sign-in in the current app.
             throw AuthError(message: 'emailCode strategy not supported for sign-in');
         }
+      });
+
+  @override
+  Future<void> prepareSecondFactor() => _guard(() async {
+        final si = _pendingSignIn;
+        if (si == null) {
+          throw AuthError(message: 'No active sign-in session');
+        }
+        _pendingSignIn = await si
+            .prepareSecondFactor(jsObj({'strategy': 'email_code'}))
+            .toDart;
+      });
+
+  @override
+  Future<void> attemptSecondFactor({required String code}) =>
+      _guard(() async {
+        final si = _pendingSignIn;
+        if (si == null) {
+          throw AuthError(message: 'No active sign-in session');
+        }
+        final result = await si
+            .attemptSecondFactor(
+                jsObj({'strategy': 'email_code', 'code': code}))
+            .toDart;
+        _pendingSignIn = result;
+        await _activateIfComplete(result.status, result.createdSessionId);
       });
 
   @override

@@ -102,6 +102,10 @@ class ClerkDartAuthService implements AuthService {
       _auth.client.signUp?.missingFields.map((f) => f.name).toList();
 
   @override
+  bool get needsSecondFactor =>
+      _auth.client.signIn?.needsSecondFactor == true;
+
+  @override
   Future<String?> getSessionToken() async {
     try {
       final token = await _auth.sessionToken();
@@ -142,6 +146,15 @@ class ClerkDartAuthService implements AuthService {
             identifier: identifier,
             password: password,
           ));
+
+  @override
+  Future<void> prepareSecondFactor() =>
+      _guard(() => _auth.attemptSignIn(strategy: clerk.Strategy.emailCode));
+
+  @override
+  Future<void> attemptSecondFactor({required String code}) =>
+      _guard(
+          () => _auth.attemptSignIn(strategy: clerk.Strategy.emailCode, code: code));
 
   @override
   Future<void> attemptSignUp({

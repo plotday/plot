@@ -34,6 +34,8 @@ extension type ClientJS._(JSObject _) implements JSObject {
 extension type SignInJS._(JSObject _) implements JSObject {
   external JSPromise<SignInJS> create(JSObject params);
   external JSPromise<SignInJS> attemptFirstFactor(JSObject params);
+  external JSPromise<SignInJS> prepareSecondFactor(JSObject params);
+  external JSPromise<SignInJS> attemptSecondFactor(JSObject params);
   external String? get status;
   external String? get createdSessionId;
 }
