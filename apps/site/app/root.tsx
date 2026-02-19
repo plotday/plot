@@ -1,6 +1,11 @@
 import {
+  Button,
   ColorSchemeScript,
+  Container,
   MantineProvider,
+  Stack,
+  Text,
+  Title,
   mantineHtmlProps,
   useComputedColorScheme,
 } from "@mantine/core";
@@ -11,6 +16,7 @@ import { rootAuthLoader } from "@clerk/react-router/ssr.server";
 import { dark } from "@clerk/themes";
 
 import {
+  Link,
   Links,
   Meta,
   Outlet,
@@ -19,6 +25,8 @@ import {
   isRouteErrorResponse,
   useRouteLoaderData,
 } from "react-router";
+
+import notFoundImage from "./assets/404.png";
 
 import type { Route } from "./+types/root";
 import stylesheet from "./app.css?url";
@@ -138,16 +146,36 @@ export default function App({ loaderData }: Route.ComponentProps) {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  if (isRouteErrorResponse(error) && error.status === 404) {
+    return (
+      <Container size="xs" style={{ minHeight: "100dvh", display: "flex", alignItems: "center" }}>
+        <Stack align="center" gap="xl" style={{ width: "100%" }}>
+          <img
+            src={notFoundImage}
+            alt=""
+            style={{ maxWidth: 300, width: "100%" }}
+          />
+          <Title order={1} ta="center" c="violet">
+            Looks like we lost the plot!
+          </Title>
+          <Text ta="center" c="dimmed" fs="italic" size="lg">
+            &ldquo;Not all those who wander are lost.&rdquo; &mdash; Tolkien
+          </Text>
+          <Button component={Link} to="/" size="md" variant="filled">
+            Back to Plot
+          </Button>
+        </Stack>
+      </Container>
+    );
+  }
+
   let message = "Oops!";
   let details = "An unexpected error occurred.";
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
-    details =
-      error.status === 404
-        ? "The requested page could not be found."
-        : error.statusText || details;
+    message = "Error";
+    details = error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
     stack = error.stack;
