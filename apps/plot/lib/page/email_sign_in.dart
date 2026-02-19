@@ -89,32 +89,40 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      // Two-step sign-in flow:
-      // 1. Identify with email
-      await Base.auth.attemptSignIn(
-        strategy: AuthStrategy.emailAddress,
-        identifier: email,
-      );
-      // 2. Authenticate with password
-      await Base.auth.attemptSignIn(
-        strategy: AuthStrategy.password,
-        password: password,
-      );
+      await Future(() async {
+        // Two-step sign-in flow:
+        // 1. Identify with email
+        await Base.auth.attemptSignIn(
+          strategy: AuthStrategy.emailAddress,
+          identifier: email,
+        );
+        // 2. Authenticate with password
+        await Base.auth.attemptSignIn(
+          strategy: AuthStrategy.password,
+          password: password,
+        );
 
-      // Check if second factor is required (e.g. untrusted device)
-      if (Base.auth.needsSecondFactor) {
-        await Base.auth.prepareSecondFactor();
-        if (!mounted) return;
-        setState(() {
-          _mode = _AuthMode.secondFactor;
-          _isLoading = false;
-        });
-        return;
-      }
+        // Check if second factor is required (e.g. untrusted device)
+        if (Base.auth.needsSecondFactor) {
+          await Base.auth.prepareSecondFactor();
+          if (!mounted) return;
+          setState(() {
+            _mode = _AuthMode.secondFactor;
+            _isLoading = false;
+          });
+          return;
+        }
 
-      // Call /activate to get user identity
-      await Base.resolveIdentity();
-      // UserBloc will pick up the emission and transition to UserReady
+        // Call /activate to get user identity
+        await Base.resolveIdentity();
+        // UserBloc will pick up the emission and transition to UserReady
+      }).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Sign-in is taking too long. Please try again.';
+        _isLoading = false;
+      });
     } on AuthError catch (e, t) {
       log.warning('Error signing in with password', e, t);
       if (!mounted) return;
@@ -154,9 +162,15 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       await Base.auth.attemptSignUp(
         strategy: AuthStrategy.emailCode,
         emailAddress: email,
-      );
+      ).timeout(const Duration(seconds: 15));
       setState(() {
         _mode = _AuthMode.otpSent;
+        _isLoading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Sign-up is taking too long. Please try again.';
         _isLoading = false;
       });
     } on AuthError catch (e, t) {
@@ -201,23 +215,31 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      // Verify the email code
-      await Base.auth.attemptSignUp(
-        strategy: AuthStrategy.emailCode,
-        code: token,
-      );
+      await Future(() async {
+        // Verify the email code
+        await Base.auth.attemptSignUp(
+          strategy: AuthStrategy.emailCode,
+          code: token,
+        );
 
-      if (Base.auth.isSignedIn) {
-        // Sign-up complete — call /activate to get user identity
-        await Base.resolveIdentity();
-        // UserBloc will pick up the emission and transition to UserReady
-      } else {
-        // Sign-up has missing requirements (e.g. password) —
-        // navigate to password setup to complete it.
-        if (!mounted) return;
-        context.router.replace(PasswordSetupRoute());
-        return;
-      }
+        if (Base.auth.isSignedIn) {
+          // Sign-up complete — call /activate to get user identity
+          await Base.resolveIdentity();
+          // UserBloc will pick up the emission and transition to UserReady
+        } else {
+          // Sign-up has missing requirements (e.g. password) —
+          // navigate to password setup to complete it.
+          if (!mounted) return;
+          context.router.replace(PasswordSetupRoute());
+          return;
+        }
+      }).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Verification is taking too long. Please try again.';
+        _isLoading = false;
+      });
     } on AuthError catch (e, t) {
       log.warning('Error verifying OTP', e, t);
       if (!mounted) return;
@@ -255,11 +277,19 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      await Base.auth.attemptSecondFactor(code: code);
+      await Future(() async {
+        await Base.auth.attemptSecondFactor(code: code);
 
-      // Call /activate to get user identity
-      await Base.resolveIdentity();
-      // UserBloc will pick up the emission and transition to UserReady
+        // Call /activate to get user identity
+        await Base.resolveIdentity();
+        // UserBloc will pick up the emission and transition to UserReady
+      }).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Verification is taking too long. Please try again.';
+        _isLoading = false;
+      });
     } on AuthError catch (e, t) {
       log.warning('Error verifying second factor', e, t);
       if (!mounted) return;

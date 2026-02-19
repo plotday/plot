@@ -235,7 +235,7 @@ abstract class BaseTable {
       rows = result.cast<Map<String, dynamic>>();
     } catch (e) {
       if (Store._isAuthError(e)) {
-        await Store._handleAuthError();
+        Store._handleAuthError();
       } else if (Store._isRlsViolation(e)) {
         // Log RLS violations for debugging without signing out
         log.warning(
@@ -301,7 +301,7 @@ abstract class BaseTable {
       }
     } catch (e) {
       if (Store._isAuthError(e)) {
-        await Store._handleAuthError();
+        Store._handleAuthError();
       } else if (Store._isRlsViolation(e)) {
         // Log RLS violations for debugging without signing out
         log.warning(
@@ -367,6 +367,9 @@ class Store extends _$Store {
   static String? get currentUserId => _currentUserId;
 
   static Future<void> stop() async {
+    _authRetryTimer?.cancel();
+    _authRetryTimer = null;
+    _authFailureCount = 0;
     if (Injector.appInstance.exists<Store>()) {
       // Get reference before removing from injector
       final store = get;
@@ -540,19 +543,38 @@ class Store extends _$Store {
     }
   }
 
-  /// Handles authentication errors by signing out.
-  /// Clerk handles token refresh automatically, so a 401 means definitive auth failure.
-  static Future<void> _handleAuthError() async {
-    log.warning("Authentication failure detected - signing out");
-    try {
-      await Base.signOut();
-    } catch (signOutError, stackTrace) {
-      log.warning(
-        "Error during auth failure sign-out",
-        signOutError,
-        stackTrace,
-      );
+  static int _authFailureCount = 0;
+  static Timer? _authRetryTimer;
+
+  /// Auth errors during sync are treated as transient (like being offline).
+  /// Schedule a retry with increasing backoff instead of signing out.
+  static void _handleAuthError() {
+    _authFailureCount++;
+    final delaySec = min(30 * _authFailureCount, 300); // 30s, 60s, ... max 5min
+    log.warning(
+      "Auth error during sync (attempt $_authFailureCount), retrying in ${delaySec}s",
+    );
+
+    _authRetryTimer?.cancel();
+    if (Injector.appInstance.exists<Store>()) {
+      _authRetryTimer = Timer(Duration(seconds: delaySec), () {
+        if (Injector.appInstance.exists<Store>()) {
+          Store.get._startSync().catchError((Object e, StackTrace s) {
+            log.warning("Auth retry sync failed", e, s);
+          });
+        }
+      });
     }
+  }
+
+  /// Reset auth failure tracking after successful sync.
+  static void _resetAuthFailures() {
+    if (_authFailureCount > 0) {
+      log.info("Sync recovered after $_authFailureCount auth failures");
+    }
+    _authFailureCount = 0;
+    _authRetryTimer?.cancel();
+    _authRetryTimer = null;
   }
 
   BroadcastClient? _broadcastClient;
@@ -732,7 +754,7 @@ class Store extends _$Store {
                 );
               } catch (e, stackTrace) {
                 if (Store._isAuthError(e)) {
-                  await Store._handleAuthError();
+                  Store._handleAuthError();
                   rethrow;
                 } else if (Store._isPermanentError(e)) {
                   // Permanent error - revert local change to remote version
@@ -1410,11 +1432,12 @@ class Store extends _$Store {
       // Use orchestrator for dependency-aware sync
       // This pulls all entities (parents→children), then pushes all (children→parents)
       await SyncOrchestrator.instance.syncAll();
+      _resetAuthFailures();
     } catch (e, stackTrace) {
-      // Check if this is an auth error - if so, sign out
+      // Check if this is an auth error - if so, schedule retry
       if (_isAuthError(e)) {
         log.warning("Auth error during sync", e, stackTrace);
-        await _handleAuthError();
+        _handleAuthError();
         rethrow; // Stop sync on auth errors
       } else if (_isRlsViolation(e)) {
         log.warning(

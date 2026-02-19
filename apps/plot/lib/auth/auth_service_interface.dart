@@ -141,3 +141,93 @@ abstract class AuthService {
   /// Sign out the current session.
   Future<void> signOut();
 }
+
+/// Fallback [AuthService] used when Clerk initialization fails entirely.
+/// Returns safe defaults for all queries and throws on any sign-in attempt.
+/// On next app restart Clerk will likely initialize successfully.
+class FailedAuthService implements AuthService {
+  @override
+  bool get isSignedIn => false;
+
+  @override
+  List<String>? get signUpMissingFields => null;
+
+  @override
+  bool get needsSecondFactor => false;
+
+  @override
+  Future<String?> getSessionToken() async => null;
+
+  @override
+  Future<void> signInWithIdToken({
+    required IdTokenProvider provider,
+    required String idToken,
+  }) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> signUpWithIdToken({
+    required IdTokenProvider provider,
+    required String idToken,
+  }) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> attemptSignIn({
+    required AuthStrategy strategy,
+    String? identifier,
+    String? password,
+  }) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> prepareSecondFactor() => throw const AuthError(
+    message: 'Authentication unavailable, please restart the app.',
+  );
+
+  @override
+  Future<void> attemptSecondFactor({required String code}) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> attemptSignUp({
+    required AuthStrategy strategy,
+    String? emailAddress,
+    String? code,
+    String? password,
+    String? passwordConfirmation,
+    String? firstName,
+    String? lastName,
+  }) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> transfer() => throw const AuthError(
+    message: 'Authentication unavailable, please restart the app.',
+  );
+
+  @override
+  Future<void> updateUser({String? firstName, String? lastName}) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> refreshClient() async {}
+
+  @override
+  Future<void> resetClient() async {}
+
+  @override
+  Future<void> signOut() async {}
+}

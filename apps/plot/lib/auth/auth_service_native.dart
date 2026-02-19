@@ -29,7 +29,7 @@ Future<AuthService> createAuthServiceImpl({
       persistor: persistor,
     ),
   );
-  await clerkAuth.initialize();
+  await clerkAuth.initialize().timeout(const Duration(seconds: 10));
 
   return ClerkDartAuthService._(clerkAuth);
 }

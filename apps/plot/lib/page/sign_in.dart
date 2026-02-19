@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_svg/flutter_svg.dart';
@@ -86,17 +88,25 @@ class _SignInPageState extends State<SignInPage> {
     }
 
     try {
-      await Base.auth.signInWithIdToken(
-        provider: provider,
-        idToken: idToken,
-      );
+      await Future(() async {
+        await Base.auth.signInWithIdToken(
+          provider: provider,
+          idToken: idToken,
+        );
 
-      // If Clerk indicates this should become a sign-up, transfer the flow.
-      await Base.auth.transfer();
+        // If Clerk indicates this should become a sign-up, transfer the flow.
+        await Base.auth.transfer();
 
-      // Call /activate to get user identity
-      await Base.resolveIdentity();
-      // UserBloc will pick up the emission and transition to UserReady
+        // Call /activate to get user identity
+        await Base.resolveIdentity();
+        // UserBloc will pick up the emission and transition to UserReady
+      }).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Sign-in is taking too long. Please try again.';
+        _isLoading = false;
+      });
     } on AuthError catch (e, t) {
       AuthError errorToShow = e;
       if (_isAlreadySignedIn(e)) {
@@ -119,12 +129,21 @@ class _SignInPageState extends State<SignInPage> {
       if (_isExternalAccountNotFound(e)) {
         try {
           log.info('External account not found, attempting sign-up');
-          await Base.auth.signUpWithIdToken(
-            provider: provider,
-            idToken: idToken,
-          );
-          await Base.auth.transfer();
-          await Base.resolveIdentity();
+          await Future(() async {
+            await Base.auth.signUpWithIdToken(
+              provider: provider,
+              idToken: idToken,
+            );
+            await Base.auth.transfer();
+            await Base.resolveIdentity();
+          }).timeout(const Duration(seconds: 15));
+          return;
+        } on TimeoutException {
+          if (!mounted) return;
+          setState(() {
+            _errorMessage = 'Sign-in is taking too long. Please try again.';
+            _isLoading = false;
+          });
           return;
         } on AuthError catch (signUpError, signUpTrace) {
           log.warning('Error signing up with OAuth', signUpError, signUpTrace);

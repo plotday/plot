@@ -61,51 +61,61 @@ class Base {
   }
 
   static Future<void> init() async {
-    try {
-      log.info("Initializing Clerk auth");
+    log.info("Initializing Clerk auth");
 
-      final authService = await createAuthService(
+    // Step 1: Create auth service (may fail if Clerk is down)
+    AuthService authService;
+    try {
+      authService = await createAuthService(
         publishableKey: Env.clerkPublishableKey,
         profile: CliArgs.profile,
       );
+    } catch (e, stack) {
+      log.warning("Clerk auth initialization failed, using fallback", e, stack);
+      authService = FailedAuthService();
+    }
 
-      final base = Base._(authService);
-      Injector.appInstance.registerSingleton<Base>(() => base);
+    // Step 2: Always register Base so the app can proceed
+    final base = Base._(authService);
+    Injector.appInstance.registerSingleton<Base>(() => base);
 
-      // Restore identity from local storage (doesn't require network)
+    // Step 3: Try to restore identity from local storage (no network needed)
+    try {
       await base._restoreIdentity();
+    } catch (e, stack) {
+      log.warning("Failed to restore identity from local storage", e, stack);
+    }
 
-      // If Clerk has a session but local identity wasn't restored (e.g. first
-      // sign-in with Clerk, or preferences were cleared), activate via API.
-      if (!base._currentUserController.hasValue && authService.isSignedIn) {
-        log.info(
-          'Clerk session found without local identity, resolving identity',
-        );
+    // Step 4: If Clerk has a session but local identity wasn't restored,
+    // resolve via API. Skip if using FailedAuthService (no session possible).
+    if (!base._currentUserController.hasValue &&
+        authService is! FailedAuthService &&
+        authService.isSignedIn) {
+      log.info(
+        'Clerk session found without local identity, resolving identity',
+      );
+      try {
+        await Base.resolveIdentity();
+      } catch (e, stack) {
+        log.warning('Failed to resolve identity on startup', e, stack);
+        // Session token is likely expired/invalid. Sign out of Clerk so the
+        // user can sign in fresh instead of being stuck ("already signed in").
+        log.info('Signing out stale Clerk session');
         try {
-          await Base.resolveIdentity();
-        } catch (e, stack) {
-          log.warning('Failed to resolve identity on startup', e, stack);
-          // Session token is likely expired/invalid. Sign out of Clerk so the
-          // user can sign in fresh instead of being stuck ("already signed in").
-          log.info('Signing out stale Clerk session');
-          try {
-            await authService.signOut();
-          } catch (signOutError) {
-            log.warning('Failed to sign out stale session', signOutError);
-          }
+          await authService.signOut();
+        } catch (signOutError) {
+          log.warning('Failed to sign out stale session', signOutError);
         }
       }
-
-      // Ensure the user stream emits a value so the UI can proceed.
-      if (!base._currentUserController.hasValue) {
-        log.info('No identity available, emitting signed-out state');
-        base._currentUserController.add(null);
-      }
-
-      log.info("Clerk auth ready");
-    } catch (e, stack) {
-      log.warning("Clerk auth error", e, stack);
     }
+
+    // Step 5: Ensure the user stream always emits so the UI can proceed
+    if (!base._currentUserController.hasValue) {
+      log.info('No identity available, emitting signed-out state');
+      base._currentUserController.add(null);
+    }
+
+    log.info("Clerk auth ready");
   }
 
   /// Called after successful Clerk sign-in to activate and set identity.
