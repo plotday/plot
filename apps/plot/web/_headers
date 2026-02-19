@@ -1,5 +1,6 @@
 /*
-  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
 
 /.well-known/apple-app-site-association
   Content-Type: application/json
