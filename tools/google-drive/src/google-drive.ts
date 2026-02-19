@@ -42,6 +42,7 @@ import {
   listComments,
   listFilesInFolder,
   listFolders,
+  listSharedDrives,
 } from "./google-api";
 
 /**
@@ -96,15 +97,72 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
   }
 
   /**
-   * Returns available Google Drive folders as syncable resources.
+   * Returns available Google Drive folders as a syncable tree.
+   * Shared drives and root-level My Drive folders appear at the top level,
+   * with subfolders nested under their parents.
    */
   async getSyncables(
     _auth: Authorization,
     token: AuthToken
   ): Promise<Syncable[]> {
     const api = new GoogleApi(token.token);
-    const files = await listFolders(api);
-    return files.map((f) => ({ id: f.id, title: f.name }));
+    const [folders, sharedDrives] = await Promise.all([
+      listFolders(api),
+      listSharedDrives(api),
+    ]);
+
+    // Build node map for all folders
+    type SyncableNode = { id: string; title: string; children: SyncableNode[] };
+    const nodeMap = new Map<string, SyncableNode>();
+    for (const f of folders) {
+      nodeMap.set(f.id, { id: f.id, title: f.name, children: [] });
+    }
+
+    // Build shared drive node map
+    const sharedDriveMap = new Map<string, SyncableNode>();
+    for (const drive of sharedDrives) {
+      sharedDriveMap.set(drive.id, {
+        id: drive.id,
+        title: drive.name,
+        children: [],
+      });
+    }
+
+    // Link children to parents
+    const roots: SyncableNode[] = [];
+    for (const f of folders) {
+      const node = nodeMap.get(f.id)!;
+      const parentId = f.parents?.[0];
+      if (parentId) {
+        const parentFolder = nodeMap.get(parentId);
+        if (parentFolder) {
+          parentFolder.children.push(node);
+          continue;
+        }
+        const parentDrive = sharedDriveMap.get(parentId);
+        if (parentDrive) {
+          parentDrive.children.push(node);
+          continue;
+        }
+      }
+      // No known parent in our set → root folder (My Drive)
+      roots.push(node);
+    }
+
+    // Combine: shared drives first, then root My Drive folders
+    const allRoots = [...sharedDriveMap.values(), ...roots];
+
+    // Strip empty children arrays for clean output
+    const clean = (nodes: SyncableNode[]): Syncable[] => {
+      return nodes.map((n) => {
+        if (n.children.length > 0) {
+          return { id: n.id, title: n.title, children: clean(n.children) };
+        }
+        return { id: n.id, title: n.title };
+      });
+    };
+
+    return clean(allRoots);
   }
 
   /**

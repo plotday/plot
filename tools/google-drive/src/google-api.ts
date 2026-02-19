@@ -109,7 +109,7 @@ export class GoogleApi {
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 
 /**
- * List folders accessible by the user.
+ * List folders accessible by the user, including shared drive folders.
  */
 export async function listFolders(api: GoogleApi): Promise<GoogleDriveFile[]> {
   const folders: GoogleDriveFile[] = [];
@@ -120,6 +120,8 @@ export async function listFolders(api: GoogleApi): Promise<GoogleDriveFile[]> {
       q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
       fields: "nextPageToken,files(id,name,description,parents)",
       pageSize: 100,
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
       pageToken,
     })) as { files: GoogleDriveFile[]; nextPageToken?: string } | null;
 
@@ -129,6 +131,32 @@ export async function listFolders(api: GoogleApi): Promise<GoogleDriveFile[]> {
   } while (pageToken);
 
   return folders;
+}
+
+export type SharedDrive = {
+  id: string;
+  name: string;
+};
+
+/**
+ * List shared drives accessible by the user.
+ */
+export async function listSharedDrives(api: GoogleApi): Promise<SharedDrive[]> {
+  const drives: SharedDrive[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const data = (await api.call("GET", `${DRIVE_API}/drives`, {
+      pageSize: 100,
+      pageToken,
+    })) as { drives?: SharedDrive[]; nextPageToken?: string } | null;
+
+    if (!data) break;
+    drives.push(...(data.drives || []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return drives;
 }
 
 /**
