@@ -17,10 +17,40 @@ An overview of layout (including tabs and panels) can be found in "docs/layout.m
 
 # Drift schema changes
 
-When making changes to the Drift schema, follow these steps:
+Version 243 was the **last full-reset migration**. All future schema changes
+MUST use incremental migrations to preserve user data.
 
-1. Run `flutter pub run build_runner build --delete-conflicting-outputs` to generate the necessary files.
-2. Increase Store.schemaVersion
+## How to make a schema change
+
+1. Modify the table class in `lib/store/` (add column, change type, etc.)
+2. Add a migration step in `Store.migration.onUpgrade` for the new version:
+   ```dart
+   if (from < 244) {
+     await m.addColumn(activities, activities.newColumn);
+   }
+   ```
+3. Bump `Store.schemaVersion` (e.g. 243 → 244)
+4. Run `flutter pub run build_runner build --delete-conflicting-outputs`
+5. Run `flutter analyze` to verify
+
+## Common migration operations
+
+- **Add column**: `await m.addColumn(table, table.columnName);`
+- **Drop column**: `await m.alterTable(TableMigration(table));`
+  (Drift rebuilds the table keeping only current columns)
+- **Rename column**: `await m.alterTable(TableMigration(table,
+    columnTransformer: {table.newName: table.oldName}));`
+- **Add table**: `await m.createTable(newTable);`
+- **Custom SQL**: `await m.database.customStatement('ALTER TABLE ...');`
+- **Views**: Views are automatically recreated at the end of `onUpgrade` —
+  no per-version migration needed for view changes.
+
+## Important notes
+
+- New nullable columns with defaults don't need data migration
+- Non-nullable columns require a default value or a data migration step
+- Test migrations locally before committing
+- Never drop-and-recreate tables in production — user data will be lost
 
 # Code Style Guidelines
 

@@ -394,10 +394,40 @@ class Store extends _$Store {
         await get.close();
       }
 
-      final inst = Store._(user);
+      var inst = Store._(user);
       Injector.appInstance.registerSingleton<Store>(() => inst, override: true);
 
-      if (await Priority.hasDefault()) {
+      bool hasDefault;
+      try {
+        hasDefault = await Priority.hasDefault();
+      } catch (e, stackTrace) {
+        log.warning('Priority.hasDefault() failed, attempting schema rebuild', e, stackTrace);
+        Tracker.trackError(
+          'database',
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+          stackTrace: stackTrace.toString(),
+          context: 'store_start_schema_error',
+        );
+
+        // Try rebuilding schema in place
+        try {
+          await _dropAllUserObjects(inst);
+          await Migrator(inst).createAll();
+          await ActivityFts.createTable(inst);
+          await NoteFts.createTable(inst);
+          hasDefault = false; // Schema was rebuilt, no data
+        } catch (rebuildError, rebuildTrace) {
+          log.warning('In-place rebuild failed, recreating Store', rebuildError, rebuildTrace);
+          // Close broken store, create fresh one (triggers fresh beforeOpen)
+          await inst.close();
+          inst = Store._(user);
+          Injector.appInstance.registerSingleton<Store>(() => inst, override: true);
+          hasDefault = false;
+        }
+      }
+
+      if (hasDefault) {
         // User has existing local data, start sync in background (non-blocking)
         inst._setupConnectivityListener();
       } else {
@@ -1598,7 +1628,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 242;
+  int get schemaVersion => 243;
 
   @override
   MigrationStrategy get migration {
@@ -1609,33 +1639,52 @@ class Store extends _$Store {
         await NoteFts.createTable(m.database);
       },
       onUpgrade: (Migrator m, int from, int to) async {
-        // For schema version 141, completely rebuild the database
-        // Drop views manually using raw SQL before dropping tables
-        final db = m.database;
-        for (final view in [
-          'priority_children',
-          'priority_ancestry',
-          'latest_priorities',
-        ]) {
-          try {
-            await db.customStatement('DROP VIEW IF EXISTS $view');
-          } catch (e) {
-            // View might not exist or might fail - ignore
-          }
+        // =============================================================
+        // Version 243: Final full reset for all pre-production schemas.
+        // ALL versions <= 242 get a complete drop-and-recreate.
+        // Future migrations (244+) MUST be incremental — see below.
+        // =============================================================
+        if (from <= 242) {
+          await _dropAllUserObjects(m.database);
+          await m.createAll();
+          await ActivityFts.createTable(m.database);
+          await NoteFts.createTable(m.database);
+          return;
         }
 
-        // Drop all entities
+        // --- Incremental migrations (add new versions here) ---
+        // if (from < 244) {
+        //   await m.addColumn(activities, activities.newColumn);
+        // }
+        // if (from < 245) {
+        //   await m.alterTable(TableMigration(priorities));
+        // }
+
+        // Always recreate views and FTS (they depend on table schemas)
         for (final entity in allSchemaEntities) {
-          try {
+          if (entity is ViewInfo) {
             await m.drop(entity);
-          } catch (e) {
-            // Ignore errors - entity might not exist
           }
         }
-
-        await m.createAll();
-        await ActivityFts.createTable(db);
-        await NoteFts.createTable(db);
+        await m.createAll(); // CREATE VIEW/TABLE IF NOT EXISTS — only views get recreated since tables already exist
+        await ActivityFts.createTable(m.database);
+        await NoteFts.createTable(m.database);
+      },
+      beforeOpen: (details) async {
+        // Validate critical tables have expected columns. On web, OPFS may
+        // survive "Clear site data" leaving a stale schema that passes
+        // migration (CREATE TABLE IF NOT EXISTS) but fails at query time.
+        try {
+          await customSelect(
+            'SELECT id, archived_at, root, created_at FROM priorities LIMIT 0',
+          ).get();
+        } catch (e) {
+          log.warning('Database schema validation failed, rebuilding: $e');
+          await _dropAllUserObjects(this);
+          await Migrator(this).createAll();
+          await ActivityFts.createTable(this);
+          await NoteFts.createTable(this);
+        }
       },
     );
   }
@@ -1655,5 +1704,38 @@ class Store extends _$Store {
   void _unsubscribeFromUpdates() {
     _broadcastClient?.disconnect();
     _broadcastClient = null;
+  }
+
+  /// Drops ALL user-created objects from the SQLite database in dependency order
+  /// (triggers → views → tables). Queries sqlite_master dynamically so it
+  /// handles any schema state, including stale schemas left after partial
+  /// browser storage clears on web.
+  static Future<void> _dropAllUserObjects(DatabaseConnectionUser db) async {
+    // 1. Drop triggers
+    final triggers = await db.customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name NOT LIKE 'sqlite_%'",
+    ).get();
+    for (final row in triggers) {
+      final name = row.read<String>('name');
+      await db.customStatement('DROP TRIGGER IF EXISTS "$name"');
+    }
+
+    // 2. Drop views
+    final views = await db.customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'view' AND name NOT LIKE 'sqlite_%'",
+    ).get();
+    for (final row in views) {
+      final name = row.read<String>('name');
+      await db.customStatement('DROP VIEW IF EXISTS "$name"');
+    }
+
+    // 3. Drop tables (except internal drift/sqlite tables)
+    final tables = await db.customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__db_version%'",
+    ).get();
+    for (final row in tables) {
+      final name = row.read<String>('name');
+      await db.customStatement('DROP TABLE IF EXISTS "$name"');
+    }
   }
 }
