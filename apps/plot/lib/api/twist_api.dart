@@ -258,6 +258,16 @@ class TwistApi {
       '/twist/$priorityTwistId/syncables/$provider/$syncableId/disable',
     );
   }
+
+  /// Re-fetch the syncable list from the external service for a provider.
+  static Future<void> refreshSyncables({
+    required String priorityTwistId,
+    required String provider,
+  }) async {
+    await api.post<Map<String, dynamic>>(
+      '/twist/$priorityTwistId/syncables/$provider/refresh',
+    );
+  }
 }
 
 /// Auth URL result from the integrations auth endpoint

@@ -82,6 +82,9 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
   /// Whether we've seeded _localSelectedSyncables from server state (edit mode).
   bool _initializedFromServer = false;
 
+  /// Providers currently being refreshed — keeps existing data visible.
+  final Set<AuthProvider> _refreshingProviders = {};
+
   @override
   void initState() {
     super.initState();
@@ -137,6 +140,48 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
           _error = 'Failed to load integrations';
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  /// Re-fetch the syncable list from the external service for a provider,
+  /// then reload integration data to pick up the updated list.
+  Future<void> _refreshSyncables(AuthProvider provider) async {
+    setState(() => _refreshingProviders.add(provider));
+
+    try {
+      // Ask the server to re-run getSyncables() on the tool
+      await TwistApi.refreshSyncables(
+        priorityTwistId: widget.priorityTwistId,
+        provider: provider.name,
+      );
+      if (!mounted) return;
+
+      // Now re-fetch integration data which includes the updated syncables
+      final data = await TwistApi.getIntegrations(widget.priorityTwistId);
+      if (!mounted) return;
+
+      // Compute set of available syncable keys from new data
+      final availableKeys =
+          data.syncables.map((s) => '${s.provider.name}:${s.id}').toSet();
+
+      // Remove stale entries that no longer exist in the new data
+      _localSelectedSyncables.removeWhere(
+        (key) => !availableKeys.contains(key),
+      );
+
+      setState(() {
+        _data = data;
+        _refreshingProviders.remove(provider);
+      });
+    } catch (e, t) {
+      log.warning('Failed to refresh syncables', e, t);
+      if (mounted) {
+        context.showToast(
+          message: 'Failed to refresh. Please try again.',
+          isError: true,
+        );
+        setState(() => _refreshingProviders.remove(provider));
       }
     }
   }
@@ -289,6 +334,8 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
               ? _removeAccountImmediate(account)
               : _softRemoveAccount(account),
           onUndo: () => _undoRemoveAccount(accountKey),
+          onRefresh: () => _refreshSyncables(account.provider),
+          isRefreshing: _refreshingProviders.contains(account.provider),
         ),
       );
 
@@ -336,12 +383,16 @@ class _AccountRow extends StatelessWidget {
     required this.onRemove,
     this.isRemoved = false,
     this.onUndo,
+    this.onRefresh,
+    this.isRefreshing = false,
   });
 
   final TwistAccount account;
   final VoidCallback onRemove;
   final bool isRemoved;
   final VoidCallback? onUndo;
+  final VoidCallback? onRefresh;
+  final bool isRefreshing;
 
   @override
   Widget build(BuildContext context) {
@@ -389,6 +440,18 @@ class _AccountRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (!isRemoved && onRefresh != null)
+              FButton.icon(
+                onPress: isRefreshing ? null : onRefresh,
+                style: FButtonStyle.ghost(),
+                child: isRefreshing
+                    ? SizedBox(width: 14, height: 14, child: Spinner(size: 14))
+                    : Icon(
+                        FontAwesomeIcons.arrowsRotate,
+                        size: 14,
+                        color: theme.colors.mutedForeground,
+                      ),
+              ),
             FButton.icon(
               onPress: isRemoved ? onUndo : onRemove,
               style: FButtonStyle.ghost(),

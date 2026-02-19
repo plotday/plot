@@ -437,6 +437,86 @@ twistIntegrations.post(
   }
 );
 
+// POST /twist/:id/syncables/:provider/refresh
+// Re-fetch the syncable list from the external service for a provider+actor.
+twistIntegrations.post(
+  "/twist/:id/syncables/:provider/refresh",
+  async (c) => {
+    const priorityTwistId = c.req.param("id");
+    const provider = c.req.param("provider");
+
+    const logger = createLogger({ priority_twist_id: priorityTwistId });
+
+    const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+    if (!twistInfo) {
+      return c.json({ message: "Twist not found" }, 404);
+    }
+
+    const config = await loadTwistConfig(
+      c.env,
+      twistInfo.twistPackageId,
+      twistInfo.version
+    );
+    if (!config) {
+      return c.json({ message: "Twist config not found" }, 404);
+    }
+
+    const integrationsPathStr = config.integrationsMap[provider];
+    if (!integrationsPathStr) {
+      return c.json(
+        { message: `Provider ${provider} not configured` },
+        400
+      );
+    }
+
+    // Get current user's actor ID
+    const currentActorId = await getCurrentActorId(c.var.db, c.var.user.id);
+    if (!currentActorId) {
+      return c.json({ message: "No actor found for current user" }, 400);
+    }
+
+    try {
+      const factory = twistFactory({
+        env: c.env,
+        ctx: c.executionCtx as ExecutionContext,
+        db: c.var.db,
+      });
+
+      const twistWrapper = await factory({
+        priorityId: twistInfo.priorityId!,
+        priorityTwistId,
+      });
+
+      const result = await twistWrapper.callCallback(
+        integrationsPathStr.split(":"),
+        "refreshSyncables",
+        provider,
+        currentActorId
+      );
+      disposeRpc(result);
+
+      logger.info("Syncables refreshed", {
+        provider,
+        actor_id: currentActorId,
+      });
+
+      return c.json({ success: true });
+    } catch (error) {
+      logger.error("Error refreshing syncables", error as Error, {
+        provider,
+      });
+      return c.json(
+        {
+          message: `Failed to refresh syncables: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+        },
+        500
+      );
+    }
+  }
+);
+
 // DELETE /twist/:id/integrations/:provider/:actorId
 // Remove an account (auth token) for a provider.
 twistIntegrations.delete(
