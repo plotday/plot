@@ -1,5 +1,8 @@
 import 'dart:async' show unawaited;
 import 'dart:convert' show jsonDecode;
+import 'dart:math' show Random;
+
+import 'package:crypto/crypto.dart' show sha256;
 
 import 'package:flutter/foundation.dart'
     show kIsWeb, kReleaseMode, defaultTargetPlatform, TargetPlatform;
@@ -268,11 +271,17 @@ class _AuthButtonState extends State<AuthButton> {
   void _startAppleAuth() async {
     setState(() => _isLoading = true);
     try {
+      // Generate a cryptographic nonce for Apple Sign In.
+      // Clerk requires the identity token to contain a nonce claim.
+      final rawNonce = _generateNonce();
+      final hashedNonce = sha256.convert(rawNonce.codeUnits).toString();
+
       final credential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
+        nonce: hashedNonce,
         webAuthenticationOptions: kIsWeb
             ? WebAuthenticationOptions(
                 clientId: Env.appleClientId,
@@ -544,6 +553,14 @@ class _AuthButtonState extends State<AuthButton> {
     }
   }
 
+  /// Generate a random nonce string for Apple Sign In.
+  static String _generateNonce([int length = 32]) {
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = Random.secure();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
+        .join();
+  }
 }
 
 FButtonStyle buildAuthButtonStyle(BuildContext context, AuthProviderConfig config) {

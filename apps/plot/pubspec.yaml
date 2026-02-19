@@ -98,6 +98,7 @@ dependencies:
   app_links: ^6.3.3
   mime: ^2.0.0
   clerk_auth: 0.0.14-beta
+  crypto: ^3.0.0
 
 dev_dependencies:
   analyzer: ^8.4.1
