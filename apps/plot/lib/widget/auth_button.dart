@@ -18,6 +18,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:plot/env.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
+import 'package:plot/util/google_sign_in.dart' as web;
 import 'package:plot/store/store.dart' show AuthLink;
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/api/api.dart' as api;
@@ -148,6 +149,7 @@ class AuthButton extends StatefulWidget {
 
 class _AuthButtonState extends State<AuthButton> {
   bool _isLoading = false;
+  Widget? _cachedWebButton;
 
   @override
   void initState() {
@@ -155,6 +157,20 @@ class _AuthButtonState extends State<AuthButton> {
     if (widget.provider == AuthProvider.google) {
       if (AuthButton._useNativeGoogleSignIn) {
         final GoogleSignIn signIn = GoogleSignIn.instance;
+
+        // On web, listen to the user stream to handle sign-in from the rendered button
+        // Only cache the web button for sign-in flows, not authorize flows
+        if (kIsWeb && !signIn.supportsAuthenticate() && widget._link == null) {
+          // Cache the web button widget to prevent re-rendering
+          _cachedWebButton = web.buildGoogleSignInButton();
+
+          signIn.authenticationEvents.listen((event) {
+            log.info('Google sign-in event: $event');
+            if (event is GoogleSignInAuthenticationEventSignIn) {
+              _onGoogleSignIn(event.user);
+            }
+          });
+        }
 
         if (widget.autoSignIn) {
           unawaited(() async {
@@ -407,6 +423,11 @@ class _AuthButtonState extends State<AuthButton> {
 
   @override
   Widget build(BuildContext context) {
+    // Return cached web button to prevent re-rendering
+    if (_cachedWebButton != null) {
+      return _cachedWebButton!;
+    }
+
     final config = getAuthProviderConfig(widget.provider);
     return FButton(
       mainAxisSize: .min,
@@ -506,75 +527,6 @@ class _AuthButtonState extends State<AuthButton> {
     }
   }
 
-  /// Web fallback for browsers without FedCM support (e.g. Firefox).
-  /// Opens a standard Google OAuth popup and exchanges the code via the API.
-  void _startGoogleAuthPopup() async {
-    setState(() => _isLoading = true);
-    try {
-      final clientId = Env.googleClientId;
-      final redirectUri = Env.webAuthCallbackUrl;
-
-      final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
-        'client_id': clientId,
-        'redirect_uri': redirectUri,
-        'response_type': 'code',
-        'scope': 'openid profile email',
-        'access_type': 'offline',
-        'prompt': 'select_account',
-      });
-
-      final result = await FlutterWebAuth2.authenticate(
-        url: authUrl.toString(),
-        callbackUrlScheme: redirectUri.split(':').first,
-      );
-
-      final responseUri = Uri.parse(result);
-      final code = responseUri.queryParameters['code'];
-      if (code == null) {
-        throw Exception('No authorization code received from Google');
-      }
-
-      // Exchange code for tokens via API (same as desktop flow)
-      final uri = Uri.parse('${Env.apiRoot}/auth').replace(queryParameters: {
-        'code': code,
-        'clientId': clientId,
-        'redirectUri': redirectUri,
-        'provider': 'google',
-      });
-      final tokenResponse = await http.post(uri);
-
-      if (tokenResponse.statusCode != 200) {
-        throw Exception(
-          'Token exchange failed (${tokenResponse.statusCode}): ${tokenResponse.body}',
-        );
-      }
-
-      final tokens = jsonDecode(tokenResponse.body) as Map<String, dynamic>;
-      final idToken = tokens['id_token'] as String?;
-      if (idToken == null) {
-        throw Exception('No id_token in token response');
-      }
-
-      await widget.onComplete(
-        clientId: clientId,
-        redirectUri: redirectUri,
-        idToken: idToken,
-        accessToken: tokens['access_token'] as String?,
-      );
-    } catch (e, t) {
-      log.warning('Google sign-in failed (popup)', e, t);
-      Tracker.captureException(e, t);
-      final message = 'Unable to connect with Google. Please try again.';
-      if (widget.onError != null) {
-        widget.onError!(message);
-      } else if (mounted) {
-        context.showToast(message: message, isError: true);
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
   void _onPress() {
     if (_isLoading) return;
     if (widget.provider == AuthProvider.google) {
@@ -591,10 +543,6 @@ class _AuthButtonState extends State<AuthButton> {
         // 1. Multiple popup blocking (authorizeScopes/authorizeServer open separate popups)
         // 2. User sign-out when selecting a different account
         _startOAuth();
-      } else if (kIsWeb && !GoogleSignIn.instance.supportsAuthenticate()) {
-        // Browsers without FedCM support (e.g. Firefox) can't use
-        // authenticate() or the GSI rendered button. Use popup OAuth instead.
-        _startGoogleAuthPopup();
       } else {
         _startGoogleAuth();
       }
