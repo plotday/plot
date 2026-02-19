@@ -87,21 +87,13 @@ describe("validation utilities", () => {
       expect(result?.path).toBe("value");
     });
 
-    it("should detect undefined", () => {
-      const result = findNonSerializable(undefined);
-      expect(result).toEqual({
-        path: "value",
-        type: "undefined",
-      });
+    it("should allow undefined (handled by SuperJSON)", () => {
+      expect(findNonSerializable(undefined)).toBeNull();
     });
 
-    it("should detect undefined in objects", () => {
+    it("should allow undefined in objects (handled by SuperJSON)", () => {
       const obj = { foo: undefined };
-      const result = findNonSerializable(obj);
-      expect(result).toEqual({
-        path: "foo",
-        type: "undefined",
-      });
+      expect(findNonSerializable(obj)).toBeNull();
     });
 
     it("should detect bigint", () => {
@@ -163,16 +155,6 @@ describe("validation utilities", () => {
       expect(error.message).toContain("mySymbol");
       expect(error.message).toContain("Symbol(test)");
       expect(error.message).toContain("cannot be serialized");
-    });
-
-    it("should create helpful error for undefined", () => {
-      const error = createSerializationError("store value", {
-        path: "optionalField",
-        type: "undefined",
-      });
-
-      expect(error.message).toContain("optionalField");
-      expect(error.message).toContain("Use null instead of undefined");
     });
 
     it("should create helpful error for circular references", () => {

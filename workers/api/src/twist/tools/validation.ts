@@ -10,6 +10,7 @@
  * - Functions
  * - Symbols
  * - Circular references
+ * - BigInt
  */
 
 import superjson from "superjson";
@@ -58,11 +59,9 @@ export function findNonSerializable(
     };
   }
 
+  // undefined is handled by SuperJSON (serialized with meta tag)
   if (value === undefined) {
-    return {
-      path,
-      type: "undefined",
-    };
+    return null;
   }
 
   if (typeof value === "bigint") {
@@ -144,9 +143,6 @@ export function createSerializationError(
   } else if (info.type === "circular reference") {
     message += `Found circular reference at path "${info.path}".\n`;
     message += `Objects with circular references cannot be serialized.`;
-  } else if (info.type === "undefined") {
-    message += `Found undefined at path "${info.path}".\n`;
-    message += `Use null instead of undefined.`;
   } else {
     message += `Found non-serializable ${info.type} at path "${info.path}".\n`;
     if (info.value) {
