@@ -173,11 +173,17 @@ class EditTwist extends ShowForm {
         orElse: () => throw Exception('Twist not found'),
       );
 
-      // Compute initially enabled syncables from server state
-      final initialEnabled = integrations.syncables
-          .where((s) => s.enabled)
-          .map((s) => '${s.provider.name}:${s.id}')
-          .toSet();
+      // Compute initially enabled syncables from server state (including nested)
+      Set<String> collectEnabled(List<TwistSyncable> syncables) {
+        final result = <String>{};
+        for (final s in syncables) {
+          if (s.enabled) result.add('${s.provider.name}:${s.id}');
+          result.addAll(collectEnabled(s.children));
+        }
+        return result;
+      }
+
+      final initialEnabled = collectEnabled(integrations.syncables);
 
       final refreshNotifier = ValueNotifier<int>(0);
       var integrationChanges = IntegrationChanges(

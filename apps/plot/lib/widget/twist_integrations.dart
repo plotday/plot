@@ -79,6 +79,9 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
   /// Snapshot of selected syncables per removed account for undo.
   final Map<String, Set<String>> _removedAccountSyncableSnapshot = {};
 
+  /// Tracks expanded state for nested syncables in the tree view.
+  final Set<String> _expandedSyncables = {};
+
   /// Whether we've seeded _localSelectedSyncables from server state (edit mode).
   bool _initializedFromServer = false;
 
@@ -107,15 +110,28 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
   /// Seed local selected syncables from server enabled state (edit mode only).
   void _seedLocalState(TwistIntegrations data) {
     if (!widget.setupMode && !_initializedFromServer) {
-      for (final syncable in data.syncables) {
-        if (syncable.enabled) {
-          _localSelectedSyncables.add(
-            '${syncable.provider.name}:${syncable.id}',
-          );
-        }
-      }
+      _collectEnabledSyncables(data.syncables);
       _initializedFromServer = true;
     }
+  }
+
+  void _collectEnabledSyncables(List<TwistSyncable> syncables) {
+    for (final syncable in syncables) {
+      if (syncable.enabled) {
+        _localSelectedSyncables.add('${syncable.provider.name}:${syncable.id}');
+      }
+      _collectEnabledSyncables(syncable.children);
+    }
+  }
+
+  /// Flatten all syncable keys from a tree for set operations.
+  Set<String> _flattenSyncableKeys(List<TwistSyncable> syncables) {
+    final keys = <String>{};
+    for (final s in syncables) {
+      keys.add('${s.provider.name}:${s.id}');
+      keys.addAll(_flattenSyncableKeys(s.children));
+    }
+    return keys;
   }
 
   Future<void> _loadIntegrations() async {
@@ -161,9 +177,8 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
       final data = await TwistApi.getIntegrations(widget.priorityTwistId);
       if (!mounted) return;
 
-      // Compute set of available syncable keys from new data
-      final availableKeys =
-          data.syncables.map((s) => '${s.provider.name}:${s.id}').toSet();
+      // Compute set of available syncable keys from new data (including nested)
+      final availableKeys = _flattenSyncableKeys(data.syncables);
 
       // Remove stale entries that no longer exist in the new data
       _localSelectedSyncables.removeWhere(
@@ -212,13 +227,13 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
 
     // Snapshot the currently selected syncables for this account's provider
     // so we can restore them on undo.
-    final providerSyncables =
-        _data?.syncables
-            .where((s) => s.provider == account.provider)
-            .map((s) => '${s.provider.name}:${s.id}')
-            .where(_localSelectedSyncables.contains)
-            .toSet() ??
-        {};
+    final providerSyncables = _data != null
+        ? _flattenSyncableKeys(
+            _data!.syncables
+                .where((s) => s.provider == account.provider)
+                .toList(),
+          ).where(_localSelectedSyncables.contains).toSet()
+        : <String>{};
 
     setState(() {
       _removedAccounts.add(accountKey);
@@ -262,14 +277,57 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
     );
   }
 
-  Widget _buildSyncableRow(TwistSyncable syncable) {
-    final key = '${syncable.provider.name}:${syncable.id}';
-    return _SyncableRow(
-      syncable: syncable,
-      isChecked: _localSelectedSyncables.contains(key),
-      canToggle: widget.setupMode || syncable.currentUserHasAccess,
-      onToggle: () => _toggleSyncable(syncable),
-    );
+  List<Widget> _buildSyncableTree(
+    List<TwistSyncable> syncables, {
+    int depth = 0,
+    bool ancestorEnabled = false,
+  }) {
+    final widgets = <Widget>[];
+    for (final syncable in syncables) {
+      final key = '${syncable.provider.name}:${syncable.id}';
+      final isExplicitlyEnabled = _localSelectedSyncables.contains(key);
+      final isForceEnabled = ancestorEnabled;
+      final isOn = isExplicitlyEnabled || isForceEnabled;
+      final canToggle =
+          !isForceEnabled &&
+          (widget.setupMode || syncable.currentUserHasAccess);
+      final isExpanded = _expandedSyncables.contains(key);
+
+      widgets.add(
+        _SyncableRow(
+          syncable: syncable,
+          isChecked: isOn,
+          canToggle: canToggle,
+          onToggle: () => _toggleSyncable(syncable),
+          depth: depth,
+          hasChildren: syncable.hasChildren,
+          isExpanded: isExpanded,
+          onExpandToggle: syncable.hasChildren
+              ? () {
+                  setState(() {
+                    if (isExpanded) {
+                      _expandedSyncables.remove(key);
+                    } else {
+                      _expandedSyncables.add(key);
+                    }
+                  });
+                }
+              : null,
+          isForceEnabled: isForceEnabled,
+        ),
+      );
+
+      if (syncable.hasChildren && isExpanded) {
+        widgets.addAll(
+          _buildSyncableTree(
+            syncable.children,
+            depth: depth + 1,
+            ancestorEnabled: isOn,
+          ),
+        );
+      }
+    }
+    return widgets;
   }
 
   @override
@@ -349,9 +407,9 @@ class _TwistIntegrationsWidgetState extends State<TwistIntegrationsWidget> {
           !fullyRemovedProviders.contains(account.provider) &&
           syncablesByProvider.containsKey(account.provider)) {
         shownProviders.add(account.provider);
-        for (final syncable in syncablesByProvider[account.provider]!) {
-          accountWidgets.add(_buildSyncableRow(syncable));
-        }
+        accountWidgets.addAll(
+          _buildSyncableTree(syncablesByProvider[account.provider]!),
+        );
       }
     }
 
@@ -474,12 +532,22 @@ class _SyncableRow extends StatefulWidget {
     required this.isChecked,
     required this.canToggle,
     required this.onToggle,
+    this.depth = 0,
+    this.hasChildren = false,
+    this.isExpanded = false,
+    this.onExpandToggle,
+    this.isForceEnabled = false,
   });
 
   final TwistSyncable syncable;
   final bool isChecked;
   final bool canToggle;
   final VoidCallback onToggle;
+  final int depth;
+  final bool hasChildren;
+  final bool isExpanded;
+  final VoidCallback? onExpandToggle;
+  final bool isForceEnabled;
 
   @override
   State<_SyncableRow> createState() => _SyncableRowState();
@@ -491,42 +559,59 @@ class _SyncableRowState extends State<_SyncableRow> {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
+    final isTappable = widget.canToggle || widget.hasChildren;
 
-    // Indented to align under account name (20 left + 16 icon + 12 gap = 48)
     return MouseRegion(
-      cursor: widget.canToggle
-          ? SystemMouseCursors.click
-          : SystemMouseCursors.basic,
+      cursor: isTappable ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
-        onTap: widget.canToggle ? widget.onToggle : null,
+        onTap: widget.hasChildren
+            ? widget.onExpandToggle
+            : widget.canToggle
+            ? widget.onToggle
+            : null,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: _isHovered && widget.canToggle
+            color: _isHovered && isTappable
                 ? theme.colors.foreground.withValues(alpha: 0.05)
                 : null,
             borderRadius: BorderRadius.circular(6),
           ),
           child: Padding(
             padding: EdgeInsets.only(
-              left: theme.spacing.xxl,
+              left: theme.spacing.xxl + (widget.depth * 24.0),
               right: theme.spacing.sm,
               bottom: theme.spacing.sm,
             ),
             child: Row(
               children: [
                 SizedBox(
-                  width: 42,
-                  height: 25,
-                  child: FittedBox(
-                    fit: BoxFit.contain,
-                    child: FSwitch(
-                      value: widget.isChecked,
-                      onChange: widget.canToggle
-                          ? (_) => widget.onToggle()
-                          : null,
-                      enabled: widget.canToggle,
+                  width: 10 + theme.spacing.sm,
+                  child: widget.hasChildren
+                      ? Icon(
+                          widget.isExpanded
+                              ? FontAwesomeIcons.chevronDown
+                              : FontAwesomeIcons.chevronRight,
+                          size: 10,
+                          color: theme.colors.mutedForeground,
+                        )
+                      : null,
+                ),
+                Opacity(
+                  opacity: widget.isForceEnabled ? 0.5 : 1.0,
+                  child: SizedBox(
+                    width: 42,
+                    height: 25,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: FSwitch(
+                        value: widget.isChecked,
+                        onChange: widget.canToggle
+                            ? (_) => widget.onToggle()
+                            : null,
+                        enabled: widget.canToggle,
+                      ),
                     ),
                   ),
                 ),

@@ -384,6 +384,7 @@ class TwistSyncable extends Equatable {
   final bool enabled;
   final String? enabledBy;
   final bool currentUserHasAccess;
+  final List<TwistSyncable> children;
 
   const TwistSyncable({
     required this.provider,
@@ -392,6 +393,7 @@ class TwistSyncable extends Equatable {
     required this.enabled,
     this.enabledBy,
     required this.currentUserHasAccess,
+    this.children = const [],
   });
 
   factory TwistSyncable.fromJson(Map<String, dynamic> json) {
@@ -405,8 +407,16 @@ class TwistSyncable extends Equatable {
       enabled: json['enabled'] as bool,
       enabledBy: json['enabledBy'] as String?,
       currentUserHasAccess: json['currentUserHasAccess'] as bool,
+      children: (json['children'] as List<dynamic>?)
+              ?.map(
+                (c) => TwistSyncable.fromJson(c as Map<String, dynamic>),
+              )
+              .toList() ??
+          const [],
     );
   }
+
+  bool get hasChildren => children.isNotEmpty;
 
   @override
   List<Object?> get props => [
@@ -416,5 +426,6 @@ class TwistSyncable extends Equatable {
     enabled,
     enabledBy,
     currentUserHasAccess,
+    children,
   ];
 }

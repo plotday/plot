@@ -482,9 +482,10 @@ export class Integrations extends Tool implements IAuth {
   async removeAuth(provider: AuthProvider, actorId: ActorId): Promise<void> {
     const tokenKey = `auth_token:${provider}:${actorId}`;
 
-    // Handle syncables this actor enabled
+    // Handle syncables this actor enabled (flatten tree to check all levels)
     const accessKey = `syncable_access:${provider}:${actorId}`;
-    const actorSyncables = await this.store.get<Syncable[]>(accessKey) ?? [];
+    const actorSyncablesTree = await this.store.get<Syncable[]>(accessKey) ?? [];
+    const actorSyncables = this.flattenSyncables(actorSyncablesTree);
 
     // Accumulate dispatch entries for callbacks that need to run on the twist worker
     const dispatches: Array<{ optionPath: (string | number)[]; args: any[] }> = [];
@@ -562,7 +563,7 @@ export class Integrations extends Tool implements IAuth {
     if (!title) {
       const accessKey = `syncable_access:${provider}:${actorId}`;
       const syncables = await this.store.get<Syncable[]>(accessKey) ?? [];
-      const syncable = syncables.find(s => s.id === syncableId);
+      const syncable = this.findSyncableInTree(syncables, syncableId);
       title = syncable?.title;
     }
 
@@ -633,6 +634,15 @@ export class Integrations extends Tool implements IAuth {
       enabled: boolean;
       enabledBy: ActorId | undefined;
       currentUserHasAccess: boolean;
+      children?: Array<{
+        provider: AuthProvider;
+        id: string;
+        title: string;
+        enabled: boolean;
+        enabledBy: ActorId | undefined;
+        currentUserHasAccess: boolean;
+        children?: any[];
+      }>;
     }>;
   }> {
     const providers = this.providerConfigs.map(p => ({
@@ -670,15 +680,21 @@ export class Integrations extends Tool implements IAuth {
       name: string | null;
     }> = [];
 
-    // Collect all syncables and their states
-    const syncablesMap = new Map<string, {
+    // Track which syncable IDs have access from any current-user contact
+    const syncableAccessByCurrentUser = new Set<string>();
+
+    // Collect syncable trees per provider (merged across actors)
+    type AnnotatedSyncable = {
       provider: AuthProvider;
       id: string;
       title: string;
       enabled: boolean;
       enabledBy: ActorId | undefined;
       currentUserHasAccess: boolean;
-    }>();
+      children?: AnnotatedSyncable[];
+    };
+
+    const syncableTreesByProvider = new Map<AuthProvider, Syncable[]>();
 
     for (const providerConfig of this.providerConfigs) {
       const provider = providerConfig.provider;
@@ -695,7 +711,7 @@ export class Integrations extends Tool implements IAuth {
         }
       }
 
-      // Build syncables for known actors
+      // Build accounts and collect syncable trees
       for (const actorId of knownActorIds) {
         const tokenKey = `auth_token:${provider}:${actorId}`;
         const tokenData = await this.store.get<StoredTokenData>(tokenKey);
@@ -719,38 +735,80 @@ export class Integrations extends Tool implements IAuth {
           name,
         });
 
-        // Get this actor's syncable access
+        // Get this actor's syncable access (may be a tree)
         const accessKey = `syncable_access:${provider}:${actorId}`;
         const actorSyncables = await this.store.get<Syncable[]>(accessKey) ?? [];
 
-        for (const syncable of actorSyncables) {
-          const configKey = `syncable_config:${provider}:${syncable.id}`;
-          const syncConfig = await this.store.get<SyncableConfig>(configKey);
+        // Track access for the current user
+        if (currentUserContactIds.has(actorId)) {
+          for (const s of this.flattenSyncables(actorSyncables)) {
+            syncableAccessByCurrentUser.add(`${provider}:${s.id}`);
+          }
+        }
 
-          const mapKey = `${provider}:${syncable.id}`;
-          const existing = syncablesMap.get(mapKey);
-
-          syncablesMap.set(mapKey, {
-            provider,
-            id: syncable.id,
-            title: syncable.title,
-            enabled: syncConfig?.enabled ?? false,
-            enabledBy: syncConfig?.enabledBy,
-            currentUserHasAccess: existing?.currentUserHasAccess || currentUserContactIds.has(actorId),
-          });
+        // Use the first actor's tree as the canonical tree for this provider
+        // (all actors with the same provider should see the same structure)
+        if (!syncableTreesByProvider.has(provider) && actorSyncables.length > 0) {
+          syncableTreesByProvider.set(provider, actorSyncables);
         }
       }
     }
 
-    // Apply visibility rules:
-    // - Show all enabled syncables (even if current user doesn't have access)
-    // - Show disabled syncables only if current user has access
-    // - Hide disabled syncables the current user doesn't have access to
-    const syncables = Array.from(syncablesMap.values()).filter(s =>
-      s.enabled || s.currentUserHasAccess
-    );
+    // Annotate syncable trees with config and access info
+    const annotateSyncableTree = async (
+      provider: AuthProvider,
+      syncables: Syncable[]
+    ): Promise<AnnotatedSyncable[]> => {
+      const result: AnnotatedSyncable[] = [];
+      for (const syncable of syncables) {
+        const configKey = `syncable_config:${provider}:${syncable.id}`;
+        const syncConfig = await this.store.get<SyncableConfig>(configKey);
+        const mapKey = `${provider}:${syncable.id}`;
 
-    return { providers, accounts, syncables };
+        const annotated: AnnotatedSyncable = {
+          provider,
+          id: syncable.id,
+          title: syncable.title,
+          enabled: syncConfig?.enabled ?? false,
+          enabledBy: syncConfig?.enabledBy,
+          currentUserHasAccess: syncableAccessByCurrentUser.has(mapKey),
+        };
+
+        if (syncable.children && syncable.children.length > 0) {
+          annotated.children = await annotateSyncableTree(provider, syncable.children);
+        }
+
+        result.push(annotated);
+      }
+      return result;
+    };
+
+    // Apply visibility rules recursively:
+    // Show a node if it's enabled, the user has access, or any descendant matches
+    const filterVisibleTree = (syncables: AnnotatedSyncable[]): AnnotatedSyncable[] => {
+      const result: AnnotatedSyncable[] = [];
+      for (const s of syncables) {
+        const filteredChildren = s.children ? filterVisibleTree(s.children) : undefined;
+        const hasVisibleChildren = filteredChildren && filteredChildren.length > 0;
+        if (s.enabled || s.currentUserHasAccess || hasVisibleChildren) {
+          result.push({
+            ...s,
+            children: filteredChildren && filteredChildren.length > 0 ? filteredChildren : undefined,
+          });
+        }
+      }
+      return result;
+    };
+
+    // Build annotated and filtered syncable trees per provider
+    const allSyncables: AnnotatedSyncable[] = [];
+    for (const [provider, tree] of syncableTreesByProvider) {
+      const annotated = await annotateSyncableTree(provider, tree);
+      const visible = filterVisibleTree(annotated);
+      allSyncables.push(...visible);
+    }
+
+    return { providers, accounts, syncables: allSyncables };
   }
 
   /**
@@ -857,6 +915,34 @@ export class Integrations extends Tool implements IAuth {
   // ============================================================================
   // Private helpers
   // ============================================================================
+
+  /**
+   * Find a syncable by ID anywhere in a tree of syncables.
+   */
+  private findSyncableInTree(syncables: Syncable[], id: string): Syncable | undefined {
+    for (const s of syncables) {
+      if (s.id === id) return s;
+      if (s.children) {
+        const found = this.findSyncableInTree(s.children, id);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Flatten a tree of syncables into a flat array.
+   */
+  private flattenSyncables(syncables: Syncable[]): Syncable[] {
+    const result: Syncable[] = [];
+    for (const s of syncables) {
+      result.push(s);
+      if (s.children) {
+        result.push(...this.flattenSyncables(s.children));
+      }
+    }
+    return result;
+  }
 
   private extractEmail(providerData: ProviderData | null): string | null {
     if (!providerData) {
