@@ -231,11 +231,15 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                       if (focusedIndex != null) {
                         final note = _getNoteAtIndex(state, focusedIndex);
                         if (note != null) {
+                          final activityBloc = context.read<ActivityBloc>();
                           context.run(
                             OpenFocusedItemActions(listController, (index) {
                               final note = _getNoteAtIndex(state, index);
                               if (note == null) return [];
-                              return noteCommandGroups(note);
+                              return noteCommandGroups(
+                                note,
+                                activityBloc: activityBloc,
+                              );
                             }),
                           );
                           return KeyEventResult.handled;
@@ -243,6 +247,13 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                       }
                     }
                     if (event.logicalKey == LogicalKeyboardKey.escape) {
+                      // Cancel editing if active
+                      final activityBloc = context.read<ActivityBloc>();
+                      if (activityBloc.state.editingNote != null) {
+                        activityBloc.setEditingNote(null);
+                        _noteEditorKey.currentState?.focus();
+                        return KeyEventResult.handled;
+                      }
                       listController.clearFocus();
                       // Focus NoteEditor after clearing item focus
                       _noteEditorKey.currentState?.focus();
@@ -448,6 +459,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
       return NoteWidget(
         note: note,
         selected: false, // No selection on ActivityPage
+        dimmed: state.editingNote?.id == note.id,
         focusNode: focusNode,
         key: ValueKey(note.id),
         reorderableIndex: reorderableIndex,

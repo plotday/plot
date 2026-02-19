@@ -237,6 +237,25 @@ class ToggleNotePrivate extends NoteCommand {
   }
 }
 
+class EditNote extends NoteCommand {
+  EditNote(super.note, {this.activityBloc})
+    : super(
+        title: 'Edit',
+        eventObject: EventObject.note,
+        eventAction: EventAction.updated,
+        icon: FontAwesomeIcons.penToSquare,
+      );
+
+  final ActivityBloc? activityBloc;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final bloc = activityBloc ?? context.read<ActivityBloc>();
+    bloc.setEditingNote(note);
+    return const CommandDone();
+  }
+}
+
 class ReplyToNote extends NoteCommand {
   ReplyToNote(super.note)
     : super(
@@ -444,12 +463,15 @@ class _UnassignAllFromNote extends NoteCommand {
   }
 }
 
-List<StaticCommandGroup> noteCommandGroups(Note note) {
+List<StaticCommandGroup> noteCommandGroups(
+  Note note, {
+  ActivityBloc? activityBloc,
+}) {
   final actorId = Base.actorId;
   final tags = Tag.getAll()
       .map((tag) => ToggleNoteTag(note, tag, actorId))
       .toList();
-  final commands = noteCommands(note);
+  final commands = noteCommands(note, activityBloc: activityBloc);
   final remove = tags
       .where(
         (cmd) =>
@@ -473,7 +495,7 @@ List<StaticCommandGroup> noteCommandGroups(Note note) {
   ];
 }
 
-List<Command> noteCommands(Note note) {
+List<Command> noteCommands(Note note, {ActivityBloc? activityBloc}) {
   final actorId = Base.actorId;
   final isAssigned = note.isAssignedTo(actorId);
 
@@ -481,6 +503,11 @@ List<Command> noteCommands(Note note) {
     if (!isAssigned) StartTask(note),
     if (isAssigned) FinishTask(note),
     if (!note.draft) ReplyToNote(note),
+    if (!note.draft &&
+        note.authorId == Base.actorId &&
+        note.content != null &&
+        note.content!.trim().isNotEmpty)
+      EditNote(note, activityBloc: activityBloc),
     PickNoteAssignee(note),
     if (!note.draft && note.content != null && note.content!.trim().isNotEmpty)
       SplitNoteToNewActivity(note),
@@ -538,10 +565,12 @@ class CopyNoteContent extends NoteCommand {
 }
 
 class ShowNoteCommands extends ShowCommands {
-  ShowNoteCommands(Note note)
+  ShowNoteCommands(Note note, {ActivityBloc? activityBloc})
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
-        commands: Commands(groups: noteCommandGroups(note)),
+        commands: Commands(
+          groups: noteCommandGroups(note, activityBloc: activityBloc),
+        ),
       );
 }

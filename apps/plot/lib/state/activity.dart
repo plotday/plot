@@ -59,8 +59,29 @@ class ActivityBloc extends Cubit<ActivityState> {
   }
 
   /// Sets the note being replied to. Pass null to clear.
+  /// Clears editing state when replying (mutual exclusion).
   void setReplyTo(Note? note) {
-    emit(state.copyWith(replyTo: note, clearReplyTo: note == null));
+    emit(state.copyWith(
+      replyTo: note,
+      clearReplyTo: note == null,
+      clearEditingNote: note != null,
+    ));
+  }
+
+  /// Sets the note being edited. Pass null to clear.
+  /// Clears reply state when editing (mutual exclusion).
+  void setEditingNote(Note? note) {
+    emit(state.copyWith(
+      editingNote: note,
+      clearEditingNote: note == null,
+      clearReplyTo: note != null,
+    ));
+  }
+
+  /// Saves an edited note and clears editing state.
+  Future<void> updateNote(Note note) async {
+    await note.save();
+    emit(state.copyWith(clearEditingNote: true));
   }
 
   /// Sets thread filter to show only a note and its replies. Pass null to clear.
@@ -80,11 +101,12 @@ class ActivityBloc extends Cubit<ActivityState> {
 
     // Create fresh draft for the activity (in-memory only, will be saved when content is added)
     // Don't save empty draft - it will be saved when content is added via updateDraft()
-    // Also clear replyTo state
+    // Also clear replyTo and editing state
     emit(
       state.copyWith(
         draft: Note.draft(activityId: state.activity.id),
         clearReplyTo: true,
+        clearEditingNote: true,
       ),
     );
 

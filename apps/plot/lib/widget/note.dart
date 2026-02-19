@@ -80,6 +80,7 @@ class NoteWidget extends StatefulWidget {
   const NoteWidget({
     required this.note,
     this.selected = false,
+    this.dimmed = false,
     this.focusNode,
     this.onHover,
     this.reorderableIndex,
@@ -89,6 +90,7 @@ class NoteWidget extends StatefulWidget {
 
   final Note note;
   final bool selected;
+  final bool dimmed;
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
@@ -232,18 +234,28 @@ class _NoteWidgetState extends State<NoteWidget> {
       noHoverHighlight: true,
     );
 
+    Widget result;
     if (hasPhysicalKeyboard()) {
-      return ContextMenu(
-        items: () => noteCommands(widget.note).map((cmd) => FItem(
+      final activityBloc = context.read<ActivityBloc>();
+      result = ContextMenu(
+        items: () => noteCommands(
+          widget.note,
+          activityBloc: activityBloc,
+        ).map((cmd) => FItem(
           title: Text(cmd.title),
           prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
           onPress: () => context.run(cmd),
         )).toList(),
         child: listTile,
       );
+    } else {
+      result = listTile;
     }
 
-    return listTile;
+    if (widget.dimmed) {
+      return Opacity(opacity: 0.4, child: result);
+    }
+    return result;
   }
 }
 
@@ -312,7 +324,8 @@ class NoteCommands extends StatelessWidget {
         .toList();
 
     // Get activity state for common tags
-    final activityState = context.watch<ActivityBloc>().state;
+    final activityBloc = context.watch<ActivityBloc>();
+    final activityState = activityBloc.state;
 
     // Get commands (only if showCommands is true)
     final commandButtons = showCommands
@@ -329,7 +342,7 @@ class NoteCommands extends StatelessWidget {
             ).map((cmd) => Button.icon(cmd)),
             Button.icon(
               CommandWrapper(
-                ShowNoteCommands(note),
+                ShowNoteCommands(note, activityBloc: activityBloc),
                 icon: Value(PlotIcon.more),
               ),
             ),

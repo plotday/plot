@@ -12,6 +12,7 @@ class ActivityState extends Equatable {
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
     this.replyTo,
+    this.editingNote,
     this.threadNoteId,
   }) : notes = notes.isNotEmpty ? List.unmodifiable(notes) : notes,
        filter = filter.isNotEmpty ? List.unmodifiable(filter) : filter,
@@ -33,6 +34,7 @@ class ActivityState extends Equatable {
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
   final Note? replyTo;
+  final Note? editingNote;
   final NoteId? threadNoteId;
   final bool hasOtherAuthors;
 
@@ -48,6 +50,8 @@ class ActivityState extends Equatable {
     List<Tag>? tagSuggestions,
     Note? replyTo,
     bool clearReplyTo = false,
+    Note? editingNote,
+    bool clearEditingNote = false,
     NoteId? threadNoteId,
     bool clearThreadNoteId = false,
   }) {
@@ -71,6 +75,9 @@ class ActivityState extends Equatable {
                 : tagSuggestions)
           : this.tagSuggestions,
       replyTo: clearReplyTo ? null : (replyTo ?? this.replyTo),
+      editingNote: clearEditingNote
+          ? null
+          : (editingNote ?? this.editingNote),
       threadNoteId: clearThreadNoteId
           ? null
           : (threadNoteId ?? this.threadNoteId),
@@ -88,6 +95,7 @@ class ActivityState extends Equatable {
     tags,
     tagSuggestions,
     replyTo,
+    editingNote,
     threadNoteId,
     hasOtherAuthors,
   ];
