@@ -1614,7 +1614,7 @@ class Store extends _$Store {
           name: _databaseName(user.id),
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),
-            driftWorker: Uri.parse('drift_worker.dart.js'),
+            driftWorker: Uri.parse('drift_worker.js'),
           ),
         ),
       );
@@ -1710,6 +1710,12 @@ class Store extends _$Store {
   /// (triggers → views → tables). Queries sqlite_master dynamically so it
   /// handles any schema state, including stale schemas left after partial
   /// browser storage clears on web.
+  ///
+  /// Uses try-catch per statement because FTS5 virtual tables create shadow
+  /// tables (e.g. activity_fts_content, activity_fts_data) that cannot be
+  /// dropped directly — they are auto-removed when the parent virtual table
+  /// is dropped. Without per-statement error handling, a shadow table failure
+  /// would abort the entire method and leave stale tables in place.
   static Future<void> _dropAllUserObjects(DatabaseConnectionUser db) async {
     // 1. Drop triggers
     final triggers = await db.customSelect(
@@ -1717,7 +1723,11 @@ class Store extends _$Store {
     ).get();
     for (final row in triggers) {
       final name = row.read<String>('name');
-      await db.customStatement('DROP TRIGGER IF EXISTS "$name"');
+      try {
+        await db.customStatement('DROP TRIGGER IF EXISTS "$name"');
+      } catch (e) {
+        log.fine('Failed to drop trigger $name: $e');
+      }
     }
 
     // 2. Drop views
@@ -1726,16 +1736,42 @@ class Store extends _$Store {
     ).get();
     for (final row in views) {
       final name = row.read<String>('name');
-      await db.customStatement('DROP VIEW IF EXISTS "$name"');
+      try {
+        await db.customStatement('DROP VIEW IF EXISTS "$name"');
+      } catch (e) {
+        log.fine('Failed to drop view $name: $e');
+      }
     }
 
-    // 3. Drop tables (except internal drift/sqlite tables)
+    // 3. Drop tables (except internal sqlite tables).
+    //    FTS5 shadow tables will fail here but succeed implicitly when their
+    //    parent virtual table is dropped. A second pass catches stragglers.
     final tables = await db.customSelect(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__db_version%'",
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
     ).get();
     for (final row in tables) {
       final name = row.read<String>('name');
-      await db.customStatement('DROP TABLE IF EXISTS "$name"');
+      try {
+        await db.customStatement('DROP TABLE IF EXISTS "$name"');
+      } catch (e) {
+        log.fine('Failed to drop table $name (may be FTS shadow table): $e');
+      }
+    }
+
+    // 4. Second pass: pick up anything left (e.g. shadow tables whose parent
+    //    was dropped after them in the first pass, freeing them).
+    final remaining = await db.customSelect(
+      "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view', 'trigger') AND name NOT LIKE 'sqlite_%'",
+    ).get();
+    for (final row in remaining) {
+      final name = row.read<String>('name');
+      final type = row.read<String>('type');
+      final keyword = type == 'trigger' ? 'TRIGGER' : (type == 'view' ? 'VIEW' : 'TABLE');
+      try {
+        await db.customStatement('DROP $keyword IF EXISTS "$name"');
+      } catch (e) {
+        log.warning('Failed to drop $type $name on second pass: $e');
+      }
     }
   }
 }
