@@ -1193,8 +1193,9 @@ List<StaticCommandGroup> activityCommandGroups(
   final tags = Tag.getAll()
       .where(
         (tag) =>
-            activity.type != ActivityType.event ||
-            ![Tag.now, Tag.later, Tag.done].contains(tag),
+            (activity.type == ActivityType.event || !tag.isRsvp) &&
+            (activity.type != ActivityType.event ||
+                ![Tag.now, Tag.later, Tag.done].contains(tag)),
       )
       .map((tag) => ToggleActivityTag(activity, tag))
       .toList();
@@ -1285,6 +1286,7 @@ List<Command> topActivityTags(Activity activity, List<Tag> tagSuggestions) {
   // Filter out tags already on activity and take maxToShow
   return tagSuggestions
       .where((tag) => !activity.hasTag(tag))
+      .where((tag) => activity.type == ActivityType.event || !tag.isRsvp)
       .take(maxToShow)
       .map((tag) => ToggleActivityTag(activity, tag))
       .toList();
