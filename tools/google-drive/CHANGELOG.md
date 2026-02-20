@@ -1,5 +1,11 @@
 # @plotday/tool-google-drive
 
+## 0.2.1
+
+### Fixed
+
+- Add defensive watch renewal for Google Drive ([`59cc5d0`](https://github.com/plotday/plot/commit/59cc5d067a84b4950b96de8498e791b1c9b914cf))
+
 ## 0.2.0
 
 ### Changed
