@@ -107,4 +107,6 @@ export type ResolvedOptions<T extends OptionsSchema> = {
  * }
  * ```
  */
-export abstract class Options extends ITool {}
+export abstract class Options extends ITool {
+  static readonly toolId = "Options";
+}
