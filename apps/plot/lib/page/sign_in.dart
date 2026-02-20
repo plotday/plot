@@ -268,6 +268,32 @@ class _SignInPageState extends State<SignInPage> {
                     idToken: idToken,
                   );
                 },
+                onRedirectAuth: () async {
+                  if (mounted) {
+                    setState(() {
+                      _errorMessage = null;
+                      _isLoading = true;
+                    });
+                  }
+                  try {
+                    await Base.auth.signInWithRedirect(
+                      provider: IdTokenProvider.google,
+                    );
+                    // Browser will redirect away; no further action needed.
+                  } on AuthError catch (e, t) {
+                    log.warning('Google redirect sign-in failed', e, t);
+                    Tracker.captureException(e, t);
+                    if (mounted) {
+                      setState(() {
+                        _errorMessage = e.toString();
+                        _isLoading = false;
+                      });
+                    }
+                  } catch (e, t) {
+                    log.warning('Google redirect sign-in failed', e, t);
+                    _showGenericError(e, t);
+                  }
+                },
                 onError: (error) {
                   if (mounted) {
                     setState(() {

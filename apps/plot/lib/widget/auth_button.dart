@@ -18,7 +18,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:plot/env.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
-import 'package:plot/util/google_sign_in.dart' as web;
 import 'package:plot/store/store.dart' show AuthLink;
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/api/api.dart' as api;
@@ -81,13 +80,15 @@ class AuthButton extends StatefulWidget {
   const AuthButton.authenticate({
     required this.provider,
     required OIDCCallback onAuth,
+    Future<void> Function()? onRedirectAuth,
     this.autoSignIn = true,
     this.scopes = const [],
     this.onError,
     super.key,
   }) : _link = null,
        _onOIDCAuth = onAuth,
-       _onLinkAuth = null;
+       _onLinkAuth = null,
+       _onRedirectAuth = onRedirectAuth;
 
   // Run an OAuth authorization flow for the given link
   AuthButton.authorize({
@@ -100,6 +101,7 @@ class AuthButton extends StatefulWidget {
        autoSignIn = false,
        _onOIDCAuth = null,
        _onLinkAuth = onAuth,
+       _onRedirectAuth = null,
        scopes = link.scopes;
 
   Future<void> onComplete({
@@ -139,6 +141,7 @@ class AuthButton extends StatefulWidget {
   final bool autoSignIn;
   final OIDCCallback? _onOIDCAuth;
   final void Function()? _onLinkAuth;
+  final Future<void> Function()? _onRedirectAuth;
   final List<String> scopes;
   final AuthLink? _link;
   final void Function(String error)? onError;
@@ -149,7 +152,6 @@ class AuthButton extends StatefulWidget {
 
 class _AuthButtonState extends State<AuthButton> {
   bool _isLoading = false;
-  Widget? _cachedWebButton;
 
   @override
   void initState() {
@@ -157,20 +159,6 @@ class _AuthButtonState extends State<AuthButton> {
     if (widget.provider == AuthProvider.google) {
       if (AuthButton._useNativeGoogleSignIn) {
         final GoogleSignIn signIn = GoogleSignIn.instance;
-
-        // On web, listen to the user stream to handle sign-in from the rendered button
-        // Only cache the web button for sign-in flows, not authorize flows
-        if (kIsWeb && !signIn.supportsAuthenticate() && widget._link == null) {
-          // Cache the web button widget to prevent re-rendering
-          _cachedWebButton = web.buildGoogleSignInButton();
-
-          signIn.authenticationEvents.listen((event) {
-            log.info('Google sign-in event: $event');
-            if (event is GoogleSignInAuthenticationEventSignIn) {
-              _onGoogleSignIn(event.user);
-            }
-          });
-        }
 
         if (widget.autoSignIn) {
           unawaited(() async {
@@ -423,11 +411,6 @@ class _AuthButtonState extends State<AuthButton> {
 
   @override
   Widget build(BuildContext context) {
-    // Return cached web button to prevent re-rendering
-    if (_cachedWebButton != null) {
-      return _cachedWebButton!;
-    }
-
     final config = getAuthProviderConfig(widget.provider);
     return FButton(
       mainAxisSize: .min,
@@ -543,6 +526,13 @@ class _AuthButtonState extends State<AuthButton> {
         // 1. Multiple popup blocking (authorizeScopes/authorizeServer open separate popups)
         // 2. User sign-out when selecting a different account
         _startOAuth();
+      } else if (kIsWeb &&
+          !GoogleSignIn.instance.supportsAuthenticate() &&
+          widget._onRedirectAuth != null) {
+        // On web browsers without FedCM (e.g. Firefox), use Clerk's OAuth
+        // redirect flow instead of the GSI rendered button (which doesn't
+        // composite properly under Flutter's CanvasKit renderer).
+        widget._onRedirectAuth!();
       } else {
         _startGoogleAuth();
       }

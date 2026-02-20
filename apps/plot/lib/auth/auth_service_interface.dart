@@ -84,6 +84,13 @@ abstract class AuthService {
     required String idToken,
   });
 
+  /// Start a browser-based OAuth redirect flow (web only).
+  ///
+  /// Redirects the browser to the provider's OAuth page via Clerk. After
+  /// the user authenticates, the page reloads and the session is active.
+  /// On native platforms this throws [UnsupportedError].
+  Future<void> signInWithRedirect({required IdTokenProvider provider});
+
   /// Sign up using an id-token (same as [signInWithIdToken] but creates the
   /// account if it doesn't exist).
   Future<void> signUpWithIdToken({
@@ -163,6 +170,12 @@ class FailedAuthService implements AuthService {
     required IdTokenProvider provider,
     required String idToken,
   }) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> signInWithRedirect({required IdTokenProvider provider}) =>
       throw const AuthError(
         message: 'Authentication unavailable, please restart the app.',
       );

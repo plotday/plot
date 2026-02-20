@@ -72,6 +72,7 @@ Future<AuthService> createAuthServiceImpl({
   // Access the auto-initialized Clerk instance from window.Clerk.
   final clerk = globalContext['Clerk'] as ClerkJS;
   await clerk.load().toDart;
+
   return ClerkJsAuthService._(clerk);
 }
 
@@ -194,6 +195,24 @@ class ClerkJsAuthService implements AuthService {
 
         _pendingSignIn = result;
         await _activateIfComplete(result.status, result.createdSessionId);
+      });
+
+  @override
+  Future<void> signInWithRedirect({required IdTokenProvider provider}) =>
+      _guard(() async {
+        final strategy = switch (provider) {
+          IdTokenProvider.google => 'oauth_google',
+          IdTokenProvider.apple => 'oauth_apple',
+        };
+
+        final origin = web.window.location.origin;
+        await _clerk.client!.signIn!
+            .authenticateWithRedirect(jsObj({
+              'strategy': strategy,
+              'redirectUrl': origin,
+              'redirectUrlComplete': origin,
+            }))
+            .toDart;
       });
 
   @override

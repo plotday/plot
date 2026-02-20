@@ -126,6 +126,10 @@ class ClerkDartAuthService implements AuthService {
           ));
 
   @override
+  Future<void> signInWithRedirect({required IdTokenProvider provider}) =>
+      throw UnsupportedError('signInWithRedirect is only supported on web');
+
+  @override
   Future<void> signUpWithIdToken({
     required IdTokenProvider provider,
     required String idToken,
