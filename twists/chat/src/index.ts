@@ -9,12 +9,28 @@ import {
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
-import { AI, type AIMessage } from "@plotday/twister/tools/ai";
+import { Options } from "@plotday/twister/options";
+import { AI, type AIMessage, AIModel } from "@plotday/twister/tools/ai";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
 
 export default class ChatTwist extends Twist<ChatTwist> {
   build(build: ToolBuilder) {
     return {
+      options: build(Options, {
+        model: {
+          type: "select" as const,
+          label: "AI Model",
+          description: "The AI model used for chat responses",
+          choices: [
+            { value: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+            { value: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5 (Fast)" },
+            { value: "openai/gpt-5", label: "GPT-5" },
+            { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+            { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash (Fast)" },
+          ],
+          default: "anthropic/claude-sonnet-4-5",
+        },
+      }),
       ai: build(AI),
       plot: build(Plot, {
         activity: {
@@ -111,7 +127,7 @@ You can provide either or both inline and standalone links. Only use standalone 
     });
 
     const response = await this.tools.ai.prompt({
-      model: { speed: "balanced", cost: "medium" },
+      model: { speed: "balanced", cost: "medium", hint: this.tools.options.model as AIModel },
       messages,
       outputSchema: schema,
     });
