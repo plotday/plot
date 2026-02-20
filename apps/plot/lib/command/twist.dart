@@ -401,6 +401,7 @@ class SetupTwist extends ShowForm {
     // Store draftId for the form builder via a static variable
     _currentDraftId = draftId;
 
+    if (!context.mounted) return const CommandSkipped();
     final result = await super.run(context);
 
     // If the form was dismissed without activation, delete the draft

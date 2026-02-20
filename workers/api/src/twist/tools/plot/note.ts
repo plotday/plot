@@ -270,7 +270,9 @@ export async function createNote(
         plot,
         authorId as string,
         activityId,
-        String(dbResult.source_created_at)
+        dbResult.source_created_at instanceof Date
+          ? dbResult.source_created_at.toISOString()
+          : dbResult.source_created_at
       );
     }
 

@@ -277,8 +277,11 @@ export async function createActivity(
         dbResult.source_created_at instanceof Date
           ? dbResult.source_created_at.toISOString()
           : dbResult.source_created_at;
-      const readTimestamp =
-        latestNoteRow?.source_created_at?.toString() ?? dbSourceCreatedAt2;
+      const noteSourceCreatedAt2 =
+        latestNoteRow?.source_created_at instanceof Date
+          ? latestNoteRow.source_created_at.toISOString()
+          : latestNoteRow?.source_created_at;
+      const readTimestamp = noteSourceCreatedAt2 ?? dbSourceCreatedAt2;
 
       await markActivityReadForAuthorIfOwner(
         plot,
