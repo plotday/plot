@@ -597,11 +597,8 @@ export class CallbacksState extends DurableObject<Bindings> {
 
     for (const row of callbackResults) {
       const token = row.token as string;
-      const extraArgs = row.extra_args
-        ? this.parseWithFallback<any[]>(row.extra_args as string)
-        : undefined;
       try {
-        await this.callCallback(token, ...(extraArgs ?? []));
+        await this.callCallback(`${this.ctx.id}:${token}`);
       } catch (error) {
         logger.error("Callback failed", error as Error, { token });
       } finally {
