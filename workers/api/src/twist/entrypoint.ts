@@ -295,7 +295,7 @@ async function callPreLifecycle(toolBuilder, methodName, ...args) {
                   await cb.call(context, ...callbackInfo.args);
                 }
               } catch (error) {
-                console.error('Error in lifecycle dispatch callback:', error);
+                throw error;
               }
             }
           }
@@ -483,7 +483,7 @@ export default class extends WorkerEntrypoint {
                   const cbResult = await cb.call(context, ...callbackInfo.args);
                 }
               } catch (error) {
-                console.error('[callCallback] Error in callback dispatch:', error);
+                throw error;
               }
             }
           }
@@ -535,10 +535,6 @@ export default class extends WorkerEntrypoint {
 
               // Call the callback if it's a function, binding to the correct context
               if (typeof callback === 'function') {
-                console.log(
-                  \`Calling callback at path: \${callbackInfo.optionPath.join('.')}\`
-                );
-
                 try {
                   // Determine the correct context for the callback
                   // If path has > 1 element, the parent tool owns the callback
@@ -567,10 +563,6 @@ export default class extends WorkerEntrypoint {
                   twistError.name = 'TwistError';
                   throw twistError;
                 }
-
-                console.log(
-                  \`Callback completed at path: \${callbackInfo.optionPath.join('.')}\`
-                );
 
                 // Remove deferred Twisting tag after callback completes
                 if (callbackInfo.deferredTagRemoval) {

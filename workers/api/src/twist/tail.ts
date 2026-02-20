@@ -91,6 +91,11 @@ export class TwistTail extends WorkerEntrypoint<
             continue;
           }
 
+          // Skip RPC stub disposal warnings (framework noise, not twist code)
+          if (message.includes("An RPC stub was not disposed properly")) {
+            continue;
+          }
+
           // Map log level to severity
           let severity: "log" | "info" | "warn" | "error";
           switch (logEntry.level) {
