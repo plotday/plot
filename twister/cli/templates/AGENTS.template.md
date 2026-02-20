@@ -70,28 +70,41 @@ New event/task/conversation?
 ```typescript
 import {
   type Activity,
+  type NewActivityWithNotes,
+  type ActivityFilter,
   type Priority,
   type ToolBuilder,
-  twist,
+  Twist,
+  ActivityType,
 } from "@plotday/twister";
-import { Plot } from "@plotday/twister/tools/plot";
-import { Uuid } from "@plotday/twister/utils/uuid";
+import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+// Import your tools:
+// import { GoogleCalendar } from "@plotday/tool-google-calendar";
+// import { Linear } from "@plotday/tool-linear";
 
 export default class MyTwist extends Twist<MyTwist> {
   build(build: ToolBuilder) {
     return {
-      plot: build(Plot),
+      // myTool: build(MyTool, {
+      //   onItem: this.handleItem,
+      //   onSyncableDisabled: this.onSyncableDisabled,
+      // }),
+      plot: build(Plot, {
+        activity: { access: ActivityAccess.Create },
+      }),
     };
   }
 
-  async activate(priority: Pick<Priority, "id">) {
-    // Called when twist is enabled for a priority
-    // Common actions: request auth, create setup activities
+  async activate(_priority: Pick<Priority, "id">) {
+    // Auth and resource selection handled in the twist edit modal.
   }
 
-  async activity(activity: Activity) {
-    // Called when an activity is routed to this twist
-    // Common actions: process external events, update activities
+  async handleItem(activity: NewActivityWithNotes): Promise<void> {
+    await this.tools.plot.createActivity(activity);
+  }
+
+  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+    await this.tools.plot.updateActivity({ match: filter, archived: true });
   }
 }
 ```
@@ -145,76 +158,111 @@ Add tool dependencies to `package.json`:
 }
 ```
 
-#### Common External Tools
+#### Available External Tools
 
-- `@plotday/tool-google-calendar`: Google Calendar integration
-- `@plotday/tool-outlook-calendar`: Outlook Calendar integration
-- `@plotday/tool-google-contacts`: Google Contacts integration
+- `@plotday/tool-google-calendar`: Google Calendar sync (CalendarTool)
+- `@plotday/tool-outlook-calendar`: Outlook Calendar sync (CalendarTool)
+- `@plotday/tool-google-contacts`: Google Contacts sync (supporting tool)
+- `@plotday/tool-google-drive`: Google Drive sync (DocumentTool)
+- `@plotday/tool-gmail`: Gmail sync (MessagingTool)
+- `@plotday/tool-slack`: Slack sync (MessagingTool)
+- `@plotday/tool-linear`: Linear sync (ProjectTool)
+- `@plotday/tool-jira`: Jira sync (ProjectTool)
+- `@plotday/tool-asana`: Asana sync (ProjectTool)
 
 ## Lifecycle Methods
 
 ### activate(priority: Pick<Priority, "id">)
 
-Called when the twist is enabled for a priority. Common patterns:
+Called when the twist is enabled for a priority. Auth and resource selection are handled automatically via the twist edit modal when using external tools with Integrations.
 
-**Request Authentication:**
+Most twists have an empty or minimal `activate()`:
 
 ```typescript
 async activate(_priority: Pick<Priority, "id">) {
-  const authLink = await this.tools.externalTool.requestAuth(
-    this.onAuthComplete,
-    "google"
-  );
-
-  await this.tools.plot.createActivity({
-    type: ActivityType.Note,
-    title: "Connect your account",
-    notes: [
-      {
-        content: "Click the link below to connect your account and start syncing.",
-        links: [authLink],
-      },
-    ],
-  });
+  // Auth and resource selection are handled in the twist edit modal.
+  // Only add custom initialization here if needed.
 }
 ```
 
-**Store Parent Activity for Later:**
+**Store Parent Activity for Later (optional):**
 
 ```typescript
-const activity = await this.tools.plot.createActivity({
-  type: ActivityType.Note,
-  title: "Setup",
-  notes: [
-    {
-      content: "Your twist is being set up. Configuration steps will appear here.",
-    },
-  ],
-});
-
-await this.set("setup_activity_id", activity.id);
+async activate(_priority: Pick<Priority, "id">) {
+  const activityId = await this.tools.plot.createActivity({
+    type: ActivityType.Note,
+    title: "Setup complete",
+    notes: [{
+      content: "Your twist is ready. Activities will appear as they sync.",
+    }],
+  });
+  await this.set("setup_activity_id", activityId);
+}
 ```
 
-### activity(activity: Activity)
+### Event Callbacks (via build options)
 
-Called when an activity is routed to the twist. Common patterns:
+Twists respond to events through callbacks declared in `build()`:
 
-**Create Activities from External Events:**
+**Receive synced items from a tool (most common):**
 
 ```typescript
-async activity(activity: Activity) {
+build(build: ToolBuilder) {
+  return {
+    myTool: build(MyTool, {
+      onItem: this.handleItem,
+      onSyncableDisabled: this.onSyncableDisabled,
+    }),
+    plot: build(Plot, { activity: { access: ActivityAccess.Create } }),
+  };
+}
+
+async handleItem(activity: NewActivityWithNotes): Promise<void> {
   await this.tools.plot.createActivity(activity);
 }
+
+async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+  await this.tools.plot.updateActivity({ match: filter, archived: true });
+}
 ```
 
-**Update Based on User Action:**
+**React to activity changes (for two-way sync):**
 
 ```typescript
-async activity(activity: Activity) {
-  if (activity.completed) {
-    await this.handleCompletion(activity);
-  }
+plot: build(Plot, {
+  activity: {
+    access: ActivityAccess.Create,
+    updated: this.onActivityUpdated,
+  },
+  note: {
+    created: this.onNoteCreated,
+  },
+}),
+
+async onActivityUpdated(activity: Activity, changes: { tagsAdded, tagsRemoved }): Promise<void> {
+  const tool = this.getToolForActivity(activity);
+  if (tool?.updateIssue) await tool.updateIssue(activity);
 }
+
+async onNoteCreated(note: Note): Promise<void> {
+  if (note.author.type === ActorType.Twist) return; // Prevent loops
+  // Sync note to external service as a comment
+}
+```
+
+**Respond to mentions (AI twist pattern):**
+
+```typescript
+plot: build(Plot, {
+  activity: { access: ActivityAccess.Respond },
+  note: {
+    intents: [{
+      description: "Respond to general questions",
+      examples: ["What's the weather?", "Help me plan my week"],
+      handler: this.respond,
+    }],
+  },
+}),
 ```
 
 ## Activity Links
@@ -224,19 +272,19 @@ Activity links enable user interaction:
 ```typescript
 import { type ActivityLink, ActivityLinkType } from "@plotday/twister";
 
-// URL link
+// External URL link
 const urlLink: ActivityLink = {
   title: "Open website",
-  type: ActivityLinkType.url,
+  type: ActivityLinkType.external,
   url: "https://example.com",
 };
 
-// Callback link (uses Callbacks tool)
-const token = await this.callback(this.onLinkClicked, "context");
+// Callback link (uses Callbacks tool — use linkCallback, not callback)
+const token = await this.linkCallback(this.onLinkClicked, "context");
 const callbackLink: ActivityLink = {
   title: "Click me",
   type: ActivityLinkType.callback,
-  token: token,
+  callback: token,
 };
 
 // Add to activity note
@@ -250,70 +298,87 @@ await this.tools.plot.createActivity({
     },
   ],
 });
+
+// Callback handler receives the ActivityLink as first argument
+async onLinkClicked(link: ActivityLink, context: string): Promise<void> {
+  // Handle link click
+}
 ```
 
 ## Authentication Pattern
 
-Common pattern for OAuth authentication:
+Auth is handled automatically via the Integrations tool. Tools declare their OAuth provider in `build()`, and users connect in the twist edit modal. **You do not need to create auth activities manually.**
 
 ```typescript
-async activate(_priority: Pick<Priority, "id">) {
-  // Request auth link from tool with callback
-  const authLink = await this.tools.googleTool.requestAuth(
-    this.onAuthComplete,
-    "google"
-  );
-
-  // Create activity with auth link
-  const activity = await this.tools.plot.createActivity({
-    type: ActivityType.Note,
-    title: "Connect Google account",
-    notes: [
-      {
-        content: "Click below to connect your Google account and start syncing.",
-        links: [authLink],
-      },
-    ],
-  });
-
-  // Store for later use
-  await this.set("auth_activity_id", activity.id);
+// In your tool's build() method:
+build(build: ToolBuilder) {
+  return {
+    integrations: build(Integrations, {
+      providers: [{
+        provider: AuthProvider.Google,
+        scopes: ["https://www.googleapis.com/auth/calendar"],
+        getSyncables: this.getSyncables,      // List available resources after auth
+        onSyncEnabled: this.onSyncEnabled,    // User enabled a resource
+        onSyncDisabled: this.onSyncDisabled,  // User disabled a resource
+      }],
+    }),
+    // ...
+  };
 }
 
-async onAuthComplete(authResult: { authToken: string }, provider: string) {
-  // Store auth token
-  await this.set(`${provider}_auth`, authResult.authToken);
+// Get a token for API calls:
+const token = await this.tools.integrations.get(AuthProvider.Google, syncableId);
+if (!token) throw new Error("No auth token available");
+const client = new ApiClient({ accessToken: token.token });
+```
 
-  // Continue setup flow
-  await this.setupSyncOptions(authResult.authToken);
-}
+For per-user write-backs (e.g., RSVP, comments attributed to the acting user):
+
+```typescript
+await this.tools.integrations.actAs(
+  AuthProvider.Google,
+  actorId,       // The user who performed the action
+  activityId,    // Activity to prompt for auth if needed
+  this.performWriteBack,
+  ...extraArgs
+);
 ```
 
 ## Sync Pattern
 
-### Recommended: Upsert via Source/Key (Strategy 2)
+### Recommended: Using External Tools with SyncToolOptions
 
-Pattern for syncing external data using automatic upserts - **no manual ID tracking needed**:
+Most twists use external tools (CalendarTool, ProjectTool, etc.) that handle sync internally. The twist just receives `NewActivityWithNotes` objects and saves them:
 
 ```typescript
-async startSync(calendarId: string): Promise<void> {
-  const authToken = await this.get<string>("auth_token");
-
-  await this.tools.calendarTool.startSync(
-    authToken,
-    calendarId,
-    this.handleEvent,
-    calendarId
-  );
+build(build: ToolBuilder) {
+  return {
+    calendarTool: build(GoogleCalendar, {
+      onItem: this.handleEvent,                     // Receives synced items
+      onSyncableDisabled: this.onSyncableDisabled,  // Clean up when disabled
+    }),
+    plot: build(Plot, { activity: { access: ActivityAccess.Create } }),
+  };
 }
 
-async handleEvent(
-  event: ExternalEvent,
-  calendarId: string
-): Promise<void> {
-  // Use the event's canonical URL as the source for automatic deduplication
+// Tools deliver NewActivityWithNotes — twist saves them
+async handleEvent(activity: NewActivityWithNotes): Promise<void> {
+  await this.tools.plot.createActivity(activity);
+}
+
+async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+  await this.tools.plot.updateActivity({ match: filter, archived: true });
+}
+```
+
+### Custom Sync: Upsert via Source/Key (Strategy 2)
+
+For direct API integration without an external tool, use source/key for automatic upserts:
+
+```typescript
+async handleEvent(event: ExternalEvent): Promise<void> {
   const activity: NewActivityWithNotes = {
-    source: event.htmlLink, // or event.url, depending on your external system
+    source: event.htmlLink,  // Canonical URL for automatic deduplication
     type: ActivityType.Event,
     title: event.summary || "(No title)",
     start: event.start?.dateTime || event.start?.date || null,
@@ -321,35 +386,16 @@ async handleEvent(
     notes: [],
   };
 
-  // Add description as an upsertable note
   if (event.description) {
     activity.notes.push({
       activity: { source: event.htmlLink },
-      key: "description", // This key enables upserts - same key updates the note
+      key: "description",  // This key enables note-level upserts
       content: event.description,
     });
   }
 
-  // Add attendees as an upsertable note
-  if (event.attendees?.length) {
-    const attendeeList = event.attendees
-      .map(a => `- ${a.email}${a.displayName ? ` (${a.displayName})` : ''}`)
-      .join('\n');
-
-    activity.notes.push({
-      activity: { source: event.htmlLink },
-      key: "attendees", // Different key for different note types
-      content: `## Attendees\n${attendeeList}`,
-    });
-  }
-
-  // Create or update - Plot automatically handles deduplication based on source
+  // Create or update — Plot handles deduplication automatically
   await this.tools.plot.createActivity(activity);
-}
-
-async stopSync(calendarId: string): Promise<void> {
-  const authToken = await this.get<string>("auth_token");
-  await this.tools.calendarTool.stopSync(authToken, calendarId);
 }
 ```
 
@@ -397,61 +443,20 @@ async handleEventAdvanced(
 }
 ```
 
-## Calendar Selection Pattern
+## Resource Selection
 
-Pattern for letting users select from multiple calendars/accounts:
+Resource selection (calendars, projects, channels) is handled automatically in the twist edit modal via the Integrations tool. Users see a list of available resources returned by your tool's `getSyncables()` method and toggle them on/off. You do **not** need to build custom selection UI.
 
 ```typescript
-private async createCalendarSelectionActivity(
-  provider: string,
-  calendars: Calendar[],
-  authToken: string
-): Promise<void> {
-  const links: ActivityLink[] = [];
-
-  for (const calendar of calendars) {
-    const token = await this.callback(
-      this.onCalendarSelected,
-      provider,
-      calendar.id,
-      calendar.name,
-      authToken
-    );
-
-    links.push({
-      title: `📅 ${calendar.name}${calendar.primary ? " (Primary)" : ""}`,
-      type: ActivityLinkType.callback,
-      token: token,
-    });
-  }
-
-  await this.tools.plot.createActivity({
-    type: ActivityType.Note,
-    title: "Which calendars would you like to connect?",
-    notes: [
-      {
-        content: "Select the calendars you want to sync:",
-        links,
-      },
-    ],
-  });
-}
-
-async onCalendarSelected(
-  link: ActivityLink,
-  provider: string,
-  calendarId: string,
-  calendarName: string,
-  authToken: string
-): Promise<void> {
-  // Start sync for selected calendar
-  await this.tools.tool.startSync(
-    authToken,
-    calendarId,
-    this.handleEvent,
-    provider,
-    calendarId
-  );
+// In your tool:
+async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+  const client = new ApiClient({ accessToken: token.token });
+  const calendars = await client.listCalendars();
+  return calendars.map(c => ({
+    id: c.id,
+    title: c.name,
+    children: c.subCalendars?.map(sc => ({ id: sc.id, title: sc.name })),
+  }));
 }
 ```
 
@@ -486,7 +491,7 @@ async startSync(resourceId: string): Promise<void> {
   await this.runTask(callback);
 }
 
-async syncBatch(args: any, resourceId: string): Promise<void> {
+async syncBatch(resourceId: string): Promise<void> {
   // Load state from Store (set by previous execution)
   const state = await this.get(`sync_state_${resourceId}`);
 
@@ -506,7 +511,7 @@ async syncBatch(args: any, resourceId: string): Promise<void> {
         key: "description", // Use key for upsertable notes
         content: item.description,
       }],
-      unread: !state.initialSync, // false for initial sync, true for incremental
+      ...(state.initialSync ? { unread: false } : {}), // false for initial, omit for incremental
       ...(state.initialSync ? { archived: false } : {}), // unarchive on initial only
     });
   }
@@ -551,7 +556,7 @@ All sync-based tools should distinguish between initial sync (first import) and 
 
 | Field | Initial Sync | Incremental Sync | Reason |
 |-------|--------------|------------------|---------|
-| `unread` | `false` | `true` | Avoid notification overload from historical items |
+| `unread` | `false` | *omit* | Initial: mark read for all. Incremental: auto-mark read for author only |
 | `archived` | `false` | *omit* | Unarchive on install, preserve user choice on updates |
 
 **Example:**
@@ -560,14 +565,14 @@ const activity: NewActivity = {
   type: ActivityType.Event,
   source: event.url,
   title: event.title,
-  unread: !initialSync,                      // false for initial, true for incremental
-  ...(initialSync ? { archived: false } : {}),  // unarchive on initial only
+  ...(initialSync ? { unread: false } : {}),     // false for initial, omit for incremental
+  ...(initialSync ? { archived: false } : {}),    // unarchive on initial only
 };
 ```
 
 **Why this matters:**
-- **Initial sync**: Activities are unarchived and marked as read, preventing spam from bulk historical imports
-- **Incremental sync**: New activities appear as unread, and archived state is preserved (respects user's archiving decisions)
+- **Initial sync**: Activities are unarchived and marked as read for all users, preventing spam from bulk historical imports
+- **Incremental sync**: Activities are auto-marked read for the author (twist owner), unread for everyone else. Archived state is preserved
 - **Reinstall**: Acts as initial sync, so previously archived activities are unarchived (fresh start)
 
 ### Two-Way Sync: Avoiding Race Conditions
