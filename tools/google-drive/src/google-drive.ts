@@ -342,11 +342,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
     }
 
     // Stop watch via Google API
-    try {
-      await this.stopDriveWatch(folderId);
-    } catch (error) {
-      console.error("Failed to stop drive watch:", error);
-    }
+    await this.stopDriveWatch(folderId);
 
     // Clear sync-related storage
     await this.clear(`drive_watch_${folderId}`);
@@ -450,16 +446,23 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
       return;
     }
 
-    const api = await this.getApi(folderId);
-    await api.call(
-      "POST",
-      "https://www.googleapis.com/drive/v3/channels/stop",
-      undefined,
-      {
-        id: watchData.watchId,
-        resourceId: watchData.resourceId,
-      }
-    );
+    try {
+      const api = await this.getApi(folderId);
+      await api.call(
+        "POST",
+        "https://www.googleapis.com/drive/v3/channels/stop",
+        undefined,
+        {
+          id: watchData.watchId,
+          resourceId: watchData.resourceId,
+        }
+      );
+    } catch (error) {
+      console.warn(
+        `Failed to stop drive watch for folder ${folderId}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
   }
 
   private async scheduleWatchRenewal(folderId: string): Promise<void> {
@@ -513,6 +516,15 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
     const watchData = await this.get<any>(`drive_watch_${folderId}`);
     if (!watchData) {
       return;
+    }
+
+    // Reactive expiry check - renew if watch expires within 1 hour
+    const expiry = new Date(watchData.expiry);
+    const hoursUntilExpiry = (expiry.getTime() - Date.now()) / (1000 * 60 * 60);
+    if (hoursUntilExpiry < 1) {
+      this.renewDriveWatch(folderId).catch((error) => {
+        console.error(`Failed to reactively renew watch for ${folderId}:`, error);
+      });
     }
 
     // Trigger incremental sync
