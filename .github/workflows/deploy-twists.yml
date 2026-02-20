@@ -1,7 +1,7 @@
 name: Deploy Twists
 
 env:
-  TWISTS: "plot,calendar-sync,chat,project-sync"
+  TWISTS: "plot,calendar-sync,chat,project-sync,document-actions"
 
 on:
   push:
