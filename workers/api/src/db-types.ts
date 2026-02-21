@@ -266,6 +266,16 @@ export interface Cost {
   updated_at: Generated<Timestamp>;
 }
 
+export interface Device {
+  app_version: string | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  platform: string;
+  push_token: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface Domain {
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
@@ -977,6 +987,7 @@ export interface DB {
   contact_external_account: ContactExternalAccount;
   contact_invitation: ContactInvitation;
   cost: Cost;
+  device: Device;
   domain: Domain;
   "extensions.pg_all_foreign_keys": ExtensionsPgAllForeignKeys;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;

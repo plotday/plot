@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from "@plotday/worker-util";
+import { getGcpAccessToken } from "./gcp-auth";
 
 interface PubSubConfig {
   projectId: string;
@@ -19,106 +20,16 @@ interface PushSubscriptionConfig {
   pushEndpoint: string;
 }
 
-/**
- * Generates a JWT token for Google service account authentication.
- * Uses RS256 signing algorithm with the service account's private key.
- */
-async function generateJWT(
-  serviceAccountEmail: string,
-  serviceAccountKey: string
-): Promise<string> {
-  const header = {
-    alg: "RS256",
-    typ: "JWT",
-  };
-
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iss: serviceAccountEmail,
-    scope: "https://www.googleapis.com/auth/pubsub",
-    aud: "https://oauth2.googleapis.com/token",
-    exp: now + 3600, // 1 hour expiration
-    iat: now,
-  };
-
-  // Base64url encode header and payload
-  const base64UrlEncode = (obj: any) => {
-    const json = JSON.stringify(obj);
-    const base64 = btoa(json);
-    return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-  };
-
-  const encodedHeader = base64UrlEncode(header);
-  const encodedPayload = base64UrlEncode(payload);
-  const signatureInput = `${encodedHeader}.${encodedPayload}`;
-
-  // Import the private key
-  const pemKey = serviceAccountKey
-    .replace(/\\n/g, "\n")
-    .replace("-----BEGIN PRIVATE KEY-----", "")
-    .replace("-----END PRIVATE KEY-----", "")
-    .replace(/\s/g, "");
-
-  const binaryKey = Uint8Array.from(atob(pemKey), (c) => c.charCodeAt(0));
-
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    binaryKey,
-    {
-      name: "RSASSA-PKCS1-v1_5",
-      hash: "SHA-256",
-    },
-    false,
-    ["sign"]
-  );
-
-  // Sign the JWT
-  const encoder = new TextEncoder();
-  const signatureData = encoder.encode(signatureInput);
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    signatureData
-  );
-
-  // Base64url encode signature
-  const signatureArray = new Uint8Array(signature);
-  const signatureBase64 = btoa(String.fromCharCode(...signatureArray));
-  const encodedSignature = signatureBase64
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-
-  return `${signatureInput}.${encodedSignature}`;
-}
+const PUBSUB_SCOPE = "https://www.googleapis.com/auth/pubsub";
 
 /**
- * Exchanges a JWT for an access token.
+ * Gets an access token for Pub/Sub API calls.
  */
 async function getAccessToken(
   serviceAccountEmail: string,
   serviceAccountKey: string
 ): Promise<string> {
-  const jwt = await generateJWT(serviceAccountEmail, serviceAccountKey);
-
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to get access token: ${error}`);
-  }
-
-  const data = (await response.json()) as { access_token: string };
-  return data.access_token;
+  return getGcpAccessToken(serviceAccountEmail, serviceAccountKey, PUBSUB_SCOPE);
 }
 
 /**

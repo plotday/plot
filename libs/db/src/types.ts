@@ -497,6 +497,43 @@ export type Database = {
         }
         Relationships: []
       }
+      device: {
+        Row: {
+          app_version: string | null
+          created_at: string
+          id: string
+          platform: string
+          push_token: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string
+          id?: string
+          platform: string
+          push_token: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string
+          id?: string
+          platform?: string
+          push_token?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       domain: {
         Row: {
           created_at: string

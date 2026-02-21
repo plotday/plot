@@ -242,6 +242,37 @@ Future<T> delete<T>(String url) async {
   }
 }
 
+Future<T> deleteWithBody<T>(
+  String url, {
+  Map<String, dynamic> body = const {},
+}) async {
+  try {
+    final response = await http.delete(
+      Uri.parse(Env.apiRoot + url),
+      headers: await getHeaders(),
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, url);
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: url,
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+        pgCode: _parsePgCode(response),
+      );
+    }
+    return _parseResponse(response);
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
+  }
+}
+
 /// Upload a file attachment, returning file metadata.
 Future<Map<String, dynamic>> uploadFile({
   required String filePath,

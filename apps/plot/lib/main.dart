@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
@@ -15,6 +16,7 @@ import 'env.dart';
 import 'auto_sign_in.dart';
 import 'base.dart';
 import 'cli_args.dart';
+import 'firebase_options.dart';
 import 'logging.dart';
 import 'widget/window.dart';
 import 'widget/auth_button.dart';
@@ -43,6 +45,18 @@ void setNavigatorKey(GlobalKey<NavigatorState> key) {
 Future<void> run(List<String> args) async {
   // Initialize bindings first - required for platform channels used by Env.init()
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase on mobile platforms (required for push notifications)
+  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (e, stackTrace) {
+      // Firebase init is non-blocking — app works without push notifications
+      log.warning('Firebase initialization failed', e, stackTrace);
+    }
+  }
 
   // Initialize deep link handling (iOS/Android only)
   if (!kIsWeb) {

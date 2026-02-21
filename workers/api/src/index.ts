@@ -4,6 +4,7 @@ import { PostHog } from "posthog-node";
 
 import { Tracker } from "./utils/tracker";
 import account from "./app/account";
+import device from "./app/device";
 import invitation from "./app/invitation";
 import share from "./app/share";
 import twists from "./app/twists";
@@ -135,6 +136,7 @@ appSection.use(appCorsMiddleware);
 appSection.use("*", appAuthMiddleware);
 appSection.use("*", trackerIdentifyMiddleware);
 appSection.route("/", account);
+appSection.route("/", device);
 appSection.route("/", invitation);
 appSection.route("/", share);
 appSection.route("/", twists);

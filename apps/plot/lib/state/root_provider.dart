@@ -7,6 +7,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/cli_args.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/command/page_link.dart';
+import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
@@ -116,6 +117,7 @@ class RootProviderState extends State<RootProvider> {
                 await PriorityTwist.start();
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
+                unawaited(NotificationService.instance.start());
 
                 // Navigate to main app after re-sign-in. On first startup
                 // _routerInitialized is still false (router not yet built),
@@ -163,6 +165,7 @@ class RootProviderState extends State<RootProvider> {
               }
               break;
             case UserSignedOut _:
+              await NotificationService.instance.stop();
               _teardownNowBlocListener();
               prioritiesBloc.stop();
               nowBloc.stop();

@@ -77,9 +77,11 @@ unlinked_spec.ds
 **/android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 **/android/key.properties
+**/android/app/google-services.json
 *.jks
 
 # iOS/XCode related
+**/ios/**/GoogleService-Info.plist
 **/ios/**/*.mode1v3
 **/ios/**/*.mode2v3
 **/ios/**/*.moved-aside
