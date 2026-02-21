@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.36.0
+
+### Added
+
+- Options tool for defining user-configurable options for twists ([#96](https://github.com/plotday/plot/pull/96) [`f573ef1`](https://github.com/plotday/plot/commit/f573ef1b3a45abdccfcdc453d4e24221500b907e))
+
 ## 0.35.0
 
 ### Added

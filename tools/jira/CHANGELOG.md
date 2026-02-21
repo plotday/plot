@@ -1,5 +1,12 @@
 # @plotday/tool-jira
 
+## 0.8.1
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.36.0
+
 ## 0.8.0
 
 ### Changed
