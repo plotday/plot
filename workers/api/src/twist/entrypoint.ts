@@ -60,7 +60,7 @@ class ToolShed {
   }
 
   async _buildTool(ToolClass, options) {
-    const id = ToolClass.name;
+    const id = ToolClass.toolId || ToolClass.name;
 
     // Enforce build-only usage: throw error if locked
     if (this.locked) {

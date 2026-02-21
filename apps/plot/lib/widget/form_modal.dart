@@ -487,14 +487,14 @@ class FormModalState extends State<_FormModal> {
                       } else if (item is FormTextInput) {
                         // For text inputs, trigger primary button (first button)
                         _submitForm();
-                      } else if (item is FormSelect) {
+                      } else if (item.canActivate) {
                         final indexToRestore = _highlightedIndex;
                         log.info(
-                          'FormSelect activated, will restore to index $indexToRestore',
+                          'Activatable item activated, will restore to index $indexToRestore',
                         );
                         item.activate(context).then((_) {
                           log.info(
-                            'FormSelect.activate returned, scheduling focus restore',
+                            'Item.activate returned, scheduling focus restore',
                           );
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             log.info(
@@ -616,15 +616,13 @@ class FormModalState extends State<_FormModal> {
                                 onTap: () async {
                                   final item = _getItemAtIndex(index);
                                   // FormButton handles its own taps via ListTile
-                                  if (item is FormSelect) {
-                                    if (item.enabled) {
-                                      await item.activate(context);
-                                    }
+                                  if (item.canActivate) {
+                                    await item.activate(context);
                                   }
                                 },
                                 child: MouseRegion(
                                   cursor:
-                                      item is FormButton || item is FormSelect
+                                      item is FormButton || item.canActivate
                                       ? SystemMouseCursors.click
                                       : SystemMouseCursors.basic,
                                   onEnter: (_) =>

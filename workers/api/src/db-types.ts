@@ -734,6 +734,7 @@ export interface Twist {
   environment: Generated<TwistEnvironment>;
   id: Generated<Int8>;
   name: string;
+  options: Json | null;
   permissions: Json | null;
   twist_admin_id: Int8;
   updated_at: Generated<Timestamp>;

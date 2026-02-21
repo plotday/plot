@@ -51,6 +51,7 @@ const DraftRequestSchema = z.object({
 const ActivateDraftSchema = z.object({
   priorityId: z.string(),
   name: z.string(),
+  config: z.record(z.string(), z.any()).optional(),
   syncables: z
     .array(
       z.object({
@@ -181,6 +182,7 @@ twists.post("/twist/draft/:id/activate", async (c) => {
       draftId,
       body.priorityId,
       body.name,
+      body.config,
       body.syncables,
       {
         twistFactory: twistFactory({

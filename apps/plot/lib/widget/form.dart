@@ -109,6 +109,13 @@ abstract class FormItem {
   /// Whether this item can receive keyboard focus and navigation
   bool get isFocusable => true;
 
+  /// Whether this item can be activated (e.g., opens a modal on Enter/tap)
+  bool get canActivate => false;
+
+  /// Activate the item (e.g., open a selection modal).
+  /// Only called when [canActivate] is true.
+  Future<void> activate(BuildContext context) async {}
+
   /// Get the current value of the form item
   dynamic getValue();
 
@@ -252,6 +259,9 @@ class FormSelect<T> extends FormItem {
   }
 
   @override
+  bool get canActivate => true;
+
+  @override
   bool isValid() {
     if (this.required) {
       return _value != null;
@@ -277,6 +287,7 @@ class FormSelect<T> extends FormItem {
   }
 
   /// Activate the select field (open the selection modal)
+  @override
   Future<void> activate(BuildContext context) async {
     if (!enabled) return;
     final result = await SelectModal.open<T>(

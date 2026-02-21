@@ -1,5 +1,7 @@
 import type { Kysely } from "kysely";
 
+import type { OptionsSchema } from "@plotday/twister/options";
+
 import type { DB } from "../../db-types";
 import { type TwistEnvironment, type Bindings } from "../../env";
 import { type ToolPermission } from "../permissions";
@@ -19,7 +21,7 @@ import type { Tool } from "./tool";
  * across createTool() and collectToolPermissions().
  *
  * @param toolId - The tool identifier (e.g., "Plot", "Network")
- * @returns The tool class
+ * @returns The tool class or null for special built-in tools like Options
  * @throws Error if tool ID is unknown
  */
 function getToolClass(
@@ -32,7 +34,8 @@ function getToolClass(
   | typeof Store
   | typeof Tasks
   | typeof Callbacks
-  | typeof Twists {
+  | typeof Twists
+  | null {
   switch (toolId) {
     case "Plot":
       return Plot;
@@ -50,9 +53,30 @@ function getToolClass(
       return Callbacks;
     case "Twists":
       return Twists;
+    case "Options":
+      return null; // Handled specially — not a real tool
     default:
       throw new Error(`Unknown tool ID: ${toolId}`);
   }
+}
+
+/**
+ * Resolves option values by merging user config with schema defaults.
+ * For each key in the schema, uses the config value if present, otherwise the default.
+ */
+export function resolveOptions(
+  schema: OptionsSchema,
+  config: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const resolved: Record<string, unknown> = {};
+  for (const [key, def] of Object.entries(schema)) {
+    if (key in config && config[key] !== undefined) {
+      resolved[key] = config[key];
+    } else {
+      resolved[key] = def.default;
+    }
+  }
+  return resolved;
 }
 
 export function createTool(
@@ -67,6 +91,7 @@ export function createTool(
     priorityTwistId,
     env,
     ctx,
+    config,
   }: {
     twistId: string;
     environment: TwistEnvironment;
@@ -75,6 +100,7 @@ export function createTool(
     priorityTwistId: string;
     env: Bindings;
     ctx: { exports: ExecutionContext["exports"] };
+    config?: Record<string, unknown>;
   }
 ): Tool {
   switch (id) {
@@ -148,6 +174,11 @@ export function createTool(
         db,
         priorityTwistId,
       });
+    case "Options":
+      // Options is not a real tool — return a plain object with resolved values.
+      // The schema is passed as `options`, config comes from priority_twist.config
+      // which is injected by the factory caller.
+      return resolveOptions(options as OptionsSchema, config) as unknown as Tool;
     default:
       throw new Error(`Unknown tool: ${id}`);
   }
@@ -162,6 +193,9 @@ export function collectToolPermissions(
   options: any
 ): ToolPermission[] {
   const ToolClass = getToolClass(toolId);
+
+  // Options tool has no permissions
+  if (!ToolClass) return [];
 
   // Check if the class has a static Permissions method
   if (

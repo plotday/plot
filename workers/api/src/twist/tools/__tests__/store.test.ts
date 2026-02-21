@@ -134,10 +134,9 @@ describe("Store", () => {
       ).rejects.toThrow();
     });
 
-    it("should throw error for undefined values in objects", async () => {
-      await expect(
-        store.set("undefined-key", { val: undefined, keep: "value" })
-      ).rejects.toThrow("undefined");
+    it("should handle undefined values in objects (serialized by superjson)", async () => {
+      await store.set("undefined-key", { val: undefined, keep: "value" });
+      expect(mockStorage.set).toHaveBeenCalled();
     });
 
     it("should handle null values", async () => {

@@ -315,6 +315,7 @@ export async function getById(
         "priority_twist.created_at",
         "priority_twist.updated_at",
         "twist.permissions",
+        "twist.options",
       ])
       .where("priority_twist.id", "=", priority_twist_id)
       .where("priority_twist.archived_at", "is", null)
@@ -362,6 +363,7 @@ export async function getByPriority(
         "priority_child_twist.author_email",
         "priority_child_twist.author_url",
         "twist.permissions",
+        "twist.options",
       ])
       .where("priority_child_twist.priority_child_id", "=", priority_id)
       .where("priority_child_twist.archived_at", "is", null)
@@ -562,6 +564,7 @@ export async function activateDraft(
   draftId: string,
   priorityId: string,
   name: string,
+  config: Record<string, any> | undefined,
   syncables: Array<{ provider: string; syncableId: string }> | undefined,
   activate: {
     twistFactory: ReturnType<typeof twistFactory>;
@@ -594,10 +597,10 @@ export async function activateDraft(
     throw new Error(`Twist with name "${name}" already exists for this priority.`);
   }
 
-  // Set priority_id and name
+  // Set priority_id, name, and config
   await db
     .updateTable("priority_twist")
-    .set({ priority_id: priorityId, name })
+    .set({ priority_id: priorityId, name, ...(config ? { config } : {}) })
     .where("id", "=", draftId)
     .execute();
 

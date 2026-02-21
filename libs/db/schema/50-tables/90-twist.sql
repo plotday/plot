@@ -52,7 +52,8 @@ CREATE TABLE "public"."twist" (
     "name" text NOT NULL,
     "description" text,
     "version" text NOT NULL,
-    "permissions" jsonb
+    "permissions" jsonb,
+    "options" jsonb
 );
 
 CREATE INDEX idx_twist_admin_id ON "public"."twist" ("twist_admin_id");

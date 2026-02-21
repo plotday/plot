@@ -77,6 +77,12 @@ export function twistFactory({
     let storedPermissions: MergedPermissions | undefined;
     let storedToolPermissions: Record<string, ToolPermission[]> | undefined;
 
+    // Track options schema captured during deployment introspection
+    let optionsSchema: Record<string, unknown> | undefined;
+
+    // Load priority_twist config for Options resolution at runtime
+    let priorityTwistConfig: Record<string, unknown> | undefined;
+
     if (checkPermissions) {
       const config = await env.TWIST_CONFIG.get(`${id}:${version}`);
       if (!config) {
@@ -86,6 +92,21 @@ export function twistFactory({
         permissions: storedPermissions,
         toolPermissions: storedToolPermissions,
       } = JSON.parse(config));
+
+      // Load user config from priority_twist for Options resolution
+      if (priorityTwistId && priorityTwistId !== "__deployment__") {
+        const pt = await db
+          .selectFrom("priority_twist")
+          .select("config")
+          .where("id", "=", priorityTwistId)
+          .executeTakeFirst();
+        if (pt?.config) {
+          priorityTwistConfig =
+            typeof pt.config === "string"
+              ? JSON.parse(pt.config)
+              : (pt.config as Record<string, unknown>);
+        }
+      }
     }
 
     // Create factory function for constructing built-in tools at runtime
@@ -94,6 +115,26 @@ export function twistFactory({
       toolId: string,
       options?: any
     ): Tool => {
+      // Options tool: capture schema at deploy, resolve values at runtime
+      if (toolId === "Options") {
+        if (!checkPermissions) {
+          // DEPLOYMENT: capture the schema for storage
+          optionsSchema = options;
+        }
+        // Both deploy and runtime: return resolved options object
+        toolInstances.push({ path, id: toolId, options });
+        return createTool(path, toolId, options, {
+          twistId: id,
+          environment,
+          db,
+          priorityId,
+          priorityTwistId,
+          env,
+          ctx,
+          config: priorityTwistConfig,
+        });
+      }
+
       // SPECIAL CASE: ContactAccess.Write inheritance at runtime
       // Apply the same inheritance logic as during deployment: if ANY tool in the
       // dependency tree has ContactAccess.Write (checked via stored permissions),
@@ -281,6 +322,7 @@ export function twistFactory({
       toolPermissions: toolPermissionsMap,
       providers,
       integrationsMap,
+      optionsSchema,
       activate: async (priority: Pick<Priority, "id">, context?: { actor: { id: string; type: number } }) => {
         await env.TWIST_LOGS_QUEUE.send({
           twistRootId: id,

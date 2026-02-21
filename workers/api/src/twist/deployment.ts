@@ -117,6 +117,7 @@ export async function deployTwist({
   let version: string;
   let permissions: TwistPermissions;
   let providers: Array<{ provider: string; scopes: string[] }> = [];
+  let optionsSchema: Record<string, unknown> | undefined;
   try {
     if (dryRun) {
       onProgress?.("Analyzing permissions");
@@ -144,6 +145,7 @@ export async function deployTwist({
     version = storeResult.version;
     permissions = storeResult.permissions;
     providers = storeResult.providers;
+    optionsSchema = storeResult.optionsSchema;
   } catch (error) {
     logger.error("Error storing twist module", error as Error);
     // Provide user-friendly error message
@@ -194,6 +196,7 @@ export async function deployTwist({
         description,
         version,
         permissions: JSON.stringify(twistPermissions),
+        options: optionsSchema ? JSON.stringify(optionsSchema) : null,
       })
       .where("id", "=", existingTwist.id)
       .returningAll()
@@ -214,6 +217,7 @@ export async function deployTwist({
         description,
         version,
         permissions: JSON.stringify(newTwistPermissions),
+        options: optionsSchema ? JSON.stringify(optionsSchema) : null,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -316,6 +320,7 @@ export async function deployTwist({
             description,
             version,
             permissions: JSON.stringify(publicPermissions),
+            options: optionsSchema ? JSON.stringify(optionsSchema) : null,
           })
           .onConflict((oc) =>
             oc.columns(["twist_admin_id", "environment"]).doUpdateSet({
@@ -323,6 +328,7 @@ export async function deployTwist({
               description,
               version,
               permissions: JSON.stringify(publicPermissions),
+              options: optionsSchema ? JSON.stringify(optionsSchema) : null,
             })
           )
           .returningAll()

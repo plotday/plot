@@ -190,6 +190,16 @@ class EditTwist extends ShowForm {
         selectedSyncables: Set.of(initialEnabled),
       );
 
+      // Build option form items
+      final hasOptions = matchingTwist.options != null &&
+          matchingTwist.options!.isNotEmpty;
+      final optionItems = hasOptions
+          ? TwistOptionItems(
+              options: matchingTwist.options!,
+              initialConfig: priorityTwist.config,
+            )
+          : null;
+
       return FormData(
         title: 'Edit ${priorityTwist.name}',
         groups: [
@@ -221,7 +231,15 @@ class EditTwist extends ShowForm {
                     onAccountAdded: () => refreshNotifier.value++,
                   ),
                 ),
-              FormDivider(key: 'divider'),
+            ],
+          ),
+          if (optionItems != null)
+            StaticFormGroup(
+              title: 'Settings',
+              items: optionItems.items,
+            ),
+          StaticFormGroup(
+            items: [
               FormButton(
                 key: 'save',
                 buildCommand: (values) {
@@ -229,6 +247,7 @@ class EditTwist extends ShowForm {
                   return SaveTwist(
                     priorityTwist: priorityTwist,
                     name: name,
+                    config: optionItems?.values,
                     initialEnabled: initialEnabled,
                     changes: integrationChanges,
                   );
@@ -473,6 +492,12 @@ class SetupTwist extends ShowForm {
     // Track integration changes from the integrations widget
     var integrationChanges = const IntegrationChanges();
 
+    // Build option form items
+    final hasOptions = twist.options != null && twist.options!.isNotEmpty;
+    final optionItems = hasOptions
+        ? TwistOptionItems(options: twist.options!)
+        : null;
+
     return FormData(
       title: 'Set up ${twist.name}',
       groups: [
@@ -525,7 +550,15 @@ class SetupTwist extends ShowForm {
                   onAccountAdded: () => refreshNotifier.value++,
                 ),
               ),
-            FormDivider(key: 'divider'),
+          ],
+        ),
+        if (optionItems != null)
+          StaticFormGroup(
+            title: 'Settings',
+            items: optionItems.items,
+          ),
+        StaticFormGroup(
+          items: [
             FormButton(
               key: 'add',
               buildCommand: (values) {
@@ -545,6 +578,7 @@ class SetupTwist extends ShowForm {
                   draftId: draftId,
                   priority: selectedPriority,
                   name: name,
+                  config: optionItems?.values,
                   syncables: selectedSyncables,
                 );
               },
@@ -562,6 +596,7 @@ class ActivateTwist extends Command {
     required this.draftId,
     required this.priority,
     required this.name,
+    this.config,
     required this.syncables,
   }) : super(
          title: 'Activate Twist',
@@ -573,6 +608,7 @@ class ActivateTwist extends Command {
   final String draftId;
   final Priority priority;
   final String name;
+  final Map<String, dynamic>? config;
   final List<SelectedSyncable> syncables;
 
   @override
@@ -582,6 +618,7 @@ class ActivateTwist extends Command {
         draftId: draftId,
         priorityId: priority.id.toString(),
         name: name,
+        config: config,
         syncables: syncables.isNotEmpty
             ? syncables
                   .map(
@@ -886,6 +923,7 @@ class SaveTwist extends Command {
   SaveTwist({
     required this.priorityTwist,
     required this.name,
+    this.config,
     required this.initialEnabled,
     required this.changes,
   }) : super(
@@ -897,6 +935,7 @@ class SaveTwist extends Command {
 
   final PriorityTwist priorityTwist;
   final String? name;
+  final Map<String, dynamic>? config;
   final Set<String> initialEnabled;
   final IntegrationChanges changes;
 
@@ -909,8 +948,12 @@ class SaveTwist extends Command {
 
       final ptId = priorityTwist.id.toString();
 
-      // 1. Update name
-      await TwistApi.updateTwist(priorityTwistId: ptId, name: name!);
+      // 1. Update name and config
+      await TwistApi.updateTwist(
+        priorityTwistId: ptId,
+        name: name!,
+        config: config,
+      );
 
       // 2. Compute providers being removed (skip their syncable changes)
       final removedProviders = changes.removedAccounts

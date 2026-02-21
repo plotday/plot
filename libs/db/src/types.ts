@@ -1295,6 +1295,7 @@ export type Database = {
           environment: Database["public"]["Enums"]["twist_environment"]
           id: number
           name: string
+          options: Json | null
           permissions: Json | null
           twist_admin_id: number
           updated_at: string
@@ -1307,6 +1308,7 @@ export type Database = {
           environment?: Database["public"]["Enums"]["twist_environment"]
           id?: never
           name: string
+          options?: Json | null
           permissions?: Json | null
           twist_admin_id: number
           updated_at?: string
@@ -1319,6 +1321,7 @@ export type Database = {
           environment?: Database["public"]["Enums"]["twist_environment"]
           id?: never
           name?: string
+          options?: Json | null
           permissions?: Json | null
           twist_admin_id?: number
           updated_at?: string
@@ -2403,6 +2406,7 @@ export type Database = {
           environment: Database["public"]["Enums"]["twist_environment"]
           id: number
           name: string
+          options: Json | null
           permissions: Json | null
           twist_admin_id: number
           updated_at: string

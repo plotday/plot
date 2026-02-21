@@ -32,6 +32,7 @@ class Twist {
   final List<TwistTool> tools;
   final String environment;
   final TwistPermissions? permissions;
+  final Map<String, dynamic>? options;
   final String? version;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -46,6 +47,7 @@ class Twist {
     required this.tools,
     required this.environment,
     this.permissions,
+    this.options,
     this.version,
     this.createdAt,
     this.updatedAt,
@@ -87,6 +89,7 @@ class Twist {
               json['permissions'] as Map<String, dynamic>,
             )
           : null,
+      options: json['options'] as Map<String, dynamic>?,
       version: json['version'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -181,6 +184,7 @@ class TwistApi {
     required String draftId,
     required String priorityId,
     required String name,
+    Map<String, dynamic>? config,
     List<Map<String, String>>? syncables,
   }) async {
     await api.post<Map<String, dynamic>>(
@@ -188,6 +192,7 @@ class TwistApi {
       body: {
         'priorityId': priorityId,
         'name': name,
+        if (config != null) 'config': config,
         if (syncables != null) 'syncables': syncables,
       },
     );

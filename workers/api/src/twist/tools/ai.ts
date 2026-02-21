@@ -69,22 +69,14 @@ export class AI extends Tool implements IAI {
   /**
    * Selects the best AI model based on speed and cost preferences.
    * Maps preference combinations to specific models optimized for those requirements.
-   * Uses only Anthropic and Workers AI models by default.
+   * Accepts any valid AIModel as a hint override.
    */
   private selectModel(preferences: ModelPreferences): AIModel {
     const { speed, cost, hint } = preferences;
 
-    // Allow explicit model override via hint, but only for Workers AI and Anthropic
-    if (hint) {
-      const hintStr = hint.toLowerCase();
-      if (
-        hintStr.startsWith("anthropic/") ||
-        (!hintStr.startsWith("openai/") && !hintStr.startsWith("google/"))
-      ) {
-        // Accept anthropic/ models and any model without a provider prefix (assumed to be Workers AI)
-        return hint as AIModel;
-      }
-      // Ignore hints for other providers and fall through to preference-based selection
+    // Allow explicit model override via hint for any valid AIModel
+    if (hint && Object.values(AIModel).includes(hint as AIModel)) {
+      return hint as AIModel;
     }
 
     // Model selection matrix based on speed and cost preferences

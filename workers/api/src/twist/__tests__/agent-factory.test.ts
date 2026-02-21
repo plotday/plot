@@ -34,7 +34,13 @@ describe("twistFactory", () => {
       exports: testEnv,
     };
 
-    db = {} as any;
+    // Chainable mock for Kysely-style queries
+    const chain = {
+      select: () => chain,
+      where: () => chain,
+      executeTakeFirst: async () => undefined,
+    };
+    db = { selectFrom: () => chain } as any;
   });
 
   it("should create twist factory function", async () => {
