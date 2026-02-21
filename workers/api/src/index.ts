@@ -32,6 +32,7 @@ import tokens from "./sdk/tokens";
 import { stripeMiddleware } from "./stripe/middleware";
 import stripe from "./stripe/stripe";
 import { createLogger } from "@plotday/worker-util";
+import { createDb } from "./db";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
 // Import webhook routes
 import webhook from "./webhook";
@@ -176,6 +177,17 @@ app.route("/app", appSection);
 app.route("/app", appSyncSection);
 app.route("/v1", sdkSection);
 app.route("/stripe", stripeSection);
+
+// Health check — exercises DB to detect connection exhaustion
+app.get("/health", async (c) => {
+  const db = createDb(c.env);
+  try {
+    await db.selectFrom("priority").select("id").limit(1).execute();
+    return c.text("ok");
+  } finally {
+    await db.destroy();
+  }
+});
 
 // Mount webhook route at top level
 app.route("/", webhook);

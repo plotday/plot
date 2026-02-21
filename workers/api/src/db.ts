@@ -20,8 +20,10 @@ export function createDb(env: Bindings) {
   // Prevent pool-level errors from crashing the worker.
   // Query errors are still propagated via promise rejections.
   pool.on("error", (err) => {
-    const logger = createLogger();
-    logger.error("DB error", err);
+    const logger = createLogger({ source: "pg_pool" });
+    logger.error("DB pool error", err, {
+      pg_code: (err as any)?.code,
+    });
   });
 
   return new Kysely<DB>({
