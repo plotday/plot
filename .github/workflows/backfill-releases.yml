@@ -1,0 +1,160 @@
+name: Backfill GitHub Releases
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  backfill:
+    name: Backfill Missing Releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11.7.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Backfill releases and publish missing versions
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Define publishable packages: directory => npm package name
+          declare -A PACKAGES=(
+            ["twister"]="@plotday/twister"
+            ["tools/google-calendar"]="@plotday/tool-google-calendar"
+            ["tools/google-contacts"]="@plotday/tool-google-contacts"
+            ["tools/google-drive"]="@plotday/tool-google-drive"
+            ["tools/gmail"]="@plotday/tool-gmail"
+            ["tools/linear"]="@plotday/tool-linear"
+            ["tools/slack"]="@plotday/tool-slack"
+            ["tools/jira"]="@plotday/tool-jira"
+            ["tools/asana"]="@plotday/tool-asana"
+            ["tools/outlook-calendar"]="@plotday/tool-outlook-calendar"
+          )
+
+          created=0
+          published=0
+          failed=0
+
+          for pkg_dir in "${!PACKAGES[@]}"; do
+            npm_name="${PACKAGES[$pkg_dir]}"
+            local_version=$(jq -r '.version' "$pkg_dir/package.json")
+
+            echo "=== $npm_name ($pkg_dir) ==="
+            echo "  Local version: $local_version"
+
+            # Get all published versions from npm
+            npm_versions=$(npm view "$npm_name" versions --json 2>/dev/null || echo "[]")
+            latest_npm=$(echo "$npm_versions" | jq -r 'if type == "array" then .[-1] // "none" else . end')
+            echo "  Latest npm version: $latest_npm"
+
+            # Check each version in CHANGELOG for missing GitHub releases
+            changelog_file="$pkg_dir/CHANGELOG.md"
+            if [ ! -f "$changelog_file" ]; then
+              echo "  No CHANGELOG.md found, skipping"
+              continue
+            fi
+
+            # Extract all versions from CHANGELOG
+            changelog_versions=$(grep -oP '^## \K[0-9]+\.[0-9]+\.[0-9]+' "$changelog_file" || true)
+
+            for version in $changelog_versions; do
+              # Check if this version is published on npm
+              is_on_npm=$(echo "$npm_versions" | jq -r --arg v "$version" 'if type == "array" then (map(select(. == $v)) | length > 0) else (. == $v) end')
+
+              if [ "$is_on_npm" != "true" ]; then
+                echo "  v$version: not on npm, skipping GitHub release"
+                continue
+              fi
+
+              # Build tag name matching release.yml convention
+              tag_name="${pkg_dir//\//@}@${version}"
+
+              # Check if GitHub release already exists
+              if gh release view "$tag_name" &>/dev/null; then
+                echo "  v$version: GitHub release exists"
+                continue
+              fi
+
+              # Extract changelog entry for this version
+              release_notes=$(awk "/^## ${version}/,/^## [0-9]/" "$changelog_file" | sed '1d;$d' | sed '/^$/d')
+              if [ -z "$release_notes" ]; then
+                release_notes="Release ${npm_name}@${version}"
+              fi
+
+              echo "  v$version: Creating GitHub release ($tag_name)"
+              if gh release create "$tag_name" \
+                --title "${npm_name}@${version}" \
+                --notes "$release_notes" \
+                --target main; then
+                created=$((created + 1))
+              else
+                echo "  v$version: Failed to create release"
+                failed=$((failed + 1))
+              fi
+            done
+
+            # Attempt to publish if npm is behind local version
+            if [ "$latest_npm" != "$local_version" ]; then
+              echo "  Attempting to publish $npm_name@$local_version (npm has $latest_npm)"
+              if (cd "$pkg_dir" && npm publish --provenance --access public 2>&1); then
+                echo "  Published $npm_name@$local_version"
+                published=$((published + 1))
+
+                # Create GitHub release for newly published version
+                tag_name="${pkg_dir//\//@}@${local_version}"
+                release_notes=$(awk "/^## ${local_version}/,/^## [0-9]/" "$changelog_file" | sed '1d;$d' | sed '/^$/d')
+                if [ -z "$release_notes" ]; then
+                  release_notes="Release ${npm_name}@${local_version}"
+                fi
+                gh release create "$tag_name" \
+                  --title "${npm_name}@${local_version}" \
+                  --notes "$release_notes" \
+                  --target main || echo "  Release creation failed for $tag_name"
+              else
+                echo "  Failed to publish $npm_name@$local_version"
+                failed=$((failed + 1))
+              fi
+            fi
+          done
+
+          echo ""
+          echo "=== Summary ==="
+          echo "GitHub releases created: $created"
+          echo "Packages published to npm: $published"
+          echo "Failures: $failed"
+
+          # Write summary
+          {
+            echo "### Backfill Results"
+            echo ""
+            echo "- GitHub releases created: **$created**"
+            echo "- Packages published to npm: **$published**"
+            echo "- Failures: **$failed**"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: {}
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -95,7 +96,7 @@ jobs:
             gh release create "$tag_name" \
               --title "${name}@${version}" \
               --notes "$release_notes" \
-              --verify-tag || echo "Release creation failed for $tag_name, may already exist"
+              --target main || echo "Release creation failed for $tag_name, may already exist"
           done
 
       - name: Summary
