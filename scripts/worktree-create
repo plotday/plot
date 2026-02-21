@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# WorktreeCreate hook for Claude Code.
+# Handles the full worktree creation: git worktree add, submodule init,
+# env file copying, and dependency installation.
+#
+# Receives JSON on stdin from Claude Code with worktree details.
+# Must output JSON with the created worktree path.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Read stdin JSON
+INPUT="$(cat)"
+
+# Extract fields from input JSON
+# The hook receives common fields (session_id, cwd, hook_event_name, etc.)
+# plus worktree-specific fields (name, path)
+NAME="$(echo "$INPUT" | jq -r '.name // empty')"
+WORKTREE_PATH="$(echo "$INPUT" | jq -r '.path // empty')"
+
+# If name wasn't provided, generate one
+if [[ -z "$NAME" ]]; then
+  NAME="worktree-$(date +%s)"
+fi
+
+# Default path to .claude/worktrees/<name> inside the repo
+if [[ -z "$WORKTREE_PATH" ]]; then
+  WORKTREE_PATH="$REPO_DIR/.claude/worktrees/$NAME"
+fi
+
+echo "Creating worktree: $NAME at $WORKTREE_PATH" >&2
+
+cd "$REPO_DIR"
+
+# Create the git worktree with a new branch
+if git show-ref --verify --quiet "refs/heads/$NAME"; then
+  git worktree add "$WORKTREE_PATH" "$NAME" >&2
+else
+  git worktree add -b "$NAME" "$WORKTREE_PATH" >&2
+fi
+
+cd "$WORKTREE_PATH"
+
+# Initialize submodules
+echo "Initializing submodules..." >&2
+git submodule update --init --recursive >&2
+
+# Copy environment files from the main repo
+echo "Copying environment files..." >&2
+"$REPO_DIR/scripts/cp-env" "$REPO_DIR" >&2
+
+# Install dependencies
+echo "Installing dependencies..." >&2
+pnpm install >&2
+
+echo "Worktree setup complete: $WORKTREE_PATH" >&2
+
+# Return the worktree path to Claude Code
+jq -n --arg path "$WORKTREE_PATH" --arg branch "$NAME" '{
+  path: $path,
+  branch: $branch
+}'

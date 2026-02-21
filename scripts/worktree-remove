@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# WorktreeRemove hook for Claude Code.
+# Cleans up a worktree: stops any isolated database, removes the directory,
+# and prunes git worktrees.
+#
+# Receives JSON on stdin from Claude Code with worktree details.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Read stdin JSON
+INPUT="$(cat)"
+
+# Extract worktree path from input
+WORKTREE_PATH="$(echo "$INPUT" | jq -r '.path // empty')"
+
+if [[ -z "$WORKTREE_PATH" ]]; then
+  echo "Error: No worktree path provided" >&2
+  exit 1
+fi
+
+if [[ ! -d "$WORKTREE_PATH" ]]; then
+  echo "Worktree directory does not exist: $WORKTREE_PATH" >&2
+  exit 0
+fi
+
+echo "Removing worktree: $WORKTREE_PATH" >&2
+
+# Clean up isolated database if present
+if [[ -f "$WORKTREE_PATH/.worktree-db" ]]; then
+  echo "Stopping worktree database..." >&2
+  "$SCRIPT_DIR/worktree-db-remove" "$WORKTREE_PATH" >&2 || true
+fi
+
+# Remove the worktree directory (rm -rf needed for submodules)
+cd "$REPO_DIR"
+rm -rf "$WORKTREE_PATH"
+
+# Prune git worktrees
+git worktree prune >&2
+
+echo "Worktree removed: $WORKTREE_PATH" >&2

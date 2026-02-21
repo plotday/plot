@@ -767,6 +767,37 @@ tail -f .tunnel.log
 - **Rate limiting**: All rate limiting middleware still applies to tunnel requests
 - **Callback URLs**: Be aware that webhook URLs may be stored in the database during testing. Use separate test priorities for webhook development to avoid affecting production data.
 
+## Worktree Development
+
+Worktrees are automatically set up via WorktreeCreate/WorktreeRemove hooks in
+`.claude/settings.json`. The hooks handle: git worktree creation, submodule init,
+env file copying, and pnpm install.
+
+### Conditional Setup (run when needed)
+
+**Submodule changes** (modifying `public/` — twister types, tools, twists):
+```bash
+cd public && git checkout -b <branch-name>
+cd twister && pnpm build && cd ../..
+pnpm install
+```
+
+**Database schema changes:**
+```bash
+bash scripts/worktree-db
+```
+This starts an isolated PostgreSQL on a unique port with migrations applied.
+
+**Flutter app development:**
+```bash
+cd apps/plot && flutter pub run build_runner build --delete-conflicting-outputs
+```
+
+### Manual env copy (outside worktree hooks)
+```bash
+pnpm cp-env /path/to/main/repo
+```
+
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Clean up an isolated worktree database.
+# Reads the .worktree-db marker file, stops the container, removes volumes.
+#
+# Usage: worktree-db-remove [worktree-path]
+#   If no path is given, uses the current directory.
+
+WORKTREE_DIR="${1:-$(pwd)}"
+MARKER="$WORKTREE_DIR/.worktree-db"
+
+if [[ ! -f "$MARKER" ]]; then
+  # No marker file means no worktree database to clean up
+  exit 0
+fi
+
+# Read marker file
+source "$MARKER"
+
+echo "Stopping worktree database ($PROJECT_NAME on port $PORT)..."
+
+# Stop and remove container + volumes
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose \
+  -f "$DB_DIR/docker-compose.yml" \
+  -f "$DB_DIR/docker-compose.override.yml" \
+  down -v 2>/dev/null || true
+
+# Remove the override file
+rm -f "$DB_DIR/docker-compose.override.yml"
+
+# Remove marker file
+rm -f "$MARKER"
+
+echo "Worktree database cleaned up"

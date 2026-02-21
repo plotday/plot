@@ -30,6 +30,7 @@
     "start": "nx run-many -t start --exclude plot",
     "restart": "pnpm stop; pnpm start",
     "update": "pnpm update --latest --recursive",
+    "cp-env": "./scripts/cp-env",
     "worktree": "./scripts/worktree",
     "prepare": "husky install",
     "nopy": "nopy",

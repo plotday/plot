@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Set up an isolated PostgreSQL database for a worktree.
+# Finds an available port, starts a Docker container, applies migrations,
+# and writes a marker file for cleanup by worktree-db-remove.
+#
+# Must be run from within a worktree directory.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKTREE_DIR="$(pwd)"
+DB_DIR="$WORKTREE_DIR/libs/db"
+
+if [[ ! -f "$DB_DIR/docker-compose.yml" ]]; then
+  echo "Error: Must be run from a worktree root (libs/db/docker-compose.yml not found)"
+  exit 1
+fi
+
+# Derive compose project name from the worktree directory name
+BRANCH_NAME="$(basename "$WORKTREE_DIR")"
+PROJECT_NAME="plot-db-${BRANCH_NAME}"
+
+# Find an available port starting from 54330
+PORT=54330
+while lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do
+  ((PORT++))
+  if [[ $PORT -gt 54399 ]]; then
+    echo "Error: No available ports in range 54330-54399"
+    exit 1
+  fi
+done
+
+echo "Using port $PORT for worktree database ($PROJECT_NAME)"
+
+# Create docker-compose.override.yml with the unique port
+# COMPOSE_PROJECT_NAME already namespaces the volumes, so only the port needs overriding
+cat > "$DB_DIR/docker-compose.override.yml" <<EOF
+services:
+  db:
+    ports:
+      - "${PORT}:5432"
+EOF
+
+# Start the container
+echo "Starting database container..."
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f "$DB_DIR/docker-compose.yml" -f "$DB_DIR/docker-compose.override.yml" up -d db
+
+# Wait for readiness
+echo "Waiting for PostgreSQL..."
+"$DB_DIR/scripts/wait-for-pg.sh" 127.0.0.1 "$PORT"
+
+# Update libs/db/.env.development with the new port
+if [[ -f "$DB_DIR/.env.development" ]]; then
+  # Replace the DATABASE_URL port
+  sed -i '' "s|127\.0\.0\.1:54322|127.0.0.1:${PORT}|g" "$DB_DIR/.env.development"
+  sed -i '' "s|localhost:54322|localhost:${PORT}|g" "$DB_DIR/.env.development"
+  echo "Updated libs/db/.env.development to use port $PORT"
+fi
+
+# Update root .env.development DATABASE_PORT
+if [[ -f "$WORKTREE_DIR/.env.development" ]]; then
+  if grep -q "DATABASE_PORT" "$WORKTREE_DIR/.env.development"; then
+    sed -i '' "s|DATABASE_PORT=.*|DATABASE_PORT=${PORT}|" "$WORKTREE_DIR/.env.development"
+  else
+    echo "DATABASE_PORT=${PORT}" >> "$WORKTREE_DIR/.env.development"
+  fi
+  echo "Updated root .env.development DATABASE_PORT=$PORT"
+fi
+
+# Apply migrations
+echo "Applying migrations..."
+# apply-migrations script appends ?sslmode=disable, so don't include it here
+DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${PORT}/postgres" \
+  pnpm --filter @plotday/db run apply-migrations
+
+# Write marker file for cleanup
+cat > "$WORKTREE_DIR/.worktree-db" <<EOF
+PORT="$PORT"
+PROJECT_NAME="$PROJECT_NAME"
+DB_DIR="$DB_DIR"
+EOF
+
+echo ""
+echo "Worktree database ready:"
+echo "  Port: $PORT"
+echo "  Project: $PROJECT_NAME"
+echo "  URL: postgres://postgres:postgres@127.0.0.1:${PORT}/postgres"

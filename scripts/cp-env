@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Copy gitignored environment files from a source repo to the current directory.
+# Also recreates symlinks and copies the husky helper directory.
+# Idempotent — safe to run multiple times.
+#
+# Usage: cp-env <source-repo-path>
+
+if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+  cat <<EOF
+Usage: cp-env <source-repo-path>
+
+Copies gitignored environment files from the source repo to the current
+directory, preserving relative paths. Also recreates symlinks and copies
+the .husky/_/ directory.
+
+Example:
+  pnpm cp-env /Users/kris/code/plot
+EOF
+  exit 0
+fi
+
+if [[ $# -eq 0 ]]; then
+  echo "Error: Source repo path required"
+  echo "Usage: cp-env <source-repo-path>"
+  exit 1
+fi
+
+SOURCE="$(cd "$1" && pwd)"
+DEST="$(pwd)"
+
+if [[ "$SOURCE" == "$DEST" ]]; then
+  echo "Error: Source and destination are the same directory"
+  exit 1
+fi
+
+# Env file patterns to look for (gitignored)
+ENV_PATTERNS=(
+  ".env.development"
+  ".env.production"
+  ".env.development.local"
+  ".env.production.local"
+  ".dev.vars"
+  ".dev.vars.development"
+  ".dev.vars.production"
+)
+
+# Find directories containing package.json (skip node_modules, .worktrees, .claude, build)
+# Use associative array to deduplicate (root "." is always included)
+declare -A SEEN_DIRS
+DIRS=(".")
+SEEN_DIRS["."]="1"
+while IFS= read -r pkg; do
+  dir="$(dirname "$pkg")"
+  if [[ -z "${SEEN_DIRS[$dir]:-}" ]]; then
+    DIRS+=("$dir")
+    SEEN_DIRS["$dir"]="1"
+  fi
+done < <(find "$SOURCE" -name package.json -not -path "*/node_modules/*" -not -path "*/.worktrees/*" -not -path "*/.claude/*" -not -path "*/build/*" -not -path "*/dist/*" -not -path "*/.nx/*" | sed "s|^$SOURCE/||" | sort)
+
+copied=0
+
+for dir in "${DIRS[@]}"; do
+  for pattern in "${ENV_PATTERNS[@]}"; do
+    src_file="$SOURCE/$dir/$pattern"
+    if [[ -f "$src_file" ]]; then
+      dest_dir="$DEST/$dir"
+      mkdir -p "$dest_dir"
+      cp "$src_file" "$dest_dir/$pattern"
+      echo "  copied $dir/$pattern"
+      copied=$((copied + 1))
+    fi
+  done
+done
+
+# Recreate symlinks: .env -> .env.development, .dev.vars -> .dev.vars.development
+symlinks_created=0
+for dir in "${DIRS[@]}"; do
+  src_link="$SOURCE/$dir/.env"
+  if [[ -L "$src_link" ]]; then
+    target="$(readlink "$src_link")"
+    dest_link="$DEST/$dir/.env"
+    ln -sf "$target" "$dest_link"
+    echo "  symlink $dir/.env -> $target"
+    symlinks_created=$((symlinks_created + 1))
+  fi
+
+  src_link="$SOURCE/$dir/.dev.vars"
+  if [[ -L "$src_link" ]]; then
+    target="$(readlink "$src_link")"
+    dest_link="$DEST/$dir/.dev.vars"
+    ln -sf "$target" "$dest_link"
+    echo "  symlink $dir/.dev.vars -> $target"
+    symlinks_created=$((symlinks_created + 1))
+  fi
+done
+
+# Copy the root .env if it's a regular file (not a symlink)
+if [[ -f "$SOURCE/.env" ]] && [[ ! -L "$SOURCE/.env" ]]; then
+  cp "$SOURCE/.env" "$DEST/.env"
+  echo "  copied .env"
+  copied=$((copied + 1))
+fi
+
+# Copy .husky/_/ directory (gitignored pre-commit helper)
+if [[ -d "$SOURCE/.husky/_" ]]; then
+  mkdir -p "$DEST/.husky/_"
+  cp -r "$SOURCE/.husky/_/" "$DEST/.husky/_/"
+  echo "  copied .husky/_/"
+fi
+
+echo ""
+echo "Done: $copied files copied, $symlinks_created symlinks created"
