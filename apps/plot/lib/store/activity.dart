@@ -1652,22 +1652,13 @@ class Activity extends Equatable implements Comparable<Activity> {
   }
 
   bool get doNow =>
-      (assigneeId == null || assigneeId?.isCurrentUser == true) &&
-      todo &&
-      at?.includes(Time.now()) == true;
+      !assignedToOther && todo && at?.includes(Time.now()) == true;
+  bool get otherDoingNow =>
+      assignedToOther && todo && at?.includes(Time.now()) == true;
   bool get doLater =>
-      (assigneeId == null || assigneeId?.isCurrentUser == true) &&
-      todo &&
-      at?.start?.isAfter(Time.now()) == true;
-  bool get doSomeday =>
-      type == .action &&
-      (on == null && at == null ||
-          (assigneeId != null && assigneeId?.isCurrentUser != true));
-  bool get todo =>
-      (assigneeId == null || assigneeId?.isCurrentUser == true) &&
-      type == ActivityType.action &&
-      (on ?? at) != null &&
-      !done;
+      !assignedToOther && todo && at?.start?.isAfter(Time.now()) == true;
+  bool get doSomeday => todo && (on == null && at == null);
+  bool get todo => type == ActivityType.action && !done;
   bool get done => doneAt != null;
   bool get isPast =>
       at?.end?.isBefore(Time.now()) == true ||
@@ -1683,7 +1674,8 @@ class Activity extends Equatable implements Comparable<Activity> {
     // For actions, always use state-based icons (done, doNow, doLater, doSomeday)
     if (type == ActivityType.action) {
       if (done) return assignedToOther ? PlotIcon.otherDone : PlotIcon.done;
-      if (doNow) return assignedToOther ? PlotIcon.other : PlotIcon.now;
+      if (doNow) return PlotIcon.now;
+      if (otherDoingNow) return PlotIcon.other;
       if (doLater) return PlotIcon.later;
       if (doSomeday) return PlotIcon.someday;
     }
