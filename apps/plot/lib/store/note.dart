@@ -66,6 +66,26 @@ class NotesBase extends BaseTable {
 
     return json;
   }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final noteRow = row as NoteRow;
+      final local = await (store.select(store.notes)
+            ..where((t) => t.id.equals(noteRow.id.toBytes())))
+          .getSingleOrNull();
+      if (local != null && local.pending != null) {
+        // Local has pending changes — don't overwrite with remote data
+        continue;
+      }
+      result.add(row);
+    }
+    return result;
+  }
 }
 
 class Note extends Equatable implements Comparable<Note> {
@@ -513,16 +533,16 @@ class Note extends Equatable implements Comparable<Note> {
           .write(ActivitiesCompanion(lastNoteCreatedAt: Value(createdAt)));
     }
 
-    // Use orchestrator to ensure parent activity is pushed first, then push note
-    await SyncOrchestrator.instance.push(SyncOrchestrator.note);
+    // Push to remote (fire-and-forget, like Store.save)
+    unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
   }
 
   Future<void> delete() async {
     await (Store.get.update(Store.get.notes)
           ..where((t) => t.id.equalsValue(id)))
         .write(NotesCompanion(archivedAt: Value(DateTime.now())));
-    // Use orchestrator to ensure parent activity is pushed first
-    await SyncOrchestrator.instance.push(SyncOrchestrator.note);
+    // Push to remote (fire-and-forget, like Store.save)
+    unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
   }
 
   // Tag-related getters
