@@ -1,5 +1,12 @@
 # @plotday/tool-linear
 
+## 0.7.1
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.36.0
+
 ## 0.7.0
 
 ### Added
