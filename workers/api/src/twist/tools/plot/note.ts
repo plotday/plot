@@ -17,7 +17,7 @@ import { rpc } from "../../../rpc";
 import {
   convertNoteToMarkdown,
   handleDbOperationError,
-  markActivityReadForAuthorIfOwner,
+  markActivityReadForAuthor,
   processNewActor,
   processNewActorArray,
 } from "./activity-helpers";
@@ -266,7 +266,7 @@ export async function createNote(
       }
     } else if (!skipActivityRead && note?.unread === undefined) {
       // Default: mark read for just the author if they are the twist owner
-      await markActivityReadForAuthorIfOwner(
+      await markActivityReadForAuthor(
         plot,
         authorId as string,
         activityId,

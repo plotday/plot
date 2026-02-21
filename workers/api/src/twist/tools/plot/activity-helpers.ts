@@ -514,20 +514,24 @@ export type PreparedActivity = (
 };
 
 /**
- * Marks an activity as read for the author if the author is the twist owner (user).
- * This implements the "auto-mark as read for author" behavior when unread is omitted.
+ * Marks an activity as "read" for a note/activity author, if the author's
+ * contact is linked to a user.
+ *
+ * Before upserting activity_read, checks whether there are unread notes from
+ * other authors (using author_id). If so, the activity stays unread so the
+ * user sees there is new content from others.
  *
  * Early returns (no-op) when:
  * - authorId is the priorityTwistId (no real author, just the twist default)
  * - author contact has no linked user_id
- * - author's user_id doesn't match the twist owner
+ * - there are unread notes from other authors since the user's last read_at
  *
  * @param plot - The Plot instance
  * @param authorId - The resolved author contact ID
  * @param activityId - The activity to mark as read
  * @param timestamp - The read_at timestamp to use
  */
-export async function markActivityReadForAuthorIfOwner(
+export async function markActivityReadForAuthor(
   plot: Plot,
   authorId: string,
   activityId: string,
@@ -551,9 +555,48 @@ export async function markActivityReadForAuthorIfOwner(
       return;
     }
 
-    // Check if the author is the twist owner
-    const twistOwnerId = await plot.getUserId();
-    if (userId !== twistOwnerId) {
+    // Check if there are unread notes from other authors since this user's
+    // last read_at — mirrors the DB trigger logic but uses author_id (the real
+    // author) instead of created_by (which is the twist for synced notes).
+    const existingRead = await plot.db
+      .selectFrom("activity_read")
+      .select("read_at")
+      .where("user_id", "=", userId)
+      .where("activity_id", "=", activityId)
+      .executeTakeFirst();
+
+    const lastReadAt = existingRead?.read_at ?? null;
+
+    let unreadFromOthersQuery = plot.db
+      .selectFrom("note")
+      .select("id")
+      .where("activity_id", "=", activityId)
+      .where("draft", "=", false)
+      .where("archived_at", "is", null)
+      .where((eb) =>
+        eb.or([
+          eb("author_id", "is", null),
+          eb("author_id", "!=", authorId),
+        ])
+      )
+      .limit(1);
+
+    if (lastReadAt) {
+      const readAtDate =
+        lastReadAt instanceof Date
+          ? lastReadAt
+          : new Date(lastReadAt);
+      unreadFromOthersQuery = unreadFromOthersQuery.where(
+        "source_created_at",
+        ">",
+        readAtDate
+      );
+    }
+
+    const unreadFromOthers = await unreadFromOthersQuery.executeTakeFirst();
+
+    if (unreadFromOthers) {
+      // There are unread notes from other authors — keep activity unread
       return;
     }
 
@@ -588,7 +631,7 @@ export async function markActivityReadForAuthorIfOwner(
       priority_twist_id: plot.priorityTwistId,
     });
     logger.error(
-      "Error in markActivityReadForAuthorIfOwner",
+      "Error in markActivityReadForAuthor",
       error as Error,
       { activity_id: activityId, author_id: authorId }
     );

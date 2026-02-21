@@ -26,7 +26,7 @@ import { sql } from "kysely";
 import { rpc, rpcUser } from "../../../rpc";
 import {
   handleDbOperationError,
-  markActivityReadForAuthorIfOwner,
+  markActivityReadForAuthor,
   prepareActivityForDb,
   processTagsActors,
   toDbRange,
@@ -79,7 +79,7 @@ export {
   actorTypeToString,
   convertNoteToMarkdown,
   createPreviewFromMarkdown,
-  markActivityReadForAuthorIfOwner,
+  markActivityReadForAuthor,
   prepareActivityForDb,
   processNewActor,
   processNewActorArray,
@@ -264,7 +264,7 @@ export async function createActivity(
         }
       }
     } else if (activity?.unread === undefined) {
-      // Default: mark read for just the author if they are the twist owner
+      // Default: mark read for the activity author and each note author
       const latestNoteRow = await plot.db
         .selectFrom("note")
         .select("source_created_at")
@@ -283,12 +283,37 @@ export async function createActivity(
           : latestNoteRow?.source_created_at;
       const readTimestamp = noteSourceCreatedAt2 ?? dbSourceCreatedAt2;
 
-      await markActivityReadForAuthorIfOwner(
+      // Mark read for the activity's author
+      await markActivityReadForAuthor(
         plot,
         authorId,
         dbResult.id,
         readTimestamp
       );
+
+      // Also mark read for each unique note author linked to a user
+      const noteAuthors = await plot.db
+        .selectFrom("note")
+        .innerJoin("contact", "contact.id", "note.author_id")
+        .select("note.author_id")
+        .distinct()
+        .where("note.activity_id", "=", dbResult.id)
+        .where("note.author_id", "is not", null)
+        .where("note.author_id", "!=", authorId)
+        .where("note.author_id", "!=", plot.priorityTwistId)
+        .where("contact.user_id", "is not", null)
+        .execute();
+
+      for (const row of noteAuthors) {
+        if (row.author_id) {
+          await markActivityReadForAuthor(
+            plot,
+            row.author_id,
+            dbResult.id,
+            readTimestamp
+          );
+        }
+      }
     }
     // unread === true: do nothing (explicitly unread for all)
 
@@ -1432,7 +1457,7 @@ export async function createActivities(
                 : item.dbActivity.source_created_at;
             const readTimestamp =
               latestNoteTimestamps.get(item.dbActivity.id) ?? fallback;
-            await markActivityReadForAuthorIfOwner(
+            await markActivityReadForAuthor(
               plot,
               item.authorId,
               item.dbActivity.id,
@@ -1440,6 +1465,53 @@ export async function createActivities(
             );
           })
         )
+      );
+
+      // Also mark read for unique note authors linked to users
+      const authorIdsByActivity = new Map<string, Set<string>>(
+        activitiesToMarkAuthorAsRead.map((item) => [
+          item.dbActivity.id,
+          new Set([item.authorId, plot.priorityTwistId]),
+        ])
+      );
+
+      const noteAuthorRows = await plot.db
+        .selectFrom("note")
+        .innerJoin("contact", "contact.id", "note.author_id")
+        .select(["note.activity_id", "note.author_id"])
+        .distinct()
+        .where("note.activity_id", "in", authorActivityIds)
+        .where("note.author_id", "is not", null)
+        .where("note.author_id", "!=", plot.priorityTwistId)
+        .where("contact.user_id", "is not", null)
+        .execute();
+
+      await Promise.all(
+        noteAuthorRows
+          .filter((row) => {
+            const excluded = authorIdsByActivity.get(row.activity_id);
+            return row.author_id && (!excluded || !excluded.has(row.author_id));
+          })
+          .map((row) =>
+            limit(async () => {
+              const fallback =
+                activitiesToMarkAuthorAsRead.find(
+                  (item) => item.dbActivity.id === row.activity_id
+                )?.dbActivity.source_created_at;
+              const fallbackStr =
+                fallback instanceof Date
+                  ? fallback.toISOString()
+                  : fallback ?? new Date().toISOString();
+              const readTimestamp =
+                latestNoteTimestamps.get(row.activity_id) ?? fallbackStr;
+              await markActivityReadForAuthor(
+                plot,
+                row.author_id!,
+                row.activity_id,
+                readTimestamp
+              );
+            })
+          )
       );
     }
 
