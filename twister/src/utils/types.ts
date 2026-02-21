@@ -8,6 +8,7 @@
  *
  * @internal
  */
+import type { Options, OptionsSchema, ResolvedOptions } from "../options";
 import type { Callbacks } from "../tools/callbacks";
 import type { Store } from "../tools/store";
 import type { Tasks } from "../tools/tasks";
@@ -63,10 +64,16 @@ export type InferOptions<T> = T extends {
  * Function type for building tool dependencies.
  * Used in build methods to request tool instances.
  */
-export type ToolBuilder = <TC extends abstract new (...args: any) => any>(
-  ToolClass: TC,
-  options?: InferOptions<TC>
-) => Promise<InstanceType<TC>>;
+export type ToolBuilder = {
+  <T extends OptionsSchema>(
+    ToolClass: typeof Options,
+    schema: T
+  ): Promise<ResolvedOptions<T>>;
+  <TC extends abstract new (...args: any) => any>(
+    ToolClass: TC,
+    options?: InferOptions<TC>
+  ): Promise<InstanceType<TC>>;
+};
 
 /**
  * Interface for managing tool initialization and lifecycle.

@@ -35,6 +35,11 @@
       "types": "./dist/tag.d.ts",
       "default": "./dist/tag.js"
     },
+    "./options": {
+      "@plotday/source": "./src/options.ts",
+      "types": "./dist/options.d.ts",
+      "default": "./dist/options.js"
+    },
     "./tools/twists": {
       "@plotday/source": "./src/tools/twists.ts",
       "types": "./dist/tools/twists.d.ts",
