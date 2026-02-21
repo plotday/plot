@@ -2110,7 +2110,6 @@ export type Database = {
         Row: {
           activity_created_by: string | null
           activity_id: string | null
-          activity_mentions: string[] | null
           activity_meta: Json | null
           activity_title: string | null
           archived_at: string | null
@@ -2121,7 +2120,6 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           draft: boolean | null
-          first_mentioned_at: string | null
           id: string | null
           key: string | null
           links: Json | null
@@ -2209,7 +2207,6 @@ export type Database = {
         Row: {
           activity_created_by: string | null
           activity_id: string | null
-          activity_mentions: string[] | null
           activity_meta: Json | null
           activity_title: string | null
           archived_at: string | null

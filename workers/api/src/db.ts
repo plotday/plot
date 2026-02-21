@@ -16,7 +16,7 @@ export function createDb(env: Bindings) {
   if (!connectionString) {
     throw new Error("No database connection: set HYPERDRIVE or DATABASE_URL");
   }
-  const pool = new pg.Pool({ connectionString, max: 1 });
+  const pool = new pg.Pool({ connectionString, max: 1, statement_timeout: 30_000 });
 
   // Prevent pool-level errors from crashing the worker.
   // Query errors are still propagated via promise rejections.

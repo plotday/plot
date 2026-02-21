@@ -27,7 +27,6 @@ SELECT
     a.title AS activity_title,
     a.created_by AS activity_created_by,
     a.meta AS activity_meta,
-    public.get_activity_mentions (a.id) AS activity_mentions,
     author.name AS author_name,
     author.type AS author_type,
     nt.tags

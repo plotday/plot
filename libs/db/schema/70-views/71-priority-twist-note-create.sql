@@ -27,12 +27,9 @@ SELECT
     a.title AS activity_title,
     a.created_by AS activity_created_by,
     a.meta AS activity_meta,
-    public.get_activity_mentions (a.id) AS activity_mentions,
     author.name AS author_name,
     author.type AS author_type,
-    nt.tags,
-    -- First mention timestamp for filtering notes after first mention
-    fm.first_mentioned_at
+    nt.tags
 FROM
     priority_twist pt
     JOIN priority pp ON pp.id = pt.priority_id
@@ -41,15 +38,6 @@ FROM
     JOIN note n ON n.activity_id = a.id
     LEFT JOIN actor author ON author.id = n.author_id
     LEFT JOIN note_tags nt ON nt.note_id = n.id
-    LEFT JOIN LATERAL (
-        SELECT
-            MIN(note.created_at) AS first_mentioned_at
-        FROM
-            note
-        WHERE
-            note.activity_id = a.id
-            AND pt.id = ANY (note.mentions)
-            AND note.archived_at IS NULL) fm ON TRUE
 WHERE
     n.draft = FALSE
     AND n.created_by != pt.id
@@ -61,7 +49,11 @@ WHERE
         -- Twist created the activity: get all notes
         a.created_by = pt.id
         -- OR twist is mentioned: only notes on/after first mention
-        OR (fm.first_mentioned_at IS NOT NULL
-            AND n.created_at >= fm.first_mentioned_at))
+        OR EXISTS (
+            SELECT 1 FROM note m
+            WHERE m.activity_id = a.id
+              AND pt.id = ANY(m.mentions)
+              AND m.archived_at IS NULL
+              AND m.created_at <= n.created_at))
 ORDER BY
     n.created_at ASC;
