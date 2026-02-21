@@ -18,15 +18,19 @@ export async function processUpdates(
 ): Promise<void> {
   const db = createDb(env);
 
-  for (const message of batch.messages) {
-    await processTwistBatch(
-      message.body,
-      env,
-      ctx,
-      db,
-      batch.queue,
-      postHog
-    );
+  try {
+    for (const message of batch.messages) {
+      await processTwistBatch(
+        message.body,
+        env,
+        ctx,
+        db,
+        batch.queue,
+        postHog
+      );
+    }
+  } finally {
+    await db.destroy();
   }
 }
 

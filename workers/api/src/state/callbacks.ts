@@ -387,23 +387,40 @@ export class CallbacksState extends DurableObject<Bindings> {
     }
 
     // Call the callback with error handling (works for both twists and tools via path parameter)
-    const callResult = await handleTwistOperation(
-      `callback: ${callback.functionName}`,
-      async () => {
-        return await twistWrapper.callCallback(
-          path,
-          callback.functionName,
-          ...(args ?? []),
-          ...(callback.extraArgs ?? [])
-        );
-      },
-      {
-        env: this.env,
-        id: twistMeta.twist_package_id,
-        version: callback.version,
-        environment: twistMeta.environment,
+    let callResult: any;
+    try {
+      callResult = await handleTwistOperation(
+        `callback: ${callback.functionName}`,
+        async () => {
+          return await twistWrapper.callCallback(
+            path,
+            callback.functionName,
+            ...(args ?? []),
+            ...(callback.extraArgs ?? [])
+          );
+        },
+        {
+          env: this.env,
+          id: twistMeta.twist_package_id,
+          version: callback.version,
+          environment: twistMeta.environment,
+        }
+      );
+    } catch (error) {
+      // If the tool path no longer exists, delete the callback to prevent repeated failures
+      if (
+        error instanceof Error &&
+        error.message.includes("Tool not found at path")
+      ) {
+        logger.warn("Deleting callback for removed tool", {
+          token: token.substring(0, 8) + "...",
+          path: path.join(" > "),
+          function_name: callback.functionName,
+        });
+        this.delete(`_:${token}`);
       }
-    );
+      throw error;
+    }
 
     if (timingEnabled) {
       const callbackExecMs = Date.now() - callbackExecStart!;
