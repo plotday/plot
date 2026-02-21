@@ -1,7 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
-import type { Kysely } from "kysely";
 
-import { type DB, createDb } from "../db";
+import { withDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
@@ -9,12 +8,10 @@ import { createLogger } from "@plotday/worker-util";
 const BATCH_WINDOW_MS = 100;
 
 export class SyncNotify extends DurableObject<Bindings> {
-  private db: Kysely<DB>;
   private priorityId: string | null = null;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.db = createDb(env);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -74,9 +71,11 @@ export class SyncNotify extends DurableObject<Bindings> {
   private async notifyUsers(logger: ReturnType<typeof createLogger>): Promise<void> {
     let users: Awaited<ReturnType<typeof rpc<"get_users_with_priority_access">>>;
     try {
-      users = await rpc(this.db, "get_users_with_priority_access", {
-        target_priority_id: this.priorityId!,
-      });
+      users = await withDb(this.env, (db) =>
+        rpc(db, "get_users_with_priority_access", {
+          target_priority_id: this.priorityId!,
+        })
+      );
     } catch (error) {
       logger.error("Error querying users for priority", error as Error, {
         priority_id: this.priorityId!,
@@ -115,12 +114,14 @@ export class SyncNotify extends DurableObject<Bindings> {
   private async notifyTwists(logger: ReturnType<typeof createLogger>): Promise<void> {
     let twists: { id: string }[];
     try {
-      twists = await this.db
-        .selectFrom("priority_twist")
-        .select("id")
-        .where("priority_id", "=", this.priorityId!)
-        .where("archived_at", "is", null)
-        .execute();
+      twists = await withDb(this.env, (db) =>
+        db
+          .selectFrom("priority_twist")
+          .select("id")
+          .where("priority_id", "=", this.priorityId!)
+          .where("archived_at", "is", null)
+          .execute()
+      );
     } catch (error) {
       logger.error("Error querying twists for priority", error as Error, {
         priority_id: this.priorityId!,

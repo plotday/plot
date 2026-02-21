@@ -1,7 +1,7 @@
 import type { Kysely } from "kysely";
 import type { MiddlewareHandler } from "hono";
 
-import { type DB, createDb } from "../db";
+import type { DB } from "../db";
 import type { Bindings } from "../env";
 import type { AuthUser } from "../utils/auth";
 import type { Tracker } from "../utils/tracker";
@@ -34,8 +34,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   const tokenValue = authHeader.replace("Bearer ", "");
 
   // Validate token exists and is not deleted
-  const db = createDb(c.env);
-  c.set("db", db);
+  const db = c.var.db;
 
   let tokenData;
   try {

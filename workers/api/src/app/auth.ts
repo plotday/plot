@@ -1,7 +1,7 @@
 import type { Kysely } from "kysely";
 import type { MiddlewareHandler } from "hono";
 
-import { type DB, createDb } from "../db";
+import type { DB } from "../db";
 import type { Bindings } from "../env";
 import { type AuthUser, type ClerkClaims, getUser } from "../utils/auth";
 import type { Tracker } from "../utils/tracker";
@@ -25,8 +25,6 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   c,
   next
 ) => {
-  c.set("db", createDb(c.env));
-
   // WebSocket protocol doesn't support custom headers, so we're using the
   // Sec-WebSocket-Protocol method, checked in the handler.
   if (c.req.path.startsWith("/app/updates")) {

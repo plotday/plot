@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { createDb } from "../db";
 import { rpcUser } from "../rpc";
 import type { Bindings } from "../env";
 import { deployTwist } from "../twist/deployment";
@@ -96,7 +95,7 @@ twist.get("/twist/publishers", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const db = createDb(c.env);
+  const db = c.var.db;
 
   try {
     const publishers = await getAccessiblePublishers(user.id, db);
@@ -137,7 +136,7 @@ twist.post("/twist/publishers", async (c) => {
 
   const { name, url } = parseResult.data;
 
-  const db = createDb(c.env);
+  const db = c.var.db;
 
   try {
     const publisher = await createPublisher(name, url || null, db);
@@ -245,7 +244,7 @@ twist.get("/twist/:id", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const db = createDb(c.env);
+  const db = c.var.db;
 
   // Query twist_admin for non-personal deployment (user_id IS NULL)
   // Need a JOIN for publisher relation
@@ -321,7 +320,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     environment,
   } = parseResult.data;
 
-  const db = createDb(c.env);
+  const db = c.var.db;
 
   // Validate name is provided
   if (!name) {
@@ -755,7 +754,7 @@ twist.get("/twist/:id/logs", async (c) => {
     return new Response("Invalid environment", { status: 400 });
   }
 
-  const db = createDb(c.env);
+  const db = c.var.db;
 
   // For personal environment, verify twist exists and user owns it
   // For other environments, verify user has access to the twist's priority

@@ -2,7 +2,6 @@ import * as crypto from "crypto";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { createDb } from "../db";
 import type { Bindings } from "../env";
 import { getUser } from "../utils/auth";
 import { handleValidationError } from "../utils/validation";
@@ -39,7 +38,7 @@ tokens.post("/token", tokenCreationRateLimiter, async (c) => {
   const tokenValue = crypto.randomBytes(32).toString("hex");
 
   // Store token in database
-  const db = createDb(c.env);
+  const db = c.var.db;
   try {
     const token = await db
       .insertInto("token")
@@ -69,7 +68,7 @@ tokens.get("/tokens", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const db = createDb(c.env);
+  const db = c.var.db;
   try {
     const userTokens = await db
       .selectFrom("token")
@@ -98,7 +97,7 @@ tokens.delete("/token/:id", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const db = createDb(c.env);
+  const db = c.var.db;
 
   try {
     // Soft delete - set archived_at
@@ -165,7 +164,7 @@ tokens.post("/session/authorize", tokenCreationRateLimiter, async (c) => {
   const accessToken = authHeader.replace("Bearer ", "");
 
   // Validate the Clerk JWT using local PEM key (no network call)
-  const db = createDb(c.env);
+  const db = c.var.db;
   const { user, claims, error: authError } = await getUser(
     db,
     accessToken,

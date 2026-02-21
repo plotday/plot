@@ -1,7 +1,7 @@
 import type { Kysely } from "kysely";
 
 import type { DB } from "../db-types";
-import { createDb } from "../db";
+import { withDb } from "../db";
 import type { Bindings, LogMessage, TwistEnvironment } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { rpc, rpcUser } from "../rpc";
@@ -178,75 +178,75 @@ export async function addLogsNote(
   });
 
   try {
-    const db = createDb(env);
+    await withDb(env, async (db) => {
+      // Get priority_id from twist_admin
+      const adminData = await db
+        .selectFrom("twist_admin")
+        .select("priority_id")
+        .where("twist_package_id", "=", twistPackageId)
+        .where("priority_id", "is not", null)
+        .limit(1)
+        .executeTakeFirst();
 
-    // Get priority_id from twist_admin
-    const adminData = await db
-      .selectFrom("twist_admin")
-      .select("priority_id")
-      .where("twist_package_id", "=", twistPackageId)
-      .where("priority_id", "is not", null)
-      .limit(1)
-      .executeTakeFirst();
+      if (!adminData?.priority_id) {
+        // No priority set up yet, skip logging
+        return;
+      }
 
-    if (!adminData?.priority_id) {
-      // No priority set up yet, skip logging
-      return;
-    }
+      // Find the Plot twist's priority_twist that covers the target priority
+      // priority_child_twist joins: priority_twist -> priority_child -> twist -> twist_admin
+      const plotPriorityTwist = await db
+        .selectFrom("priority_child_twist")
+        .innerJoin("twist", "twist.id", "priority_child_twist.twist_id")
+        .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+        .select(["priority_child_twist.id", "priority_child_twist.owner_id"])
+        .where("priority_child_twist.priority_child_id", "=", adminData.priority_id)
+        .where("twist_admin.twist_package_id", "=", PLOT_TWIST_PACKAGE_ID)
+        .executeTakeFirst();
 
-    // Find the Plot twist's priority_twist that covers the target priority
-    // priority_child_twist joins: priority_twist -> priority_child -> twist -> twist_admin
-    const plotPriorityTwist = await db
-      .selectFrom("priority_child_twist")
-      .innerJoin("twist", "twist.id", "priority_child_twist.twist_id")
-      .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-      .select(["priority_child_twist.id", "priority_child_twist.owner_id"])
-      .where("priority_child_twist.priority_child_id", "=", adminData.priority_id)
-      .where("twist_admin.twist_package_id", "=", PLOT_TWIST_PACKAGE_ID)
-      .executeTakeFirst();
+      if (!plotPriorityTwist?.id) {
+        // Plot twist not installed in this priority's path, skip silently
+        return;
+      }
 
-    if (!plotPriorityTwist?.id) {
-      // Plot twist not installed in this priority's path, skip silently
-      return;
-    }
+      // Use the Plot twist's priority_twist.id as both created_by and author_id
+      const createdBy = plotPriorityTwist.id;
+      const authorId = plotPriorityTwist.id;
+      const userId = plotPriorityTwist.owner_id;
 
-    // Use the Plot twist's priority_twist.id as both created_by and author_id
-    const createdBy = plotPriorityTwist.id;
-    const authorId = plotPriorityTwist.id;
-    const userId = plotPriorityTwist.owner_id;
+      if (!userId) {
+        logger.warn("Plot twist owner not found for log activity");
+        return;
+      }
 
-    if (!userId) {
-      logger.warn("Plot twist owner not found for log activity");
-      return;
-    }
+      // Format logs
+      const environment = logs[0]?.environment || "unknown";
 
-    // Format logs
-    const environment = logs[0]?.environment || "unknown";
+      const activityId = await ensureLogsActivity(
+        db,
+        twistPackageId,
+        adminData.priority_id,
+        environment,
+        createdBy,
+        authorId,
+        userId
+      );
 
-    const activityId = await ensureLogsActivity(
-      db,
-      twistPackageId,
-      adminData.priority_id,
-      environment,
-      createdBy,
-      authorId,
-      userId
-    );
+      const formattedLogs = logs
+        .map((log) => `[${log.severity.toUpperCase()}] ${log.message}`)
+        .join("\n");
 
-    const formattedLogs = logs
-      .map((log) => `[${log.severity.toUpperCase()}] ${log.message}`)
-      .join("\n");
+      const content = ["```", formattedLogs, "```"].join("\n");
 
-    const content = ["```", formattedLogs, "```"].join("\n");
-
-    await db.insertInto("note").values({
-      activity_id: activityId,
-      author_id: authorId,
-      created_by: createdBy,
-      content,
-      updated_by: 0,
-      sync_depth: 1,
-    }).execute();
+      await db.insertInto("note").values({
+        activity_id: activityId,
+        author_id: authorId,
+        created_by: createdBy,
+        content,
+        updated_by: 0,
+        sync_depth: 1,
+      }).execute();
+    });
   } catch (error) {
     // Log but don't fail the queue processing
     logger.error("Failed to add logs note", error as Error);

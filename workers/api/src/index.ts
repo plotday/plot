@@ -32,8 +32,8 @@ import tokens from "./sdk/tokens";
 import { stripeMiddleware } from "./stripe/middleware";
 import stripe from "./stripe/stripe";
 import { createLogger } from "@plotday/worker-util";
-import { createDb } from "./db";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
+import { dbMiddleware } from "./middleware/db";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
@@ -81,6 +81,9 @@ app.use("*", async (c, next) => {
     c.executionCtx.waitUntil(Promise.resolve(c.var.tracker.shutdown()));
   }
 });
+
+// Create request-scoped DB connection (cleaned up automatically)
+app.use("*", dbMiddleware);
 
 // Rate limiting is now applied per-section instead of globally
 // This allows sync endpoints to be exempt from rate limiting
@@ -180,13 +183,8 @@ app.route("/stripe", stripeSection);
 
 // Health check — exercises DB to detect connection exhaustion
 app.get("/health", async (c) => {
-  const db = createDb(c.env);
-  try {
-    await db.selectFrom("priority").select("id").limit(1).execute();
-    return c.text("ok");
-  } finally {
-    await db.destroy();
-  }
+  await c.var.db.selectFrom("priority").select("id").limit(1).execute();
+  return c.text("ok");
 });
 
 // Mount webhook route at top level

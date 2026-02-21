@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { createDb } from "../db";
 import { rpc, rpcUser } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
@@ -24,7 +23,7 @@ priority.get("/priorities", async (c) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const db = createDb(c.env);
+  const db = c.var.db;
 
   try {
     // Get all priorities the user has access to via user.priority view
@@ -91,7 +90,7 @@ priority.post("/priority", async (c) => {
 
   const { title, parentId } = parseResult.data;
 
-  const db = createDb(c.env);
+  const db = c.var.db;
 
   let parentPath: string;
   let createdBy: string;

@@ -8,6 +8,7 @@ import type { Bindings } from "./env";
 
 export type { DB };
 export { sql };
+export type { Kysely };
 
 /** Create a Kysely instance from Hyperdrive or direct connection. Call once per request. */
 export function createDb(env: Bindings) {
@@ -29,6 +30,19 @@ export function createDb(env: Bindings) {
   return new Kysely<DB>({
     dialect: new PostgresDialect({ pool }),
   });
+}
+
+/** Run `fn` with a short-lived Kysely instance that is always destroyed. */
+export async function withDb<T>(
+  env: Bindings,
+  fn: (db: Kysely<DB>) => Promise<T>
+): Promise<T> {
+  const db = createDb(env);
+  try {
+    return await fn(db);
+  } finally {
+    await db.destroy();
+  }
 }
 
 /**

@@ -1,8 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { PostHog } from "posthog-node";
-import type { Kysely } from "kysely";
 
-import { type DB, createDb } from "../db";
+import { withDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
@@ -26,11 +25,8 @@ const MAX_ITEMS_PER_QUERY = 50; // Limit per table per run
  * - After 5 alarms, stops (cron will restart the cycle)
  */
 export class SyncRecovery extends DurableObject<Bindings> {
-  private db: Kysely<DB>;
-
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.db = createDb(env);
   }
 
   /**
@@ -172,10 +168,12 @@ export class SyncRecovery extends DurableObject<Bindings> {
     // and filter by stale threshold (last_sync_at < staleThreshold)
     let staleUserSyncs: Awaited<ReturnType<typeof rpc<"get_stale_user_syncs">>>;
     try {
-      staleUserSyncs = await rpc(this.db, "get_stale_user_syncs", {
-        p_stale_threshold: staleThreshold,
-        p_limit: MAX_ITEMS_PER_QUERY,
-      });
+      staleUserSyncs = await withDb(this.env, (db) =>
+        rpc(db, "get_stale_user_syncs", {
+          p_stale_threshold: staleThreshold,
+          p_limit: MAX_ITEMS_PER_QUERY,
+        })
+      );
     } catch (error) {
       logger.error("Error querying stale user_sync records", error as Error);
       return;
@@ -248,10 +246,12 @@ export class SyncRecovery extends DurableObject<Bindings> {
     // and filter by stale threshold (last_sync_at < staleThreshold)
     let staleTwistSyncs: Awaited<ReturnType<typeof rpc<"get_stale_twist_syncs">>>;
     try {
-      staleTwistSyncs = await rpc(this.db, "get_stale_twist_syncs", {
-        p_stale_threshold: staleThreshold,
-        p_limit: MAX_ITEMS_PER_QUERY,
-      });
+      staleTwistSyncs = await withDb(this.env, (db) =>
+        rpc(db, "get_stale_twist_syncs", {
+          p_stale_threshold: staleThreshold,
+          p_limit: MAX_ITEMS_PER_QUERY,
+        })
+      );
     } catch (error) {
       logger.error("Error querying stale priority_twist_sync records", error as Error);
       return;

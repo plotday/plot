@@ -3,7 +3,6 @@ import { render } from "@plotday/email";
 
 import { Network } from "./twist/tools/network";
 import { sendEmail } from "./email/send";
-import { createDb } from "./db";
 import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
 import { createLogger } from "@plotday/worker-util";
@@ -155,9 +154,8 @@ webhook.post("/hook/clerk", async (c) => {
         return c.json({ ok: true });
       }
 
-      const db = createDb(c.env);
       try {
-        const deleted = await db
+        const deleted = await c.var.db
           .deleteFrom("user")
           .where("clerk_id", "=", clerkId)
           .returning("id")

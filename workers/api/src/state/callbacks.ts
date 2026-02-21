@@ -1,8 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import superjson from "superjson";
-import type { Kysely } from "kysely";
 
-import { type DB, createDb } from "../db";
+import { withDb } from "../db";
 import { type Bindings } from "../env";
 import { CallbackError } from "../errors";
 import { twistFactory } from "../twist";
@@ -46,13 +45,11 @@ function isValidDoId(id: string): boolean {
 
 export class CallbacksState extends DurableObject<Bindings> {
   private sql: SqlStorage;
-  private db: Kysely<DB>;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.initializeTable();
-    this.db = createDb(this.env);
   }
 
   /**
@@ -148,30 +145,32 @@ export class CallbacksState extends DurableObject<Bindings> {
 
     // Fetch twist_id, environment, and version from database if version not provided
     if (!version) {
-      const ptData = await this.db
-        .selectFrom("priority_twist")
-        .select("twist_id")
-        .where("id", "=", priorityTwistId)
-        .executeTakeFirst();
+      version = await withDb(this.env, async (db) => {
+        const ptData = await db
+          .selectFrom("priority_twist")
+          .select("twist_id")
+          .where("id", "=", priorityTwistId)
+          .executeTakeFirst();
 
-      if (!ptData) {
-        throw new Error(
-          `Failed to fetch priority_twist ${priorityTwistId}: No data found`
-        );
-      }
+        if (!ptData) {
+          throw new Error(
+            `Failed to fetch priority_twist ${priorityTwistId}: No data found`
+          );
+        }
 
-      const data = await this.db
-        .selectFrom("twist")
-        .select(["version", "environment"])
-        .where("id", "=", ptData.twist_id)
-        .executeTakeFirst();
+        const data = await db
+          .selectFrom("twist")
+          .select(["version", "environment"])
+          .where("id", "=", ptData.twist_id)
+          .executeTakeFirst();
 
-      if (!data?.version) {
-        throw new Error(
-          `Failed to fetch version for twist_id ${ptData.twist_id}: No version found`
-        );
-      }
-      version = data.version;
+        if (!data?.version) {
+          throw new Error(
+            `Failed to fetch version for twist_id ${ptData.twist_id}: No version found`
+          );
+        }
+        return data.version;
+      });
     }
 
     const token = this.generateToken();
@@ -293,153 +292,155 @@ export class CallbacksState extends DurableObject<Bindings> {
       dbLookupStart = Date.now();
     }
 
-    const priorityTwist = await this.db
-      .selectFrom("priority_twist")
-      .select(["priority_id", "twist_id", "archived_at", "suspended_at"])
-      .where("id", "=", callback.priorityTwistId)
-      .executeTakeFirst();
+    return await withDb(this.env, async (db) => {
+      const priorityTwist = await db
+        .selectFrom("priority_twist")
+        .select(["priority_id", "twist_id", "archived_at", "suspended_at"])
+        .where("id", "=", callback.priorityTwistId)
+        .executeTakeFirst();
 
-    // If priority_twist was deleted, clean up callback and return error object
-    if (!priorityTwist) {
-      this.delete(token);
-      // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
-      return {
-        __error: true,
-        type: "NOT_FOUND",
-        context: {
-          operation: "callCallback",
-          priorityTwistId: callback.priorityTwistId,
-          reason: "Priority twist deleted",
-        },
-      };
-    }
-
-    // If priority_twist is archived, clean up callback and return error object
-    // This is expected behavior when a twist is uninstalled
-    if (priorityTwist.archived_at) {
-      this.delete(token);
-      // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
-      return {
-        __error: true,
-        type: "NOT_FOUND",
-        context: {
-          operation: "callCallback",
-          priorityTwistId: callback.priorityTwistId,
-          reason: "Priority twist archived",
-        },
-      };
-    }
-
-    // If priority_twist is suspended, block without deleting callback (allows retry after resume)
-    if (priorityTwist.suspended_at) {
-      return {
-        __error: true,
-        type: "SUSPENDED",
-        context: {
-          operation: "callCallback",
-          priorityTwistId: callback.priorityTwistId,
-          reason: "Twist processing suspended due to high usage",
-        },
-      };
-    }
-
-    // Fetch twist metadata including environment and twist_package_id (for log routing)
-    const twistMeta = await this.db
-      .selectFrom("twist")
-      .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-      .select(["twist.environment", "twist_admin.twist_package_id"])
-      .where("twist.id", "=", priorityTwist.twist_id)
-      .executeTakeFirst();
-
-    // If twist was deleted, clean up callback and return
-    if (!twistMeta) {
-      logger.warn("Twist not found for callback, deleting callback", {
-        twistId: priorityTwist.twist_id,
-        token,
-      });
-      this.delete(token);
-      return;
-    }
-
-    let dbLookupMs: number | undefined;
-    let factoryInitStart: number | undefined;
-    if (timingEnabled) {
-      dbLookupMs = Date.now() - dbLookupStart!;
-      factoryInitStart = Date.now();
-    }
-
-    const factory = twistFactory({
-      env: this.env,
-      ctx: this.ctx,
-      db: this.db,
-    });
-    const twistWrapper = await factory({
-      version: callback.version,
-      priorityId: priorityTwist.priority_id!,
-      priorityTwistId: callback.priorityTwistId,
-    });
-
-    let factoryInitMs: number | undefined;
-    let callbackExecStart: number | undefined;
-    if (timingEnabled) {
-      factoryInitMs = Date.now() - factoryInitStart!;
-      callbackExecStart = Date.now();
-    }
-
-    // Call the callback with error handling (works for both twists and tools via path parameter)
-    let callResult: any;
-    try {
-      callResult = await handleTwistOperation(
-        `callback: ${callback.functionName}`,
-        async () => {
-          return await twistWrapper.callCallback(
-            path,
-            callback.functionName,
-            ...(args ?? []),
-            ...(callback.extraArgs ?? [])
-          );
-        },
-        {
-          env: this.env,
-          id: twistMeta.twist_package_id,
-          version: callback.version,
-          environment: twistMeta.environment,
-        }
-      );
-    } catch (error) {
-      // If the tool path no longer exists, delete the callback to prevent repeated failures
-      if (
-        error instanceof Error &&
-        error.message.includes("Tool not found at path")
-      ) {
-        logger.warn("Deleting callback for removed tool", {
-          token: token.substring(0, 8) + "...",
-          path: path.join(" > "),
-          function_name: callback.functionName,
-        });
-        this.delete(`_:${token}`);
+      // If priority_twist was deleted, clean up callback and return error object
+      if (!priorityTwist) {
+        this.delete(token);
+        // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
+        return {
+          __error: true,
+          type: "NOT_FOUND",
+          context: {
+            operation: "callCallback",
+            priorityTwistId: callback.priorityTwistId,
+            reason: "Priority twist deleted",
+          },
+        };
       }
-      throw error;
-    }
 
-    if (timingEnabled) {
-      const callbackExecMs = Date.now() - callbackExecStart!;
-      logger.info("Callback execution timing", {
-        token: token.substring(0, 8) + "...",
-        function_name: callback.functionName,
-        priority_twist_id: callback.priorityTwistId,
-        db_lookup_ms: dbLookupMs,
-        factory_init_ms: factoryInitMs,
-        callback_exec_ms: callbackExecMs,
-        total_ms: (dbLookupMs ?? 0) + (factoryInitMs ?? 0) + callbackExecMs,
+      // If priority_twist is archived, clean up callback and return error object
+      // This is expected behavior when a twist is uninstalled
+      if (priorityTwist.archived_at) {
+        this.delete(token);
+        // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
+        return {
+          __error: true,
+          type: "NOT_FOUND",
+          context: {
+            operation: "callCallback",
+            priorityTwistId: callback.priorityTwistId,
+            reason: "Priority twist archived",
+          },
+        };
+      }
+
+      // If priority_twist is suspended, block without deleting callback (allows retry after resume)
+      if (priorityTwist.suspended_at) {
+        return {
+          __error: true,
+          type: "SUSPENDED",
+          context: {
+            operation: "callCallback",
+            priorityTwistId: callback.priorityTwistId,
+            reason: "Twist processing suspended due to high usage",
+          },
+        };
+      }
+
+      // Fetch twist metadata including environment and twist_package_id (for log routing)
+      const twistMeta = await db
+        .selectFrom("twist")
+        .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+        .select(["twist.environment", "twist_admin.twist_package_id"])
+        .where("twist.id", "=", priorityTwist.twist_id)
+        .executeTakeFirst();
+
+      // If twist was deleted, clean up callback and return
+      if (!twistMeta) {
+        logger.warn("Twist not found for callback, deleting callback", {
+          twistId: priorityTwist.twist_id,
+          token,
+        });
+        this.delete(token);
+        return;
+      }
+
+      let dbLookupMs: number | undefined;
+      let factoryInitStart: number | undefined;
+      if (timingEnabled) {
+        dbLookupMs = Date.now() - dbLookupStart!;
+        factoryInitStart = Date.now();
+      }
+
+      const factory = twistFactory({
+        env: this.env,
+        ctx: this.ctx,
+        db,
       });
-    }
+      const twistWrapper = await factory({
+        version: callback.version,
+        priorityId: priorityTwist.priority_id!,
+        priorityTwistId: callback.priorityTwistId,
+      });
 
-    if (callback.callOnce) {
-      this.delete(token);
-    }
+      let factoryInitMs: number | undefined;
+      let callbackExecStart: number | undefined;
+      if (timingEnabled) {
+        factoryInitMs = Date.now() - factoryInitStart!;
+        callbackExecStart = Date.now();
+      }
 
-    return callResult;
+      // Call the callback with error handling (works for both twists and tools via path parameter)
+      let callResult: any;
+      try {
+        callResult = await handleTwistOperation(
+          `callback: ${callback.functionName}`,
+          async () => {
+            return await twistWrapper.callCallback(
+              path,
+              callback.functionName,
+              ...(args ?? []),
+              ...(callback.extraArgs ?? [])
+            );
+          },
+          {
+            env: this.env,
+            id: twistMeta.twist_package_id,
+            version: callback.version,
+            environment: twistMeta.environment,
+          }
+        );
+      } catch (error) {
+        // If the tool path no longer exists, delete the callback to prevent repeated failures
+        if (
+          error instanceof Error &&
+          error.message.includes("Tool not found at path")
+        ) {
+          logger.warn("Deleting callback for removed tool", {
+            token: token.substring(0, 8) + "...",
+            path: path.join(" > "),
+            function_name: callback.functionName,
+          });
+          this.delete(`_:${token}`);
+        }
+        throw error;
+      }
+
+      if (timingEnabled) {
+        const callbackExecMs = Date.now() - callbackExecStart!;
+        logger.info("Callback execution timing", {
+          token: token.substring(0, 8) + "...",
+          function_name: callback.functionName,
+          priority_twist_id: callback.priorityTwistId,
+          db_lookup_ms: dbLookupMs,
+          factory_init_ms: factoryInitMs,
+          callback_exec_ms: callbackExecMs,
+          total_ms: (dbLookupMs ?? 0) + (factoryInitMs ?? 0) + callbackExecMs,
+        });
+      }
+
+      if (callback.callOnce) {
+        this.delete(token);
+      }
+
+      return callResult;
+    });
   }
 
   /**

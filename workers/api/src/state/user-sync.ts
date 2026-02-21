@@ -1,7 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
-import type { Kysely } from "kysely";
 
-import { type DB, createDb } from "../db";
+import { withDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
@@ -18,13 +17,11 @@ interface UserSyncState {
 }
 
 export class UserSync extends DurableObject<Bindings> {
-  private db: Kysely<DB>;
   private userId: string | null = null;
   private state: UserSyncState;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.db = createDb(env);
     this.state = {
       lastNotifyTime: 0,
       lastSyncTime: 0,
@@ -153,108 +150,111 @@ export class UserSync extends DurableObject<Bindings> {
         return;
       }
 
-      // Query pending updates using RPC to compare columns
-      let pendingUpdates: Awaited<ReturnType<typeof rpc<"get_pending_user_sync">>>;
-      try {
-        pendingUpdates = await rpc(this.db, "get_pending_user_sync", {
-          p_user_id: this.userId,
-        });
-      } catch (error) {
-        logger.error("Error querying user_sync", error as Error, {
-          user_id: this.userId,
-        });
-        return;
-      }
-
-      if (!pendingUpdates || !Array.isArray(pendingUpdates) || pendingUpdates.length === 0) {
-        // No pending updates
-        this.state.lastSyncTime = now;
-        return;
-      }
-
-      // Calculate the sync timestamp from query results (max last_update_at)
-      // This ensures we use database timestamps consistently rather than local server time
-      // and avoids race conditions where new updates could arrive between query and mark complete
-      const syncUpTo = pendingUpdates.reduce((max, update) => {
-        return update.last_update_at > max ? update.last_update_at : max;
-      }, pendingUpdates[0]?.last_update_at);
-
-      // Send sync messages for each entity
-      for (const update of pendingUpdates) {
-        await broadcast.send({
-          type: "sync",
-          table: update.entity,
-        });
-      }
-
-      // Update last_sync_at for the entities we just synced using the max timestamp from the query
-      // Sort entities alphabetically to ensure consistent lock order and prevent deadlocks
-      const entities = pendingUpdates.map((u) => u.entity).sort();
-
-      // Retry logic for deadlock errors (PostgreSQL code 40P01)
-      let retryCount = 0;
-      const maxRetries = 3;
-      let updateError: any = null;
-
-      while (retryCount <= maxRetries) {
+      const userId = this.userId;
+      await withDb(this.env, async (db) => {
+        // Query pending updates using RPC to compare columns
+        let pendingUpdates: Awaited<ReturnType<typeof rpc<"get_pending_user_sync">>>;
         try {
-          await this.db
-            .updateTable("user_sync")
-            .set({ last_sync_at: syncUpTo })
-            .where("user_id", "=", this.userId)
-            .where("entity", "in", entities)
-            .execute();
-
-          updateError = null;
-          break;
-        } catch (error: any) {
-          // Check if this is a deadlock error
-          if (error?.code === "40P01" && retryCount < maxRetries) {
-            retryCount++;
-            // Exponential backoff with jitter: 50-100ms, 100-200ms, 200-400ms
-            const baseDelay = 50 * Math.pow(2, retryCount - 1);
-            const jitter = Math.random() * baseDelay;
-            const delayMs = baseDelay + jitter;
-
-            logger.warn(`Deadlock detected, retrying (${retryCount}/${maxRetries})`, {
-              user_id: this.userId,
-              delay_ms: Math.round(delayMs),
-            });
-
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-            continue;
-          }
-
-          // Non-deadlock error or max retries exceeded
-          updateError = error;
-          break;
+          pendingUpdates = await rpc(db, "get_pending_user_sync", {
+            p_user_id: userId,
+          });
+        } catch (error) {
+          logger.error("Error querying user_sync", error as Error, {
+            user_id: userId,
+          });
+          return;
         }
-      }
 
-      if (updateError) {
-        logger.error("Error updating user_sync last_sync_at", updateError, {
-          user_id: this.userId,
-          retry_count: retryCount,
-        });
-      }
+        if (!pendingUpdates || !Array.isArray(pendingUpdates) || pendingUpdates.length === 0) {
+          // No pending updates
+          this.state.lastSyncTime = now;
+          return;
+        }
 
-      this.state.lastSyncTime = now;
+        // Calculate the sync timestamp from query results (max last_update_at)
+        // This ensures we use database timestamps consistently rather than local server time
+        // and avoids race conditions where new updates could arrive between query and mark complete
+        const syncUpTo = pendingUpdates.reduce((max, update) => {
+          return update.last_update_at > max ? update.last_update_at : max;
+        }, pendingUpdates[0]?.last_update_at);
 
-      const syncDispatchMs = Date.now() - now;
+        // Send sync messages for each entity
+        for (const update of pendingUpdates) {
+          await broadcast.send({
+            type: "sync",
+            table: update.entity,
+          });
+        }
 
-      if (timingEnabled) {
-        logger.info("User sync dispatch timing", {
-          user_id: this.userId,
-          sync_dispatch_ms: syncDispatchMs,
-          pending_entity_count: pendingUpdates.length,
+        // Update last_sync_at for the entities we just synced using the max timestamp from the query
+        // Sort entities alphabetically to ensure consistent lock order and prevent deadlocks
+        const entities = pendingUpdates.map((u) => u.entity).sort();
+
+        // Retry logic for deadlock errors (PostgreSQL code 40P01)
+        let retryCount = 0;
+        const maxRetries = 3;
+        let updateError: any = null;
+
+        while (retryCount <= maxRetries) {
+          try {
+            await db
+              .updateTable("user_sync")
+              .set({ last_sync_at: syncUpTo })
+              .where("user_id", "=", userId)
+              .where("entity", "in", entities)
+              .execute();
+
+            updateError = null;
+            break;
+          } catch (error: any) {
+            // Check if this is a deadlock error
+            if (error?.code === "40P01" && retryCount < maxRetries) {
+              retryCount++;
+              // Exponential backoff with jitter: 50-100ms, 100-200ms, 200-400ms
+              const baseDelay = 50 * Math.pow(2, retryCount - 1);
+              const jitter = Math.random() * baseDelay;
+              const delayMs = baseDelay + jitter;
+
+              logger.warn(`Deadlock detected, retrying (${retryCount}/${maxRetries})`, {
+                user_id: userId,
+                delay_ms: Math.round(delayMs),
+              });
+
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+              continue;
+            }
+
+            // Non-deadlock error or max retries exceeded
+            updateError = error;
+            break;
+          }
+        }
+
+        if (updateError) {
+          logger.error("Error updating user_sync last_sync_at", updateError, {
+            user_id: userId,
+            retry_count: retryCount,
+          });
+        }
+
+        this.state.lastSyncTime = now;
+
+        const syncDispatchMs = Date.now() - now;
+
+        if (timingEnabled) {
+          logger.info("User sync dispatch timing", {
+            user_id: userId,
+            sync_dispatch_ms: syncDispatchMs,
+            pending_entity_count: pendingUpdates.length,
+            entities: pendingUpdates.map((u) => u.entity),
+          });
+        }
+
+        logger.info("User sync completed", {
+          user_id: userId,
+          entity_count: pendingUpdates.length,
           entities: pendingUpdates.map((u) => u.entity),
         });
-      }
-
-      logger.info("User sync completed", {
-        user_id: this.userId,
-        entity_count: pendingUpdates.length,
-        entities: pendingUpdates.map((u) => u.entity),
       });
     } catch (error) {
       logger.error("Error in UserSync alarm", error as Error, {
@@ -282,8 +282,10 @@ export class UserSync extends DurableObject<Bindings> {
     try {
       // Call database function to sync last_sync_at to match last_update_at
       // This ensures incremental updates work correctly after client reconnects
-      await rpc(this.db, "sync_user_on_connect", {
-        p_user_id: userId,
+      await withDb(this.env, async (db) => {
+        await rpc(db, "sync_user_on_connect", {
+          p_user_id: userId,
+        });
       });
 
       logger.info("User sync state updated on client connect", {

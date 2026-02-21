@@ -4,7 +4,7 @@ import type { Kysely } from "kysely";
 
 import { AuthProvider } from "@plotday/twister/tools/integrations";
 
-import { type DB, createDb, sql } from "../db";
+import { type DB, withDb, sql } from "../db";
 import type { Bindings } from "../env";
 import { PROVIDER_CONFIGS, type StoredTokenData } from "../provider";
 import { createLogger } from "@plotday/worker-util";
@@ -28,11 +28,8 @@ const SENTINEL_EMAIL = "removed@system.plot.day";
  * Auth: OAuth 2.0 3LO (uses an existing Jira twist's token)
  */
 export class PrivacyReporting extends DurableObject<Bindings> {
-  private db: Kysely<DB>;
-
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    this.db = createDb(env);
   }
 
   private captureException(
@@ -114,8 +111,9 @@ export class PrivacyReporting extends DurableObject<Bindings> {
       operation: "reportAtlassianAccounts",
     });
 
+    await withDb(this.env, async (db) => {
     // 1. Get accounts that need reporting
-    const accounts = await this.db
+    const accounts = await db
       .selectFrom("contact_external_account")
       .select(["contact_id", "provider", "account_id", "last_reported_at"])
       .where("provider", "=", "atlassian")
@@ -142,7 +140,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     });
 
     // 2. Find a valid Atlassian OAuth token
-    const accessToken = await this.findAtlassianToken();
+    const accessToken = await this.findAtlassianToken(db);
     if (!accessToken) {
       logger.error(
         "No valid Atlassian OAuth token found",
@@ -163,7 +161,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
         reportedIds.push(...batch);
 
         // 4. Handle account statuses
-        await this.handleAccountStatuses(statuses, accounts);
+        await this.handleAccountStatuses(db, statuses, accounts);
       } catch (error) {
         logger.error("Failed to report batch", error as Error, {
           batchStart: i,
@@ -177,7 +175,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     // 5. Update last_reported_at for successfully reported accounts
     if (reportedIds.length > 0) {
       try {
-        await this.db
+        await db
           .updateTable("contact_external_account")
           .set({ last_reported_at: new Date().toISOString() })
           .where("provider", "=", "atlassian")
@@ -195,6 +193,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
         total: accountIds.length,
       });
     }
+    }); // end withDb
   }
 
   /**
@@ -202,14 +201,14 @@ export class PrivacyReporting extends DurableObject<Bindings> {
    * Searches priority_twist records for Jira twists, then accesses
    * their Storage DOs for auth tokens keyed by the twist owner's contact.
    */
-  private async findAtlassianToken(): Promise<string | null> {
+  private async findAtlassianToken(db: Kysely<DB>): Promise<string | null> {
     const logger = createLogger({
       durable_object: "PrivacyReporting",
       operation: "findAtlassianToken",
     });
 
     // Find active Jira-related priority twists
-    const twists = await this.db
+    const twists = await db
       .selectFrom("priority_twist")
       .select(["id", "owner_id"])
       .where("archived_at", "is", null)
@@ -225,6 +224,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     for (const twist of twists) {
       try {
         const tokenData = await this.findTokenInTwistStorage(
+          db,
           twist.id,
           twist.owner_id
         );
@@ -264,11 +264,12 @@ export class PrivacyReporting extends DurableObject<Bindings> {
    * We look up the owner's contact IDs and try each key.
    */
   private async findTokenInTwistStorage(
+    db: Kysely<DB>,
     priorityTwistId: string,
     ownerId: string
   ): Promise<StoredTokenData | null> {
     // Get all contacts for this user
-    const contacts = await this.db
+    const contacts = await db
       .selectFrom("contact")
       .select("id")
       .where("user_id", "=", ownerId)
@@ -396,6 +397,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
    * Handle account statuses from the Atlassian API response.
    */
   private async handleAccountStatuses(
+    db: Kysely<DB>,
     statuses: Array<{
       accountId: string;
       status: "active" | "closed" | "updated";
@@ -419,6 +421,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
         if (account) {
           try {
             await this.handleClosedAccount(
+              db,
               account.contact_id,
               account.account_id
             );
@@ -432,7 +435,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
       } else if (status.status === "updated") {
         // Mark for refresh - data will be updated on next Jira sync
         try {
-          await this.db
+          await db
             .updateTable("contact_external_account")
             .set({ data_fetched_at: new Date(0).toISOString() })
             .where("provider", "=", "atlassian")
@@ -457,6 +460,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
    * 3. Delete the contact_external_account row
    */
   private async handleClosedAccount(
+    db: Kysely<DB>,
     contactId: string,
     accountId: string
   ): Promise<void> {
@@ -466,7 +470,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     });
 
     // Get sentinel contact ID
-    const sentinel = await this.db
+    const sentinel = await db
       .selectFrom("contact")
       .select("id")
       .where("email", "=", SENTINEL_EMAIL)
@@ -479,7 +483,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     const sentinelId = sentinel.id;
 
     // Replace Jira-sourced activity author references
-    await this.db
+    await db
       .updateTable("activity")
       .set({ author_id: sentinelId })
       .where("author_id", "=", contactId)
@@ -487,7 +491,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
       .execute();
 
     // Replace Jira-sourced activity assignee references
-    await this.db
+    await db
       .updateTable("activity")
       .set({ assignee_id: sentinelId })
       .where("assignee_id", "=", contactId)
@@ -495,7 +499,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
       .execute();
 
     // Replace Jira-sourced note author references
-    const jiraActivities = await this.db
+    const jiraActivities = await db
       .selectFrom("activity")
       .select("id")
       .where("source", "like", "jira:%")
@@ -504,7 +508,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     if (jiraActivities.length > 0) {
       const jiraActivityIds = jiraActivities.map((a) => a.id);
 
-      await this.db
+      await db
         .updateTable("note")
         .set({ author_id: sentinelId })
         .where("author_id", "=", contactId)
@@ -514,7 +518,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
       // Replace mentions using raw SQL (array_replace)
       // This is a best-effort operation
       try {
-        await sql`UPDATE note SET mentions = array_replace(mentions, ${contactId}::uuid, ${sentinelId}::uuid) WHERE ${contactId}::uuid = ANY(mentions) AND activity_id = ANY(${jiraActivityIds}::uuid[])`.execute(this.db);
+        await sql`UPDATE note SET mentions = array_replace(mentions, ${contactId}::uuid, ${sentinelId}::uuid) WHERE ${contactId}::uuid = ANY(mentions) AND activity_id = ANY(${jiraActivityIds}::uuid[])`.execute(db);
       } catch (mentionError) {
         // Mentions replacement failed - log and continue
         logger.info("Mention replacement failed, skipping", {
@@ -524,14 +528,14 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     }
 
     // Check if contact has remaining non-Jira references
-    const nonJiraAuthorResult = await this.db
+    const nonJiraAuthorResult = await db
       .selectFrom("activity")
       .select((eb) => eb.fn.countAll().as("count"))
       .where("author_id", "=", contactId)
       .where("source", "not like", "jira:%")
       .executeTakeFirstOrThrow();
 
-    const nonJiraAssigneeResult = await this.db
+    const nonJiraAssigneeResult = await db
       .selectFrom("activity")
       .select((eb) => eb.fn.countAll().as("count"))
       .where("assignee_id", "=", contactId)
@@ -543,7 +547,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
 
     if (!hasNonJiraRefs) {
       // No remaining references - clear personal data and archive
-      await this.db
+      await db
         .updateTable("contact")
         .set({
           name: null,
@@ -565,7 +569,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     }
 
     // Delete the contact_external_account row
-    await this.db
+    await db
       .deleteFrom("contact_external_account")
       .where("provider", "=", "atlassian")
       .where("account_id", "=", accountId)

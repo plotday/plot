@@ -1,9 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
-import { type Kysely, sql } from "kysely";
+import { sql } from "kysely";
 
 import { createLogger } from "@plotday/worker-util";
 
-import { type DB, createDb } from "../db";
+import { type Kysely, withDb } from "../db";
+import type { DB } from "../db-types";
 import { type Bindings } from "../env";
 
 const FLUSH_INTERVAL_MS = 60_000; // 1 minute
@@ -21,7 +22,6 @@ type UsageRow = {
 
 export class Usage extends DurableObject<Bindings> {
   private sql: SqlStorage;
-  private db: Kysely<DB>;
   private priorityTwistId?: string;
   private isDirty: boolean = false;
   private nextFlushTime: number | null = null;
@@ -42,7 +42,6 @@ export class Usage extends DurableObject<Bindings> {
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
-    this.db = createDb(env);
     this.initializeTable();
     this.loadState();
   }
@@ -210,28 +209,30 @@ export class Usage extends DurableObject<Bindings> {
       recordsByHour.get(record.hour)!.push(record);
     }
 
-    // Process each hour's records
-    for (const [hour, records] of recordsByHour.entries()) {
-      await this.flushHourToDb(hour, records);
+    await withDb(this.env, async (db) => {
+      // Process each hour's records
+      for (const [hour, records] of recordsByHour.entries()) {
+        await this.flushHourToDb(db, hour, records);
 
-      // Delete records from previous hours after successful flush
-      if (hour < currentHour) {
-        this.sql.exec("DELETE FROM usage WHERE hour = ?", hour);
+        // Delete records from previous hours after successful flush
+        if (hour < currentHour) {
+          this.sql.exec("DELETE FROM usage WHERE hour = ?", hour);
+        }
       }
-    }
 
-    this.isDirty = false;
-    this.persistState();
+      this.isDirty = false;
+      this.persistState();
 
-    // Check cost limits after successful flush
-    await this.checkCostLimit();
+      // Check cost limits after successful flush
+      await this.checkCostLimit(db);
+    });
   }
 
   /**
    * Check if this twist's usage exceeds cost safety limits.
    * If exceeded, suspend the twist and notify the owner.
    */
-  private async checkCostLimit(): Promise<void> {
+  private async checkCostLimit(db: Kysely<DB>): Promise<void> {
     const priorityTwistId = this.getPriorityTwistId();
     const logger = createLogger({
       durable_object: "Usage",
@@ -241,7 +242,7 @@ export class Usage extends DurableObject<Bindings> {
 
     try {
       // Check if already suspended
-      const pt = await this.db
+      const pt = await db
         .selectFrom("priority_twist")
         .select(["suspended_at", "owner_id", "name"])
         .where("id", "=", priorityTwistId)
@@ -264,7 +265,7 @@ export class Usage extends DurableObject<Bindings> {
         JOIN cost c ON u.cost_id = c.id
         WHERE u.priority_twist_id = ${priorityTwistId}
           AND u.hour >= DATE_TRUNC('hour', NOW() - INTERVAL '30 days')
-      `.execute(this.db);
+      `.execute(db);
 
       const { cost_4h, cost_30d } = costResult.rows[0] ?? {
         cost_4h: 0,
@@ -294,21 +295,21 @@ export class Usage extends DurableObject<Bindings> {
       });
 
       // Suspend the twist
-      await this.db
+      await db
         .updateTable("priority_twist")
         .set({ suspended_at: sql`NOW()` })
         .where("id", "=", priorityTwistId)
         .execute();
 
       // Notify the owner via Help & Feedback activity
-      const helpPriority = await this.db
+      const helpPriority = await db
         .selectFrom("priority")
         .select("id")
         .where("key", "=", `@help-feedback-${pt.owner_id}`)
         .executeTakeFirst();
 
       if (helpPriority) {
-        const activity = await this.db
+        const activity = await db
           .insertInto("activity")
           .values({
             priority_id: helpPriority.id,
@@ -320,7 +321,7 @@ export class Usage extends DurableObject<Bindings> {
           .returning("id")
           .executeTakeFirstOrThrow();
 
-        await this.db
+        await db
           .insertInto("note")
           .values({
             activity_id: activity.id,
@@ -340,6 +341,7 @@ export class Usage extends DurableObject<Bindings> {
    * Flush a specific hour's usage to Db
    */
   private async flushHourToDb(
+    db: Kysely<DB>,
     hour: number,
     records: UsageRow[]
   ): Promise<void> {
@@ -357,7 +359,7 @@ export class Usage extends DurableObject<Bindings> {
     });
 
     // Get ALL cost types from the database
-    const costs = await this.db
+    const costs = await db
       .selectFrom("cost")
       .select(["id", "name"])
       .execute();
@@ -383,7 +385,7 @@ export class Usage extends DurableObject<Bindings> {
         cost_names: missingCostNames,
       });
 
-      const insertedCosts = await this.db
+      const insertedCosts = await db
         .insertInto("cost")
         .values(newCosts)
         .onConflict((oc) =>
@@ -418,7 +420,7 @@ export class Usage extends DurableObject<Bindings> {
     }
 
     // Upsert to database
-    const data = await this.db
+    const data = await db
       .insertInto("usage")
       .values(usageRows)
       .onConflict((oc) =>
