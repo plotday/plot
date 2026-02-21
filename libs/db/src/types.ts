@@ -664,12 +664,6 @@ export type Database = {
           {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
             referencedRelation: "priority_twist_note_update"
             referencedColumns: ["id"]
           },
@@ -711,12 +705,6 @@ export type Database = {
             foreignKeyName: "note_tag_note_id_fkey"
             columns: ["note_id"]
             referencedRelation: "note"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_tag_note_id_fkey"
-            columns: ["note_id"]
-            referencedRelation: "priority_twist_note_create"
             referencedColumns: ["id"]
           },
           {
@@ -1043,12 +1031,6 @@ export type Database = {
             foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
             columns: ["priority_twist_id"]
             referencedRelation: "priority_twist_activity_create"
-            referencedColumns: ["priority_twist_id"]
-          },
-          {
-            foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
             referencedColumns: ["priority_twist_id"]
           },
         ]
@@ -1496,12 +1478,6 @@ export type Database = {
             referencedRelation: "priority_twist_activity_create"
             referencedColumns: ["priority_twist_id"]
           },
-          {
-            foreignKeyName: "usage_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
-          },
         ]
       }
       user: {
@@ -1769,12 +1745,6 @@ export type Database = {
             foreignKeyName: "note_tag_note_id_fkey"
             columns: ["note_id"]
             referencedRelation: "note"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_tag_note_id_fkey"
-            columns: ["note_id"]
-            referencedRelation: "priority_twist_note_create"
             referencedColumns: ["id"]
           },
           {
@@ -2134,74 +2104,7 @@ export type Database = {
           updated_at: string | null
           updated_by: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child_twist"
-            referencedColumns: ["priority_child_id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            referencedRelation: "activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            referencedRelation: "activity_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            referencedRelation: "priority_twist_activity_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            referencedRelation: "priority_twist_activity_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "note"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_update"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       priority_twist_note_update: {
         Row: {
@@ -2284,12 +2187,6 @@ export type Database = {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
             referencedRelation: "note"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_create"
             referencedColumns: ["id"]
           },
           {

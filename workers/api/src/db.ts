@@ -16,7 +16,15 @@ export function createDb(env: Bindings) {
   if (!connectionString) {
     throw new Error("No database connection: set HYPERDRIVE or DATABASE_URL");
   }
-  const pool = new pg.Pool({ connectionString, max: 1, statement_timeout: 30_000 });
+  const pool = new pg.Pool({
+    connectionString,
+    max: 1,
+    // Set statement_timeout as a connection-level GUC parameter.
+    // The -c flag sets GUC parameters at connection time, which survives
+    // Hyperdrive's connection pooling (unlike SET commands sent as separate queries
+    // that may be routed to a different backend connection).
+    options: "-c statement_timeout=30000",
+  });
 
   // Prevent pool-level errors from crashing the worker.
   // Query errors are still propagated via promise rejections.
@@ -39,6 +47,11 @@ export async function withDb<T>(
 ): Promise<T> {
   const db = createDb(env);
   try {
+    // Also set statement_timeout via explicit SET as a fallback.
+    // The connection-level `options` parameter in createDb should handle this,
+    // but if Hyperdrive reuses a pooled connection that already completed
+    // its startup phase, this SET ensures the timeout is applied.
+    await sql`SET statement_timeout = 30000`.execute(db);
     return await fn(db);
   } finally {
     await db.destroy();

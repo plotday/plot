@@ -151,6 +151,12 @@ CREATE INDEX idx_activity_priority_archived_last_note ON "public"."activity" ("p
 WHERE
     archived_at IS NULL;
 
+-- Support twist sync views that filter activities by created_by (priority_twist_id)
+-- Used by priority_twist_note_create, priority_twist_activity_update, etc.
+CREATE INDEX idx_activity_created_by ON "public"."activity" ("created_by")
+WHERE
+    archived_at IS NULL;
+
 CREATE TRIGGER set_activity_updated_at
     BEFORE INSERT OR UPDATE ON "public"."activity"
     FOR EACH ROW

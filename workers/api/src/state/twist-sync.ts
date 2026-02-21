@@ -8,6 +8,7 @@ import { createLogger } from "@plotday/worker-util";
 // Debouncing configuration (compile-time constants)
 const MIN_WAIT_MS = 100; // Minimum time to wait before processing
 const MIN_INTERVAL_MS = 100; // Minimum gap between queue messages
+const MAX_JITTER_MS = 2000; // Random jitter to stagger concurrent alarms across DOs
 const MAX_ITEMS_PER_BATCH = 12; // Maximum items per batch in queue messages
 const MAX_BATCH_BYTES = 120_000; // Maximum batch size in bytes (128KB limit minus 8KB headroom)
 
@@ -104,6 +105,13 @@ export class TwistSync extends DurableObject<Bindings> {
       // Otherwise, use MIN_WAIT_MS to allow batching
       delayMs = MIN_WAIT_MS;
     }
+
+    // Add random jitter to prevent thundering herd when many TwistSync DOs
+    // are notified simultaneously (e.g., change on a shared priority fans out
+    // to all active twists). Without jitter, all DOs fire alarms within ~100ms
+    // and hit the database with concurrent heavy queries that degrade from 36ms
+    // to 28+ minutes under contention.
+    delayMs += Math.floor(Math.random() * MAX_JITTER_MS);
 
     // Schedule the alarm
     this.state.pendingAlarm = true;
