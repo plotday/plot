@@ -238,6 +238,7 @@ BEGIN
                 n.draft = FALSE
                 AND a.draft = FALSE
                 AND pct.archived_at IS NULL
+                AND n.created_by != pct.id
                 -- Track sync for twists that created activity OR are mentioned anywhere in thread
                 AND (a.created_by = pct.id
                     OR pct.id = ANY (n.mentions)
@@ -275,6 +276,7 @@ BEGIN
                 AND n.draft = FALSE
                 AND a.draft = FALSE
                 AND pct.archived_at IS NULL
+                AND n.created_by != pct.id
                 -- Track sync for twists that created activity OR are mentioned anywhere in thread
                 AND (a.created_by = pct.id
                     OR pct.id = ANY (n.mentions)

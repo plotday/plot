@@ -1476,6 +1476,11 @@ class Store extends _$Store {
         log.warning("${entity.debugName} push failed during table sync");
       }
 
+      // Pull dependencies first (e.g., pull actors before notes)
+      for (final dep in entity.dependsOn) {
+        await SyncOrchestrator.instance.pull(dep);
+      }
+
       // Pull updates for this entity
       await SyncOrchestrator.instance.pull(entity);
     } catch (e, stackTrace) {

@@ -374,6 +374,11 @@ export class Plot extends Tool implements IPlot {
     if (dispatchItem.itemType === "note") {
       const { item, isCreate = true } = dispatchItem; // Default true for backwards compat
 
+      // Skip notes created by this twist to prevent self-response loops
+      if (isCreate && item.created_by === this.priorityTwistId) {
+        return [];
+      }
+
       // Build the current note
       const currentNote = buildNoteFromDbRecord(item);
 

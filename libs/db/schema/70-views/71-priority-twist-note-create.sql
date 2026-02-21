@@ -52,6 +52,7 @@ FROM
             AND note.archived_at IS NULL) fm ON TRUE
 WHERE
     n.draft = FALSE
+    AND n.created_by != pt.id
     AND updated_by_uuid (pt.id) != n.updated_by
     AND a.archived_at IS NULL
     AND pt.archived_at IS NULL
