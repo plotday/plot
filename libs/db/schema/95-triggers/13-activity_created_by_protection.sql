@@ -1,10 +1,13 @@
--- Protect created_by from unauthorized changes
--- Only allows updating created_by when un-archiving an activity
+-- Protect author_id and created_by from unauthorized changes
+-- author_id is always immutable (never changes after creation)
+-- created_by is only allowed to change when un-archiving an activity
 CREATE OR REPLACE FUNCTION public.protect_activity_created_by ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     AS $function$
 BEGIN
+    -- author_id is immutable: always preserve original value
+    NEW.author_id := OLD.author_id;
     -- Un-archiving: allow created_by update
     IF OLD.archived_at IS NOT NULL AND NEW.archived_at IS NULL THEN
         IF NEW.created_by IS DISTINCT FROM OLD.created_by THEN

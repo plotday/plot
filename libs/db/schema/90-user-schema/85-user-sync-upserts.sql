@@ -244,8 +244,8 @@ BEGIN
             VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_activity_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_links, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key)
         ON CONFLICT (activity_id, key)
             DO UPDATE SET
-                author_id = EXCLUDED.author_id,
-                created_by = EXCLUDED.created_by,
+                author_id = note.author_id,
+                created_by = note.created_by,
                 updated_by = EXCLUDED.updated_by,
                 archived_at = EXCLUDED.archived_at,
                 draft = EXCLUDED.draft,
@@ -263,8 +263,8 @@ BEGIN
             VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_activity_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_links, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key)
         ON CONFLICT (id)
             DO UPDATE SET
-                author_id = EXCLUDED.author_id,
-                created_by = EXCLUDED.created_by,
+                author_id = note.author_id,
+                created_by = note.created_by,
                 updated_by = EXCLUDED.updated_by,
                 archived_at = EXCLUDED.archived_at,
                 draft = EXCLUDED.draft,
