@@ -202,15 +202,6 @@ async function processTwistBatch(
         // Read sync_depth from the entity
         const syncDepth = note.sync_depth ?? 1;
 
-        // DEBUG: Log each new note being processed
-        logger.info("[DEBUG] Processing new note", {
-          note_id: noteId,
-          activity_id: note.activity_id ?? undefined,
-          created_by: note.created_by ?? undefined,
-          activity_created_by: note.activity_created_by ?? undefined,
-          sync_depth: syncDepth,
-        });
-
         // Check cascade depth limit
         if (syncDepth > 4) {
           logger.warn("Sync cascade depth limit reached for note", {
@@ -269,14 +260,6 @@ async function processTwistBatch(
       try {
         const syncDepth = note.sync_depth ?? 1;
 
-        // DEBUG: Log each updated note being processed
-        logger.info("[DEBUG] Processing updated note", {
-          note_id: noteId,
-          activity_id: note.activity_id ?? undefined,
-          created_by: note.created_by ?? undefined,
-          sync_depth: syncDepth,
-        });
-
         if (syncDepth > 4) {
           logger.warn("Sync cascade depth limit reached for updated note", {
             sync_depth: syncDepth,
@@ -321,14 +304,6 @@ async function processTwistBatch(
       try {
         // Read sync_depth from the entity
         const syncDepth = activity.sync_depth ?? 1;
-
-        // DEBUG: Log each new activity being processed
-        logger.info("[DEBUG] Processing new activity", {
-          activity_id: activityId,
-          title: activity.title?.substring(0, 50) ?? undefined,
-          created_by: activity.created_by ?? undefined,
-          sync_depth: syncDepth,
-        });
 
         // Check cascade depth limit
         if (syncDepth > 4) {
@@ -413,15 +388,6 @@ async function processTwistBatch(
       try {
         // Read sync_depth from the entity
         const syncDepth = activity.sync_depth ?? 1;
-
-        // DEBUG: Log each updated activity being processed
-        logger.info("[DEBUG] Processing updated activity", {
-          activity_id: activityId,
-          title: activity.title?.substring(0, 50) ?? undefined,
-          created_by: activity.created_by ?? undefined,
-          updated_by: activity.updated_by ?? undefined,
-          sync_depth: syncDepth,
-        });
 
         // Check cascade depth limit
         if (syncDepth > 4) {

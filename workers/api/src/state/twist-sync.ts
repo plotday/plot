@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { PostHog } from "posthog-node";
 
+import { sql } from "kysely";
+
 import { withDb } from "../db";
 import type { ActivityTagChange, Bindings, TwistBatchMessage } from "../env";
 import { createLogger } from "@plotday/worker-util";
@@ -16,13 +18,6 @@ interface TwistSyncState {
   lastNotifyTime: number;
   lastSyncTime: number;
   pendingAlarm: boolean;
-}
-
-interface SyncInfo {
-  entity: string;
-  operation: string;
-  last_sync_at: Date;
-  last_update_at: Date;
 }
 
 interface TagChangeRow {
@@ -151,15 +146,16 @@ export class TwistSync extends DurableObject<Bindings> {
       const priorityTwistId = this.priorityTwistId;
       await withDb(this.env, async (db) => {
       // Get the priority_twist with twist info
+      // Read created_at as text to preserve full μs precision for sync cursors
       const priorityTwist = await db
         .selectFrom("priority_twist")
         .select([
           "priority_twist.priority_id",
           "priority_twist.twist_id",
-          "priority_twist.created_at",
           "priority_twist.archived_at",
           "priority_twist.suspended_at",
         ])
+        .select(sql<string>`priority_twist.created_at::text`.as("created_at_text"))
         .where("priority_twist.id", "=", priorityTwistId)
         .executeTakeFirstOrThrow();
 
@@ -194,33 +190,29 @@ export class TwistSync extends DurableObject<Bindings> {
         return;
       }
 
-      // Get sync timestamps for each operation type
-      const syncInfos: SyncInfo[] = await db
+      // Get sync timestamps as text to preserve full μs precision
+      const syncInfos = await db
         .selectFrom("priority_twist_sync")
-        .select(["entity", "operation", "last_sync_at", "last_update_at"])
+        .select(["entity", "operation"])
+        .select(sql<string>`last_sync_at::text`.as("last_sync_at_text"))
+        .select(sql<string>`last_update_at::text`.as("last_update_at_text"))
         .where("priority_twist_id", "=", priorityTwistId)
         .execute();
 
-      // Use the priority_twist's created_at as the minimum sync time
+      // Use the priority_twist's created_at (as text) as the minimum sync time
       // This ensures we don't send notifications for items that existed before the twist was added
-      const minSyncAt = priorityTwist.created_at;
+      const minSyncAtText = priorityTwist.created_at_text;
 
-      const getSyncAt = (entity: string, operation: string): Date => {
+      // Returns a SQL expression that evaluates to timestamptz with full precision
+      // Uses GREATEST in PG to avoid JS Date comparison losing μs digits
+      const getSyncAtExpr = (entity: string, operation: string) => {
         const info = syncInfos.find(
           (s) => s.entity === entity && s.operation === operation
         );
-        // Use the later of: last_sync_at or the priority_twist's created_at
-        const lastSyncAt = info?.last_sync_at;
-        if (!lastSyncAt) {
-          return minSyncAt;
-        }
-        return lastSyncAt > minSyncAt ? lastSyncAt : minSyncAt;
+        const text = info?.last_sync_at_text;
+        if (!text) return sql<Date>`${minSyncAtText}::timestamptz`;
+        return sql<Date>`GREATEST(${text}::timestamptz, ${minSyncAtText}::timestamptz)`;
       };
-
-      const noteCreateLastSyncAt = getSyncAt("note", "create");
-      const noteUpdateLastSyncAt = getSyncAt("note", "update");
-      const activityCreateLastSyncAt = getSyncAt("activity", "create");
-      const activityUpdateLastSyncAt = getSyncAt("activity", "update");
 
       const viewNames = [
         "priority_twist_activity_create",
@@ -235,8 +227,9 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("priority_twist_activity_create")
           .selectAll()
+          .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
           .where("priority_twist_id", "=", priorityTwistId)
-          .where("created_at", ">", activityCreateLastSyncAt)
+          .where("created_at", ">", getSyncAtExpr("activity", "create"))
           .orderBy("created_at", "asc")
           .limit(100)
           .execute(),
@@ -248,8 +241,9 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("priority_twist_activity_update")
           .selectAll()
+          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("priority_twist_id", "=", priorityTwistId)
-          .where("updated_at", ">", activityUpdateLastSyncAt)
+          .where("updated_at", ">", getSyncAtExpr("activity", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
           .execute(),
@@ -261,8 +255,9 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("priority_twist_note_create")
           .selectAll()
+          .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
           .where("priority_twist_id", "=", priorityTwistId)
-          .where("created_at", ">", noteCreateLastSyncAt)
+          .where("created_at", ">", getSyncAtExpr("note", "create"))
           .orderBy("created_at", "asc")
           .limit(100)
           .execute(),
@@ -272,8 +267,9 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("priority_twist_note_update")
           .selectAll()
+          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("priority_twist_id", "=", priorityTwistId)
-          .where("updated_at", ">", noteUpdateLastSyncAt)
+          .where("updated_at", ">", getSyncAtExpr("note", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
           .execute(),
@@ -300,90 +296,24 @@ export class TwistSync extends DurableObject<Bindings> {
       const newNotes = extractResult(results[2], 2);
       const updatedNotes = extractResult(results[3], 3);
 
-      // DEBUG: Log specific items being synced
-      if (
-        newNotes.length > 0 ||
-        updatedNotes.length > 0 ||
-        newActivities.length > 0 ||
-        updatedActivities.length > 0
-      ) {
-        logger.info("[DEBUG] TwistSync items to queue", {
-          priority_twist_id: priorityTwistId,
-          noteCreateLastSyncAt,
-          noteUpdateLastSyncAt,
-          activityCreateLastSyncAt,
-          activityUpdateLastSyncAt,
-          newNoteIds: newNotes.map((n) => n.id).join(", "),
-          newNoteActivityIds: newNotes.map((n) => n.activity_id).join(", "),
-          updatedNoteIds: updatedNotes.map((n) => n.id).join(", "),
-          updatedNoteActivityIds: updatedNotes
-            .map((n) => n.activity_id)
-            .join(", "),
-          newActivityIds: newActivities.map((a) => a.id).join(", "),
-          newActivityTitles: newActivities
-            .map((a) => a.title?.substring(0, 30))
-            .join(", "),
-          newActivityCreatedAts: newActivities
-            .map((a) => a.created_at)
-            .join(", "),
-          updatedActivityIds: updatedActivities.map((a) => a.id).join(", "),
-          updatedActivityTitles: updatedActivities
-            .map((a) => a.title?.substring(0, 30))
-            .join(", "),
-          updatedActivityCreatedAts: updatedActivities
-            .map((a) => a.created_at)
-            .join(", "),
-        });
-      }
+      // Extract max timestamps as PG-precision text strings from window functions
+      // null if no items were returned for that query
+      const activityCreateMaxTs: string | null =
+        newActivities.length > 0 ? (newActivities[0] as any)._max_ts : null;
+      const activityUpdateMaxTs: string | null =
+        updatedActivities.length > 0 ? (updatedActivities[0] as any)._max_ts : null;
+      const noteCreateMaxTs: string | null =
+        newNotes.length > 0 ? (newNotes[0] as any)._max_ts : null;
+      const noteUpdateMaxTs: string | null =
+        updatedNotes.length > 0 ? (updatedNotes[0] as any)._max_ts : null;
 
-      // Helper to get max timestamp from database-fetched items (or keep existing if none)
-      const getMaxTimestamp = (
-        items: any[],
-        timestampField: "created_at" | "updated_at",
-        fallback: Date
-      ): Date => {
-        if (items.length === 0) return fallback;
-
-        const timestamps = items
-          .map((item) => item[timestampField])
-          .filter((ts): ts is Date => ts !== null && ts !== undefined);
-
-        if (timestamps.length === 0) return fallback;
-
-        // All timestamps are from database, already in UTC
-        return timestamps.reduce((max, ts) => (ts > max ? ts : max));
-      };
-
-      // Calculate sync timestamps from database values for each entity/operation
-      const activityCreateSyncAt = getMaxTimestamp(
-        newActivities,
-        "created_at",
-        activityCreateLastSyncAt
-      );
-
-      const activityUpdateSyncAt = getMaxTimestamp(
-        updatedActivities,
-        "updated_at",
-        activityUpdateLastSyncAt
-      );
-
-      const noteCreateSyncAt = getMaxTimestamp(
-        newNotes,
-        "created_at",
-        noteCreateLastSyncAt
-      );
-
-      const noteUpdateSyncAt = getMaxTimestamp(
-        updatedNotes,
-        "updated_at",
-        noteUpdateLastSyncAt
-      );
-
-      // Get the latest timestamp from database (current sync point)
-      // This represents the most recent change detected by database triggers
-      const currentSyncTimestamp = syncInfos.reduce((max, info) => {
-        return info.last_update_at > max ? info.last_update_at : max;
-      }, syncInfos[0]?.last_update_at ?? new Date(0));
+      // Get the latest update timestamp from sync info as text for tag change upper bound
+      // PG text representation (YYYY-MM-DD HH:MI:SS.ffffff+TZ) is lexicographically sortable
+      const currentSyncTimestampText = syncInfos.length > 0
+        ? syncInfos.reduce((max, info) =>
+            info.last_update_at_text > max ? info.last_update_at_text : max,
+          syncInfos[0].last_update_at_text)
+        : null;
 
       // Query tag changes for the activity update time range
       // This provides tagsAdded/tagsRemoved data for the activity.updated callback
@@ -395,8 +325,10 @@ export class TwistSync extends DurableObject<Bindings> {
           .selectFrom("priority_twist_activity_tag_change")
           .select(["activity_id", "occurrence", "tag_id", "actor_id", "change_type"])
           .where("priority_twist_id", "=", priorityTwistId)
-          .where("updated_at", ">", activityUpdateLastSyncAt)
-          .where("updated_at", "<=", currentSyncTimestamp)
+          .where("updated_at", ">", getSyncAtExpr("activity", "update"))
+          .where("updated_at", "<=", currentSyncTimestampText
+            ? sql<Date>`${currentSyncTimestampText}::timestamptz`
+            : sql<Date>`now()`)
           .execute();
 
         // Transform tag changes into the expected format, filtering out any with null required fields
@@ -425,21 +357,30 @@ export class TwistSync extends DurableObject<Bindings> {
         });
       }
 
+      // Strip internal _max_ts field from items before building queue messages
+      const stripMaxTs = <T extends Record<string, any>>(items: T[]): T[] =>
+        items.map(({ _max_ts, ...rest }) => rest as T);
+
+      const cleanNewNotes = stripMaxTs(newNotes);
+      const cleanUpdatedNotes = stripMaxTs(updatedNotes);
+      const cleanNewActivities = stripMaxTs(newActivities);
+      const cleanUpdatedActivities = stripMaxTs(updatedActivities);
+
       // Build size-aware batches to stay under Cloudflare's 128KB queue message limit.
       // Items are added sequentially (all newNotes, then updatedNotes, then newActivities,
       // then updatedActivities). The consumer processes each array independently, so
       // co-location of items from different arrays in the same batch is not required.
       type TaggedItem =
-        | { array: "newNotes"; item: (typeof newNotes)[number]; size: number }
-        | { array: "updatedNotes"; item: (typeof updatedNotes)[number]; size: number }
-        | { array: "newActivities"; item: (typeof newActivities)[number]; size: number }
-        | { array: "updatedActivities"; item: (typeof updatedActivities)[number]; size: number };
+        | { array: "newNotes"; item: (typeof cleanNewNotes)[number]; size: number }
+        | { array: "updatedNotes"; item: (typeof cleanUpdatedNotes)[number]; size: number }
+        | { array: "newActivities"; item: (typeof cleanNewActivities)[number]; size: number }
+        | { array: "updatedActivities"; item: (typeof cleanUpdatedActivities)[number]; size: number };
 
       const taggedItems: TaggedItem[] = [
-        ...newNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
-        ...updatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: JSON.stringify(item).length })),
-        ...newActivities.map((item) => ({ array: "newActivities" as const, item, size: JSON.stringify(item).length })),
-        ...updatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: JSON.stringify(item).length })),
+        ...cleanNewNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
+        ...cleanUpdatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: JSON.stringify(item).length })),
+        ...cleanNewActivities.map((item) => ({ array: "newActivities" as const, item, size: JSON.stringify(item).length })),
+        ...cleanUpdatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: JSON.stringify(item).length })),
       ];
 
       const batches: TaggedItem[][] = [];
@@ -520,59 +461,107 @@ export class TwistSync extends DurableObject<Bindings> {
         }
       }
 
-      // Update each entity/operation pair with its specific timestamp
-      // This ensures each operation advances independently based on items actually processed
-      // Using database timestamps avoids clock skew and timezone issues
-      // Uses Promise.allSettled so transient PostgREST 500s don't throw — failed updates
-      // simply mean the next alarm re-fetches the same items (duplicate callbacks are acceptable)
-      const syncUpdateNames = [
-        "activity create sync",
-        "activity update sync",
-        "note create sync",
-        "note update sync",
-      ] as const;
+      // UPSERT sync cursors with full-precision text timestamps cast to timestamptz
+      // Only upsert when items were found (non-null max timestamp).
+      // UPSERT (INSERT...ON CONFLICT) fixes Bug 1: the trigger only creates rows for the
+      // twist that created the activity, but the create view returns items for other twists.
+      // Text-based timestamps fix Bug 2: no JS Date round-trip means no μs precision loss.
+      const syncUpdates: Array<{ name: string; promise: Promise<any> }> = [];
 
-      const syncUpdateResults = await Promise.allSettled([
-        db
-          .updateTable("priority_twist_sync")
-          .set({ last_sync_at: activityCreateSyncAt })
-          .where("priority_twist_id", "=", priorityTwistId)
-          .where("entity", "=", "activity")
-          .where("operation", "=", "create")
-          .execute(),
-        db
-          .updateTable("priority_twist_sync")
-          .set({ last_sync_at: activityUpdateSyncAt })
-          .where("priority_twist_id", "=", priorityTwistId)
-          .where("entity", "=", "activity")
-          .where("operation", "=", "update")
-          .execute(),
-        db
-          .updateTable("priority_twist_sync")
-          .set({ last_sync_at: noteCreateSyncAt })
-          .where("priority_twist_id", "=", priorityTwistId)
-          .where("entity", "=", "note")
-          .where("operation", "=", "create")
-          .execute(),
-        db
-          .updateTable("priority_twist_sync")
-          .set({ last_sync_at: noteUpdateSyncAt })
-          .where("priority_twist_id", "=", priorityTwistId)
-          .where("entity", "=", "note")
-          .where("operation", "=", "update")
-          .execute(),
-      ]);
+      if (activityCreateMaxTs) {
+        syncUpdates.push({
+          name: "activity create sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'activity'`,
+              operation: sql`'create'`,
+              last_sync_at: sql`${activityCreateMaxTs}::timestamptz`,
+              last_update_at: sql`${activityCreateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${activityCreateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
+      if (activityUpdateMaxTs) {
+        syncUpdates.push({
+          name: "activity update sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'activity'`,
+              operation: sql`'update'`,
+              last_sync_at: sql`${activityUpdateMaxTs}::timestamptz`,
+              last_update_at: sql`${activityUpdateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${activityUpdateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
+      if (noteCreateMaxTs) {
+        syncUpdates.push({
+          name: "note create sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'note'`,
+              operation: sql`'create'`,
+              last_sync_at: sql`${noteCreateMaxTs}::timestamptz`,
+              last_update_at: sql`${noteCreateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${noteCreateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
+      if (noteUpdateMaxTs) {
+        syncUpdates.push({
+          name: "note update sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'note'`,
+              operation: sql`'update'`,
+              last_sync_at: sql`${noteUpdateMaxTs}::timestamptz`,
+              last_update_at: sql`${noteUpdateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${noteUpdateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
+      const syncUpdateResults = await Promise.allSettled(
+        syncUpdates.map((u) => u.promise)
+      );
 
       // Log any failed sync timestamp updates
       for (let i = 0; i < syncUpdateResults.length; i++) {
         const result = syncUpdateResults[i];
         if (result.status === "rejected") {
           const error = result.reason;
-          logger.error(`Failed to update ${syncUpdateNames[i]}`, error as Error, {
+          logger.error(`Failed to update ${syncUpdates[i].name}`, error as Error, {
             priority_twist_id: priorityTwistId!,
           });
           this.captureException(error as Error, {
-            sync_update: syncUpdateNames[i],
+            sync_update: syncUpdates[i].name,
           });
         }
       }
