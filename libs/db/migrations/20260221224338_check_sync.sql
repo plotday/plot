@@ -1,3 +1,22 @@
+-- Disable statement timeout for this migration transaction.
+-- The CREATE OR REPLACE VIEW needs AccessExclusive lock on the view, which blocks
+-- until any active queries (holding AccessShareLock) finish. Stuck queries on the
+-- old slow view can run for hours, so we need unlimited time to wait for the lock.
+SET LOCAL statement_timeout = '0';
+
+-- Terminate stuck queries against the old view so we can acquire the lock quickly.
+-- These queries use the old O(n^2) correlated EXISTS subquery and can run for hours.
+-- Hyperdrive will automatically reconnect terminated connections.
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE state = 'active'
+  AND query LIKE '%priority_twist_note_create%'
+  AND pid <> pg_backend_pid()
+  AND now() - query_start > interval '30 seconds';
+
+-- Brief pause for terminated backends to release locks
+SELECT pg_sleep(2);
+
 -- Create index "idx_activity_created_by" to table: "activity"
 CREATE INDEX "idx_activity_created_by" ON "public"."activity" ("created_by") WHERE (archived_at IS NULL);
 -- Modify "priority_twist_note_create" view
