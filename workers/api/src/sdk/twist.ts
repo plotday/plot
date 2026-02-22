@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { rpcUser } from "../rpc";
 import type { Bindings } from "../env";
+import { createDb } from "../db";
 import { deployTwist } from "../twist/deployment";
 import {
   createPublisher,
@@ -573,6 +574,11 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     // Stream progress updates via SSE
     const stream = new SSEStream();
 
+    // Create a separate DB connection for the background deployment.
+    // The middleware-scoped `db` will be destroyed when the handler returns
+    // the streaming response, but deployment continues via waitUntil.
+    const sseDb = createDb(c.env);
+
     // Start deployment in the background
     const deploymentPromise = (async () => {
       let resultSent = false;
@@ -580,7 +586,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         const result = await deployTwist({
           env: c.env,
           ctx: c.executionCtx as ExecutionContext,
-          db,
+          db: sseDb,
           twistAdminId: twistAdminId!,
           input:
             module !== undefined ? { module, sourcemap } : { source: source! },
@@ -607,7 +613,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
 
         // Fetch the final twist to return
         try {
-          const finalTwist = await db
+          const finalTwist = await sseDb
             .selectFrom("twist")
             .selectAll()
             .where("twist_admin_id", "=", String(twistAdminId))
@@ -657,6 +663,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           );
         }
         stream.close();
+        await sseDb.destroy();
       }
     })();
 
