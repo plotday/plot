@@ -1,10 +1,13 @@
 import { Type } from "typebox";
 
+import { Gmail } from "@plotday/tool-gmail";
 import { Slack } from "@plotday/tool-slack";
 import {
   type ActivityFilter,
   ActivityType,
   type NewActivityWithNotes,
+  type NewContact,
+  type Note,
   type Priority,
   type ToolBuilder,
   Twist,
@@ -13,7 +16,15 @@ import { AI, type AIMessage } from "@plotday/twister/tools/ai";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
 import { Uuid } from "@plotday/twister/utils/uuid";
 
-type MessageProvider = "slack";
+type MessageProvider = "slack" | "gmail";
+
+type Instruction = {
+  id: string;
+  text: string;
+  summary: string;
+  authorId: string;
+  created: string;
+};
 
 type ThreadTask = {
   threadId: string;
@@ -29,10 +40,48 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
         onItem: this.onSlackThread,
         onSyncableDisabled: this.onSyncableDisabled,
       }),
+      gmail: build(Gmail, {
+        onItem: this.onGmailThread,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
       ai: build(AI),
       plot: build(Plot, {
         activity: {
           access: ActivityAccess.Create,
+        },
+        note: {
+          intents: [
+            {
+              description:
+                "Give the twist an instruction that changes how it creates tasks from messages",
+              examples: [
+                "Ignore threads from #random",
+                "Always create tasks for messages from my manager",
+                "Never create tasks for bot messages",
+                "Only create tasks when I'm directly mentioned",
+              ],
+              handler: this.onInstruct,
+            },
+            {
+              description: "List all saved instructions",
+              examples: [
+                "What are my instructions?",
+                "Show my rules",
+                "List instructions",
+              ],
+              handler: this.onListInstructions,
+            },
+            {
+              description:
+                "Forget or remove a specific saved instruction",
+              examples: [
+                "Forget instruction about #random",
+                "Remove rule 3",
+                "Delete the instruction about bot messages",
+              ],
+              handler: this.onForgetInstruction,
+            },
+          ],
         },
       }),
     };
@@ -45,6 +94,11 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   async onSlackThread(thread: NewActivityWithNotes): Promise<void> {
     const channelId = thread.meta?.syncableId as string;
     return this.onMessageThread(thread, "slack", channelId);
+  }
+
+  async onGmailThread(thread: NewActivityWithNotes): Promise<void> {
+    const channelId = thread.meta?.syncableId as string;
+    return this.onMessageThread(thread, "gmail", channelId);
   }
 
   async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
@@ -78,6 +132,172 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       task.lastChecked = new Date().toISOString();
       await this.set("thread_tasks", tasks);
     }
+  }
+
+  // ============================================================================
+  // Instruction Storage
+  // ============================================================================
+
+  private async getInstructions(): Promise<Instruction[]> {
+    return (await this.get<Instruction[]>("instructions")) ?? [];
+  }
+
+  private async setInstructions(instructions: Instruction[]): Promise<void> {
+    await this.set("instructions", instructions);
+  }
+
+  // ============================================================================
+  // Intent Handlers
+  // ============================================================================
+
+  async onInstruct(note: Note): Promise<void> {
+    const content = note.content?.trim();
+    if (!content) return;
+
+    const instructions = await this.getInstructions();
+    if (instructions.length >= 20) {
+      await this.tools.plot.createNote({
+        activity: { id: note.activity.id },
+        content:
+          "You've reached the limit of 20 instructions. Remove one first with \"forget instruction\" before adding more.",
+      });
+      return;
+    }
+
+    const response = await this.tools.ai.prompt({
+      model: { speed: "fast", cost: "low" },
+      system: `Summarize the user's instruction as a concise directive starting with a verb (e.g. "Ignore", "Always", "Never", "Only"). Keep it to one short sentence. If the input is unclear or not an instruction, respond with exactly "UNCLEAR".`,
+      prompt: content,
+    });
+
+    const summary = response.text.trim();
+
+    if (summary === "UNCLEAR") {
+      await this.tools.plot.createNote({
+        activity: { id: note.activity.id },
+        content: `I didn't understand that as an instruction. Try something like:\n- "Ignore threads from #random"\n- "Always create tasks for messages from Sarah"\n- "Never create tasks for bot messages"`,
+      });
+      return;
+    }
+
+    const instruction: Instruction = {
+      id: crypto.randomUUID().slice(0, 8),
+      text: content,
+      summary,
+      authorId: note.author?.id as string,
+      created: new Date().toISOString(),
+    };
+
+    instructions.push(instruction);
+    await this.setInstructions(instructions);
+
+    await this.tools.plot.createNote({
+      activity: { id: note.activity.id },
+      content: `Saved: "${summary}"`,
+    });
+  }
+
+  async onListInstructions(note: Note): Promise<void> {
+    const instructions = await this.getInstructions();
+
+    if (instructions.length === 0) {
+      await this.tools.plot.createNote({
+        activity: { id: note.activity.id },
+        content: `No instructions yet. Mention me with an instruction like "Ignore threads from #random" to add one.`,
+      });
+      return;
+    }
+
+    const list = instructions
+      .map((inst, i) => `${i + 1}. ${inst.summary} \`${inst.id}\``)
+      .join("\n");
+
+    await this.tools.plot.createNote({
+      activity: { id: note.activity.id },
+      content: `**Instructions:**\n${list}`,
+    });
+  }
+
+  async onForgetInstruction(note: Note): Promise<void> {
+    const content = note.content?.trim();
+    if (!content) return;
+
+    const instructions = await this.getInstructions();
+
+    if (instructions.length === 0) {
+      await this.tools.plot.createNote({
+        activity: { id: note.activity.id },
+        content: "No instructions to remove.",
+      });
+      return;
+    }
+
+    let target: Instruction | undefined;
+
+    // Strategy 1: Match a number (e.g. "forget instruction 3")
+    const numMatch = content.match(/\d+/);
+    if (numMatch) {
+      const idx = parseInt(numMatch[0], 10) - 1;
+      if (idx >= 0 && idx < instructions.length) {
+        target = instructions[idx];
+      }
+    }
+
+    // Strategy 2: Match a short ID substring
+    if (!target) {
+      target = instructions.find((inst) =>
+        content.toLowerCase().includes(inst.id.toLowerCase())
+      );
+    }
+
+    // Strategy 3: AI fuzzy match
+    if (!target) {
+      const summaries = instructions
+        .map((inst, i) => `${i + 1}. ${inst.summary}`)
+        .join("\n");
+
+      const schema = Type.Object({
+        matchIndex: Type.Number({
+          description:
+            "1-based index of the best matching instruction, or 0 if none match",
+        }),
+      });
+
+      try {
+        const response = await this.tools.ai.prompt({
+          model: { speed: "fast", cost: "low" },
+          system: `The user wants to remove one of these instructions:\n${summaries}\n\nReturn the 1-based index of the instruction that best matches the user's request. Return 0 if none match.`,
+          prompt: content,
+          outputSchema: schema,
+        });
+
+        const idx = (response.output?.matchIndex ?? 0) - 1;
+        if (idx >= 0 && idx < instructions.length) {
+          target = instructions[idx];
+        }
+      } catch {
+        // Fall through to "no match" handling
+      }
+    }
+
+    if (!target) {
+      const list = instructions
+        .map((inst, i) => `${i + 1}. ${inst.summary} \`${inst.id}\``)
+        .join("\n");
+
+      await this.tools.plot.createNote({
+        activity: { id: note.activity.id },
+        content: `Couldn't find a matching instruction. Here are the current ones:\n${list}`,
+      });
+      return;
+    }
+
+    await this.setInstructions(instructions.filter((i) => i.id !== target.id));
+
+    await this.tools.plot.createNote({
+      activity: { id: note.activity.id },
+      content: `Removed: "${target.summary}"`,
+    });
   }
 
   // ============================================================================
@@ -125,6 +345,13 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     confidence: number;
     isCompleted: boolean;
   }> {
+    // Load user instructions
+    const instructions = await this.getInstructions();
+    const instructionBlock =
+      instructions.length > 0
+        ? `\n\nUser instructions (follow these as rules):\n${instructions.map((i) => `- ${i.summary}`).join("\n")}`
+        : "";
+
     // Build conversation for AI
     const messages: AIMessage[] = [
       {
@@ -147,14 +374,18 @@ DO NOT create tasks for:
 - Already completed or resolved discussions
 - Automatic notifications or bot messages
 
-If a task is needed, create a clear, actionable title that describes what the user needs to do.`,
+If a task is needed, create a clear, actionable title that describes what the user needs to do.${instructionBlock}`,
       },
-      ...thread.notes.map((note, idx) => ({
-        role: "user" as const,
-        content: `[Message ${idx + 1}] User: ${
-          note.content || "(empty message)"
-        }`,
-      })),
+      ...thread.notes.map((note, idx) => {
+        const author: NewContact | null =
+          note.author && "email" in note.author ? note.author : null;
+        return {
+          role: "user" as const,
+          content: `[Message ${idx + 1}] From ${
+            author?.name || author?.email || "someone"
+          }: ${note.content || "(empty message)"}`,
+        };
+      }),
     ];
 
     const schema = Type.Object({
@@ -217,6 +448,27 @@ If a task is needed, create a clear, actionable title that describes what the us
     }
   }
 
+  private formatSourceReference(
+    thread: NewActivityWithNotes,
+    provider: MessageProvider,
+    channelId: string
+  ): string {
+    if (provider === "gmail") {
+      const firstNote = thread.notes?.[0];
+      const author: NewContact | null =
+        firstNote?.author && "email" in firstNote.author
+          ? firstNote.author
+          : null;
+      const senderName = author?.name || author?.email;
+      const subject = thread.title;
+      if (senderName && subject) return `From ${senderName}: ${subject}`;
+      if (senderName) return `From ${senderName}`;
+      if (subject) return `Re: ${subject}`;
+      return `From Gmail`;
+    }
+    return `From #${channelId}`;
+  }
+
   private async createTaskFromThread(
     thread: NewActivityWithNotes,
     analysis: {
@@ -225,7 +477,7 @@ If a task is needed, create a clear, actionable title that describes what the us
       taskNote: string | null;
       confidence: number;
     },
-    _provider: MessageProvider,
+    provider: MessageProvider,
     channelId: string
   ): Promise<void> {
     const threadId = "source" in thread ? thread.source : undefined;
@@ -233,6 +485,8 @@ If a task is needed, create a clear, actionable title that describes what the us
       console.warn("Thread has no source, skipping task creation");
       return;
     }
+
+    const sourceRef = this.formatSourceReference(thread, provider, channelId);
 
     // Create task activity - database handles upsert automatically
     const taskId = await this.tools.plot.createActivity({
@@ -243,17 +497,17 @@ If a task is needed, create a clear, actionable title that describes what the us
       notes: analysis.taskNote
         ? [
             {
-              content: `${analysis.taskNote}\n\n---\nFrom #${channelId}`,
+              content: `${analysis.taskNote}\n\n---\n${sourceRef}`,
             },
           ]
         : [
             {
-              content: `From #${channelId}`,
+              content: sourceRef,
             },
           ],
       preview: analysis.taskNote
-        ? `${analysis.taskNote}\n\n---\nFrom #${channelId}`
-        : `From #${channelId}`,
+        ? `${analysis.taskNote}\n\n---\n${sourceRef}`
+        : sourceRef,
       meta: {
         originalThreadId: threadId,
         channelId,
