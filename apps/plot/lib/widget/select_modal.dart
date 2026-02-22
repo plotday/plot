@@ -707,11 +707,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
                         // Build the item widget
                         final itemWidget = widget.itemBuilder(item);
-                        final isListTile = itemWidget is ListTile;
-
-                        // For ListTiles, don't wrap in GestureDetector - they handle their own taps
-                        // and have spinner logic. For other widgets, wrap in GestureDetector.
-                        final Widget child = isListTile
+                        // Only skip GestureDetector for ListTiles that have a command,
+                        // since they handle their own taps and spinner logic. ListTiles
+                        // without a command (e.g. priority selection) need the wrapper.
+                        final handlesOwnTaps =
+                            itemWidget is ListTile &&
+                            itemWidget.command != null;
+                        final Widget child = handlesOwnTaps
                             ? itemWidget
                             : GestureDetector(
                                 behavior: HitTestBehavior.opaque,
