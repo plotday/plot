@@ -1,7 +1,7 @@
 import {
   type Activity,
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
   type ActivityOccurrence,
   ActivityType,
   type ActorId,
@@ -609,12 +609,12 @@ export class OutlookCalendar
         }
 
         // Build links array for videoconferencing and calendar links
-        const links: ActivityLink[] = [];
+        const links: Link[] = [];
 
         // Add conferencing link if available
         if (outlookEvent.onlineMeeting?.joinUrl) {
           links.push({
-            type: ActivityLinkType.conferencing,
+            type: LinkType.conferencing,
             url: outlookEvent.onlineMeeting.joinUrl,
             provider: detectConferencingProvider(
               outlookEvent.onlineMeeting.joinUrl
@@ -625,27 +625,26 @@ export class OutlookCalendar
         // Add calendar link
         if (outlookEvent.webLink) {
           links.push({
-            type: ActivityLinkType.external,
+            type: LinkType.external,
             title: "View in Calendar",
             url: outlookEvent.webLink,
           });
         }
 
-        // Create note with description and/or links
+        // Create note with description (links moved to activity level)
         const notes: NewNote[] = [];
         const hasDescription =
           outlookEvent.body?.content &&
           outlookEvent.body.content.trim().length > 0;
         const hasLinks = links.length > 0;
 
-        if (hasDescription || hasLinks) {
+        if (hasDescription) {
           notes.push({
             activity: {
               source: `outlook-calendar:${outlookEvent.id}`,
             },
             key: "description",
-            content: hasDescription ? outlookEvent.body!.content! : null,
-            links: hasLinks ? links : null,
+            content: outlookEvent.body!.content!,
             contentType: (outlookEvent.body?.contentType === "html"
               ? "html"
               : "text") as ContentType,
@@ -662,6 +661,7 @@ export class OutlookCalendar
             syncableId: calendarId,
           },
           tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
+          links: hasLinks ? links : undefined,
           notes,
           preview: hasDescription ? outlookEvent.body!.content! : null,
           ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates

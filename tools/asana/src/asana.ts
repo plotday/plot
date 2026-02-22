@@ -3,8 +3,8 @@ import * as asana from "asana";
 import {
   type Activity,
   type ActivityFilter,
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
   ActivityMeta,
   ActivityType,
   type NewActivity,
@@ -424,20 +424,20 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     // Construct Asana task URL for link
     const taskUrl = `https://app.asana.com/0/${projectId}/${task.gid}`;
 
-    // Create initial note with description and link to Asana task
-    const links: ActivityLink[] = [];
-    links.push({
-      type: ActivityLinkType.external,
+    // Build activity-level links
+    const activityLinks: Link[] = [];
+    activityLinks.push({
+      type: LinkType.external,
       title: `Open in Asana`,
       url: taskUrl,
     });
 
+    // Create initial note with description (links moved to activity level)
     notes.push({
       activity: { source: activitySource },
       key: "description",
       content: description,
       created: task.created_at ? new Date(task.created_at) : undefined,
-      links: links.length > 0 ? links : null,
     });
 
     return {
@@ -451,6 +451,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         syncProvider: "asana",
         syncableId: projectId,
       },
+      links: activityLinks.length > 0 ? activityLinks : undefined,
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned tasks
       done:

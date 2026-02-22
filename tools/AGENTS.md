@@ -93,7 +93,7 @@ export { default, ToolName } from "./tool-name";
 ```typescript
 import {
   ActivityType,
-  ActivityLinkType,
+  LinkType,
   type NewActivity,
   type NewActivityWithNotes,
   type NewNote,
@@ -346,7 +346,7 @@ export class MyTool extends Tool<MyTool> implements ProjectTool {
         key: "description",  // Enables note upsert
         content: item.description || null,
         links: item.url ? [{
-          type: ActivityLinkType.external,
+          type: LinkType.external,
           title: "Open in Service",
           url: item.url,
         }] : null,

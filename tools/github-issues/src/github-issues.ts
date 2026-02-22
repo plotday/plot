@@ -1,8 +1,8 @@
 import { Octokit } from "@octokit/rest";
 
 import {
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
   type ActivityMeta,
   ActivityType,
   type NewActivity,
@@ -453,24 +453,23 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
     const description = issue.body || "";
     const hasDescription = description.trim().length > 0;
 
-    // Build notes array (inline notes don't require the `activity` field)
-    const notes: any[] = [];
-
-    // Description note with link to GitHub issue
-    const links: ActivityLink[] = [];
+    // Build activity-level links
+    const activityLinks: Link[] = [];
     if (issue.html_url) {
-      links.push({
-        type: ActivityLinkType.external,
+      activityLinks.push({
+        type: LinkType.external,
         title: "Open in GitHub",
         url: issue.html_url,
       });
     }
 
+    // Build notes array (inline notes don't require the `activity` field)
+    const notes: any[] = [];
+
     notes.push({
       key: "description",
       content: hasDescription ? description : null,
       created: issue.created_at,
-      links: links.length > 0 ? links : null,
       author: authorContact,
     });
 
@@ -534,6 +533,7 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
         githubRepoFullName: repoFullName,
         projectId: repoId,
       },
+      links: activityLinks.length > 0 ? activityLinks : undefined,
       notes,
       preview: hasDescription ? description : null,
       ...(initialSync ? { unread: false } : {}),

@@ -32,7 +32,7 @@ export type Callback = string & { readonly __brand: "Callback" };
  * **When to use callbacks:**
  * - Webhook handlers that need persistent function references
  * - Scheduled operations that run after worker timeouts
- * - User interaction links (ActivityLinkType.callback)
+ * - User interaction links (LinkType.callback)
  * - Cross-tool communication that survives restarts
  *
  * **Type Safety:**

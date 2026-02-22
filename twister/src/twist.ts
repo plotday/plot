@@ -1,4 +1,4 @@
-import { ActivityLink, type Actor, type Priority, Uuid } from "./plot";
+import { type Link, type Actor, type Priority, Uuid } from "./plot";
 import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
 import type { Serializable } from "./utils/serializable";
@@ -92,7 +92,7 @@ export abstract class Twist<TSelf> {
   }
 
   /**
-   * Like callback(), but for an ActivityLink, which receives the link as the first argument.
+   * Like callback(), but for a Link, which receives the link as the first argument.
    *
    * @param fn - The method to callback
    * @param extraArgs - Additional arguments to pass after the link
@@ -101,8 +101,8 @@ export abstract class Twist<TSelf> {
    * @example
    * ```typescript
    * const callback = await this.linkCallback(this.doSomething, 123);
-   * const link: ActivityLink = {
-   *    type: ActivityLinkType.Callback,
+   * const link: Link = {
+   *    type: LinkType.Callback,
    *    title: "Do Something",
    *    callback,
    * };
@@ -110,7 +110,7 @@ export abstract class Twist<TSelf> {
    */
   protected async linkCallback<
     TArgs extends Serializable[],
-    Fn extends (link: ActivityLink, ...extraArgs: TArgs) => any
+    Fn extends (link: Link, ...extraArgs: TArgs) => any
   >(fn: Fn, ...extraArgs: TArgs): Promise<Callback> {
     return this.tools.callbacks.create(fn, ...extraArgs);
   }

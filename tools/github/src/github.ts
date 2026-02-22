@@ -1,7 +1,7 @@
 import {
   type Activity,
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
   type ActivityMeta,
   ActivityType,
   type NewActivity,
@@ -784,23 +784,22 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
       ? this.userToContact(pr.assignee)
       : null;
 
-    const notes: any[] = [];
-
-    // Description note with link to GitHub PR
-    const links: ActivityLink[] = [
+    // Build activity-level links
+    const activityLinks: Link[] = [
       {
-        type: ActivityLinkType.external,
+        type: LinkType.external,
         title: `Open in GitHub`,
         url: pr.html_url,
       },
     ];
+
+    const notes: any[] = [];
 
     const hasDescription = pr.body && pr.body.trim().length > 0;
     notes.push({
       key: "description",
       content: hasDescription ? pr.body : null,
       created: new Date(pr.created_at),
-      links,
       author: authorContact,
     });
 
@@ -873,6 +872,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
         prNumber: pr.number,
         prNodeId: pr.id,
       },
+      links: activityLinks,
       notes,
       preview: hasDescription ? pr.body : null,
       ...(initialSync ? { unread: false } : {}),
