@@ -449,6 +449,9 @@ importers:
 
   public/twists/message-tasks:
     dependencies:
+      '@plotday/tool-gmail':
+        specifier: workspace:^
+        version: link:../../tools/gmail
       '@plotday/tool-slack':
         specifier: workspace:^
         version: link:../../tools/slack
