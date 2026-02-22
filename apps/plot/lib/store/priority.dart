@@ -602,6 +602,15 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .map(Priority.fromStore);
   }
 
+  /// Filters out the @plot system priority and all its descendants.
+  static List<Priority> excludePlot(List<Priority> priorities) {
+    final plot = priorities.firstWhereOrNull((p) => p.key == '@plot');
+    if (plot == null) return priorities;
+    return priorities
+        .where((p) => p.id != plot.id && !plot.path.isParent(p.path))
+        .toList();
+  }
+
   static Map<Uuid, Priority> asMap(List<Priority> list) {
     final priorities = <Uuid, Priority>{};
     void add(Priority priority) {

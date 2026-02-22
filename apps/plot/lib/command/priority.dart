@@ -94,8 +94,7 @@ class PriorityGroup extends CommandGroup {
       order: PriorityOrder.recent,
       search: search,
     );
-    // Filter out the @plot priority
-    final filtered = priorities.where((p) => p.key != '@plot').toList();
+    final filtered = Priority.excludePlot(priorities);
     final all = filtered.map((priority) => builder(priority)).toList();
     return CommandGroup.filter(all, search);
   }
@@ -252,9 +251,11 @@ class NewPriority extends ShowForm {
                     key: 'parent',
                     label: 'Parent',
                     initialValue: defaultParent,
-                    items: (search) => Priority.get(
-                      order: PriorityOrder.nested,
-                      search: search,
+                    items: (search) async => Priority.excludePlot(
+                      await Priority.get(
+                        order: PriorityOrder.nested,
+                        search: search,
+                      ),
                     ),
                     labelBuilder: (p) => PriorityLabel(priority: p),
                     titleBuilder: (p) => p.ancestorsLabel() != null
@@ -336,18 +337,16 @@ class EditPriorityCommand extends ShowForm {
                     enabled: !isRoot,
                     placeholder: 'None',
                     items: (search) async {
-                      final priorities = await Priority.get(
-                        order: PriorityOrder.nested,
-                        search: search,
+                      final priorities = Priority.excludePlot(
+                        await Priority.get(
+                          order: PriorityOrder.nested,
+                          search: search,
+                        ),
                       );
-                      // Filter out the priority itself, its descendants, and the @plot priority
                       return priorities.where((p) {
                         if (p.id == priority.id) return false;
                         if (priority.path.isParent(p.path)) return false;
-                        if (p.key == '@plot') return false;
-                        // If editing personal priority, only show personal parents
                         if (priority.personal && !p.personal) return false;
-
                         return true;
                       }).toList();
                     },

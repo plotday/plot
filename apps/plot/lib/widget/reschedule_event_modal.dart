@@ -66,9 +66,11 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
     final result = await SelectModal.open<Priority>(
       context,
       items: (search) async {
-        final priorities = await Priority.get(
-          order: PriorityOrder.nested,
-          search: search,
+        final priorities = Priority.excludePlot(
+          await Priority.get(
+            order: PriorityOrder.nested,
+            search: search,
+          ),
         );
         return [SelectGroup(title: null, items: priorities)];
       },
