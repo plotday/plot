@@ -787,17 +787,13 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
       });
     }
 
-    // Add links to the summary note if present
-    if (links.length > 0 && notes.length > 0) {
-      notes[0].links = links;
-    }
-
     const activity: NewActivityWithNotes = {
       source: canonicalSource,
       type: ActivityType.Note,
       kind: ActivityKind.document,
       title: file.name,
       author,
+      links: links.length > 0 ? links : null,
       meta: {
         fileId: file.id,
         folderId,
