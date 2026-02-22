@@ -290,29 +290,19 @@ class AddActivity extends Command {
       return const CommandDone();
     }
 
-    var routePriority = activity.priority;
     if (context.mounted) {
       final priorityBloc = context.read<PriorityBloc>();
-      final nowBloc = context.read<NowBloc>();
 
       // Update PriorityBloc to track the new activity
       priorityBloc.setActivity(activity);
 
-      // Get the currently displayed priority context to preserve it in navigation
-      if (nowBloc.loadedState.context != null) {
-        routePriority = nowBloc.loadedState.context!;
-      }
+      // Replace NewActivityRoute with ActivityRoute on the inner stack
+      await context.router.replace(
+        ActivityRoute(activityIdString: activity.id.toShortString()),
+      );
     }
 
-    return CommandRoute(
-      PriorityRoute(
-        priorityIdString: routePriority.id.toShortString(),
-        children: [
-          ActivityRoute(activityIdString: activity.id.toShortString()),
-        ],
-      ),
-      replace: true,
-    );
+    return const CommandDone();
   }
 }
 
@@ -342,24 +332,14 @@ class AddActivityWithNote extends Command {
       return const CommandDone();
     }
 
-    // Get the currently displayed priority context to preserve it in navigation
-    var routePriority = savedActivity.priority;
+    // Replace NewActivityRoute with ActivityRoute on the inner stack
     if (context.mounted) {
-      final nowBloc = context.read<NowBloc>();
-      if (nowBloc.loadedState.context != null) {
-        routePriority = nowBloc.loadedState.context!;
-      }
+      await context.router.replace(
+        ActivityRoute(activityIdString: savedActivity.id.toShortString()),
+      );
     }
 
-    return CommandRoute(
-      PriorityRoute(
-        priorityIdString: routePriority.id.toShortString(),
-        children: [
-          ActivityRoute(activityIdString: savedActivity.id.toShortString()),
-        ],
-      ),
-      replace: true,
-    );
+    return const CommandDone();
   }
 }
 
@@ -387,24 +367,14 @@ class AddEvent extends Command {
       return const CommandDone();
     }
 
-    // Get the currently displayed priority context to preserve it in navigation
-    var routePriority = savedActivity.priority;
+    // Replace NewActivityRoute with ActivityRoute on the inner stack
     if (context.mounted) {
-      final nowBloc = context.read<NowBloc>();
-      if (nowBloc.loadedState.context != null) {
-        routePriority = nowBloc.loadedState.context!;
-      }
+      await context.router.replace(
+        ActivityRoute(activityIdString: savedActivity.id.toShortString()),
+      );
     }
 
-    return CommandRoute(
-      PriorityRoute(
-        priorityIdString: routePriority.id.toShortString(),
-        children: [
-          ActivityRoute(activityIdString: savedActivity.id.toShortString()),
-        ],
-      ),
-      replace: true,
-    );
+    return const CommandDone();
   }
 }
 
