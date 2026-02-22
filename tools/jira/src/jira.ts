@@ -2,8 +2,8 @@ import { Version3Client } from "jira.js";
 
 import {
   type Activity,
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
   ActivityType,
   type NewActivity,
   type NewActivityWithNotes,
@@ -430,21 +430,21 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       ? `jira:${cloudId}:issue:${issue.id}`
       : undefined;
 
-    // Create initial note with description and link to Jira issue
-    const links: ActivityLink[] = [];
+    // Build activity-level links
+    const activityLinks: Link[] = [];
     if (issueUrl) {
-      links.push({
-        type: ActivityLinkType.external,
+      activityLinks.push({
+        type: LinkType.external,
         title: `Open in Jira`,
         url: issueUrl,
       });
     }
 
+    // Create initial note with description (links moved to activity level)
     notes.push({
       key: "description",
       content: description,
       created: fields.created ? new Date(fields.created) : undefined,
-      links: links.length > 0 ? links : null,
       author: authorContact,
     });
 
@@ -486,6 +486,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
       done: fields.resolutiondate ? new Date(fields.resolutiondate) : null,
+      links: activityLinks.length > 0 ? activityLinks : undefined,
       notes,
       preview: description || null,
     };

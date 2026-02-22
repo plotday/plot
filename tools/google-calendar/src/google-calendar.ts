@@ -1,8 +1,8 @@
 import GoogleContacts from "@plotday/tool-google-contacts";
 import {
   type Activity,
-  ActivityLinkType,
-  type ActivityLink,
+  LinkType,
+  type Link,
   type ActivityOccurrence,
   ActivityType,
   type ActorId,
@@ -832,7 +832,7 @@ export class GoogleCalendar
           }
 
           // Build links array for videoconferencing and calendar links
-          const links: ActivityLink[] = [];
+          const links: Link[] = [];
           const seenUrls = new Set<string>();
 
           // Extract all conferencing links (Zoom, Teams, Webex, etc.)
@@ -841,7 +841,7 @@ export class GoogleCalendar
             if (!seenUrls.has(link.url)) {
               seenUrls.add(link.url);
               links.push({
-                type: ActivityLinkType.conferencing,
+                type: LinkType.conferencing,
                 url: link.url,
                 provider: link.provider,
               });
@@ -852,7 +852,7 @@ export class GoogleCalendar
           if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
             seenUrls.add(event.hangoutLink);
             links.push({
-              type: ActivityLinkType.conferencing,
+              type: LinkType.conferencing,
               url: event.hangoutLink,
               provider: ConferencingProvider.googleMeet,
             });
@@ -861,7 +861,7 @@ export class GoogleCalendar
           // Add calendar link
           if (event.htmlLink) {
             links.push({
-              type: ActivityLinkType.external,
+              type: LinkType.external,
               title: "View in Calendar",
               url: event.htmlLink,
             });
@@ -882,14 +882,13 @@ export class GoogleCalendar
           // Canonical source for this event (required for upsert)
           const canonicalUrl = `google-calendar:${event.id}`;
 
-          // Create note with description and/or links
+          // Create note with description (links moved to activity level)
           const notes: NewNote[] = [];
-          if (hasDescription || hasLinks) {
+          if (hasDescription) {
             notes.push({
               activity: { source: canonicalUrl },
               key: "description",
-              content: hasDescription ? description : null,
-              links: hasLinks ? links : null,
+              content: description,
               contentType:
                 description && containsHtml(description) ? "html" : "text",
               created: event.created ? new Date(event.created) : new Date(),
@@ -909,6 +908,7 @@ export class GoogleCalendar
             recurrenceExdates: activityData.recurrenceExdates || null,
             meta: activityData.meta ?? null,
             tags: tags || undefined,
+            links: hasLinks ? links : undefined,
             notes,
             preview: hasDescription ? description : null,
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates

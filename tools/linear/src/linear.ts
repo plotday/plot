@@ -7,8 +7,8 @@ import type {
 import { LinearWebhookClient } from "@linear/sdk/webhooks";
 
 import {
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
   ActivityMeta,
   ActivityType,
   type NewActivity,
@@ -420,24 +420,23 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     const description = issue.description || "";
     const hasDescription = description.trim().length > 0;
 
-    // Build notes array: description note with link + comment notes
-    const notes: any[] = [];
-
-    // Create description note with link to Linear issue
-    const links: ActivityLink[] = [];
+    // Build activity-level links
+    const activityLinks: Link[] = [];
     if (issue.url) {
-      links.push({
-        type: ActivityLinkType.external,
+      activityLinks.push({
+        type: LinkType.external,
         title: `Open in Linear`,
         url: issue.url,
       });
     }
 
+    // Build notes array: description note + comment notes
+    const notes: any[] = [];
+
     notes.push({
       key: "description",
       content: hasDescription ? description : null,
       created: issue.createdAt,
-      links: links.length > 0 ? links : null,
       author: authorContact,
     });
 
@@ -483,6 +482,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         linearId: issue.id,
         projectId,
       },
+      links: activityLinks.length > 0 ? activityLinks : undefined,
       notes,
       preview: hasDescription ? description : null,
       ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates

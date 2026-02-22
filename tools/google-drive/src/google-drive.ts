@@ -2,8 +2,8 @@ import GoogleContacts from "@plotday/tool-google-contacts";
 import {
   type ActivityFilter,
   ActivityKind,
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
   ActivityType,
   type NewActivityWithNotes,
   type NewContact,
@@ -778,18 +778,13 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
     }
 
     // Build external link
-    const links: ActivityLink[] = [];
+    const links: Link[] = [];
     if (file.webViewLink) {
       links.push({
-        type: ActivityLinkType.external,
+        type: LinkType.external,
         title: "View in Drive",
         url: file.webViewLink,
       });
-    }
-
-    // Add links to the summary note if present
-    if (links.length > 0 && notes.length > 0) {
-      notes[0].links = links;
     }
 
     const activity: NewActivityWithNotes = {
@@ -798,6 +793,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
       kind: ActivityKind.document,
       title: file.name,
       author,
+      links: links.length > 0 ? links : null,
       meta: {
         fileId: file.id,
         folderId,

@@ -1,8 +1,8 @@
 import { Type } from "typebox";
 
 import {
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
   ActorType,
   type Note,
   Tag,
@@ -132,10 +132,10 @@ You can provide either or both inline and standalone links. Only use standalone 
       outputSchema: schema,
     });
 
-    // Convert AI links to ActivityLink format
-    const activityLinks: ActivityLink[] | null =
+    // Convert AI links to Link format
+    const activityLinks: Link[] | null =
       response.output!.links?.map((link) => ({
-        type: ActivityLinkType.external,
+        type: LinkType.external,
         title: link.title,
         url: link.url,
       })) || null;

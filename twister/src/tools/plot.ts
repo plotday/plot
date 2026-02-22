@@ -90,7 +90,7 @@ export type NoteIntentHandler = {
  *       title: "Welcome to Plot!",
  *       links: [{
  *         title: "Get Started",
- *         type: ActivityLinkType.external,
+ *         type: LinkType.external,
  *         url: "https://plot.day/docs"
  *       }]
  *     });
@@ -337,7 +337,7 @@ export abstract class Plot extends ITool {
    *   activity: { id: "activity-456" },
    *   note: "Meeting recording available",
    *   links: [{
-   *     type: ActivityLinkType.external,
+   *     type: LinkType.external,
    *     title: "View Recording",
    *     url: "https://example.com/recording"
    *   }]

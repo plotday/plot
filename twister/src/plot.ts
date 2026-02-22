@@ -206,7 +206,7 @@ export enum ActivityKind {
  * Different link types have different behaviors when clicked by users
  * and may require different rendering approaches.
  */
-export enum ActivityLinkType {
+export enum LinkType {
   /** External web links that open in browser */
   external = "external",
   /** Authentication flows for connecting services */
@@ -247,22 +247,22 @@ export enum ConferencingProvider {
  * @example
  * ```typescript
  * // External link - opens URL in browser
- * const externalLink: ActivityLink = {
- *   type: ActivityLinkType.external,
+ * const externalLink: Link = {
+ *   type: LinkType.external,
  *   title: "Open in Google Calendar",
  *   url: "https://calendar.google.com/event/123",
  * };
  *
  * // Conferencing link - opens video conference with provider info
- * const conferencingLink: ActivityLink = {
- *   type: ActivityLinkType.conferencing,
+ * const conferencingLink: Link = {
+ *   type: LinkType.conferencing,
  *   url: "https://meet.google.com/abc-defg-hij",
  *   provider: ConferencingProvider.googleMeet,
  * };
  *
  * // Integrations link - initiates OAuth flow
- * const authLink: ActivityLink = {
- *   type: ActivityLinkType.auth,
+ * const authLink: Link = {
+ *   type: LinkType.auth,
  *   title: "Continue with Google",
  *   provider: AuthProvider.Google,
  *   scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
@@ -270,17 +270,17 @@ export enum ConferencingProvider {
  * };
  *
  * // Callback link - triggers a twist method
- * const callbackLink: ActivityLink = {
- *   type: ActivityLinkType.callback,
+ * const callbackLink: Link = {
+ *   type: LinkType.callback,
  *   title: "📅 Primary Calendar",
  *   token: "callback-token-here"
  * };
  * ```
  */
-export type ActivityLink =
+export type Link =
   | {
       /** External web link that opens in browser */
-      type: ActivityLinkType.external;
+      type: LinkType.external;
       /** Display text for the link button */
       title: string;
       /** URL to open when clicked */
@@ -288,7 +288,7 @@ export type ActivityLink =
     }
   | {
       /** Video conferencing link with provider-specific handling */
-      type: ActivityLinkType.conferencing;
+      type: LinkType.conferencing;
       /** URL to join the conference */
       url: string;
       /** Conferencing provider for UI customization */
@@ -296,7 +296,7 @@ export type ActivityLink =
     }
   | {
       /** Authentication link that initiates an OAuth flow */
-      type: ActivityLinkType.auth;
+      type: LinkType.auth;
       /** Display text for the auth button */
       title: string;
       /** OAuth provider (e.g., "google", "microsoft") */
@@ -308,7 +308,7 @@ export type ActivityLink =
     }
   | {
       /** Callback link that triggers a twist method when clicked */
-      type: ActivityLinkType.callback;
+      type: LinkType.callback;
       /** Display text for the callback button */
       title: string;
       /** Token identifying the callback to execute */
@@ -316,7 +316,7 @@ export type ActivityLink =
     }
   | {
       /** File attachment link stored in R2 */
-      type: ActivityLinkType.file;
+      type: LinkType.file;
       /** Unique identifier for the stored file */
       fileId: string;
       /** Original filename */
@@ -543,6 +543,8 @@ type ActivityFields = ActivityCommon & {
   meta: ActivityMeta | null;
   /** Sort order for the activity (fractional positioning) */
   order: number;
+  /** Array of interactive links attached to the activity (external, conferencing, callback) */
+  links: Array<Link> | null;
 };
 
 export type Activity = ActivityFields &
@@ -929,7 +931,7 @@ export type ActivityFilter = {
  * that can be applied uniformly across many activities are included.
  */
 type ActivityBulkUpdateFields = Partial<
-  Pick<ActivityFields, "kind" | "title" | "private" | "archived" | "meta" | "order">
+  Pick<ActivityFields, "kind" | "title" | "private" | "archived" | "meta" | "order" | "links">
 > & {
   /** Update the type of all matching activities. */
   type?: ActivityType;
@@ -1065,7 +1067,7 @@ export type Note = ActivityCommon & {
   /** Primary content for the note (markdown) */
   content: string | null;
   /** Array of interactive links attached to the note */
-  links: Array<ActivityLink> | null;
+  links: Array<Link> | null;
   /** The note this is a reply to, or null if not a reply */
   reNote: { id: Uuid } | null;
 };
@@ -1267,3 +1269,10 @@ export type NewContact = {
 };
 
 export type ContentType = "text" | "markdown" | "html";
+
+/** @deprecated Use LinkType instead */
+export const ActivityLinkType = LinkType;
+/** @deprecated Use LinkType instead */
+export type ActivityLinkType = LinkType;
+/** @deprecated Use Link instead */
+export type ActivityLink = Link;
