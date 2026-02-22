@@ -1,27 +1,11 @@
--- Upsert activity with smart handling
--- On INSERT: Infers required fields from defaults if provided
--- On UPDATE: Only updates fields whose keys are present in p_activity
---   - Key absent: keep existing value (unless activity is archived)
---   - Key present (even with null): use provided value (allows clearing to NULL)
---   - Archived activities: treated as INSERT, applying p_defaults for missing keys
--- Archived Detection: Activity is considered archived if:
---   - activity.archived_at IS NOT NULL, OR
---   - Priority is not accessible (no user.priority_expanded entry with NULL archived_at)
--- Derivation: Automatically derives source_priority_root, created_by_twist_id, and default assignee
---
--- Parameters:
---   p_activity: activity data as JSONB (explicitly provided values only)
---   p_defaults: default values as JSONB (all fields with defaults - used on INSERT if not in p_activity)
---
--- Assignee Derivation:
---   - If 'assignee_id' key exists in p_activity (even if null): use that value
---   - If 'assignee_id' key is absent AND type is 'action': derive from priority_twist owner
---
--- Returns: The full activity row (not just ID) so caller can process occurrences
-CREATE OR REPLACE FUNCTION "user".upsert_activity (user_id uuid, p_activity jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS activity
-    LANGUAGE plpgsql
-    AS $function$
+-- Drop "activity" view (CASCADE drops dependent views: activity_exception, activity_tags, note_tags)
+DROP VIEW "user"."activity" CASCADE;
+-- Drop "activity_x" view (CASCADE drops any remaining dependent views)
+DROP VIEW IF EXISTS "public"."activity_x" CASCADE;
+-- Modify "activity" table
+ALTER TABLE "public"."activity" ADD COLUMN "links" jsonb NULL;
+-- Modify "upsert_activity" function
+CREATE OR REPLACE FUNCTION "user"."upsert_activity" ("user_id" uuid, "p_activity" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."activity" LANGUAGE plpgsql AS $$
 DECLARE
     v_result activity;
     v_id uuid;
@@ -400,4 +384,311 @@ BEGIN
             * INTO v_result;
     RETURN v_result;
 END;
-$function$;
+$$;
+-- Create "activity_x" view
+CREATE VIEW "public"."activity_x" (
+  "id",
+  "created_at",
+  "updated_at",
+  "source_created_at",
+  "author_id",
+  "created_by",
+  "assignee_id",
+  "updated_by",
+  "sync_depth",
+  "archived_at",
+  "priority_id",
+  "type",
+  "kind",
+  "order",
+  "draft",
+  "private",
+  "title",
+  "preview",
+  "at",
+  "on",
+  "duration",
+  "done_at",
+  "recurrence_rule",
+  "recurrence_exdates",
+  "meta",
+  "links",
+  "source",
+  "created_by_twist_id",
+  "embedding",
+  "pick_priority",
+  "last_note_created_at",
+  "last_note_source_created_at",
+  "source_priority_root",
+  "priority_path",
+  "mentions"
+) AS SELECT a.id,
+    a.created_at,
+    a.updated_at,
+    a.source_created_at,
+    a.author_id,
+    a.created_by,
+    a.assignee_id,
+    a.updated_by,
+    a.sync_depth,
+    a.archived_at,
+    a.priority_id,
+    a.type,
+    a.kind,
+    a."order",
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    a.at,
+    a."on",
+    a.duration,
+    a.done_at,
+    a.recurrence_rule,
+    a.recurrence_exdates,
+    a.meta,
+    a.links,
+    a.source,
+    a.created_by_twist_id,
+    a.embedding,
+    a.pick_priority,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    a.source_priority_root,
+    p.path AS priority_path,
+    public.get_activity_mentions(a.id) AS mentions
+   FROM public.activity a
+     JOIN public.priority p ON p.id = a.priority_id;
+-- Create "activity" view
+CREATE VIEW "user"."activity" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "source_created_at",
+  "author_id",
+  "assignee_id",
+  "updated_by",
+  "archived_at",
+  "priority_id",
+  "priority_path",
+  "type",
+  "kind",
+  "order",
+  "draft",
+  "private",
+  "title",
+  "preview",
+  "at",
+  "on",
+  "duration",
+  "done_at",
+  "recurrence_rule",
+  "recurrence_exdates",
+  "meta",
+  "links",
+  "source",
+  "created_by_twist_id",
+  "last_note_created_at",
+  "last_note_source_created_at",
+  "mentions",
+  "range_at",
+  "range_on",
+  "unread"
+) AS SELECT upe.user_id,
+    a.id,
+    a.created_at,
+    GREATEST(a.updated_at, COALESCE(a.last_note_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone),
+        CASE
+            WHEN a.archived_at IS NULL AND (a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at OR (a.created_by IS NULL OR a.created_by <> upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at) THEN GREATEST(COALESCE(
+            CASE
+                WHEN ar.read_at >=
+                CASE
+                    WHEN a.created_by = upe.user_id THEN a.last_note_source_created_at
+                    ELSE COALESCE(a.last_note_source_created_at, a.source_created_at)
+                END THEN ar.updated_at
+                ELSE NULL::timestamp with time zone
+            END, '1970-01-01 00:00:00+00'::timestamp with time zone),
+            CASE
+                WHEN a.created_by = upe.user_id THEN COALESCE(a.last_note_source_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone)
+                ELSE COALESCE(a.last_note_source_created_at, a.source_created_at)
+            END)
+            ELSE '1970-01-01 00:00:00+00'::timestamp with time zone
+        END) AS updated_at,
+    a.source_created_at,
+    a.author_id,
+    a.assignee_id,
+    a.updated_by,
+    COALESCE(a.archived_at, upe.archived_at) AS archived_at,
+    a.priority_id,
+    a.priority_path,
+    a.type,
+    a.kind,
+    a."order",
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    a.at,
+    a."on",
+    a.duration,
+    a.done_at,
+    a.recurrence_rule,
+    a.recurrence_exdates,
+    a.meta,
+    a.links,
+    a.source,
+    a.created_by_twist_id,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    a.mentions,
+        CASE
+            WHEN a.done_at IS NOT NULL THEN tstzrange(a.done_at, a.done_at, '[]'::text)
+            WHEN a.assignee_id IS NOT NULL AND (( SELECT c.user_id
+               FROM public.contact c
+              WHERE c.id = a.assignee_id)) <> upe.user_id OR a."on" IS NULL THEN
+            CASE
+                WHEN lower(a.at) >= GREATEST(a.source_created_at, COALESCE(a.last_note_source_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) THEN a.at
+                ELSE tstzrange(GREATEST(a.source_created_at, COALESCE(a.last_note_source_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone)), GREATEST(a.source_created_at, COALESCE(a.last_note_source_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone)), '[]'::text)
+            END
+            ELSE NULL::tstzrange
+        END AS range_at,
+        CASE
+            WHEN a.done_at IS NOT NULL THEN NULL::daterange
+            WHEN a.assignee_id IS NOT NULL AND (( SELECT c.user_id
+               FROM public.contact c
+              WHERE c.id = a.assignee_id)) <> upe.user_id THEN NULL::daterange
+            WHEN a.at IS NOT NULL THEN NULL::daterange
+            WHEN a."on" IS NOT NULL THEN a."on"
+            ELSE NULL::daterange
+        END AS range_on,
+    COALESCE(
+        CASE
+            WHEN a.archived_at IS NULL AND (a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at OR (a.created_by IS NULL OR a.created_by <> upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at) THEN ar.read_at IS NULL OR ar.read_at <
+            CASE
+                WHEN a.created_by = upe.user_id THEN a.last_note_source_created_at
+                ELSE COALESCE(a.last_note_source_created_at, a.source_created_at)
+            END
+            ELSE false
+        END, false) AS unread
+   FROM public.activity_x a
+     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
+     LEFT JOIN public.activity_read ar ON ar.user_id = upe.user_id AND ar.activity_id = a.id
+  WHERE (a.draft = false OR a.created_by = upe.user_id) AND
+        CASE
+            WHEN a.private = false THEN true
+            WHEN a.created_by = upe.user_id THEN true
+            ELSE "user".mentioned_in_activity(upe.user_id, a.id)
+        END
+UNION ALL
+ SELECT upe.user_id,
+    a.id,
+    a.created_at,
+    a.updated_at,
+    a.source_created_at,
+    a.author_id,
+    a.assignee_id,
+    a.updated_by,
+    COALESCE(a.archived_at, upe.archived_at, a.updated_at) AS archived_at,
+    a.priority_id,
+    a.priority_path,
+    a.type,
+    a.kind,
+    a."order",
+    a.draft,
+    a.private,
+    NULL::text AS title,
+    NULL::text AS preview,
+    NULL::tstzrange AS at,
+    NULL::daterange AS "on",
+    NULL::interval AS duration,
+    a.done_at,
+    NULL::text AS recurrence_rule,
+    NULL::timestamp with time zone[] AS recurrence_exdates,
+    NULL::jsonb AS meta,
+    NULL::jsonb AS links,
+    NULL::text AS source,
+    a.created_by_twist_id,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    NULL::uuid[] AS mentions,
+    NULL::tstzrange AS range_at,
+    NULL::daterange AS range_on,
+    false AS unread
+   FROM public.activity_x a
+     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
+  WHERE (a.draft = false OR a.created_by = upe.user_id) AND a.private = true AND a.created_by <> upe.user_id AND NOT "user".mentioned_in_activity(upe.user_id, a.id);
+-- Create "activity_exception" view
+CREATE VIEW "user"."activity_exception" (
+  "user_id",
+  "id",
+  "activity_id",
+  "archived_at",
+  "occurrence",
+  "updated_at",
+  "priority_path",
+  "range_at",
+  "range_on",
+  "at",
+  "on",
+  "title",
+  "preview"
+) AS SELECT ua.user_id,
+    ae.id,
+    ae.activity_id,
+    COALESCE(ae.archived_at, ua.archived_at) AS archived_at,
+    ae.occurrence,
+    ae.updated_at,
+    ua.priority_path,
+    ua.range_at,
+    ua.range_on,
+    ae.at,
+    ae."on",
+    ae.title,
+    ae.preview
+   FROM public.activity_exception ae
+     JOIN "user".activity ua ON ua.id = ae.activity_id;
+-- Create "activity_tags" view
+CREATE VIEW "user"."activity_tags" (
+  "user_id",
+  "id",
+  "archived_at",
+  "occurrence",
+  "updated_at",
+  "priority_path",
+  "range_at",
+  "range_on",
+  "tags"
+) AS SELECT ua.user_id,
+    ua.id,
+    ua.archived_at,
+    at.occurrence,
+    at.updated_at,
+    ua.priority_path,
+    ua.range_at,
+    ua.range_on,
+    at.tags
+   FROM public.activity_tags at
+     JOIN "user".activity ua ON ua.id = at.activity_id;
+-- Create "note_tags" view
+CREATE VIEW "user"."note_tags" (
+  "user_id",
+  "id",
+  "updated_at",
+  "archived_at",
+  "priority_path",
+  "range_at",
+  "range_on",
+  "tags"
+) AS SELECT ua.user_id,
+    n.id,
+    nt.updated_at,
+    ua.archived_at,
+    ua.priority_path,
+    ua.range_at,
+    ua.range_on,
+    nt.tags
+   FROM public.note_tags nt
+     JOIN public.note n ON n.id = nt.note_id
+     JOIN "user".activity ua ON ua.id = n.activity_id
+  WHERE (n.draft = false OR n.created_by = ua.user_id) AND (n.private = false OR n.created_by = ua.user_id OR (ua.user_id = ANY (n.mentions)));

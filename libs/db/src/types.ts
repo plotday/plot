@@ -26,6 +26,7 @@ export type Database = {
           kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
+          links: Json | null
           meta: Json | null
           on: unknown
           order: number
@@ -80,6 +81,7 @@ export type Database = {
           kind?: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
+          links?: Json | null
           meta?: Json | null
           on?: unknown
           order?: number
@@ -114,6 +116,7 @@ export type Database = {
           kind?: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
+          links?: Json | null
           meta?: Json | null
           on?: unknown
           order?: number
@@ -1663,6 +1666,7 @@ export type Database = {
           kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
+          links: Json | null
           mentions: string[] | null
           meta: Json | null
           on: unknown
@@ -1682,16 +1686,6 @@ export type Database = {
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
           updated_by: number | null
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
         }
         Relationships: [
           {
@@ -2214,45 +2208,7 @@ export type Database = {
               updated_at: string | null
             }[]
             SetofOptions: {
-              from: '"user".activity'
-              to: "actor"
-              isOneToOne: false
-              isSetofReturn: true
-            }
-          }
-        | {
-            Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
-            Returns: {
-              archived_at: string | null
-              avatar_url: string | null
-              created_at: string | null
-              email: string | null
-              id: string | null
-              name: string | null
-              type: string | null
-              updated_at: string | null
-            }[]
-            SetofOptions: {
               from: "activity"
-              to: "actor"
-              isOneToOne: false
-              isSetofReturn: true
-            }
-          }
-        | {
-            Args: { "": Database["public"]["Views"]["activity_x"]["Row"] }
-            Returns: {
-              archived_at: string | null
-              avatar_url: string | null
-              created_at: string | null
-              email: string | null
-              id: string | null
-              name: string | null
-              type: string | null
-              updated_at: string | null
-            }[]
-            SetofOptions: {
-              from: "activity_x"
               to: "actor"
               isOneToOne: false
               isSetofReturn: true
@@ -2536,6 +2492,7 @@ export type Database = {
           kind: Database["public"]["Enums"]["activity_kind"] | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
+          links: Json | null
           mentions: string[] | null
           meta: Json | null
           on: unknown

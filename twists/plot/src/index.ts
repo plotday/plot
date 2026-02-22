@@ -1,5 +1,5 @@
 import {
-  ActivityLinkType,
+  LinkType,
   ActivityType,
   type Priority,
   ThemeColor,
@@ -136,7 +136,7 @@ class PlotTwist extends Twist<PlotTwist> {
             "You can also **create your own twists**, either by describing what you want (Plot AI will generate it for you) or by writing code. Custom twists can integrate any app or automate any workflow specific to your needs.",
           links: [
             {
-              type: ActivityLinkType.external,
+              type: LinkType.external,
               title: "Learn more about creating twists",
               url: "https://twist.plot.day",
             },

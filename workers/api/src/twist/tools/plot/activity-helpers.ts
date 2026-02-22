@@ -918,6 +918,7 @@ export async function prepareActivityForDb(
     recurrence_exdates:
       activity.recurrenceExdates?.map((d) => d.toISOString()) ?? [],
     meta: (activity.meta ?? null) as Json | null,
+    links: (activity.links ?? null) as Json | null,
     sync_depth: plot.syncDepth + 1,
     embedding: embedding ? JSON.stringify(embedding) : null,
     pick_priority: (pickPriorityConfig ?? null) as Json | null,
@@ -976,6 +977,9 @@ export async function prepareActivityForDb(
     }
     if (activity.meta !== undefined) {
       upsertFields.meta = activity.meta as Json | null;
+    }
+    if (activity.links !== undefined) {
+      upsertFields.links = activity.links as Json | null;
     }
     if ((activity as any).addRecurrenceExdates !== undefined) {
       (upsertFields as any).recurrence_exdates_add =

@@ -1,7 +1,7 @@
 import type { Database } from "@plotday/db";
 import {
   type Activity,
-  type ActivityLink,
+  type Link,
   type ActorId,
   type ActorType,
   type NewNote,
@@ -712,7 +712,7 @@ export async function getNotes(
         content: row.content,
         key: row.key || null,
         reNote: row.re_note_id ? { id: row.re_note_id as Uuid } : null,
-        links: row.links as ActivityLink[] | null,
+        links: row.links as Link[] | null,
         mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? [],
         tags:
           (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) || {},

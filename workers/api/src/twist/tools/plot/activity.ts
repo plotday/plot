@@ -5,7 +5,7 @@ import { ActivityType } from "@plotday/twister/plot";
 import {
   type Activity,
   type ActivityFilter,
-  type ActivityLink,
+  type Link,
   type ActivityMeta,
   type ActivityOccurrence,
   type ActivityUpdate,
@@ -412,6 +412,9 @@ async function updateActivitiesByMatch(
   if (activity.meta !== undefined) {
     dbUpdate.meta = activity.meta;
   }
+  if (activity.links !== undefined) {
+    dbUpdate.links = activity.links;
+  }
   if (activity.kind !== undefined) {
     dbUpdate.kind = activity.kind;
   }
@@ -519,6 +522,9 @@ export async function updateActivity(
     }
     if (activity.meta !== undefined) {
       dbUpdate.meta = activity.meta;
+    }
+    if (activity.links !== undefined) {
+      dbUpdate.links = activity.links;
     }
     if (activity.order !== undefined) {
       dbUpdate.order = activity.order;
@@ -1097,7 +1103,7 @@ export async function getNote(
       content: data.content,
       key: data.key || null,
       reNote: data.re_note_id ? { id: data.re_note_id as Uuid } : null,
-      links: data.links as ActivityLink[] | null,
+      links: data.links as Link[] | null,
       mentions: (data.mentions as string[])?.map((m) => m as ActorId) ?? [],
       tags: (tagsData?.tags as Partial<Record<Tag, ActorId[]>> | null) || {},
     };

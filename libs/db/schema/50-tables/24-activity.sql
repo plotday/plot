@@ -34,6 +34,7 @@ CREATE TABLE "public"."activity" (
     "recurrence_rule" text,
     "recurrence_exdates" timestamptz[],
     "meta" jsonb,
+    "links" jsonb,
     "source" text,
     "created_by_twist_id" bigint,
     "embedding" halfvec (384),

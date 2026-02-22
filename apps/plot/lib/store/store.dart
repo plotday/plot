@@ -1656,7 +1656,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 243;
+  int get schemaVersion => 244;
 
   @override
   MigrationStrategy get migration {
@@ -1681,12 +1681,9 @@ class Store extends _$Store {
         }
 
         // --- Incremental migrations (add new versions here) ---
-        // if (from < 244) {
-        //   await m.addColumn(activities, activities.newColumn);
-        // }
-        // if (from < 245) {
-        //   await m.alterTable(TableMigration(priorities));
-        // }
+        if (from < 244) {
+          await m.addColumn(activities, activities.links);
+        }
 
         // Always recreate views and FTS (they depend on table schemas)
         for (final entity in allSchemaEntities) {

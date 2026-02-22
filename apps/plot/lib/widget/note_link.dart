@@ -19,14 +19,22 @@ import 'logging.dart';
 class NoteLinkWidget extends StatelessWidget {
   const NoteLinkWidget({
     required this.link,
-    required this.note,
+    this.note,
     this.onAuthComplete,
+    this.style,
+    this.textStyle,
     super.key,
   });
 
   final Link link;
-  final Note note;
+  final Note? note;
   final VoidCallback? onAuthComplete;
+
+  /// Optional button style override (e.g. ghost for activity-level links).
+  final FBaseButtonStyle Function(FButtonStyle)? style;
+
+  /// Optional text style override (e.g. sm for compact links).
+  final TextStyle? textStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -37,11 +45,26 @@ class NoteLinkWidget extends StatelessWidget {
           onAuth: onAuthComplete,
         );
       case LinkType.callback:
-        return CallbackLinkButton(link: link as CallbackLink, note: note);
+        if (note == null) {
+          return _CallbackLinkWithoutNote(
+            link: link as CallbackLink,
+            style: style,
+            textStyle: textStyle,
+          );
+        }
+        return CallbackLinkButton(link: link as CallbackLink, note: note!);
       case LinkType.external:
-        return ExternalLinkButton(link: link as ExternalLink);
+        return ExternalLinkButton(
+          link: link as ExternalLink,
+          style: style,
+          textStyle: textStyle,
+        );
       case LinkType.conferencing:
-        return ConferencingLinkButton(link: link as ConferencingLink);
+        return ConferencingLinkButton(
+          link: link as ConferencingLink,
+          style: style,
+          textStyle: textStyle,
+        );
       case LinkType.file:
         final fileLink = link as FileLink;
         if (fileLink.isImage) {
@@ -117,31 +140,93 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
   }
 }
 
-/// A button widget for non-OAuth links (external, hidden, etc.)
-class ExternalLinkButton extends StatelessWidget {
-  const ExternalLinkButton({required this.link, super.key});
+/// A button for callback links at the activity level (no note context for tag toggling)
+class _CallbackLinkWithoutNote extends StatefulWidget {
+  const _CallbackLinkWithoutNote({
+    required this.link,
+    this.style,
+    this.textStyle,
+  });
 
-  final ExternalLink link;
+  final CallbackLink link;
+  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final TextStyle? textStyle;
+
+  @override
+  State<_CallbackLinkWithoutNote> createState() =>
+      _CallbackLinkWithoutNoteState();
+}
+
+class _CallbackLinkWithoutNoteState extends State<_CallbackLinkWithoutNote> {
+  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: context.theme.buttonStyles.secondary,
-      // ignore: unused_result
-      // context.theme.buttonStyles.secondary.copyWith(
-      //   contentStyle: context.theme.buttonStyles.secondary.contentStyle
-      //       // ignore: unused_result
-      //       .copyWith(
-      //         padding: const EdgeInsets.symmetric(
-      //           horizontal: 8,
-      //           vertical: 6,
-      //         ),
-      //       ),
-      // ),
+      style: widget.style ?? FButtonStyle.secondary(),
+      mainAxisSize: MainAxisSize.min,
+      onPress: _isLoading ? null : () => _handleTap(),
+      child: Flexible(
+        child: Text(
+          widget.link.title,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+          style: widget.textStyle,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleTap() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    try {
+      await api.post<Map<String, dynamic>>(
+        '/callback/${widget.link.callback}',
+        body: widget.link.toJson(),
+      );
+      log.info('Callback executed successfully for: ${widget.link.title}');
+    } catch (e) {
+      log.warning('Failed to execute callback for ${widget.link.title}: $e');
+      if (mounted) {
+        context.showToast(
+          message: 'Unable to complete action. Please try again.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+}
+
+/// A button widget for non-OAuth links (external, hidden, etc.)
+class ExternalLinkButton extends StatelessWidget {
+  const ExternalLinkButton({
+    required this.link,
+    this.style,
+    this.textStyle,
+    super.key,
+  });
+
+  final ExternalLink link;
+  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final TextStyle? textStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return FButton(
+      style: style ?? FButtonStyle.secondary(),
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
       child: Flexible(
-        child: Text(link.title, overflow: TextOverflow.ellipsis, maxLines: 1),
+        child: Text(
+          link.title,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+          style: textStyle,
+        ),
       ),
     );
   }
@@ -159,18 +244,30 @@ class ExternalLinkButton extends StatelessWidget {
 
 /// A button widget for conferencing links with provider-specific titles
 class ConferencingLinkButton extends StatelessWidget {
-  const ConferencingLinkButton({required this.link, super.key});
+  const ConferencingLinkButton({
+    required this.link,
+    this.style,
+    this.textStyle,
+    super.key,
+  });
 
   final ConferencingLink link;
+  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final TextStyle? textStyle;
 
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: FButtonStyle.secondary(),
+      style: style ?? FButtonStyle.secondary(),
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
       child: Flexible(
-        child: Text(_getTitle(), overflow: TextOverflow.ellipsis, maxLines: 1),
+        child: Text(
+          _getTitle(),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+          style: textStyle,
+        ),
       ),
     );
   }

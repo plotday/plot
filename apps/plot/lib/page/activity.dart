@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/state/layout.dart';
@@ -373,6 +373,11 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                     body: Column(
                       spacing: 8,
                       children: [
+                        if (state.activity.links != null &&
+                            state.activity.links!.isNotEmpty)
+                          _ActivityLinksBar(
+                            links: state.activity.links!,
+                          ),
                         Flexible(
                           flex: 1,
                           fit: FlexFit.tight,
@@ -467,5 +472,85 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
       );
     }
     return const SizedBox.shrink();
+  }
+}
+
+class _ActivityLinksBar extends StatelessWidget {
+  const _ActivityLinksBar({required this.links});
+
+  final List<Link> links;
+
+  @override
+  Widget build(BuildContext context) {
+    return FAnimatedTheme(
+      data: darkenTheme(context, context.theme, context.colour, steps: 2),
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.theme.colors.background,
+            border: Border(
+              bottom: BorderSide(
+                color: context.theme.colors.border,
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              children: _buildChildren(context),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildChildren(BuildContext context) {
+    final borderRadius = BorderRadius.circular(8);
+    final ghostStyle = FButtonStyle.ghost(
+      (style) => style.copyWith(
+        // ignore: unused_result
+        decoration: FWidgetStateMap({
+          WidgetState.hovered | WidgetState.pressed: BoxDecoration(
+            borderRadius: borderRadius,
+            color: context.theme.colors.secondary,
+          ),
+          WidgetState.any: BoxDecoration(
+            borderRadius: borderRadius,
+          ),
+        }),
+        // ignore: unused_result
+        contentStyle: style.contentStyle.copyWith(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        ),
+      ),
+    );
+    final textStyle = TextStyle(
+      fontSize: context.theme.typography.sm.fontSize,
+    );
+
+    final children = <Widget>[];
+    for (var i = 0; i < links.length; i++) {
+      if (i > 0) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              '\u00B7',
+              style: textStyle.copyWith(
+                color: context.theme.colors.border,
+              ),
+            ),
+          ),
+        );
+      }
+      children.add(NoteLinkWidget(
+        link: links[i],
+        style: ghostStyle,
+        textStyle: textStyle,
+      ));
+    }
+    return children;
   }
 }

@@ -44,6 +44,7 @@ class Activities extends Table
   TextColumn get recurrenceExdates =>
       text().nullable().map(const DateTimeListConverter())();
   TextColumn get mentions => text().nullable().map(const UuidListConverter())();
+  TextColumn get links => text().nullable().map(const LinksConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   BoolColumn get unreadUpdated => boolean().nullable()();
 }
@@ -1582,6 +1583,7 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   String? get title => _exception?.title ?? _activity.title;
   String? get preview => _activity.preview;
+  List<Link>? get links => _activity.links;
   List<Note>? get notes => _notes;
 
   /// Returns the first note if notes are loaded

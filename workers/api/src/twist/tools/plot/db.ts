@@ -1,6 +1,6 @@
 import {
   type Activity,
-  type ActivityLink,
+  type Link,
   type ActivityMeta,
   ActivityType,
   type ActivityKind,
@@ -185,6 +185,7 @@ export function buildActivityFromDbRecord(
       : null,
     meta: activityRecord.meta as ActivityMeta | null,
     order: (activityRecord as any).order ?? 0,
+    links: (activityRecord as any).links as Link[] | null ?? null,
     source: activityRecord.source || null,
     tags: (activityRecord.tags as Partial<Record<number, ActorId[]>>) || {},
     mentions: (activityRecord.mentions as ActorId[]) || [],
@@ -227,6 +228,6 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     tags: (noteRecord.tags as Partial<Record<number, ActorId[]>>) || {},
     private: noteRecord.private ?? false,
     archived: noteRecord.archived_at !== null,
-    links: noteRecord.links as Array<ActivityLink> | null,
+    links: noteRecord.links as Array<Link> | null,
   };
 }

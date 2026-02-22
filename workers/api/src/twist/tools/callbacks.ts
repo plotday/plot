@@ -1,4 +1,4 @@
-import { type ActivityLink, ActivityLinkType } from "@plotday/twister/plot";
+import { type Link, LinkType } from "@plotday/twister/plot";
 import type {
   Callback,
   Callbacks as ICallbackTool,
@@ -151,11 +151,11 @@ export class Callbacks extends Tool implements ICallbackTool {
   static async HandleLinkCallback(
     callbacks: DurableObjectNamespace<CallbacksState>,
     token: string,
-    link: ActivityLink
+    link: Link
   ): Promise<any> {
     try {
       // Extract callback token from the link
-      if (link.type !== ActivityLinkType.callback) {
+      if (link.type !== LinkType.callback) {
         throw new Error("Link is not a callback type");
       }
 

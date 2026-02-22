@@ -4,8 +4,8 @@ import {
   type Actor,
   type ActorId,
   ActorType,
-  type ActivityLink,
-  ActivityLinkType,
+  type Link,
+  LinkType,
 } from "@plotday/twister/plot";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
@@ -210,9 +210,9 @@ export class Integrations extends Tool implements IAuth {
       extraArgs: [], // onAuth will look up pending callbacks itself
     }) as unknown as Callback;
 
-    const authLink: ActivityLink = {
+    const authLink: Link = {
       title: `Continue with ${PROVIDER_CONFIGS[provider]?.name ?? provider}`,
-      type: ActivityLinkType.auth,
+      type: LinkType.auth,
       provider,
       scopes: providerConfig.scopes,
       callback: onAuthCallback,
