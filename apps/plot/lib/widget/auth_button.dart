@@ -176,11 +176,17 @@ class _AuthButtonState extends State<AuthButton> {
     final googleAuth = account.authentication;
     final idToken = googleAuth.idToken;
 
+    // Merge openid and email scopes so the server auth code includes an
+    // id_token with email claim. Android GIS only grants explicitly requested
+    // scopes; without these the token exchange returns no id_token and the
+    // account shows a UUID instead of the user's email.
+    final scopes = {...widget.scopes, 'openid', 'email'}.toList();
+
     String? accessToken;
     if (widget.scopes.isNotEmpty) {
       final GoogleSignInClientAuthorization authorization = await account
           .authorizationClient
-          .authorizeScopes(widget.scopes);
+          .authorizeScopes(scopes);
       accessToken = authorization.accessToken;
     }
 
@@ -188,7 +194,7 @@ class _AuthButtonState extends State<AuthButton> {
     if (widget.scopes.isNotEmpty) {
       final GoogleSignInServerAuthorization? serverAuth = await account
           .authorizationClient
-          .authorizeServer(widget.scopes);
+          .authorizeServer(scopes);
       code = serverAuth?.serverAuthCode;
     }
 

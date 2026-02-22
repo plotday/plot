@@ -797,7 +797,12 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
 
   /// Use native Google Sign-In SDK on macOS/iOS/Android.
   Future<void> _startNativeGoogleAuth(TwistAuthUrl authUrl) async {
-    final scopes = widget.provider.scopes;
+    final providerScopes = widget.provider.scopes;
+    // Merge openid and email scopes so the server auth code includes an
+    // id_token with email claim. Android GIS only grants explicitly requested
+    // scopes; without these the token exchange returns no id_token and the
+    // account shows a UUID instead of the user's email.
+    final scopes = {...providerScopes, 'openid', 'email'}.toList();
 
     await GoogleSignIn.instance.signOut();
     final account = await GoogleSignIn.instance.authenticate(
