@@ -1,4 +1,5 @@
 import { Asana } from "@plotday/tool-asana";
+import { GitHubIssues } from "@plotday/tool-github-issues";
 import { Jira } from "@plotday/tool-jira";
 import { Linear } from "@plotday/tool-linear";
 import {
@@ -14,7 +15,7 @@ import {
 import type { ProjectTool } from "@plotday/twister/common/projects";
 import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
 
-type ProjectProvider = "linear" | "jira" | "asana";
+type ProjectProvider = "linear" | "jira" | "asana" | "github-issues";
 
 /**
  * Project Sync Twist
@@ -35,6 +36,10 @@ export default class ProjectSync extends Twist<ProjectSync> {
       }),
       asana: build(Asana, {
         onItem: this.onAsanaItem,
+        onSyncableDisabled: this.onSyncableDisabled,
+      }),
+      githubIssues: build(GitHubIssues, {
+        onItem: this.onGitHubIssuesItem,
         onSyncableDisabled: this.onSyncableDisabled,
       }),
       plot: build(Plot, {
@@ -60,6 +65,8 @@ export default class ProjectSync extends Twist<ProjectSync> {
         return this.tools.jira;
       case "asana":
         return this.tools.asana;
+      case "github-issues":
+        return this.tools.githubIssues;
       default:
         throw new Error(`Unknown provider: ${provider}`);
     }
@@ -79,6 +86,10 @@ export default class ProjectSync extends Twist<ProjectSync> {
 
   async onAsanaItem(item: NewActivityWithNotes) {
     return this.onIssue(item, "asana");
+  }
+
+  async onGitHubIssuesItem(item: NewActivityWithNotes) {
+    return this.onIssue(item, "github-issues");
   }
 
   async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
