@@ -204,6 +204,30 @@ class _AuthButtonState extends State<AuthButton> {
   void _startGoogleAuth() async {
     setState(() => _isLoading = true);
     try {
+      // Re-initialize GoogleSignIn with a fresh nonce before authenticating.
+      // The nonce is embedded in the ID token; without it Clerk can reject
+      // the token as "not authorized" (confirmed on Android, preventive on
+      // iOS/macOS).
+      if (!kIsWeb) {
+        late final String clientId;
+        String? serverClientId;
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          clientId = Env.googleAndroidClientId;
+          serverClientId = Env.googleClientId;
+        } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS) {
+          clientId = Env.googleIosClientId;
+          serverClientId = Env.googleClientId;
+        } else {
+          clientId = Env.googleClientId;
+        }
+        await GoogleSignIn.instance.initialize(
+          clientId: clientId,
+          serverClientId: serverClientId,
+          nonce: _generateNonce(),
+        );
+      }
+
       // Always sign out first to force account selection
       await GoogleSignIn.instance.signOut();
 

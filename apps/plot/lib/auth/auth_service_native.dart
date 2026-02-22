@@ -31,7 +31,7 @@ Future<AuthService> createAuthServiceImpl({
   );
   await clerkAuth.initialize().timeout(const Duration(seconds: 10));
 
-  return ClerkDartAuthService._(clerkAuth);
+  return ClerkDartAuthService._(clerkAuth, publishableKey, profile);
 }
 
 Future<Directory> _getClerkCacheDirectory(String? profile) async {
@@ -90,9 +90,39 @@ Future<T> _guard<T>(Future<T> Function() fn) async {
 // ---------------------------------------------------------------------------
 
 class ClerkDartAuthService implements AuthService {
-  ClerkDartAuthService._(this._auth);
+  ClerkDartAuthService._(this._auth, this._publishableKey, this._profile);
 
-  final clerk.Auth _auth;
+  clerk.Auth _auth;
+  final String _publishableKey;
+  final String? _profile;
+
+  /// Create a fresh Clerk [Auth] instance, discarding any stale state.
+  ///
+  /// The `clerk_auth` package has a bug where [Auth.signOut] can leave stale
+  /// client tokens in the token cache if the DELETE `/client` call returns a
+  /// non-200 response. Subsequent API calls then use the invalid token and
+  /// fail with "not authorized". Reinitialising with a clean cache file
+  /// ensures a fresh client token is obtained.
+  Future<void> _reinitialize() async {
+    _auth.terminate();
+
+    final cacheDir = await _getClerkCacheDirectory(_profile);
+    final cacheFile = File('${cacheDir.path}/clerk_sdk.json');
+    if (cacheFile.existsSync()) {
+      cacheFile.deleteSync();
+    }
+
+    final persistor = clerk.DefaultPersistor(
+      getCacheDirectory: () async => cacheDir,
+    );
+    _auth = clerk.Auth(
+      config: clerk.AuthConfig(
+        publishableKey: _publishableKey,
+        persistor: persistor,
+      ),
+    );
+    await _auth.initialize().timeout(const Duration(seconds: 10));
+  }
 
   @override
   bool get isSignedIn => _auth.isSignedIn;
@@ -120,10 +150,17 @@ class ClerkDartAuthService implements AuthService {
     required IdTokenProvider provider,
     required String idToken,
   }) =>
-      _guard(() => _auth.idTokenSignIn(
-            provider: _toClerkProvider(provider),
-            idToken: idToken,
-          ));
+      _guard(() async {
+        // After sign-out, clerk_auth can leave stale client tokens that cause
+        // "not authorized" errors. Reinitialise to ensure a clean client.
+        if (!_auth.isSignedIn) {
+          await _reinitialize();
+        }
+        await _auth.idTokenSignIn(
+          provider: _toClerkProvider(provider),
+          idToken: idToken,
+        );
+      });
 
   @override
   Future<void> signInWithRedirect({required IdTokenProvider provider}) =>
@@ -134,10 +171,15 @@ class ClerkDartAuthService implements AuthService {
     required IdTokenProvider provider,
     required String idToken,
   }) =>
-      _guard(() => _auth.idTokenSignUp(
-            provider: _toClerkProvider(provider),
-            idToken: idToken,
-          ));
+      _guard(() async {
+        if (!_auth.isSignedIn) {
+          await _reinitialize();
+        }
+        await _auth.idTokenSignUp(
+          provider: _toClerkProvider(provider),
+          idToken: idToken,
+        );
+      });
 
   @override
   Future<void> attemptSignIn({

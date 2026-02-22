@@ -89,13 +89,22 @@ class _SignInPageState extends State<SignInPage> {
 
     try {
       await Future(() async {
-        await Base.auth.signInWithIdToken(
-          provider: provider,
-          idToken: idToken,
-        );
-
-        // If Clerk indicates this should become a sign-up, transfer the flow.
-        await Base.auth.transfer();
+        try {
+          await Base.auth.signInWithIdToken(
+            provider: provider,
+            idToken: idToken,
+          );
+        } catch (e) {
+          log.warning('signInWithIdToken failed', e);
+          rethrow;
+        }
+        try {
+          // If Clerk indicates this should become a sign-up, transfer the flow.
+          await Base.auth.transfer();
+        } catch (e) {
+          log.warning('transfer failed', e);
+          rethrow;
+        }
 
         // Call /activate to get user identity
         await Base.resolveIdentity();
