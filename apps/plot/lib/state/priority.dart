@@ -209,6 +209,18 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   PriorityId get currentId => state.context.id;
 
+  /// Optimistically remove an activity from the agenda for instant UI feedback.
+  /// The stream-based update will confirm the same state when it catches up.
+  void optimisticallyRemoveActivity(ActivityId id) {
+    final updatedItems = state.agendaItems
+        .where((item) => item.when(
+              header: (_) => true,
+              activity: (a) => a.activity.id != id,
+            ))
+        .toList();
+    emit(state.copyWith(agendaItems: updatedItems));
+  }
+
   Future<void> setPriority(Priority newPriority) async {
     if (state.context.id == newPriority.id) return;
 

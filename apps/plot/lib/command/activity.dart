@@ -513,8 +513,11 @@ class FinishAction extends _UpdateActivityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await onUpdate(activity.copyWith(doneAt: Value(DateTime.now())));
+    // Optimistic removal for instant UI feedback
+    context.read<PriorityBloc?>()?.optimisticallyRemoveActivity(activity.id);
     HapticFeedback.mediumImpact();
+    // Async save — stream will confirm the removal when it catches up
+    onUpdate(activity.copyWith(doneAt: Value(DateTime.now())));
     return const CommandDone();
   }
 }
