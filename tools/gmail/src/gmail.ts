@@ -1,6 +1,6 @@
 import {
-  type ActivityFilter,
-  type NewActivityWithNotes,
+  type ThreadFilter,
+  type NewThreadWithNotes,
   Serializable,
   type SyncToolOptions,
   Tool,
@@ -21,7 +21,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
-  ActivityAccess,
+  ThreadAccess,
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
@@ -66,9 +66,9 @@ import {
  *     );
  *   }
  *
- *   async onGmailThread(thread: ActivityWithNotes) {
+ *   async onGmailThread(thread: NewThreadWithNotes) {
  *     // Process Gmail email thread
- *     // Each thread is an Activity with Notes for each email
+ *     // Each thread is a Thread with Notes for each email
  *     console.log(`Email thread: ${thread.title}`);
  *     console.log(`${thread.notes.length} messages`);
  *
@@ -109,8 +109,8 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
         contact: {
           access: ContactAccess.Write,
         },
-        activity: {
-          access: ActivityAccess.Create,
+        thread: {
+          access: ThreadAccess.Create,
         },
       }),
     };
@@ -142,7 +142,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
     // Create disable callback if parent provided onSyncableDisabled
     if (this.options.onSyncableDisabled) {
-      const filter: ActivityFilter = {
+      const filter: ThreadFilter = {
         meta: { syncProvider: "google", syncableId: syncable.id },
       };
       const disableCallbackToken = await this.tools.callbacks.createFromParent(
@@ -242,7 +242,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (thread: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       channelId: string;
@@ -391,7 +391,7 @@ export class Gmail extends Tool<Gmail> implements MessagingTool {
 
     for (const thread of threads) {
       try {
-        // Transform Gmail thread to NewActivityWithNotes
+        // Transform Gmail thread to NewThreadWithNotes
         const activityThread = transformGmailThread(thread);
 
         if (activityThread.notes.length === 0) continue;

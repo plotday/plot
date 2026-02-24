@@ -1,7 +1,7 @@
 import type {
-  Activity,
-  ActivityMeta,
-  NewActivityWithNotes,
+  Thread,
+  ThreadMeta,
+  NewThreadWithNotes,
   Serializable,
 } from "../index";
 
@@ -43,14 +43,14 @@ export type SourceControlSyncOptions = {
 /**
  * Base interface for source control integration tools.
  *
- * All synced pull requests are converted to ActivityWithNotes objects.
- * Each PR becomes an Activity with Notes for the description, comments,
+ * All synced pull requests are converted to ThreadWithNotes objects.
+ * Each PR becomes a Thread with Notes for the description, comments,
  * and review summaries.
  *
  * **Architecture: Tools Build, Twists Save**
  *
  * Source control tools follow Plot's core architectural principle:
- * - **Tools**: Fetch external data and transform it into Plot format (NewActivity objects)
+ * - **Tools**: Fetch external data and transform it into Plot format (NewThread objects)
  * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
  *
  * **Implementation Pattern:**
@@ -58,11 +58,11 @@ export type SourceControlSyncOptions = {
  * 2. Tool declares providers and lifecycle callbacks in build()
  * 3. onAuthorized lists available repositories and calls setSyncables()
  * 4. User enables repositories in the modal → onSyncEnabled fires
- * 5. **Tool builds NewActivity objects** and passes them to the twist via callback
- * 6. **Twist decides** whether to save using createActivity/updateActivity
+ * 5. **Tool builds NewThread objects** and passes them to the twist via callback
+ * 6. **Twist decides** whether to save using createThread/updateThread
  *
  * **Recommended Data Sync Strategy:**
- * Use Activity.source (PR URL) and Note.key for automatic upserts.
+ * Use Thread.source (PR URL) and Note.key for automatic upserts.
  * See SYNC_STRATEGIES.md for detailed patterns.
  */
 export type SourceControlTool = {
@@ -82,13 +82,13 @@ export type SourceControlTool = {
    * @param options - Sync configuration options
    * @param options.repositoryId - ID of the repository to sync (owner/repo format)
    * @param options.timeMin - Earliest date to sync PRs from (inclusive)
-   * @param callback - Function receiving (activity, ...extraArgs) for each synced PR
+   * @param callback - Function receiving (thread, ...extraArgs) for each synced PR
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
   startSync<
     TArgs extends Serializable[],
-    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       repositoryId: string;
@@ -109,18 +109,18 @@ export type SourceControlTool = {
    * Adds a general comment to a pull request.
    *
    * Optional method for bidirectional sync. When implemented, allows Plot to
-   * sync notes added to activities back as comments on the external service.
+   * sync notes added to threads back as comments on the external service.
    *
    * Auth is obtained automatically. The tool should extract its own ID
    * from meta (e.g., prNumber, owner, repo).
    *
-   * @param meta - Activity metadata containing the tool's PR identifier
+   * @param meta - Thread metadata containing the tool's PR identifier
    * @param body - The comment text content
    * @param noteId - Optional Plot note ID for dedup
    * @returns The external comment key (e.g. "comment-123") for dedup, or void
    */
   addPRComment?(
-    meta: ActivityMeta,
+    meta: ThreadMeta,
     body: string,
     noteId?: string,
   ): Promise<string | void>;
@@ -129,20 +129,20 @@ export type SourceControlTool = {
    * Updates a pull request's review status (approve, request changes).
    *
    * Optional method for bidirectional sync. When implemented, allows Plot to
-   * sync activity status changes back to the external service.
+   * sync thread status changes back to the external service.
    *
-   * @param activity - The updated activity with review status
+   * @param thread - The updated thread with review status
    * @returns Promise that resolves when the update is synced
    */
-  updatePRStatus?(activity: Activity): Promise<void>;
+  updatePRStatus?(thread: Thread): Promise<void>;
 
   /**
    * Closes a pull request without merging.
    *
    * Optional method for bidirectional sync.
    *
-   * @param meta - Activity metadata containing the tool's PR identifier
+   * @param meta - Thread metadata containing the tool's PR identifier
    * @returns Promise that resolves when the PR is closed
    */
-  closePR?(meta: ActivityMeta): Promise<void>;
+  closePR?(meta: ThreadMeta): Promise<void>;
 };

@@ -1,6 +1,6 @@
-import { ActivityType } from "@plotday/twister";
+import { ThreadType } from "@plotday/twister";
 import type {
-  NewActivityWithNotes,
+  NewThreadWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
 
@@ -343,14 +343,14 @@ function extractAttachments(
 }
 
 /**
- * Transforms a Gmail thread into a NewActivityWithNotes structure.
- * The subject becomes the Activity title, and each email becomes a Note.
+ * Transforms a Gmail thread into a NewThreadWithNotes structure.
+ * The subject becomes the Thread title, and each email becomes a Note.
  */
-export function transformGmailThread(thread: GmailThread): NewActivityWithNotes {
+export function transformGmailThread(thread: GmailThread): NewThreadWithNotes {
   if (!thread.messages || thread.messages.length === 0) {
     // Return empty structure for invalid threads
     return {
-      type: ActivityType.Note,
+      type: ThreadType.Note,
       title: "",
       notes: [],
     };
@@ -366,10 +366,10 @@ export function transformGmailThread(thread: GmailThread): NewActivityWithNotes 
   const firstMessageBody = extractBody(parentMessage.payload);
   const preview = firstMessageBody || parentMessage.snippet || null;
 
-  // Create Activity
-  const activity: NewActivityWithNotes = {
+  // Create Thread
+  const plotThread: NewThreadWithNotes = {
     source: canonicalUrl,
-    type: ActivityType.Note,
+    type: ThreadType.Note,
     title: subject || "Email",
     start: new Date(parseInt(parentMessage.internalDate)),
     meta: {
@@ -399,7 +399,7 @@ export function transformGmailThread(thread: GmailThread): NewActivityWithNotes 
 
     // Create NewNote with idempotent key
     const note = {
-      activity: { source: canonicalUrl },
+      thread: { source: canonicalUrl },
       key: message.id,
       author: {
         email: sender.email,
@@ -409,10 +409,10 @@ export function transformGmailThread(thread: GmailThread): NewActivityWithNotes 
       mentions: mentions.length > 0 ? mentions : undefined,
     };
 
-    activity.notes.push(note);
+    plotThread.notes.push(note);
   }
 
-  return activity;
+  return plotThread;
 }
 
 /**

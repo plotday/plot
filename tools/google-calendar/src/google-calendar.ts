@@ -1,14 +1,14 @@
 import GoogleContacts from "@plotday/tool-google-contacts";
 import {
-  type Activity,
-  LinkType,
-  type Link,
-  type ActivityOccurrence,
-  ActivityType,
+  type Thread,
+  ActionType,
+  type Action,
+  type ThreadOccurrence,
+  ThreadType,
   type ActorId,
   ConferencingProvider,
-  type NewActivityOccurrence,
-  type NewActivityWithNotes,
+  type NewThreadOccurrence,
+  type NewThreadWithNotes,
   type NewActor,
   type NewContact,
   type NewNote,
@@ -33,7 +33,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
-  ActivityAccess,
+  ThreadAccess,
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
@@ -83,10 +83,10 @@ import {
  *       provider: "google"
  *     });
  *
- *     await this.plot.createActivity({
- *       type: ActivityType.Action,
+ *     await this.plot.createThread({
+ *       type: ThreadType.Action,
  *       title: "Connect Google Calendar",
- *       links: [authLink]
+ *       actions: [authLink]
  *     });
  *   }
  *
@@ -109,9 +109,9 @@ import {
  *     }
  *   }
  *
- *   async onCalendarEvent(activity: NewActivityWithNotes, context: any) {
+ *   async onCalendarEvent(thread: NewThreadWithNotes, context: any) {
  *     // Process Google Calendar events
- *     await this.plot.createActivity(activity);
+ *     await this.plot.createThread(thread);
  *   }
  * }
  * ```
@@ -151,9 +151,9 @@ export class GoogleCalendar
         contact: {
           access: ContactAccess.Write,
         },
-        activity: {
-          access: ActivityAccess.Create,
-          updated: this.onActivityUpdated,
+        thread: {
+          access: ThreadAccess.Create,
+          updated: this.onThreadUpdated,
         },
       }),
       googleContacts: build(GoogleContacts),
@@ -369,7 +369,7 @@ export class GoogleCalendar
 
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       calendarId: string;
@@ -760,7 +760,7 @@ export class GoogleCalendar
 
             // Create cancellation note
             const cancelNote: NewNote = {
-              activity: { source: canonicalUrl },
+              thread: { source: canonicalUrl },
               key: "cancellation",
               content: "This event was cancelled.",
               contentType: "text",
@@ -768,10 +768,10 @@ export class GoogleCalendar
             };
 
             // Convert to Note type with blocked tag and cancellation note
-            const activity: NewActivityWithNotes = {
+            const thread: NewThreadWithNotes = {
               source: canonicalUrl,
               created: event.created ? new Date(event.created) : undefined,
-              type: ActivityType.Note,
+              type: ThreadType.Note,
               title: activityData.title,
               preview: "Cancelled",
               start: activityData.start || null,
@@ -783,10 +783,10 @@ export class GoogleCalendar
             };
 
             // Inject sync metadata for the parent to identify the source
-            activity.meta = { ...activity.meta, syncProvider: "google", syncableId: calendarId };
+            thread.meta = { ...thread.meta, syncProvider: "google", syncableId: calendarId };
 
-            // Send activity - database handles upsert automatically
-            await this.tools.callbacks.run(callbackToken, activity);
+            // Send thread - database handles upsert automatically
+            await this.tools.callbacks.run(callbackToken, thread);
             continue;
           }
 
@@ -831,8 +831,8 @@ export class GoogleCalendar
             }
           }
 
-          // Build links array for videoconferencing and calendar links
-          const links: Link[] = [];
+          // Build actions array for videoconferencing and calendar links
+          const actions: Action[] = [];
           const seenUrls = new Set<string>();
 
           // Extract all conferencing links (Zoom, Teams, Webex, etc.)
@@ -840,8 +840,8 @@ export class GoogleCalendar
           for (const link of conferencingLinks) {
             if (!seenUrls.has(link.url)) {
               seenUrls.add(link.url);
-              links.push({
-                type: LinkType.conferencing,
+              actions.push({
+                type: ActionType.conferencing,
                 url: link.url,
                 provider: link.provider,
               });
@@ -851,8 +851,8 @@ export class GoogleCalendar
           // Add Google Meet link from hangoutLink if not already added
           if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
             seenUrls.add(event.hangoutLink);
-            links.push({
-              type: LinkType.conferencing,
+            actions.push({
+              type: ActionType.conferencing,
               url: event.hangoutLink,
               provider: ConferencingProvider.googleMeet,
             });
@@ -860,8 +860,8 @@ export class GoogleCalendar
 
           // Add calendar link
           if (event.htmlLink) {
-            links.push({
-              type: LinkType.external,
+            actions.push({
+              type: ActionType.external,
               title: "View in Calendar",
               url: event.htmlLink,
             });
@@ -873,7 +873,7 @@ export class GoogleCalendar
           const description =
             typeof descriptionValue === "string" ? descriptionValue : null;
           const hasDescription = description && description.trim().length > 0;
-          const hasLinks = links.length > 0;
+          const hasActions = actions.length > 0;
 
           if (!activityData.type) {
             continue;
@@ -882,11 +882,11 @@ export class GoogleCalendar
           // Canonical source for this event (required for upsert)
           const canonicalUrl = `google-calendar:${event.id}`;
 
-          // Create note with description (links moved to activity level)
+          // Create note with description (actions moved to thread level)
           const notes: NewNote[] = [];
           if (hasDescription) {
             notes.push({
-              activity: { source: canonicalUrl },
+              thread: { source: canonicalUrl },
               key: "description",
               content: description,
               contentType:
@@ -908,25 +908,25 @@ export class GoogleCalendar
             recurrenceExdates: activityData.recurrenceExdates || null,
             meta: activityData.meta ?? null,
             tags: tags || undefined,
-            links: hasLinks ? links : undefined,
+            actions: hasActions ? actions : undefined,
             notes,
             preview: hasDescription ? description : null,
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           } as const;
 
-          const activity: NewActivityWithNotes =
-            activityData.type === ActivityType.Action
-              ? { type: ActivityType.Action, ...shared }
-              : activityData.type === ActivityType.Event
-                ? { type: ActivityType.Event, ...shared }
-                : { type: ActivityType.Note, ...shared };
+          const thread: NewThreadWithNotes =
+            activityData.type === ThreadType.Action
+              ? { type: ThreadType.Action, ...shared }
+              : activityData.type === ThreadType.Event
+                ? { type: ThreadType.Event, ...shared }
+                : { type: ThreadType.Note, ...shared };
 
           // Inject sync metadata for the parent to identify the source
-          activity.meta = { ...activity.meta, syncProvider: "google", syncableId: calendarId };
+          thread.meta = { ...thread.meta, syncProvider: "google", syncableId: calendarId };
 
-          // Send activity - database handles upsert automatically
-          await this.tools.callbacks.run(callbackToken, activity);
+          // Send thread - database handles upsert automatically
+          await this.tools.callbacks.run(callbackToken, thread);
         }
       } catch (error) {
         console.error(`Failed to process event ${event.id}:`, error);
@@ -937,7 +937,7 @@ export class GoogleCalendar
 
   /**
    * Process a recurring event instance (occurrence) from Google Calendar.
-   * This updates the master recurring activity with occurrence-specific data.
+   * This updates the master recurring thread with occurrence-specific data.
    */
   private async processEventInstance(
     event: GoogleEvent,
@@ -952,7 +952,7 @@ export class GoogleCalendar
       return;
     }
 
-    // The recurring event ID points to the master activity
+    // The recurring event ID points to the master thread
     if (!event.recurringEventId) {
       console.warn(`No recurring event ID for instance: ${event.id}`);
       return;
@@ -980,7 +980,7 @@ export class GoogleCalendar
         : null;
 
       const occurrenceUpdate = {
-        type: ActivityType.Event,
+        type: ThreadType.Event,
         source: masterCanonicalUrl,
         start: start,
         end: end,
@@ -1027,11 +1027,11 @@ export class GoogleCalendar
 
     // Build occurrence object
     // Always include start to ensure upsert_activity can infer scheduling when
-    // creating a new master activity. Use instanceData.start if available (for
+    // creating a new master thread. Use instanceData.start if available (for
     // rescheduled instances), otherwise fall back to originalStartTime.
     const occurrenceStart = instanceData.start ?? new Date(originalStartTime);
 
-    const occurrence: Omit<NewActivityOccurrence, "activity"> = {
+    const occurrence: Omit<NewThreadOccurrence, "thread"> = {
       occurrence: new Date(originalStartTime),
       start: occurrenceStart,
       tags: Object.keys(tags).length > 0 ? tags : undefined,
@@ -1046,12 +1046,12 @@ export class GoogleCalendar
     if (instanceData.meta) occurrence.meta = instanceData.meta;
 
     // Send occurrence data to the twist via callback
-    // The twist will decide whether to create or update the master activity
+    // The twist will decide whether to create or update the master thread
 
-    // Build a minimal NewActivity with source and occurrences
-    // The twist's createActivity will upsert the master activity
+    // Build a minimal NewThread with source and occurrences
+    // The twist's createThread will upsert the master thread
     const occurrenceUpdate = {
-      type: ActivityType.Event,
+      type: ThreadType.Event,
       source: masterCanonicalUrl,
       meta: { syncProvider: "google", syncableId: calendarId },
       occurrences: [occurrence],
@@ -1169,17 +1169,17 @@ export class GoogleCalendar
     return `${baseEventId}_${instanceDateStr}`;
   }
 
-  async onActivityUpdated(
-    activity: Activity,
+  async onThreadUpdated(
+    thread: Thread,
     changes: {
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
-      occurrence?: ActivityOccurrence;
+      occurrence?: ThreadOccurrence;
     }
   ): Promise<void> {
     try {
       // Only process calendar events
-      const source = activity.source;
+      const source = thread.source;
       if (
         !source ||
         typeof source !== "string" ||
@@ -1214,12 +1214,12 @@ export class GoogleCalendar
 
       // Determine new RSVP status based on most recent tag change
       const hasAttend =
-        activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
+        thread.tags?.[Tag.Attend] && thread.tags[Tag.Attend].length > 0;
       const hasSkip =
-        activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
+        thread.tags?.[Tag.Skip] && thread.tags[Tag.Skip].length > 0;
       const hasUndecided =
-        activity.tags?.[Tag.Undecided] &&
-        activity.tags[Tag.Undecided].length > 0;
+        thread.tags?.[Tag.Undecided] &&
+        thread.tags[Tag.Undecided].length > 0;
 
       let newStatus: "accepted" | "declined" | "tentative" | "needsAction";
 
@@ -1253,15 +1253,15 @@ export class GoogleCalendar
       }
 
       // Extract calendar info from metadata
-      if (!activity.meta) {
-        console.error("[RSVP Sync] Missing activity metadata", {
-          activity_id: activity.id,
+      if (!thread.meta) {
+        console.error("[RSVP Sync] Missing thread metadata", {
+          thread_id: thread.id,
         });
         return;
       }
 
-      const baseEventId = activity.meta.id;
-      const calendarId = activity.meta.calendarId;
+      const baseEventId = thread.meta.id;
+      const calendarId = thread.meta.calendarId;
 
       if (
         !baseEventId ||
@@ -1294,7 +1294,7 @@ export class GoogleCalendar
         await this.tools.integrations.actAs(
           GoogleCalendar.PROVIDER,
           actorId,
-          activity.id,
+          thread.id,
           this.syncActorRSVP,
           calendarId as string,
           eventId,
@@ -1306,7 +1306,7 @@ export class GoogleCalendar
       console.error("[RSVP Sync] Error in callback", {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
-        activity_id: activity.id,
+        thread_id: thread.id,
       });
     }
   }

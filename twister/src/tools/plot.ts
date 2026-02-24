@@ -1,12 +1,12 @@
 import {
-  type Activity,
-  type ActivityOccurrence,
-  type ActivityUpdate,
+  type Thread,
+  type ThreadOccurrence,
+  type ThreadUpdate,
   type Actor,
   type ActorId,
   ITool,
-  type NewActivity,
-  type NewActivityWithNotes,
+  type NewThread,
+  type NewThreadWithNotes,
   type NewContact,
   type NewNote,
   type NewPriority,
@@ -18,19 +18,24 @@ import {
   Uuid,
 } from "..";
 
-export enum ActivityAccess {
+export enum ThreadAccess {
   /**
-   * Create new Note on an Activity where the twist was mentioned.
-   * Add/remove tags on Activity or Note where the twist was mentioned.
+   * Create new Note on a Thread where the twist was mentioned.
+   * Add/remove tags on Thread or Note where the twist was mentioned.
    */
   Respond,
   /**
-   * Create new Activity.
-   * Create new Note in an Activity the twist created.
+   * Create new Thread.
+   * Create new Note in a Thread the twist created.
    * All Respond permissions.
    */
   Create,
 }
+
+/** @deprecated Use ThreadAccess instead */
+export const ActivityAccess = ThreadAccess;
+/** @deprecated Use ThreadAccess instead */
+export type ActivityAccess = ThreadAccess;
 
 export enum PriorityAccess {
   /**
@@ -54,8 +59,8 @@ export enum ContactAccess {
 }
 
 /**
- * Intent handler for activity mentions.
- * Defines how the twist should respond when mentioned in an activity.
+ * Intent handler for thread mentions.
+ * Defines how the twist should respond when mentioned in a thread.
  */
 export type NoteIntentHandler = {
   /** Human-readable description of what this intent handles */
@@ -69,7 +74,7 @@ export type NoteIntentHandler = {
 /**
  * Built-in tool for interacting with the core Plot data layer.
  *
- * The Plot tool provides twists with the ability to create and manage activities,
+ * The Plot tool provides twists with the ability to create and manage threads,
  * priorities, and contacts within the Plot system. This is the primary interface
  * for twists to persist data and interact with the Plot database.
  *
@@ -84,13 +89,13 @@ export type NoteIntentHandler = {
  *   }
  *
  *   async activate(priority) {
- *     // Create a welcome activity
- *     await this.plot.createActivity({
- *       type: ActivityType.Note,
+ *     // Create a welcome thread
+ *     await this.plot.createThread({
+ *       type: ThreadType.Note,
  *       title: "Welcome to Plot!",
- *       links: [{
+ *       actions: [{
  *         title: "Get Started",
- *         type: LinkType.external,
+ *         type: ActionType.external,
  *         url: "https://plot.day/docs"
  *       }]
  *     });
@@ -110,8 +115,8 @@ export abstract class Plot extends ITool {
    * build(build: ToolBuilder) {
    *   return {
    *     plot: build(Plot, {
-   *       activity: {
-   *         access: ActivityAccess.Create
+   *       thread: {
+   *         access: ThreadAccess.Create
    *       }
    *     })
    *   };
@@ -121,9 +126,9 @@ export abstract class Plot extends ITool {
    * build(build: ToolBuilder) {
    *   return {
    *     plot: build(Plot, {
-   *       activity: {
-   *         access: ActivityAccess.Create,
-   *         updated: this.onActivityUpdated
+   *       thread: {
+   *         access: ThreadAccess.Create,
+   *         updated: this.onThreadUpdated
    *       },
    *       note: {
    *         intents: [{
@@ -145,28 +150,28 @@ export abstract class Plot extends ITool {
    * ```
    */
   static readonly Options: {
-    activity?: {
+    thread?: {
       /**
        * Capability to create Notes and modify tags.
        * Must be explicitly set to grant permissions.
        */
-      access?: ActivityAccess;
+      access?: ThreadAccess;
       /**
-       * Called when an activity created by this twist is updated.
+       * Called when a thread created by this twist is updated.
        * This is often used to implement two-way sync with an external system.
        *
-       * @param activity - The updated activity
-       * @param changes - Changes to the activity and the previous version
+       * @param thread - The updated thread
+       * @param changes - Changes to the thread and the previous version
        */
       updated?: (
-        activity: Activity,
+        thread: Thread,
         changes: {
           tagsAdded: Record<Tag, ActorId[]>;
           tagsRemoved: Record<Tag, ActorId[]>;
           /**
-           * If present, this update is for a specific occurrence of a recurring activity.
+           * If present, this update is for a specific occurrence of a recurring thread.
            */
-          occurrence?: ActivityOccurrence;
+          occurrence?: ThreadOccurrence;
         }
       ) => Promise<void>;
     };
@@ -192,12 +197,12 @@ export abstract class Plot extends ITool {
        */
       intents?: NoteIntentHandler[];
       /**
-       * Called when a note is created on an activity created by this twist.
+       * Called when a note is created on a thread created by this twist.
        * This is often used to implement two-way sync with an external system,
        * such as syncing notes as comments back to the source system.
        *
        * Notes created by the twist itself are automatically filtered out to prevent loops.
-       * The parent activity is available via note.activity.
+       * The parent thread is available via note.thread.
        *
        * @param note - The newly created note
        */
@@ -212,77 +217,77 @@ export abstract class Plot extends ITool {
   };
 
   /**
-   * Creates a new activity in the Plot system.
+   * Creates a new thread in the Plot system.
    *
-   * The activity will be automatically assigned an ID and author information
-   * based on the current execution context. All other fields from NewActivity
-   * will be preserved in the created activity.
+   * The thread will be automatically assigned an ID and author information
+   * based on the current execution context. All other fields from NewThread
+   * will be preserved in the created thread.
    *
-   * @param activity - The activity data to create
-   * @returns Promise resolving to the created activity's ID
+   * @param thread - The thread data to create
+   * @returns Promise resolving to the created thread's ID
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createActivity(
-    activity: NewActivity | NewActivityWithNotes
+  abstract createThread(
+    thread: NewThread | NewThreadWithNotes
   ): Promise<Uuid>;
 
   /**
-   * Creates multiple activities in a single batch operation.
+   * Creates multiple threads in a single batch operation.
    *
-   * This method efficiently creates multiple activities at once, which is
-   * more performant than calling createActivity() multiple times individually.
-   * All activities are created with the same author and access control rules.
+   * This method efficiently creates multiple threads at once, which is
+   * more performant than calling createThread() multiple times individually.
+   * All threads are created with the same author and access control rules.
    *
-   * @param activities - Array of activity data to create
-   * @returns Promise resolving to array of created activity IDs
+   * @param threads - Array of thread data to create
+   * @returns Promise resolving to array of created thread IDs
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createActivities(
-    activities: (NewActivity | NewActivityWithNotes)[]
+  abstract createThreads(
+    threads: (NewThread | NewThreadWithNotes)[]
   ): Promise<Uuid[]>;
 
   /**
-   * Updates an existing activity in the Plot system.
+   * Updates an existing thread in the Plot system.
    *
-   * **Important**: This method only updates existing activities. It will throw an error
-   * if the activity does not exist. Use `createActivity()` to create or update (upsert)
-   * activities.
+   * **Important**: This method only updates existing threads. It will throw an error
+   * if the thread does not exist. Use `createThread()` to create or update (upsert)
+   * threads.
    *
    * Only the fields provided in the update object will be modified - all other fields
    * remain unchanged. This enables partial updates without needing to fetch and resend
-   * the entire activity object.
+   * the entire thread object.
    *
    * For tags, provide a Record<number, boolean> where true adds a tag and false removes it.
    * Tags not included in the update remain unchanged.
    *
-   * When updating the parent, the activity's path will be automatically recalculated to
+   * When updating the parent, the thread's path will be automatically recalculated to
    * maintain the correct hierarchical structure.
    *
    * When updating scheduling fields (start, end, recurrence*), the database will
    * automatically recalculate duration and range values to maintain consistency.
    *
-   * @param activity - The activity update containing the ID or source and fields to change
+   * @param thread - The thread update containing the ID or source and fields to change
    * @returns Promise that resolves when the update is complete
-   * @throws Error if the activity does not exist
+   * @throws Error if the thread does not exist
    *
    * @example
    * ```typescript
    * // Mark a task as complete
-   * await this.plot.updateActivity({
+   * await this.plot.updateThread({
    *   id: "task-123",
    *   done: new Date()
    * });
    *
    * // Reschedule an event
-   * await this.plot.updateActivity({
+   * await this.plot.updateThread({
    *   id: "event-456",
    *   start: new Date("2024-03-15T10:00:00Z"),
    *   end: new Date("2024-03-15T11:00:00Z")
    * });
    *
    * // Add and remove tags
-   * await this.plot.updateActivity({
-   *   id: "activity-789",
+   * await this.plot.updateThread({
+   *   id: "thread-789",
    *   tags: {
    *     1: true,  // Add tag with ID 1
    *     2: false  // Remove tag with ID 2
@@ -290,7 +295,7 @@ export abstract class Plot extends ITool {
    * });
    *
    * // Update a recurring event exception
-   * await this.plot.updateActivity({
+   * await this.plot.updateThread({
    *   id: "exception-123",
    *   occurrence: new Date("2024-03-20T09:00:00Z"),
    *   title: "Rescheduled meeting"
@@ -298,26 +303,26 @@ export abstract class Plot extends ITool {
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract updateActivity(activity: ActivityUpdate): Promise<void>;
+  abstract updateThread(thread: ThreadUpdate): Promise<void>;
 
   /**
-   * Retrieves all notes within an activity.
+   * Retrieves all notes within a thread.
    *
-   * Notes are detailed entries within an activity, ordered by creation time.
-   * Each note can contain markdown content, links, and other detailed information
-   * related to the parent activity.
+   * Notes are detailed entries within a thread, ordered by creation time.
+   * Each note can contain markdown content, actions, and other detailed information
+   * related to the parent thread.
    *
-   * @param activity - The activity whose notes to retrieve
-   * @returns Promise resolving to array of notes in the activity
+   * @param thread - The thread whose notes to retrieve
+   * @returns Promise resolving to array of notes in the thread
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getNotes(activity: Activity): Promise<Note[]>;
+  abstract getNotes(thread: Thread): Promise<Note[]>;
 
   /**
-   * Creates a new note in an activity.
+   * Creates a new note in a thread.
    *
-   * Notes provide detailed content within an activity, supporting markdown,
-   * links, and other rich content. The note will be automatically assigned
+   * Notes provide detailed content within a thread, supporting markdown,
+   * actions, and other rich content. The note will be automatically assigned
    * an ID and author information based on the current execution context.
    *
    * @param note - The note data to create
@@ -327,17 +332,17 @@ export abstract class Plot extends ITool {
    * ```typescript
    * // Create a note with content
    * await this.plot.createNote({
-   *   activity: { id: "activity-123" },
+   *   thread: { id: "thread-123" },
    *   note: "Discussion notes from the meeting...",
    *   contentType: "markdown"
    * });
    *
-   * // Create a note with links
+   * // Create a note with actions
    * await this.plot.createNote({
-   *   activity: { id: "activity-456" },
+   *   thread: { id: "thread-456" },
    *   note: "Meeting recording available",
-   *   links: [{
-   *     type: LinkType.external,
+   *   actions: [{
+   *     type: ActionType.external,
    *     title: "View Recording",
    *     url: "https://example.com/recording"
    *   }]
@@ -362,11 +367,11 @@ export abstract class Plot extends ITool {
    * // Create multiple notes in one batch
    * await this.plot.createNotes([
    *   {
-   *     activity: { id: "activity-123" },
+   *     thread: { id: "thread-123" },
    *     note: "First message in thread"
    *   },
    *   {
-   *     activity: { id: "activity-123" },
+   *     thread: { id: "thread-123" },
    *     note: "Second message in thread"
    *   }
    * ]);
@@ -410,25 +415,25 @@ export abstract class Plot extends ITool {
   abstract updateNote(note: NoteUpdate): Promise<void>;
 
   /**
-   * Retrieves an activity by ID or source.
+   * Retrieves a thread by ID or source.
    *
-   * This method enables lookup of activities either by their unique ID or by their
-   * source identifier (canonical URL from an external system). Archived activities
+   * This method enables lookup of threads either by their unique ID or by their
+   * source identifier (canonical URL from an external system). Archived threads
    * are included in the results.
    *
-   * @param activity - Activity lookup by ID or source
-   * @returns Promise resolving to the matching activity or null if not found
+   * @param thread - Thread lookup by ID or source
+   * @returns Promise resolving to the matching thread or null if not found
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getActivity(
-    activity: { id: Uuid } | { source: string }
-  ): Promise<Activity | null>;
+  abstract getThread(
+    thread: { id: Uuid } | { source: string }
+  ): Promise<Thread | null>;
 
   /**
    * Retrieves a note by ID or key.
    *
    * This method enables lookup of notes either by their unique ID or by their
-   * key (unique identifier within the activity). Archived notes are included
+   * key (unique identifier within the thread). Archived notes are included
    * in the results.
    *
    * @param note - Note lookup by ID or key
@@ -440,7 +445,7 @@ export abstract class Plot extends ITool {
   /**
    * Creates a new priority in the Plot system.
    *
-   * Priorities serve as organizational containers for activities and twists.
+   * Priorities serve as organizational containers for threads and twists.
    * The created priority will be automatically assigned a unique ID.
    *
    * @param priority - The priority data to create
@@ -477,7 +482,7 @@ export abstract class Plot extends ITool {
   /**
    * Adds contacts to the Plot system.
    *
-   * Contacts are used for associating people with activities, such as
+   * Contacts are used for associating people with threads, such as
    * event attendees or task assignees. Duplicate contacts (by email)
    * will be merged or updated as appropriate.
    * This method requires ContactAccess.Write permission.

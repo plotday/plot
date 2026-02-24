@@ -1,12 +1,12 @@
 import { Version3Client } from "jira.js";
 
 import {
-  type Activity,
-  type Link,
-  LinkType,
-  ActivityType,
-  type NewActivity,
-  type NewActivityWithNotes,
+  type Thread,
+  type Action,
+  ActionType,
+  ThreadType,
+  type NewThread,
+  type NewThreadWithNotes,
   NewContact,
   Serializable,
   type SyncToolOptions,
@@ -183,7 +183,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
    */
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (issue: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (issue: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       projectId: string;
@@ -317,16 +317,16 @@ export class Jira extends Tool<Jira> implements ProjectTool {
 
     // Process each issue
     for (const issue of searchResult.issues || []) {
-      const activityWithNotes = await this.convertIssueToActivity(
+      const threadWithNotes = await this.convertIssueToThread(
         issue,
         projectId
       );
       // Set unread based on sync type (false for initial sync to avoid notification overload)
-      activityWithNotes.unread = !state.initialSync;
+      threadWithNotes.unread = !state.initialSync;
       // Inject sync metadata for filtering on disable
-      activityWithNotes.meta = { ...activityWithNotes.meta, syncProvider: "atlassian", syncableId: projectId };
+      threadWithNotes.meta = { ...threadWithNotes.meta, syncProvider: "atlassian", syncableId: projectId };
       // Execute the callback using the callback token
-      await this.tools.callbacks.run(callbackToken, activityWithNotes);
+      await this.tools.callbacks.run(callbackToken, threadWithNotes);
     }
 
     // Check if more pages
@@ -367,12 +367,12 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   }
 
   /**
-   * Convert a Jira issue to a Plot Activity
+   * Convert a Jira issue to a Plot Thread
    */
-  private async convertIssueToActivity(
+  private async convertIssueToThread(
     issue: any,
     projectId: string
-  ): Promise<NewActivityWithNotes> {
+  ): Promise<NewThreadWithNotes> {
     const fields = issue.fields || {};
     const comments = fields.comment?.comments || [];
     const reporter = fields.reporter || fields.creator;
@@ -430,17 +430,17 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       ? `jira:${cloudId}:issue:${issue.id}`
       : undefined;
 
-    // Build activity-level links
-    const activityLinks: Link[] = [];
+    // Build thread-level actions
+    const threadActions: Action[] = [];
     if (issueUrl) {
-      activityLinks.push({
-        type: LinkType.external,
+      threadActions.push({
+        type: ActionType.external,
         title: `Open in Jira`,
         url: issueUrl,
       });
     }
 
-    // Create initial note with description (links moved to activity level)
+    // Create initial note with description (actions moved to thread level)
     notes.push({
       key: "description",
       content: description,
@@ -476,7 +476,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
 
     return {
       ...(source ? { source } : {}),
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: fields.summary || issue.key,
       created: fields.created ? new Date(fields.created) : undefined,
       meta: {
@@ -486,7 +486,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
       done: fields.resolutiondate ? new Date(fields.resolutiondate) : null,
-      links: activityLinks.length > 0 ? activityLinks : undefined,
+      actions: threadActions.length > 0 ? threadActions : undefined,
       notes,
       preview: description || null,
     };
@@ -525,27 +525,27 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   /**
    * Update issue with new values
    *
-   * @param activity - The updated activity
+   * @param thread - The updated thread
    */
-  async updateIssue(activity: Activity): Promise<void> {
+  async updateIssue(thread: Thread): Promise<void> {
     // Extract Jira issue key and project ID from meta
-    const issueKey = activity.meta?.issueKey as string | undefined;
+    const issueKey = thread.meta?.issueKey as string | undefined;
     if (!issueKey) {
-      throw new Error("Jira issue key not found in activity meta");
+      throw new Error("Jira issue key not found in thread meta");
     }
-    const projectId = activity.meta?.projectId as string;
+    const projectId = thread.meta?.projectId as string;
 
     const client = await this.getClient(projectId);
 
     // Handle field updates (title, assignee)
     const updateFields: any = {};
 
-    if (activity.title !== null) {
-      updateFields.summary = activity.title;
+    if (thread.title !== null) {
+      updateFields.summary = thread.title;
     }
 
-    updateFields.assignee = activity.assignee
-      ? { id: activity.assignee.id }
+    updateFields.assignee = thread.assignee
+      ? { id: thread.assignee.id }
       : null;
 
     // Apply field updates if any
@@ -565,7 +565,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
     let targetTransition;
 
     // Determine target state based on combination
-    if (activity.type === ActivityType.Action && activity.done !== null) {
+    if (thread.type === ThreadType.Action && thread.done !== null) {
       // Completed - look for "Done", "Close", or "Resolve" transition
       targetTransition = transitions.transitions?.find(
         (t) =>
@@ -576,7 +576,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
           t.to?.name?.toLowerCase() === "closed" ||
           t.to?.name?.toLowerCase() === "resolved"
       );
-    } else if (activity.start !== null) {
+    } else if (thread.start !== null) {
       // In Progress - look for "Start Progress" or "In Progress" transition
       targetTransition = transitions.transitions?.find(
         (t) =>
@@ -610,18 +610,18 @@ export class Jira extends Tool<Jira> implements ProjectTool {
   /**
    * Add a comment to a Jira issue
    *
-   * @param meta - Activity metadata containing issueKey and projectId
+   * @param meta - Thread metadata containing issueKey and projectId
    * @param body - Comment text (converted to ADF format)
    * @param noteId - Optional Plot note ID for dedup
    */
   async addIssueComment(
-    meta: import("@plotday/twister").ActivityMeta,
+    meta: import("@plotday/twister").ThreadMeta,
     body: string,
     noteId?: string,
   ): Promise<string | void> {
     const issueKey = meta.issueKey as string | undefined;
     if (!issueKey) {
-      throw new Error("Jira issue key not found in activity meta");
+      throw new Error("Jira issue key not found in thread meta");
     }
     const projectId = meta.projectId as string;
     const client = await this.getClient(projectId);
@@ -760,10 +760,10 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       }
     }
 
-    // Create partial activity update (no notes = doesn't touch existing notes)
-    const activity: NewActivity = {
+    // Create partial thread update (no notes = doesn't touch existing notes)
+    const thread: NewThread = {
       ...(source ? { source } : {}),
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: fields.summary || issue.key,
       created: fields.created ? new Date(fields.created) : undefined,
       meta: {
@@ -776,7 +776,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       preview: description || null,
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, thread);
   }
 
   /**
@@ -831,17 +831,17 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       (p: any) => p.key === "plotNoteId"
     )?.value;
 
-    // Create activity update with single comment note
-    const activity: NewActivityWithNotes = {
+    // Create thread update with single comment note
+    const thread: NewThreadWithNotes = {
       ...(source ? { source } : {}),
-      type: ActivityType.Action, // Required field (will match existing activity)
+      type: ThreadType.Action, // Required field (will match existing thread)
       notes: [
         {
           key: `comment-${comment.id}`,
           // If this comment originated from Plot, identify by note ID so we update the existing note
           // rather than creating a duplicate
           ...(plotNoteId ? { id: plotNoteId } : {}),
-          activity: source ? { source } : undefined,
+          thread: source ? { source } : undefined,
           content: commentText,
           created: comment.created ? new Date(comment.created) : undefined,
           author: commentAuthor,
@@ -853,7 +853,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       },
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, thread);
   }
 
   /**

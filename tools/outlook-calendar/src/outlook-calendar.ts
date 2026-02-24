@@ -1,14 +1,14 @@
 import {
-  type Activity,
-  type Link,
-  LinkType,
-  type ActivityOccurrence,
-  ActivityType,
+  type Thread,
+  type Action,
+  ActionType,
+  type ThreadOccurrence,
+  ThreadType,
   type ActorId,
   ConferencingProvider,
   type ContentType,
-  type NewActivityOccurrence,
-  type NewActivityWithNotes,
+  type NewThreadOccurrence,
+  type NewThreadWithNotes,
   type NewActor,
   type NewContact,
   type NewNote,
@@ -33,7 +33,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
-  ActivityAccess,
+  ThreadAccess,
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
@@ -101,7 +101,7 @@ type WatchState = {
  *   build(build: ToolBuilder) {
  *     return {
  *       outlookCalendar: build(OutlookCalendar),
- *       plot: build(Plot, { activity: { access: ActivityAccess.Create } }),
+ *       plot: build(Plot, { thread: { access: ThreadAccess.Create } }),
  *     };
  *   }
  *
@@ -135,9 +135,9 @@ export class OutlookCalendar
       network: build(Network, { urls: ["https://graph.microsoft.com/*"] }),
       plot: build(Plot, {
         contact: { access: ContactAccess.Write },
-        activity: {
-          access: ActivityAccess.Create,
-          updated: this.onActivityUpdated,
+        thread: {
+          access: ThreadAccess.Create,
+          updated: this.onThreadUpdated,
         },
       }),
     };
@@ -270,7 +270,7 @@ export class OutlookCalendar
 
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       calendarId: string;
@@ -478,7 +478,7 @@ export class OutlookCalendar
       try {
         // Handle deleted events
         if (outlookEvent["@removed"]) {
-          // On initial sync, skip creating activities for already-deleted events
+          // On initial sync, skip creating threads for already-deleted events
           if (initialSync) {
             continue;
           }
@@ -487,7 +487,7 @@ export class OutlookCalendar
 
           // Create cancellation note
           const cancelNote: NewNote = {
-            activity: { source },
+            thread: { source },
             key: "cancellation",
             content: "This event was cancelled.",
             contentType: "text",
@@ -497,8 +497,8 @@ export class OutlookCalendar
           };
 
           // Convert to Note type with blocked tag and cancellation note
-          const activity: NewActivityWithNotes = {
-            type: ActivityType.Note,
+          const thread: NewThreadWithNotes = {
+            type: ThreadType.Note,
             created: outlookEvent.createdDateTime
               ? new Date(outlookEvent.createdDateTime)
               : new Date(),
@@ -510,8 +510,8 @@ export class OutlookCalendar
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           };
 
-          // Send activity update
-          await this.tools.callbacks.run(callbackToken, activity);
+          // Send thread update
+          await this.tools.callbacks.run(callbackToken, thread);
           continue;
         }
 
@@ -551,11 +551,11 @@ export class OutlookCalendar
           continue;
         }
 
-        // Transform the Outlook event to a Plot activity (master or single events)
-        const activity = transformOutlookEvent(outlookEvent, calendarId);
+        // Transform the Outlook event to a Plot thread (master or single events)
+        const threadData = transformOutlookEvent(outlookEvent, calendarId);
 
         // Skip deleted events (transformOutlookEvent returns null for deleted)
-        if (!activity) {
+        if (!threadData) {
           continue;
         }
 
@@ -568,7 +568,7 @@ export class OutlookCalendar
         // Tags (RSVPs) should be per-occurrence via the occurrences array
         // For non-recurring events, add tags normally
         let tags: Partial<Record<Tag, NewActor[]>> | null = null;
-        if (validAttendees.length > 0 && !activity.recurrenceRule) {
+        if (validAttendees.length > 0 && !threadData.recurrenceRule) {
           const attendTags: NewActor[] = [];
           const skipTags: NewActor[] = [];
           const undecidedTags: NewActor[] = [];
@@ -608,13 +608,13 @@ export class OutlookCalendar
           }
         }
 
-        // Build links array for videoconferencing and calendar links
-        const links: Link[] = [];
+        // Build actions array for videoconferencing and calendar links
+        const actions: Action[] = [];
 
         // Add conferencing link if available
         if (outlookEvent.onlineMeeting?.joinUrl) {
-          links.push({
-            type: LinkType.conferencing,
+          actions.push({
+            type: ActionType.conferencing,
             url: outlookEvent.onlineMeeting.joinUrl,
             provider: detectConferencingProvider(
               outlookEvent.onlineMeeting.joinUrl
@@ -624,23 +624,23 @@ export class OutlookCalendar
 
         // Add calendar link
         if (outlookEvent.webLink) {
-          links.push({
-            type: LinkType.external,
+          actions.push({
+            type: ActionType.external,
             title: "View in Calendar",
             url: outlookEvent.webLink,
           });
         }
 
-        // Create note with description (links moved to activity level)
+        // Create note with description (actions moved to thread level)
         const notes: NewNote[] = [];
         const hasDescription =
           outlookEvent.body?.content &&
           outlookEvent.body.content.trim().length > 0;
-        const hasLinks = links.length > 0;
+        const hasActions = actions.length > 0;
 
         if (hasDescription) {
           notes.push({
-            activity: {
+            thread: {
               source: `outlook-calendar:${outlookEvent.id}`,
             },
             key: "description",
@@ -651,17 +651,17 @@ export class OutlookCalendar
           });
         }
 
-        // Build NewActivityWithNotes from the transformed activity
-        const activityWithNotes: NewActivityWithNotes = {
-          ...activity,
+        // Build NewThreadWithNotes from the transformed thread
+        const threadWithNotes: NewThreadWithNotes = {
+          ...threadData,
           author: authorContact,
           meta: {
-            ...activity.meta,
+            ...threadData.meta,
             syncProvider: "microsoft",
             syncableId: calendarId,
           },
-          tags: tags && Object.keys(tags).length > 0 ? tags : activity.tags,
-          links: hasLinks ? links : undefined,
+          tags: tags && Object.keys(tags).length > 0 ? tags : threadData.tags,
+          actions: hasActions ? actions : undefined,
           notes,
           preview: hasDescription ? outlookEvent.body!.content! : null,
           ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
@@ -669,7 +669,7 @@ export class OutlookCalendar
         };
 
         // Call the event callback using hoisted token
-        await this.tools.callbacks.run(callbackToken, activityWithNotes);
+        await this.tools.callbacks.run(callbackToken, threadWithNotes);
       } catch (error) {
         console.error(`Error processing event ${outlookEvent.id}:`, error);
         // Continue processing other events
@@ -679,7 +679,7 @@ export class OutlookCalendar
 
   /**
    * Process a recurring event instance (occurrence or exception) from Outlook Calendar.
-   * This updates the master recurring activity with occurrence-specific data.
+   * This updates the master recurring thread with occurrence-specific data.
    */
   private async processEventInstance(
     event: import("./graph-api").OutlookEvent,
@@ -693,7 +693,7 @@ export class OutlookCalendar
       return;
     }
 
-    // The seriesMasterId points to the master activity
+    // The seriesMasterId points to the master thread
     if (!event.seriesMasterId) {
       console.warn(`No series master ID for instance: ${event.id}`);
       return;
@@ -715,7 +715,7 @@ export class OutlookCalendar
       const end = instanceData?.end ?? null;
 
       const occurrenceUpdate = {
-        type: ActivityType.Event,
+        type: ThreadType.Event,
         source: masterCanonicalUrl,
         meta: { syncProvider: "microsoft", syncableId: calendarId },
         start: start,
@@ -766,11 +766,11 @@ export class OutlookCalendar
 
     // Build occurrence object
     // Always include start to ensure upsert_activity can infer scheduling when
-    // creating a new master activity. Use instanceData.start if available (for
+    // creating a new master thread. Use instanceData.start if available (for
     // rescheduled instances), otherwise fall back to originalStart.
     const occurrenceStart = instanceData.start ?? new Date(originalStart);
 
-    const occurrence: Omit<NewActivityOccurrence, "activity"> = {
+    const occurrence: Omit<NewThreadOccurrence, "thread"> = {
       occurrence: new Date(originalStart),
       start: occurrenceStart,
       tags: Object.keys(tags).length > 0 ? tags : undefined,
@@ -785,12 +785,12 @@ export class OutlookCalendar
     if (instanceData.meta) occurrence.meta = instanceData.meta;
 
     // Send occurrence data to the twist via callback
-    // The twist will decide whether to create or update the master activity
+    // The twist will decide whether to create or update the master thread
 
-    // Build a minimal NewActivity with source and occurrences
-    // The twist's createActivity will upsert the master activity
+    // Build a minimal NewThread with source and occurrences
+    // The twist's createThread will upsert the master thread
     const occurrenceUpdate = {
-      type: ActivityType.Event,
+      type: ThreadType.Event,
       source: masterCanonicalUrl,
       meta: { syncProvider: "microsoft", syncableId: calendarId },
       occurrences: [occurrence],
@@ -845,17 +845,17 @@ export class OutlookCalendar
     await this.runTask(callback);
   }
 
-  async onActivityUpdated(
-    activity: Activity,
+  async onThreadUpdated(
+    thread: Thread,
     changes: {
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
-      occurrence?: ActivityOccurrence;
+      occurrence?: ThreadOccurrence;
     }
   ): Promise<void> {
     try {
       // Only process calendar events
-      const source = activity.source;
+      const source = thread.source;
       if (
         !source ||
         typeof source !== "string" ||
@@ -890,12 +890,12 @@ export class OutlookCalendar
 
       // Determine new RSVP status based on most recent tag change
       const hasAttend =
-        activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
+        thread.tags?.[Tag.Attend] && thread.tags[Tag.Attend].length > 0;
       const hasSkip =
-        activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
+        thread.tags?.[Tag.Skip] && thread.tags[Tag.Skip].length > 0;
       const hasUndecided =
-        activity.tags?.[Tag.Undecided] &&
-        activity.tags[Tag.Undecided].length > 0;
+        thread.tags?.[Tag.Undecided] &&
+        thread.tags[Tag.Undecided].length > 0;
 
       let newStatus: "accepted" | "declined" | "tentativelyAccepted";
 
@@ -930,15 +930,15 @@ export class OutlookCalendar
       }
 
       // Extract calendar info from metadata
-      if (!activity.meta) {
-        console.error("[RSVP Sync] Missing activity metadata", {
-          activity_id: activity.id,
+      if (!thread.meta) {
+        console.error("[RSVP Sync] Missing thread metadata", {
+          thread_id: thread.id,
         });
         return;
       }
 
-      const baseEventId = activity.meta.id;
-      const calendarId = activity.meta.calendarId;
+      const baseEventId = thread.meta.id;
+      const calendarId = thread.meta.calendarId;
 
       if (
         !baseEventId ||
@@ -993,7 +993,7 @@ export class OutlookCalendar
         await this.tools.integrations.actAs(
           OutlookCalendar.PROVIDER,
           actorId,
-          activity.id,
+          thread.id,
           this.syncActorRSVP,
           calendarId as string,
           eventId,
@@ -1005,7 +1005,7 @@ export class OutlookCalendar
       console.error("[RSVP Sync] Error in callback", {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
-        activity_id: activity.id,
+        thread_id: thread.id,
       });
     }
   }

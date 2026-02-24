@@ -3,9 +3,9 @@ import { Type } from "typebox";
 import { Gmail } from "@plotday/tool-gmail";
 import { Slack } from "@plotday/tool-slack";
 import {
-  type ActivityFilter,
-  ActivityType,
-  type NewActivityWithNotes,
+  type ThreadFilter,
+  ThreadType,
+  type NewThreadWithNotes,
   type NewContact,
   type Note,
   type Priority,
@@ -13,7 +13,7 @@ import {
   Twist,
 } from "@plotday/twister";
 import { AI, type AIMessage } from "@plotday/twister/tools/ai";
-import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
 import { Uuid } from "@plotday/twister/utils/uuid";
 
 type MessageProvider = "slack" | "gmail";
@@ -46,8 +46,8 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       }),
       ai: build(AI),
       plot: build(Plot, {
-        activity: {
-          access: ActivityAccess.Create,
+        thread: {
+          access: ThreadAccess.Create,
         },
         note: {
           intents: [
@@ -91,18 +91,18 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     // Auth and channel selection are now handled in the twist edit modal.
   }
 
-  async onSlackThread(thread: NewActivityWithNotes): Promise<void> {
+  async onSlackThread(thread: NewThreadWithNotes): Promise<void> {
     const channelId = thread.meta?.syncableId as string;
     return this.onMessageThread(thread, "slack", channelId);
   }
 
-  async onGmailThread(thread: NewActivityWithNotes): Promise<void> {
+  async onGmailThread(thread: NewThreadWithNotes): Promise<void> {
     const channelId = thread.meta?.syncableId as string;
     return this.onMessageThread(thread, "gmail", channelId);
   }
 
-  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
-    await this.tools.plot.updateActivity({ match: filter, archived: true });
+  async onSyncableDisabled(filter: ThreadFilter): Promise<void> {
+    await this.tools.plot.updateThread({ match: filter, archived: true });
   }
 
   // ============================================================================
@@ -157,7 +157,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     const instructions = await this.getInstructions();
     if (instructions.length >= 20) {
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content:
           "You've reached the limit of 20 instructions. Remove one first with \"forget instruction\" before adding more.",
       });
@@ -174,7 +174,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     if (summary === "UNCLEAR") {
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content: `I didn't understand that as an instruction. Try something like:\n- "Ignore threads from #random"\n- "Always create tasks for messages from Sarah"\n- "Never create tasks for bot messages"`,
       });
       return;
@@ -192,7 +192,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     await this.setInstructions(instructions);
 
     await this.tools.plot.createNote({
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content: `Saved: "${summary}"`,
     });
   }
@@ -202,7 +202,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     if (instructions.length === 0) {
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content: `No instructions yet. Mention me with an instruction like "Ignore threads from #random" to add one.`,
       });
       return;
@@ -213,7 +213,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       .join("\n");
 
     await this.tools.plot.createNote({
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content: `**Instructions:**\n${list}`,
     });
   }
@@ -226,7 +226,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     if (instructions.length === 0) {
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content: "No instructions to remove.",
       });
       return;
@@ -286,7 +286,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
         .join("\n");
 
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content: `Couldn't find a matching instruction. Here are the current ones:\n${list}`,
       });
       return;
@@ -295,7 +295,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     await this.setInstructions(instructions.filter((i) => i.id !== target.id));
 
     await this.tools.plot.createNote({
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content: `Removed: "${target.summary}"`,
     });
   }
@@ -305,7 +305,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   // ============================================================================
 
   async onMessageThread(
-    thread: NewActivityWithNotes,
+    thread: NewThreadWithNotes,
     provider: MessageProvider,
     channelId: string
   ): Promise<void> {
@@ -338,7 +338,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     await this.createTaskFromThread(thread, analysis, provider, channelId);
   }
 
-  private async analyzeThread(thread: NewActivityWithNotes): Promise<{
+  private async analyzeThread(thread: NewThreadWithNotes): Promise<{
     needsTask: boolean;
     taskTitle: string | null;
     taskNote: string | null;
@@ -449,7 +449,7 @@ If a task is needed, create a clear, actionable title that describes what the us
   }
 
   private formatSourceReference(
-    thread: NewActivityWithNotes,
+    thread: NewThreadWithNotes,
     provider: MessageProvider,
     channelId: string
   ): string {
@@ -470,7 +470,7 @@ If a task is needed, create a clear, actionable title that describes what the us
   }
 
   private async createTaskFromThread(
-    thread: NewActivityWithNotes,
+    thread: NewThreadWithNotes,
     analysis: {
       needsTask: boolean;
       taskTitle: string | null;
@@ -488,10 +488,10 @@ If a task is needed, create a clear, actionable title that describes what the us
 
     const sourceRef = this.formatSourceReference(thread, provider, channelId);
 
-    // Create task activity - database handles upsert automatically
-    const taskId = await this.tools.plot.createActivity({
+    // Create task thread - database handles upsert automatically
+    const taskId = await this.tools.plot.createThread({
       source: `message-tasks:${threadId}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: analysis.taskTitle || thread.title || "Action needed from message",
       start: new Date(),
       notes: analysis.taskNote
@@ -521,7 +521,7 @@ If a task is needed, create a clear, actionable title that describes what the us
   }
 
   private async checkThreadForCompletion(
-    thread: NewActivityWithNotes,
+    thread: NewThreadWithNotes,
     taskInfo: ThreadTask
   ): Promise<void> {
     // Only check the last few messages for completion signals
@@ -572,7 +572,7 @@ Return true only if there's clear evidence the task is done.`,
       };
 
       if (result.isCompleted && result.confidence >= 0.7) {
-        await this.tools.plot.updateActivity({
+        await this.tools.plot.updateThread({
           id: taskInfo.taskId,
           done: new Date(),
         });

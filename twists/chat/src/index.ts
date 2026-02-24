@@ -1,8 +1,8 @@
 import { Type } from "typebox";
 
 import {
-  type Link,
-  LinkType,
+  type Action,
+  ActionType,
   ActorType,
   type Note,
   Tag,
@@ -11,7 +11,7 @@ import {
 } from "@plotday/twister";
 import { Options } from "@plotday/twister/options";
 import { AI, type AIMessage, AIModel } from "@plotday/twister/tools/ai";
-import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
 
 export default class ChatTwist extends Twist<ChatTwist> {
   build(build: ToolBuilder) {
@@ -33,8 +33,8 @@ export default class ChatTwist extends Twist<ChatTwist> {
       }),
       ai: build(AI),
       plot: build(Plot, {
-        activity: {
-          access: ActivityAccess.Respond,
+        thread: {
+          access: ThreadAccess.Respond,
         },
         note: {
           intents: [
@@ -54,14 +54,14 @@ export default class ChatTwist extends Twist<ChatTwist> {
   }
 
   async respond(note: Note) {
-    const activity = note.activity;
+    const thread = note.thread;
 
-    // Get all notes in this activity (conversation history)
-    const previousNotes = await this.tools.plot.getNotes(activity);
+    // Get all notes in this thread (conversation history)
+    const previousNotes = await this.tools.plot.getNotes(thread);
 
     // Add Thinking tag to indicate processing has started
-    await this.tools.plot.updateActivity({
-      id: activity.id,
+    await this.tools.plot.updateThread({
+      id: thread.id,
       twistTags: {
         [Tag.Twist]: true,
       },
@@ -75,12 +75,12 @@ You respond helpfully to user requests.
 You can also create tasks, but should only do so when the user explicitly asks you to.
 You can provide either or both inline and standalone links. Only use standalone links for key references, such as a website that answers the user's question in detail.`,
       },
-      // Include activity title as context
-      ...(activity.title
+      // Include thread title as context
+      ...(thread.title
         ? [
             {
               role: "user" as const,
-              content: activity.title,
+              content: thread.title,
             },
           ]
         : []),
@@ -132,24 +132,24 @@ You can provide either or both inline and standalone links. Only use standalone 
       outputSchema: schema,
     });
 
-    // Convert AI links to Link format
-    const activityLinks: Link[] | null =
+    // Convert AI links to Action format
+    const threadActions: Action[] | null =
       response.output!.links?.map((link) => ({
-        type: LinkType.external,
+        type: ActionType.external,
         title: link.title,
         url: link.url,
       })) || null;
 
-    // Create AI response as a note on the existing activity
+    // Create AI response as a note on the existing thread
     await Promise.all([
       this.tools.plot.createNote({
-        activity,
+        thread,
         content: response.output!.response,
-        links: activityLinks,
+        actions: threadActions,
       }),
       ...(response.output!.tasks?.map((task) =>
         this.tools.plot.createNote({
-          activity,
+          thread,
           content: task,
           tags: {
             [Tag.Now]: [{ id: note.author.id }],
@@ -159,8 +159,8 @@ You can provide either or both inline and standalone links. Only use standalone 
     ]);
 
     // Remove Thinking tag after response is created
-    await this.tools.plot.updateActivity({
-      id: activity.id,
+    await this.tools.plot.updateThread({
+      id: thread.id,
       twistTags: {
         [Tag.Twist]: false,
       },

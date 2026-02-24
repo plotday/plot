@@ -1,5 +1,5 @@
 /**
- * Activity tags. Three types:
+ * Thread tags. Three types:
  * 1. Special tags, which trigger other behaviors
  * 2. Toggle tags, which anyone can toggle a shared value on or off
  * 3. Count tags, where everyone can add or remove their own

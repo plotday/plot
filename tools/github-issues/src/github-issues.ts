@@ -1,12 +1,12 @@
 import { Octokit } from "@octokit/rest";
 
 import {
-  type Link,
-  LinkType,
-  type ActivityMeta,
-  ActivityType,
-  type NewActivity,
-  type NewActivityWithNotes,
+  type Action,
+  ActionType,
+  type ThreadMeta,
+  ThreadType,
+  type NewThread,
+  type NewThreadWithNotes,
   type NewNote,
   type Serializable,
   type SyncToolOptions,
@@ -209,7 +209,7 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
   async startSync<
     TArgs extends Serializable[],
     TCallback extends (
-      issue: NewActivityWithNotes,
+      issue: NewThreadWithNotes,
       ...args: TArgs
     ) => any,
   >(
@@ -359,7 +359,7 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
       // Skip pull requests (GitHub returns PRs in issues endpoint)
       if (issue.pull_request) continue;
 
-      const activity = await this.convertIssueToActivity(
+      const thread = await this.convertIssueToThread(
         octokit,
         issue,
         repoId,
@@ -367,13 +367,13 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
         state.initialSync
       );
 
-      if (activity) {
-        activity.meta = {
-          ...activity.meta,
+      if (thread) {
+        thread.meta = {
+          ...thread.meta,
           syncProvider: "github-issues",
           syncableId: repoId,
         };
-        await this.tools.callbacks.run(callbackToken, activity);
+        await this.tools.callbacks.run(callbackToken, thread);
         processedInBatch++;
       }
     }
@@ -419,15 +419,15 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
   }
 
   /**
-   * Convert a GitHub issue to a NewActivityWithNotes
+   * Convert a GitHub issue to a NewThreadWithNotes
    */
-  private async convertIssueToActivity(
+  private async convertIssueToThread(
     octokit: Octokit,
     issue: any,
     repoId: string,
     repoFullName: string,
     initialSync: boolean
-  ): Promise<NewActivityWithNotes | null> {
+  ): Promise<NewThreadWithNotes | null> {
     // Build author contact (GitHub users may not have email)
     let authorContact: NewContact | undefined;
     if (issue.user) {
@@ -453,17 +453,17 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
     const description = issue.body || "";
     const hasDescription = description.trim().length > 0;
 
-    // Build activity-level links
-    const activityLinks: Link[] = [];
+    // Build thread-level actions
+    const threadActions: Action[] = [];
     if (issue.html_url) {
-      activityLinks.push({
-        type: LinkType.external,
+      threadActions.push({
+        type: ActionType.external,
         title: "Open in GitHub",
         url: issue.html_url,
       });
     }
 
-    // Build notes array (inline notes don't require the `activity` field)
+    // Build notes array (inline notes don't require the `thread` field)
     const notes: any[] = [];
 
     notes.push({
@@ -518,9 +518,9 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
       );
     }
 
-    const activity: NewActivityWithNotes = {
+    const thread: NewThreadWithNotes = {
       source: `github:issue:${repoId}:${issue.number}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: issue.title,
       created: issue.created_at,
       author: authorContact,
@@ -533,37 +533,37 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
         githubRepoFullName: repoFullName,
         projectId: repoId,
       },
-      links: activityLinks.length > 0 ? activityLinks : undefined,
+      actions: threadActions.length > 0 ? threadActions : undefined,
       notes,
       preview: hasDescription ? description : null,
       ...(initialSync ? { unread: false } : {}),
       ...(initialSync ? { archived: false } : {}),
     };
 
-    return activity;
+    return thread;
   }
 
   /**
    * Update issue with new values
    */
   async updateIssue(
-    activity: import("@plotday/twister").Activity
+    thread: import("@plotday/twister").Thread
   ): Promise<void> {
-    const issueNumber = activity.meta?.githubIssueNumber as number | undefined;
+    const issueNumber = thread.meta?.githubIssueNumber as number | undefined;
     if (!issueNumber) {
-      throw new Error("GitHub issue number not found in activity meta");
+      throw new Error("GitHub issue number not found in thread meta");
     }
 
-    const repoFullName = activity.meta?.githubRepoFullName as
+    const repoFullName = thread.meta?.githubRepoFullName as
       | string
       | undefined;
     if (!repoFullName) {
-      throw new Error("GitHub repo name not found in activity meta");
+      throw new Error("GitHub repo name not found in thread meta");
     }
 
-    const projectId = activity.meta?.projectId as string | undefined;
+    const projectId = thread.meta?.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Project ID not found in activity meta");
+      throw new Error("Project ID not found in thread meta");
     }
 
     const octokit = await this.getClient(projectId);
@@ -575,15 +575,15 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
     } = {};
 
     // Handle open/close status
-    if (activity.type === ActivityType.Action && activity.done !== null) {
+    if (thread.type === ThreadType.Action && thread.done !== null) {
       updateFields.state = "closed";
     } else {
       updateFields.state = "open";
     }
 
     // Handle assignee
-    if (activity.assignee) {
-      const actors = await this.tools.plot.getActors([activity.assignee.id]);
+    if (thread.assignee) {
+      const actors = await this.tools.plot.getActors([thread.assignee.id]);
       const actor = actors[0];
       if (actor?.name) {
         // GitHub assignees use login names
@@ -607,22 +607,22 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
    * Add a comment to a GitHub issue
    */
   async addIssueComment(
-    meta: ActivityMeta,
+    meta: ThreadMeta,
     body: string
   ): Promise<string | void> {
     const issueNumber = meta.githubIssueNumber as number | undefined;
     if (!issueNumber) {
-      throw new Error("GitHub issue number not found in activity meta");
+      throw new Error("GitHub issue number not found in thread meta");
     }
 
     const repoFullName = meta.githubRepoFullName as string | undefined;
     if (!repoFullName) {
-      throw new Error("GitHub repo name not found in activity meta");
+      throw new Error("GitHub repo name not found in thread meta");
     }
 
     const projectId = meta.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Project ID not found in activity meta");
+      throw new Error("Project ID not found in thread meta");
     }
 
     const octokit = await this.getClient(projectId);
@@ -749,9 +749,9 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
       };
     }
 
-    const activity: NewActivity = {
+    const thread: NewThread = {
       source: `github:issue:${repoId}:${issue.number}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: issue.title,
       created: issue.created_at,
       author: authorContact,
@@ -769,7 +769,7 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
       preview: issue.body || null,
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, thread);
   }
 
   /**
@@ -801,18 +801,18 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
       };
     }
 
-    const activitySource = `github:issue:${repoId}:${issue.number}`;
+    const threadSource = `github:issue:${repoId}:${issue.number}`;
     const note: NewNote = {
       key: `comment-${comment.id}`,
-      activity: { source: activitySource },
+      thread: { source: threadSource },
       content: comment.body ?? null,
       created: comment.created_at,
       author: commentAuthor,
     };
 
-    const activity: NewActivityWithNotes = {
-      source: activitySource,
-      type: ActivityType.Action,
+    const thread: NewThreadWithNotes = {
+      source: threadSource,
+      type: ThreadType.Action,
       notes: [note],
       meta: {
         githubIssueNumber: issue.number,
@@ -824,7 +824,7 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
       },
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, thread);
   }
 
   /**

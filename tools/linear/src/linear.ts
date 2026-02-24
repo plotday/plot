@@ -7,12 +7,12 @@ import type {
 import { LinearWebhookClient } from "@linear/sdk/webhooks";
 
 import {
-  type Link,
-  LinkType,
-  ActivityMeta,
-  ActivityType,
-  type NewActivity,
-  type NewActivityWithNotes,
+  type Action,
+  ActionType,
+  ThreadMeta,
+  ThreadType,
+  type NewThread,
+  type NewThreadWithNotes,
   type NewNote,
   Serializable,
   type SyncToolOptions,
@@ -185,7 +185,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
    */
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (issue: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (issue: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       projectId: string;
@@ -317,21 +317,21 @@ export class Linear extends Tool<Linear> implements ProjectTool {
 
     // Process each issue
     for (const issue of issuesConnection.nodes) {
-      const activity = await this.convertIssueToActivity(
+      const thread = await this.convertIssueToThread(
         issue,
         projectId,
         state.initialSync
       );
 
-      if (activity) {
+      if (thread) {
         // Inject sync metadata for bulk operations (e.g. disable filtering)
-        activity.meta = {
-          ...activity.meta,
+        thread.meta = {
+          ...thread.meta,
           syncProvider: "linear",
           syncableId: projectId,
         };
         // Execute the callback using the callback token
-        await this.tools.callbacks.run(callbackToken, activity);
+        await this.tools.callbacks.run(callbackToken, thread);
       }
     }
 
@@ -358,13 +358,13 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   }
 
   /**
-   * Convert a Linear issue to a NewActivityWithNotes
+   * Convert a Linear issue to a NewThreadWithNotes
    */
-  private async convertIssueToActivity(
+  private async convertIssueToThread(
     issue: Issue,
     projectId: string,
     initialSync: boolean
-  ): Promise<NewActivityWithNotes | null> {
+  ): Promise<NewThreadWithNotes | null> {
     let creator, assignee, comments;
 
     try {
@@ -420,11 +420,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     const description = issue.description || "";
     const hasDescription = description.trim().length > 0;
 
-    // Build activity-level links
-    const activityLinks: Link[] = [];
+    // Build thread-level actions
+    const threadActions: Action[] = [];
     if (issue.url) {
-      activityLinks.push({
-        type: LinkType.external,
+      threadActions.push({
+        type: ActionType.external,
         title: `Open in Linear`,
         url: issue.url,
       });
@@ -468,9 +468,9 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       });
     }
 
-    const activity: NewActivityWithNotes = {
+    const newThread: NewThreadWithNotes = {
       source: `linear:issue:${issue.id}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: issue.title,
       created: issue.createdAt,
       author: authorContact,
@@ -482,33 +482,33 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         linearId: issue.id,
         projectId,
       },
-      links: activityLinks.length > 0 ? activityLinks : undefined,
+      actions: threadActions.length > 0 ? threadActions : undefined,
       notes,
       preview: hasDescription ? description : null,
       ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
       ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
     };
 
-    return activity;
+    return newThread;
   }
 
   /**
    * Update issue with new values
    *
-   * @param activity - The updated activity
+   * @param thread - The updated thread
    */
   async updateIssue(
-    activity: import("@plotday/twister").Activity
+    thread: import("@plotday/twister").Thread
   ): Promise<void> {
-    // Get the Linear issue ID from activity meta
-    const issueId = activity.meta?.linearId as string | undefined;
+    // Get the Linear issue ID from thread meta
+    const issueId = thread.meta?.linearId as string | undefined;
     if (!issueId) {
-      throw new Error("Linear issue ID not found in activity meta");
+      throw new Error("Linear issue ID not found in thread meta");
     }
 
-    const projectId = activity.meta?.projectId as string | undefined;
+    const projectId = thread.meta?.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Project ID not found in activity meta");
+      throw new Error("Project ID not found in thread meta");
     }
 
     const client = await this.getClient(projectId);
@@ -516,17 +516,17 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     const updateFields: any = {};
 
     // Handle title
-    if (activity.title !== null) {
-      updateFields.title = activity.title;
+    if (thread.title !== null) {
+      updateFields.title = thread.title;
     }
 
     // Handle order -> sortOrder
-    if (activity.order !== undefined && activity.order !== null) {
-      updateFields.sortOrder = activity.order;
+    if (thread.order !== undefined && thread.order !== null) {
+      updateFields.sortOrder = thread.order;
     }
 
     // Handle assignee - map Plot actor to Linear user via email lookup
-    const currentAssigneeActorId = activity.assignee?.id || null;
+    const currentAssigneeActorId = thread.assignee?.id || null;
 
     if (!currentAssigneeActorId) {
       updateFields.assigneeId = null;
@@ -573,7 +573,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       let targetState;
 
       // Determine target state based on combination
-      if (activity.type === ActivityType.Action && activity.done !== null) {
+      if (thread.type === ThreadType.Action && thread.done !== null) {
         // Completed
         targetState = states.nodes.find(
           (s) =>
@@ -581,7 +581,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
             s.name === "Completed" ||
             s.type === "completed"
         );
-      } else if (activity.start !== null) {
+      } else if (thread.start !== null) {
         // In Progress (has start date, not done)
         targetState = states.nodes.find(
           (s) => s.name === "In Progress" || s.type === "started"
@@ -608,21 +608,21 @@ export class Linear extends Tool<Linear> implements ProjectTool {
   /**
    * Add a comment to a Linear issue
    *
-   * @param meta - Activity metadata containing linearId and projectId
+   * @param meta - Thread metadata containing linearId and projectId
    * @param body - Comment text (markdown supported)
    */
   async addIssueComment(
-    meta: ActivityMeta,
+    meta: ThreadMeta,
     body: string
   ): Promise<string | void> {
     const issueId = meta.linearId as string | undefined;
     if (!issueId) {
-      throw new Error("Linear issue ID not found in activity meta");
+      throw new Error("Linear issue ID not found in thread meta");
     }
 
     const projectId = meta.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Project ID not found in activity meta");
+      throw new Error("Project ID not found in thread meta");
     }
 
     const client = await this.getClient(projectId);
@@ -728,7 +728,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
     const creator = issue.creator || null;
     const assignee = issue.assignee || null;
 
-    // Build activity update with only issue fields (no notes)
+    // Build thread update with only issue fields (no notes)
     let authorContact: NewContact | undefined;
     let assigneeContact: NewContact | undefined;
 
@@ -747,11 +747,11 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       };
     }
 
-    // Create partial activity update (no notes = doesn't touch existing notes)
+    // Create partial thread update (no notes = doesn't touch existing notes)
     // Note: webhook payload dates are JSON strings, must convert to Date
-    const activity: NewActivity = {
+    const newThread: NewThread = {
       source: `linear:issue:${issue.id}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: issue.title,
       created: new Date(issue.createdAt),
       author: authorContact,
@@ -772,7 +772,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       preview: issue.description || null,
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, newThread);
   }
 
   /**
@@ -807,20 +807,20 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       };
     }
 
-    // Create activity update with single comment note
-    // Type is required by NewActivity, but upsert will use existing activity's type
-    const activitySource = `linear:issue:${issueId}`;
+    // Create thread update with single comment note
+    // Type is required by NewThread, but upsert will use existing thread's type
+    const threadSource = `linear:issue:${issueId}`;
     const note: NewNote = {
       key: `comment-${comment.id}`,
-      activity: { source: activitySource },
+      thread: { source: threadSource },
       content: comment.body,
       created: new Date(comment.createdAt),
       author: commentAuthor,
     };
 
-    const activity: NewActivityWithNotes = {
-      source: activitySource,
-      type: ActivityType.Action, // Required field (will match existing activity)
+    const newThread: NewThreadWithNotes = {
+      source: threadSource,
+      type: ThreadType.Action, // Required field (will match existing thread)
       notes: [note],
       meta: {
         linearId: issueId,
@@ -830,7 +830,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       },
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, newThread);
   }
 
   /**

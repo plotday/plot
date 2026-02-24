@@ -1,6 +1,6 @@
-import { ActivityType } from "@plotday/twister";
+import { ThreadType } from "@plotday/twister";
 import type {
-  NewActivityWithNotes,
+  NewThreadWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
 
@@ -233,19 +233,19 @@ function formatSlackText(text: string): string {
 }
 
 /**
- * Transforms a Slack message thread into a NewActivityWithNotes structure.
- * The first message snippet becomes the Activity title, and each message becomes a Note.
+ * Transforms a Slack message thread into a NewThreadWithNotes structure.
+ * The first message snippet becomes the Thread title, and each message becomes a Note.
  */
 export function transformSlackThread(
   messages: SlackMessage[],
   channelId: string
-): NewActivityWithNotes {
+): NewThreadWithNotes {
   const parentMessage = messages[0];
 
   if (!parentMessage) {
     // Return empty structure for invalid threads
     return {
-      type: ActivityType.Note,
+      type: ThreadType.Note,
       title: "Empty thread",
       notes: [],
     };
@@ -258,10 +258,10 @@ export function transformSlackThread(
   // Canonical URL using Slack's app_redirect (works across all workspaces)
   const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${threadTs}`;
 
-  // Create Activity
-  const activity: NewActivityWithNotes = {
+  // Create Thread
+  const thread: NewThreadWithNotes = {
     source: canonicalUrl,
-    type: ActivityType.Note,
+    type: ThreadType.Note,
     title,
     start: new Date(parseFloat(parentMessage.ts) * 1000),
     meta: {
@@ -282,17 +282,17 @@ export function transformSlackThread(
 
     // Create NewNote with idempotent key
     const note = {
-      activity: { source: canonicalUrl },
+      thread: { source: canonicalUrl },
       key: message.ts,
       author: slackUserToNewActor(userId),
       content: text,
       mentions: mentions.length > 0 ? mentions : undefined,
     };
 
-    activity.notes.push(note);
+    thread.notes.push(note);
   }
 
-  return activity;
+  return thread;
 }
 
 /**

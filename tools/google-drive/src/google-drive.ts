@@ -1,11 +1,11 @@
 import GoogleContacts from "@plotday/tool-google-contacts";
 import {
-  type ActivityFilter,
-  ActivityKind,
-  type Link,
-  LinkType,
-  ActivityType,
-  type NewActivityWithNotes,
+  type ThreadFilter,
+  ThreadKind,
+  type Action,
+  ActionType,
+  ThreadType,
+  type NewThreadWithNotes,
   type NewContact,
   type NewNote,
   Serializable,
@@ -180,7 +180,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
 
     // Create disable callback if parent provided onSyncableDisabled
     if (this.options.onSyncableDisabled) {
-      const filter: ActivityFilter = {
+      const filter: ThreadFilter = {
         meta: { syncProvider: "google", syncableId: syncable.id },
       };
       const disableCallbackToken = await this.tools.callbacks.createFromParent(
@@ -279,7 +279,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
 
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       folderId: string;
@@ -359,7 +359,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
     const fileId = meta.fileId as string | undefined;
     const folderId = meta.folderId as string | undefined;
     if (!fileId || !folderId) {
-      console.warn("No fileId/folderId in activity meta, cannot add comment");
+      console.warn("No fileId/folderId in thread meta, cannot add comment");
       return;
     }
 
@@ -377,7 +377,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
     const fileId = meta.fileId as string | undefined;
     const folderId = meta.folderId as string | undefined;
     if (!fileId || !folderId) {
-      console.warn("No fileId/folderId in activity meta, cannot add reply");
+      console.warn("No fileId/folderId in thread meta, cannot add reply");
       return;
     }
 
@@ -588,13 +588,13 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
 
       for (const file of result.files) {
         try {
-          const activity = await this.buildActivityFromFile(
+          const thread = await this.buildThreadFromFile(
             api,
             file,
             folderId,
             initialSync
           );
-          await this.tools.callbacks.run(callbackToken, activity);
+          await this.tools.callbacks.run(callbackToken, thread);
         } catch (error) {
           console.error(`Failed to process file ${file.id}:`, error);
         }
@@ -663,13 +663,13 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
         processedCount++;
 
         try {
-          const activity = await this.buildActivityFromFile(
+          const thread = await this.buildThreadFromFile(
             api,
             change.file,
             folderId,
             false // incremental sync
           );
-          await this.tools.callbacks.run(callbackToken, activity);
+          await this.tools.callbacks.run(callbackToken, thread);
         } catch (error) {
           console.error(
             `Failed to process changed file ${change.fileId}:`,
@@ -705,14 +705,14 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
     }
   }
 
-  // --- Activity Building ---
+  // --- Thread Building ---
 
-  private async buildActivityFromFile(
+  private async buildThreadFromFile(
     api: GoogleApi,
     file: GoogleDriveFile,
     folderId: string,
     initialSync: boolean
-  ): Promise<NewActivityWithNotes> {
+  ): Promise<NewThreadWithNotes> {
     const canonicalSource = `google-drive:file:${file.id}`;
 
     // Build author contact from file owner
@@ -743,7 +743,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
 
     // Summary note with description if available
     notes.push({
-      activity: { source: canonicalSource },
+      thread: { source: canonicalSource },
       key: "summary",
       content: file.description || null,
       contentType: "text",
@@ -777,23 +777,23 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
       console.error(`Failed to fetch comments for file ${file.id}:`, error);
     }
 
-    // Build external link
-    const links: Link[] = [];
+    // Build external action
+    const actions: Action[] = [];
     if (file.webViewLink) {
-      links.push({
-        type: LinkType.external,
+      actions.push({
+        type: ActionType.external,
         title: "View in Drive",
         url: file.webViewLink,
       });
     }
 
-    const activity: NewActivityWithNotes = {
+    const thread: NewThreadWithNotes = {
       source: canonicalSource,
-      type: ActivityType.Note,
-      kind: ActivityKind.document,
+      type: ThreadType.Note,
+      kind: ThreadKind.document,
       title: file.name,
       author,
-      links: links.length > 0 ? links : null,
+      actions: actions.length > 0 ? actions : null,
       meta: {
         fileId: file.id,
         folderId,
@@ -809,7 +809,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
       ...(initialSync ? { archived: false } : {}),
     };
 
-    return activity;
+    return thread;
   }
 
   private buildCommentNote(
@@ -830,7 +830,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
       : undefined;
 
     return {
-      activity: { source: canonicalSource },
+      thread: { source: canonicalSource },
       key: `comment-${comment.id}`,
       content: comment.content,
       contentType: comment.htmlContent ? "html" : "text",
@@ -863,7 +863,7 @@ export class GoogleDrive extends Tool<GoogleDrive> implements DocumentTool {
       : undefined;
 
     return {
-      activity: { source: canonicalSource },
+      thread: { source: canonicalSource },
       key: `reply-${commentId}-${reply.id}`,
       reNote: { key: `comment-${commentId}` },
       content: reply.content,

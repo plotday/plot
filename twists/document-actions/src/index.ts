@@ -1,7 +1,7 @@
 import { GoogleDrive } from "@plotday/tool-google-drive";
 import {
-  type ActivityFilter,
-  type NewActivityWithNotes,
+  type ThreadFilter,
+  type NewThreadWithNotes,
   type Note,
   type Priority,
   ActorType,
@@ -9,13 +9,13 @@ import {
   Twist,
 } from "@plotday/twister";
 import type { DocumentTool } from "@plotday/twister/common/documents";
-import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
 
 /**
  * Document Actions Twist
  *
  * Syncs documents, comments, and action items from Google Drive with Plot.
- * Converts documents into Plot activities with notes for comments,
+ * Converts documents into Plot threads with notes for comments,
  * syncs Plot notes back as comments on the documents,
  * and tags action items with Tag.Now for assigned users.
  */
@@ -27,8 +27,8 @@ export default class DocumentActions extends Twist<DocumentActions> {
         onSyncableDisabled: this.onSyncableDisabled,
       }),
       plot: build(Plot, {
-        activity: {
-          access: ActivityAccess.Create,
+        thread: {
+          access: ThreadAccess.Create,
         },
         note: {
           created: this.onNoteCreated,
@@ -49,26 +49,26 @@ export default class DocumentActions extends Twist<DocumentActions> {
     // Auth and folder selection are now handled in the twist edit modal.
   }
 
-  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
-    await this.tools.plot.updateActivity({ match: filter, archived: true });
+  async onSyncableDisabled(filter: ThreadFilter): Promise<void> {
+    await this.tools.plot.updateThread({ match: filter, archived: true });
   }
 
   /**
    * Called for each document synced from Google Drive.
    */
-  async onDocument(doc: NewActivityWithNotes) {
+  async onDocument(doc: NewThreadWithNotes) {
     // Add provider to meta for routing updates back
     doc.meta = { ...doc.meta, provider: "google-drive" };
 
-    await this.tools.plot.createActivity(doc);
+    await this.tools.plot.createThread(doc);
   }
 
   /**
-   * Called when a note is created on an activity created by this twist.
+   * Called when a note is created on a thread created by this twist.
    * Syncs the note as a comment or reply to Google Drive.
    */
   private async onNoteCreated(note: Note): Promise<void> {
-    const activity = note.activity;
+    const thread = note.thread;
 
     // Filter out twist-authored notes to prevent loops
     if (note.author.type === ActorType.Twist) {
@@ -81,8 +81,8 @@ export default class DocumentActions extends Twist<DocumentActions> {
     }
 
     // Get provider from meta
-    const provider = activity.meta?.provider as string | undefined;
-    if (!provider || !activity.meta) {
+    const provider = thread.meta?.provider as string | undefined;
+    if (!provider || !thread.meta) {
       return;
     }
 
@@ -100,7 +100,7 @@ export default class DocumentActions extends Twist<DocumentActions> {
       if (commentId && tool.addDocumentReply) {
         // Reply to existing comment thread
         commentKey = await tool.addDocumentReply(
-          activity.meta,
+          thread.meta,
           commentId,
           note.content,
           note.id
@@ -108,7 +108,7 @@ export default class DocumentActions extends Twist<DocumentActions> {
       } else if (tool.addDocumentComment) {
         // Top-level comment
         commentKey = await tool.addDocumentComment(
-          activity.meta,
+          thread.meta,
           note.content,
           note.id
         );
@@ -129,8 +129,8 @@ export default class DocumentActions extends Twist<DocumentActions> {
    * or null if the chain doesn't lead to a synced comment.
    */
   private async resolveCommentId(note: Note): Promise<string | null> {
-    // Fetch all notes for the activity to build the lookup map
-    const notes = await this.tools.plot.getNotes(note.activity);
+    // Fetch all notes for the thread to build the lookup map
+    const notes = await this.tools.plot.getNotes(note.thread);
     const noteMap = new Map(notes.map((n) => [n.id, n]));
 
     // Walk up the reNote chain

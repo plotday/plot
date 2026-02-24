@@ -1,5 +1,5 @@
-import type { NewActivity } from "@plotday/twister";
-import { ActivityType, ConferencingProvider } from "@plotday/twister";
+import type { NewThread } from "@plotday/twister";
+import { ThreadType, ConferencingProvider } from "@plotday/twister";
 
 export type GoogleEvent = {
   id: string;
@@ -339,7 +339,7 @@ export function extractConferencingLinks(
 export function transformGoogleEvent(
   event: GoogleEvent,
   calendarId: string
-): NewActivity {
+): NewThread {
   // Determine if this is an all-day event
   const isAllDay = event.start?.date && !event.start?.dateTime;
 
@@ -383,44 +383,44 @@ export function transformGoogleEvent(
     },
   } as const;
 
-  const activity: NewActivity =
+  const thread: NewThread =
     isCancelled || isAllDay
-      ? { type: ActivityType.Note, ...shared }
-      : { type: ActivityType.Event, ...shared };
+      ? { type: ThreadType.Note, ...shared }
+      : { type: ThreadType.Event, ...shared };
 
   // Handle recurrence for master events (not instances)
   if (event.recurrence && !event.recurringEventId) {
-    activity.recurrenceRule = parseRRule(event.recurrence);
+    thread.recurrenceRule = parseRRule(event.recurrence);
 
     // Parse recurrence count (takes precedence over UNTIL)
     const recurrenceCount = parseGoogleRecurrenceCount(event.recurrence);
     if (recurrenceCount) {
-      activity.recurrenceCount = recurrenceCount;
+      thread.recurrenceCount = recurrenceCount;
     } else {
-      // Parse recurrence end date for recurring activities if no count
+      // Parse recurrence end date for recurring threads if no count
       const recurrenceUntil = parseGoogleRecurrenceEnd(event.recurrence);
       if (recurrenceUntil) {
-        activity.recurrenceUntil = recurrenceUntil;
+        thread.recurrenceUntil = recurrenceUntil;
       }
     }
 
     const exdates = parseExDates(event.recurrence);
     if (exdates.length > 0) {
-      activity.recurrenceExdates = exdates;
+      thread.recurrenceExdates = exdates;
     }
 
     // Parse RDATEs (additional occurrence dates not in the recurrence rule)
-    // and create ActivityOccurrenceUpdate entries for each
+    // and create ThreadOccurrenceUpdate entries for each
     const rdates = parseRDates(event.recurrence);
     if (rdates.length > 0) {
-      activity.occurrences = rdates.map((rdate) => ({
+      thread.occurrences = rdates.map((rdate) => ({
         occurrence: rdate,
         start: rdate,
       }));
     }
   }
 
-  return activity;
+  return thread;
 }
 
 export async function syncGoogleCalendar(

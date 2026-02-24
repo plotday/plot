@@ -1,6 +1,6 @@
 import type {
-  ActivityMeta,
-  NewActivityWithNotes,
+  ThreadMeta,
+  NewThreadWithNotes,
   Serializable,
 } from "../index";
 
@@ -36,13 +36,13 @@ export type DocumentSyncOptions = {
 /**
  * Base interface for document service integration tools.
  *
- * All synced documents are converted to ActivityWithNotes objects.
- * Each document becomes an Activity with Notes for the description and comments.
+ * All synced documents are converted to ThreadWithNotes objects.
+ * Each document becomes a Thread with Notes for the description and comments.
  *
  * **Architecture: Tools Build, Twists Save**
  *
  * Document tools follow Plot's core architectural principle:
- * - **Tools**: Fetch external data and transform it into Plot format (NewActivity objects)
+ * - **Tools**: Fetch external data and transform it into Plot format (NewThread objects)
  * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
  *
  * **Implementation Pattern:**
@@ -50,20 +50,20 @@ export type DocumentSyncOptions = {
  * 2. Tool declares providers and lifecycle callbacks in build()
  * 3. onAuthorized lists available folders and calls setSyncables()
  * 4. User enables folders in the modal → onSyncEnabled fires
- * 5. **Tool builds NewActivity objects** and passes them to the twist via callback
- * 6. **Twist decides** whether to save using createActivity/updateActivity
+ * 5. **Tool builds NewThread objects** and passes them to the twist via callback
+ * 6. **Twist decides** whether to save using createThread/updateThread
  *
  * **Recommended Data Sync Strategy:**
- * Use Activity.source and Note.key for automatic upserts.
+ * Use Thread.source and Note.key for automatic upserts.
  *
- * - Set `Activity.source` to `"{provider}:file:{fileId}"` (e.g., `"google-drive:file:abc123"`)
+ * - Set `Thread.source` to `"{provider}:file:{fileId}"` (e.g., `"google-drive:file:abc123"`)
  * - Use `Note.key` for document details:
  *   - key: `"summary"` for the document description or metadata summary
  *   - key: `"comment-{commentId}"` for individual comments (unique per comment)
  *   - key: `"reply-{commentId}-{replyId}"` for comment replies
  * - No manual ID tracking needed - Plot handles deduplication automatically
- * - Send NewActivityWithNotes for all documents (creates new or updates existing)
- * - Set `activity.unread = false` for initial sync, omit for incremental updates
+ * - Send NewThreadWithNotes for all documents (creates new or updates existing)
+ * - Set `thread.unread = false` for initial sync, omit for incremental updates
  */
 export type DocumentTool = {
   /**
@@ -77,20 +77,20 @@ export type DocumentTool = {
   /**
    * Begins synchronizing documents from a specific folder.
    *
-   * Documents are converted to NewActivityWithNotes objects.
+   * Documents are converted to NewThreadWithNotes objects.
    *
    * Auth is obtained automatically via integrations.get(provider, folderId).
    *
    * @param options - Sync configuration options
    * @param options.folderId - ID of the folder to sync
    * @param options.timeMin - Earliest date to sync documents from (inclusive)
-   * @param callback - Function receiving (activity, ...extraArgs) for each synced document
+   * @param callback - Function receiving (thread, ...extraArgs) for each synced document
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
   startSync<
     TArgs extends Serializable[],
-    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       folderId: string;
@@ -111,18 +111,18 @@ export type DocumentTool = {
    * Adds a comment to a document.
    *
    * Optional method for bidirectional sync. When implemented, allows Plot to
-   * sync notes added to activities back as comments on the external document.
+   * sync notes added to threads back as comments on the external document.
    *
    * Auth is obtained automatically. The tool should extract its own ID
    * from meta (e.g., fileId).
    *
-   * @param meta - Activity metadata containing the tool's document identifier
+   * @param meta - Thread metadata containing the tool's document identifier
    * @param body - The comment text content
    * @param noteId - Optional Plot note ID for deduplication
    * @returns The external comment key (e.g. "comment-123") for dedup, or void
    */
   addDocumentComment?(
-    meta: ActivityMeta,
+    meta: ThreadMeta,
     body: string,
     noteId?: string,
   ): Promise<string | void>;
@@ -133,14 +133,14 @@ export type DocumentTool = {
    * Auth is obtained automatically. The tool should extract its own ID
    * from meta (e.g., fileId).
    *
-   * @param meta - Activity metadata containing the tool's document identifier
+   * @param meta - Thread metadata containing the tool's document identifier
    * @param commentId - The external comment ID to reply to
    * @param body - The reply text content
    * @param noteId - Optional Plot note ID for deduplication
    * @returns The external reply key (e.g. "reply-123-456") for dedup, or void
    */
   addDocumentReply?(
-    meta: ActivityMeta,
+    meta: ThreadMeta,
     commentId: string,
     body: string,
     noteId?: string,

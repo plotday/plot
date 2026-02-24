@@ -11,15 +11,15 @@ export { type AuthProvider } from "./tools/integrations";
 
 /**
  * @fileoverview
- * Core Plot entity types for working with activities, notes, priorities, and contacts.
+ * Core Plot entity types for working with threads, notes, priorities, and contacts.
  *
  * ## Type Pattern: Null vs Undefined Semantics
  *
  * Plot entity types use a consistent pattern to distinguish between missing, unset, and explicitly cleared values:
  *
- * ### Entity Types (Activity, Priority, Note, Actor)
+ * ### Entity Types (Thread, Priority, Note, Actor)
  * - **Required fields**: No `?`, cannot be `undefined`
- *   - Example: `id: Uuid`, `type: ActivityType`
+ *   - Example: `id: Uuid`, `type: ThreadType`
  * - **Nullable fields**: Use `| null` to allow explicit clearing
  *   - Example: `assignee: ActorId | null`, `done: Date | null`
  *   - `null` = field is explicitly unset/cleared
@@ -30,10 +30,10 @@ export { type AuthProvider } from "./tools/integrations";
  *   - `null` = field included but not set
  *   - Value = field has a value
  *
- * ### New* Types (NewActivity, NewNote, NewPriority)
+ * ### New* Types (NewThread, NewNote, NewPriority)
  * Used for creating or updating entities. Support partial updates by distinguishing omitted vs cleared fields:
  * - **Required fields**: Must be provided (no `?`)
- *   - Example: `type: ActivityType` in NewActivity
+ *   - Example: `type: ThreadType` in NewThread
  * - **Optional fields**: Use `?` to make them optional
  *   - Example: `title?: string`, `author?: NewActor`
  *   - `undefined` (omitted) = don't set/update this field
@@ -51,17 +51,17 @@ export { type AuthProvider } from "./tools/integrations";
  *
  * @example
  * ```typescript
- * // Creating a new activity
- * const newActivity: NewActivity = {
- *   type: ActivityType.Action,  // Required
+ * // Creating a new thread
+ * const newThread: NewThread = {
+ *   type: ThreadType.Action,  // Required
  *   title: "Review PR",          // Optional, provided
  *   assignee: null,              // Optional nullable, explicitly clearing
  *   // priority is omitted (undefined), will auto-select or use default
  * };
  *
- * // Updating an activity - only change what's specified
- * const update: ActivityUpdate = {
- *   id: activityId,
+ * // Updating a thread - only change what's specified
+ * const update: ThreadUpdate = {
+ *   id: threadId,
  *   done: new Date(),       // Mark as done
  *   assignee: null,         // Clear assignee
  *   // title is omitted, won't be changed
@@ -168,12 +168,12 @@ export type PriorityUpdate = ({ id: Uuid } | { key: string }) &
   Partial<Pick<Priority, "title" | "archived">>;
 
 /**
- * Enumeration of supported activity types in Plot.
+ * Enumeration of supported thread types in Plot.
  *
- * Each activity type has different behaviors and rendering characteristics
+ * Each thread type has different behaviors and rendering characteristics
  * within the Plot application.
  */
-export enum ActivityType {
+export enum ThreadType {
   /** A note or piece of information without actionable requirements */
   Note,
   /** An actionable item that can be completed */
@@ -182,10 +182,15 @@ export enum ActivityType {
   Event,
 }
 
+/** @deprecated Use ThreadType instead */
+export const ActivityType = ThreadType;
+/** @deprecated Use ThreadType instead */
+export type ActivityType = ThreadType;
+
 /**
- * Kinds of activities. Used only for visual categorization (icon).
+ * Kinds of threads. Used only for visual categorization (icon).
  */
-export enum ActivityKind {
+export enum ThreadKind {
   document = "document", // any external document or item in an external system
   messages = "messages", // emails and chat threads
   meeting = "meeting", // in-person meeting
@@ -201,23 +206,28 @@ export enum ActivityKind {
 }
 
 /**
- * Enumeration of supported activity link types.
+ * Enumeration of supported action types.
  *
- * Different link types have different behaviors when clicked by users
+ * Different action types have different behaviors when clicked by users
  * and may require different rendering approaches.
  */
-export enum LinkType {
+export enum ActionType {
   /** External web links that open in browser */
   external = "external",
   /** Authentication flows for connecting services */
   auth = "auth",
-  /** Callback links that trigger twist methods when clicked */
+  /** Callback actions that trigger twist methods when clicked */
   callback = "callback",
   /** Video conferencing links with provider-specific handling */
   conferencing = "conferencing",
   /** File attachment links stored in R2 */
   file = "file",
 }
+
+/** @deprecated Use ActionType instead */
+export const LinkType = ActionType;
+/** @deprecated Use ActionType instead */
+export type LinkType = ActionType;
 
 /**
  * Video conferencing providers for conferencing links.
@@ -239,64 +249,64 @@ export enum ConferencingProvider {
 }
 
 /**
- * Represents a clickable link attached to an activity.
+ * Represents a clickable action attached to a thread.
  *
- * Activity links are rendered as buttons that enable user interaction with activities.
- * Different link types have specific behaviors and required fields for proper functionality.
+ * Thread actions are rendered as buttons that enable user interaction with threads.
+ * Different action types have specific behaviors and required fields for proper functionality.
  *
  * @example
  * ```typescript
- * // External link - opens URL in browser
- * const externalLink: Link = {
- *   type: LinkType.external,
+ * // External action - opens URL in browser
+ * const externalAction: Action = {
+ *   type: ActionType.external,
  *   title: "Open in Google Calendar",
  *   url: "https://calendar.google.com/event/123",
  * };
  *
- * // Conferencing link - opens video conference with provider info
- * const conferencingLink: Link = {
- *   type: LinkType.conferencing,
+ * // Conferencing action - opens video conference with provider info
+ * const conferencingAction: Action = {
+ *   type: ActionType.conferencing,
  *   url: "https://meet.google.com/abc-defg-hij",
  *   provider: ConferencingProvider.googleMeet,
  * };
  *
- * // Integrations link - initiates OAuth flow
- * const authLink: Link = {
- *   type: LinkType.auth,
+ * // Integrations action - initiates OAuth flow
+ * const authAction: Action = {
+ *   type: ActionType.auth,
  *   title: "Continue with Google",
  *   provider: AuthProvider.Google,
  *   scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
  *   callback: "callback-token-for-auth-completion"
  * };
  *
- * // Callback link - triggers a twist method
- * const callbackLink: Link = {
- *   type: LinkType.callback,
+ * // Callback action - triggers a twist method
+ * const callbackAction: Action = {
+ *   type: ActionType.callback,
  *   title: "📅 Primary Calendar",
  *   token: "callback-token-here"
  * };
  * ```
  */
-export type Link =
+export type Action =
   | {
       /** External web link that opens in browser */
-      type: LinkType.external;
-      /** Display text for the link button */
+      type: ActionType.external;
+      /** Display text for the action button */
       title: string;
       /** URL to open when clicked */
       url: string;
     }
   | {
-      /** Video conferencing link with provider-specific handling */
-      type: LinkType.conferencing;
+      /** Video conferencing action with provider-specific handling */
+      type: ActionType.conferencing;
       /** URL to join the conference */
       url: string;
       /** Conferencing provider for UI customization */
       provider: ConferencingProvider;
     }
   | {
-      /** Authentication link that initiates an OAuth flow */
-      type: LinkType.auth;
+      /** Authentication action that initiates an OAuth flow */
+      type: ActionType.auth;
       /** Display text for the auth button */
       title: string;
       /** OAuth provider (e.g., "google", "microsoft") */
@@ -307,16 +317,16 @@ export type Link =
       callback: Callback;
     }
   | {
-      /** Callback link that triggers a twist method when clicked */
-      type: LinkType.callback;
+      /** Callback action that triggers a twist method when clicked */
+      type: ActionType.callback;
       /** Display text for the callback button */
       title: string;
       /** Token identifying the callback to execute */
       callback: Callback;
     }
   | {
-      /** File attachment link stored in R2 */
-      type: LinkType.file;
+      /** File attachment action stored in R2 */
+      type: ActionType.file;
       /** Unique identifier for the stored file */
       fileId: string;
       /** Original filename */
@@ -328,9 +338,9 @@ export type Link =
     };
 
 /**
- * Represents metadata about an activity, typically from an external system.
+ * Represents metadata about a thread, typically from an external system.
  *
- * Activity metadata enables storing additional information about activities,
+ * Thread metadata enables storing additional information about threads,
  * which is useful for synchronization, linking back to external systems,
  * and storing tool-specific data.
  *
@@ -340,8 +350,8 @@ export type Link =
  * @example
  * ```typescript
  * // Calendar event metadata
- * await plot.createActivity({
- *   type: ActivityType.Event,
+ * await plot.createThread({
+ *   type: ThreadType.Event,
  *   title: "Team Meeting",
  *   start: new Date("2024-01-15T10:00:00Z"),
  *   meta: {
@@ -352,8 +362,8 @@ export type Link =
  * });
  *
  * // Project issue metadata
- * await plot.createActivity({
- *   type: ActivityType.Action,
+ * await plot.createThread({
+ *   type: ThreadType.Action,
  *   title: "Fix login bug",
  *   meta: {
  *     projectId: "TEAM",
@@ -363,10 +373,13 @@ export type Link =
  * });
  * ```
  */
-export type ActivityMeta = {
+export type ThreadMeta = {
   /** Source-specific properties and metadata */
   [key: string]: JSONValue;
 };
+
+/** @deprecated Use ThreadMeta instead */
+export type ActivityMeta = ThreadMeta;
 
 /**
  * Tags on an item, along with the actors who added each tag.
@@ -379,38 +392,38 @@ export type Tags = { [K in Tag]?: ActorId[] };
 export type NewTags = { [K in Tag]?: NewActor[] };
 
 /**
- * Common fields shared by both Activity and Note entities.
+ * Common fields shared by both Thread and Note entities.
  */
-export type ActivityCommon = {
-  /** Unique identifier for the activity */
+export type ThreadCommon = {
+  /** Unique identifier for the thread */
   id: Uuid;
   /**
-   * When this activity was originally created in its source system.
+   * When this thread was originally created in its source system.
    *
-   * For activities created in Plot, this is when the user created it.
-   * For activities synced from external systems (GitHub issues, emails, calendar events),
+   * For threads created in Plot, this is when the user created it.
+   * For threads synced from external systems (GitHub issues, emails, calendar events),
    * this is the original creation time in that system.
    *
-   * Defaults to the current time when creating new activities.
+   * Defaults to the current time when creating new threads.
    */
   created: Date;
-  /** Information about who created the activity */
+  /** Information about who created the thread */
   author: Actor;
-  /** Whether this activity is private (only visible to author) */
+  /** Whether this thread is private (only visible to author) */
   private: boolean;
-  /** Whether this activity has been archived */
+  /** Whether this thread has been archived */
   archived: boolean;
-  /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
+  /** Tags attached to this thread. Maps tag ID to array of actor IDs who added that tag. */
   tags: Tags;
-  /** Array of actor IDs (users, contacts, or twists) mentioned in this activity via @-mentions */
+  /** Array of actor IDs (users, contacts, or twists) mentioned in this thread via @-mentions */
   mentions: ActorId[];
 };
 
 /**
- * Common fields shared by all activity types (Note, Action, Event).
+ * Common fields shared by all thread types (Note, Action, Event).
  * Does not include the discriminant `type` field or type-specific fields like `done`.
  */
-type ActivityFields = ActivityCommon & {
+type ThreadFields = ThreadCommon & {
   /**
    * Globally unique, stable identifier for the item in an external system.
    * MUST use immutable system-generated IDs, not human-readable slugs or titles.
@@ -426,15 +439,15 @@ type ActivityFields = ActivityCommon & {
    *   - Bad: `https://linear.app/team/issue/TEAM-123/title` (team and title can change)
    *   - Bad: `jira:issue:PROJECT-42` (issue key can change)
    *
-   * When set, uniquely identifies the activity within a priority tree for upsert operations.
+   * When set, uniquely identifies the thread within a priority tree for upsert operations.
    */
   source: string | null;
-  /** The display title/summary of the activity */
+  /** The display title/summary of the thread */
   title: string;
-  /** Optional kind for additional categorization within the activity */
-  kind: ActivityKind | null;
+  /** Optional kind for additional categorization within the thread */
+  kind: ThreadKind | null;
   /**
-   * The actor assigned to this activity.
+   * The actor assigned to this thread.
    *
    * **For actions (tasks):**
    * - If not provided (undefined), defaults to the user who installed the twist (twist owner)
@@ -442,28 +455,28 @@ type ActivityFields = ActivityCommon & {
    * - For synced tasks from external systems, typically set `assignee: null` for unassigned items
    *
    * **For notes and events:** Assignee is optional and typically null.
-   * When marking an activity as done, it becomes an Action; if no assignee is set,
+   * When marking a thread as done, it becomes an Action; if no assignee is set,
    * the twist owner is assigned automatically.
    *
    * @example
    * ```typescript
    * // Create action assigned to twist owner (default behavior)
-   * const task: NewActivity = {
-   *   type: ActivityType.Action,
+   * const task: NewThread = {
+   *   type: ThreadType.Action,
    *   title: "Follow up on email"
    *   // assignee omitted → defaults to twist owner
    * };
    *
    * // Create UNASSIGNED action (for backlog items)
-   * const backlogTask: NewActivity = {
-   *   type: ActivityType.Action,
+   * const backlogTask: NewThread = {
+   *   type: ThreadType.Action,
    *   title: "Review PR #123",
    *   assignee: null  // Explicitly set to null
    * };
    *
    * // Create action with explicit assignee
-   * const assignedTask: NewActivity = {
-   *   type: ActivityType.Action,
+   * const assignedTask: NewThread = {
+   *   type: ThreadType.Action,
    *   title: "Deploy to production",
    *   assignee: {
    *     id: userId as ActorId,
@@ -475,11 +488,11 @@ type ActivityFields = ActivityCommon & {
    */
   assignee: Actor | null;
   /**
-   * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
+   * Start time of a scheduled thread. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
    * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
    *
-   * **Activity Scheduling States** (for Actions):
+   * **Thread Scheduling States** (for Actions):
    * - **Do Now** (current/actionable): When creating an Action, omitting `start` defaults to current time
    * - **Do Later** (future scheduled): Set `start` to a future Date or date string
    * - **Do Someday** (unscheduled backlog): Explicitly set `start: null`
@@ -490,23 +503,23 @@ type ActivityFields = ActivityCommon & {
    * @example
    * ```typescript
    * // "Do Now" - assigned to twist owner, actionable immediately
-   * await this.tools.plot.createActivity({
-   *   type: ActivityType.Action,
+   * await this.tools.plot.createThread({
+   *   type: ThreadType.Action,
    *   title: "Urgent task"
    *   // start omitted → defaults to now
    *   // assignee omitted → defaults to twist owner
    * });
    *
    * // "Do Later" - scheduled for a specific time
-   * await this.tools.plot.createActivity({
-   *   type: ActivityType.Action,
+   * await this.tools.plot.createThread({
+   *   type: ThreadType.Action,
    *   title: "Future task",
    *   start: new Date("2025-02-01")
    * });
    *
    * // "Do Someday" - unassigned backlog item (common for synced tasks)
-   * await this.tools.plot.createActivity({
-   *   type: ActivityType.Action,
+   * await this.tools.plot.createThread({
+   *   type: ThreadType.Action,
    *   title: "Backlog task",
    *   start: null,      // Explicitly unscheduled
    *   assignee: null    // Explicitly unassigned
@@ -515,65 +528,74 @@ type ActivityFields = ActivityCommon & {
    */
   start: Date | string | null;
   /**
-   * End time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
+   * End time of a scheduled thread. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the end of the first occurrence.
    * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
-   * Null for tasks or activities without defined end times.
+   * Null for tasks or threads without defined end times.
    */
   end: Date | string | null;
   /**
-   * For recurring activities, the last occurrence date (inclusive).
+   * For recurring threads, the last occurrence date (inclusive).
    * Can be a Date object, date string in "YYYY-MM-DD" format, or null if recurring indefinitely.
    * When both recurrenceCount and recurrenceUntil are provided, recurrenceCount takes precedence.
    */
   recurrenceUntil: Date | string | null;
   /**
-   * For recurring activities, the number of occurrences to generate.
+   * For recurring threads, the number of occurrences to generate.
    * Takes precedence over recurrenceUntil if both are provided.
-   * Null for non-recurring activities or indefinite recurrence.
+   * Null for non-recurring threads or indefinite recurrence.
    */
   recurrenceCount: number | null;
-  /** The priority context this activity belongs to */
+  /** The priority context this thread belongs to */
   priority: Priority;
   /** Recurrence rule in RFC 5545 RRULE format (e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR") */
   recurrenceRule: string | null;
   /** Array of dates to exclude from the recurrence pattern */
   recurrenceExdates: Date[] | null;
-  /** Metadata about the activity, typically from an external system that created it */
-  meta: ActivityMeta | null;
-  /** Sort order for the activity (fractional positioning) */
+  /** Metadata about the thread, typically from an external system that created it */
+  meta: ThreadMeta | null;
+  /** Sort order for the thread (fractional positioning) */
   order: number;
-  /** Array of interactive links attached to the activity (external, conferencing, callback) */
-  links: Array<Link> | null;
+  /** Array of interactive actions attached to the thread (external, conferencing, callback) */
+  actions: Array<Action> | null;
 };
 
-export type Activity = ActivityFields &
+export type Thread = ThreadFields &
   (
-    | { type: ActivityType.Note }
+    | { type: ThreadType.Note }
     | {
-        type: ActivityType.Action;
+        type: ThreadType.Action;
         /**
-         * Timestamp when the activity was marked as complete. Null if not completed.
+         * Timestamp when the thread was marked as complete. Null if not completed.
          */
         done: Date | null;
       }
-    | { type: ActivityType.Event }
+    | { type: ThreadType.Event }
   );
 
-export type ActivityWithNotes = Activity & {
+/** @deprecated Use Thread instead */
+export type Activity = Thread;
+
+export type ThreadWithNotes = Thread & {
   notes: Note[];
 };
 
-export type NewActivityWithNotes = NewActivity & {
-  notes: Omit<NewNote, "activity">[];
+/** @deprecated Use ThreadWithNotes instead */
+export type ActivityWithNotes = ThreadWithNotes;
+
+export type NewThreadWithNotes = NewThread & {
+  notes: Omit<NewNote, "thread">[];
 };
 
+/** @deprecated Use NewThreadWithNotes instead */
+export type NewActivityWithNotes = NewThreadWithNotes;
+
 /**
- * Represents a specific instance of a recurring activity.
- * All field values are computed by merging the recurring activity's
+ * Represents a specific instance of a recurring thread.
+ * All field values are computed by merging the recurring thread's
  * defaults with any occurrence-specific overrides.
  */
-export type ActivityOccurrence = {
+export type ThreadOccurrence = {
   /**
    * Original date/datetime of this occurrence.
    * Use start for the occurrence's current start time.
@@ -582,9 +604,9 @@ export type ActivityOccurrence = {
   occurrence: Date | string;
 
   /**
-   * The recurring activity of which this is an occurrence.
+   * The recurring thread of which this is an occurrence.
    */
-  activity: Activity;
+  thread: Thread;
 
   /**
    * Effective values for this occurrence (series defaults + overrides).
@@ -597,7 +619,7 @@ export type ActivityOccurrence = {
   /**
    * Meta is merged, with the occurrence's meta taking precedence.
    */
-  meta: ActivityMeta | null;
+  meta: ThreadMeta | null;
 
   /**
    * Tags for this occurrence (merged with the recurring tags).
@@ -610,18 +632,21 @@ export type ActivityOccurrence = {
   archived: boolean;
 };
 
+/** @deprecated Use ThreadOccurrence instead */
+export type ActivityOccurrence = ThreadOccurrence;
+
 /**
- * Type for creating or updating activity occurrences.
+ * Type for creating or updating thread occurrences.
  *
- * Follows the same pattern as Activity/NewActivity:
+ * Follows the same pattern as Thread/NewThread:
  * - Required fields: `occurrence` (key) and `start` (for scheduling)
- * - Optional fields: All others from ActivityOccurrence
+ * - Optional fields: All others from ThreadOccurrence
  * - Additional fields: `twistTags` for add/remove, `unread` for notification control
  *
  * @example
  * ```typescript
- * const activity: NewActivity = {
- *   type: ActivityType.Event,
+ * const thread: NewThread = {
+ *   type: ThreadType.Event,
  *   recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
  *   occurrences: [
  *     {
@@ -633,12 +658,12 @@ export type ActivityOccurrence = {
  * };
  * ```
  */
-export type NewActivityOccurrence = Pick<
-  ActivityOccurrence,
+export type NewThreadOccurrence = Pick<
+  ThreadOccurrence,
   "occurrence" | "start"
 > &
   Partial<
-    Omit<ActivityOccurrence, "occurrence" | "start" | "activity" | "tags">
+    Omit<ThreadOccurrence, "occurrence" | "start" | "thread" | "tags">
   > & {
     /**
      * Tags specific to this occurrence.
@@ -665,27 +690,33 @@ export type NewActivityOccurrence = Pick<
     unread?: boolean;
   };
 
-/**
- * Inline type for creating/updating occurrences within NewActivity/ActivityUpdate.
- * Used to specify occurrence-specific overrides when creating or updating a recurring activity.
- */
-export type ActivityOccurrenceUpdate = Pick<
-  NewActivityOccurrence,
-  "occurrence"
-> &
-  Partial<Omit<NewActivityOccurrence, "occurrence" | "activity">>;
+/** @deprecated Use NewThreadOccurrence instead */
+export type NewActivityOccurrence = NewThreadOccurrence;
 
 /**
- * Configuration for automatic priority selection based on activity similarity.
+ * Inline type for creating/updating occurrences within NewThread/ThreadUpdate.
+ * Used to specify occurrence-specific overrides when creating or updating a recurring thread.
+ */
+export type ThreadOccurrenceUpdate = Pick<
+  NewThreadOccurrence,
+  "occurrence"
+> &
+  Partial<Omit<NewThreadOccurrence, "occurrence" | "thread">>;
+
+/** @deprecated Use ThreadOccurrenceUpdate instead */
+export type ActivityOccurrenceUpdate = ThreadOccurrenceUpdate;
+
+/**
+ * Configuration for automatic priority selection based on thread similarity.
  *
- * Maps activity fields to scoring weights or required exact matches:
+ * Maps thread fields to scoring weights or required exact matches:
  * - Number value: Maximum score for similarity matching on this field
- * - `true` value: Required exact match - activities must match exactly or be excluded
+ * - `true` value: Required exact match - threads must match exactly or be excluded
  *
  * Scoring rules:
- * - content: Uses vector similarity on activity embedding (cosine similarity)
- * - type: Exact match on ActivityType
- * - mentions: Percentage of existing activity's mentions that appear in new activity
+ * - content: Uses vector similarity on thread embedding (cosine similarity)
+ * - type: Exact match on ThreadType
+ * - mentions: Percentage of existing thread's mentions that appear in new thread
  * - meta.field: Exact match on top-level meta fields (e.g., "meta.sourceId")
  *
  * When content is `true`, applies a strong similarity threshold to ensure only close matches.
@@ -711,16 +742,16 @@ export type PickPriorityConfig = {
 };
 
 /**
- * Type for creating new activities.
+ * Type for creating new threads.
  *
- * Requires only the activity type, with all other fields optional.
+ * Requires only the thread type, with all other fields optional.
  * The author will be automatically assigned by the Plot system based on
  * the current execution context. The ID can be optionally provided by
  * tools for tracking and update detection purposes.
  *
  * **Important: Defaults for Actions**
  *
- * When creating an Activity of type `Action`:
+ * When creating a Thread of type `Action`:
  * - **`start` omitted** → Defaults to current time (now) → "Do Now"
  * - **`assignee` omitted** → Defaults to twist owner → Assigned action
  *
@@ -741,61 +772,61 @@ export type PickPriorityConfig = {
  * @example
  * ```typescript
  * // "Do Now" - Assigned to twist owner, actionable immediately
- * const urgentTask: NewActivity = {
- *   type: ActivityType.Action,
+ * const urgentTask: NewThread = {
+ *   type: ThreadType.Action,
  *   title: "Review pull request"
  *   // start omitted → defaults to now
  *   // assignee omitted → defaults to twist owner
  * };
  *
  * // "Do Someday" - UNASSIGNED backlog item (for synced tasks)
- * const backlogTask: NewActivity = {
- *   type: ActivityType.Action,
+ * const backlogTask: NewThread = {
+ *   type: ThreadType.Action,
  *   title: "Refactor user service",
  *   start: null,      // Must explicitly set to null
  *   assignee: null    // Must explicitly set to null
  * };
  *
  * // "Do Later" - Scheduled for specific date
- * const futureTask: NewActivity = {
- *   type: ActivityType.Action,
+ * const futureTask: NewThread = {
+ *   type: ThreadType.Action,
  *   title: "Prepare Q1 review",
  *   start: new Date("2025-03-15")
  * };
  *
  * // Note (typically unscheduled)
- * const note: NewActivity = {
- *   type: ActivityType.Note,
+ * const note: NewThread = {
+ *   type: ThreadType.Note,
  *   title: "Meeting notes",
  *   content: "Discussed Q4 roadmap...",
  *   start: null  // Notes typically don't have scheduled times
  * };
  *
  * // Event (always has explicit start/end times)
- * const event: NewActivity = {
- *   type: ActivityType.Event,
+ * const event: NewThread = {
+ *   type: ThreadType.Event,
  *   title: "Team standup",
  *   start: new Date("2025-01-15T10:00:00"),
  *   end: new Date("2025-01-15T10:30:00")
  * };
  * ```
  */
-export type NewActivity = (
-  | { type: ActivityType.Note; done?: never }
-  | { type: ActivityType.Action; done?: Date | null }
-  | { type: ActivityType.Event; done?: never }
+export type NewThread = (
+  | { type: ThreadType.Note; done?: never }
+  | { type: ThreadType.Action; done?: Date | null }
+  | { type: ThreadType.Event; done?: never }
 ) &
   Partial<
     Omit<
-      ActivityFields,
+      ThreadFields,
       "author" | "assignee" | "priority" | "tags" | "mentions" | "id" | "source"
     >
   > &
   (
     | {
         /**
-         * Unique identifier for the activity, generated by Uuid.Generate().
-         * Specifying an ID allows tools to track and upsert activities.
+         * Unique identifier for the thread, generated by Uuid.Generate().
+         * Specifying an ID allows tools to track and upsert threads.
          */
         id: Uuid;
       }
@@ -803,7 +834,7 @@ export type NewActivity = (
         /**
          * Canonical URL for the item in an external system.
          * For example, https://acme.atlassian.net/browse/PROJ-42 could represent a Jira issue.
-         * When set, it uniquely identifies the activity within a priority tree. This performs
+         * When set, it uniquely identifies the thread within a priority tree. This performs
          * an upsert.
          */
         source: string;
@@ -833,16 +864,16 @@ export type NewActivity = (
     assignee?: NewActor | null;
 
     /**
-     * All tags to set on the new activity.
+     * All tags to set on the new thread.
      */
     tags?: NewTags;
 
     /**
-     * Whether the activity should be marked as unread for users.
-     * - undefined/omitted (default): Activity is unread for users, except auto-marked
+     * Whether the thread should be marked as unread for users.
+     * - undefined/omitted (default): Thread is unread for users, except auto-marked
      *   as read for the author if they are the twist owner (user)
-     * - true: Activity is explicitly unread for ALL users (use sparingly)
-     * - false: Activity is marked as read for all users in the priority at creation time
+     * - true: Thread is explicitly unread for ALL users (use sparingly)
+     * - false: Thread is marked as read for all users in the priority at creation time
      *
      * For the default behavior, omit this field entirely.
      * Use false for initial sync to avoid marking historical items as unread.
@@ -850,30 +881,30 @@ export type NewActivity = (
     unread?: boolean;
 
     /**
-     * Whether the activity is archived.
-     * - true: Archive the activity
-     * - false: Unarchive the activity
+     * Whether the thread is archived.
+     * - true: Archive the thread
+     * - false: Unarchive the thread
      * - undefined (default): Preserve current archive state
      *
-     * Best practice: Set to false during initial syncs to ensure activities
+     * Best practice: Set to false during initial syncs to ensure threads
      * are unarchived. Omit during incremental syncs to preserve user's choice.
      */
     archived?: boolean;
 
     /**
-     * Optional preview content for the activity. Can be Markdown formatted.
+     * Optional preview content for the thread. Can be Markdown formatted.
      * The preview will be automatically generated from this content (truncated to 100 chars).
      *
      * - string: Use this content for preview generation
      * - null: Explicitly disable preview (no preview will be shown)
      * - undefined (default): Fall back to legacy behavior (generate from first note with content)
      *
-     * This field is write-only and won't be returned when reading activities.
+     * This field is write-only and won't be returned when reading threads.
      */
     preview?: string | null;
 
     /**
-     * Create or update specific occurrences of a recurring activity.
+     * Create or update specific occurrences of a recurring thread.
      * Each entry specifies overrides for a specific occurrence.
      *
      * When occurrence matches the recurrence rule but only tags are specified,
@@ -884,8 +915,8 @@ export type NewActivity = (
      * @example
      * ```typescript
      * // Create recurring event with per-occurrence RSVPs
-     * const meeting: NewActivity = {
-     *   type: ActivityType.Event,
+     * const meeting: NewThread = {
+     *   type: ThreadType.Event,
      *   recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
      *   start: new Date("2025-01-20T14:00:00Z"),
      *   duration: 1800000, // 30 minutes
@@ -903,7 +934,7 @@ export type NewActivity = (
      * };
      * ```
      */
-    occurrences?: NewActivityOccurrence[];
+    occurrences?: NewThreadOccurrence[];
 
     /**
      * Dates to add to the recurrence exclusion list.
@@ -919,37 +950,43 @@ export type NewActivity = (
     removeRecurrenceExdates?: Date[];
   };
 
-export type ActivityFilter = {
+/** @deprecated Use NewThread instead */
+export type NewActivity = NewThread;
+
+export type ThreadFilter = {
   type?: ActorType;
   meta?: {
     [key: string]: JSONValue;
   };
 };
 
+/** @deprecated Use ThreadFilter instead */
+export type ActivityFilter = ThreadFilter;
+
 /**
  * Fields supported by bulk updates via `match`. Only simple scalar fields
- * that can be applied uniformly across many activities are included.
+ * that can be applied uniformly across many threads are included.
  */
-type ActivityBulkUpdateFields = Partial<
-  Pick<ActivityFields, "kind" | "title" | "private" | "archived" | "meta" | "order" | "links">
+type ThreadBulkUpdateFields = Partial<
+  Pick<ThreadFields, "kind" | "title" | "private" | "archived" | "meta" | "order" | "actions">
 > & {
-  /** Update the type of all matching activities. */
-  type?: ActivityType;
+  /** Update the type of all matching threads. */
+  type?: ThreadType;
   /**
-   * Timestamp when the activities were marked as complete. Null to clear.
+   * Timestamp when the threads were marked as complete. Null to clear.
    * Setting done will automatically set the type to Action if not already.
    */
   done?: Date | null;
 };
 
 /**
- * Fields supported by single-activity updates via `id` or `source`.
+ * Fields supported by single-thread updates via `id` or `source`.
  * Includes all bulk fields plus scheduling, recurrence, tags, and occurrences.
  */
-type ActivitySingleUpdateFields = ActivityBulkUpdateFields &
+type ThreadSingleUpdateFields = ThreadBulkUpdateFields &
   Partial<
     Pick<
-      ActivityFields,
+      ThreadFields,
       | "start"
       | "end"
       | "assignee"
@@ -960,7 +997,7 @@ type ActivitySingleUpdateFields = ActivityBulkUpdateFields &
     >
   > & {
     /**
-     * Tags to change on the activity. Use an empty array of NewActor to remove a tag.
+     * Tags to change on the thread. Use an empty array of NewActor to remove a tag.
      * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
      */
     tags?: NewTags;
@@ -968,24 +1005,24 @@ type ActivitySingleUpdateFields = ActivityBulkUpdateFields &
     /**
      * Add or remove the twist's tags.
      * Maps tag ID to boolean: true = add tag, false = remove tag.
-     * This is allowed on all activities the twist has access to.
+     * This is allowed on all threads the twist has access to.
      */
     twistTags?: Partial<Record<Tag, boolean>>;
 
     /**
-     * Optional preview content for the activity. Can be Markdown formatted.
+     * Optional preview content for the thread. Can be Markdown formatted.
      * The preview will be automatically generated from this content (truncated to 100 chars).
      *
      * - string: Use this content for preview generation
      * - null: Explicitly disable preview (no preview will be shown)
      * - undefined (omitted): Preserve current preview value
      *
-     * This field is write-only and won't be returned when reading activities.
+     * This field is write-only and won't be returned when reading threads.
      */
     preview?: string | null;
 
     /**
-     * Create or update specific occurrences of this recurring activity.
+     * Create or update specific occurrences of this recurring thread.
      * Each entry specifies overrides for a specific occurrence.
      *
      * Setting a field to null reverts it to the series default.
@@ -994,7 +1031,7 @@ type ActivitySingleUpdateFields = ActivityBulkUpdateFields &
      * @example
      * ```typescript
      * // Update RSVPs for specific occurrences
-     * await plot.updateActivity({
+     * await plot.updateThread({
      *   id: meetingId,
      *   occurrences: [
      *     {
@@ -1013,7 +1050,7 @@ type ActivitySingleUpdateFields = ActivityBulkUpdateFields &
      * });
      * ```
      */
-    occurrences?: (NewActivityOccurrence | ActivityOccurrenceUpdate)[];
+    occurrences?: (NewThreadOccurrence | ThreadOccurrenceUpdate)[];
 
     /**
      * Dates to add to the recurrence exclusion list.
@@ -1029,25 +1066,28 @@ type ActivitySingleUpdateFields = ActivityBulkUpdateFields &
     removeRecurrenceExdates?: Date[];
   };
 
-export type ActivityUpdate =
-  | (({ id: Uuid } | { source: string }) & ActivitySingleUpdateFields)
+export type ThreadUpdate =
+  | (({ id: Uuid } | { source: string }) & ThreadSingleUpdateFields)
   | ({
       /**
-       * Update all activities matching the specified criteria. Only activities
+       * Update all threads matching the specified criteria. Only threads
        * that match all provided fields and were created by the twist will be updated.
        */
-      match: ActivityFilter;
-    } & ActivityBulkUpdateFields);
+      match: ThreadFilter;
+    } & ThreadBulkUpdateFields);
+
+/** @deprecated Use ThreadUpdate instead */
+export type ActivityUpdate = ThreadUpdate;
 
 /**
- * Represents a note within an activity.
+ * Represents a note within a thread.
  *
- * Notes contain the detailed content (note text, links) associated with an activity.
- * They are always ordered by creation time within their parent activity.
+ * Notes contain the detailed content (note text, actions) associated with a thread.
+ * They are always ordered by creation time within their parent thread.
  */
-export type Note = ActivityCommon & {
+export type Note = ThreadCommon & {
   /**
-   * Globally unique, stable identifier for the note within its activity.
+   * Globally unique, stable identifier for the note within its thread.
    * Can be used to upsert without knowing the id.
    *
    * Use one of these patterns:
@@ -1059,15 +1099,15 @@ export type Note = ActivityCommon & {
    *   - `"comment:12345"` (for a specific comment by ID)
    *   - `"gmail:msg:18d4e5f2a3b1c9d7"` (for a Gmail message within a thread)
    *
-   * ⚠️ Ensure IDs are immutable - avoid human-readable slugs or titles.
+   * Ensure IDs are immutable - avoid human-readable slugs or titles.
    */
   key: string | null;
-  /** The parent activity this note belongs to */
-  activity: Activity;
+  /** The parent thread this note belongs to */
+  thread: Thread;
   /** Primary content for the note (markdown) */
   content: string | null;
-  /** Array of interactive links attached to the note */
-  links: Array<Link> | null;
+  /** Array of interactive actions attached to the note */
+  actions: Array<Action> | null;
   /** The note this is a reply to, or null if not a reply */
   reNote: { id: Uuid } | null;
 };
@@ -1075,22 +1115,22 @@ export type Note = ActivityCommon & {
 /**
  * Type for creating new notes.
  *
- * Requires the activity reference, with all other fields optional.
+ * Requires the thread reference, with all other fields optional.
  * Can provide id, key, or neither for note identification:
  * - id: Provide a specific UUID for the note
- * - key: Provide an external identifier for upsert within the activity
+ * - key: Provide an external identifier for upsert within the thread
  * - neither: A new note with auto-generated UUID will be created
  */
 export type NewNote = Partial<
   Omit<
     Note,
-    "author" | "activity" | "tags" | "mentions" | "id" | "key" | "reNote"
+    "author" | "thread" | "tags" | "mentions" | "id" | "key" | "reNote"
   >
 > &
   ({ id: Uuid } | { key: string } | {}) & {
-    /** Reference to the parent activity (required) */
-    activity:
-      | Pick<Activity, "id">
+    /** Reference to the parent thread (required) */
+    thread:
+      | Pick<Thread, "id">
       | {
           source: string;
         };
@@ -1109,7 +1149,7 @@ export type NewNote = Partial<
     contentType?: ContentType;
 
     /**
-     * Tags to change on the activity. Use an empty array of NewActor to remove a tag.
+     * Tags to change on the thread. Use an empty array of NewActor to remove a tag.
      * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
      */
     tags?: NewTags;
@@ -1120,11 +1160,11 @@ export type NewNote = Partial<
     mentions?: NewActor[];
 
     /**
-     * Whether the note should mark the parent activity as unread for users.
-     * - undefined/omitted (default): Activity is unread for users, except auto-marked
+     * Whether the note should mark the parent thread as unread for users.
+     * - undefined/omitted (default): Thread is unread for users, except auto-marked
      *   as read for the author if they are the twist owner (user)
-     * - true: Activity is explicitly unread for ALL users (use sparingly)
-     * - false: Activity is marked as read for all users in the priority at note creation time
+     * - true: Thread is explicitly unread for ALL users (use sparingly)
+     * - false: Thread is marked as read for all users in the priority at note creation time
      *
      * For the default behavior, omit this field entirely.
      * Use false for initial sync to avoid marking historical items as unread.
@@ -1147,7 +1187,7 @@ export type NewNote = Partial<
  */
 export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
   Partial<
-    Pick<Note, "private" | "archived" | "content" | "links" | "reNote">
+    Pick<Note, "private" | "archived" | "content" | "actions" | "reNote">
   > & {
     /**
      * Format of the note content. Determines how the note is processed:
@@ -1179,7 +1219,7 @@ export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
 /**
  * Represents an actor in Plot - a user, contact, or twist.
  *
- * Actors can be associated with activities as authors, assignees, or mentions.
+ * Actors can be associated with threads as authors, assignees, or mentions.
  * The email field is only included when ContactAccess.Read permission is granted.
  *
  * @example
@@ -1224,17 +1264,17 @@ export type NewActor =
   | NewContact;
 
 /**
- * Enumeration of author types that can create activities.
+ * Enumeration of author types that can create threads.
  *
- * The author type affects how activities are displayed and processed
+ * The author type affects how threads are displayed and processed
  * within the Plot system.
  */
 export enum ActorType {
-  /** Activities created by human users */
+  /** Threads created by human users */
   User,
-  /** Activities created by external contacts */
+  /** Threads created by external contacts */
   Contact,
-  /** Activities created by automated twists */
+  /** Threads created by automated twists */
   Twist,
 }
 
@@ -1270,9 +1310,22 @@ export type NewContact = {
 
 export type ContentType = "text" | "markdown" | "html";
 
-/** @deprecated Use LinkType instead */
-export const ActivityLinkType = LinkType;
-/** @deprecated Use LinkType instead */
-export type ActivityLinkType = LinkType;
-/** @deprecated Use Link instead */
-export type ActivityLink = Link;
+/** @deprecated Use Action instead */
+export type Link = Action;
+
+/** @deprecated Use ActionType instead */
+export const ActivityLinkType = ActionType;
+/** @deprecated Use ActionType instead */
+export type ActivityLinkType = ActionType;
+/** @deprecated Use Action instead */
+export type ActivityLink = Action;
+
+/** @deprecated Use ThreadKind instead */
+export const ActivityKind = ThreadKind;
+/** @deprecated Use ThreadKind instead */
+export type ActivityKind = ThreadKind;
+
+/** @deprecated Use ThreadCommon instead */
+export type ActivityCommon = ThreadCommon;
+/** @deprecated Use ThreadFields instead */
+export type ActivityFields = ThreadFields;

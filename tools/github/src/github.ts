@@ -1,11 +1,11 @@
 import {
-  type Activity,
-  type Link,
-  LinkType,
-  type ActivityMeta,
-  ActivityType,
-  type NewActivity,
-  type NewActivityWithNotes,
+  type Thread,
+  type Action,
+  ActionType,
+  type ThreadMeta,
+  ThreadType,
+  type NewThread,
+  type NewThreadWithNotes,
   type Serializable,
   type SyncToolOptions,
 } from "@plotday/twister";
@@ -293,7 +293,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
    */
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (pr: NewActivityWithNotes, ...args: TArgs) => any,
+    TCallback extends (pr: NewThreadWithNotes, ...args: TArgs) => any,
   >(
     options: {
       repositoryId: string;
@@ -545,9 +545,9 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
       ? this.userToContact(pr.assignee)
       : null;
 
-    const activity: NewActivity = {
+    const thread: NewThread = {
       source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: pr.title,
       created: new Date(pr.created_at),
       author: authorContact,
@@ -566,7 +566,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
       preview: pr.body || null,
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, thread);
   }
 
   /**
@@ -592,9 +592,9 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
       ? `${prefix}${review.body ? `\n\n${review.body}` : ""}`
       : review.body || null;
 
-    const activity: NewActivityWithNotes = {
+    const thread: NewThreadWithNotes = {
       source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       notes: [
         {
           key: `review-${review.id}`,
@@ -614,7 +614,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
       },
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, thread);
   }
 
   /**
@@ -633,9 +633,9 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
     const prNumber = issue.number;
     const commentAuthor = this.userToContact(comment.user);
 
-    const activity: NewActivityWithNotes = {
+    const thread: NewThreadWithNotes = {
       source: `github:pr:${owner}/${repo}/${prNumber}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       notes: [
         {
           key: `comment-${comment.id}`,
@@ -654,7 +654,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
       },
     };
 
-    await this.tools.callbacks.run(callbackToken, activity);
+    await this.tools.callbacks.run(callbackToken, thread);
   }
 
   // ---------- Batch sync ----------
@@ -732,7 +732,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
 
     // Process each relevant PR
     for (const pr of relevantPRs) {
-      const activity = await this.convertPRToActivity(
+      const thread = await this.convertPRToThread(
         token,
         owner,
         repo,
@@ -741,13 +741,13 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
         state.initialSync,
       );
 
-      if (activity) {
-        activity.meta = {
-          ...activity.meta,
+      if (thread) {
+        thread.meta = {
+          ...thread.meta,
           syncProvider: "github",
           syncableId: repositoryId,
         };
-        await this.tools.callbacks.run(callbackToken, activity);
+        await this.tools.callbacks.run(callbackToken, thread);
       }
     }
 
@@ -769,25 +769,25 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
   }
 
   /**
-   * Convert a GitHub PR to a NewActivityWithNotes
+   * Convert a GitHub PR to a NewThreadWithNotes
    */
-  private async convertPRToActivity(
+  private async convertPRToThread(
     token: string,
     owner: string,
     repo: string,
     pr: GitHubPullRequest,
     repositoryId: string,
     initialSync: boolean,
-  ): Promise<NewActivityWithNotes | null> {
+  ): Promise<NewThreadWithNotes | null> {
     const authorContact = this.userToContact(pr.user);
     const assigneeContact = pr.assignee
       ? this.userToContact(pr.assignee)
       : null;
 
-    // Build activity-level links
-    const activityLinks: Link[] = [
+    // Build thread-level actions
+    const threadActions: Action[] = [
       {
-        type: LinkType.external,
+        type: ActionType.external,
         title: `Open in GitHub`,
         url: pr.html_url,
       },
@@ -857,9 +857,9 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
       console.error("Error fetching PR reviews:", error);
     }
 
-    const activity: NewActivityWithNotes = {
+    const thread: NewThreadWithNotes = {
       source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: ActivityType.Action,
+      type: ThreadType.Action,
       title: pr.title,
       created: new Date(pr.created_at),
       author: authorContact,
@@ -872,7 +872,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
         prNumber: pr.number,
         prNodeId: pr.id,
       },
-      links: activityLinks,
+      actions: threadActions,
       notes,
       preview: hasDescription ? pr.body : null,
       ...(initialSync ? { unread: false } : {}),
@@ -883,7 +883,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
         : {}),
     };
 
-    return activity;
+    return thread;
   }
 
   // ---------- Bidirectional methods ----------
@@ -892,7 +892,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
    * Add a general comment to a pull request
    */
   async addPRComment(
-    meta: ActivityMeta,
+    meta: ThreadMeta,
     body: string,
     noteId?: string,
   ): Promise<string | void> {
@@ -902,7 +902,7 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
     const syncableId = `${owner}/${repo}`;
 
     if (!owner || !repo || !prNumber) {
-      throw new Error("Owner, repo, and prNumber required in activity meta");
+      throw new Error("Owner, repo, and prNumber required in thread meta");
     }
 
     const token = await this.getToken(syncableId);
@@ -932,8 +932,8 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
   /**
    * Update a PR's review status (approve or request changes)
    */
-  async updatePRStatus(activity: Activity): Promise<void> {
-    const meta = activity.meta;
+  async updatePRStatus(thread: Thread): Promise<void> {
+    const meta = thread.meta;
     if (!meta) return;
 
     const owner = meta.owner as string;
@@ -942,14 +942,14 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
     const syncableId = `${owner}/${repo}`;
 
     if (!owner || !repo || !prNumber) {
-      throw new Error("Owner, repo, and prNumber required in activity meta");
+      throw new Error("Owner, repo, and prNumber required in thread meta");
     }
 
     const token = await this.getToken(syncableId);
 
-    // Map activity done state to review event
+    // Map thread done state to review event
     // done = approved, not done = no action (can't undo approval via API easily)
-    if (activity.type === ActivityType.Action && activity.done !== null) {
+    if (thread.type === ThreadType.Action && thread.done !== null) {
       const response = await this.githubFetch(
         token,
         `/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
@@ -973,14 +973,14 @@ export class GitHub extends Tool<GitHub> implements SourceControlTool {
   /**
    * Close a pull request without merging
    */
-  async closePR(meta: ActivityMeta): Promise<void> {
+  async closePR(meta: ThreadMeta): Promise<void> {
     const owner = meta.owner as string;
     const repo = meta.repo as string;
     const prNumber = meta.prNumber as number;
     const syncableId = `${owner}/${repo}`;
 
     if (!owner || !repo || !prNumber) {
-      throw new Error("Owner, repo, and prNumber required in activity meta");
+      throw new Error("Owner, repo, and prNumber required in thread meta");
     }
 
     const token = await this.getToken(syncableId);

@@ -1,4 +1,4 @@
-import type { NewActivityWithNotes, Serializable } from "../index";
+import type { NewThreadWithNotes, Serializable } from "../index";
 
 /**
  * Represents a channel from an external messaging service.
@@ -32,13 +32,13 @@ export type MessageSyncOptions = {
 /**
  * Base interface for email and chat integration tools.
  *
- * All synced messages/emails are converted to ActivityWithNotes objects.
- * Each email thread or chat conversation becomes an Activity with Notes for each message.
+ * All synced messages/emails are converted to ThreadWithNotes objects.
+ * Each email thread or chat conversation becomes a Thread with Notes for each message.
  *
  * **Architecture: Tools Build, Twists Save**
  *
  * Messaging tools follow Plot's core architectural principle:
- * - **Tools**: Fetch external data and transform it into Plot format (NewActivity objects)
+ * - **Tools**: Fetch external data and transform it into Plot format (NewThread objects)
  * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
  *
  * **Implementation Pattern:**
@@ -46,11 +46,11 @@ export type MessageSyncOptions = {
  * 2. Tool declares providers and lifecycle callbacks in build()
  * 3. onAuthorized lists available channels and calls setSyncables()
  * 4. User enables channels in the modal → onSyncEnabled fires
- * 5. **Tool builds NewActivity objects** and passes them to the twist via callback
- * 6. **Twist decides** whether to save using createActivity/updateActivity
+ * 5. **Tool builds NewThread objects** and passes them to the twist via callback
+ * 6. **Twist decides** whether to save using createThread/updateThread
  *
  * **Recommended Data Sync Strategy:**
- * Use Activity.source (thread URL or ID) and Note.key (message ID) for automatic upserts.
+ * Use Thread.source (thread URL or ID) and Note.key (message ID) for automatic upserts.
  * See SYNC_STRATEGIES.md for detailed patterns.
  */
 export type MessagingTool = {
@@ -76,7 +76,7 @@ export type MessagingTool = {
    */
   startSync<
     TArgs extends Serializable[],
-    TCallback extends (thread: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       channelId: string;

@@ -1,5 +1,5 @@
-import type { NewActivity } from "@plotday/twister";
-import { ActivityType } from "@plotday/twister";
+import type { NewThread } from "@plotday/twister";
+import { ThreadType } from "@plotday/twister";
 import type { Calendar } from "@plotday/twister/common/calendar";
 
 /**
@@ -462,12 +462,12 @@ export function parseOutlookRecurrenceCount(
 }
 
 /**
- * Transform Microsoft Graph event to Plot Activity
+ * Transform Microsoft Graph event to Plot Thread
  */
 export function transformOutlookEvent(
   event: OutlookEvent,
   calendarId: string
-): NewActivity | null {
+): NewThread | null {
   // Skip deleted events
   if (event["@removed"]) {
     return null;
@@ -508,38 +508,38 @@ export function transformOutlookEvent(
     },
   } as const;
 
-  const activity: NewActivity =
+  const thread: NewThread =
     isCancelled || isAllDay
-      ? { type: ActivityType.Note, ...shared }
-      : { type: ActivityType.Event, ...shared };
+      ? { type: ThreadType.Note, ...shared }
+      : { type: ThreadType.Event, ...shared };
 
   // Handle recurrence for master events (not instances or exceptions)
   if (event.recurrence && event.type === "seriesMaster") {
-    activity.recurrenceRule = parseOutlookRRule(event.recurrence);
+    thread.recurrenceRule = parseOutlookRRule(event.recurrence);
 
     // Parse recurrence count (takes precedence over UNTIL)
     const recurrenceCount = parseOutlookRecurrenceCount(event.recurrence);
     if (recurrenceCount) {
-      activity.recurrenceCount = recurrenceCount;
+      thread.recurrenceCount = recurrenceCount;
     } else {
       // Parse recurrence end date if no count
       const recurrenceUntil = parseOutlookRecurrenceEnd(event.recurrence);
       if (recurrenceUntil) {
-        activity.recurrenceUntil = recurrenceUntil;
+        thread.recurrenceUntil = recurrenceUntil;
       }
     }
 
     // Parse exception dates (currently not available from Graph API directly)
     const exdates = parseOutlookExDates(event.recurrence);
     if (exdates.length > 0) {
-      activity.recurrenceExdates = exdates;
+      thread.recurrenceExdates = exdates;
     }
 
     // Parse RDATEs (additional occurrence dates not in the recurrence rule)
     // Note: Microsoft Graph API doesn't support RDATE, so this will always be empty
     const rdates = parseOutlookRDates(event.recurrence);
     if (rdates.length > 0) {
-      activity.occurrences = rdates.map((rdate) => ({
+      thread.occurrences = rdates.map((rdate) => ({
         occurrence: rdate,
         start: rdate,
       }));
@@ -556,15 +556,15 @@ export function transformOutlookEvent(
   ) {
     // This is a modified instance of a recurring event
     // Store the exception info in metadata
-    if (activity.meta) {
-      activity.meta.seriesMasterId = event.seriesMasterId;
-      activity.meta.originalStartDate = new Date(
+    if (thread.meta) {
+      thread.meta.seriesMasterId = event.seriesMasterId;
+      thread.meta.originalStartDate = new Date(
         event.originalStart
       ).toISOString();
     }
   }
 
-  return activity;
+  return thread;
 }
 
 /**

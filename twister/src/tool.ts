@@ -1,7 +1,7 @@
 import {
   type Actor,
-  type ActivityFilter,
-  type NewActivityWithNotes,
+  type ThreadFilter,
+  type NewThreadWithNotes,
   type Priority,
 } from "./plot";
 import type { Callback } from "./tools/callbacks";
@@ -16,7 +16,7 @@ import type {
 export type { ToolBuilder };
 
 /**
- * Options for tools that sync activities from external services.
+ * Options for tools that sync threads from external services.
  *
  * @example
  * ```typescript
@@ -25,9 +25,9 @@ export type { ToolBuilder };
  */
 export type SyncToolOptions = {
   /** Callback invoked for each synced item. The tool adds sync metadata before passing it. */
-  onItem: (item: NewActivityWithNotes) => Promise<void>;
-  /** Callback invoked when a syncable is disabled, receiving an ActivityFilter for bulk operations. */
-  onSyncableDisabled?: (filter: ActivityFilter) => Promise<void>;
+  onItem: (item: NewThreadWithNotes) => Promise<void>;
+  /** Callback invoked when a syncable is disabled, receiving a ThreadFilter for bulk operations. */
+  onSyncableDisabled?: (filter: ThreadFilter) => Promise<void>;
 };
 
 /**

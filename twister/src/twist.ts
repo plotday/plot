@@ -1,4 +1,4 @@
-import { type Link, type Actor, type Priority, Uuid } from "./plot";
+import { type Action, type Actor, type Priority, Uuid } from "./plot";
 import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
 import type { Serializable } from "./utils/serializable";
@@ -23,8 +23,8 @@ import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
  *
  *   async activate(priority: Pick<Priority, "id">) {
  *     // Initialize twist for the given priority
- *     await this.tools.plot.createActivity({
- *       type: ActivityType.Note,
+ *     await this.tools.plot.createThread({
+ *       type: ThreadType.Note,
  *       note: "Hello, good looking!",
  *     });
  *   }
@@ -92,25 +92,25 @@ export abstract class Twist<TSelf> {
   }
 
   /**
-   * Like callback(), but for a Link, which receives the link as the first argument.
+   * Like callback(), but for an Action, which receives the action as the first argument.
    *
    * @param fn - The method to callback
-   * @param extraArgs - Additional arguments to pass after the link
+   * @param extraArgs - Additional arguments to pass after the action
    * @returns Promise resolving to a persistent callback token
    *
    * @example
    * ```typescript
-   * const callback = await this.linkCallback(this.doSomething, 123);
-   * const link: Link = {
-   *    type: LinkType.Callback,
+   * const callback = await this.actionCallback(this.doSomething, 123);
+   * const action: Action = {
+   *    type: ActionType.callback,
    *    title: "Do Something",
    *    callback,
    * };
    * ```
    */
-  protected async linkCallback<
+  protected async actionCallback<
     TArgs extends Serializable[],
-    Fn extends (link: Link, ...extraArgs: TArgs) => any
+    Fn extends (action: Action, ...extraArgs: TArgs) => any
   >(fn: Fn, ...extraArgs: TArgs): Promise<Callback> {
     return this.tools.callbacks.create(fn, ...extraArgs);
   }
@@ -263,7 +263,7 @@ export abstract class Twist<TSelf> {
    * Called when the twist is activated for a specific priority.
    *
    * This method should contain initialization logic such as setting up
-   * initial activities, configuring webhooks, or establishing external connections.
+   * initial threads, configuring webhooks, or establishing external connections.
    *
    * @param priority - The priority context containing the priority ID
    * @param context - Optional context containing the actor who triggered activation

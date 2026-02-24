@@ -3,17 +3,17 @@ import { GitHubIssues } from "@plotday/tool-github-issues";
 import { Jira } from "@plotday/tool-jira";
 import { Linear } from "@plotday/tool-linear";
 import {
-  type Activity,
-  type ActivityFilter,
+  type Thread,
+  type ThreadFilter,
   ActorType,
-  type NewActivityWithNotes,
+  type NewThreadWithNotes,
   type Note,
   type Priority,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
 import type { ProjectTool } from "@plotday/twister/common/projects";
-import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
 
 type ProjectProvider = "linear" | "jira" | "asana" | "github-issues";
 
@@ -43,9 +43,9 @@ export default class ProjectSync extends Twist<ProjectSync> {
         onSyncableDisabled: this.onSyncableDisabled,
       }),
       plot: build(Plot, {
-        activity: {
-          access: ActivityAccess.Create,
-          updated: this.onActivityUpdated,
+        thread: {
+          access: ThreadAccess.Create,
+          updated: this.onThreadUpdated,
         },
         note: {
           created: this.onNoteCreated,
@@ -76,24 +76,24 @@ export default class ProjectSync extends Twist<ProjectSync> {
     // Auth and project selection are now handled in the twist edit modal.
   }
 
-  async onLinearItem(item: NewActivityWithNotes) {
+  async onLinearItem(item: NewThreadWithNotes) {
     return this.onIssue(item, "linear");
   }
 
-  async onJiraItem(item: NewActivityWithNotes) {
+  async onJiraItem(item: NewThreadWithNotes) {
     return this.onIssue(item, "jira");
   }
 
-  async onAsanaItem(item: NewActivityWithNotes) {
+  async onAsanaItem(item: NewThreadWithNotes) {
     return this.onIssue(item, "asana");
   }
 
-  async onGitHubIssuesItem(item: NewActivityWithNotes) {
+  async onGitHubIssuesItem(item: NewThreadWithNotes) {
     return this.onIssue(item, "github-issues");
   }
 
-  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
-    await this.tools.plot.updateActivity({ match: filter, archived: true });
+  async onSyncableDisabled(filter: ThreadFilter): Promise<void> {
+    await this.tools.plot.updateThread({ match: filter, archived: true });
   }
 
   /**
@@ -116,7 +116,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
    * Creates or updates Plot activities based on issue state.
    */
   async onIssue(
-    issue: NewActivityWithNotes,
+    issue: NewThreadWithNotes,
     provider: ProjectProvider
   ) {
     // Add provider to meta for routing updates back to the correct tool
@@ -127,44 +127,44 @@ export default class ProjectSync extends Twist<ProjectSync> {
 
     // Just create/upsert - database handles everything automatically
     // Note: The unread field is already set by the tool based on sync type
-    await this.tools.plot.createActivity(issue);
+    await this.tools.plot.createThread(issue);
   }
 
   /**
-   * Called when an activity created by this twist is updated.
+   * Called when a thread created by this twist is updated.
    * Syncs changes back to the external service.
    */
-  private async onActivityUpdated(
-    activity: Activity,
+  private async onThreadUpdated(
+    thread: Thread,
     _changes: {
       tagsAdded: Record<string, string[]>;
       tagsRemoved: Record<string, string[]>;
     }
   ): Promise<void> {
-    // Get provider from meta (set by this twist when creating the activity)
-    const provider = activity.meta?.provider as ProjectProvider | undefined;
+    // Get provider from meta (set by this twist when creating the thread)
+    const provider = thread.meta?.provider as ProjectProvider | undefined;
     if (!provider) return;
 
     const tool = this.getProviderTool(provider);
 
     try {
       // Sync all changes using the generic updateIssue method
-      // Tool reads its own IDs from activity.meta (e.g., linearId, taskGid, issueKey)
+      // Tool reads its own IDs from thread.meta (e.g., linearId, taskGid, issueKey)
       // Tool resolves auth token internally via integrations
       if (tool.updateIssue) {
-        await tool.updateIssue(activity);
+        await tool.updateIssue(thread);
       }
     } catch (error) {
-      console.error(`Failed to sync activity update to ${provider}:`, error);
+      console.error(`Failed to sync thread update to ${provider}:`, error);
     }
   }
 
   /**
-   * Called when a note is created on an activity created by this twist.
+   * Called when a note is created on a thread created by this twist.
    * Syncs the note as a comment to the external service.
    */
   private async onNoteCreated(note: Note): Promise<void> {
-    const activity = note.activity;
+    const thread = note.thread;
 
     // Filter out notes created by twists to prevent loops
     if (note.author.type === ActorType.Twist) {
@@ -176,9 +176,9 @@ export default class ProjectSync extends Twist<ProjectSync> {
       return;
     }
 
-    // Get provider from meta (set by this twist when creating the activity)
-    const provider = activity.meta?.provider as ProjectProvider | undefined;
-    if (!provider || !activity.meta) {
+    // Get provider from meta (set by this twist when creating the thread)
+    const provider = thread.meta?.provider as ProjectProvider | undefined;
+    if (!provider || !thread.meta) {
       return;
     }
 
@@ -191,7 +191,7 @@ export default class ProjectSync extends Twist<ProjectSync> {
     try {
       // Tool resolves auth token internally via integrations
       const commentKey = await tool.addIssueComment(
-        activity.meta,
+        thread.meta,
         note.content,
         note.id
       );

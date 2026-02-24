@@ -1,6 +1,6 @@
 import {
-  type ActivityFilter,
-  type NewActivityWithNotes,
+  type ThreadFilter,
+  type NewThreadWithNotes,
   Serializable,
   type SyncToolOptions,
   Tool,
@@ -21,7 +21,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
-  ActivityAccess,
+  ThreadAccess,
   ContactAccess,
   Plot,
 } from "@plotday/twister/tools/plot";
@@ -75,10 +75,10 @@ import {
  *   async activate() {
  *     const authLink = await this.slack.requestAuth(this.onSlackAuth);
  *
- *     await this.plot.createActivity({
- *       type: ActivityType.Action,
+ *     await this.plot.createThread({
+ *       type: ThreadType.Action,
  *       title: "Connect Slack",
- *       links: [authLink]
+ *       actions: [authLink]
  *     });
  *   }
  *
@@ -99,9 +99,9 @@ import {
  *     }
  *   }
  *
- *   async onSlackThread(thread: ActivityWithNotes) {
+ *   async onSlackThread(thread: NewThreadWithNotes) {
  *     // Process Slack message thread
- *     // thread contains the Activity with thread.notes containing each message
+ *     // thread contains the Thread with thread.notes containing each message
  *     console.log(`Thread: ${thread.title}`);
  *     console.log(`${thread.notes.length} messages`);
  *   }
@@ -140,7 +140,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
       network: build(Network, { urls: ["https://slack.com/api/*"] }),
       plot: build(Plot, {
         contact: { access: ContactAccess.Write },
-        activity: { access: ActivityAccess.Create },
+        thread: { access: ThreadAccess.Create },
       }),
     };
   }
@@ -167,7 +167,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
     // Create disable callback if parent provided onSyncableDisabled
     if (this.options.onSyncableDisabled) {
-      const filter: ActivityFilter = {
+      const filter: ThreadFilter = {
         meta: { syncProvider: "slack", syncableId: syncable.id },
       };
       const disableCallbackToken = await this.tools.callbacks.createFromParent(
@@ -252,7 +252,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (thread: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       channelId: string;
@@ -390,7 +390,7 @@ export class Slack extends Tool<Slack> implements MessagingTool {
 
     for (const thread of threads) {
       try {
-        // Transform Slack thread to NewActivityWithNotes
+        // Transform Slack thread to NewThreadWithNotes
         const activityThread = transformSlackThread(thread, channelId);
 
         if (activityThread.notes.length === 0) continue;

@@ -1,7 +1,7 @@
 import type {
-  Activity,
-  ActivityMeta,
-  NewActivityWithNotes,
+  Thread,
+  ThreadMeta,
+  NewThreadWithNotes,
   Serializable,
 } from "../index";
 
@@ -37,13 +37,13 @@ export type ProjectSyncOptions = {
 /**
  * Base interface for project management integration tools.
  *
- * All synced issues/tasks are converted to ActivityWithNotes objects.
- * Each issue becomes an Activity with Notes for the description and comments.
+ * All synced issues/tasks are converted to ThreadWithNotes objects.
+ * Each issue becomes a Thread with Notes for the description and comments.
  *
  * **Architecture: Tools Build, Twists Save**
  *
  * Project tools follow Plot's core architectural principle:
- * - **Tools**: Fetch external data and transform it into Plot format (NewActivity objects)
+ * - **Tools**: Fetch external data and transform it into Plot format (NewThread objects)
  * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
  *
  * **Implementation Pattern:**
@@ -51,11 +51,11 @@ export type ProjectSyncOptions = {
  * 2. Tool declares providers and lifecycle callbacks in build()
  * 3. onAuthorized lists available projects and calls setSyncables()
  * 4. User enables projects in the modal → onSyncEnabled fires
- * 5. **Tool builds NewActivity objects** and passes them to the twist via callback
- * 6. **Twist decides** whether to save using createActivity/updateActivity
+ * 5. **Tool builds NewThread objects** and passes them to the twist via callback
+ * 6. **Twist decides** whether to save using createThread/updateThread
  *
  * **Recommended Data Sync Strategy:**
- * Use Activity.source (issue URL) and Note.key for automatic upserts.
+ * Use Thread.source (issue URL) and Note.key for automatic upserts.
  * See SYNC_STRATEGIES.md for detailed patterns.
  */
 export type ProjectTool = {
@@ -75,13 +75,13 @@ export type ProjectTool = {
    * @param options - Sync configuration options
    * @param options.projectId - ID of the project to sync
    * @param options.timeMin - Earliest date to sync issues from (inclusive)
-   * @param callback - Function receiving (activity, ...extraArgs) for each synced issue
+   * @param callback - Function receiving (thread, ...extraArgs) for each synced issue
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
   startSync<
     TArgs extends Serializable[],
-    TCallback extends (activity: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       projectId: string;
@@ -102,32 +102,32 @@ export type ProjectTool = {
    * Updates an issue/task with new values.
    *
    * Optional method for bidirectional sync. When implemented, allows Plot to
-   * sync activity updates back to the external service.
+   * sync thread updates back to the external service.
    *
    * Auth is obtained automatically via integrations.get(provider, projectId)
-   * using the projectId from activity.meta.
+   * using the projectId from thread.meta.
    *
-   * @param activity - The updated activity
+   * @param thread - The updated thread
    * @returns Promise that resolves when the update is synced
    */
-  updateIssue?(activity: Activity): Promise<void>;
+  updateIssue?(thread: Thread): Promise<void>;
 
   /**
    * Adds a comment to an issue/task.
    *
    * Optional method for bidirectional sync. When implemented, allows Plot to
-   * sync notes added to activities back as comments on the external service.
+   * sync notes added to threads back as comments on the external service.
    *
    * Auth is obtained automatically. The tool should extract its own ID
    * from meta (e.g., linearId, taskGid, issueKey).
    *
-   * @param meta - Activity metadata containing the tool's issue/task identifier
+   * @param meta - Thread metadata containing the tool's issue/task identifier
    * @param body - The comment text content
    * @param noteId - Optional Plot note ID, used by tools that support comment metadata (e.g. Jira)
    * @returns The external comment key (e.g. "comment-123") for dedup, or void
    */
   addIssueComment?(
-    meta: ActivityMeta,
+    meta: ThreadMeta,
     body: string,
     noteId?: string,
   ): Promise<string | void>;

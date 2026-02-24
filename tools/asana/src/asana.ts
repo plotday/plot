@@ -1,14 +1,14 @@
 import * as asana from "asana";
 
 import {
-  type Activity,
-  type ActivityFilter,
-  type Link,
-  LinkType,
-  ActivityMeta,
-  ActivityType,
-  type NewActivity,
-  type NewActivityWithNotes,
+  type Thread,
+  type ThreadFilter,
+  type Action,
+  ActionType,
+  ThreadMeta,
+  ThreadType,
+  type NewThread,
+  type NewThreadWithNotes,
   type NewNote,
   type Serializable,
   type SyncToolOptions,
@@ -111,7 +111,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
 
     // Create disable callback if parent provided onSyncableDisabled
     if (this.options.onSyncableDisabled) {
-      const filter: ActivityFilter = {
+      const filter: ThreadFilter = {
         meta: { syncProvider: "asana", syncableId: syncable.id },
       };
       const disableCallbackToken = await this.tools.callbacks.createFromParent(
@@ -190,7 +190,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
    */
   async startSync<
     TArgs extends Serializable[],
-    TCallback extends (task: NewActivityWithNotes, ...args: TArgs) => any
+    TCallback extends (task: NewThreadWithNotes, ...args: TArgs) => any
   >(
     options: {
       projectId: string;
@@ -342,18 +342,18 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         }
       }
 
-      const activityWithNotes = await this.convertTaskToActivity(
+      const threadWithNotes = await this.convertTaskToThread(
         task,
         projectId
       );
       // Set unread based on sync type (false for initial sync to avoid notification overload)
-      activityWithNotes.unread = !state.initialSync;
+      threadWithNotes.unread = !state.initialSync;
       // Unarchive on initial sync only (preserve user's archive state on incremental syncs)
       if (state.initialSync) {
-        activityWithNotes.archived = false;
+        threadWithNotes.archived = false;
       }
       // Execute the callback using the callback token
-      await this.tools.callbacks.run(callbackToken, activityWithNotes);
+      await this.tools.callbacks.run(callbackToken, threadWithNotes);
     }
 
     // Check if more pages by checking if we got a full batch
@@ -381,12 +381,12 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   }
 
   /**
-   * Convert an Asana task to a Plot Activity
+   * Convert an Asana task to a Plot Thread
    */
-  private async convertTaskToActivity(
+  private async convertTaskToThread(
     task: any,
     projectId: string
-  ): Promise<NewActivityWithNotes> {
+  ): Promise<NewThreadWithNotes> {
     const createdBy = task.created_by;
     const assignee = task.assignee;
 
@@ -419,30 +419,30 @@ export class Asana extends Tool<Asana> implements ProjectTool {
     }
 
     // Use stable identifier for source
-    const activitySource = `asana:task:${task.gid}`;
+    const threadSource = `asana:task:${task.gid}`;
 
     // Construct Asana task URL for link
     const taskUrl = `https://app.asana.com/0/${projectId}/${task.gid}`;
 
-    // Build activity-level links
-    const activityLinks: Link[] = [];
-    activityLinks.push({
-      type: LinkType.external,
+    // Build thread-level actions
+    const threadActions: Action[] = [];
+    threadActions.push({
+      type: ActionType.external,
       title: `Open in Asana`,
       url: taskUrl,
     });
 
-    // Create initial note with description (links moved to activity level)
+    // Create initial note with description (actions moved to thread level)
     notes.push({
-      activity: { source: activitySource },
+      thread: { source: threadSource },
       key: "description",
       content: description,
       created: task.created_at ? new Date(task.created_at) : undefined,
     });
 
     return {
-      source: activitySource,
-      type: ActivityType.Action,
+      source: threadSource,
+      type: ThreadType.Action,
       title: task.name,
       created: task.created_at ? new Date(task.created_at) : undefined,
       meta: {
@@ -451,7 +451,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         syncProvider: "asana",
         syncableId: projectId,
       },
-      links: activityLinks.length > 0 ? activityLinks : undefined,
+      actions: threadActions.length > 0 ? threadActions : undefined,
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned tasks
       done:
@@ -466,34 +466,34 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   /**
    * Update task with new values
    *
-   * @param activity - The updated activity
+   * @param thread - The updated thread
    */
-  async updateIssue(activity: Activity): Promise<void> {
+  async updateIssue(thread: Thread): Promise<void> {
     // Extract Asana task GID and project ID from meta
-    const taskGid = activity.meta?.taskGid as string | undefined;
+    const taskGid = thread.meta?.taskGid as string | undefined;
     if (!taskGid) {
-      throw new Error("Asana task GID not found in activity meta");
+      throw new Error("Asana task GID not found in thread meta");
     }
-    const projectId = activity.meta?.projectId as string | undefined;
+    const projectId = thread.meta?.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Asana project ID not found in activity meta");
+      throw new Error("Asana project ID not found in thread meta");
     }
 
     const client = await this.getClient(projectId);
     const updateFields: any = {};
 
     // Handle title
-    if (activity.title !== null) {
-      updateFields.name = activity.title;
+    if (thread.title !== null) {
+      updateFields.name = thread.title;
     }
 
     // Handle assignee
-    updateFields.assignee = activity.assignee?.id || null;
+    updateFields.assignee = thread.assignee?.id || null;
 
     // Handle completion status based on done
     // Asana only has completed boolean (no In Progress state)
     updateFields.completed =
-      activity.type === ActivityType.Action && activity.done !== null;
+      thread.type === ThreadType.Action && thread.done !== null;
 
     // Apply updates if any fields changed
     if (Object.keys(updateFields).length > 0) {
@@ -504,20 +504,20 @@ export class Asana extends Tool<Asana> implements ProjectTool {
   /**
    * Add a comment (story) to an Asana task
    *
-   * @param meta - Activity metadata containing taskGid and projectId
+   * @param meta - Thread metadata containing taskGid and projectId
    * @param body - Comment text (markdown not directly supported, plain text)
    */
   async addIssueComment(
-    meta: ActivityMeta,
+    meta: ThreadMeta,
     body: string
   ): Promise<string | void> {
     const taskGid = meta.taskGid as string | undefined;
     if (!taskGid) {
-      throw new Error("Asana task GID not found in activity meta");
+      throw new Error("Asana task GID not found in thread meta");
     }
     const projectId = meta.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Asana project ID not found in activity meta");
+      throw new Error("Asana project ID not found in thread meta");
     }
     const client = await this.getClient(projectId);
 
@@ -690,7 +690,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
       }
 
       // Use stable identifier for source
-      const activitySource = `asana:task:${task.gid}`;
+      const threadSource = `asana:task:${task.gid}`;
 
       // Extract description
       let description: string | null = null;
@@ -698,10 +698,10 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         description = task.notes;
       }
 
-      // Create partial activity update (no notes = doesn't touch existing notes)
-      const activity: NewActivity = {
-        source: activitySource,
-        type: ActivityType.Action,
+      // Create partial thread update (no notes = doesn't touch existing notes)
+      const thread: NewThread = {
+        source: threadSource,
+        type: ThreadType.Action,
         title: task.name,
         created: task.created_at ? new Date(task.created_at) : undefined,
         meta: {
@@ -719,7 +719,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         preview: description || null,
       };
 
-      await this.tools.callbacks.run(callbackToken, activity);
+      await this.tools.callbacks.run(callbackToken, thread);
     } catch (error) {
       console.warn("Failed to process Asana task webhook:", error);
     }
@@ -739,7 +739,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
 
     try {
       // Use stable identifier for source
-      const activitySource = `asana:task:${taskGid}`;
+      const threadSource = `asana:task:${taskGid}`;
 
       // Fetch stories (comments) for this task
       // We fetch all stories since Asana doesn't provide the specific story GID in the webhook
@@ -774,14 +774,14 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         };
       }
 
-      // Create activity update with single story note
-      const activity: NewActivityWithNotes = {
-        source: activitySource,
-        type: ActivityType.Action, // Required field (will match existing activity)
+      // Create thread update with single story note
+      const thread: NewThreadWithNotes = {
+        source: threadSource,
+        type: ThreadType.Action, // Required field (will match existing thread)
         notes: [
           {
             key: `story-${latestStory.gid}`,
-            activity: { source: activitySource },
+            thread: { source: threadSource },
             content: latestStory.text || "",
             created: latestStory.created_at
               ? new Date(latestStory.created_at)
@@ -797,7 +797,7 @@ export class Asana extends Tool<Asana> implements ProjectTool {
         },
       };
 
-      await this.tools.callbacks.run(callbackToken, activity);
+      await this.tools.callbacks.run(callbackToken, thread);
     } catch (error) {
       console.warn("Failed to process Asana story webhook:", error);
     }

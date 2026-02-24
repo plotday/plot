@@ -1,16 +1,16 @@
 import { GitHub } from "@plotday/tool-github";
 import {
-  type Activity,
-  type ActivityFilter,
+  type Thread,
+  type ThreadFilter,
   ActorType,
-  type NewActivityWithNotes,
+  type NewThreadWithNotes,
   type Note,
   type Priority,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
 import type { SourceControlTool } from "@plotday/twister/common/source-control";
-import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
 
 type SourceControlProvider = "github";
 
@@ -29,9 +29,9 @@ export default class CodeReview extends Twist<CodeReview> {
         onSyncableDisabled: this.onSyncableDisabled,
       }),
       plot: build(Plot, {
-        activity: {
-          access: ActivityAccess.Create,
-          updated: this.onActivityUpdated,
+        thread: {
+          access: ThreadAccess.Create,
+          updated: this.onThreadUpdated,
         },
         note: {
           created: this.onNoteCreated,
@@ -56,12 +56,12 @@ export default class CodeReview extends Twist<CodeReview> {
     // Auth and repository selection are handled in the twist edit modal.
   }
 
-  async onGitHubItem(item: NewActivityWithNotes) {
+  async onGitHubItem(item: NewThreadWithNotes) {
     return this.onPullRequest(item, "github");
   }
 
-  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
-    await this.tools.plot.updateActivity({ match: filter, archived: true });
+  async onSyncableDisabled(filter: ThreadFilter): Promise<void> {
+    await this.tools.plot.updateThread({ match: filter, archived: true });
   }
 
   /**
@@ -84,7 +84,7 @@ export default class CodeReview extends Twist<CodeReview> {
    * Creates or updates Plot activities based on PR state.
    */
   async onPullRequest(
-    pr: NewActivityWithNotes,
+    pr: NewThreadWithNotes,
     provider: SourceControlProvider,
   ) {
     // Add provider to meta for routing updates back to the correct tool
@@ -94,21 +94,21 @@ export default class CodeReview extends Twist<CodeReview> {
     pr.notes = pr.notes?.filter((note) => !this.isNoteEmpty(note));
 
     // Create/upsert - database handles everything automatically
-    await this.tools.plot.createActivity(pr);
+    await this.tools.plot.createThread(pr);
   }
 
   /**
-   * Called when an activity created by this twist is updated.
+   * Called when a thread created by this twist is updated.
    * Syncs changes back to the external service.
    */
-  private async onActivityUpdated(
-    activity: Activity,
+  private async onThreadUpdated(
+    thread: Thread,
     _changes: {
       tagsAdded: Record<string, string[]>;
       tagsRemoved: Record<string, string[]>;
     },
   ): Promise<void> {
-    const provider = activity.meta?.provider as
+    const provider = thread.meta?.provider as
       | SourceControlProvider
       | undefined;
     if (!provider) return;
@@ -117,22 +117,22 @@ export default class CodeReview extends Twist<CodeReview> {
 
     try {
       if (tool.updatePRStatus) {
-        await tool.updatePRStatus(activity);
+        await tool.updatePRStatus(thread);
       }
     } catch (error) {
       console.error(
-        `Failed to sync activity update to ${provider}:`,
+        `Failed to sync thread update to ${provider}:`,
         error,
       );
     }
   }
 
   /**
-   * Called when a note is created on an activity created by this twist.
+   * Called when a note is created on a thread created by this twist.
    * Syncs the note as a comment to the external service.
    */
   private async onNoteCreated(note: Note): Promise<void> {
-    const activity = note.activity;
+    const thread = note.thread;
 
     // Filter out notes created by twists to prevent loops
     if (note.author.type === ActorType.Twist) {
@@ -144,10 +144,10 @@ export default class CodeReview extends Twist<CodeReview> {
       return;
     }
 
-    const provider = activity.meta?.provider as
+    const provider = thread.meta?.provider as
       | SourceControlProvider
       | undefined;
-    if (!provider || !activity.meta) {
+    if (!provider || !thread.meta) {
       return;
     }
 
@@ -161,7 +161,7 @@ export default class CodeReview extends Twist<CodeReview> {
 
     try {
       const commentKey = await tool.addPRComment(
-        activity.meta,
+        thread.meta,
         note.content,
         note.id,
       );
