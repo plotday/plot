@@ -116,10 +116,8 @@ Future<AuthService> createAuthServiceImpl({
                 .setActive(jsObj({'session': signIn.createdSessionId!}))
                 .toDart;
           }
-        } catch (e) {
+        } catch (_) {
           // Transfer failed — if we have an email, try completing sign-up.
-          // ignore: avoid_print
-          print('[Auth] Transfer failed: $e');
         }
       }
 
@@ -137,9 +135,8 @@ Future<AuthService> createAuthServiceImpl({
                 .setActive(jsObj({'session': updated.createdSessionId!}))
                 .toDart;
           }
-        } catch (e) {
-          // ignore: avoid_print
-          print('[Auth] Sign-up completion failed: $e');
+        } catch (_) {
+          // Sign-up completion failed — user will see the sign-in page.
         }
       }
     }
