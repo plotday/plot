@@ -73,77 +73,64 @@ Future<AuthService> createAuthServiceImpl({
   final clerk = globalContext['Clerk'] as ClerkJS;
   await clerk.load().toDart;
 
-  // After an OAuth redirect for a new user, Clerk may leave the sign-up in
-  // `missing_requirements` state — the external account has the email but
-  // Clerk hasn't mapped it to the sign-up's own emailAddress field yet.
-  // Extract it from the external account and complete the sign-up.
+  // After an OAuth redirect, Clerk may leave the sign-up in
+  // `missing_requirements` state. Two cases:
+  //
+  // 1. Existing user: The external account verification is `transferable`.
+  //    We need to transfer the sign-up to a sign-in via
+  //    `signIn.create({ transfer: true })`.
+  //
+  // 2. New user: The external account has the email but Clerk hasn't mapped
+  //    it to the sign-up's own emailAddress field. Extract it and call
+  //    `signUp.update()` to complete the sign-up.
   if (clerk.session == null) {
     final signUp = clerk.client?.signUp;
     if (signUp?.status == 'missing_requirements') {
-      // Try to get the email from the external account (Google OAuth data).
-      // Clerk JS sign-up objects have multiple places the email could be.
       final signUpObj = signUp! as JSObject;
-      String? email = signUp.emailAddress;
 
-      // Path 1: verifications.externalAccount.emailAddress
-      if (email == null || email.isEmpty) {
-        final v = signUpObj['verifications'];
-        if (v != null && v.isA<JSObject>()) {
-          final ea = (v as JSObject)['externalAccount'];
-          if (ea != null && ea.isA<JSObject>()) {
-            email = ((ea as JSObject)['emailAddress'] as JSString?)?.toDart;
-          }
+      // Check external account verification status.
+      String? eaStatus;
+      String? email;
+      final v = signUpObj['verifications'];
+      if (v != null && v.isA<JSObject>()) {
+        final ea = (v as JSObject)['externalAccount'];
+        if (ea != null && ea.isA<JSObject>()) {
+          final eaObj = ea as JSObject;
+          eaStatus = (eaObj['status'] as JSString?)?.toDart;
+          email = (eaObj['emailAddress'] as JSString?)?.toDart;
         }
       }
+      email ??= signUp.emailAddress;
 
-      // Path 2: externalAccount (top-level, may be array or single object)
-      if (email == null || email.isEmpty) {
-        final ea = signUpObj['externalAccount'];
-        if (ea != null) {
-          if (ea.isA<JSArray>()) {
-            final arr = ea as JSArray;
-            if (arr.length > 0) {
-              final first = arr.toDart[0];
-              if (first.isA<JSObject>()) {
-                email =
-                    ((first as JSObject)['emailAddress'] as JSString?)?.toDart;
-              }
-            }
-          } else if (ea.isA<JSObject>()) {
-            email = ((ea as JSObject)['emailAddress'] as JSString?)?.toDart;
-          }
-        }
-      }
-
-      // Path 3: verifications.externalAccount (nested properties dump)
-      if (email == null || email.isEmpty) {
-        // Log the structure to find the right path
-        final v = signUpObj['verifications'];
-        final ea = signUpObj['externalAccount'];
-        // ignore: avoid_print
-        print('[Auth] Debug: signUp.verifications type=${v?.runtimeType}, '
-            'signUp.externalAccount type=${ea?.runtimeType}');
-        // Try to dump the sign-up as JSON for structure discovery
+      // Case 1: Existing user — external account is transferable.
+      // Also try transfer as a fallback when email extraction fails,
+      // since the user may already exist in Clerk.
+      if (eaStatus == 'transferable' || (email == null || email.isEmpty)) {
         try {
-          final json = globalContext.callMethod('JSON.stringify'.toJS, signUpObj);
+          final signIn = _asSignIn(await clerk.client!.signIn!
+              .create(jsObj({'transfer': true}))
+              .toDart);
+          if (signIn.status == 'complete' &&
+              signIn.createdSessionId != null) {
+            await clerk
+                .setActive(jsObj({'session': signIn.createdSessionId!}))
+                .toDart;
+          }
+        } catch (e) {
+          // Transfer failed — if we have an email, try completing sign-up.
           // ignore: avoid_print
-          print('[Auth] Debug: signUp JSON=${(json as JSString?)?.toDart}');
-        } catch (_) {}
+          print('[Auth] Transfer failed: $e');
+        }
       }
 
-      // ignore: avoid_print
-      print('[Auth] Sign-up missing_requirements '
-          '(email=$email, missing=${signUp.missingFields?.toDart.map((e) => e.toDart).toList()})');
-
-      if (email != null && email.isNotEmpty) {
+      // Case 2: New user — complete sign-up with email from external account.
+      if (clerk.session == null &&
+          email != null &&
+          email.isNotEmpty) {
         try {
           final updated = _asSignUp(
             await signUp.update(jsObj({'emailAddress': email})).toDart,
           );
-          // ignore: avoid_print
-          print('[Auth] Sign-up after update: status=${updated.status}, '
-              'sessionId=${updated.createdSessionId}, '
-              'missing=${updated.missingFields?.toDart.map((e) => e.toDart).toList()}');
           if (updated.status == 'complete' &&
               updated.createdSessionId != null) {
             await clerk

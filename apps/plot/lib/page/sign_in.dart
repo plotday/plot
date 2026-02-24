@@ -40,8 +40,9 @@ class _SignInPageState extends State<SignInPage> {
   }
 
   bool _isAlreadySignedIn(AuthError error) {
-    final message = error.toString().toLowerCase();
-    return message.contains('already signed in');
+    // Don't rely on error message strings — check if Clerk actually has
+    // an active session regardless of which error was thrown.
+    return Base.auth.isSignedIn;
   }
 
   void _showGenericError(Object error, StackTrace? stackTrace) {
