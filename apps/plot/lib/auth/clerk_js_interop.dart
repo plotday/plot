@@ -52,6 +52,17 @@ extension type SignUpJS._(JSObject _) implements JSObject {
   external String? get status;
   external String? get createdSessionId;
   external JSArray<JSString>? get missingFields;
+  external String? get firstName;
+  external String? get lastName;
+  external String? get emailAddress;
+}
+
+/// Clerk ExternalAccount (nested in SignUp verifications).
+extension type ExternalAccountJS._(JSObject _) implements JSObject {
+  external String? get emailAddress;
+  external String? get firstName;
+  external String? get lastName;
+  external String? get status;
 }
 
 /// Clerk Session.

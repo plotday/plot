@@ -74,27 +74,50 @@ Future<AuthService> createAuthServiceImpl({
   await clerk.load().toDart;
 
   // After an OAuth redirect for a new user, Clerk may leave the sign-up in
-  // `missing_requirements` state if the instance has required fields that
-  // OAuth doesn't satisfy. Attempt to complete it — Clerk will auto-fill
-  // what it can from the OAuth provider data.
+  // `missing_requirements` state — the external account has the email but
+  // Clerk hasn't mapped it to the sign-up's own emailAddress field yet.
+  // Extract it from the external account and complete the sign-up.
   if (clerk.session == null) {
     final signUp = clerk.client?.signUp;
     if (signUp?.status == 'missing_requirements') {
-      // ignore: avoid_print
-      print('[Auth] Sign-up missing_requirements, '
-          'missing=${signUp?.missingFields?.toDart.map((e) => e.toDart).toList()}, '
-          'sessionId=${signUp?.createdSessionId}');
-      try {
-        // Update with empty params to trigger re-evaluation / completion.
-        final updated = _asSignUp(await signUp!.update(jsObj({})).toDart);
-        if (updated.status == 'complete' && updated.createdSessionId != null) {
-          await clerk
-              .setActive(jsObj({'session': updated.createdSessionId!}))
-              .toDart;
+      // Try to get the email from the external account (Google OAuth data).
+      final signUpObj = signUp! as JSObject;
+      String? email = signUp.emailAddress;
+      if (email == null || email.isEmpty) {
+        // Read verifications.externalAccount.emailAddress
+        final verifications = signUpObj['verifications'];
+        if (verifications != null && verifications.isA<JSObject>()) {
+          final extAcct = (verifications as JSObject)['externalAccount'];
+          if (extAcct != null && extAcct.isA<JSObject>()) {
+            final extAccount = extAcct as ExternalAccountJS;
+            email = extAccount.emailAddress;
+          }
         }
-      } catch (e) {
-        // ignore: avoid_print
-        print('[Auth] Sign-up completion failed: $e');
+      }
+
+      // ignore: avoid_print
+      print('[Auth] Sign-up missing_requirements '
+          '(email=$email, missing=${signUp.missingFields?.toDart.map((e) => e.toDart).toList()})');
+
+      if (email != null && email.isNotEmpty) {
+        try {
+          final updated = _asSignUp(
+            await signUp.update(jsObj({'emailAddress': email})).toDart,
+          );
+          // ignore: avoid_print
+          print('[Auth] Sign-up after update: status=${updated.status}, '
+              'sessionId=${updated.createdSessionId}, '
+              'missing=${updated.missingFields?.toDart.map((e) => e.toDart).toList()}');
+          if (updated.status == 'complete' &&
+              updated.createdSessionId != null) {
+            await clerk
+                .setActive(jsObj({'session': updated.createdSessionId!}))
+                .toDart;
+          }
+        } catch (e) {
+          // ignore: avoid_print
+          print('[Auth] Sign-up completion failed: $e');
+        }
       }
     }
   }
