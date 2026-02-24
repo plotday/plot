@@ -222,7 +222,9 @@ class ArchivePriority extends Command {
 class NewPriority extends ShowForm {
   NewPriority({Priority? parent})
     : super(
-        title: parent == null ? 'Add a Priority' : 'Add a Sub-priority',
+        title: parent == null || parent.root == true
+            ? 'Add a Priority'
+            : 'Add a Sub-priority',
         icon: PlotIcon.add,
         form: (context) async {
           // Get default parent for the dummy action (only used for display)
@@ -309,7 +311,7 @@ class NewPriority extends ShowForm {
 class EditPriorityCommand extends ShowForm {
   EditPriorityCommand(Priority priority)
     : super(
-        title: 'Edit',
+        title: 'Edit Priority',
         icon: PlotIcon.settings,
         form: (context) async {
           final isRoot = priority.root;
@@ -410,14 +412,9 @@ class ShowPriorityCommands extends ShowCommands {
         title: 'More Commands',
         icon: PlotIcon.menu,
         commands: Commands(
-          groups: [
-            StaticCommandGroup(
-              title: priority.title,
-              commands: current
-                  ? currentPriorityCommands(priority)
-                  : priorityCommands(priority),
-            ),
-          ],
+          groups: current
+              ? currentPriorityCommandGroups(priority)
+              : priorityCommandGroups(priority),
         ),
       );
 }
@@ -426,6 +423,7 @@ List<Command> prioritySecondaryCommands(Priority priority) => [
   EditPriorityCommand(priority),
   ManagePrioritySharing(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
+  NewPriority(parent: priority),
   if (!priority.root) ArchivePriority(Future.value(priority)),
 ];
 
@@ -440,6 +438,20 @@ List<Command> currentPriorityCommands(Priority priority) => [
   NewAction(),
   OpenNextActivity(),
   OpenPreviousActivity(),
+];
+
+List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [
+  StaticCommandGroup(
+    title: 'Priority: ${priority.title}',
+    commands: priorityCommands(priority),
+  ),
+];
+
+List<StaticCommandGroup> currentPriorityCommandGroups(Priority priority) => [
+  StaticCommandGroup(
+    title: 'Priority: ${priority.title}',
+    commands: currentPriorityCommands(priority),
+  ),
 ];
 
 class SetTopPriority extends Command {
@@ -545,7 +557,7 @@ class SharePriority extends PriorityCommand {
 class ManagePrioritySharing extends ShowCommands {
   ManagePrioritySharing(this.priority)
     : super(
-        title: 'Share',
+        title: 'Share Priority',
         icon: PlotIcon.share,
         commandsBuilder: (context) => _getSharingCommands(priority),
       );

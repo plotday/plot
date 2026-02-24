@@ -7,6 +7,7 @@ import 'package:plot/router.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/bottom_navigation_provider.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/page/priority.dart';
 
 @RoutePage(name: "PrioritiesShellRoute")
 class PrioritiesShell extends StatefulWidget {
@@ -18,6 +19,7 @@ class PrioritiesShell extends StatefulWidget {
 
 class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   AutoRouteObserver? _observer;
+  final PriorityTabNotifier _tabNotifier = PriorityTabNotifier();
 
   @override
   void didChangeDependencies() {
@@ -32,6 +34,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   @override
   void dispose() {
     _observer?.unsubscribe(this);
+    _tabNotifier.dispose();
     super.dispose();
   }
 
@@ -50,169 +53,223 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   @override
   Widget build(BuildContext context) {
     return LayoutStateProvider(
-      child: AutoTabsRouter(
-        homeIndex: 1,
-        routes: [PrioritiesRoute(), EmptyShellRoute("PriorityShell")()],
-        transitionBuilder: (context, child, animation) => child,
-        builder: (context, child) {
-          final tabsRouter = AutoTabsRouter.of(context);
-          return BlocConsumer<LayoutBloc, LayoutState>(
-            listenWhen: (previous, current) =>
-                previous.multiPanel != current.multiPanel,
-            listener: (context, layoutState) {
-              if (layoutState.multiPanel) {
-                tabsRouter.setActiveIndex(1);
-              }
-            },
-            buildWhen: (previous, current) =>
-                previous.multiPanel != current.multiPanel,
-            builder: (context, layoutState) {
-              // Determine the correct tab index based on current route
-              int getCurrentIndex() {
-                final currentPath = context.router.currentPath;
-                // If on NewActivityPage (/priorityId/new), highlight New tab (index 2)
-                if (currentPath.endsWith('/new')) {
-                  return 2;
+      child: PriorityTabProvider(
+        notifier: _tabNotifier,
+        child: AutoTabsRouter(
+          homeIndex: 1,
+          routes: [PrioritiesRoute(), EmptyShellRoute("PriorityShell")()],
+          transitionBuilder: (context, child, animation) => child,
+          builder: (context, child) {
+            final tabsRouter = AutoTabsRouter.of(context);
+            return BlocConsumer<LayoutBloc, LayoutState>(
+              listenWhen: (previous, current) =>
+                  previous.multiPanel != current.multiPanel,
+              listener: (context, layoutState) {
+                if (layoutState.multiPanel) {
+                  tabsRouter.setActiveIndex(1);
                 }
-                // If on ActivityPage (/priorityId/activityId), no tab highlighted
-                final pathSegments = currentPath.split('/').where((s) => s.isNotEmpty).toList();
-                if (pathSegments.length >= 2) {
-                  return -1;
+              },
+              buildWhen: (previous, current) =>
+                  previous.multiPanel != current.multiPanel,
+              builder: (context, layoutState) {
+                // Determine the correct tab index based on current route
+                int getCurrentIndex() {
+                  final currentPath = context.router.currentPath;
+                  // If on NewActivityPage (/priorityId/new), highlight New tab (index 3)
+                  if (currentPath.endsWith('/new')) {
+                    return 3;
+                  }
+                  // If on ActivityPage (/priorityId/activityId), no tab highlighted
+                  final pathSegments = currentPath
+                      .split('/')
+                      .where((s) => s.isNotEmpty)
+                      .toList();
+                  if (pathSegments.length >= 2) {
+                    return -1;
+                  }
+                  // On the Activities tab, highlight Now + Next or Activity based on tab notifier
+                  if (tabsRouter.activeIndex == 1) {
+                    return _tabNotifier.value == PriorityTab.upNext ? 1 : 2;
+                  }
+                  // Otherwise use the tab router's active index
+                  return tabsRouter.activeIndex;
                 }
-                // Otherwise use the tab router's active index
-                return tabsRouter.activeIndex;
-              }
 
-              return BottomNavigationScope(
-                config: layoutState.multiPanel
-                    ? null
-                    : BottomNavigationConfig(
-                        currentIndex: getCurrentIndex(),
-                        onChange: (index) {
-                          final currentPath = context.router.currentPath;
+                // Hide bottom nav on full-screen routes (activity detail, new activity)
+                bool isFullScreenRoute() {
+                  final currentPath = context.router.currentPath;
+                  if (currentPath.endsWith('/new')) return true;
+                  final pathSegments = currentPath
+                      .split('/')
+                      .where((s) => s.isNotEmpty)
+                      .toList();
+                  return pathSegments.length >= 2;
+                }
 
-                          if (index == 2) {
-                            // Navigate to New Activity for current priority
-                            final pathSegments = currentPath.split('/');
+                return BottomNavigationScope(
+                  config: layoutState.multiPanel || isFullScreenRoute()
+                      ? null
+                      : BottomNavigationConfig(
+                          currentIndex: getCurrentIndex(),
+                          onChange: (index) {
+                            final currentPath = context.router.currentPath;
 
-                            // Check if we're on the Priorities tab
-                            if (pathSegments.length > 1 &&
-                                pathSegments[1] == 'priorities') {
-                              // On Priorities tab - navigate to the Activities tab's current priority
-                              final activitiesRouter = tabsRouter.stackRouterOfIndex(1);
+                            if (index == 1 || index == 2) {
+                              // Now + Next (1) or Activity (2) — switch to tab 1 and set tab notifier
+                              final tab = index == 1
+                                  ? PriorityTab.upNext
+                                  : PriorityTab.activity;
+                              _tabNotifier.value = tab;
 
-                              // Switch tabs and navigate in a single frame to avoid flash
-                              tabsRouter.setActiveIndex(1);
-                              final innerRouter = activitiesRouter?.innerRouterOf<StackRouter>(PriorityRoute.name);
-
-                              if (innerRouter != null) {
-                                // Navigate immediately without waiting for frame
-                                innerRouter.push(NewActivityRoute());
-                              } else {
-                                // Fallback: wait one frame if inner router not ready
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  final innerRouter2 = tabsRouter.stackRouterOfIndex(1)?.innerRouterOf<StackRouter>(PriorityRoute.name);
-                                  if (innerRouter2 != null) {
-                                    innerRouter2.push(NewActivityRoute());
-                                  }
-                                });
-                              }
-                            } else if (pathSegments.length > 1 &&
-                                pathSegments[1].isNotEmpty) {
-                              // Already on a priority route - push NewActivityRoute directly
-                              final innerRouter = context.router.innerRouterOf<StackRouter>(
-                                PriorityRoute.name,
-                              );
-                              if (innerRouter != null) {
-                                innerRouter.push(NewActivityRoute());
-                              } else {
-                                // Fallback: navigate with full route
-                                final priorityIdString = pathSegments[1];
-                                context.router.push(
-                                  PriorityRoute(
-                                    priorityIdString: priorityIdString,
-                                    children: [NewActivityRoute()],
-                                  ),
-                                );
-                              }
-                            }
-                          } else if (index == 3) {
-                            // Show command palette (same as Cmd-K)
-                            Commands(
-                              prompt: 'Run a command',
-                              groups: CommandRegistry.of(context).commands,
-                            ).show(context);
-                          } else {
-                            // If currently on NewActivityPage or ActivityPage
-                            if (currentPath.endsWith('/new')) {
-                              // On NewActivityPage - pop back
-                              if (index == 1) {
+                              if (currentPath.endsWith('/new')) {
+                                // On NewActivityPage - pop back
                                 context.router.back();
                               } else {
-                                // Going to Priorities tab - pop first then switch tabs
+                                final pathSegments = currentPath
+                                    .split('/')
+                                    .where((s) => s.isNotEmpty)
+                                    .toList();
+                                if (pathSegments.length >= 2 &&
+                                    tabsRouter.activeIndex == 1) {
+                                  // On ActivityPage - pop back to PriorityPage
+                                  context.router.back();
+                                } else {
+                                  tabsRouter.setActiveIndex(1);
+                                }
+                              }
+                              setState(() {});
+                            } else if (index == 3) {
+                              // Navigate to New Activity for current priority
+                              final pathSegments = currentPath.split('/');
+
+                              // Check if we're on the Priorities tab
+                              if (pathSegments.length > 1 &&
+                                  pathSegments[1] == 'priorities') {
+                                // On Priorities tab - navigate to the Activities tab's current priority
+                                final activitiesRouter = tabsRouter
+                                    .stackRouterOfIndex(1);
+
+                                // Switch tabs and navigate in a single frame to avoid flash
+                                tabsRouter.setActiveIndex(1);
+                                final innerRouter = activitiesRouter
+                                    ?.innerRouterOf<StackRouter>(
+                                      PriorityRoute.name,
+                                    );
+
+                                if (innerRouter != null) {
+                                  // Navigate immediately without waiting for frame
+                                  innerRouter.push(NewActivityRoute());
+                                } else {
+                                  // Fallback: wait one frame if inner router not ready
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    final innerRouter2 = tabsRouter
+                                        .stackRouterOfIndex(1)
+                                        ?.innerRouterOf<StackRouter>(
+                                          PriorityRoute.name,
+                                        );
+                                    if (innerRouter2 != null) {
+                                      innerRouter2.push(NewActivityRoute());
+                                    }
+                                  });
+                                }
+                              } else if (pathSegments.length > 1 &&
+                                  pathSegments[1].isNotEmpty) {
+                                // Already on a priority route - push NewActivityRoute directly
+                                final innerRouter = context.router
+                                    .innerRouterOf<StackRouter>(
+                                      PriorityRoute.name,
+                                    );
+                                if (innerRouter != null) {
+                                  innerRouter.push(NewActivityRoute());
+                                } else {
+                                  // Fallback: navigate with full route
+                                  final priorityIdString = pathSegments[1];
+                                  context.router.push(
+                                    PriorityRoute(
+                                      priorityIdString: priorityIdString,
+                                      children: [NewActivityRoute()],
+                                    ),
+                                  );
+                                }
+                              }
+                            } else if (index == 4) {
+                              // Show command palette (same as Cmd-K)
+                              Commands(
+                                prompt: 'Run a command',
+                                groups: CommandRegistry.of(context).commands,
+                              ).show(context);
+                            } else {
+                              // Index 0: Priorities tab
+                              if (currentPath.endsWith('/new')) {
+                                // On NewActivityPage - pop first then switch tabs
                                 context.router.back();
                                 WidgetsBinding.instance.addPostFrameCallback((
                                   _,
                                 ) {
                                   tabsRouter.setActiveIndex(index);
                                 });
-                              }
-                            } else {
-                              final pathSegments = currentPath.split('/').where((s) => s.isNotEmpty).toList();
-                              if (pathSegments.length >= 2 && index == 1) {
-                                // On ActivityPage, tapping Activities tab - pop back to PriorityPage
-                                context.router.back();
                               } else {
                                 // Normal tab switching
                                 tabsRouter.setActiveIndex(index);
                               }
                             }
-                          }
-                        },
-                        items: [
-                          FBottomNavigationBarItem(
-                            icon: Icon(PlotIcon.priorities),
-                            label: Builder(
-                              builder: (context) => DefaultTextStyle(
-                                style: context.theme.typography.base,
-                                child: const Text('Priorities'),
+                          },
+                          items: [
+                            FBottomNavigationBarItem(
+                              icon: Icon(PlotIcon.priorities),
+                              label: Builder(
+                                builder: (context) => DefaultTextStyle(
+                                  style: context.theme.typography.base,
+                                  child: const Text('Priorities'),
+                                ),
                               ),
                             ),
-                          ),
-                          FBottomNavigationBarItem(
-                            icon: Icon(PlotIcon.activity),
-                            label: Builder(
-                              builder: (context) => DefaultTextStyle(
-                                style: context.theme.typography.base,
-                                child: const Text('Activities'),
+                            FBottomNavigationBarItem(
+                              icon: Icon(PlotIcon.now),
+                              label: Builder(
+                                builder: (context) => DefaultTextStyle(
+                                  style: context.theme.typography.base,
+                                  child: const Text('Now + Next'),
+                                ),
                               ),
                             ),
-                          ),
-                          FBottomNavigationBarItem(
-                            icon: Icon(PlotIcon.addNote),
-                            label: Builder(
-                              builder: (context) => DefaultTextStyle(
-                                style: context.theme.typography.base,
-                                child: const Text('New'),
+                            FBottomNavigationBarItem(
+                              icon: Icon(PlotIcon.activity),
+                              label: Builder(
+                                builder: (context) => DefaultTextStyle(
+                                  style: context.theme.typography.base,
+                                  child: const Text('Activity'),
+                                ),
                               ),
                             ),
-                          ),
-                          FBottomNavigationBarItem(
-                            icon: Icon(PlotIcon.menu),
-                            label: Builder(
-                              builder: (context) => DefaultTextStyle(
-                                style: context.theme.typography.base,
-                                child: const Text('More'),
+                            FBottomNavigationBarItem(
+                              icon: Icon(PlotIcon.addNote),
+                              label: Builder(
+                                builder: (context) => DefaultTextStyle(
+                                  style: context.theme.typography.base,
+                                  child: const Text('New'),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                child: child,
-              );
-            },
-          );
-        },
+                            FBottomNavigationBarItem(
+                              icon: Icon(PlotIcon.menu),
+                              label: Builder(
+                                builder: (context) => DefaultTextStyle(
+                                  style: context.theme.typography.base,
+                                  child: const Text('More'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                  child: child,
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

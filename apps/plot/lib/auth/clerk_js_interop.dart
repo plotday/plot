@@ -47,6 +47,7 @@ extension type SignUpJS._(JSObject _) implements JSObject {
   external JSPromise<JSAny?> update(JSObject params);
   external JSPromise<JSAny?> prepareEmailAddressVerification(JSObject params);
   external JSPromise<JSAny?> attemptEmailAddressVerification(JSObject params);
+  external JSPromise<JSAny?> authenticateWithRedirect(JSObject params);
   external String? get status;
   external String? get createdSessionId;
   external JSArray<JSString>? get missingFields;

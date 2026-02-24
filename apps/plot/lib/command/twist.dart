@@ -1092,7 +1092,7 @@ class PromptToArchiveTwist extends ShowForm {
             FormInfo(
               key: 'info',
               text:
-                  'Archiving this twist will remove it and archive the activities it has created.',
+                  'Archiving this twist will remove it and archive the topics it has created.',
             ),
             FormDivider(key: 'divider'),
             FormButton(
@@ -1133,7 +1133,7 @@ class ArchiveTwist extends Command {
       );
 
       return CommandMessage(
-        'Twist "${twist.name}" and its activities archived successfully',
+        'Twist "${twist.name}" and its topics archived successfully',
       );
     } catch (e, t) {
       log.warning('Failed to archive twist', e, t);
@@ -1145,7 +1145,7 @@ class ArchiveTwist extends Command {
 class ArchiveActivitiesCreatedByTwist extends ShowForm {
   ArchiveActivitiesCreatedByTwist(this.twist)
     : super(
-        title: 'Archive Activities',
+        title: 'Archive Topics',
         icon: PlotIcon.archived,
         form: (context) => _buildForm(context, twist),
       );
@@ -1160,17 +1160,17 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
     final count = await _getActivityCount(twist.id);
 
     return FormData(
-      title: 'Archive Activities Created by Twist',
+      title: 'Archive Topics Created by Twist',
       groups: [
         StaticFormGroup(
           items: [
             FormInfo(
               key: 'info',
               text: count == 0
-                  ? 'No activities were created by this twist.'
+                  ? 'No topics were created by this twist.'
                   : count == 1
-                  ? '1 activity was created by this twist and will be archived.'
-                  : '$count activities were created by this twist and will be archived.',
+                  ? '1 topic was created by this twist and will be archived.'
+                  : '$count topics were created by this twist and will be archived.',
             ),
             if (count > 0)
               FormButton(
@@ -1201,7 +1201,7 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
 class _ArchiveActivitiesCommand extends Command {
   _ArchiveActivitiesCommand(this.twist, this.count)
     : super(
-        title: 'Archive Activities',
+        title: 'Archive Topics',
         icon: PlotIcon.archived,
         eventObject: EventObject.activity,
         eventAction: EventAction.archived,
@@ -1224,11 +1224,11 @@ class _ArchiveActivitiesCommand extends Command {
       Activity.push();
 
       return CommandMessage(
-        count == 1 ? '1 activity archived' : '$count activities archived',
+        count == 1 ? '1 topic archived' : '$count topics archived',
       );
     } catch (e, t) {
       log.warning('Failed to archive activities', e, t);
-      return CommandMessage('Failed to archive activities', isError: true);
+      return CommandMessage('Failed to archive topics', isError: true);
     }
   }
 }

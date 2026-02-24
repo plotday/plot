@@ -8,6 +8,7 @@ import 'package:plot/state/priority.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/widget/activity_header_notifier.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
@@ -50,6 +51,7 @@ class NewActivityPageState extends State<NewActivityPage> {
 
   // Save reference to provider to avoid looking it up in dispose()
   PriorityShortcutsProviderState? _provider;
+  ActivityHeaderNotifier? _headerNotifier;
   bool _hasAppliedQueryParams = false;
 
   // Twists for the selected draft priority (may differ from context priority)
@@ -61,8 +63,17 @@ class NewActivityPageState extends State<NewActivityPage> {
 
     // Save the provider reference
     _provider = ActivityPanelControllerProvider.maybeOf(context);
+    // Register with ActivityHeaderNotifier so unified header knows NewActivityPage is visible
+    _headerNotifier = ActivityHeaderNotifierProvider.read(context);
     // Register ActivityEditor with the focus coordination provider
+    // Both registrations deferred to avoid notifyListeners() during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerNotifier?.register(
+        onSearchChanged: (_) {},
+        onSearchClosed: () {},
+        tags: const [],
+        filter: const [],
+      );
       _provider?.registerActivityPanel(
         editorFocusCallback: () => _activityEditorKey.currentState?.focus(),
       );
@@ -198,6 +209,8 @@ class NewActivityPageState extends State<NewActivityPage> {
   void dispose() {
     // Unregister from the focus coordination provider using saved reference
     _provider?.unregisterActivityPanel();
+    // Unregister from activity header notifier
+    _headerNotifier?.unregister();
     super.dispose();
   }
 
@@ -228,10 +241,7 @@ class NewActivityPageState extends State<NewActivityPage> {
       context,
       items: (search) async {
         final priorities = Priority.excludePlot(
-          await Priority.get(
-            order: PriorityOrder.nested,
-            search: search,
-          ),
+          await Priority.get(order: PriorityOrder.nested, search: search),
         );
         return [SelectGroup(title: null, items: priorities)];
       },
@@ -278,19 +288,6 @@ class NewActivityPageState extends State<NewActivityPage> {
                 translucent: true,
                 scrollable: false,
                 childPad: layoutState.multiPanel,
-                header: !context.isMultiPanel
-                    ? null
-                    : layoutState.middlePanelVisible
-                    ? const Header()
-                    : Header(
-                        title: 'New Activity',
-                        prefixCommands: [
-                          CommandWrapper(
-                            ChangeCurrentActivity(null),
-                            icon: Value(PlotIcon.back),
-                          ),
-                        ],
-                      ),
                 body: LayoutBuilder(
                   builder: (context, constraints) {
                     // Single panel mode: editor at bottom, edge-to-edge

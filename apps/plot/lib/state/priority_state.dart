@@ -123,6 +123,126 @@ class PriorityState extends Equatable {
     return range != null && (next == null || next < range.end);
   }
 
+  /// "Now + Next": items from the "Now" header onward,
+  /// with date headers and sub-priority-only headers stripped.
+  /// The split point is the first incomplete action marked now=true,
+  /// backed up to include the preceding "Now" header (but not date headers).
+  List<AgendaItem> get upNextItems {
+    final nowActivityIndex = _findNowActivity(agendaItems);
+
+    // Look backward for the "Now" header (now=true, not a date header).
+    // We skip over activities (not just headers) because reordering can
+    // place a now=false activity between the Now header and the first
+    // now=true activity.
+    var startIndex = nowActivityIndex;
+    for (int i = nowActivityIndex - 1; i >= 0; i--) {
+      final item = agendaItems[i];
+      if (item is AgendaHeaderItem) {
+        if (item.now && item.date == null) {
+          startIndex = i;
+          break;
+        }
+        // Stop at non-now headers (e.g. date or priority headers from
+        // an earlier section) to avoid pulling in unrelated items.
+        break;
+      }
+      // Continue past activities — reorder may place them here.
+    }
+
+    final result = agendaItems.sublist(startIndex).where((item) {
+      // Strip today's date header (replaced by synthesized "Now" header)
+      if (item is AgendaHeaderItem &&
+          item.date != null &&
+          item.date == Date.today()) {
+        return false;
+      }
+      // Strip sub-priority-only headers (priority set, but no date or dateTimeRange)
+      if (item is AgendaHeaderItem &&
+          item.priority != null &&
+          item.date == null &&
+          item.dateTimeRange == null) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    // If no "Now" header at the top, synthesize one.
+    // This happens when there are no past activities, so _makeAgenda only
+    // creates a date header (no separate "Now" header).
+    if (result.isEmpty ||
+        result.first is! AgendaHeaderItem ||
+        !(result.first as AgendaHeaderItem).now) {
+      // Find countdown info: look for the next event in remaining items
+      DateTimeRange? dateTimeRange;
+      for (int i = nowActivityIndex; i < agendaItems.length; i++) {
+        final item = agendaItems[i];
+        if (item is AgendaHeaderItem &&
+            item.dateTimeRange != null &&
+            item.activity != null) {
+          final eventStart = item.dateTimeRange!.start;
+          if (eventStart != null && eventStart.isAfter(Time.now())) {
+            dateTimeRange = DateTimeRange(Time.now(), eventStart);
+          }
+          break;
+        }
+      }
+      result.insert(
+        0,
+        AgendaHeaderItem(now: true, text: 'Now', dateTimeRange: dateTimeRange),
+      );
+    }
+
+    return result;
+  }
+
+  /// "Activity": flat list of ALL activities sorted by activityFeedAt descending,
+  /// with coarse time-based section headers (Today, Yesterday, X days ago, etc.).
+  List<AgendaItem> get activityFeedItems {
+    final activities =
+        agendaItems
+            .whereType<AgendaActivityItem>()
+            .map((item) => item.activity)
+            .toList()
+          ..sort((a, b) => b.activityFeedAt.compareTo(a.activityFeedAt));
+
+    final items = <AgendaItem>[];
+    String? currentBucket;
+    for (final activity in activities) {
+      final (label, bucketDate) = _timeAgoBucket(
+        activity.activityFeedAt.toDate(),
+      );
+      if (label != currentBucket) {
+        currentBucket = label;
+        items.add(AgendaHeaderItem(text: label, date: bucketDate));
+      }
+      items.add(AgendaActivityItem(activity));
+    }
+    return items;
+  }
+
+  /// Returns a coarse time bucket label and representative date for grouping.
+  static (String, Date) _timeAgoBucket(Date date) {
+    final today = Date.today();
+    final days = today.difference(date).inDays;
+
+    if (days <= 0) return ('Today', today);
+    if (days == 1) return ('Yesterday', today.addDays(-1));
+    if (days <= 6) return ('$days days ago', date);
+    if (days <= 13) return ('A week ago', date);
+    if (days <= 20) return ('2 weeks ago', date);
+    if (days <= 29) return ('3 weeks ago', date);
+
+    // Month-based buckets
+    final months = (days / 30).floor();
+    if (months <= 1) return ('A month ago', date);
+    if (months < 12) return ('$months months ago', date);
+
+    // Year-based buckets
+    final years = (days / 365).floor();
+    if (years <= 1) return ('A year ago', date);
+    return ('$years years ago', date);
+  }
+
   /// Finds the first gap of at least 1 hour in a day's schedule.
   ///
   /// Returns the start time of the first hour-long gap, or null if no such gap exists.
@@ -230,13 +350,18 @@ class PriorityState extends Equatable {
             final (orderA, timestampA) = getSortKey(a);
             final (orderB, timestampB) = getSortKey(b);
 
-            // First compare by order
+            // First compare by category order
             final orderComparison = orderA.compareTo(orderB);
             if (orderComparison != 0) {
               return orderComparison;
             }
 
-            // Within the same order, compare by timestamp
+            // For incomplete actions, sort by user-defined order
+            if (a.todo && b.todo) {
+              return a.order.compareTo(b.order);
+            }
+
+            // Within the same category, compare by timestamp
             if (timestampA != null && timestampB != null) {
               return timestampA.compareTo(timestampB);
             }
@@ -445,12 +570,8 @@ class PriorityState extends Equatable {
           // Apply "Now" header when not in an event (covers: gaps, after events, no events)
           if (currentEvent == null && beforeNowUnscheduled.isNotEmpty) {
             // Split activities into past and future
-            final (
-              pastActivities,
-              otherBeforeNowActivities,
-            ) = beforeNowUnscheduled.partition(
-              (activity) => !activity.todo && activity.agendaAt.isBefore(now),
-            );
+            final (pastActivities, otherBeforeNowActivities) =
+                beforeNowUnscheduled.partition((activity) => !activity.todo);
 
             if (pastActivities.isNotEmpty) {
               // Add date header if needed
@@ -473,108 +594,28 @@ class PriorityState extends Equatable {
                 skipHeaderFor: context,
               );
 
-              // Group otherBeforeNowActivities by priority to combine "Now" header with first group
+              // Add "Now" header
+              items.add(
+                AgendaHeaderItem(
+                  priority: null,
+                  dateTimeRange:
+                      afterNowScheduled.firstOrNull?.at?.start != null
+                      ? DateTimeRange(
+                          now,
+                          afterNowScheduled.firstOrNull!.at!.start!,
+                        )
+                      : null,
+                  now: true,
+                  text: currentEvent?.title ?? 'Now',
+                ),
+              );
+
               if (otherBeforeNowActivities.isNotEmpty) {
-                final prioritizedOtherActivities = Activity.prioritize(
-                  otherBeforeNowActivities,
-                  context: context,
-                );
-
-                // Get first priority group
-                final firstEntry = prioritizedOtherActivities.entries.first;
-                final firstPriority = firstEntry.key;
-                final firstGroupActivities = firstEntry.value;
-
-                // Add "Now" header using first group's priority
-                items.add(
-                  AgendaHeaderItem(
-                    priority: firstPriority,
-                    dateTimeRange:
-                        afterNowScheduled.firstOrNull?.at?.start != null
-                        ? DateTimeRange(
-                            now,
-                            afterNowScheduled.firstOrNull!.at!.start!,
-                          )
-                        : null,
-                    now: true,
-                    text: 'Now',
-                  ),
-                );
-
-                // Sort first group's activities (same sorting logic as addActivitiesGrouped)
-                final sortedFirstGroup = firstGroupActivities.toList()
-                  ..sort((a, b) {
-                    final (orderA, timestampA) = getSortKey(a);
-                    final (orderB, timestampB) = getSortKey(b);
-                    final orderComparison = orderA.compareTo(orderB);
-                    if (orderComparison != 0) {
-                      return orderComparison;
-                    }
-                    if (timestampA != null && timestampB != null) {
-                      return timestampA.compareTo(timestampB);
-                    }
-                    return a.compareTo(b);
-                  });
-
-                // Add first group's activities without a priority header
+                // Sort all todos by user-defined order (no priority grouping)
+                final sortedTodos = otherBeforeNowActivities.toList()
+                  ..sort((a, b) => a.order.compareTo(b.order));
                 items.addAll(
-                  sortedFirstGroup.map((Activity a) => AgendaActivityItem(a)),
-                );
-
-                // Add remaining priority groups with headers
-                if (prioritizedOtherActivities.length > 1) {
-                  var isFirst = true;
-                  for (final entry in prioritizedOtherActivities.entries) {
-                    if (isFirst) {
-                      isFirst = false;
-                      continue; // Skip first group, already added
-                    }
-
-                    // Add priority header
-                    items.add(
-                      AgendaHeaderItem(
-                        priority: entry.key,
-                        scheduleAt: dayScheduleAt,
-                      ),
-                    );
-
-                    // Sort and add activities
-                    final sortedActivities = entry.value.toList()
-                      ..sort((a, b) {
-                        final (orderA, timestampA) = getSortKey(a);
-                        final (orderB, timestampB) = getSortKey(b);
-                        final orderComparison = orderA.compareTo(orderB);
-                        if (orderComparison != 0) {
-                          return orderComparison;
-                        }
-                        if (timestampA != null && timestampB != null) {
-                          return timestampA.compareTo(timestampB);
-                        }
-                        return a.compareTo(b);
-                      });
-
-                    items.addAll(
-                      sortedActivities.map(
-                        (Activity a) => AgendaActivityItem(a),
-                      ),
-                    );
-                  }
-                }
-              } else {
-                // No otherBeforeNowActivities, just add "Now" header
-                items.add(
-                  AgendaHeaderItem(
-                    priority: null,
-                    dateTimeRange:
-                        afterNowScheduled.firstOrNull?.at?.start != null
-                        ? DateTimeRange(
-                            now,
-                            afterNowScheduled.firstOrNull!.at!.start!,
-                          )
-                        : null,
-                    now: true,
-                    text: 'Now',
-                  ),
+                  sortedTodos.map((Activity a) => AgendaActivityItem(a)),
                 );
               }
 
@@ -912,15 +953,31 @@ class PriorityState extends Equatable {
   }
 
   /// Returns the index of the AgendaHeaderItem with now=true.
+  /// Prefers the "Now" divider header (no date) over date headers.
   /// Returns 0 if no such AgendaHeaderItem is found.
   static int _findNow(List<AgendaItem> agendaItems) {
+    int? firstNow;
     for (int i = 0; i < agendaItems.length; i++) {
       final item = agendaItems[i];
       if (item is AgendaHeaderItem && item.now) {
+        if (item.date == null) return i;
+        firstNow ??= i;
+      }
+    }
+    return firstNow ?? 0;
+  }
+
+  /// Returns the index of the first AgendaActivityItem with now=true.
+  /// This is the first incomplete action, which is the true "up next" split point.
+  /// Falls back to _findNow (the now header) if no activity has now=true.
+  static int _findNowActivity(List<AgendaItem> agendaItems) {
+    for (int i = 0; i < agendaItems.length; i++) {
+      final item = agendaItems[i];
+      if (item is AgendaActivityItem && item.now) {
         return i;
       }
     }
-    return 0;
+    return _findNow(agendaItems);
   }
 }
 

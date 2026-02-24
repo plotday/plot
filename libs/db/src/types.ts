@@ -44,26 +44,6 @@ export type Database = {
           type: Database["public"]["Enums"]["activity_type"]
           updated_at: string
           updated_by: number
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
-          assignee: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
         }
         Insert: {
           archived_at?: string | null
@@ -362,11 +342,6 @@ export type Database = {
           primary: boolean
           updated_at: string
           user_id: string | null
-          organization: {
-            created_at: string
-            id: number
-            name: string
-          } | null
         }
         Insert: {
           archived_at?: string | null
@@ -584,16 +559,6 @@ export type Database = {
           sync_depth: number | null
           updated_at: string
           updated_by: number
-          actor: {
-            archived_at: string | null
-            avatar_url: string | null
-            created_at: string | null
-            email: string | null
-            id: string | null
-            name: string | null
-            type: string | null
-            updated_at: string | null
-          } | null
         }
         Insert: {
           activity_id: string
@@ -1044,6 +1009,7 @@ export type Database = {
           created_at: string
           personal: boolean
           priority_id: string
+          role: string
           updated_at: string
           user_id: string
         }
@@ -1052,6 +1018,7 @@ export type Database = {
           created_at?: string
           personal?: boolean
           priority_id: string
+          role?: string
           updated_at?: string
           user_id: string
         }
@@ -1060,6 +1027,7 @@ export type Database = {
           created_at?: string
           personal?: boolean
           priority_id?: string
+          role?: string
           updated_at?: string
           user_id?: string
         }
@@ -1825,6 +1793,7 @@ export type Database = {
           invited_by: string | null
           personal: boolean | null
           priority_id: string | null
+          role: string | null
           status: string | null
           updated_at: string | null
         }
@@ -2194,64 +2163,6 @@ export type Database = {
     }
     Functions: {
       activate_invited_user: { Args: { p_user_id: string }; Returns: Json }
-      actor:
-        | {
-            Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
-            Returns: {
-              archived_at: string | null
-              avatar_url: string | null
-              created_at: string | null
-              email: string | null
-              id: string | null
-              name: string | null
-              type: string | null
-              updated_at: string | null
-            }[]
-            SetofOptions: {
-              from: "activity"
-              to: "actor"
-              isOneToOne: false
-              isSetofReturn: true
-            }
-          }
-        | {
-            Args: { "": Database["public"]["Tables"]["note"]["Row"] }
-            Returns: {
-              archived_at: string | null
-              avatar_url: string | null
-              created_at: string | null
-              email: string | null
-              id: string | null
-              name: string | null
-              type: string | null
-              updated_at: string | null
-            }[]
-            SetofOptions: {
-              from: "note"
-              to: "actor"
-              isOneToOne: false
-              isSetofReturn: true
-            }
-          }
-      assignee: {
-        Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
-        Returns: {
-          archived_at: string | null
-          avatar_url: string | null
-          created_at: string | null
-          email: string | null
-          id: string | null
-          name: string | null
-          type: string | null
-          updated_at: string | null
-        }[]
-        SetofOptions: {
-          from: "activity"
-          to: "actor"
-          isOneToOne: false
-          isSetofReturn: true
-        }
-      }
       count_not_null: { Args: { val: unknown }; Returns: number }
       find_matching_activities_scored: {
         Args: {
@@ -2372,20 +2283,6 @@ export type Database = {
         }[]
       }
       order_first: { Args: never; Returns: number }
-      organization: {
-        Args: { "": Database["public"]["Tables"]["contact"]["Row"] }
-        Returns: {
-          created_at: string
-          id: number
-          name: string
-        }[]
-        SetofOptions: {
-          from: "contact"
-          to: "organization"
-          isOneToOne: false
-          isSetofReturn: true
-        }
-      }
       parent_path: { Args: { p: unknown }; Returns: unknown }
       redeem_invitation_token: {
         Args: { p_token: string; p_user_id: string }
@@ -2395,11 +2292,13 @@ export type Database = {
         Args: { p_user_id?: string; p_user_name?: string }
         Returns: Json
       }
+      setup_whats_new_priority: { Args: { p_user_id: string }; Returns: Json }
       share_priority: {
         Args: {
           p_add_actor_ids: string[]
           p_priority_id: string
           p_remove_actor_ids: string[]
+          p_role?: string
           p_user_id: string
         }
         Returns: Json
@@ -2610,6 +2509,7 @@ export type Database = {
           path: unknown
           personal: boolean | null
           pomodoro: number | null
+          role: string | null
           root: boolean | null
           title: string | null
           top_order: number | null
@@ -2637,6 +2537,7 @@ export type Database = {
           joined_at: string | null
           path: unknown
           priority_id: string | null
+          role: string | null
           user_id: string | null
         }
         Relationships: []
@@ -2696,6 +2597,10 @@ export type Database = {
       delete_activity_read: {
         Args: { p_activity_id: string; user_id: string }
         Returns: undefined
+      }
+      get_effective_role: {
+        Args: { p_priority_id: string; p_user_id: string }
+        Returns: string
       }
       has_priority_access: {
         Args: { priority_id: string; user_id: string }
@@ -2845,6 +2750,7 @@ export type Database = {
           path: unknown
           personal: boolean | null
           pomodoro: number | null
+          role: string | null
           root: boolean | null
           title: string | null
           top_order: number | null

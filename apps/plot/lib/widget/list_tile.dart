@@ -315,9 +315,7 @@ class _ListTileState extends State<ListTile> {
         onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
         child: ReorderableDragStartListener(
           index: widget.reorderableIndex ?? 0,
-          enabled:
-              widget.reorderableIndex != null &&
-              hasPhysicalKeyboard(),
+          enabled: widget.reorderableIndex != null && hasPhysicalKeyboard(),
           child: Container(
             decoration: BoxDecoration(
               color: widget.selected
@@ -455,7 +453,7 @@ class _ListTileState extends State<ListTile> {
             crossAxisAlignment: CrossAxisAlignment.center,
             spacing: hasIcon ? 12 : 0,
             children: [
-              if (hasIcon) iconWidget else iconWidget,
+              iconWidget,
               Expanded(
                 child: Padding(
                   padding: (widget.padding?.resolve(null) ?? widgetPaddingSm)

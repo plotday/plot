@@ -302,7 +302,7 @@ class ArchiveNote extends NoteCommand {
 class SplitNoteToNewActivity extends NoteCommand {
   SplitNoteToNewActivity(super.note)
     : super(
-        title: 'Split to New Activity',
+        title: 'Split to New Topic',
         eventObject: EventObject.note,
         eventAction: EventAction.moved,
         icon: PlotIcon.move,
@@ -369,7 +369,7 @@ class SplitNoteToNewActivity extends NoteCommand {
     } catch (e, stackTrace) {
       log.severe('Error in SplitNoteToNewActivity: $e', e, stackTrace);
       return CommandMessage(
-        'Failed to split note to new activity',
+        'Failed to split note to new topic',
         isError: true,
       );
     }
@@ -513,7 +513,12 @@ List<Command> noteCommands(Note note, {ActivityBloc? activityBloc}) {
       SplitNoteToNewActivity(note),
     if (note.content != null && note.content!.trim().isNotEmpty)
       CopyNoteContent(note),
-    if (!note.private || note.authorId == Base.actorId) ToggleNotePrivate(note),
+    if ((activityBloc?.state.activity.priority.personal != true ||
+            (note.draft &&
+                activityBloc?.state.activity.authorId.isCurrentUser ==
+                    false)) &&
+        (!note.private || note.authorId == Base.actorId))
+      ToggleNotePrivate(note),
     ArchiveNote(note),
   ];
 }

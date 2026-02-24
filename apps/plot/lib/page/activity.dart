@@ -11,6 +11,7 @@ import 'package:plot/state/activity.dart';
 import 'package:plot/state/layout.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/widget/activity_header_notifier.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 
@@ -54,6 +55,9 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   // Store reference to provider to avoid unsafe ancestor lookup in dispose()
   PriorityShortcutsProviderState? _provider;
 
+  // Store reference to activity header notifier
+  ActivityHeaderNotifier? _headerNotifier;
+
   // Timer for delayed read marking
   Timer? _markReadTimer;
 
@@ -65,6 +69,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
     super.didChangeDependencies();
     // Save reference during a safe lifecycle method
     _provider = ActivityPanelControllerProvider.maybeOf(context);
+    _headerNotifier = ActivityHeaderNotifierProvider.read(context);
     // Schedule marking activity as read after 750ms
     _scheduleMarkAsRead();
 
@@ -78,6 +83,26 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
         }
       });
     }
+
+    // Register with ActivityHeaderNotifier for unified header search
+    // Deferred to avoid notifyListeners() during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _registerWithHeaderNotifier();
+    });
+  }
+
+  void _registerWithHeaderNotifier() {
+    final state = context.read<ActivityBloc>().state;
+    _headerNotifier?.register(
+      onSearchChanged: (search) =>
+          context.read<ActivityBloc>().updateSearch(search),
+      onSearchClosed: () {
+        context.read<ActivityBloc>().updateFilter([]);
+        context.read<ActivityBloc>().setThreadFilter(null);
+      },
+      tags: state.tags,
+      filter: state.filter,
+    );
   }
 
   @override
@@ -87,6 +112,8 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
     // Unregister from the focus coordination provider
     // Use saved reference instead of looking up during dispose()
     _provider?.unregisterActivityPanel();
+    // Unregister from activity header notifier
+    _headerNotifier?.unregister();
     super.dispose();
   }
 
@@ -109,12 +136,19 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   Widget build(BuildContext context) {
     return BlocListener<ActivityBloc, ActivityState>(
       listener: (context, state) {
-        // Reschedule mark as read when new notes are synced
-        _scheduleMarkAsRead();
+        // Update header notifier when tags/filter change
+        _headerNotifier?.updateTags(state.tags, state.filter);
       },
       listenWhen: (previous, current) =>
-          previous.notes != current.notes && current.activity.unread,
+          previous.tags != current.tags || previous.filter != current.filter,
       child: BlocListener<ActivityBloc, ActivityState>(
+        listener: (context, state) {
+          // Reschedule mark as read when new notes are synced
+          _scheduleMarkAsRead();
+        },
+        listenWhen: (previous, current) =>
+            previous.notes != current.notes && current.activity.unread,
+        child: BlocListener<ActivityBloc, ActivityState>(
         listener: (context, state) {
           // Focus NoteEditor when activity thread changes
           // (BidirectionalListSelector is keyed by activity.id, so it creates a fresh controller)
@@ -130,24 +164,13 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
           },
         ),
       ),
+      ),
     );
   }
 
   Widget _buildContent(BuildContext context, ActivityState state) {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutStateForPanels) {
-        final prefixActions = <Command>[];
-
-        // Add back button when middle panel is not visible
-        if (!layoutStateForPanels.middlePanelVisible) {
-          prefixActions.add(
-            CommandWrapper(
-              ChangeCurrentActivity(null),
-              icon: Value(PlotIcon.back),
-            ),
-          );
-        }
-
         return PopScope(
           canPop: false,
           onPopInvokedWithResult: (didPop, result) {
@@ -267,7 +290,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                 child: CommandScope(
                   commands: [
                     StaticCommandGroup(
-                      title: state.activity.displayTitle,
+                      title: 'Topic: ${state.activity.displayTitle}',
                       commands: activityCommands(state.activity),
                     ),
                   ],
@@ -275,109 +298,14 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                     scrollable: false,
                     translucent: true,
                     childPad: false,
-                    header: Header(
-                      title: state.threadNoteId == null
-                          ? state.activity.displayTitle
-                          : null,
-                      main: state.threadNoteId != null
-                          ? Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    state.activity.displayTitle,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: context.theme.typography.base,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                GestureDetector(
-                                  onTap: () => context
-                                      .read<ActivityBloc>()
-                                      .setThreadFilter(null),
-                                  child: MouseRegion(
-                                    cursor: SystemMouseCursors.click,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: context.colour.accentBackground,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            FontAwesomeIcons.reply,
-                                            size: 10,
-                                            color: context.colour.accent,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'Thread',
-                                            style: context.theme.typography.xs
-                                                .copyWith(
-                                                  color: context.colour.accent,
-                                                ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Icon(
-                                            PlotIcon.close,
-                                            size: 8,
-                                            color: context.colour.accent,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            )
-                          : null,
-                      prefixCommands: prefixActions,
-                      onSearchChanged: (search) =>
-                          context.read<ActivityBloc>().updateSearch(search),
-                      onSearchClosed: () {
-                        context.read<ActivityBloc>().updateFilter([]);
-                        context.read<ActivityBloc>().setThreadFilter(null);
-                      },
-                      filterCommands: state.tags
-                          .map(
-                            (tagData) =>
-                                ToggleNoteFilter(tagData.$1, context: context),
-                          )
-                          .toList(),
-                      commands: [
-                        // Show primary command based on activity state
-                        primaryActivityCommand(
-                          state.activity,
-                          stateIcon: false,
-                        ),
-
-                        // Show active tags (up to 3)
-                        ...state.tags
-                            .where(
-                              (tagData) => state.activity.hasTag(tagData.$1),
-                            )
-                            .take(3)
-                            .map(
-                              (tagData) =>
-                                  ToggleActivityTag(state.activity, tagData.$1),
-                            ),
-
-                        // Always show the command menu
-                        ShowActivityCommands(state.activity),
-                      ],
-                    ),
                     body: Column(
                       spacing: 8,
                       children: [
-                        if (state.activity.links != null &&
-                            state.activity.links!.isNotEmpty)
-                          _ActivityLinksBar(
-                            links: state.activity.links!,
-                          ),
+                        _ActivitySecondaryBar(
+                          activity: state.activity,
+                          tags: state.tags,
+                          threadNoteId: state.threadNoteId,
+                        ),
                         Flexible(
                           flex: 1,
                           fit: FlexFit.tight,
@@ -475,13 +403,36 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   }
 }
 
-class _ActivityLinksBar extends StatelessWidget {
-  const _ActivityLinksBar({required this.links});
+/// Secondary actions bar for ActivityPage. Combines:
+/// - Primary command button (Complete/Start/etc.)
+/// - Active tag toggles (up to 3)
+/// - Thread filter badge
+/// - Activity links
+class _ActivitySecondaryBar extends StatelessWidget {
+  const _ActivitySecondaryBar({
+    required this.activity,
+    required this.tags,
+    this.threadNoteId,
+  });
 
-  final List<Link> links;
+  final Activity activity;
+  final List<(Tag, int)> tags;
+  final NoteId? threadNoteId;
 
   @override
   Widget build(BuildContext context) {
+    final hasLinks = activity.links != null && activity.links!.isNotEmpty;
+    final hasThread = threadNoteId != null;
+    final activeTags = tags
+        .where((tagData) => activity.hasTag(tagData.$1))
+        .take(3)
+        .toList();
+
+    // Don't show the bar if there's nothing to display
+    if (!hasLinks && !hasThread && activeTags.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return FAnimatedTheme(
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
@@ -498,7 +449,70 @@ class _ActivityLinksBar extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Row(
-              children: _buildChildren(context),
+              children: [
+                // Primary command
+                Button.icon(
+                  primaryActivityCommand(activity, stateIcon: false),
+                ),
+
+                // Active tag toggles
+                ...activeTags.map(
+                  (tagData) => Button.icon(
+                    ToggleActivityTag(activity, tagData.$1),
+                  ),
+                ),
+
+                // Thread filter badge
+                if (hasThread) ...[
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: () => context
+                        .read<ActivityBloc>()
+                        .setThreadFilter(null),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: context.colour.accentBackground,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              FontAwesomeIcons.reply,
+                              size: 10,
+                              color: context.colour.accent,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Thread',
+                              style: context.theme.typography.xs
+                                  .copyWith(color: context.colour.accent),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              PlotIcon.close,
+                              size: 8,
+                              color: context.colour.accent,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Spacer before links
+                if (hasLinks) ...[
+                  const Spacer(),
+                  ..._buildLinks(context),
+                ],
+              ],
             ),
           ),
         ),
@@ -506,7 +520,8 @@ class _ActivityLinksBar extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildChildren(BuildContext context) {
+  List<Widget> _buildLinks(BuildContext context) {
+    final links = activity.links!;
     final borderRadius = BorderRadius.circular(8);
     final ghostStyle = FButtonStyle.ghost(
       (style) => style.copyWith(

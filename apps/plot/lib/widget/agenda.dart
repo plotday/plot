@@ -268,9 +268,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
     }
 
     return Padding(
-      padding: EdgeInsets.only(
-        top: widget.date != null ? context.theme.spacing.xxxl : context.theme.spacing.md,
-      ),
+      padding: EdgeInsets.only(top: context.theme.spacing.md),
       child: ListTile(
         command: command,
         focusNode: widget.focusNode,
@@ -354,7 +352,9 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       );
                       alignment = Alignment.center;
                       padding = widget.date != null || widget.now
-                          ? EdgeInsets.symmetric(horizontal: context.theme.spacing.md)
+                          ? EdgeInsets.symmetric(
+                              horizontal: context.theme.spacing.md,
+                            )
                           : null;
                     } else {
                       // Full width duration, right-aligned
@@ -472,7 +472,9 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                             )
                                           : null,
                                       padding: widget.date != null || widget.now
-                                          ? EdgeInsets.only(right: context.theme.spacing.md)
+                                          ? EdgeInsets.only(
+                                              right: context.theme.spacing.md,
+                                            )
                                           : null,
                                       child: PriorityLabel(
                                         priority: widget.priority,
@@ -533,7 +535,9 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                             )
                                           : null,
                                       padding: widget.date != null || widget.now
-                                          ? EdgeInsets.only(left: context.theme.spacing.md)
+                                          ? EdgeInsets.only(
+                                              left: context.theme.spacing.md,
+                                            )
                                           : null,
                                       child: _buildDurationContent(
                                         context,

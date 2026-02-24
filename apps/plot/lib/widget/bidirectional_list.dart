@@ -496,12 +496,12 @@ class BidirectionalListState extends State<BidirectionalList> {
         );
       },
       onReorder: (oldIndex, newIndex) {
+        final adjustedNewIndex =
+            newIndex > oldIndex ? newIndex - 1 : newIndex;
         final onReorder = widget.onReorder?.call(
           itemIndexCalculator(oldIndex)!,
         );
-        final index = itemIndexCalculator(
-          newIndex > oldIndex ? newIndex - 1 : newIndex,
-        );
+        final index = itemIndexCalculator(adjustedNewIndex);
         assert(
           index != null,
           'Item index calculator returned null for new index: $newIndex',

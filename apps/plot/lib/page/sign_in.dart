@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:auto_route/auto_route.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -33,8 +34,9 @@ class _SignInPageState extends State<SignInPage> {
   bool _isLoading = false;
 
   bool _isExternalAccountNotFound(AuthError error) {
-    final message = error.toString().toLowerCase();
-    return message.contains('external account') && message.contains('not found');
+    // Use the error code (mapped from Clerk's 'external_account_not_found')
+    // instead of fragile string matching on the error message.
+    return error.code == AuthErrorCode.noAssociatedStrategy;
   }
 
   bool _isAlreadySignedIn(AuthError error) {
@@ -95,7 +97,6 @@ class _SignInPageState extends State<SignInPage> {
             idToken: idToken,
           );
         } catch (e) {
-          log.warning('signInWithIdToken failed', e);
           rethrow;
         }
         try {
@@ -166,8 +167,7 @@ class _SignInPageState extends State<SignInPage> {
       if (!mounted) return;
       String message = errorToShow.toString();
       if (message.contains('google_one_tap') ||
-          errorToShow.code == AuthErrorCode.noSuchFirstFactorStrategy ||
-          errorToShow.code == AuthErrorCode.noAssociatedStrategy) {
+          errorToShow.code == AuthErrorCode.noSuchFirstFactorStrategy) {
         message =
             'Google sign-in is not enabled for this environment. Please try another method.';
       }

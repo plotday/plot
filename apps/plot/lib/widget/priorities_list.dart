@@ -449,21 +449,27 @@ class _PrioritiesListState extends State<PrioritiesList>
                     .toList();
 
                 return [
-                  // Only show header if there are priorities to display
-                  if (allPriorities.isNotEmpty) ...[
-                    SizedBox(height: 16),
-                    ListTile(
-                      title: 'All Priorities',
-                      style: ListTileStyle.header,
-                      textStyle: headerStyle,
-                      noHoverHighlight: true,
+                  SizedBox(height: 16),
+                  ListTile(
+                    title: 'All Priorities',
+                    style: ListTileStyle.header,
+                    textStyle: headerStyle,
+                    noHoverHighlight: true,
+                  ),
+                  ...buildReorderablePriorityItems(
+                    context,
+                    allPriorities,
+                    textStyle: itemStyle,
+                  ),
+                  ListTile(
+                    command: CommandWrapper(
+                      NewPriority(parent: widget.root),
+                      icon: Value(null),
                     ),
-                    ...buildReorderablePriorityItems(
-                      context,
-                      allPriorities,
-                      textStyle: itemStyle,
+                    textStyle: itemStyle.copyWith(
+                      color: context.theme.colors.mutedForeground,
                     ),
-                  ],
+                  ),
 
                   // Fourth group: Plot section (children of @plot priority)
                   if (plotPriority != null &&

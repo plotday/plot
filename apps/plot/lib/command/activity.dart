@@ -91,7 +91,7 @@ class ChangeCurrentActivity extends ActivityCommand {
 class NewActivity extends Command {
   NewActivity()
     : super(
-        title: "New Activity",
+        title: "New Topic",
         eventObject: EventObject.activity,
         eventAction: EventAction.opened,
         icon: PlotIcon.addNote,
@@ -179,7 +179,7 @@ class NewEvent extends Command {
 class OpenNextActivity extends Command {
   OpenNextActivity()
     : super(
-        title: 'Next Activity Thread',
+        title: 'Next Topic',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         shortcut: platformSingleActivator(
@@ -224,7 +224,7 @@ class OpenNextActivity extends Command {
 class OpenPreviousActivity extends Command {
   OpenPreviousActivity()
     : super(
-        title: 'Previous Activity Thread',
+        title: 'Previous Topic',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         shortcut: platformSingleActivator(
@@ -886,7 +886,7 @@ class ActivityToNote extends _UpdateActivityCommand {
 class MarkActivityIncomplete extends _UpdateActivityCommand {
   MarkActivityIncomplete(super.activity, {super.onUpdate})
     : super(
-        title: 'Mark Activity Not Finished',
+        title: 'Mark Not Finished',
         eventObject: EventObject.activity,
         eventAction: EventAction.unfinished,
         icon: PlotIcon.done,
@@ -1189,7 +1189,7 @@ List<StaticCommandGroup> activityCommandGroups(
   return [
     if (commands.isNotEmpty)
       StaticCommandGroup(
-        title: 'Activity: ${activity.title}',
+        title: 'Topic: ${activity.title}',
         commands: commands,
       ),
     if (remove.isNotEmpty)
@@ -1221,11 +1221,7 @@ List<Command> activityCommands(
       StartAction(activity),
     if (activity.type != .event && actualPrimary is! PickScheduleActivity)
       PickScheduleActivity(activity),
-    if (activity.type != .event &&
-        !activity.doSomeday &&
-        actualPrimary is! UnscheduleAction)
-      UnscheduleAction(activity),
-    if (activity.type != .event &&
+    if (activity.type == .action &&
         !activity.done &&
         actualPrimary is! FinishAction)
       FinishAction(activity),
@@ -1234,6 +1230,7 @@ List<Command> activityCommands(
     MoveActivityToPriority(activity),
     if (activity.type != .note && !skipInfrequent) ActivityToNote(activity),
     if (!skipInfrequent &&
+        !activity.priority.personal &&
         (!activity.private || activity.authorId == Base.actorId))
       ToggleActivityPrivate(activity),
     if (!skipInfrequent) ArchiveActivity(activity),

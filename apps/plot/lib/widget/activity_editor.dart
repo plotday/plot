@@ -301,7 +301,8 @@ class ActivityEditorState extends State<ActivityEditor> {
                                   ),
                             selected: widget.draft.type == .event,
                           ),
-                          if (!widget.draft.private || widget.draft.authorId == Base.actorId)
+                          if (!widget.draft.priority.personal &&
+                              (!widget.draft.private || widget.draft.authorId == Base.actorId))
                             Button.icon(
                               ToggleActivityPrivate(
                                 widget.draft,

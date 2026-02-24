@@ -33,12 +33,12 @@ class SetActivityFilters extends Command {
 
   static String _generateSubtitle(List<Tag> filters) {
     if (filters.isEmpty) {
-      return 'Show all activities';
+      return 'Show all topics';
     } else if (filters.length == 1) {
-      return 'Show activities with ${filters.first.name}';
+      return 'Show topics with ${filters.first.name}';
     } else {
       final names = filters.map((tag) => tag.name).join(', ');
-      return 'Show activities with $names';
+      return 'Show topics with $names';
     }
   }
 

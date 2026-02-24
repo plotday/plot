@@ -35,23 +35,11 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   double _leftPanelWidth = 280.0;
   double _middlePanelRatio = 0.5;
   late final Future<void> _loadPreferencesFuture;
-  final ValueNotifier<double> _headerHeight = ValueNotifier<double>(0.0);
 
   @override
   void initState() {
     super.initState();
     _loadPreferencesFuture = _loadFromPreferences();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-  }
-
-  @override
-  void dispose() {
-    _headerHeight.dispose();
-    super.dispose();
   }
 
   /// Load panel dimensions from profile preferences
@@ -209,27 +197,15 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                   ),
                 ];
 
-                return HeaderHeightProvider(
-                  notifier: _headerHeight,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.max,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: _HoverableResizable(
-                          regions: regions,
-                          layoutState: layoutState,
-                          headerHeight: _headerHeight,
-                          onLeftWidthChanged: (width) {
-                            _leftPanelWidth = width;
-                          },
-                          onMiddleRatioChanged: (ratio) {
-                            _middlePanelRatio = ratio;
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
+                return _HoverableResizable(
+                  regions: regions,
+                  layoutState: layoutState,
+                  onLeftWidthChanged: (width) {
+                    _leftPanelWidth = width;
+                  },
+                  onMiddleRatioChanged: (ratio) {
+                    _middlePanelRatio = ratio;
+                  },
                 );
               },
             );
@@ -244,14 +220,12 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
 class _HoverableResizable extends StatefulWidget {
   final List<FResizableRegion> regions;
   final LayoutState layoutState;
-  final ValueNotifier<double> headerHeight;
   final ValueChanged<double> onLeftWidthChanged;
   final ValueChanged<double> onMiddleRatioChanged;
 
   const _HoverableResizable({
     required this.regions,
     required this.layoutState,
-    required this.headerHeight,
     required this.onLeftWidthChanged,
     required this.onMiddleRatioChanged,
   });
@@ -276,6 +250,11 @@ class _HoverableResizableState extends State<_HoverableResizable> {
     super.initState();
     _controller = FResizableController.cascade();
     _controller.addListener(_handleResize);
+    // Force rebuild after first layout so overlay dividers
+    // can read the controller's populated regions.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -393,74 +372,68 @@ class _HoverableResizableState extends State<_HoverableResizable> {
         return ListenableBuilder(
           listenable: _controller,
           builder: (context, child) {
-            return ValueListenableBuilder<double>(
-              valueListenable: widget.headerHeight,
-              builder: (context, headerHeight, _) {
-                final overlayTop = headerHeight;
-                final overlayHeight = constraints.maxHeight - headerHeight;
+            final overlayHeight = constraints.maxHeight;
 
-                return Stack(
-                  children: [
-                    // The actual resizable widget with no divider
-                    FResizable(
-                      control: .managedCascade(controller: _controller),
-                      axis: Axis.horizontal,
-                      divider: FResizableDivider.none,
-                      children: widget.regions,
-                    ),
-                    // Overlay dividers with drag hysteresis handling.
-                    // Use Transform.translate instead of Positioned to
-                    // guarantee repaint on position change (RenderTransform
-                    // calls markNeedsPaint; Positioned only marks layout).
-                    // Skip when controller regions are stale (count mismatch)
-                    // to avoid rendering dividers at wrong positions.
-                    if (_controller.regions.length ==
-                            widget.regions.length &&
-                        _controller.regions.isNotEmpty)
-                      for (var i = 0; i < _controller.regions.length - 1; i++)
-                        Transform.translate(
-                          offset: Offset(
-                            _controller.regions[i].offset.max -
-                                (_hitRegionExtent / 2),
-                            overlayTop,
-                          ),
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onHorizontalDragStart: (_) => _onDragStart(i),
-                            onHorizontalDragUpdate: (details) =>
-                                _onDragUpdate(i, details.delta.dx),
-                            onHorizontalDragEnd: (_) => _onDragEnd(i),
-                            child: MouseRegion(
-                              cursor: SystemMouseCursors.resizeLeftRight,
-                              onEnter: (_) =>
-                                  setState(() => _hoveredDividerIndex = i),
-                              onExit: (_) =>
-                                  setState(() => _hoveredDividerIndex = null),
-                              child: SizedBox(
-                                width: _hitRegionExtent,
+            return Stack(
+              children: [
+                // The actual resizable widget with no divider
+                FResizable(
+                  control: .managedCascade(controller: _controller),
+                  axis: Axis.horizontal,
+                  divider: FResizableDivider.none,
+                  children: widget.regions,
+                ),
+                // Overlay dividers with drag hysteresis handling.
+                // Use Transform.translate instead of Positioned to
+                // guarantee repaint on position change (RenderTransform
+                // calls markNeedsPaint; Positioned only marks layout).
+                // Skip when controller regions are stale (count mismatch)
+                // to avoid rendering dividers at wrong positions.
+                if (_controller.regions.length ==
+                        widget.regions.length &&
+                    _controller.regions.isNotEmpty)
+                  for (var i = 0; i < _controller.regions.length - 1; i++)
+                    Transform.translate(
+                      offset: Offset(
+                        _controller.regions[i].offset.max -
+                            (_hitRegionExtent / 2),
+                        0.0,
+                      ),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragStart: (_) => _onDragStart(i),
+                        onHorizontalDragUpdate: (details) =>
+                            _onDragUpdate(i, details.delta.dx),
+                        onHorizontalDragEnd: (_) => _onDragEnd(i),
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.resizeLeftRight,
+                          onEnter: (_) =>
+                              setState(() => _hoveredDividerIndex = i),
+                          onExit: (_) =>
+                              setState(() => _hoveredDividerIndex = null),
+                          child: SizedBox(
+                            width: _hitRegionExtent,
+                            height: overlayHeight,
+                            child: Center(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                curve: Curves.easeInOut,
+                                width: (_hoveredDividerIndex == i ||
+                                        _draggingDividerIndex == i)
+                                    ? 2.0
+                                    : 0.5,
                                 height: overlayHeight,
-                                child: Center(
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 150),
-                                    curve: Curves.easeInOut,
-                                    width: (_hoveredDividerIndex == i ||
-                                            _draggingDividerIndex == i)
-                                        ? 2.0
-                                        : 0.5,
-                                    height: overlayHeight,
-                                    color: (_hoveredDividerIndex == i ||
-                                            _draggingDividerIndex == i)
-                                        ? colorScheme.accent
-                                        : context.theme.colors.border,
-                                  ),
-                                ),
+                                color: (_hoveredDividerIndex == i ||
+                                        _draggingDividerIndex == i)
+                                    ? colorScheme.accent
+                                    : context.theme.colors.border,
                               ),
                             ),
                           ),
                         ),
-                  ],
-                );
-              },
+                      ),
+                    ),
+              ],
             );
           },
         );

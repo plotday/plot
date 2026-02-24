@@ -28,7 +28,16 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
         priorities: state.priorities,
         root: state.root,
         archivedFilter: newFilter,
+        search: state.search,
       ));
+      start();
+    }
+  }
+
+  void updateSearch(String search) {
+    if (state.search != search) {
+      log.info('Updating priorities search to "$search"');
+      emit(state.copyWith(search: search));
       start();
     }
   }
@@ -36,12 +45,15 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
   Future<void> start() {
     final completer = Completer<void>();
     stop();
-    _subscription = Priority.watch(archived: state.archivedFilter).listen(
+    _subscription = Priority.watch(
+      archived: state.archivedFilter,
+      search: state.search.isNotEmpty ? state.search : null,
+    ).listen(
       (priorities) {
         emit(
           state.copyWith(
             priorities: priorities,
-            root: Priority.asNested(priorities).first,
+            root: Priority.asNested(priorities).firstOrNull ?? state.root,
           ),
         );
         if (!completer.isCompleted) {

@@ -37,29 +37,6 @@ class PanelPositionProvider extends InheritedWidget {
   }
 }
 
-/// Provides a [ValueNotifier] for header height to descendants.
-/// Used to offset the resize hover overlay below the header area.
-class HeaderHeightProvider extends InheritedWidget {
-  const HeaderHeightProvider({
-    super.key,
-    required this.notifier,
-    required super.child,
-  });
-
-  final ValueNotifier<double> notifier;
-
-  static ValueNotifier<double>? of(BuildContext context) {
-    return context
-        .dependOnInheritedWidgetOfExactType<HeaderHeightProvider>()
-        ?.notifier;
-  }
-
-  @override
-  bool updateShouldNotify(HeaderHeightProvider oldWidget) {
-    return notifier != oldWidget.notifier;
-  }
-}
-
 class Header extends StatefulWidget {
   const Header({
     this.main,
@@ -190,7 +167,7 @@ class _HeaderState extends State<Header> {
                     style: (style) => style.copyWith(
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 8,
-                        vertical: 4,
+                        vertical: 2,
                       ),
                     ),
                     suffixBuilder: (context, style, states) {
@@ -304,8 +281,7 @@ class _HeaderState extends State<Header> {
             SizedBox(width: resolvedToolbarPadding.right),
         ];
 
-        Widget header = _HeaderHeightReporter(
-          child: FAnimatedTheme(
+        Widget header = FAnimatedTheme(
             data: darkenTheme(context, context.theme, context.colour, steps: 2),
             child: Builder(
               builder: (context) => ClipRect(
@@ -339,8 +315,7 @@ class _HeaderState extends State<Header> {
                 ),
               ),
             ),
-          ),
-        );
+          );
 
         // Wrap with DragToMoveArea on Windows for window dragging
         if (Platform.instance.isWindows) {
@@ -350,36 +325,5 @@ class _HeaderState extends State<Header> {
         return header;
       },
     );
-  }
-}
-
-/// Reports its measured height to the nearest [HeaderHeightProvider].
-class _HeaderHeightReporter extends StatefulWidget {
-  const _HeaderHeightReporter({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_HeaderHeightReporter> createState() => _HeaderHeightReporterState();
-}
-
-class _HeaderHeightReporterState extends State<_HeaderHeightReporter> {
-  void _reportHeight() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final renderObject = context.findRenderObject();
-      if (renderObject is! RenderBox || !renderObject.hasSize) return;
-      final height = context.size?.height;
-      final notifier = HeaderHeightProvider.of(context);
-      if (height != null && notifier != null && notifier.value != height) {
-        notifier.value = height;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    _reportHeight();
-    return widget.child;
   }
 }

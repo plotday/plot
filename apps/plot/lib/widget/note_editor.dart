@@ -423,9 +423,10 @@ class NoteEditorState extends State<NoteEditor> {
                                           Base.actorId,
                                         ),
                                       ),
-                                      // Private toggle
-                                      if (!widget.draft.private ||
-                                          widget.draft.authorId == Base.actorId)
+                                      // Private toggle (only for shared priorities)
+                                      if (!context.read<ActivityBloc>().state.activity.priority.personal &&
+                                          (!widget.draft.private ||
+                                              widget.draft.authorId == Base.actorId))
                                         Button.icon(
                                           ToggleNoteTag(
                                             widget.draft,

@@ -48,7 +48,7 @@ class ToggleLeftSidebarCommand extends Command {
 class ToggleMiddleSidebarCommand extends Command {
   ToggleMiddleSidebarCommand({required this.isVisible})
     : super(
-        title: isVisible ? 'Close Activities' : 'Open Activities',
+        title: isVisible ? 'Close Topics' : 'Open Topics',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,
@@ -61,6 +61,63 @@ class ToggleMiddleSidebarCommand extends Command {
     final layoutBloc = context.read<LayoutBloc>();
     final currentState = layoutBloc.state;
     layoutBloc.setMiddlePanelVisible(!currentState.middlePanelVisible);
+    return const CommandDone();
+  }
+}
+
+class CyclePanelsCommand extends Command {
+  CyclePanelsCommand({required LayoutState layoutState})
+    : super(
+        title: _title(layoutState),
+        eventObject: EventObject.navigation,
+        eventAction: EventAction.clicked,
+        icon: _icon(layoutState),
+      );
+
+  static String _title(LayoutState layoutState) {
+    final visibleCount = 1 +
+        (layoutState.leftPanelVisible ? 1 : 0) +
+        (layoutState.middlePanelVisible ? 1 : 0);
+    if (visibleCount > 1) return 'Close Sidebar';
+    return 'Open Sidebar';
+  }
+
+  static IconData _icon(LayoutState layoutState) {
+    final visibleCount = 1 +
+        (layoutState.leftPanelVisible ? 1 : 0) +
+        (layoutState.middlePanelVisible ? 1 : 0);
+    if (visibleCount > 1) return PlotIcon.sidebarClose;
+    return PlotIcon.sidebarOpen;
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final layoutBloc = context.read<LayoutBloc>();
+    final state = layoutBloc.state;
+    final visibleCount = 1 +
+        (state.leftPanelVisible ? 1 : 0) +
+        (state.middlePanelVisible ? 1 : 0);
+
+    final canShowThree =
+        layoutBloc.width >= LayoutState.threePanelMinWidth;
+
+    if (canShowThree) {
+      // 3-panel capable: 3 → 2 (hide left) → 1 (hide middle) → 3
+      if (visibleCount >= 3) {
+        layoutBloc.setPanelVisibility(left: false);
+      } else if (visibleCount == 2) {
+        layoutBloc.setPanelVisibility(middle: false);
+      } else {
+        layoutBloc.setPanelVisibility(left: true, middle: true);
+      }
+    } else {
+      // 2-panel capable: 2 → 1 (hide middle) → 2
+      if (visibleCount >= 2) {
+        layoutBloc.setPanelVisibility(left: false, middle: false);
+      } else {
+        layoutBloc.setPanelVisibility(left: true, middle: true);
+      }
+    }
     return const CommandDone();
   }
 }

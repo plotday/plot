@@ -84,6 +84,14 @@ class LayoutBloc extends Cubit<LayoutState> {
     _persistState();
   }
 
+  /// Set both panel visibilities atomically before recalculating.
+  void setPanelVisibility({bool? left, bool? middle}) {
+    if (left != null) leftPanelRequested = left;
+    if (middle != null) middlePanelRequested = middle;
+    _recalculate();
+    _persistState();
+  }
+
   /// Load state from profile preferences
   Future<void> _loadFromPreferences() async {
     final prefs = ProfilePreferences.instance;

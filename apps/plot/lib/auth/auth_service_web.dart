@@ -205,8 +205,13 @@ class ClerkJsAuthService implements AuthService {
           IdTokenProvider.apple => 'oauth_apple',
         };
 
+        // Use signUp (not signIn) for the redirect flow. This handles both
+        // new users (creates account) and existing users (Clerk's FAPI
+        // auto-transfers to sign-in). The signIn redirect doesn't auto-
+        // create accounts for new users, leaving them stuck on the sign-in
+        // page with no error after the redirect.
         final origin = web.window.location.origin;
-        await _clerk.client!.signIn!
+        await _clerk.client!.signUp!
             .authenticateWithRedirect(jsObj({
               'strategy': strategy,
               'redirectUrl': origin,

@@ -737,6 +737,18 @@ class Activity extends Equatable implements Comparable<Activity> {
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
     );
 
+    // COUNT query for archived priorities
+    final archivedPriorityQuery = Store.get.selectOnly(p)
+      ..addColumns([p.id]);
+    archivedPriorityQuery.where(
+      (p.path.equalsValue(priorityPath) |
+              p.path.likeExp(Constant(priorityPathLike))) &
+          p.archivedAt.isNotNull(),
+    );
+    final archivedPriorityCountStream = archivedPriorityQuery.watch().map(
+      (rows) => rows.length,
+    );
+
     // COUNT query for Tag.unread
     final unreadQuery = Store.get.selectOnly(a)..addColumns([a.id]);
     unreadQuery.join([
@@ -757,14 +769,16 @@ class Activity extends Equatable implements Comparable<Activity> {
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
     );
 
-    return Rx.combineLatest6(
+    return Rx.combineLatest7(
       tagsQuery.watch(),
       doneCountStream,
       nowCountStream,
       laterCountStream,
       archivedCountStream,
       unreadCountStream,
-      (rows, doneCount, nowCount, laterCount, archivedCount, unreadCount) {
+      archivedPriorityCountStream,
+      (rows, doneCount, nowCount, laterCount, archivedCount, unreadCount,
+          archivedPriorityCount) {
         final Map<Tag, int> tagCounts = {};
 
         // Count stored tags
@@ -790,7 +804,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         if (doneCount > 0) tagCounts[Tag.done] = doneCount;
         if (nowCount > 0) tagCounts[Tag.now] = nowCount;
         if (laterCount > 0) tagCounts[Tag.later] = laterCount;
-        if (archivedCount > 0) tagCounts[Tag.archived] = archivedCount;
+        final totalArchived = archivedCount + archivedPriorityCount;
+        if (totalArchived > 0) tagCounts[Tag.archived] = totalArchived;
         if (unreadCount > 0) tagCounts[Tag.unread] = unreadCount;
 
         // Convert to list of (Tag, count) and sort by count descending
@@ -1649,6 +1664,39 @@ class Activity extends Equatable implements Comparable<Activity> {
 
     return (doNow ? Time.now() : null) ??
         at?.start ??
+        on?.start?.toDateTime() ??
+        sourceCreatedAt;
+  }
+
+  /// Like [agendaAt] but ignores "do now" status — returns the natural
+  /// timestamp based on when the activity was last updated, occurred, or done.
+  /// Used by the Activity feed to sort by recency without pinning active items.
+  DateTime get activityFeedAt {
+    if (type == ActivityType.event && at?.start != null) {
+      return at!.start!;
+    }
+
+    if (assigneeId != null && !assigneeId!.isCurrentUser) {
+      final times = [
+        sourceCreatedAt,
+        ?doneAt,
+        ?_activity.lastNoteSourceCreatedAt,
+      ];
+      times.sort((a, b) => b.compareTo(a));
+      return times.first;
+    }
+
+    if ((on == null && at == null) || doneAt != null) {
+      final times = [
+        sourceCreatedAt,
+        ?doneAt,
+        ?_activity.lastNoteSourceCreatedAt,
+      ];
+      times.sort((a, b) => b.compareTo(a));
+      return times.first;
+    }
+
+    return at?.start ??
         on?.start?.toDateTime() ??
         sourceCreatedAt;
   }

@@ -2,19 +2,19 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
-import 'package:flutter/foundation.dart';
 
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/priorities.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/local_preferences.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
-import 'package:plot/widget/header.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/style/colors.dart';
@@ -28,29 +28,32 @@ class PrioritiesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<LocalPreferencesBloc, LocalPreferencesState>(
       builder: (context, localPrefsState) {
-        // Sync filter when local prefs change
-        final prioritiesBloc = context.read<PrioritiesBloc>();
-        final expectedFilter = localPrefsState.showAllPriorities ? null : false;
-        if (prioritiesBloc.state.archivedFilter != expectedFilter) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            prioritiesBloc.setArchivedFilter(localPrefsState.showAllPriorities);
-          });
-        }
+        return BlocBuilder<PriorityBloc, PriorityState>(
+          buildWhen: (prev, curr) =>
+              prev.search != curr.search || prev.filter != curr.filter,
+          builder: (context, priorityState) {
+            // Sync archived filter: show all if local prefs say so OR if
+            // the search archive filter is active
+            final prioritiesBloc = context.read<PrioritiesBloc>();
+            final showAll = localPrefsState.showAllPriorities ||
+                priorityState.filter.contains(Tag.archived);
+            final expectedFilter = showAll ? null : false;
+            if (prioritiesBloc.state.archivedFilter != expectedFilter) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                prioritiesBloc.setArchivedFilter(showAll);
+              });
+            }
+
+            // Sync search from PriorityBloc to PrioritiesBloc
+            if (prioritiesBloc.state.search != priorityState.search) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                prioritiesBloc.updateSearch(priorityState.search);
+              });
+            }
 
         return Scaffold(
           childPad: false,
           scrollable: false,
-          header: Header(
-            title: defaultTargetPlatform == TargetPlatform.macOS
-                ? null
-                : 'Priorities',
-            commands: [
-              ToggleArchivedPrioritiesFilter(
-                showAllPriorities: localPrefsState.showAllPriorities,
-              ),
-              NewPriority(),
-            ],
-          ),
           body: BlocBuilder<LayoutBloc, LayoutState>(
             builder: (context, layoutState) {
               return Column(
@@ -59,12 +62,12 @@ class PrioritiesPage extends StatelessWidget {
                     child: BlocBuilder<PrioritiesBloc, PrioritiesState>(
                       builder: (builderContext, state) {
                         return BlocBuilder<NowBloc, NowState>(
-                          builder: (builderContext, priorityState) {
+                          builder: (builderContext, nowState) {
                             return PrioritiesList(
                               root: state.root!,
                               priorities: state.priorities,
-                              selected: priorityState is NowLoaded
-                                  ? priorityState.context
+                              selected: nowState is NowLoaded
+                                  ? nowState.context
                                   : null,
                             );
                           },
@@ -194,6 +197,8 @@ class PrioritiesPage extends StatelessWidget {
               );
             },
           ),
+        );
+          },
         );
       },
     );
