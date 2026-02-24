@@ -474,7 +474,9 @@ class ClerkJsAuthService implements AuthService {
 
   @override
   Future<void> refreshClient() async {
-    // Clerk JS auto-manages client state; no action needed.
+    // Clear the cached JWT so the next getToken() fetches a fresh one
+    // with updated claims (e.g. external_id set by /activate).
+    _clerk.session?.clearCache();
   }
 
   @override

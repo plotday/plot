@@ -68,6 +68,7 @@ extension type ExternalAccountJS._(JSObject _) implements JSObject {
 /// Clerk Session.
 extension type SessionJS._(JSObject _) implements JSObject {
   external JSPromise<JSAny?> getToken([JSObject? options]);
+  external void clearCache();
 }
 
 /// Clerk User.
