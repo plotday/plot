@@ -163,6 +163,12 @@ class PriorityState extends Equatable {
           item.dateTimeRange == null) {
         return false;
       }
+      // Strip event headers (timing info now shown inside ActivityWidget)
+      if (item is AgendaHeaderItem &&
+          item.activity != null &&
+          item.dateTimeRange != null) {
+        return false;
+      }
       return true;
     }).toList();
 

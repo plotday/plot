@@ -73,29 +73,28 @@ Future<AuthService> createAuthServiceImpl({
   final clerk = globalContext['Clerk'] as ClerkJS;
   await clerk.load().toDart;
 
-  // clerk.load() may not fully process OAuth redirect callbacks (e.g. when a
-  // sign-in needs to transfer to a sign-up for new users). Explicitly call
-  // handleRedirectCallback() which handles transfer and session activation.
+  // After an OAuth redirect for a new user, Clerk may leave the sign-up in
+  // `missing_requirements` state if the instance has required fields that
+  // OAuth doesn't satisfy. Attempt to complete it — Clerk will auto-fill
+  // what it can from the OAuth provider data.
   if (clerk.session == null) {
-    final url = web.window.location.href;
-    final hasClerkParams = url.contains('__clerk');
-    // ignore: avoid_print
-    print('[Auth] No session after load (clerkParams=$hasClerkParams, '
-        'signIn=${clerk.client?.signIn?.status}, '
-        'signUp=${clerk.client?.signUp?.status})');
-    if (hasClerkParams) {
+    final signUp = clerk.client?.signUp;
+    if (signUp?.status == 'missing_requirements') {
+      // ignore: avoid_print
+      print('[Auth] Sign-up missing_requirements, '
+          'missing=${signUp?.missingFields?.toDart.map((e) => e.toDart).toList()}, '
+          'sessionId=${signUp?.createdSessionId}');
       try {
-        await clerk.handleRedirectCallback(jsObj({
-          'continueSignUpUrl': web.window.location.origin,
-          'afterSignInUrl': web.window.location.origin,
-          'afterSignUpUrl': web.window.location.origin,
-        })).toDart;
-        // ignore: avoid_print
-        print('[Auth] handleRedirectCallback done '
-            '(session=${clerk.session != null})');
+        // Update with empty params to trigger re-evaluation / completion.
+        final updated = _asSignUp(await signUp!.update(jsObj({})).toDart);
+        if (updated.status == 'complete' && updated.createdSessionId != null) {
+          await clerk
+              .setActive(jsObj({'session': updated.createdSessionId!}))
+              .toDart;
+        }
       } catch (e) {
         // ignore: avoid_print
-        print('[Auth] handleRedirectCallback failed: $e');
+        print('[Auth] Sign-up completion failed: $e');
       }
     }
   }

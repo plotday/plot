@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
@@ -55,12 +57,18 @@ class ActivityWidget extends StatelessWidget {
         context != null &&
         activity.priority.id != context!.id;
 
+    final isTimedEvent = activity.type == ActivityType.event &&
+        activity.at?.start != null &&
+        !activity.at!.start!.toTimeOfDay().isMidnight;
+
+    final hasLabel = isTimedEvent || hasSubPriorityLabel;
+
     // Compute top padding to align leading/trailing with the title, not the
     // full body.  The Row uses CrossAxisAlignment.center, so adding top
     // padding P shifts a child down by P/2.  We need a shift of
     // (labelHeight + gap) / 2, hence P = labelHeight + gap.
     final double labelOffset;
-    if (hasSubPriorityLabel) {
+    if (hasLabel) {
       final xsFontSize = buildContext.theme.typography.xs.fontSize ?? 12.0;
       final xsLineHeight = buildContext.theme.typography.xs.height ?? 1.2;
       labelOffset = xsFontSize * xsLineHeight + 2.0;
@@ -114,7 +122,12 @@ class ActivityWidget extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (hasSubPriorityLabel)
+          if (isTimedEvent)
+            Padding(
+              padding: EdgeInsets.only(top: buildContext.theme.spacing.md),
+              child: _EventTimingLabel(activity: activity, now: now),
+            )
+          else if (hasSubPriorityLabel)
             Padding(
               padding: EdgeInsets.only(top: buildContext.theme.spacing.md),
               child: PriorityLabel(
@@ -125,7 +138,7 @@ class ActivityWidget extends StatelessWidget {
             ),
           Padding(
             padding: EdgeInsets.only(
-              top: hasSubPriorityLabel ? 2.0 : buildContext.theme.spacing.md,
+              top: hasLabel ? 2.0 : buildContext.theme.spacing.md,
               bottom: buildContext.theme.spacing.md,
               right: buildContext.theme.spacing.sm,
             ),
@@ -432,6 +445,139 @@ class ActivityCommands extends HookWidget {
 
         return Row(mainAxisSize: MainAxisSize.min, children: allButtons);
       },
+    );
+  }
+}
+
+class _EventTimingLabel extends StatefulWidget {
+  const _EventTimingLabel({required this.activity, required this.now});
+
+  final Activity activity;
+  final bool now;
+
+  @override
+  State<_EventTimingLabel> createState() => _EventTimingLabelState();
+}
+
+class _EventTimingLabelState extends State<_EventTimingLabel> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimerIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(_EventTimingLabel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.now != widget.now) {
+      _timer?.cancel();
+      _timer = null;
+      _startTimerIfNeeded();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimerIfNeeded() {
+    if (!widget.now) return;
+
+    final now = Time.now();
+    final secondsUntilNextMinute = 60 - now.second;
+
+    _timer = Timer(Duration(seconds: secondsUntilNextMinute), () {
+      if (mounted) {
+        setState(() {});
+        _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+          if (mounted) {
+            setState(() {});
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final at = widget.activity.at!;
+    final timeText = at.start!.toTimeOfDay().formatShort(context);
+    final fontSize = context.theme.typography.xs.fontSize;
+    final color = widget.now
+        ? context.colour.colours.fromTheme(
+            widget.activity.priority.displayColor,
+          )
+        : context.theme.colors.mutedForeground;
+
+    if (widget.now) {
+      final now = Time.now();
+
+      Duration? elapsedDuration;
+      final elapsed = now.difference(at.start!);
+      if (elapsed.inMinutes >= 1) {
+        elapsedDuration = Duration(minutes: elapsed.inMinutes);
+      }
+
+      Duration? remainingDuration;
+      if (at.end != null) {
+        final remaining = at.end!.difference(now);
+        final remainingMinutes = (remaining.inSeconds / 60).ceil();
+        if (remainingMinutes > 0) {
+          remainingDuration = Duration(minutes: remainingMinutes);
+        }
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(timeText, style: TextStyle(color: color, fontSize: fontSize)),
+          if (elapsedDuration != null || remainingDuration != null) ...[
+            SizedBox(width: context.theme.spacing.sm),
+            if (elapsedDuration != null) ...[
+              Text(
+                elapsedDuration.format(),
+                style: TextStyle(color: color, fontSize: fontSize),
+              ),
+              SizedBox(width: context.theme.spacing.xs),
+              FaIcon(PlotIcon.up, size: fontSize, color: color),
+              if (remainingDuration != null)
+                SizedBox(width: context.theme.spacing.sm),
+            ],
+            if (remainingDuration != null) ...[
+              Text(
+                remainingDuration.format(),
+                style: TextStyle(color: color, fontSize: fontSize),
+              ),
+              SizedBox(width: context.theme.spacing.xs),
+              FaIcon(PlotIcon.down, size: fontSize, color: color),
+            ],
+          ],
+        ],
+      );
+    }
+
+    // Future event: show time + duration
+    final durationText =
+        at.duration != null && at.duration!.inSeconds > 0
+            ? at.duration!.format()
+            : null;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(timeText, style: TextStyle(color: color, fontSize: fontSize)),
+        if (durationText != null) ...[
+          SizedBox(width: context.theme.spacing.sm),
+          Text(
+            durationText,
+            style: TextStyle(color: color, fontSize: fontSize),
+          ),
+        ],
+      ],
     );
   }
 }

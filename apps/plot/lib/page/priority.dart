@@ -721,14 +721,19 @@ class _PriorityPageState extends State<PriorityPage>
         final totalHeight = constraints.maxHeight;
         const dividerHeight = 30.0;
 
-        // Check if the first activity has a sub-priority label (from a
-        // different priority), which makes the item taller.
+        // Check if the first activity has a label (sub-priority or event
+        // timing), which makes the item taller.
         final firstActivity =
             upNextItems.whereType<AgendaActivityItem>().firstOrNull;
         final hasSubPriorityLabel = firstActivity != null &&
             firstActivity.activity.priority.id != state.context.id;
+        final isTimedEvent = firstActivity != null &&
+            firstActivity.activity.type == ActivityType.event &&
+            firstActivity.activity.at?.start != null &&
+            firstActivity.activity.at!.start!.toTimeOfDay().isMidnight != true;
+        final hasLabel = hasSubPriorityLabel || isTimedEvent;
         final double subPriorityExtra;
-        if (hasSubPriorityLabel) {
+        if (hasLabel) {
           final xsFontSize =
               context.theme.typography.xs.fontSize ?? 12.0;
           final xsLineHeight =
