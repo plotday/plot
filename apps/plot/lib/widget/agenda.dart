@@ -84,6 +84,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
 
   Widget _buildDurationContent(
     BuildContext context, {
+    required double? fontSize,
     required String? durationText,
     required Duration? elapsedDuration,
     required Duration? remainingDuration,
@@ -99,33 +100,19 @@ class _AgendaHeaderState extends State<AgendaHeader> {
           if (elapsedDuration != null) ...[
             Text(
               elapsedDuration.format(),
-              style: TextStyle(
-                color: color,
-                fontSize: context.theme.typography.sm.fontSize,
-              ),
+              style: TextStyle(color: color, fontSize: fontSize),
             ),
             SizedBox(width: context.theme.spacing.xs),
-            FaIcon(
-              PlotIcon.up,
-              size: context.theme.typography.sm.fontSize,
-              color: color,
-            ),
+            FaIcon(PlotIcon.up, size: fontSize, color: color),
             SizedBox(width: context.theme.spacing.sm),
           ],
           if (remainingDuration != null) ...[
             Text(
               remainingDuration.format(),
-              style: TextStyle(
-                color: color,
-                fontSize: context.theme.typography.sm.fontSize,
-              ),
+              style: TextStyle(color: color, fontSize: fontSize),
             ),
             SizedBox(width: context.theme.spacing.xs),
-            FaIcon(
-              PlotIcon.down,
-              size: context.theme.typography.sm.fontSize,
-              color: color,
-            ),
+            FaIcon(PlotIcon.down, size: fontSize, color: color),
           ],
         ],
       );
@@ -139,7 +126,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
           color: widget.now && widget.priority != null
               ? context.colour.colours.fromTheme(widget.priority!.displayColor)
               : context.theme.colors.mutedForeground,
-          fontSize: context.theme.typography.sm.fontSize,
+          fontSize: fontSize,
         ),
       );
     } else {
@@ -221,6 +208,11 @@ class _AgendaHeaderState extends State<AgendaHeader> {
               : context.theme.colors.mutedForeground)
         : context.theme.colors.mutedForeground;
 
+    // Use xs font size for event headers to match inline timing labels
+    final fontSize = widget.activity != null
+        ? context.theme.typography.xs.fontSize
+        : context.theme.typography.sm.fontSize;
+
     // Determine which command to use
     CommandWrapper? command;
 
@@ -300,9 +292,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                   final double textHeight = (TextPainter(
                     text: TextSpan(
                       text: "A",
-                      style: TextStyle(
-                        fontSize: context.theme.typography.sm.fontSize,
-                      ),
+                      style: TextStyle(fontSize: fontSize),
                     ),
                     maxLines: 1,
                     textDirection: TextDirection.ltr,
@@ -333,7 +323,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       content = PriorityLabel(
                         priority: widget.priority,
                         context: widget.priorityContext,
-                        fontSize: context.theme.typography.sm.fontSize,
+                        fontSize: fontSize,
                       );
                       alignment = Alignment.centerLeft;
                       padding = widget.date != null || widget.now
@@ -347,7 +337,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: textColor,
-                          fontSize: context.theme.typography.sm.fontSize,
+                          fontSize: fontSize,
                         ),
                       );
                       alignment = Alignment.center;
@@ -360,6 +350,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       // Full width duration, right-aligned
                       content = _buildDurationContent(
                         context,
+                        fontSize: fontSize,
                         durationText: durationText,
                         elapsedDuration: elapsedDuration,
                         remainingDuration: remainingDuration,
@@ -479,11 +470,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                       child: PriorityLabel(
                                         priority: widget.priority,
                                         context: widget.priorityContext,
-                                        fontSize: context
-                                            .theme
-                                            .typography
-                                            .sm
-                                            .fontSize,
+                                        fontSize: fontSize,
                                       ),
                                     )
                                   : SizedBox(height: textHeight),
@@ -511,11 +498,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           color: textColor,
-                                          fontSize: context
-                                              .theme
-                                              .typography
-                                              .sm
-                                              .fontSize,
+                                          fontSize: fontSize,
                                         ),
                                       ),
                                     )
@@ -541,6 +524,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                           : null,
                                       child: _buildDurationContent(
                                         context,
+                                        fontSize: fontSize,
                                         durationText: durationText,
                                         elapsedDuration: elapsedDuration,
                                         remainingDuration: remainingDuration,

@@ -731,9 +731,17 @@ class _PriorityPageState extends State<PriorityPage>
             firstActivity.activity.type == ActivityType.event &&
             firstActivity.activity.at?.start != null &&
             firstActivity.activity.at!.start!.toTimeOfDay().isMidnight != true;
-        final hasLabel = hasSubPriorityLabel || isTimedEvent;
         final double subPriorityExtra;
-        if (hasLabel) {
+        if (isTimedEvent) {
+          // Timing label is rendered above the ListTile:
+          // spacing.md top padding + label height
+          final xsFontSize =
+              context.theme.typography.xs.fontSize ?? 12.0;
+          final xsLineHeight =
+              context.theme.typography.xs.height ?? 1.2;
+          subPriorityExtra =
+              context.theme.spacing.md + xsFontSize * xsLineHeight;
+        } else if (hasSubPriorityLabel) {
           final xsFontSize =
               context.theme.typography.xs.fontSize ?? 12.0;
           final xsLineHeight =
@@ -846,6 +854,7 @@ class _PriorityPageState extends State<PriorityPage>
               now: agendaActivity.now,
               context: state.context,
               showSubPriority: true,
+              showEventTiming: true,
             ),
           ),
         if (!hasActivity) _buildUpNextEmpty(context),
@@ -966,6 +975,7 @@ class _PriorityPageState extends State<PriorityPage>
                   focusNode: focusNode,
                   context: state.context,
                   showSubPriority: true,
+                  showEventTiming: true,
                   reorderableIndex: enableReorder ? reorderableIndex : null,
                 ),
               ],

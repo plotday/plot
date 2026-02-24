@@ -21,6 +21,7 @@ class ActivityWidget extends StatelessWidget {
     this.highlighted = false,
     this.now = false,
     this.showSubPriority = false,
+    this.showEventTiming = false,
     this.focusNode,
     this.onHover,
     this.reorderableIndex,
@@ -33,6 +34,7 @@ class ActivityWidget extends StatelessWidget {
   final bool selected;
   final bool now;
   final bool showSubPriority;
+  final bool showEventTiming;
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
@@ -57,18 +59,22 @@ class ActivityWidget extends StatelessWidget {
         context != null &&
         activity.priority.id != context!.id;
 
-    final isTimedEvent = activity.type == ActivityType.event &&
+    final isTimedEvent = showEventTiming &&
+        activity.type == ActivityType.event &&
         activity.at?.start != null &&
         !activity.at!.start!.toTimeOfDay().isMidnight;
 
-    final hasLabel = isTimedEvent || hasSubPriorityLabel;
+    // When timed event, the timing label is rendered above the ListTile
+    // (outside leading/trailing) so only sub-priority labels inside the
+    // body affect the offset.
+    final hasBodyLabel = hasSubPriorityLabel && !isTimedEvent;
 
     // Compute top padding to align leading/trailing with the title, not the
     // full body.  The Row uses CrossAxisAlignment.center, so adding top
     // padding P shifts a child down by P/2.  We need a shift of
     // (labelHeight + gap) / 2, hence P = labelHeight + gap.
     final double labelOffset;
-    if (hasLabel) {
+    if (hasBodyLabel) {
       final xsFontSize = buildContext.theme.typography.xs.fontSize ?? 12.0;
       final xsLineHeight = buildContext.theme.typography.xs.height ?? 1.2;
       labelOffset = xsFontSize * xsLineHeight + 2.0;
@@ -76,7 +82,7 @@ class ActivityWidget extends StatelessWidget {
       labelOffset = 0.0;
     }
 
-    return ListTile(
+    final listTile = ListTile(
       command: CommandWrapper(
         ChangeCurrentActivity(activity),
         icon: Value(null),
@@ -122,12 +128,7 @@ class ActivityWidget extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (isTimedEvent)
-            Padding(
-              padding: EdgeInsets.only(top: buildContext.theme.spacing.md),
-              child: _EventTimingLabel(activity: activity, now: now),
-            )
-          else if (hasSubPriorityLabel)
+          if (hasBodyLabel)
             Padding(
               padding: EdgeInsets.only(top: buildContext.theme.spacing.md),
               child: PriorityLabel(
@@ -138,7 +139,7 @@ class ActivityWidget extends StatelessWidget {
             ),
           Padding(
             padding: EdgeInsets.only(
-              top: hasLabel ? 2.0 : buildContext.theme.spacing.md,
+              top: hasBodyLabel ? 2.0 : buildContext.theme.spacing.md,
               bottom: buildContext.theme.spacing.md,
               right: buildContext.theme.spacing.sm,
             ),
@@ -208,6 +209,32 @@ class ActivityWidget extends StatelessWidget {
       onHover: onHover,
       reorderableIndex: reorderableIndex,
     );
+
+    // Render timing label above the ListTile so it spans full width,
+    // unaffected by leading/trailing widgets.
+    if (isTimedEvent) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(
+              top: buildContext.theme.spacing.md,
+              left: buildContext.theme.spacing.xl,
+              right: buildContext.theme.spacing.xl,
+            ),
+            child: _EventTimingLabel(
+              activity: activity,
+              now: now,
+              priorityContext: context,
+              showSubPriority: hasSubPriorityLabel,
+            ),
+          ),
+          listTile,
+        ],
+      );
+    }
+
+    return listTile;
   }
 
   @override
@@ -450,10 +477,17 @@ class ActivityCommands extends HookWidget {
 }
 
 class _EventTimingLabel extends StatefulWidget {
-  const _EventTimingLabel({required this.activity, required this.now});
+  const _EventTimingLabel({
+    required this.activity,
+    required this.now,
+    this.priorityContext,
+    this.showSubPriority = false,
+  });
 
   final Activity activity;
   final bool now;
+  final Priority? priorityContext;
+  final bool showSubPriority;
 
   @override
   State<_EventTimingLabel> createState() => _EventTimingLabelState();
@@ -502,6 +536,50 @@ class _EventTimingLabelState extends State<_EventTimingLabel> {
     });
   }
 
+  Widget _buildDurationContent(
+    BuildContext context, {
+    required Color color,
+    required double? fontSize,
+    required String? durationText,
+    required Duration? elapsedDuration,
+    required Duration? remainingDuration,
+  }) {
+    if (elapsedDuration != null || remainingDuration != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (elapsedDuration != null) ...[
+            Text(
+              elapsedDuration.format(),
+              style: TextStyle(color: color, fontSize: fontSize),
+            ),
+            SizedBox(width: context.theme.spacing.xs),
+            FaIcon(PlotIcon.up, size: fontSize, color: color),
+            if (remainingDuration != null)
+              SizedBox(width: context.theme.spacing.sm),
+          ],
+          if (remainingDuration != null) ...[
+            Text(
+              remainingDuration.format(),
+              style: TextStyle(color: color, fontSize: fontSize),
+            ),
+            SizedBox(width: context.theme.spacing.xs),
+            FaIcon(PlotIcon.down, size: fontSize, color: color),
+          ],
+        ],
+      );
+    }
+    if (durationText != null) {
+      return Text(
+        durationText,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: color, fontSize: fontSize),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
   @override
   Widget build(BuildContext context) {
     final at = widget.activity.at!;
@@ -513,70 +591,150 @@ class _EventTimingLabelState extends State<_EventTimingLabel> {
           )
         : context.theme.colors.mutedForeground;
 
-    if (widget.now) {
-      final now = Time.now();
+    // Compute duration / elapsed / remaining
+    String? durationText;
+    Duration? elapsedDuration;
+    Duration? remainingDuration;
 
-      Duration? elapsedDuration;
-      final elapsed = now.difference(at.start!);
-      if (elapsed.inMinutes >= 1) {
-        elapsedDuration = Duration(minutes: elapsed.inMinutes);
-      }
-
-      Duration? remainingDuration;
-      if (at.end != null) {
-        final remaining = at.end!.difference(now);
-        final remainingMinutes = (remaining.inSeconds / 60).ceil();
-        if (remainingMinutes > 0) {
-          remainingDuration = Duration(minutes: remainingMinutes);
+    if (at.duration != null && at.duration!.inSeconds > 0) {
+      if (widget.now) {
+        final now = Time.now();
+        final elapsed = now.difference(at.start!);
+        if (elapsed.inMinutes >= 1) {
+          elapsedDuration = Duration(minutes: elapsed.inMinutes);
         }
+        if (at.end != null) {
+          final remaining = at.end!.difference(now);
+          final remainingMinutes = (remaining.inSeconds / 60).ceil();
+          if (remainingMinutes > 0) {
+            remainingDuration = Duration(minutes: remainingMinutes);
+          }
+        }
+      } else {
+        durationText = at.duration!.format();
       }
+    }
 
-      return Row(
-        mainAxisSize: MainAxisSize.min,
+    // Determine which columns are present
+    final hasLeft = widget.showSubPriority;
+    const hasCenter = true; // time is always shown
+    final hasRight = durationText != null ||
+        elapsedDuration != null ||
+        remainingDuration != null;
+
+    final lineColor = widget.now ? color : context.theme.colors.border;
+
+    // Measure text height for empty column placeholders
+    final double textHeight = (TextPainter(
+      text: TextSpan(
+        text: 'A',
+        style: TextStyle(fontSize: fontSize),
+      ),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout())
+        .height;
+
+    final bgDecoration = BoxDecoration(color: context.theme.colors.background);
+
+    final elementCount =
+        [hasLeft, hasCenter, hasRight].where((e) => e).length;
+
+    // Single element: full width, centered
+    if (elementCount == 1) {
+      return Stack(
+        alignment: Alignment.center,
         children: [
-          Text(timeText, style: TextStyle(color: color, fontSize: fontSize)),
-          if (elapsedDuration != null || remainingDuration != null) ...[
-            SizedBox(width: context.theme.spacing.sm),
-            if (elapsedDuration != null) ...[
-              Text(
-                elapsedDuration.format(),
+          Container(height: 1, decoration: BoxDecoration(color: lineColor)),
+          Center(
+            child: Container(
+              decoration: bgDecoration,
+              padding: EdgeInsets.symmetric(
+                horizontal: context.theme.spacing.md,
+              ),
+              child: Text(
+                timeText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: color, fontSize: fontSize),
               ),
-              SizedBox(width: context.theme.spacing.xs),
-              FaIcon(PlotIcon.up, size: fontSize, color: color),
-              if (remainingDuration != null)
-                SizedBox(width: context.theme.spacing.sm),
-            ],
-            if (remainingDuration != null) ...[
-              Text(
-                remainingDuration.format(),
-                style: TextStyle(color: color, fontSize: fontSize),
-              ),
-              SizedBox(width: context.theme.spacing.xs),
-              FaIcon(PlotIcon.down, size: fontSize, color: color),
-            ],
-          ],
+            ),
+          ),
         ],
       );
     }
 
-    // Future event: show time + duration
-    final durationText =
-        at.duration != null && at.duration!.inSeconds > 0
-            ? at.duration!.format()
-            : null;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    // Multiple elements: 3-column layout matching AgendaHeader
+    return Stack(
+      alignment: Alignment.center,
       children: [
-        Text(timeText, style: TextStyle(color: color, fontSize: fontSize)),
-        if (durationText != null) ...[
-          SizedBox(width: context.theme.spacing.sm),
-          Text(
-            durationText,
-            style: TextStyle(color: color, fontSize: fontSize),
-          ),
-        ],
+        Container(height: 1, decoration: BoxDecoration(color: lineColor)),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // LEFT: Priority label
+            Flexible(
+              flex: 2,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: hasLeft
+                    ? Container(
+                        decoration: bgDecoration,
+                        padding: EdgeInsets.only(
+                          right: context.theme.spacing.md,
+                        ),
+                        child: PriorityLabel(
+                          priority: widget.activity.priority,
+                          context: widget.priorityContext,
+                          fontSize: fontSize,
+                        ),
+                      )
+                    : SizedBox(height: textHeight),
+              ),
+            ),
+            // CENTER: Time of day
+            Expanded(
+              flex: 2,
+              child: Center(
+                child: Container(
+                  decoration: bgDecoration,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: context.theme.spacing.md,
+                  ),
+                  child: Text(
+                    timeText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: color, fontSize: fontSize),
+                  ),
+                ),
+              ),
+            ),
+            // RIGHT: Duration / elapsed + remaining
+            Flexible(
+              flex: 2,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: hasRight
+                    ? Container(
+                        decoration: bgDecoration,
+                        padding: EdgeInsets.only(
+                          left: context.theme.spacing.md,
+                        ),
+                        child: _buildDurationContent(
+                          context,
+                          color: color,
+                          fontSize: fontSize,
+                          durationText: durationText,
+                          elapsedDuration: elapsedDuration,
+                          remainingDuration: remainingDuration,
+                        ),
+                      )
+                    : SizedBox(height: textHeight),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
