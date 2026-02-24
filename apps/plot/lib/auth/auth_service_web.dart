@@ -73,6 +73,33 @@ Future<AuthService> createAuthServiceImpl({
   final clerk = globalContext['Clerk'] as ClerkJS;
   await clerk.load().toDart;
 
+  // clerk.load() may not fully process OAuth redirect callbacks (e.g. when a
+  // sign-in needs to transfer to a sign-up for new users). Explicitly call
+  // handleRedirectCallback() which handles transfer and session activation.
+  if (clerk.session == null) {
+    final url = web.window.location.href;
+    final hasClerkParams = url.contains('__clerk');
+    // ignore: avoid_print
+    print('[Auth] No session after load (clerkParams=$hasClerkParams, '
+        'signIn=${clerk.client?.signIn?.status}, '
+        'signUp=${clerk.client?.signUp?.status})');
+    if (hasClerkParams) {
+      try {
+        await clerk.handleRedirectCallback(jsObj({
+          'continueSignUpUrl': web.window.location.origin,
+          'afterSignInUrl': web.window.location.origin,
+          'afterSignUpUrl': web.window.location.origin,
+        })).toDart;
+        // ignore: avoid_print
+        print('[Auth] handleRedirectCallback done '
+            '(session=${clerk.session != null})');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[Auth] handleRedirectCallback failed: $e');
+      }
+    }
+  }
+
   return ClerkJsAuthService._(clerk);
 }
 

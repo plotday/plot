@@ -22,6 +22,7 @@ extension type ClerkJS._(JSObject _) implements JSObject {
   external UserJS? get user;
   external JSPromise<JSAny?> signOut();
   external JSPromise<JSAny?> setActive(JSObject params);
+  external JSPromise<JSAny?> handleRedirectCallback([JSObject? params]);
 }
 
 /// Clerk Client — holds the current sign-in / sign-up resources.
