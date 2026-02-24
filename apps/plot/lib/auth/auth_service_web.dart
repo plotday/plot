@@ -81,18 +81,54 @@ Future<AuthService> createAuthServiceImpl({
     final signUp = clerk.client?.signUp;
     if (signUp?.status == 'missing_requirements') {
       // Try to get the email from the external account (Google OAuth data).
+      // Clerk JS sign-up objects have multiple places the email could be.
       final signUpObj = signUp! as JSObject;
       String? email = signUp.emailAddress;
+
+      // Path 1: verifications.externalAccount.emailAddress
       if (email == null || email.isEmpty) {
-        // Read verifications.externalAccount.emailAddress
-        final verifications = signUpObj['verifications'];
-        if (verifications != null && verifications.isA<JSObject>()) {
-          final extAcct = (verifications as JSObject)['externalAccount'];
-          if (extAcct != null && extAcct.isA<JSObject>()) {
-            final extAccount = extAcct as ExternalAccountJS;
-            email = extAccount.emailAddress;
+        final v = signUpObj['verifications'];
+        if (v != null && v.isA<JSObject>()) {
+          final ea = (v as JSObject)['externalAccount'];
+          if (ea != null && ea.isA<JSObject>()) {
+            email = ((ea as JSObject)['emailAddress'] as JSString?)?.toDart;
           }
         }
+      }
+
+      // Path 2: externalAccount (top-level, may be array or single object)
+      if (email == null || email.isEmpty) {
+        final ea = signUpObj['externalAccount'];
+        if (ea != null) {
+          if (ea.isA<JSArray>()) {
+            final arr = ea as JSArray;
+            if (arr.length > 0) {
+              final first = arr.toDart[0];
+              if (first.isA<JSObject>()) {
+                email =
+                    ((first as JSObject)['emailAddress'] as JSString?)?.toDart;
+              }
+            }
+          } else if (ea.isA<JSObject>()) {
+            email = ((ea as JSObject)['emailAddress'] as JSString?)?.toDart;
+          }
+        }
+      }
+
+      // Path 3: verifications.externalAccount (nested properties dump)
+      if (email == null || email.isEmpty) {
+        // Log the structure to find the right path
+        final v = signUpObj['verifications'];
+        final ea = signUpObj['externalAccount'];
+        // ignore: avoid_print
+        print('[Auth] Debug: signUp.verifications type=${v?.runtimeType}, '
+            'signUp.externalAccount type=${ea?.runtimeType}');
+        // Try to dump the sign-up as JSON for structure discovery
+        try {
+          final json = globalContext.callMethod('JSON.stringify'.toJS, signUpObj);
+          // ignore: avoid_print
+          print('[Auth] Debug: signUp JSON=${(json as JSString?)?.toDart}');
+        } catch (_) {}
       }
 
       // ignore: avoid_print
