@@ -526,7 +526,6 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
       author: authorContact,
       assignee: assigneeContact ?? null,
       done: issue.closed_at ?? null,
-      start: assigneeContact ? undefined : null,
       meta: {
         githubIssueNumber: issue.number,
         githubRepoId: repoId,
@@ -757,7 +756,6 @@ export class GitHubIssues extends Tool<GitHubIssues> implements ProjectTool {
       author: authorContact,
       assignee: assigneeContact ?? null,
       done: issue.closed_at ?? null,
-      start: assigneeContact ? undefined : null,
       meta: {
         githubIssueNumber: issue.number,
         githubRepoId: repoId,

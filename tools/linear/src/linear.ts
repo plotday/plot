@@ -476,7 +476,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       author: authorContact,
       assignee: assigneeContact ?? null,
       done: issue.completedAt ?? issue.canceledAt ?? null,
-      start: assigneeContact ? undefined : null,
       order: issue.sortOrder,
       meta: {
         linearId: issue.id,
@@ -566,7 +565,7 @@ export class Linear extends Tool<Linear> implements ProjectTool {
       }
     }
 
-    // Handle state based on start + done combination
+    // Handle state based on assignee + done combination
     const team = await issue.team;
     if (team) {
       const states = await team.states();
@@ -581,13 +580,13 @@ export class Linear extends Tool<Linear> implements ProjectTool {
             s.name === "Completed" ||
             s.type === "completed"
         );
-      } else if (thread.start !== null) {
-        // In Progress (has start date, not done)
+      } else if (thread.assignee !== null) {
+        // In Progress (has assignee, not done)
         targetState = states.nodes.find(
           (s) => s.name === "In Progress" || s.type === "started"
         );
       } else {
-        // Backlog/Todo (no start date, not done)
+        // Backlog/Todo (no assignee, not done)
         targetState = states.nodes.find(
           (s) =>
             s.name === "Todo" || s.name === "Backlog" || s.type === "unstarted"
@@ -761,7 +760,6 @@ export class Linear extends Tool<Linear> implements ProjectTool {
         : issue.canceledAt
         ? new Date(issue.canceledAt)
         : null,
-      start: assigneeContact ? undefined : null,
       order: issue.sortOrder,
       meta: {
         linearId: issue.id,

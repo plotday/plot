@@ -371,7 +371,7 @@ export function transformGmailThread(thread: GmailThread): NewThreadWithNotes {
     source: canonicalUrl,
     type: ThreadType.Note,
     title: subject || "Email",
-    start: new Date(parseInt(parentMessage.internalDate)),
+    created: new Date(parseInt(parentMessage.internalDate)),
     meta: {
       threadId: thread.id,
       historyId: thread.historyId,

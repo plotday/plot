@@ -1,6 +1,5 @@
 import {
   type Thread,
-  type ThreadOccurrence,
   type ThreadUpdate,
   type Actor,
   type ActorId,
@@ -17,6 +16,11 @@ import {
   type Tag,
   Uuid,
 } from "..";
+import {
+  type Schedule,
+  type NewSchedule,
+  type ScheduleUpdate,
+} from "../schedule";
 
 export enum ThreadAccess {
   /**
@@ -168,10 +172,6 @@ export abstract class Plot extends ITool {
         changes: {
           tagsAdded: Record<Tag, ActorId[]>;
           tagsRemoved: Record<Tag, ActorId[]>;
-          /**
-           * If present, this update is for a specific occurrence of a recurring thread.
-           */
-          occurrence?: ThreadOccurrence;
         }
       ) => Promise<void>;
     };
@@ -263,8 +263,7 @@ export abstract class Plot extends ITool {
    * When updating the parent, the thread's path will be automatically recalculated to
    * maintain the correct hierarchical structure.
    *
-   * When updating scheduling fields (start, end, recurrence*), the database will
-   * automatically recalculate duration and range values to maintain consistency.
+   * Scheduling is handled separately via `createSchedule()` / `updateSchedule()`.
    *
    * @param thread - The thread update containing the ID or source and fields to change
    * @returns Promise that resolves when the update is complete
@@ -278,13 +277,6 @@ export abstract class Plot extends ITool {
    *   done: new Date()
    * });
    *
-   * // Reschedule an event
-   * await this.plot.updateThread({
-   *   id: "event-456",
-   *   start: new Date("2024-03-15T10:00:00Z"),
-   *   end: new Date("2024-03-15T11:00:00Z")
-   * });
-   *
    * // Add and remove tags
    * await this.plot.updateThread({
    *   id: "thread-789",
@@ -292,13 +284,6 @@ export abstract class Plot extends ITool {
    *     1: true,  // Add tag with ID 1
    *     2: false  // Remove tag with ID 2
    *   }
-   * });
-   *
-   * // Update a recurring event exception
-   * await this.plot.updateThread({
-   *   id: "exception-123",
-   *   occurrence: new Date("2024-03-20T09:00:00Z"),
-   *   title: "Rescheduled meeting"
    * });
    * ```
    */
@@ -504,4 +489,61 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract getActors(ids: ActorId[]): Promise<Actor[]>;
+
+  /**
+   * Creates a new schedule for a thread.
+   *
+   * Schedules define when a thread occurs in time. A thread can have
+   * multiple schedules (shared and per-user).
+   *
+   * @param schedule - The schedule data to create
+   * @returns Promise resolving to the created schedule
+   *
+   * @example
+   * ```typescript
+   * // Schedule a timed event
+   * const threadId = await this.plot.createThread({
+   *   type: ThreadType.Event,
+   *   title: "Team standup"
+   * });
+   * await this.plot.createSchedule({
+   *   threadId,
+   *   start: new Date("2025-01-15T10:00:00Z"),
+   *   end: new Date("2025-01-15T10:30:00Z"),
+   *   recurrenceRule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
+   * });
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createSchedule(schedule: NewSchedule): Promise<Schedule>;
+
+  /**
+   * Updates an existing schedule.
+   *
+   * Only the fields provided in the update object will be modified.
+   *
+   * @param schedule - The schedule update containing the ID and fields to change
+   * @returns Promise resolving to the updated schedule
+   *
+   * @example
+   * ```typescript
+   * // Reschedule
+   * await this.plot.updateSchedule({
+   *   id: scheduleId,
+   *   start: new Date("2025-03-20T10:00:00Z"),
+   *   end: new Date("2025-03-20T11:00:00Z")
+   * });
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract updateSchedule(schedule: ScheduleUpdate): Promise<Schedule>;
+
+  /**
+   * Retrieves all schedules for a thread.
+   *
+   * @param threadId - The thread whose schedules to retrieve
+   * @returns Promise resolving to array of schedules for the thread
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getSchedules(threadId: Uuid): Promise<Schedule[]>;
 }

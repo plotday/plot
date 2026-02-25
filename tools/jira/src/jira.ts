@@ -556,7 +556,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
       });
     }
 
-    // Handle workflow state transitions based on start + done combination
+    // Handle workflow state transitions based on assignee + done combination
     // Get available transitions for this issue
     const transitions = await client.issues.getTransitions({
       issueIdOrKey: issueKey,
@@ -576,8 +576,8 @@ export class Jira extends Tool<Jira> implements ProjectTool {
           t.to?.name?.toLowerCase() === "closed" ||
           t.to?.name?.toLowerCase() === "resolved"
       );
-    } else if (thread.start !== null) {
-      // In Progress - look for "Start Progress" or "In Progress" transition
+    } else if (thread.assignee !== null) {
+      // In Progress (has assignee, not done) - look for "Start Progress" or "In Progress" transition
       targetTransition = transitions.transitions?.find(
         (t) =>
           t.name?.toLowerCase() === "start progress" ||
@@ -585,7 +585,7 @@ export class Jira extends Tool<Jira> implements ProjectTool {
           t.to?.name?.toLowerCase() === "in progress"
       );
     } else {
-      // Backlog/Todo - look for "To Do", "Open", or "Reopen" transition
+      // Backlog/Todo (no assignee, not done) - look for "To Do", "Open", or "Reopen" transition
       targetTransition = transitions.transitions?.find(
         (t) =>
           t.name?.toLowerCase() === "reopen" ||

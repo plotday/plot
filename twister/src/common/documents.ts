@@ -1,7 +1,5 @@
 import type {
   ThreadMeta,
-  NewThreadWithNotes,
-  Serializable,
 } from "../index";
 
 /**
@@ -34,24 +32,20 @@ export type DocumentSyncOptions = {
 };
 
 /**
- * Base interface for document service integration tools.
+ * Base interface for document service integration sources.
  *
  * All synced documents are converted to ThreadWithNotes objects.
  * Each document becomes a Thread with Notes for the description and comments.
  *
- * **Architecture: Tools Build, Twists Save**
- *
- * Document tools follow Plot's core architectural principle:
- * - **Tools**: Fetch external data and transform it into Plot format (NewThread objects)
- * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
+ * Sources save threads directly via `integrations.saveThread()` rather than
+ * passing data through callbacks to a separate twist.
  *
  * **Implementation Pattern:**
  * 1. Authorization is handled via the twist edit modal (Integrations provider config)
- * 2. Tool declares providers and lifecycle callbacks in build()
- * 3. onAuthorized lists available folders and calls setSyncables()
- * 4. User enables folders in the modal → onSyncEnabled fires
- * 5. **Tool builds NewThread objects** and passes them to the twist via callback
- * 6. **Twist decides** whether to save using createThread/updateThread
+ * 2. Source declares providers and lifecycle callbacks in build()
+ * 3. getChannels returns available folders
+ * 4. User enables folders in the modal -> onChannelEnabled fires
+ * 5. Source fetches documents and saves them directly via integrations.saveThread()
  *
  * **Recommended Data Sync Strategy:**
  * Use Thread.source and Note.key for automatic upserts.
@@ -65,7 +59,7 @@ export type DocumentSyncOptions = {
  * - Send NewThreadWithNotes for all documents (creates new or updates existing)
  * - Set `thread.unread = false` for initial sync, omit for incremental updates
  */
-export type DocumentTool = {
+export type DocumentSource = {
   /**
    * Retrieves the list of folders accessible to the user.
    *
@@ -84,19 +78,12 @@ export type DocumentTool = {
    * @param options - Sync configuration options
    * @param options.folderId - ID of the folder to sync
    * @param options.timeMin - Earliest date to sync documents from (inclusive)
-   * @param callback - Function receiving (thread, ...extraArgs) for each synced document
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
-  startSync<
-    TArgs extends Serializable[],
-    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
-  >(
+  startSync(
     options: {
       folderId: string;
     } & DocumentSyncOptions,
-    callback: TCallback,
-    ...extraArgs: TArgs
   ): Promise<void>;
 
   /**
@@ -146,3 +133,6 @@ export type DocumentTool = {
     noteId?: string,
   ): Promise<string | void>;
 };
+
+/** @deprecated Use DocumentSource instead */
+export type DocumentTool = DocumentSource;

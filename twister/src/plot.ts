@@ -1,3 +1,4 @@
+import type { NewSchedule, NewScheduleOccurrence } from "./schedule";
 import { type Tag } from "./tag";
 import { type Callback } from "./tools/callbacks";
 import { type AuthProvider } from "./tools/integrations";
@@ -487,71 +488,8 @@ type ThreadFields = ThreadCommon & {
    * ```
    */
   assignee: Actor | null;
-  /**
-   * Start time of a scheduled thread. Notes are not typically scheduled unless they're about specific times.
-   * For recurring events, this represents the start of the first occurrence.
-   * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
-   *
-   * **Thread Scheduling States** (for Actions):
-   * - **Do Now** (current/actionable): When creating an Action, omitting `start` defaults to current time
-   * - **Do Later** (future scheduled): Set `start` to a future Date or date string
-   * - **Do Someday** (unscheduled backlog): Explicitly set `start: null`
-   *
-   * **Important for synced tasks**: When syncing unassigned backlog items from external systems,
-   * set BOTH `start: null` AND `assignee: null` to create unscheduled, unassigned actions.
-   *
-   * @example
-   * ```typescript
-   * // "Do Now" - assigned to twist owner, actionable immediately
-   * await this.tools.plot.createThread({
-   *   type: ThreadType.Action,
-   *   title: "Urgent task"
-   *   // start omitted → defaults to now
-   *   // assignee omitted → defaults to twist owner
-   * });
-   *
-   * // "Do Later" - scheduled for a specific time
-   * await this.tools.plot.createThread({
-   *   type: ThreadType.Action,
-   *   title: "Future task",
-   *   start: new Date("2025-02-01")
-   * });
-   *
-   * // "Do Someday" - unassigned backlog item (common for synced tasks)
-   * await this.tools.plot.createThread({
-   *   type: ThreadType.Action,
-   *   title: "Backlog task",
-   *   start: null,      // Explicitly unscheduled
-   *   assignee: null    // Explicitly unassigned
-   * });
-   * ```
-   */
-  start: Date | string | null;
-  /**
-   * End time of a scheduled thread. Notes are not typically scheduled unless they're about specific times.
-   * For recurring events, this represents the end of the first occurrence.
-   * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
-   * Null for tasks or threads without defined end times.
-   */
-  end: Date | string | null;
-  /**
-   * For recurring threads, the last occurrence date (inclusive).
-   * Can be a Date object, date string in "YYYY-MM-DD" format, or null if recurring indefinitely.
-   * When both recurrenceCount and recurrenceUntil are provided, recurrenceCount takes precedence.
-   */
-  recurrenceUntil: Date | string | null;
-  /**
-   * For recurring threads, the number of occurrences to generate.
-   * Takes precedence over recurrenceUntil if both are provided.
-   * Null for non-recurring threads or indefinite recurrence.
-   */
-  recurrenceCount: number | null;
   /** The priority context this thread belongs to */
   priority: Priority;
-  /** Recurrence rule in RFC 5545 RRULE format (e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR") */
-  recurrenceRule: string | null;
-  /** Array of dates to exclude from the recurrence pattern */
-  recurrenceExdates: Date[] | null;
   /** Metadata about the thread, typically from an external system that created it */
   meta: ThreadMeta | null;
   /** Sort order for the thread (fractional positioning) */
@@ -590,121 +528,23 @@ export type NewThreadWithNotes = NewThread & {
 /** @deprecated Use NewThreadWithNotes instead */
 export type NewActivityWithNotes = NewThreadWithNotes;
 
-/**
- * Represents a specific instance of a recurring thread.
- * All field values are computed by merging the recurring thread's
- * defaults with any occurrence-specific overrides.
- */
-export type ThreadOccurrence = {
-  /**
-   * Original date/datetime of this occurrence.
-   * Use start for the occurrence's current start time.
-   * Format: Date object or "YYYY-MM-DD" for all-day events.
-   */
-  occurrence: Date | string;
+/** @deprecated ThreadOccurrence has moved to Schedule. Use ScheduleOccurrence from @plotday/twister/schedule instead. */
+export type ThreadOccurrence = never;
 
-  /**
-   * The recurring thread of which this is an occurrence.
-   */
-  thread: Thread;
+/** @deprecated Use ScheduleOccurrence from @plotday/twister/schedule instead */
+export type ActivityOccurrence = never;
 
-  /**
-   * Effective values for this occurrence (series defaults + overrides).
-   * These are the actual values that apply to this specific instance.
-   */
-  start: Date | string;
-  end: Date | string | null;
-  done: Date | null;
-  title: string;
-  /**
-   * Meta is merged, with the occurrence's meta taking precedence.
-   */
-  meta: ThreadMeta | null;
+/** @deprecated Use NewScheduleOccurrence from @plotday/twister/schedule instead */
+export type NewThreadOccurrence = never;
 
-  /**
-   * Tags for this occurrence (merged with the recurring tags).
-   */
-  tags: Tags;
+/** @deprecated Use NewScheduleOccurrence from @plotday/twister/schedule instead */
+export type NewActivityOccurrence = never;
 
-  /**
-   * True if the occurrence is archived.
-   */
-  archived: boolean;
-};
+/** @deprecated Use ScheduleOccurrenceUpdate from @plotday/twister/schedule instead */
+export type ThreadOccurrenceUpdate = never;
 
-/** @deprecated Use ThreadOccurrence instead */
-export type ActivityOccurrence = ThreadOccurrence;
-
-/**
- * Type for creating or updating thread occurrences.
- *
- * Follows the same pattern as Thread/NewThread:
- * - Required fields: `occurrence` (key) and `start` (for scheduling)
- * - Optional fields: All others from ThreadOccurrence
- * - Additional fields: `twistTags` for add/remove, `unread` for notification control
- *
- * @example
- * ```typescript
- * const thread: NewThread = {
- *   type: ThreadType.Event,
- *   recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
- *   occurrences: [
- *     {
- *       occurrence: new Date("2025-01-27T14:00:00Z"),
- *       start: new Date("2025-01-27T14:00:00Z"),
- *       tags: { [Tag.Skip]: [user] }
- *     }
- *   ]
- * };
- * ```
- */
-export type NewThreadOccurrence = Pick<
-  ThreadOccurrence,
-  "occurrence" | "start"
-> &
-  Partial<
-    Omit<ThreadOccurrence, "occurrence" | "start" | "thread" | "tags">
-  > & {
-    /**
-     * Tags specific to this occurrence.
-     * These replace any recurrence-level tags for this occurrence.
-     */
-    tags?: NewTags;
-
-    /**
-     * Add or remove the twist's tags on this occurrence.
-     * Maps tag ID to boolean: true = add tag, false = remove tag.
-     */
-    twistTags?: Partial<Record<Tag, boolean>>;
-
-    /**
-     * Whether this occurrence should be marked as unread for users.
-     * - undefined/omitted (default): Occurrence is unread for users, except auto-marked
-     *   as read for the author if they are the twist owner (user)
-     * - true: Occurrence is explicitly unread for ALL users (use sparingly)
-     * - false: Occurrence is marked as read for all users
-     *
-     * For the default behavior, omit this field entirely.
-     * Use false for initial sync to avoid marking historical items as unread.
-     */
-    unread?: boolean;
-  };
-
-/** @deprecated Use NewThreadOccurrence instead */
-export type NewActivityOccurrence = NewThreadOccurrence;
-
-/**
- * Inline type for creating/updating occurrences within NewThread/ThreadUpdate.
- * Used to specify occurrence-specific overrides when creating or updating a recurring thread.
- */
-export type ThreadOccurrenceUpdate = Pick<
-  NewThreadOccurrence,
-  "occurrence"
-> &
-  Partial<Omit<NewThreadOccurrence, "occurrence" | "thread">>;
-
-/** @deprecated Use ThreadOccurrenceUpdate instead */
-export type ActivityOccurrenceUpdate = ThreadOccurrenceUpdate;
+/** @deprecated Use ScheduleOccurrenceUpdate from @plotday/twister/schedule instead */
+export type ActivityOccurrenceUpdate = never;
 
 /**
  * Configuration for automatic priority selection based on thread similarity.
@@ -752,17 +592,13 @@ export type PickPriorityConfig = {
  * **Important: Defaults for Actions**
  *
  * When creating a Thread of type `Action`:
- * - **`start` omitted** → Defaults to current time (now) → "Do Now"
  * - **`assignee` omitted** → Defaults to twist owner → Assigned action
  *
- * To create unassigned backlog items (common for synced tasks), you MUST explicitly set BOTH:
- * - `start: null` → "Do Someday" (unscheduled)
+ * To create unassigned backlog items (common for synced tasks), you MUST explicitly set:
  * - `assignee: null` → Unassigned
  *
- * **Scheduling States**:
- * - **"Do Now"** (actionable today): Omit `start` or set to current time
- * - **"Do Later"** (scheduled): Set `start` to a future Date
- * - **"Do Someday"** (backlog): Set `start: null`
+ * Scheduling is handled separately via the Schedule type.
+ * Use `plot.createSchedule()` to schedule threads.
  *
  * Priority can be specified in three ways:
  * 1. Explicit priority: `priority: { id: "..." }` - Use specific priority (disables pickPriority)
@@ -771,43 +607,30 @@ export type PickPriorityConfig = {
  *
  * @example
  * ```typescript
- * // "Do Now" - Assigned to twist owner, actionable immediately
+ * // Action assigned to twist owner
  * const urgentTask: NewThread = {
  *   type: ThreadType.Action,
  *   title: "Review pull request"
- *   // start omitted → defaults to now
  *   // assignee omitted → defaults to twist owner
  * };
  *
- * // "Do Someday" - UNASSIGNED backlog item (for synced tasks)
+ * // UNASSIGNED backlog item (for synced tasks)
  * const backlogTask: NewThread = {
  *   type: ThreadType.Action,
  *   title: "Refactor user service",
- *   start: null,      // Must explicitly set to null
  *   assignee: null    // Must explicitly set to null
  * };
  *
- * // "Do Later" - Scheduled for specific date
- * const futureTask: NewThread = {
- *   type: ThreadType.Action,
- *   title: "Prepare Q1 review",
- *   start: new Date("2025-03-15")
- * };
- *
- * // Note (typically unscheduled)
+ * // Note
  * const note: NewThread = {
  *   type: ThreadType.Note,
- *   title: "Meeting notes",
- *   content: "Discussed Q4 roadmap...",
- *   start: null  // Notes typically don't have scheduled times
+ *   title: "Meeting notes"
  * };
  *
- * // Event (always has explicit start/end times)
+ * // Event (schedule separately with plot.createSchedule())
  * const event: NewThread = {
  *   type: ThreadType.Event,
- *   title: "Team standup",
- *   start: new Date("2025-01-15T10:00:00"),
- *   end: new Date("2025-01-15T10:30:00")
+ *   title: "Team standup"
  * };
  * ```
  */
@@ -904,50 +727,38 @@ export type NewThread = (
     preview?: string | null;
 
     /**
-     * Create or update specific occurrences of a recurring thread.
-     * Each entry specifies overrides for a specific occurrence.
+     * Optional schedules to create alongside the thread.
      *
-     * When occurrence matches the recurrence rule but only tags are specified,
-     * the occurrence is created with just tags in activity_tag.occurrence (no activity_exception).
+     * When provided, schedules are created after the thread is inserted.
+     * The threadId is automatically filled from the created thread.
      *
-     * When any other field is specified, creates/updates an activity_exception row.
+     * For calendar integrations, this replaces the old start/end/recurrenceRule
+     * fields that were previously on the thread itself.
      *
      * @example
      * ```typescript
-     * // Create recurring event with per-occurrence RSVPs
-     * const meeting: NewThread = {
+     * const event: NewThread = {
      *   type: ThreadType.Event,
-     *   recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
-     *   start: new Date("2025-01-20T14:00:00Z"),
-     *   duration: 1800000, // 30 minutes
-     *   occurrences: [
-     *     {
-     *       occurrence: new Date("2025-01-27T14:00:00Z"),
-     *       tags: { [Tag.Skip]: [{ email: "user@example.com" }] }
-     *     },
-     *     {
-     *       occurrence: new Date("2025-02-03T14:00:00Z"),
-     *       start: new Date("2025-02-03T15:00:00Z"), // Reschedule this one
-     *       tags: { [Tag.Attend]: [{ email: "user@example.com" }] }
-     *     }
-     *   ]
+     *   title: "Team standup",
+     *   schedules: [{
+     *     start: new Date("2025-01-15T10:00:00Z"),
+     *     end: new Date("2025-01-15T10:30:00Z"),
+     *     recurrenceRule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
+     *   }]
      * };
      * ```
      */
-    occurrences?: NewThreadOccurrence[];
+    schedules?: Array<Omit<NewSchedule, "threadId">>;
 
     /**
-     * Dates to add to the recurrence exclusion list.
-     * These are merged with existing exdates. Use this for incremental updates
-     * (e.g., cancelling a single occurrence) instead of replacing the full list.
+     * Optional schedule occurrence overrides. For recurring schedules,
+     * these define per-occurrence modifications (e.g., rescheduled meetings,
+     * per-occurrence RSVP tags).
+     *
+     * Requires a schedule to be present (either via `schedules` field or
+     * an existing schedule on the thread).
      */
-    addRecurrenceExdates?: Date[];
-
-    /**
-     * Dates to remove from the recurrence exclusion list.
-     * Use this to "uncancel" a previously excluded occurrence.
-     */
-    removeRecurrenceExdates?: Date[];
+    scheduleOccurrences?: NewScheduleOccurrence[];
   };
 
 /** @deprecated Use NewThread instead */
@@ -981,21 +792,10 @@ type ThreadBulkUpdateFields = Partial<
 
 /**
  * Fields supported by single-thread updates via `id` or `source`.
- * Includes all bulk fields plus scheduling, recurrence, tags, and occurrences.
+ * Includes all bulk fields plus assignee, tags, and preview.
  */
 type ThreadSingleUpdateFields = ThreadBulkUpdateFields &
-  Partial<
-    Pick<
-      ThreadFields,
-      | "start"
-      | "end"
-      | "assignee"
-      | "recurrenceRule"
-      | "recurrenceExdates"
-      | "recurrenceUntil"
-      | "recurrenceCount"
-    >
-  > & {
+  Partial<Pick<ThreadFields, "assignee">> & {
     /**
      * Tags to change on the thread. Use an empty array of NewActor to remove a tag.
      * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
@@ -1020,50 +820,6 @@ type ThreadSingleUpdateFields = ThreadBulkUpdateFields &
      * This field is write-only and won't be returned when reading threads.
      */
     preview?: string | null;
-
-    /**
-     * Create or update specific occurrences of this recurring thread.
-     * Each entry specifies overrides for a specific occurrence.
-     *
-     * Setting a field to null reverts it to the series default.
-     * Omitting a field leaves it unchanged.
-     *
-     * @example
-     * ```typescript
-     * // Update RSVPs for specific occurrences
-     * await plot.updateThread({
-     *   id: meetingId,
-     *   occurrences: [
-     *     {
-     *       occurrence: new Date("2025-01-27T14:00:00Z"),
-     *       tags: { [Tag.Skip]: [user] }
-     *     },
-     *     {
-     *       occurrence: new Date("2025-02-03T14:00:00Z"),
-     *       tags: { [Tag.Attend]: [user] }
-     *     },
-     *     {
-     *       occurrence: new Date("2025-02-10T14:00:00Z"),
-     *       archived: true  // Cancel this occurrence
-     *     }
-     *   ]
-     * });
-     * ```
-     */
-    occurrences?: (NewThreadOccurrence | ThreadOccurrenceUpdate)[];
-
-    /**
-     * Dates to add to the recurrence exclusion list.
-     * These are merged with existing exdates. Use this for incremental updates
-     * (e.g., cancelling a single occurrence) instead of replacing the full list.
-     */
-    addRecurrenceExdates?: Date[];
-
-    /**
-     * Dates to remove from the recurrence exclusion list.
-     * Use this to "uncancel" a previously excluded occurrence.
-     */
-    removeRecurrenceExdates?: Date[];
   };
 
 export type ThreadUpdate =

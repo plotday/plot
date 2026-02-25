@@ -3,11 +3,9 @@ import {
   type Thread,
   ActionType,
   type Action,
-  type ThreadOccurrence,
   ThreadType,
   type ActorId,
   ConferencingProvider,
-  type NewThreadOccurrence,
   type NewThreadWithNotes,
   type NewActor,
   type NewContact,
@@ -18,6 +16,7 @@ import {
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
+import type { NewScheduleOccurrence } from "@plotday/twister/schedule";
 import {
   type Calendar,
   type CalendarTool,
@@ -774,8 +773,6 @@ export class GoogleCalendar
               type: ThreadType.Note,
               title: activityData.title,
               preview: "Cancelled",
-              start: activityData.start || null,
-              end: activityData.end || null,
               meta: activityData.meta ?? null,
               notes: [cancelNote],
               ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
@@ -791,10 +788,11 @@ export class GoogleCalendar
           }
 
           // For recurring events, DON'T add tags at series level
-          // Tags (RSVPs) should be per-occurrence via the occurrences array
+          // Tags (RSVPs) should be per-occurrence via the scheduleOccurrences array
           // For non-recurring events, add tags normally
+          const isRecurring = !!activityData.schedules?.[0]?.recurrenceRule;
           let tags: Partial<Record<Tag, NewActor[]>> | null = null;
-          if (validAttendees.length > 0 && !activityData.recurrenceRule) {
+          if (validAttendees.length > 0 && !isRecurring) {
             const attendTags: NewActor[] = [];
             const skipTags: NewActor[] = [];
             const undecidedTags: NewActor[] = [];
@@ -898,19 +896,15 @@ export class GoogleCalendar
           const shared = {
             source: canonicalUrl,
             created: event.created ? new Date(event.created) : undefined,
-            start: activityData.start || null,
-            end: activityData.end || null,
-            recurrenceUntil: activityData.recurrenceUntil || null,
-            recurrenceCount: activityData.recurrenceCount || null,
             title: activityData.title || "",
             author: authorContact,
-            recurrenceRule: activityData.recurrenceRule || null,
-            recurrenceExdates: activityData.recurrenceExdates || null,
             meta: activityData.meta ?? null,
             tags: tags || undefined,
             actions: hasActions ? actions : undefined,
             notes,
             preview: hasDescription ? description : null,
+            schedules: activityData.schedules,
+            scheduleOccurrences: activityData.scheduleOccurrences,
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           } as const;
@@ -964,9 +958,9 @@ export class GoogleCalendar
     // Transform the instance data
     const instanceData = transformGoogleEvent(event, calendarId);
 
-    // Handle cancelled recurring instances by adding to recurrence exdates
+    // Handle cancelled recurring instances via archived schedule occurrence
     if (event.status === "cancelled") {
-      // Extract start/end from the event (they're present even for cancelled events)
+      // Extract start from the event for the occurrence
       const start = event.start?.dateTime
         ? new Date(event.start.dateTime)
         : event.start?.date
@@ -979,13 +973,18 @@ export class GoogleCalendar
         ? event.end.date
         : null;
 
+      const cancelledOccurrence: NewScheduleOccurrence = {
+        occurrence: new Date(originalStartTime),
+        start: start,
+        end: end,
+        archived: true,
+      };
+
       const occurrenceUpdate = {
         type: ThreadType.Event,
         source: masterCanonicalUrl,
-        start: start,
-        end: end,
         meta: { syncProvider: "google", syncableId: calendarId },
-        addRecurrenceExdates: [new Date(originalStartTime)],
+        scheduleOccurrences: [cancelledOccurrence],
       };
 
       await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
@@ -1025,36 +1024,35 @@ export class GoogleCalendar
       if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
     }
 
-    // Build occurrence object
-    // Always include start to ensure upsert_activity can infer scheduling when
-    // creating a new master thread. Use instanceData.start if available (for
-    // rescheduled instances), otherwise fall back to originalStartTime.
-    const occurrenceStart = instanceData.start ?? new Date(originalStartTime);
+    // Build schedule occurrence object
+    // Always include start to ensure upsert can infer scheduling when
+    // creating a new master thread. Use instanceData schedule start if available
+    // (for rescheduled instances), otherwise fall back to originalStartTime.
+    const instanceSchedule = instanceData.schedules?.[0];
+    const occurrenceStart = instanceSchedule?.start ?? new Date(originalStartTime);
 
-    const occurrence: Omit<NewThreadOccurrence, "thread"> = {
+    const occurrence: NewScheduleOccurrence = {
       occurrence: new Date(originalStartTime),
       start: occurrenceStart,
       tags: Object.keys(tags).length > 0 ? tags : undefined,
       ...(initialSync ? { unread: false } : {}),
     };
 
-    // Add additional field overrides if present
-    if (instanceData.end !== undefined && instanceData.end !== null) {
-      occurrence.end = instanceData.end;
+    // Add end override if present on the instance
+    if (instanceSchedule?.end !== undefined && instanceSchedule?.end !== null) {
+      occurrence.end = instanceSchedule.end;
     }
-    if (instanceData.title) occurrence.title = instanceData.title;
-    if (instanceData.meta) occurrence.meta = instanceData.meta;
 
     // Send occurrence data to the twist via callback
     // The twist will decide whether to create or update the master thread
 
-    // Build a minimal NewThread with source and occurrences
+    // Build a minimal NewThread with source and scheduleOccurrences
     // The twist's createThread will upsert the master thread
     const occurrenceUpdate = {
       type: ThreadType.Event,
       source: masterCanonicalUrl,
       meta: { syncProvider: "google", syncableId: calendarId },
-      occurrences: [occurrence],
+      scheduleOccurrences: [occurrence],
     };
 
     await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
@@ -1174,7 +1172,6 @@ export class GoogleCalendar
     changes: {
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
-      occurrence?: ThreadOccurrence;
     }
   ): Promise<void> {
     try {
@@ -1279,13 +1276,8 @@ export class GoogleCalendar
       }
 
       // Determine the event ID to update
-      let eventId = baseEventId;
-      if (changes.occurrence) {
-        eventId = this.constructInstanceId(
-          baseEventId,
-          changes.occurrence.occurrence
-        );
-      }
+      // Note: occurrence-level RSVP changes are handled at the master event level
+      const eventId = baseEventId;
 
       // For each actor who changed RSVP, use actAs() to sync with their credentials.
       // If the actor has auth, the callback fires immediately.

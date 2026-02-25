@@ -1,8 +1,6 @@
 import type {
   Thread,
   ThreadMeta,
-  NewThreadWithNotes,
-  Serializable,
 } from "../index";
 
 /**
@@ -41,31 +39,27 @@ export type SourceControlSyncOptions = {
 };
 
 /**
- * Base interface for source control integration tools.
+ * Base interface for source control integration sources.
  *
  * All synced pull requests are converted to ThreadWithNotes objects.
  * Each PR becomes a Thread with Notes for the description, comments,
  * and review summaries.
  *
- * **Architecture: Tools Build, Twists Save**
- *
- * Source control tools follow Plot's core architectural principle:
- * - **Tools**: Fetch external data and transform it into Plot format (NewThread objects)
- * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
+ * Sources save threads directly via `integrations.saveThread()` rather than
+ * passing data through callbacks to a separate twist.
  *
  * **Implementation Pattern:**
  * 1. Authorization is handled via the twist edit modal (Integrations provider config)
- * 2. Tool declares providers and lifecycle callbacks in build()
- * 3. onAuthorized lists available repositories and calls setSyncables()
- * 4. User enables repositories in the modal → onSyncEnabled fires
- * 5. **Tool builds NewThread objects** and passes them to the twist via callback
- * 6. **Twist decides** whether to save using createThread/updateThread
+ * 2. Source declares providers and lifecycle callbacks in build()
+ * 3. getChannels returns available repositories
+ * 4. User enables repositories in the modal -> onChannelEnabled fires
+ * 5. Source fetches PRs and saves them directly via integrations.saveThread()
  *
  * **Recommended Data Sync Strategy:**
  * Use Thread.source (PR URL) and Note.key for automatic upserts.
  * See SYNC_STRATEGIES.md for detailed patterns.
  */
-export type SourceControlTool = {
+export type SourceControlSource = {
   /**
    * Retrieves the list of repositories accessible to the user.
    *
@@ -82,19 +76,12 @@ export type SourceControlTool = {
    * @param options - Sync configuration options
    * @param options.repositoryId - ID of the repository to sync (owner/repo format)
    * @param options.timeMin - Earliest date to sync PRs from (inclusive)
-   * @param callback - Function receiving (thread, ...extraArgs) for each synced PR
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
-  startSync<
-    TArgs extends Serializable[],
-    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
-  >(
+  startSync(
     options: {
       repositoryId: string;
     } & SourceControlSyncOptions,
-    callback: TCallback,
-    ...extraArgs: TArgs
   ): Promise<void>;
 
   /**
@@ -146,3 +133,6 @@ export type SourceControlTool = {
    */
   closePR?(meta: ThreadMeta): Promise<void>;
 };
+
+/** @deprecated Use SourceControlSource instead */
+export type SourceControlTool = SourceControlSource;

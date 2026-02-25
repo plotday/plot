@@ -1,21 +1,35 @@
-import { type Actor, type ActorId, ITool, Serializable } from "..";
+import {
+  type Actor,
+  type ActorId,
+  type NewContact,
+  type NewThreadWithNotes,
+  type Note,
+  type Thread,
+  type ThreadFilter,
+  type ThreadMeta,
+  ITool,
+  Serializable,
+} from "..";
 import type { Uuid } from "../utils/uuid";
 
 /**
  * A resource that can be synced (e.g., a calendar, project, channel).
- * Returned by getSyncables() and managed by users in the twist setup/edit modal.
+ * Returned by getChannels() and managed by users in the twist setup/edit modal.
  */
-export type Syncable = {
+export type Channel = {
   /** External ID shared across users (e.g., Google calendar ID) */
   id: string;
   /** Display name shown in the UI */
   title: string;
-  /** Optional nested syncable resources (e.g., subfolders) */
-  children?: Syncable[];
+  /** Optional nested channel resources (e.g., subfolders) */
+  children?: Channel[];
 };
 
+/** @deprecated Use Channel instead */
+export type Syncable = Channel;
+
 /**
- * Configuration for an OAuth provider in a tool's build options.
+ * Configuration for an OAuth provider in a source's build options.
  * Declares the provider, scopes, and lifecycle callbacks.
  */
 export type IntegrationProviderConfig = {
@@ -23,12 +37,30 @@ export type IntegrationProviderConfig = {
   provider: AuthProvider;
   /** OAuth scopes to request */
   scopes: string[];
-  /** Returns available syncables for the authorized actor. Must not use Plot tool. */
-  getSyncables: (auth: Authorization, token: AuthToken) => Promise<Syncable[]>;
-  /** Called when a syncable resource is enabled for syncing */
-  onSyncEnabled: (syncable: Syncable) => Promise<void>;
-  /** Called when a syncable resource is disabled */
-  onSyncDisabled: (syncable: Syncable) => Promise<void>;
+  /** Returns available channels for the authorized actor. Must not use Plot tool. */
+  getChannels: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
+  /** Called when a channel resource is enabled for syncing */
+  onChannelEnabled: (channel: Channel) => Promise<void>;
+  /** Called when a channel resource is disabled */
+  onChannelDisabled: (channel: Channel) => Promise<void>;
+  /**
+   * Called when a thread created by this source is updated by the user.
+   * Used for write-back to external services (e.g., marking an issue as done).
+   */
+  onThreadUpdated?: (thread: Thread) => Promise<void>;
+  /**
+   * Called when a note is created on a thread owned by this source.
+   * Used for write-back to external services (e.g., adding a comment to an issue).
+   */
+  onNoteCreated?: (note: Note, meta: ThreadMeta) => Promise<void>;
+
+  // Deprecated aliases
+  /** @deprecated Use getChannels instead */
+  getSyncables?: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
+  /** @deprecated Use onChannelEnabled instead */
+  onSyncEnabled?: (channel: Channel) => Promise<void>;
+  /** @deprecated Use onChannelDisabled instead */
+  onSyncDisabled?: (channel: Channel) => Promise<void>;
 };
 
 /**
@@ -40,20 +72,21 @@ export type IntegrationOptions = {
 };
 
 /**
- * Built-in tool for managing OAuth authentication and syncable resources.
+ * Built-in tool for managing OAuth authentication and channel resources.
  *
- * The redesigned Integrations tool:
+ * The Integrations tool:
  * 1. Declares providers/scopes in build options with lifecycle callbacks
- * 2. Manages syncable resources (calendars, projects, etc.) per actor
- * 3. Returns tokens for the user who enabled sync on a syncable
+ * 2. Manages channel resources (calendars, projects, etc.) per actor
+ * 3. Returns tokens for the user who enabled sync on a channel
  * 4. Supports per-actor auth via actAs() for write-back operations
+ * 5. Provides saveThread/saveContacts/archiveThreads for Sources to save data directly
  *
- * Auth and syncable management is handled in the twist edit modal in Flutter,
- * removing the need for tools to create auth activities or selection UIs.
+ * Auth and channel management is handled in the twist edit modal in Flutter,
+ * removing the need for sources to create auth activities or selection UIs.
  *
  * @example
  * ```typescript
- * class CalendarTool extends Tool<CalendarTool> {
+ * class CalendarSource extends Source<CalendarSource> {
  *   static readonly PROVIDER = AuthProvider.Google;
  *   static readonly SCOPES = ["https://www.googleapis.com/auth/calendar"];
  *
@@ -62,16 +95,16 @@ export type IntegrationOptions = {
  *       integrations: build(Integrations, {
  *         providers: [{
  *           provider: AuthProvider.Google,
- *           scopes: CalendarTool.SCOPES,
- *           getSyncables: this.getSyncables,
- *           onSyncEnabled: this.onSyncEnabled,
- *           onSyncDisabled: this.onSyncDisabled,
+ *           scopes: CalendarSource.SCOPES,
+ *           getChannels: this.getChannels,
+ *           onChannelEnabled: this.onChannelEnabled,
+ *           onChannelDisabled: this.onChannelDisabled,
  *         }]
  *       }),
  *     };
  *   }
  *
- *   async getSyncables(auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+ *   async getChannels(auth: Authorization, token: AuthToken): Promise<Channel[]> {
  *     const calendars = await this.listCalendars(token);
  *     return calendars.map(c => ({ id: c.id, title: c.name }));
  *   }
@@ -90,17 +123,17 @@ export abstract class Integrations extends ITool {
   }
 
   /**
-   * Retrieves an access token for a syncable resource.
+   * Retrieves an access token for a channel resource.
    *
-   * Returns the token of the user who enabled sync on the given syncable.
-   * If the syncable is not enabled or the token is expired/invalid, returns null.
+   * Returns the token of the user who enabled sync on the given channel.
+   * If the channel is not enabled or the token is expired/invalid, returns null.
    *
    * @param provider - The OAuth provider
-   * @param syncableId - The syncable resource ID (e.g., calendar ID)
+   * @param channelId - The channel resource ID (e.g., calendar ID)
    * @returns Promise resolving to the access token or null
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract get(provider: AuthProvider, syncableId: string): Promise<AuthToken | null>;
+  abstract get(provider: AuthProvider, channelId: string): Promise<AuthToken | null>;
 
   /**
    * Execute a callback as a specific actor, requesting auth if needed.
@@ -127,6 +160,38 @@ export abstract class Integrations extends ITool {
     ...extraArgs: TArgs
   ): Promise<void>;
 
+  /**
+   * Saves a thread with notes to the source's priority.
+   *
+   * This method is available only to Sources (not regular Twists).
+   * It replaces the old pattern of passing threads via callbacks to a Twist
+   * which then called plot.createThread().
+   *
+   * @param thread - The thread with notes to save
+   * @returns Promise resolving to the saved thread's UUID
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveThread(thread: NewThreadWithNotes): Promise<Uuid>;
+
+  /**
+   * Saves contacts to the source's priority.
+   *
+   * @param contacts - Array of contacts to save
+   * @returns Promise resolving to the saved actors
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveContacts(contacts: NewContact[]): Promise<Actor[]>;
+
+  /**
+   * Archives threads matching a filter.
+   *
+   * Useful for bulk archiving when a channel is disabled.
+   *
+   * @param filter - Filter to match threads to archive
+   * @returns Promise that resolves when archiving is complete
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract archiveThreads(filter: ThreadFilter): Promise<void>;
 }
 
 /**

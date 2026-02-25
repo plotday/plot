@@ -2,12 +2,10 @@ import {
   type Thread,
   type Action,
   ActionType,
-  type ThreadOccurrence,
   ThreadType,
   type ActorId,
   ConferencingProvider,
   type ContentType,
-  type NewThreadOccurrence,
   type NewThreadWithNotes,
   type NewActor,
   type NewContact,
@@ -18,6 +16,7 @@ import {
   Tool,
   type ToolBuilder,
 } from "@plotday/twister";
+import type { NewScheduleOccurrence } from "@plotday/twister/schedule";
 import type {
   Calendar,
   CalendarTool,
@@ -565,10 +564,11 @@ export class OutlookCalendar
         }
 
         // For recurring events, DON'T add tags at series level
-        // Tags (RSVPs) should be per-occurrence via the occurrences array
+        // Tags (RSVPs) should be per-occurrence via the scheduleOccurrences array
         // For non-recurring events, add tags normally
         let tags: Partial<Record<Tag, NewActor[]>> | null = null;
-        if (validAttendees.length > 0 && !threadData.recurrenceRule) {
+        const hasRecurrence = !!threadData.schedules?.[0]?.recurrenceRule;
+        if (validAttendees.length > 0 && !hasRecurrence) {
           const attendTags: NewActor[] = [];
           const skipTags: NewActor[] = [];
           const undecidedTags: NewActor[] = [];
@@ -709,18 +709,19 @@ export class OutlookCalendar
       return; // Skip deleted events
     }
 
-    // Handle cancelled recurring instances by adding to recurrence exdates
+    // Handle cancelled recurring instances by archiving the occurrence
     if (event.isCancelled) {
-      const start = instanceData?.start ?? new Date(originalStart);
-      const end = instanceData?.end ?? null;
+      const cancelledOccurrence: NewScheduleOccurrence = {
+        occurrence: new Date(originalStart),
+        start: new Date(originalStart),
+        archived: true,
+      };
 
       const occurrenceUpdate = {
         type: ThreadType.Event,
         source: masterCanonicalUrl,
         meta: { syncProvider: "microsoft", syncableId: calendarId },
-        start: start,
-        end: end,
-        addRecurrenceExdates: [new Date(originalStart)],
+        scheduleOccurrences: [cancelledOccurrence],
       };
 
       await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
@@ -764,36 +765,35 @@ export class OutlookCalendar
       if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
     }
 
-    // Build occurrence object
-    // Always include start to ensure upsert_activity can infer scheduling when
-    // creating a new master thread. Use instanceData.start if available (for
-    // rescheduled instances), otherwise fall back to originalStart.
-    const occurrenceStart = instanceData.start ?? new Date(originalStart);
+    // Build schedule occurrence object
+    // Always include start to ensure upsert can infer scheduling when
+    // creating a new master thread. Use schedule start from instanceData if
+    // available (for rescheduled instances), otherwise fall back to originalStart.
+    const instanceSchedule = instanceData.schedules?.[0];
+    const occurrenceStart = instanceSchedule?.start ?? new Date(originalStart);
 
-    const occurrence: Omit<NewThreadOccurrence, "thread"> = {
+    const occurrence: NewScheduleOccurrence = {
       occurrence: new Date(originalStart),
       start: occurrenceStart,
       tags: Object.keys(tags).length > 0 ? tags : undefined,
       ...(initialSync ? { unread: false } : {}),
     };
 
-    // Add additional field overrides if present
-    if (instanceData.end !== undefined && instanceData.end !== null) {
-      occurrence.end = instanceData.end;
+    // Add end time override if present
+    if (instanceSchedule?.end !== undefined && instanceSchedule?.end !== null) {
+      occurrence.end = instanceSchedule.end;
     }
-    if (instanceData.title) occurrence.title = instanceData.title;
-    if (instanceData.meta) occurrence.meta = instanceData.meta;
 
     // Send occurrence data to the twist via callback
     // The twist will decide whether to create or update the master thread
 
-    // Build a minimal NewThread with source and occurrences
+    // Build a minimal NewThread with source and scheduleOccurrences
     // The twist's createThread will upsert the master thread
     const occurrenceUpdate = {
       type: ThreadType.Event,
       source: masterCanonicalUrl,
       meta: { syncProvider: "microsoft", syncableId: calendarId },
-      occurrences: [occurrence],
+      scheduleOccurrences: [occurrence],
     };
 
     await this.tools.callbacks.run(callbackToken, occurrenceUpdate);
@@ -850,7 +850,6 @@ export class OutlookCalendar
     changes: {
       tagsAdded: Record<Tag, ActorId[]>;
       tagsRemoved: Record<Tag, ActorId[]>;
-      occurrence?: ThreadOccurrence;
     }
   ): Promise<void> {
     try {
@@ -956,35 +955,7 @@ export class OutlookCalendar
       }
 
       // Determine the event ID to update
-      // If this is an occurrence-level change, look up the instance ID
-      let eventId = baseEventId;
-      if (changes.occurrence) {
-        const occurrenceDate =
-          changes.occurrence.occurrence instanceof Date
-            ? changes.occurrence.occurrence
-            : new Date(changes.occurrence.occurrence);
-
-        try {
-          const api = await this.getApi(calendarId as string);
-          const instanceId = await this.getEventInstanceIdWithApi(
-            api,
-            calendarId as string,
-            baseEventId,
-            occurrenceDate
-          );
-          if (instanceId) {
-            eventId = instanceId;
-          } else {
-            console.warn(
-              `Could not find instance ID for occurrence ${occurrenceDate.toISOString()}`
-            );
-            return;
-          }
-        } catch (error) {
-          console.error(`Failed to look up instance ID:`, error);
-          return;
-        }
-      }
+      const eventId = baseEventId;
 
       // For each actor who changed RSVP, use actAs() to sync with their credentials.
       // If the actor has auth, the callback fires immediately.

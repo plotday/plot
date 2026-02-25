@@ -16,17 +16,13 @@ import type {
 export type { ToolBuilder };
 
 /**
- * Options for tools that sync threads from external services.
- *
- * @example
- * ```typescript
- * static readonly Options: SyncToolOptions;
- * ```
+ * @deprecated Sources now save threads directly via integrations.saveThread()
+ * instead of using callbacks. Use Source class instead of Tool + SyncToolOptions.
  */
 export type SyncToolOptions = {
-  /** Callback invoked for each synced item. The tool adds sync metadata before passing it. */
+  /** @deprecated Callback invoked for each synced item. */
   onItem: (item: NewThreadWithNotes) => Promise<void>;
-  /** Callback invoked when a syncable is disabled, receiving a ThreadFilter for bulk operations. */
+  /** @deprecated Callback invoked when a syncable is disabled. */
   onSyncableDisabled?: (filter: ThreadFilter) => Promise<void>;
 };
 

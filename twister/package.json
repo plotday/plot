@@ -25,10 +25,20 @@
       "types": "./dist/tool.d.ts",
       "default": "./dist/tool.js"
     },
+    "./source": {
+      "@plotday/source": "./src/source.ts",
+      "types": "./dist/source.d.ts",
+      "default": "./dist/source.js"
+    },
     "./plot": {
       "@plotday/source": "./src/plot.ts",
       "types": "./dist/plot.d.ts",
       "default": "./dist/plot.js"
+    },
+    "./schedule": {
+      "@plotday/source": "./src/schedule.ts",
+      "types": "./dist/schedule.d.ts",
+      "default": "./dist/schedule.js"
     },
     "./tag": {
       "@plotday/source": "./src/tag.ts",

@@ -1,5 +1,6 @@
 import type { NewThread } from "@plotday/twister";
 import { ThreadType } from "@plotday/twister";
+import type { NewSchedule, NewScheduleOccurrence } from "@plotday/twister/schedule";
 import type { Calendar } from "@plotday/twister/common/calendar";
 
 /**
@@ -495,8 +496,6 @@ export function transformOutlookEvent(
         ? `Cancelled: ${event.subject}`
         : "Cancelled Event"
       : event.subject || "",
-    start: isCancelled ? null : start,
-    end: isCancelled ? null : end,
     meta: {
       eventId: event.id,
       calendarId: calendarId,
@@ -513,36 +512,48 @@ export function transformOutlookEvent(
       ? { type: ThreadType.Note, ...shared }
       : { type: ThreadType.Event, ...shared };
 
-  // Handle recurrence for master events (not instances or exceptions)
-  if (event.recurrence && event.type === "seriesMaster") {
-    thread.recurrenceRule = parseOutlookRRule(event.recurrence);
+  // Build the primary schedule from start/end
+  if (!isCancelled && start) {
+    const schedule: Omit<NewSchedule, "threadId"> = {
+      start,
+      end: end ?? null,
+    };
 
-    // Parse recurrence count (takes precedence over UNTIL)
-    const recurrenceCount = parseOutlookRecurrenceCount(event.recurrence);
-    if (recurrenceCount) {
-      thread.recurrenceCount = recurrenceCount;
-    } else {
-      // Parse recurrence end date if no count
-      const recurrenceUntil = parseOutlookRecurrenceEnd(event.recurrence);
-      if (recurrenceUntil) {
-        thread.recurrenceUntil = recurrenceUntil;
+    // Handle recurrence for master events (not instances or exceptions)
+    if (event.recurrence && event.type === "seriesMaster") {
+      schedule.recurrenceRule = parseOutlookRRule(event.recurrence) ?? null;
+
+      // Parse recurrence count (takes precedence over UNTIL)
+      const recurrenceCount = parseOutlookRecurrenceCount(event.recurrence);
+      if (recurrenceCount) {
+        schedule.recurrenceCount = recurrenceCount;
+      } else {
+        // Parse recurrence end date if no count
+        const recurrenceUntil = parseOutlookRecurrenceEnd(event.recurrence);
+        if (recurrenceUntil) {
+          schedule.recurrenceUntil = recurrenceUntil;
+        }
+      }
+
+      // Parse exception dates (currently not available from Graph API directly)
+      const exdates = parseOutlookExDates(event.recurrence);
+      if (exdates.length > 0) {
+        schedule.recurrenceExdates = exdates;
       }
     }
 
-    // Parse exception dates (currently not available from Graph API directly)
-    const exdates = parseOutlookExDates(event.recurrence);
-    if (exdates.length > 0) {
-      thread.recurrenceExdates = exdates;
-    }
+    thread.schedules = [schedule];
 
     // Parse RDATEs (additional occurrence dates not in the recurrence rule)
     // Note: Microsoft Graph API doesn't support RDATE, so this will always be empty
-    const rdates = parseOutlookRDates(event.recurrence);
-    if (rdates.length > 0) {
-      thread.occurrences = rdates.map((rdate) => ({
-        occurrence: rdate,
-        start: rdate,
-      }));
+    if (event.recurrence && event.type === "seriesMaster") {
+      const rdates = parseOutlookRDates(event.recurrence);
+      if (rdates.length > 0) {
+        thread.scheduleOccurrences = rdates.map((rdate) => ({
+          occurrence: rdate,
+          start: rdate,
+        }));
+      }
     }
   }
 

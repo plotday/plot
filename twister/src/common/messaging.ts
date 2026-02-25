@@ -1,5 +1,3 @@
-import type { NewThreadWithNotes, Serializable } from "../index";
-
 /**
  * Represents a channel from an external messaging service.
  *
@@ -30,30 +28,26 @@ export type MessageSyncOptions = {
 };
 
 /**
- * Base interface for email and chat integration tools.
+ * Base interface for email and chat integration sources.
  *
  * All synced messages/emails are converted to ThreadWithNotes objects.
  * Each email thread or chat conversation becomes a Thread with Notes for each message.
  *
- * **Architecture: Tools Build, Twists Save**
- *
- * Messaging tools follow Plot's core architectural principle:
- * - **Tools**: Fetch external data and transform it into Plot format (NewThread objects)
- * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
+ * Sources save threads directly via `integrations.saveThread()` rather than
+ * passing data through callbacks to a separate twist.
  *
  * **Implementation Pattern:**
  * 1. Authorization is handled via the twist edit modal (Integrations provider config)
- * 2. Tool declares providers and lifecycle callbacks in build()
- * 3. onAuthorized lists available channels and calls setSyncables()
- * 4. User enables channels in the modal → onSyncEnabled fires
- * 5. **Tool builds NewThread objects** and passes them to the twist via callback
- * 6. **Twist decides** whether to save using createThread/updateThread
+ * 2. Source declares providers and lifecycle callbacks in build()
+ * 3. getChannels returns available messaging channels
+ * 4. User enables channels in the modal -> onChannelEnabled fires
+ * 5. Source fetches messages and saves them directly via integrations.saveThread()
  *
  * **Recommended Data Sync Strategy:**
  * Use Thread.source (thread URL or ID) and Note.key (message ID) for automatic upserts.
  * See SYNC_STRATEGIES.md for detailed patterns.
  */
-export type MessagingTool = {
+export type MessagingSource = {
   /**
    * Retrieves the list of conversation channels (inboxes, channels) accessible to the user.
    *
@@ -70,19 +64,12 @@ export type MessagingTool = {
    * @param options - Sync configuration options
    * @param options.channelId - ID of the channel (e.g., channel, inbox) to sync
    * @param options.timeMin - Earliest date to sync events from (inclusive)
-   * @param callback - Function receiving (thread, ...extraArgs) for each synced conversation
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    */
-  startSync<
-    TArgs extends Serializable[],
-    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
-  >(
+  startSync(
     options: {
       channelId: string;
     } & MessageSyncOptions,
-    callback: TCallback,
-    ...extraArgs: TArgs
   ): Promise<void>;
 
   /**
@@ -93,3 +80,6 @@ export type MessagingTool = {
    */
   stopSync(channelId: string): Promise<void>;
 };
+
+/** @deprecated Use MessagingSource instead */
+export type MessagingTool = MessagingSource;

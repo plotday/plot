@@ -263,7 +263,7 @@ export function transformSlackThread(
     source: canonicalUrl,
     type: ThreadType.Note,
     title,
-    start: new Date(parseFloat(parentMessage.ts) * 1000),
+    created: new Date(parseFloat(parentMessage.ts) * 1000),
     meta: {
       channelId: channelId,
       threadTs: threadTs,

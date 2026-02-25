@@ -1,5 +1,3 @@
-import type { NewThreadWithNotes, Serializable } from "../index";
-
 /**
  * Represents a calendar from an external calendar service.
  *
@@ -47,36 +45,21 @@ export type SyncOptions = {
 };
 
 /**
- * Base interface for calendar integration tools.
+ * Base interface for calendar integration sources.
  *
- * Defines the standard operations that all calendar tools must implement
+ * Defines the standard operations that all calendar sources must implement
  * to integrate with external calendar services like Google Calendar,
  * Outlook Calendar, etc.
  *
- * **Architecture: Tools Build, Twists Save**
- *
- * Calendar tools follow Plot's core architectural principle:
- * - **Tools**: Fetch external data and transform it into Plot format (NewThread objects)
- * - **Twists**: Receive the data and decide what to do with it (create, update, filter, etc.)
- *
- * This separation allows:
- * - Tools to be reusable across different twists with different behaviors
- * - Twists to have full control over what gets saved and how
- * - Easier testing of tools in isolation
+ * Sources save threads directly via `integrations.saveThread()` rather than
+ * passing data through callbacks to a separate twist.
  *
  * **Implementation Pattern:**
  * 1. Authorization is handled via the twist edit modal (Integrations provider config)
- * 2. Tool declares providers and lifecycle callbacks in build()
- * 3. onAuthorized lists available calendars and calls setSyncables()
- * 4. User enables calendars in the modal → onSyncEnabled fires
- * 5. **Tool builds NewThread objects** and passes them to the twist via callback
- * 6. **Twist decides** whether to save using createThread/updateThread
- *
- * **Tool Implementation Rules:**
- * - **DO** build Thread/Note objects from external data
- * - **DO** pass them to the twist via the callback
- * - **DON'T** call plot.createThread/updateThread directly
- * - **DON'T** save anything to Plot database
+ * 2. Source declares providers and lifecycle callbacks in build()
+ * 3. getChannels returns available calendars
+ * 4. User enables calendars in the modal -> onChannelEnabled fires
+ * 5. Source fetches events and saves them directly via integrations.saveThread()
  *
  * **Recommended Data Sync Strategy:**
  * Use Thread.source and Note.key for automatic upserts without manual ID tracking.
@@ -84,20 +67,24 @@ export type SyncOptions = {
  *
  * @example
  * ```typescript
- * class MyCalendarTwist extends Twist {
+ * class MyCalendarSource extends Source<MyCalendarSource> {
  *   build(build: ToolBuilder) {
  *     return {
- *       googleCalendar: build(GoogleCalendar),
- *       plot: build(Plot, { thread: { access: ThreadAccess.Create } }),
+ *       integrations: build(Integrations, {
+ *         providers: [{
+ *           provider: AuthProvider.Google,
+ *           scopes: MyCalendarSource.SCOPES,
+ *           getChannels: this.getChannels,
+ *           onChannelEnabled: this.onChannelEnabled,
+ *           onChannelDisabled: this.onChannelDisabled,
+ *         }]
+ *       }),
  *     };
  *   }
- *
- *   // Auth and calendar selection handled in the twist edit modal.
- *   // Events are delivered via the startSync callback.
  * }
  * ```
  */
-export type CalendarTool = {
+export type CalendarSource = {
   /**
    * Retrieves the list of calendars accessible to the authenticated user.
    *
@@ -111,8 +98,8 @@ export type CalendarTool = {
    * Begins synchronizing events from a specific calendar.
    *
    * Sets up real-time sync for the specified calendar, including initial
-   * event import and ongoing change notifications. The callback function
-   * will be invoked for each synced event.
+   * event import and ongoing change notifications. Events are saved
+   * directly via integrations.saveThread().
    *
    * Auth is obtained automatically via integrations.get(provider, calendarId).
    *
@@ -120,20 +107,13 @@ export type CalendarTool = {
    * @param options.calendarId - ID of the calendar to sync
    * @param options.timeMin - Earliest date to sync events from (inclusive)
    * @param options.timeMax - Latest date to sync events to (exclusive)
-   * @param callback - Function receiving (thread, ...extraArgs) for each synced event
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
    * @returns Promise that resolves when sync setup is complete
    * @throws When no valid authorization or calendar doesn't exist
    */
-  startSync<
-    TArgs extends Serializable[],
-    TCallback extends (thread: NewThreadWithNotes, ...args: TArgs) => any
-  >(
+  startSync(
     options: {
       calendarId: string;
     } & SyncOptions,
-    callback: TCallback,
-    ...extraArgs: TArgs
   ): Promise<void>;
 
   /**
@@ -144,3 +124,6 @@ export type CalendarTool = {
    */
   stopSync(calendarId: string): Promise<void>;
 };
+
+/** @deprecated Use CalendarSource instead */
+export type CalendarTool = CalendarSource;

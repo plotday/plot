@@ -1,5 +1,6 @@
 import type { NewThread } from "@plotday/twister";
 import { ThreadType, ConferencingProvider } from "@plotday/twister";
+import type { NewSchedule, NewScheduleOccurrence } from "@plotday/twister/schedule";
 
 export type GoogleEvent = {
   id: string;
@@ -361,8 +362,6 @@ export function transformGoogleEvent(
   const shared = {
     source: `google-calendar:${event.id}`,
     title: event.summary || (isCancelled ? "Cancelled event" : ""),
-    start: isCancelled ? null : start,
-    end: isCancelled ? null : end,
     meta: {
       id: event.id,
       calendarId: calendarId,
@@ -388,36 +387,46 @@ export function transformGoogleEvent(
       ? { type: ThreadType.Note, ...shared }
       : { type: ThreadType.Event, ...shared };
 
-  // Handle recurrence for master events (not instances)
-  if (event.recurrence && !event.recurringEventId) {
-    thread.recurrenceRule = parseRRule(event.recurrence);
+  // Build schedule from start/end if not cancelled
+  if (!isCancelled && start) {
+    const schedule: Omit<NewSchedule, "threadId"> = {
+      start,
+      end: end ?? null,
+    };
 
-    // Parse recurrence count (takes precedence over UNTIL)
-    const recurrenceCount = parseGoogleRecurrenceCount(event.recurrence);
-    if (recurrenceCount) {
-      thread.recurrenceCount = recurrenceCount;
-    } else {
-      // Parse recurrence end date for recurring threads if no count
-      const recurrenceUntil = parseGoogleRecurrenceEnd(event.recurrence);
-      if (recurrenceUntil) {
-        thread.recurrenceUntil = recurrenceUntil;
+    // Handle recurrence for master events (not instances)
+    if (event.recurrence && !event.recurringEventId) {
+      schedule.recurrenceRule = parseRRule(event.recurrence) ?? null;
+
+      // Parse recurrence count (takes precedence over UNTIL)
+      const recurrenceCount = parseGoogleRecurrenceCount(event.recurrence);
+      if (recurrenceCount) {
+        schedule.recurrenceCount = recurrenceCount;
+      } else {
+        // Parse recurrence end date for recurring schedules if no count
+        const recurrenceUntil = parseGoogleRecurrenceEnd(event.recurrence);
+        if (recurrenceUntil) {
+          schedule.recurrenceUntil = recurrenceUntil;
+        }
+      }
+
+      const exdates = parseExDates(event.recurrence);
+      if (exdates.length > 0) {
+        schedule.recurrenceExdates = exdates;
+      }
+
+      // Parse RDATEs (additional occurrence dates not in the recurrence rule)
+      // and create schedule occurrence entries for each
+      const rdates = parseRDates(event.recurrence);
+      if (rdates.length > 0) {
+        thread.scheduleOccurrences = rdates.map((rdate) => ({
+          occurrence: rdate,
+          start: rdate,
+        }));
       }
     }
 
-    const exdates = parseExDates(event.recurrence);
-    if (exdates.length > 0) {
-      thread.recurrenceExdates = exdates;
-    }
-
-    // Parse RDATEs (additional occurrence dates not in the recurrence rule)
-    // and create ThreadOccurrenceUpdate entries for each
-    const rdates = parseRDates(event.recurrence);
-    if (rdates.length > 0) {
-      thread.occurrences = rdates.map((rdate) => ({
-        occurrence: rdate,
-        start: rdate,
-      }));
-    }
+    thread.schedules = [schedule];
   }
 
   return thread;
