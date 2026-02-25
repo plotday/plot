@@ -38,11 +38,11 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     return {
       slack: build(Slack, {
         onItem: this.onSlackThread,
-        onSyncableDisabled: this.onSyncableDisabled,
+        onChannelDisabled: this.onChannelDisabled,
       }),
       gmail: build(Gmail, {
         onItem: this.onGmailThread,
-        onSyncableDisabled: this.onSyncableDisabled,
+        onChannelDisabled: this.onChannelDisabled,
       }),
       ai: build(AI),
       plot: build(Plot, {
@@ -92,16 +92,16 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   }
 
   async onSlackThread(thread: NewThreadWithNotes): Promise<void> {
-    const channelId = thread.meta?.syncableId as string;
+    const channelId = thread.meta?.channelId as string;
     return this.onMessageThread(thread, "slack", channelId);
   }
 
   async onGmailThread(thread: NewThreadWithNotes): Promise<void> {
-    const channelId = thread.meta?.syncableId as string;
+    const channelId = thread.meta?.channelId as string;
     return this.onMessageThread(thread, "gmail", channelId);
   }
 
-  async onSyncableDisabled(filter: ThreadFilter): Promise<void> {
+  async onChannelDisabled(filter: ThreadFilter): Promise<void> {
     await this.tools.plot.updateThread({ match: filter, archived: true });
   }
 
@@ -493,7 +493,6 @@ If a task is needed, create a clear, actionable title that describes what the us
       source: `message-tasks:${threadId}`,
       type: ThreadType.Action,
       title: analysis.taskTitle || thread.title || "Action needed from message",
-      start: new Date(),
       notes: analysis.taskNote
         ? [
             {

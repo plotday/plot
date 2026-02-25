@@ -1,20 +1,20 @@
-# Tool Development Guide
+# Source Development Guide
 
-This guide covers everything needed to build a Plot tool correctly.
+This guide covers everything needed to build a Plot source correctly.
 
 **For twist development**: See `../twister/cli/templates/AGENTS.template.md`
 **For general navigation**: See `../AGENTS.md`
 **For type definitions**: See `../twister/src/tools/*.ts` (comprehensive JSDoc)
 
-## Quick Start: Complete Tool Scaffold
+## Quick Start: Complete Source Scaffold
 
-Every tool follows this structure:
+Every source follows this structure:
 
 ```
-tools/<name>/
+sources/<name>/
   src/
     index.ts              # Re-exports: export { default, ClassName } from "./class-file"
-    <class-name>.ts       # Main Tool class
+    <class-name>.ts       # Main Source class
     <api-name>.ts         # (optional) Separate API client + transform functions
   package.json
   tsconfig.json
@@ -26,7 +26,7 @@ tools/<name>/
 
 ```json
 {
-  "name": "@plotday/tool-<name>",
+  "name": "@plotday/source-<name>",
   "displayName": "Human Name",
   "description": "One-line purpose statement",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -56,10 +56,10 @@ tools/<name>/
   "repository": {
     "type": "git",
     "url": "https://github.com/plotday/plot.git",
-    "directory": "tools/<name>"
+    "directory": "sources/<name>"
   },
   "homepage": "https://plot.day",
-  "keywords": ["plot", "tool", "<name>"],
+  "keywords": ["plot", "source", "<name>"],
   "publishConfig": { "access": "public" }
 }
 ```
@@ -67,7 +67,7 @@ tools/<name>/
 **Notes:**
 - `"@plotday/source"` export condition resolves to TypeScript source during workspace development
 - Add third-party SDKs to `dependencies` (e.g., `"@linear/sdk": "^72.0.0"`)
-- Add `@plotday/tool-google-contacts` as `"workspace:^"` if your tool syncs contacts (Google tools only)
+- Add `@plotday/source-google-contacts` as `"workspace:^"` if your source syncs contacts (Google sources only)
 
 ### tsconfig.json
 
@@ -85,10 +85,10 @@ tools/<name>/
 ### src/index.ts
 
 ```typescript
-export { default, ToolName } from "./tool-name";
+export { default, SourceName } from "./source-name";
 ```
 
-## Tool Class Template
+## Source Class Template
 
 ```typescript
 import {
@@ -98,26 +98,27 @@ import {
   type NewActivityWithNotes,
   type NewNote,
   type SyncToolOptions,
+  Source,
+  type SourceBuilder,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
-import { Tool, type ToolBuilder } from "@plotday/twister/tool";
 import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
   type AuthToken,
   type Authorization,
   Integrations,
-  type Syncable,
+  type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
-// Choose the correct common interface for your tool category:
-// import type { CalendarTool, SyncOptions } from "@plotday/twister/common/calendar";
-// import type { ProjectTool, ProjectSyncOptions } from "@plotday/twister/common/projects";
-// import type { MessagingTool, MessageSyncOptions } from "@plotday/twister/common/messaging";
-// import type { DocumentTool, DocumentSyncOptions } from "@plotday/twister/common/documents";
+// Choose the correct common interface for your source category:
+// import type { CalendarSource, SyncOptions } from "@plotday/twister/common/calendar";
+// import type { ProjectSource, ProjectSyncOptions } from "@plotday/twister/common/projects";
+// import type { MessagingSource, MessageSyncOptions } from "@plotday/twister/common/messaging";
+// import type { DocumentSource, DocumentSyncOptions } from "@plotday/twister/common/documents";
 
 type SyncState = {
   cursor: string | null;
@@ -126,7 +127,7 @@ type SyncState = {
   initialSync: boolean;
 };
 
-export class MyTool extends Tool<MyTool> implements ProjectTool {
+export class MySource extends Source<MySource> implements ProjectSource {
   // 1. Static constants
   static readonly PROVIDER = AuthProvider.Linear; // Use appropriate provider
   static readonly SCOPES = ["read", "write"];
@@ -134,15 +135,15 @@ export class MyTool extends Tool<MyTool> implements ProjectTool {
   declare readonly Options: SyncToolOptions;
 
   // 2. Declare dependencies
-  build(build: ToolBuilder) {
+  build(build: SourceBuilder) {
     return {
       integrations: build(Integrations, {
         providers: [{
-          provider: MyTool.PROVIDER,
-          scopes: MyTool.SCOPES,
-          getSyncables: this.getSyncables,
-          onSyncEnabled: this.onSyncEnabled,
-          onSyncDisabled: this.onSyncDisabled,
+          provider: MySource.PROVIDER,
+          scopes: MySource.SCOPES,
+          getChannels: this.getChannels,
+          onChannelEnabled: this.onChannelEnabled,
+          onChannelDisabled: this.onChannelDisabled,
         }],
       }),
       network: build(Network, { urls: ["https://api.example.com/*"] }),
@@ -152,61 +153,61 @@ export class MyTool extends Tool<MyTool> implements ProjectTool {
     };
   }
 
-  // 3. Create API client using syncable-based auth
-  private async getClient(syncableId: string): Promise<any> {
-    const token = await this.tools.integrations.get(MyTool.PROVIDER, syncableId);
+  // 3. Create API client using channel-based auth
+  private async getClient(channelId: string): Promise<any> {
+    const token = await this.tools.integrations.get(MySource.PROVIDER, channelId);
     if (!token) throw new Error("No authentication token available");
     return new SomeApiClient({ accessToken: token.token });
   }
 
   // 4. Return available resources for the user to select
-  async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+  async getChannels(_auth: Authorization, token: AuthToken): Promise<Channel[]> {
     const client = new SomeApiClient({ accessToken: token.token });
     const resources = await client.listResources();
     return resources.map(r => ({ id: r.id, title: r.name }));
   }
 
   // 5. Called when user enables a resource
-  async onSyncEnabled(syncable: Syncable): Promise<void> {
-    await this.set(`sync_enabled_${syncable.id}`, true);
+  async onChannelEnabled(channel: Channel): Promise<void> {
+    await this.set(`sync_enabled_${channel.id}`, true);
 
     // Store parent callback tokens
     const itemCallbackToken = await this.tools.callbacks.createFromParent(
       this.options.onItem
     );
-    await this.set(`item_callback_${syncable.id}`, itemCallbackToken);
+    await this.set(`item_callback_${channel.id}`, itemCallbackToken);
 
-    if (this.options.onSyncableDisabled) {
+    if (this.options.onChannelDisabled) {
       const disableCallbackToken = await this.tools.callbacks.createFromParent(
-        this.options.onSyncableDisabled,
-        { meta: { syncProvider: "myprovider", syncableId: syncable.id } }
+        this.options.onChannelDisabled,
+        { meta: { syncProvider: "myprovider", channelId: channel.id } }
       );
-      await this.set(`disable_callback_${syncable.id}`, disableCallbackToken);
+      await this.set(`disable_callback_${channel.id}`, disableCallbackToken);
     }
 
     // Setup webhook and start initial sync
-    await this.setupWebhook(syncable.id);
-    await this.startBatchSync(syncable.id);
+    await this.setupWebhook(channel.id);
+    await this.startBatchSync(channel.id);
   }
 
   // 6. Called when user disables a resource
-  async onSyncDisabled(syncable: Syncable): Promise<void> {
-    await this.stopSync(syncable.id);
+  async onChannelDisabled(channel: Channel): Promise<void> {
+    await this.stopSync(channel.id);
 
-    const disableCallbackToken = await this.get<Callback>(`disable_callback_${syncable.id}`);
+    const disableCallbackToken = await this.get<Callback>(`disable_callback_${channel.id}`);
     if (disableCallbackToken) {
       await this.tools.callbacks.run(disableCallbackToken);
       await this.tools.callbacks.delete(disableCallbackToken);
-      await this.clear(`disable_callback_${syncable.id}`);
+      await this.clear(`disable_callback_${channel.id}`);
     }
 
-    const itemCallbackToken = await this.get<Callback>(`item_callback_${syncable.id}`);
+    const itemCallbackToken = await this.get<Callback>(`item_callback_${channel.id}`);
     if (itemCallbackToken) {
       await this.tools.callbacks.delete(itemCallbackToken);
-      await this.clear(`item_callback_${syncable.id}`);
+      await this.clear(`item_callback_${channel.id}`);
     }
 
-    await this.clear(`sync_enabled_${syncable.id}`);
+    await this.clear(`sync_enabled_${channel.id}`);
   }
 
   // 7. Public interface methods (from common interface)
@@ -308,7 +309,7 @@ export class MyTool extends Tool<MyTool> implements ProjectTool {
       activity.meta = {
         ...activity.meta,
         syncProvider: "myprovider",
-        syncableId: resourceId,
+        channelId: resourceId,
       };
       await this.tools.callbacks.run(callbackToken, activity);
     }
@@ -369,41 +370,41 @@ export class MyTool extends Tool<MyTool> implements ProjectTool {
     activity.meta = {
       ...activity.meta,
       syncProvider: "myprovider",
-      syncableId: resourceId,
+      channelId: resourceId,
     };
     await this.tools.callbacks.run(callbackToken, activity);
   }
 }
 
-export default MyTool;
+export default MySource;
 ```
 
-## Common Tool Interfaces
+## Common Source Interfaces
 
 Choose the correct interface based on what your service provides. Import from `@plotday/twister/common/*`.
 
 | Interface | For | Examples | Key resource |
 |-----------|-----|----------|-------------|
-| `CalendarTool` | Calendar/scheduling services | Google Calendar, Outlook, Apple Calendar | Calendars with events |
-| `ProjectTool` | Project/task management | Linear, Jira, Asana, GitHub Issues, Todoist, ClickUp, Trello, Monday | Projects with issues/tasks |
-| `MessagingTool` | Email and chat services | Gmail, Slack, Discord, Microsoft Teams, Intercom | Channels/inboxes with threads |
-| `DocumentTool` | Document/file services | Google Drive, Notion, Dropbox, OneDrive, Confluence | Folders with documents |
+| `CalendarSource` | Calendar/scheduling services | Google Calendar, Outlook, Apple Calendar | Calendars with events |
+| `ProjectSource` | Project/task management | Linear, Jira, Asana, GitHub Issues, Todoist, ClickUp, Trello, Monday | Projects with issues/tasks |
+| `MessagingSource` | Email and chat services | Gmail, Slack, Discord, Microsoft Teams, Intercom | Channels/inboxes with threads |
+| `DocumentSource` | Document/file services | Google Drive, Notion, Dropbox, OneDrive, Confluence | Folders with documents |
 | None | Services that don't fit above | CRM, analytics, monitoring | Define your own interface |
 
 Each interface requires these methods: `get[Resources]()`, `startSync()`, `stopSync()`. Some have optional methods for bidirectional sync (`updateIssue`, `addIssueComment`, `addDocumentComment`, etc.).
 
-## The Integrations Pattern (Auth + Syncables)
+## The Integrations Pattern (Auth + Channels)
 
-**This is how ALL authentication works.** Auth is handled in the Flutter edit modal, not in code. Tools declare their provider config in `build()`.
+**This is how ALL authentication works.** Auth is handled in the Flutter edit modal, not in code. Sources declare their provider config in `build()`.
 
 ### How It Works
 
-1. Tool declares providers in `build()` with `getSyncables`, `onSyncEnabled`, `onSyncDisabled` callbacks
+1. Source declares providers in `build()` with `getChannels`, `onChannelEnabled`, `onChannelDisabled` callbacks
 2. User clicks "Connect" in the twist edit modal → OAuth flow happens automatically
-3. After auth, the runtime calls your `getSyncables()` to list available resources
-4. User enables resources in the modal → `onSyncEnabled()` fires
-5. User disables resources → `onSyncDisabled()` fires
-6. Get tokens via `this.tools.integrations.get(PROVIDER, syncableId)`
+3. After auth, the runtime calls your `getChannels()` to list available resources
+4. User enables resources in the modal → `onChannelEnabled()` fires
+5. User disables resources → `onChannelDisabled()` fires
+6. Get tokens via `this.tools.integrations.get(PROVIDER, channelId)`
 
 ### Available Providers
 
@@ -415,7 +416,7 @@ For bidirectional sync where actions should be attributed to the acting user:
 
 ```typescript
 await this.tools.integrations.actAs(
-  MyTool.PROVIDER,
+  MySource.PROVIDER,
   actorId,      // The user who performed the action
   activityId,   // Activity to create auth prompt in (if user hasn't connected)
   this.performWriteBack,
@@ -429,25 +430,25 @@ async performWriteBack(token: AuthToken, ...extraArgs: any[]): Promise<void> {
 }
 ```
 
-### Cross-Tool Auth Sharing (Google Tools)
+### Cross-Source Auth Sharing (Google Sources)
 
-When building a Google tool that should also sync contacts, merge scopes:
+When building a Google source that should also sync contacts, merge scopes:
 
 ```typescript
-import GoogleContacts from "@plotday/tool-google-contacts";
+import GoogleContacts from "@plotday/source-google-contacts";
 
-build(build: ToolBuilder) {
+build(build: SourceBuilder) {
   return {
     integrations: build(Integrations, {
       providers: [{
         provider: AuthProvider.Google,
         scopes: Integrations.MergeScopes(
-          MyGoogleTool.SCOPES,
+          MyGoogleSource.SCOPES,
           GoogleContacts.SCOPES
         ),
-        getSyncables: this.getSyncables,
-        onSyncEnabled: this.onSyncEnabled,
-        onSyncDisabled: this.onSyncDisabled,
+        getChannels: this.getChannels,
+        onChannelEnabled: this.onChannelEnabled,
+        onChannelDisabled: this.onChannelDisabled,
       }],
     }),
     googleContacts: build(GoogleContacts),
@@ -456,18 +457,18 @@ build(build: ToolBuilder) {
 }
 ```
 
-## Architecture: Tools Build, Twists Save
+## Architecture: Sources Save Directly
 
-**Tools NEVER call `plot.createActivity()` directly.** Tools build `NewActivityWithNotes` objects and deliver them to the parent twist via `this.tools.callbacks.run(callbackToken, activity)`. The parent twist decides what to save.
+**Sources save data directly** via `integrations.saveThread()`. Sources build `NewActivityWithNotes` objects and save them, rather than passing them through a parent twist.
 
 This means:
-- Tools request `Plot` with `ContactAccess.Write` (for contacts on activities), not `ActivityAccess.Create`
-- Tools declare `static readonly Options: SyncToolOptions` to receive the `onItem` callback from the parent
-- The parent twist's `onItem` callback calls `this.tools.plot.createActivity(activity)`
+- Sources request `Plot` with `ContactAccess.Write` (for contacts on activities)
+- Sources declare `static readonly Options: SyncToolOptions` to receive configuration from the parent
+- Sources call save methods directly to persist synced data
 
 ## Critical: Callback Serialization Pattern
 
-**The #1 mistake when building tools is passing function references as callback arguments.** Functions cannot be serialized across worker boundaries.
+**The #1 mistake when building sources is passing function references as callback arguments.** Functions cannot be serialized across worker boundaries.
 
 ### ❌ WRONG - Passing Function as Callback Argument
 
@@ -518,7 +519,7 @@ async syncBatch(resourceId: string): Promise<void> {
 
 ## Callback Backward Compatibility
 
-**All callbacks automatically upgrade to new tool versions on deployment.** You MUST maintain backward compatibility.
+**All callbacks automatically upgrade to new source versions on deployment.** You MUST maintain backward compatibility.
 
 - ❌ Don't change function signatures (remove/reorder params, change types)
 - ✅ Do add optional parameters at the end
@@ -551,12 +552,12 @@ async preUpgrade(): Promise<void> {
 
 ## Storage Key Conventions
 
-All tools use consistent key prefixes:
+All sources use consistent key prefixes:
 
 | Key Pattern | Purpose |
 |------------|---------|
 | `item_callback_<id>` | Serialized callback to parent's `onItem` |
-| `disable_callback_<id>` | Serialized callback to parent's `onSyncableDisabled` |
+| `disable_callback_<id>` | Serialized callback to parent's `onChannelDisabled` |
 | `sync_state_<id>` | Current batch pagination state |
 | `sync_enabled_<id>` | Boolean tracking enabled state |
 | `webhook_id_<id>` | External webhook registration ID |
@@ -572,7 +573,7 @@ The `activity.source` field is the idempotency key for automatic upserts. Use a 
 <provider>:<namespace>:<id>     — When provider has multiple entity types
 ```
 
-Examples from existing tools:
+Examples from existing sources:
 ```
 linear:issue:<issueId>
 asana:task:<taskGid>
@@ -607,15 +608,15 @@ https://slack.com/app_redirect?channel=<id>&message_ts=<ts>  — Slack uses full
 activity.meta = {
   ...activity.meta,
   syncProvider: "myprovider",    // Provider identifier
-  syncableId: resourceId,        // Resource being synced
+  channelId: resourceId,         // Resource being synced
 };
 ```
 
-This metadata is used by the twist's `onSyncableDisabled` callback to match and archive activities:
+This metadata is used by the twist's `onChannelDisabled` callback to match and archive activities:
 
 ```typescript
 // In the twist:
-async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
+async onChannelDisabled(filter: ActivityFilter): Promise<void> {
   await this.tools.plot.updateActivity({ match: filter, archived: true });
 }
 ```
@@ -639,7 +640,7 @@ const activity = {
 
 ### Localhost Guard (REQUIRED)
 
-All tools MUST skip webhook registration in local development:
+All sources MUST skip webhook registration in local development:
 
 ```typescript
 const webhookUrl = await this.tools.network.createWebhook({}, this.onWebhook, resourceId);
@@ -678,7 +679,7 @@ private async scheduleWatchRenewal(resourceId: string): Promise<void> {
 
 ## Bidirectional Sync
 
-For tools that support write-backs (updating external items from Plot):
+For sources that support write-backs (updating external items from Plot):
 
 ### Issue/Task Updates (`updateIssue`)
 
@@ -713,7 +714,7 @@ async addIssueComment(meta: ActivityMeta, body: string, noteId?: string): Promis
 The parent twist prevents infinite loops by checking note authorship:
 
 ```typescript
-// In the twist (not the tool):
+// In the twist (not the source):
 async onNoteCreated(note: Note): Promise<void> {
   if (note.author.type === ActorType.Twist) return; // Prevent loops
   // ... sync note to external service
@@ -722,7 +723,7 @@ async onNoteCreated(note: Note): Promise<void> {
 
 ## Contacts Pattern
 
-Tools that sync user data should create contacts for authors and assignees:
+Sources that sync user data should create contacts for authors and assignees:
 
 ```typescript
 import type { NewContact } from "@plotday/twister/plot";
@@ -765,25 +766,25 @@ declare const Buffer: {
 ## Building and Testing
 
 ```bash
-# Build the tool
-cd public/tools/<name> && pnpm build
+# Build the source
+cd public/sources/<name> && pnpm build
 
 # Type-check without building
-cd public/tools/<name> && pnpm exec tsc --noEmit
+cd public/sources/<name> && pnpm exec tsc --noEmit
 
 # Install dependencies (from repo root)
 pnpm install
 ```
 
-After creating a new tool, add it to `pnpm-workspace.yaml` if not already covered by the glob pattern.
+After creating a new source, add it to `pnpm-workspace.yaml` if not already covered by the glob pattern.
 
-## Tool Development Checklist
+## Source Development Checklist
 
-- [ ] Extend `Tool<YourTool>` and implement the correct common interface
+- [ ] Extend `Source<YourSource>` and implement the correct common interface
 - [ ] Declare `static readonly PROVIDER`, `static readonly SCOPES`
 - [ ] Declare `static readonly Options: SyncToolOptions` and `declare readonly Options: SyncToolOptions`
 - [ ] Declare all dependencies in `build()`: Integrations, Network, Callbacks, Tasks, Plot
-- [ ] Implement `getSyncables()`, `onSyncEnabled()`, `onSyncDisabled()`
+- [ ] Implement `getChannels()`, `onChannelEnabled()`, `onChannelDisabled()`
 - [ ] Convert parent callbacks to tokens with `createFromParent()` — **never pass functions to `this.callback()`**
 - [ ] Store callback tokens with `this.set()`, retrieve with `this.get<Callback>()`
 - [ ] Pass only serializable values (no functions, no undefined) to `this.callback()`
@@ -792,23 +793,23 @@ After creating a new tool, add it to `pnpm-workspace.yaml` if not already covere
 - [ ] Verify webhook signatures
 - [ ] Use canonical `source` URLs for activity upserts (immutable IDs)
 - [ ] Use `note.key` for note-level upserts
-- [ ] Inject `syncProvider` and `syncableId` into `activity.meta`
+- [ ] Inject `syncProvider` and `channelId` into `activity.meta`
 - [ ] Handle `initialSync` flag: `unread: false` and `archived: false` for initial, omit both for incremental
 - [ ] Create contacts for authors/assignees with `NewContact`
-- [ ] Clean up all stored state and callbacks in `stopSync()` and `onSyncDisabled()`
+- [ ] Clean up all stored state and callbacks in `stopSync()` and `onChannelDisabled()`
 - [ ] Add `package.json` with correct structure, `tsconfig.json`, and `src/index.ts` re-export
-- [ ] Verify the tool builds: `pnpm build`
+- [ ] Verify the source builds: `pnpm build`
 
 ## Common Pitfalls
 
 1. **❌ Passing functions to `this.callback()`** — Convert to tokens first with `createFromParent()`
 2. **❌ Storing functions with `this.set()`** — Convert to tokens first
 3. **❌ Not validating callback token exists** — Always check before `callbacks.run()`
-4. **❌ Forgetting sync metadata** — Always inject `syncProvider` and `syncableId` into `activity.meta`
+4. **❌ Forgetting sync metadata** — Always inject `syncProvider` and `channelId` into `activity.meta`
 5. **❌ Using mutable IDs in `source`** — Use immutable IDs (Jira issue ID, not issue key)
 6. **❌ Not breaking loops into batches** — Each execution has ~1000 request limit
 7. **❌ Missing localhost guard** — Webhook registration fails silently on localhost
-8. **❌ Calling `plot.createActivity()` from a tool** — Tools build data, twists save it
+8. **❌ Calling `plot.createActivity()` from a source** — Sources save data directly via `integrations.saveThread()`
 9. **❌ Breaking callback signatures** — Old callbacks auto-upgrade; add optional params at end only
 10. **❌ Passing `undefined` in serializable values** — Use `null` instead
 11. **❌ Forgetting to clean up on disable** — Delete callbacks, webhooks, and stored state
@@ -816,14 +817,14 @@ After creating a new tool, add it to `pnpm-workspace.yaml` if not already covere
 
 ## Study These Examples
 
-| Tool | Category | Key Patterns |
-|------|----------|-------------|
-| `linear/` | ProjectTool | Clean reference implementation, webhook handling, bidirectional sync |
-| `google-calendar/` | CalendarTool | Recurring events, RSVP write-back, watch renewal, cross-tool auth sharing |
-| `slack/` | MessagingTool | Team-sharded webhooks, thread model, Slack-specific auth |
-| `gmail/` | MessagingTool | PubSub webhooks, email thread transformation |
-| `google-drive/` | DocumentTool | Document comments, reply threading, file watching |
-| `jira/` | ProjectTool | Immutable vs mutable IDs, comment metadata for dedup |
-| `asana/` | ProjectTool | HMAC webhook verification, section-based projects |
-| `outlook-calendar/` | CalendarTool | Microsoft Graph API, subscription management |
-| `google-contacts/` | (Supporting) | Contact sync, cross-tool `syncWithAuth()` pattern |
+| Source | Category | Key Patterns |
+|--------|----------|-------------|
+| `linear/` | ProjectSource | Clean reference implementation, webhook handling, bidirectional sync |
+| `google-calendar/` | CalendarSource | Recurring events, RSVP write-back, watch renewal, cross-source auth sharing |
+| `slack/` | MessagingSource | Team-sharded webhooks, thread model, Slack-specific auth |
+| `gmail/` | MessagingSource | PubSub webhooks, email thread transformation |
+| `google-drive/` | DocumentSource | Document comments, reply threading, file watching |
+| `jira/` | ProjectSource | Immutable vs mutable IDs, comment metadata for dedup |
+| `asana/` | ProjectSource | HMAC webhook verification, section-based projects |
+| `outlook-calendar/` | CalendarSource | Microsoft Graph API, subscription management |
+| `google-contacts/` | (Supporting) | Contact sync, cross-source `syncWithAuth()` pattern |
