@@ -1,5 +1,11 @@
 import { type Tag } from "./tag";
-import { type ActorId, type NewActor, type NewTags, type Tags } from "./plot";
+import {
+  type Actor,
+  type ActorId,
+  type NewActor,
+  type NewTags,
+  type Tags,
+} from "./plot";
 import { Uuid } from "./utils/uuid";
 
 export { Uuid } from "./utils/uuid";
@@ -52,7 +58,7 @@ export type ScheduleContactStatus = "attend" | "skip";
 export type ScheduleContactRole = "organizer" | "required" | "optional";
 
 export type ScheduleContact = {
-  contact: ActorId;
+  contact: Actor;
   status: ScheduleContactStatus | null;
   role: ScheduleContactRole | null;
   archived: boolean;
