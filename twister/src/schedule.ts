@@ -1,5 +1,5 @@
 import { type Tag } from "./tag";
-import { type ActorId, type NewTags, type Tags } from "./plot";
+import { type ActorId, type NewActor, type NewTags, type Tags } from "./plot";
 import { Uuid } from "./utils/uuid";
 
 export { Uuid } from "./utils/uuid";
@@ -44,6 +44,25 @@ export type Schedule = {
    * Format: Date object or "YYYY-MM-DD" for all-day events.
    */
   occurrence: Date | string | null;
+  /** Contacts invited to this schedule (attendees/participants) */
+  contacts: ScheduleContact[];
+};
+
+export type ScheduleContactStatus = "attend" | "skip";
+export type ScheduleContactRole = "organizer" | "required" | "optional";
+
+export type ScheduleContact = {
+  contact: ActorId;
+  status: ScheduleContactStatus | null;
+  role: ScheduleContactRole | null;
+  archived: boolean;
+};
+
+export type NewScheduleContact = {
+  contact: NewActor;
+  status?: ScheduleContactStatus | null;
+  role?: ScheduleContactRole | null;
+  archived?: boolean;
 };
 
 /**
@@ -111,6 +130,8 @@ export type NewSchedule = {
   order?: number | null;
   /** Whether to archive this schedule */
   archived?: boolean;
+  /** Contacts to upsert on this schedule. Upserted by contact identity. */
+  contacts?: NewScheduleContact[];
 };
 
 /** @deprecated Schedules are updated via Thread. Use NewSchedule instead. */
@@ -161,6 +182,9 @@ export type NewScheduleOccurrence = Pick<
 
     /** Whether this occurrence should be marked as unread */
     unread?: boolean;
+
+    /** Contacts to upsert on this occurrence's schedule */
+    contacts?: NewScheduleContact[];
   };
 
 /**
