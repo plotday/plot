@@ -44,9 +44,4 @@ export enum Tag {
   Applause = 1016,
   Cool = 1017,
   Sad = 1018,
-  // RSVP tags - mutually exclusive per actor
-  // When an actor adds one of these tags, the other two are automatically removed
-  Attend = 1019,
-  Skip = 1020,
-  Undecided = 1021,
 }
