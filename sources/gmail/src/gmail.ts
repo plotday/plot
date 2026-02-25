@@ -1,5 +1,4 @@
 import {
-  type NewThreadWithNotes,
   Source,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -53,6 +52,7 @@ export class Gmail extends Source<Gmail> implements MessagingSource {
             getChannels: this.listSyncChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
+            linkTypes: [{ type: "email", label: "Email" }],
           },
         ],
       }),
@@ -281,10 +281,10 @@ export class Gmail extends Source<Gmail> implements MessagingSource {
   ): Promise<void> {
     for (const thread of threads) {
       try {
-        // Transform Gmail thread to NewThreadWithNotes
+        // Transform Gmail thread to NewLinkWithNotes
         const activityThread = transformGmailThread(thread);
 
-        if (activityThread.notes.length === 0) continue;
+        if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
         // Inject sync metadata for the parent to identify the source
         activityThread.meta = {
@@ -293,8 +293,8 @@ export class Gmail extends Source<Gmail> implements MessagingSource {
           syncableId: channelId,
         };
 
-        // Save thread directly via integrations
-        await this.tools.integrations.saveThread(activityThread);
+        // Save link directly via integrations
+        await this.tools.integrations.saveLink(activityThread);
       } catch (error) {
         console.error(`Failed to process Gmail thread ${thread.id}:`, error);
         // Continue processing other threads

@@ -1,6 +1,5 @@
-import { ThreadType } from "@plotday/twister";
 import type {
-  NewThreadWithNotes,
+  NewLinkWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
 
@@ -233,19 +232,19 @@ function formatSlackText(text: string): string {
 }
 
 /**
- * Transforms a Slack message thread into a NewThreadWithNotes structure.
- * The first message snippet becomes the Thread title, and each message becomes a Note.
+ * Transforms a Slack message thread into a NewLinkWithNotes structure.
+ * The first message snippet becomes the link title, and each message becomes a Note.
  */
 export function transformSlackThread(
   messages: SlackMessage[],
   channelId: string
-): NewThreadWithNotes {
+): NewLinkWithNotes {
   const parentMessage = messages[0];
 
   if (!parentMessage) {
     // Return empty structure for invalid threads
     return {
-      type: ThreadType.Note,
+      type: "message",
       title: "Empty thread",
       notes: [],
     };
@@ -258,10 +257,10 @@ export function transformSlackThread(
   // Canonical URL using Slack's app_redirect (works across all workspaces)
   const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${threadTs}`;
 
-  // Create Thread
-  const thread: NewThreadWithNotes = {
+  // Create link
+  const thread: NewLinkWithNotes = {
     source: canonicalUrl,
-    type: ThreadType.Note,
+    type: "message",
     title,
     created: new Date(parseFloat(parentMessage.ts) * 1000),
     meta: {
@@ -282,14 +281,13 @@ export function transformSlackThread(
 
     // Create NewNote with idempotent key
     const note = {
-      thread: { source: canonicalUrl },
       key: message.ts,
       author: slackUserToNewActor(userId),
       content: text,
       mentions: mentions.length > 0 ? mentions : undefined,
     };
 
-    thread.notes.push(note);
+    thread.notes!.push(note);
   }
 
   return thread;

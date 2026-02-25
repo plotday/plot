@@ -6,8 +6,7 @@ import {
   ActionType,
   ThreadMeta,
   ThreadType,
-  type NewThreadWithNotes,
-  type NewNote,
+  type NewLinkWithNotes,
 } from "@plotday/twister";
 import type {
   Project,
@@ -50,6 +49,16 @@ export class Asana extends Source<Asana> implements ProjectSource {
         providers: [{
           provider: Asana.PROVIDER,
           scopes: Asana.SCOPES,
+          linkTypes: [
+            {
+              type: "task",
+              label: "Task",
+              statuses: [
+                { status: "open", label: "Open" },
+                { status: "done", label: "Done" },
+              ],
+            },
+          ],
           getChannels: this.getChannels,
           onChannelEnabled: this.onChannelEnabled,
           onChannelDisabled: this.onChannelDisabled,
@@ -283,17 +292,17 @@ export class Asana extends Source<Asana> implements ProjectSource {
         }
       }
 
-      const threadWithNotes = await this.convertTaskToThread(
+      const linkWithNotes = await this.convertTaskToLink(
         task,
         projectId
       );
       // Set unread based on sync type (false for initial sync to avoid notification overload)
-      threadWithNotes.unread = !state.initialSync;
+      linkWithNotes.unread = !state.initialSync;
       // Unarchive on initial sync only (preserve user's archive state on incremental syncs)
       if (state.initialSync) {
-        threadWithNotes.archived = false;
+        linkWithNotes.archived = false;
       }
-      await this.tools.integrations.saveThread(threadWithNotes);
+      await this.tools.integrations.saveLink(linkWithNotes);
     }
 
     // Check if more pages by checking if we got a full batch
@@ -321,12 +330,12 @@ export class Asana extends Source<Asana> implements ProjectSource {
   }
 
   /**
-   * Convert an Asana task to a Plot Thread
+   * Convert an Asana task to a Plot Link
    */
-  private async convertTaskToThread(
+  private async convertTaskToLink(
     task: any,
     projectId: string
-  ): Promise<NewThreadWithNotes> {
+  ): Promise<NewLinkWithNotes> {
     const createdBy = task.created_by;
     const assignee = task.assignee;
 
@@ -350,7 +359,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
     }
 
     // Build notes array: always create initial note with description and link
-    const notes: NewNote[] = [];
+    const notes: any[] = [];
 
     // Extract description (if any)
     let description: string | null = null;
@@ -374,7 +383,6 @@ export class Asana extends Source<Asana> implements ProjectSource {
 
     // Create initial note with description (actions moved to thread level)
     notes.push({
-      thread: { source: threadSource },
       key: "description",
       content: description,
       created: task.created_at ? new Date(task.created_at) : undefined,
@@ -382,7 +390,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
 
     return {
       source: threadSource,
-      type: ThreadType.Action,
+      type: "task",
       title: task.name,
       created: task.created_at ? new Date(task.created_at) : undefined,
       meta: {
@@ -394,10 +402,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
       actions: threadActions.length > 0 ? threadActions : undefined,
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned tasks
-      done:
-        task.completed && task.completed_at
-          ? new Date(task.completed_at)
-          : null,
+      status: task.completed && task.completed_at ? "done" : "open",
       notes,
       preview: description || null,
     };
@@ -622,10 +627,10 @@ export class Asana extends Source<Asana> implements ProjectSource {
         description = task.notes;
       }
 
-      // Create partial thread update (empty notes = doesn't touch existing notes)
-      const thread: NewThreadWithNotes = {
+      // Create partial link update (empty notes = doesn't touch existing notes)
+      const link: NewLinkWithNotes = {
         source: threadSource,
-        type: ThreadType.Action,
+        type: "task",
         title: task.name,
         created: task.created_at ? new Date(task.created_at) : undefined,
         meta: {
@@ -636,15 +641,12 @@ export class Asana extends Source<Asana> implements ProjectSource {
         },
         author: authorContact,
         assignee: assigneeContact ?? null,
-        done:
-          task.completed && task.completed_at
-            ? new Date(task.completed_at)
-            : null,
+        status: task.completed && task.completed_at ? "done" : "open",
         preview: description || null,
         notes: [],
       };
 
-      await this.tools.integrations.saveThread(thread);
+      await this.tools.integrations.saveLink(link);
     } catch (error) {
       console.warn("Failed to process Asana task webhook:", error);
     }
@@ -698,20 +700,20 @@ export class Asana extends Source<Asana> implements ProjectSource {
         };
       }
 
-      // Create thread update with single story note
-      const thread: NewThreadWithNotes = {
+      // Create link update with single story note
+      const link: NewLinkWithNotes = {
         source: threadSource,
-        type: ThreadType.Action, // Required field (will match existing thread)
+        type: "task",
+        title: taskGid, // Placeholder; upsert by source will preserve existing title
         notes: [
           {
             key: `story-${latestStory.gid}`,
-            thread: { source: threadSource },
             content: latestStory.text || "",
             created: latestStory.created_at
               ? new Date(latestStory.created_at)
               : undefined,
             author: storyAuthor,
-          } as NewNote,
+          } as any,
         ],
         meta: {
           taskGid,
@@ -721,7 +723,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
         },
       };
 
-      await this.tools.integrations.saveThread(thread);
+      await this.tools.integrations.saveLink(link);
     } catch (error) {
       console.warn("Failed to process Asana story webhook:", error);
     }

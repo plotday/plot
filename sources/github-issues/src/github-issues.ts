@@ -5,8 +5,7 @@ import {
   ActionType,
   type ThreadMeta,
   ThreadType,
-  type NewThreadWithNotes,
-  type NewNote,
+  type NewLinkWithNotes,
 } from "@plotday/twister";
 import type {
   Project,
@@ -57,6 +56,25 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
           {
             provider: GitHubIssues.PROVIDER,
             scopes: GitHubIssues.SCOPES,
+            linkTypes: [
+              {
+                type: "issue",
+                label: "Issue",
+                statuses: [
+                  { status: "open", label: "Open" },
+                  { status: "closed", label: "Closed" },
+                ],
+              },
+              {
+                type: "pull_request",
+                label: "Pull Request",
+                statuses: [
+                  { status: "open", label: "Open" },
+                  { status: "closed", label: "Closed" },
+                  { status: "merged", label: "Merged" },
+                ],
+              },
+            ],
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
@@ -300,7 +318,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       // Skip pull requests (GitHub returns PRs in issues endpoint)
       if (issue.pull_request) continue;
 
-      const thread = await this.convertIssueToThread(
+      const link = await this.convertIssueToLink(
         octokit,
         issue,
         repoId,
@@ -308,13 +326,13 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
         state.initialSync
       );
 
-      if (thread) {
-        thread.meta = {
-          ...thread.meta,
+      if (link) {
+        link.meta = {
+          ...link.meta,
           syncProvider: "github-issues",
           syncableId: repoId,
         };
-        await this.tools.integrations.saveThread(thread);
+        await this.tools.integrations.saveLink(link);
         processedInBatch++;
       }
     }
@@ -360,15 +378,15 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
   }
 
   /**
-   * Convert a GitHub issue to a NewThreadWithNotes
+   * Convert a GitHub issue to a NewLinkWithNotes
    */
-  private async convertIssueToThread(
+  private async convertIssueToLink(
     octokit: Octokit,
     issue: any,
     repoId: string,
     repoFullName: string,
     initialSync: boolean
-  ): Promise<NewThreadWithNotes | null> {
+  ): Promise<NewLinkWithNotes | null> {
     // Build author contact (GitHub users may not have email)
     let authorContact: NewContact | undefined;
     if (issue.user) {
@@ -459,14 +477,14 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       );
     }
 
-    const thread: NewThreadWithNotes = {
+    const link: NewLinkWithNotes = {
       source: `github:issue:${repoId}:${issue.number}`,
-      type: ThreadType.Action,
+      type: "issue",
       title: issue.title,
       created: issue.created_at,
       author: authorContact,
       assignee: assigneeContact ?? null,
-      done: issue.closed_at ?? null,
+      status: issue.closed_at ? "closed" : "open",
       meta: {
         githubIssueNumber: issue.number,
         githubRepoId: repoId,
@@ -480,7 +498,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       ...(initialSync ? { archived: false } : {}),
     };
 
-    return thread;
+    return link;
   }
 
   /**
@@ -676,14 +694,14 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       };
     }
 
-    const thread: NewThreadWithNotes = {
+    const link: NewLinkWithNotes = {
       source: `github:issue:${repoId}:${issue.number}`,
-      type: ThreadType.Action,
+      type: "issue",
       title: issue.title,
       created: issue.created_at,
       author: authorContact,
       assignee: assigneeContact ?? null,
-      done: issue.closed_at ?? null,
+      status: issue.closed_at ? "closed" : "open",
       meta: {
         githubIssueNumber: issue.number,
         githubRepoId: repoId,
@@ -696,7 +714,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       notes: [],
     };
 
-    await this.tools.integrations.saveThread(thread);
+    await this.tools.integrations.saveLink(link);
   }
 
   /**
@@ -727,19 +745,20 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       };
     }
 
-    const threadSource = `github:issue:${repoId}:${issue.number}`;
-    const note: NewNote = {
-      key: `comment-${comment.id}`,
-      thread: { source: threadSource },
-      content: comment.body ?? null,
-      created: comment.created_at,
-      author: commentAuthor,
-    };
+    const linkSource = `github:issue:${repoId}:${issue.number}`;
 
-    const thread: NewThreadWithNotes = {
-      source: threadSource,
-      type: ThreadType.Action,
-      notes: [note],
+    const link: NewLinkWithNotes = {
+      source: linkSource,
+      type: "issue",
+      title: issue.title || `#${issue.number}`, // Placeholder; upsert by source will preserve existing title
+      notes: [
+        {
+          key: `comment-${comment.id}`,
+          content: comment.body ?? null,
+          created: comment.created_at,
+          author: commentAuthor,
+        } as any,
+      ],
       meta: {
         githubIssueNumber: issue.number,
         githubRepoId: repoId,
@@ -750,7 +769,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       },
     };
 
-    await this.tools.integrations.saveThread(thread);
+    await this.tools.integrations.saveLink(link);
   }
 
   /**

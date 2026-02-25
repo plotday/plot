@@ -2,6 +2,7 @@ import {
   type Actor,
   type ActorId,
   type NewContact,
+  type NewLinkWithNotes,
   type NewThreadWithNotes,
   type Note,
   type Thread,
@@ -32,11 +33,31 @@ export type Syncable = Channel;
  * Configuration for an OAuth provider in a source's build options.
  * Declares the provider, scopes, and lifecycle callbacks.
  */
+/**
+ * Describes a link type that a source creates.
+ * Used for display in the UI (icons, labels).
+ */
+export type LinkTypeConfig = {
+  /** Machine-readable type identifier (e.g., "issue", "pull_request") */
+  type: string;
+  /** Human-readable label (e.g., "Issue", "Pull Request") */
+  label: string;
+  /** Possible status values for this type */
+  statuses?: Array<{
+    /** Machine-readable status (e.g., "open", "done") */
+    status: string;
+    /** Human-readable label (e.g., "Open", "Done") */
+    label: string;
+  }>;
+};
+
 export type IntegrationProviderConfig = {
   /** The OAuth provider */
   provider: AuthProvider;
   /** OAuth scopes to request */
   scopes: string[];
+  /** Registry of link types this source creates */
+  linkTypes?: LinkTypeConfig[];
   /** Returns available channels for the authorized actor. Must not use Plot tool. */
   getChannels: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
   /** Called when a channel resource is enabled for syncing */
@@ -161,11 +182,23 @@ export abstract class Integrations extends ITool {
   ): Promise<void>;
 
   /**
-   * Saves a thread with notes to the source's priority.
+   * Saves a link with notes to the source's priority.
+   *
+   * Creates a thread+link pair. The thread is a lightweight container;
+   * the link holds the external entity data (source, meta, type, status, etc.).
    *
    * This method is available only to Sources (not regular Twists).
-   * It replaces the old pattern of passing threads via callbacks to a Twist
-   * which then called plot.createThread().
+   *
+   * @param link - The link with notes to save
+   * @returns Promise resolving to the saved thread's UUID
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveLink(link: NewLinkWithNotes): Promise<Uuid>;
+
+  /**
+   * Saves a thread with notes to the source's priority.
+   *
+   * @deprecated Use saveLink() instead. saveThread() will be removed in a future version.
    *
    * @param thread - The thread with notes to save
    * @returns Promise resolving to the saved thread's UUID

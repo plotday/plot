@@ -1,5 +1,4 @@
 import {
-  type NewThreadWithNotes,
   Source,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -77,6 +76,7 @@ export class Slack extends Source<Slack> implements MessagingSource {
             getChannels: this.listSyncChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
+            linkTypes: [{ type: "message", label: "Message" }],
           },
         ],
       }),
@@ -272,10 +272,10 @@ export class Slack extends Source<Slack> implements MessagingSource {
   ): Promise<void> {
     for (const thread of threads) {
       try {
-        // Transform Slack thread to NewThreadWithNotes
+        // Transform Slack thread to NewLinkWithNotes
         const activityThread = transformSlackThread(thread, channelId);
 
-        if (activityThread.notes.length === 0) continue;
+        if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
         // Inject sync metadata for the parent to identify the source
         activityThread.meta = {
@@ -284,8 +284,8 @@ export class Slack extends Source<Slack> implements MessagingSource {
           syncableId: channelId,
         };
 
-        // Save thread directly via integrations
-        await this.tools.integrations.saveThread(activityThread);
+        // Save link directly via integrations
+        await this.tools.integrations.saveLink(activityThread);
       } catch (error) {
         console.error(`Failed to process thread:`, error);
         // Continue processing other threads

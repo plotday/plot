@@ -1,6 +1,5 @@
-import { ThreadType } from "@plotday/twister";
 import type {
-  NewThreadWithNotes,
+  NewLinkWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
 
@@ -343,14 +342,14 @@ function extractAttachments(
 }
 
 /**
- * Transforms a Gmail thread into a NewThreadWithNotes structure.
- * The subject becomes the Thread title, and each email becomes a Note.
+ * Transforms a Gmail thread into a NewLinkWithNotes structure.
+ * The subject becomes the link title, and each email becomes a Note.
  */
-export function transformGmailThread(thread: GmailThread): NewThreadWithNotes {
+export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
   if (!thread.messages || thread.messages.length === 0) {
     // Return empty structure for invalid threads
     return {
-      type: ThreadType.Note,
+      type: "email",
       title: "",
       notes: [],
     };
@@ -366,10 +365,10 @@ export function transformGmailThread(thread: GmailThread): NewThreadWithNotes {
   const firstMessageBody = extractBody(parentMessage.payload);
   const preview = firstMessageBody || parentMessage.snippet || null;
 
-  // Create Thread
-  const plotThread: NewThreadWithNotes = {
+  // Create link
+  const plotThread: NewLinkWithNotes = {
     source: canonicalUrl,
-    type: ThreadType.Note,
+    type: "email",
     title: subject || "Email",
     created: new Date(parseInt(parentMessage.internalDate)),
     meta: {
@@ -399,7 +398,6 @@ export function transformGmailThread(thread: GmailThread): NewThreadWithNotes {
 
     // Create NewNote with idempotent key
     const note = {
-      thread: { source: canonicalUrl },
       key: message.id,
       author: {
         email: sender.email,
@@ -409,7 +407,7 @@ export function transformGmailThread(thread: GmailThread): NewThreadWithNotes {
       mentions: mentions.length > 0 ? mentions : undefined,
     };
 
-    plotThread.notes.push(note);
+    plotThread.notes!.push(note);
   }
 
   return plotThread;

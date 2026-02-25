@@ -1,20 +1,18 @@
 import GoogleContacts from "@plotday/source-google-contacts";
 import {
-  type Thread,
   ActionType,
   type Action,
-  ThreadType,
-  type ActorId,
   ConferencingProvider,
-  type NewThreadWithNotes,
-  type NewActor,
+  type NewLinkWithNotes,
   type NewContact,
   type NewNote,
-  Tag,
   Source,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { NewScheduleOccurrence } from "@plotday/twister/schedule";
+import type {
+  NewScheduleContact,
+  NewScheduleOccurrence,
+} from "@plotday/twister/schedule";
 import {
   type Calendar,
   type CalendarSource,
@@ -127,10 +125,10 @@ export class GoogleCalendar
               GoogleCalendar.SCOPES,
               GoogleContacts.SCOPES
             ),
+            linkTypes: [{ type: "event", label: "Event" }],
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
-            onThreadUpdated: this.onThreadUpdated,
           },
         ],
       }),
@@ -684,20 +682,19 @@ export class GoogleCalendar
             const canonicalUrl = `google-calendar:${event.id}`;
 
             // Create cancellation note
-            const cancelNote: NewNote = {
-              thread: { source: canonicalUrl },
-              key: "cancellation",
+            const cancelNote = {
+              key: "cancellation" as const,
               content: "This event was cancelled.",
-              contentType: "text",
+              contentType: "text" as const,
               created: event.updated ? new Date(event.updated) : new Date(),
             };
 
-            // Convert to Note type with blocked tag and cancellation note
-            const thread: NewThreadWithNotes = {
+            // Convert to link with cancellation note
+            const link: NewLinkWithNotes = {
               source: canonicalUrl,
               created: event.created ? new Date(event.created) : undefined,
-              type: ThreadType.Note,
-              title: activityData.title,
+              type: "event",
+              title: activityData.title || "Cancelled event",
               preview: "Cancelled",
               meta: activityData.meta ?? null,
               notes: [cancelNote],
@@ -706,53 +703,31 @@ export class GoogleCalendar
             };
 
             // Inject sync metadata for the parent to identify the source
-            thread.meta = { ...thread.meta, syncProvider: "google", syncableId: calendarId };
+            link.meta = { ...link.meta, syncProvider: "google", syncableId: calendarId };
 
-            // Send thread - database handles upsert automatically
-            await this.tools.integrations.saveThread(thread);
+            // Send link - database handles upsert automatically
+            await this.tools.integrations.saveLink(link);
             continue;
           }
 
-          // For recurring events, DON'T add tags at series level
-          // Tags (RSVPs) should be per-occurrence via the scheduleOccurrences array
-          // For non-recurring events, add tags normally
+          // For recurring events, DON'T add contacts at series level
+          // Contacts (RSVPs) should be per-occurrence via the scheduleOccurrences array
+          // For non-recurring events, add contacts to the schedule
           const isRecurring = !!activityData.schedules?.[0]?.recurrenceRule;
-          let tags: Partial<Record<Tag, NewActor[]>> | null = null;
-          if (validAttendees.length > 0 && !isRecurring) {
-            const attendTags: NewActor[] = [];
-            const skipTags: NewActor[] = [];
-            const undecidedTags: NewActor[] = [];
-
-            // Iterate through valid attendees and group by response status
-            validAttendees.forEach((attendee) => {
-              const newActor: NewActor = {
+          if (validAttendees.length > 0 && !isRecurring && activityData.schedules?.[0]) {
+            const contacts: NewScheduleContact[] = validAttendees.map((attendee) => ({
+              contact: {
                 email: attendee.email!,
                 name: attendee.displayName,
-              };
-
-              if (attendee.responseStatus === "accepted") {
-                attendTags.push(newActor);
-              } else if (attendee.responseStatus === "declined") {
-                skipTags.push(newActor);
-              } else if (
-                attendee.responseStatus === "tentative" ||
-                attendee.responseStatus === "needsAction"
-              ) {
-                undecidedTags.push(newActor);
-              }
-            });
-
-            // Only set tags if we have at least one
-            if (
-              attendTags.length > 0 ||
-              skipTags.length > 0 ||
-              undecidedTags.length > 0
-            ) {
-              tags = {};
-              if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
-              if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
-              if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
-            }
+              },
+              status: attendee.responseStatus === "accepted" ? "attend" as const
+                : attendee.responseStatus === "declined" ? "skip" as const
+                : null,
+              role: attendee.organizer ? "organizer" as const
+                : attendee.optional ? "optional" as const
+                : "required" as const,
+            }));
+            activityData.schedules[0].contacts = contacts;
           }
 
           // Build actions array for videoconferencing and calendar links
@@ -806,47 +781,36 @@ export class GoogleCalendar
           // Canonical source for this event (required for upsert)
           const canonicalUrl = `google-calendar:${event.id}`;
 
-          // Create note with description (actions moved to thread level)
-          const notes: NewNote[] = [];
-          if (hasDescription) {
-            notes.push({
-              thread: { source: canonicalUrl },
-              key: "description",
-              content: description,
-              contentType:
-                description && containsHtml(description) ? "html" : "text",
-              created: event.created ? new Date(event.created) : new Date(),
-            });
-          }
+          // Build description note if available
+          const descriptionNote = hasDescription ? {
+            key: "description",
+            content: description,
+            contentType:
+              description && containsHtml(description) ? "html" as const : "text" as const,
+            created: event.created ? new Date(event.created) : new Date(),
+          } : null;
 
-          const shared = {
+          const link: NewLinkWithNotes = {
             source: canonicalUrl,
             created: event.created ? new Date(event.created) : undefined,
+            type: "event",
             title: activityData.title || "",
             author: authorContact,
             meta: activityData.meta ?? null,
-            tags: tags || undefined,
             actions: hasActions ? actions : undefined,
-            notes,
+            notes: descriptionNote ? [descriptionNote] : [],
             preview: hasDescription ? description : null,
             schedules: activityData.schedules,
             scheduleOccurrences: activityData.scheduleOccurrences,
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
-          } as const;
-
-          const thread: NewThreadWithNotes =
-            activityData.type === ThreadType.Action
-              ? { type: ThreadType.Action, ...shared }
-              : activityData.type === ThreadType.Event
-                ? { type: ThreadType.Event, ...shared }
-                : { type: ThreadType.Note, ...shared };
+          };
 
           // Inject sync metadata for the parent to identify the source
-          thread.meta = { ...thread.meta, syncProvider: "google", syncableId: calendarId };
+          link.meta = { ...link.meta, syncProvider: "google", syncableId: calendarId };
 
-          // Send thread - database handles upsert automatically
-          await this.tools.integrations.saveThread(thread);
+          // Send link - database handles upsert automatically
+          await this.tools.integrations.saveLink(link);
         }
       } catch (error) {
         console.error(`Failed to process event ${event.id}:`, error);
@@ -905,50 +869,38 @@ export class GoogleCalendar
         archived: true,
       };
 
-      const occurrenceUpdate: NewThreadWithNotes = {
-        type: ThreadType.Event,
+      const occurrenceUpdate: NewLinkWithNotes = {
+        type: "event",
+        title: "",
         source: masterCanonicalUrl,
         meta: { syncProvider: "google", syncableId: calendarId },
         scheduleOccurrences: [cancelledOccurrence],
         notes: [],
       };
 
-      await this.tools.integrations.saveThread(occurrenceUpdate);
+      await this.tools.integrations.saveLink(occurrenceUpdate);
       return;
     }
 
-    // Determine RSVP status for attendees
+    // Build contacts from attendees for this occurrence
     const validAttendees =
       event.attendees?.filter((att) => att.email && !att.resource) || [];
 
-    let tags: Partial<Record<Tag, import("@plotday/twister").NewActor[]>> = {};
-    if (validAttendees.length > 0) {
-      const attendTags: import("@plotday/twister").NewActor[] = [];
-      const skipTags: import("@plotday/twister").NewActor[] = [];
-      const undecidedTags: import("@plotday/twister").NewActor[] = [];
-
-      validAttendees.forEach((attendee) => {
-        const newActor: import("@plotday/twister").NewActor = {
-          email: attendee.email!,
-          name: attendee.displayName,
-        };
-
-        if (attendee.responseStatus === "accepted") {
-          attendTags.push(newActor);
-        } else if (attendee.responseStatus === "declined") {
-          skipTags.push(newActor);
-        } else if (
-          attendee.responseStatus === "tentative" ||
-          attendee.responseStatus === "needsAction"
-        ) {
-          undecidedTags.push(newActor);
-        }
-      });
-
-      if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
-      if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
-      if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
-    }
+    const contacts: NewScheduleContact[] | undefined =
+      validAttendees.length > 0
+        ? validAttendees.map((attendee) => ({
+            contact: {
+              email: attendee.email!,
+              name: attendee.displayName,
+            },
+            status: attendee.responseStatus === "accepted" ? "attend" as const
+              : attendee.responseStatus === "declined" ? "skip" as const
+              : null,
+            role: attendee.organizer ? "organizer" as const
+              : attendee.optional ? "optional" as const
+              : "required" as const,
+          }))
+        : undefined;
 
     // Build schedule occurrence object
     // Always include start to ensure upsert can infer scheduling when
@@ -960,7 +912,7 @@ export class GoogleCalendar
     const occurrence: NewScheduleOccurrence = {
       occurrence: new Date(originalStartTime),
       start: occurrenceStart,
-      tags: Object.keys(tags).length > 0 ? tags : undefined,
+      contacts,
       ...(initialSync ? { unread: false } : {}),
     };
 
@@ -969,17 +921,18 @@ export class GoogleCalendar
       occurrence.end = instanceSchedule.end;
     }
 
-    // Build a minimal NewThread with source and scheduleOccurrences
-    // The source saves directly via integrations.saveThread
-    const occurrenceUpdate: NewThreadWithNotes = {
-      type: ThreadType.Event,
+    // Build a minimal link with source and scheduleOccurrences
+    // The source saves directly via integrations.saveLink
+    const occurrenceUpdate: NewLinkWithNotes = {
+      type: "event",
+      title: "",
       source: masterCanonicalUrl,
       meta: { syncProvider: "google", syncableId: calendarId },
       scheduleOccurrences: [occurrence],
       notes: [],
     };
 
-    await this.tools.integrations.saveThread(occurrenceUpdate);
+    await this.tools.integrations.saveLink(occurrenceUpdate);
   }
 
   async onCalendarWebhook(
@@ -1091,165 +1044,22 @@ export class GoogleCalendar
     return `${baseEventId}_${instanceDateStr}`;
   }
 
-  async onThreadUpdated(
-    thread: Thread,
-    changes: {
-      tagsAdded: Record<Tag, ActorId[]>;
-      tagsRemoved: Record<Tag, ActorId[]>;
-    }
-  ): Promise<void> {
-    try {
-      // Only process calendar events
-      const source = thread.source;
-      if (
-        !source ||
-        typeof source !== "string" ||
-        !source.startsWith("google-calendar:")
-      ) {
-        return;
-      }
-
-      // Check if RSVP tags changed
-      const attendChanged =
-        Tag.Attend in changes.tagsAdded || Tag.Attend in changes.tagsRemoved;
-      const skipChanged =
-        Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
-      const undecidedChanged =
-        Tag.Undecided in changes.tagsAdded ||
-        Tag.Undecided in changes.tagsRemoved;
-
-      if (!attendChanged && !skipChanged && !undecidedChanged) {
-        return; // No RSVP-related tag changes
-      }
-
-      // Collect unique actor IDs from RSVP tag changes
-      const actorIds = new Set<ActorId>();
-      for (const tag of [Tag.Attend, Tag.Skip, Tag.Undecided]) {
-        if (tag in changes.tagsAdded) {
-          for (const id of changes.tagsAdded[tag]) actorIds.add(id);
-        }
-        if (tag in changes.tagsRemoved) {
-          for (const id of changes.tagsRemoved[tag]) actorIds.add(id);
-        }
-      }
-
-      // Determine new RSVP status based on most recent tag change
-      const hasAttend =
-        thread.tags?.[Tag.Attend] && thread.tags[Tag.Attend].length > 0;
-      const hasSkip =
-        thread.tags?.[Tag.Skip] && thread.tags[Tag.Skip].length > 0;
-      const hasUndecided =
-        thread.tags?.[Tag.Undecided] &&
-        thread.tags[Tag.Undecided].length > 0;
-
-      let newStatus: "accepted" | "declined" | "tentative" | "needsAction";
-
-      // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
-      if (hasAttend && (hasSkip || hasUndecided)) {
-        if (Tag.Attend in changes.tagsAdded) {
-          newStatus = "accepted";
-        } else if (Tag.Skip in changes.tagsAdded) {
-          newStatus = "declined";
-        } else if (Tag.Undecided in changes.tagsAdded) {
-          newStatus = "tentative";
-        } else {
-          return;
-        }
-      } else if (hasSkip && hasUndecided) {
-        if (Tag.Skip in changes.tagsAdded) {
-          newStatus = "declined";
-        } else if (Tag.Undecided in changes.tagsAdded) {
-          newStatus = "tentative";
-        } else {
-          return;
-        }
-      } else if (hasAttend) {
-        newStatus = "accepted";
-      } else if (hasSkip) {
-        newStatus = "declined";
-      } else if (hasUndecided) {
-        newStatus = "tentative";
-      } else {
-        newStatus = "needsAction";
-      }
-
-      // Extract calendar info from metadata
-      if (!thread.meta) {
-        console.error("[RSVP Sync] Missing thread metadata", {
-          thread_id: thread.id,
-        });
-        return;
-      }
-
-      const baseEventId = thread.meta.id;
-      const calendarId = thread.meta.calendarId;
-
-      if (
-        !baseEventId ||
-        !calendarId ||
-        typeof baseEventId !== "string" ||
-        typeof calendarId !== "string"
-      ) {
-        console.error("[RSVP Sync] Missing or invalid event/calendar ID", {
-          has_event_id: !!baseEventId,
-          has_calendar_id: !!calendarId,
-          event_id_type: typeof baseEventId,
-          calendar_id_type: typeof calendarId,
-        });
-        return;
-      }
-
-      // Determine the event ID to update
-      // Note: occurrence-level RSVP changes are handled at the master event level
-      const eventId = baseEventId;
-
-      // For each actor who changed RSVP, use actAs() to sync with their credentials.
-      // If the actor has auth, the callback fires immediately.
-      // If not, actAs() creates a private auth note automatically.
-      for (const actorId of actorIds) {
-        await this.tools.integrations.actAs(
-          GoogleCalendar.PROVIDER,
-          actorId,
-          thread.id,
-          this.syncActorRSVP,
-          calendarId as string,
-          eventId,
-          newStatus,
-          actorId as string
-        );
-      }
-    } catch (error) {
-      console.error("[RSVP Sync] Error in callback", {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        thread_id: thread.id,
-      });
-    }
-  }
-
   /**
-   * Sync RSVP for an actor. If the actor has auth, this is called immediately.
-   * If not, actAs() creates a private auth note and calls this when they authorize.
+   * Sync a schedule contact RSVP change back to Google Calendar.
+   * Called via actAs() which provides the actor's auth token.
    */
   async syncActorRSVP(
     token: AuthToken,
     calendarId: string,
     eventId: string,
     status: "accepted" | "declined" | "tentative" | "needsAction",
-    actorId: string
+    _actorId: string
   ): Promise<void> {
     try {
       const api = new GoogleApi(token.token);
-      await this.updateEventRSVPWithApi(
-        api,
-        calendarId,
-        eventId,
-        status,
-        actorId as ActorId
-      );
+      await this.updateEventRSVPWithApi(api, calendarId, eventId, status);
     } catch (error) {
       console.error("[RSVP Sync] Failed to sync RSVP", {
-        actor_id: actorId,
         event_id: eventId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1257,15 +1067,14 @@ export class GoogleCalendar
   }
 
   /**
-   * Update RSVP status for a specific actor using a pre-authenticated GoogleApi instance.
-   * Looks up the actor's email from the calendar API to find the correct attendee.
+   * Update RSVP status for the authenticated user on a Google Calendar event.
+   * Looks up the user's email from the calendar API to find the correct attendee.
    */
   private async updateEventRSVPWithApi(
     api: GoogleApi,
     calendarId: string,
     eventId: string,
-    status: "accepted" | "declined" | "needsAction" | "tentative",
-    actorId: ActorId
+    status: "accepted" | "declined" | "needsAction" | "tentative"
   ): Promise<void> {
     // Fetch the current event to get attendees list
     const event = (await api.call(
@@ -1294,7 +1103,6 @@ export class GoogleCalendar
 
     if (actorAttendeeIndex === -1) {
       console.warn("[RSVP Sync] Actor is not an attendee of this event", {
-        actor_id: actorId,
         event_id: eventId,
       });
       return;

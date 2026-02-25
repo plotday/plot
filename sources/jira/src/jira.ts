@@ -5,7 +5,7 @@ import {
   type Action,
   ActionType,
   ThreadType,
-  type NewThreadWithNotes,
+  type NewLinkWithNotes,
   NewContact,
 } from "@plotday/twister";
 import type {
@@ -48,6 +48,16 @@ export class Jira extends Source<Jira> implements ProjectSource {
         providers: [{
           provider: Jira.PROVIDER,
           scopes: Jira.SCOPES,
+          linkTypes: [
+            {
+              type: "issue",
+              label: "Issue",
+              statuses: [
+                { status: "open", label: "Open" },
+                { status: "done", label: "Done" },
+              ],
+            },
+          ],
           getChannels: this.getChannels,
           onChannelEnabled: this.onChannelEnabled,
           onChannelDisabled: this.onChannelDisabled,
@@ -262,15 +272,15 @@ export class Jira extends Source<Jira> implements ProjectSource {
 
     // Process each issue
     for (const issue of searchResult.issues || []) {
-      const threadWithNotes = await this.convertIssueToThread(
+      const linkWithNotes = await this.convertIssueToLink(
         issue,
         projectId
       );
       // Set unread based on sync type (false for initial sync to avoid notification overload)
-      threadWithNotes.unread = !state.initialSync;
+      linkWithNotes.unread = !state.initialSync;
       // Inject sync metadata for filtering on disable
-      threadWithNotes.meta = { ...threadWithNotes.meta, syncProvider: "atlassian", syncableId: projectId };
-      await this.tools.integrations.saveThread(threadWithNotes);
+      linkWithNotes.meta = { ...linkWithNotes.meta, syncProvider: "atlassian", syncableId: projectId };
+      await this.tools.integrations.saveLink(linkWithNotes);
     }
 
     // Check if more pages
@@ -311,12 +321,12 @@ export class Jira extends Source<Jira> implements ProjectSource {
   }
 
   /**
-   * Convert a Jira issue to a Plot Thread
+   * Convert a Jira issue to a Plot Link
    */
-  private async convertIssueToThread(
+  private async convertIssueToLink(
     issue: any,
     projectId: string
-  ): Promise<NewThreadWithNotes> {
+  ): Promise<NewLinkWithNotes> {
     const fields = issue.fields || {};
     const comments = fields.comment?.comments || [];
     const reporter = fields.reporter || fields.creator;
@@ -420,7 +430,7 @@ export class Jira extends Source<Jira> implements ProjectSource {
 
     return {
       ...(source ? { source } : {}),
-      type: ThreadType.Action,
+      type: "issue",
       title: fields.summary || issue.key,
       created: fields.created ? new Date(fields.created) : undefined,
       meta: {
@@ -429,7 +439,7 @@ export class Jira extends Source<Jira> implements ProjectSource {
       },
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
-      done: fields.resolutiondate ? new Date(fields.resolutiondate) : null,
+      status: fields.resolutiondate ? "done" : "open",
       actions: threadActions.length > 0 ? threadActions : undefined,
       notes,
       preview: description || null,
@@ -688,10 +698,10 @@ export class Jira extends Source<Jira> implements ProjectSource {
       }
     }
 
-    // Create partial thread update (empty notes = doesn't touch existing notes)
-    const thread: NewThreadWithNotes = {
+    // Create partial link update (empty notes = doesn't touch existing notes)
+    const link: NewLinkWithNotes = {
       ...(source ? { source } : {}),
-      type: ThreadType.Action,
+      type: "issue",
       title: fields.summary || issue.key,
       created: fields.created ? new Date(fields.created) : undefined,
       meta: {
@@ -700,12 +710,12 @@ export class Jira extends Source<Jira> implements ProjectSource {
       },
       author: authorContact,
       assignee: assigneeContact ?? null,
-      done: fields.resolutiondate ? new Date(fields.resolutiondate) : null,
+      status: fields.resolutiondate ? "done" : "open",
       preview: description || null,
       notes: [],
     };
 
-    await this.tools.integrations.saveThread(thread);
+    await this.tools.integrations.saveLink(link);
   }
 
   /**
@@ -759,17 +769,17 @@ export class Jira extends Source<Jira> implements ProjectSource {
       (p: any) => p.key === "plotNoteId"
     )?.value;
 
-    // Create thread update with single comment note
-    const thread: NewThreadWithNotes = {
+    // Create link update with single comment note
+    const link: NewLinkWithNotes = {
       ...(source ? { source } : {}),
-      type: ThreadType.Action, // Required field (will match existing thread)
+      type: "issue",
+      title: issue.key, // Placeholder; upsert by source will preserve existing title
       notes: [
         {
           key: `comment-${comment.id}`,
           // If this comment originated from Plot, identify by note ID so we update the existing note
           // rather than creating a duplicate
           ...(plotNoteId ? { id: plotNoteId } : {}),
-          thread: source ? { source } : undefined,
           content: commentText,
           created: comment.created ? new Date(comment.created) : undefined,
           author: commentAuthor,
@@ -781,7 +791,7 @@ export class Jira extends Source<Jira> implements ProjectSource {
       },
     };
 
-    await this.tools.integrations.saveThread(thread);
+    await this.tools.integrations.saveLink(link);
   }
 
   /**

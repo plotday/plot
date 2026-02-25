@@ -11,8 +11,7 @@ import {
   ActionType,
   ThreadMeta,
   ThreadType,
-  type NewThreadWithNotes,
-  type NewNote,
+  type NewLinkWithNotes,
 } from "@plotday/twister";
 import type {
   Project,
@@ -64,6 +63,16 @@ export class Linear extends Source<Linear> implements ProjectSource {
           {
             provider: Linear.PROVIDER,
             scopes: Linear.SCOPES,
+            linkTypes: [
+              {
+                type: "issue",
+                label: "Issue",
+                statuses: [
+                  { status: "open", label: "Open" },
+                  { status: "done", label: "Done" },
+                ],
+              },
+            ],
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
@@ -260,20 +269,20 @@ export class Linear extends Source<Linear> implements ProjectSource {
 
     // Process each issue
     for (const issue of issuesConnection.nodes) {
-      const thread = await this.convertIssueToThread(
+      const link = await this.convertIssueToLink(
         issue,
         projectId,
         state.initialSync
       );
 
-      if (thread) {
+      if (link) {
         // Inject sync metadata for bulk operations (e.g. disable filtering)
-        thread.meta = {
-          ...thread.meta,
+        link.meta = {
+          ...link.meta,
           syncProvider: "linear",
           syncableId: projectId,
         };
-        await this.tools.integrations.saveThread(thread);
+        await this.tools.integrations.saveLink(link);
       }
     }
 
@@ -300,13 +309,13 @@ export class Linear extends Source<Linear> implements ProjectSource {
   }
 
   /**
-   * Convert a Linear issue to a NewThreadWithNotes
+   * Convert a Linear issue to a NewLinkWithNotes
    */
-  private async convertIssueToThread(
+  private async convertIssueToLink(
     issue: Issue,
     projectId: string,
     initialSync: boolean
-  ): Promise<NewThreadWithNotes | null> {
+  ): Promise<NewLinkWithNotes | null> {
     let creator, assignee, comments;
 
     try {
@@ -410,15 +419,14 @@ export class Linear extends Source<Linear> implements ProjectSource {
       });
     }
 
-    const newThread: NewThreadWithNotes = {
+    const newLink: NewLinkWithNotes = {
       source: `linear:issue:${issue.id}`,
-      type: ThreadType.Action,
+      type: "issue",
       title: issue.title,
       created: issue.createdAt,
       author: authorContact,
       assignee: assigneeContact ?? null,
-      done: issue.completedAt ?? issue.canceledAt ?? null,
-      order: issue.sortOrder,
+      status: issue.completedAt || issue.canceledAt ? "done" : "open",
       meta: {
         linearId: issue.id,
         projectId,
@@ -430,7 +438,7 @@ export class Linear extends Source<Linear> implements ProjectSource {
       ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
     };
 
-    return newThread;
+    return newLink;
   }
 
   /**
@@ -671,21 +679,16 @@ export class Linear extends Source<Linear> implements ProjectSource {
       };
     }
 
-    // Create partial thread update (empty notes = doesn't touch existing notes)
+    // Create partial link update (empty notes = doesn't touch existing notes)
     // Note: webhook payload dates are JSON strings, must convert to Date
-    const newThread: NewThreadWithNotes = {
+    const newLink: NewLinkWithNotes = {
       source: `linear:issue:${issue.id}`,
-      type: ThreadType.Action,
+      type: "issue",
       title: issue.title,
       created: new Date(issue.createdAt),
       author: authorContact,
       assignee: assigneeContact ?? null,
-      done: issue.completedAt
-        ? new Date(issue.completedAt)
-        : issue.canceledAt
-        ? new Date(issue.canceledAt)
-        : null,
-      order: issue.sortOrder,
+      status: issue.completedAt || issue.canceledAt ? "done" : "open",
       meta: {
         linearId: issue.id,
         projectId,
@@ -696,7 +699,7 @@ export class Linear extends Source<Linear> implements ProjectSource {
       notes: [],
     };
 
-    await this.tools.integrations.saveThread(newThread);
+    await this.tools.integrations.saveLink(newLink);
   }
 
   /**
@@ -733,18 +736,18 @@ export class Linear extends Source<Linear> implements ProjectSource {
     // Create thread update with single comment note
     // Type is required by NewThread, but upsert will use existing thread's type
     const threadSource = `linear:issue:${issueId}`;
-    const note: NewNote = {
-      key: `comment-${comment.id}`,
-      thread: { source: threadSource },
-      content: comment.body,
-      created: new Date(comment.createdAt),
-      author: commentAuthor,
-    };
-
-    const newThread: NewThreadWithNotes = {
+    const newLink: NewLinkWithNotes = {
       source: threadSource,
-      type: ThreadType.Action, // Required field (will match existing thread)
-      notes: [note],
+      type: "issue",
+      title: issueId, // Placeholder; upsert by source will preserve existing title
+      notes: [
+        {
+          key: `comment-${comment.id}`,
+          content: comment.body,
+          created: new Date(comment.createdAt),
+          author: commentAuthor,
+        } as any,
+      ],
       meta: {
         linearId: issueId,
         projectId,
@@ -753,7 +756,7 @@ export class Linear extends Source<Linear> implements ProjectSource {
       },
     };
 
-    await this.tools.integrations.saveThread(newThread);
+    await this.tools.integrations.saveLink(newLink);
   }
 
   /**

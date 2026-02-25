@@ -1,11 +1,8 @@
 import GoogleContacts from "@plotday/source-google-contacts";
 import {
-  type ThreadFilter,
-  ThreadKind,
   type Action,
   ActionType,
-  ThreadType,
-  type NewThreadWithNotes,
+  type NewLinkWithNotes,
   type NewContact,
   type NewNote,
   Source,
@@ -75,6 +72,7 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
+            linkTypes: [{ type: "document", label: "Document" }],
           },
         ],
       }),
@@ -525,7 +523,7 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
             folderId,
             initialSync
           );
-          await this.tools.integrations.saveThread(thread);
+          await this.tools.integrations.saveLink(thread);
         } catch (error) {
           console.error(`Failed to process file ${file.id}:`, error);
         }
@@ -588,7 +586,7 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
             folderId,
             false // incremental sync
           );
-          await this.tools.integrations.saveThread(thread);
+          await this.tools.integrations.saveLink(thread);
         } catch (error) {
           console.error(
             `Failed to process changed file ${change.fileId}:`,
@@ -631,7 +629,7 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
     file: GoogleDriveFile,
     folderId: string,
     initialSync: boolean
-  ): Promise<NewThreadWithNotes> {
+  ): Promise<NewLinkWithNotes> {
     const canonicalSource = `google-drive:file:${file.id}`;
 
     // Build author contact from file owner
@@ -706,10 +704,9 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
       });
     }
 
-    const thread: NewThreadWithNotes = {
+    const thread: NewLinkWithNotes = {
       source: canonicalSource,
-      type: ThreadType.Note,
-      kind: ThreadKind.document,
+      type: "document",
       title: file.name,
       author,
       actions: actions.length > 0 ? actions : null,

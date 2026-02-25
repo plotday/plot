@@ -4,7 +4,7 @@ import {
   ActionType,
   type ThreadMeta,
   ThreadType,
-  type NewThreadWithNotes,
+  type NewLinkWithNotes,
   Source,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -110,6 +110,10 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
+            linkTypes: [
+              { type: "pull_request", label: "Pull Request" },
+              { type: "review", label: "Review" },
+            ],
           },
         ],
       }),
@@ -477,14 +481,14 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       ? this.userToContact(pr.assignee)
       : null;
 
-    const thread: NewThreadWithNotes = {
+    const thread: NewLinkWithNotes = {
       source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: ThreadType.Action,
+      type: "pull_request",
       title: pr.title,
       created: new Date(pr.created_at),
       author: authorContact,
       assignee: assigneeContact,
-      done: pr.merged_at ? new Date(pr.merged_at) : null,
+      status: pr.merged_at ? "done" : null,
       ...(pr.state === "closed" && !pr.merged_at ? { archived: true } : {}),
       meta: {
         provider: "github",
@@ -499,7 +503,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       notes: [],
     };
 
-    await this.tools.integrations.saveThread(thread);
+    await this.tools.integrations.saveLink(thread);
   }
 
   /**
@@ -524,9 +528,10 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       ? `${prefix}${review.body ? `\n\n${review.body}` : ""}`
       : review.body || null;
 
-    const thread: NewThreadWithNotes = {
+    const thread: NewLinkWithNotes = {
       source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: ThreadType.Action,
+      type: "pull_request",
+      title: pr.title,
       notes: [
         {
           key: `review-${review.id}`,
@@ -546,7 +551,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       },
     };
 
-    await this.tools.integrations.saveThread(thread);
+    await this.tools.integrations.saveLink(thread);
   }
 
   /**
@@ -564,9 +569,10 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
     const prNumber = issue.number;
     const commentAuthor = this.userToContact(comment.user);
 
-    const thread: NewThreadWithNotes = {
+    const thread: NewLinkWithNotes = {
       source: `github:pr:${owner}/${repo}/${prNumber}`,
-      type: ThreadType.Action,
+      type: "pull_request",
+      title: issue.title,
       notes: [
         {
           key: `comment-${comment.id}`,
@@ -585,7 +591,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       },
     };
 
-    await this.tools.integrations.saveThread(thread);
+    await this.tools.integrations.saveLink(thread);
   }
 
   // ---------- Batch sync ----------
@@ -669,7 +675,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
           syncProvider: "github",
           syncableId: repositoryId,
         };
-        await this.tools.integrations.saveThread(thread);
+        await this.tools.integrations.saveLink(thread);
       }
     }
 
@@ -691,7 +697,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
   }
 
   /**
-   * Convert a GitHub PR to a NewThreadWithNotes
+   * Convert a GitHub PR to a NewLinkWithNotes
    */
   private async convertPRToThread(
     token: string,
@@ -700,7 +706,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
     pr: GitHubPullRequest,
     repositoryId: string,
     initialSync: boolean,
-  ): Promise<NewThreadWithNotes | null> {
+  ): Promise<NewLinkWithNotes | null> {
     const authorContact = this.userToContact(pr.user);
     const assigneeContact = pr.assignee
       ? this.userToContact(pr.assignee)
@@ -779,14 +785,14 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       console.error("Error fetching PR reviews:", error);
     }
 
-    const thread: NewThreadWithNotes = {
+    const thread: NewLinkWithNotes = {
       source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: ThreadType.Action,
+      type: "pull_request",
       title: pr.title,
       created: new Date(pr.created_at),
       author: authorContact,
       assignee: assigneeContact,
-      done: pr.merged_at ? new Date(pr.merged_at) : null,
+      status: pr.merged_at ? "done" : null,
       meta: {
         provider: "github",
         owner,

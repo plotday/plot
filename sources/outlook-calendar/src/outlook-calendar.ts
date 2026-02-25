@@ -2,11 +2,10 @@ import {
   type Thread,
   type Action,
   ActionType,
-  ThreadType,
   type ActorId,
   ConferencingProvider,
   type ContentType,
-  type NewThreadWithNotes,
+  type NewLinkWithNotes,
   type NewActor,
   type NewContact,
   type NewNote,
@@ -14,7 +13,10 @@ import {
   Source,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { NewScheduleOccurrence } from "@plotday/twister/schedule";
+import type {
+  NewScheduleContact,
+  NewScheduleOccurrence,
+} from "@plotday/twister/schedule";
 import type {
   Calendar,
   CalendarSource,
@@ -115,10 +117,10 @@ export class OutlookCalendar
           {
             provider: OutlookCalendar.PROVIDER,
             scopes: OutlookCalendar.SCOPES,
+            linkTypes: [{ type: "event", label: "Event" }],
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
-            onThreadUpdated: this.onThreadUpdated,
           },
         ],
       }),
@@ -417,19 +419,19 @@ export class OutlookCalendar
           const source = `outlook-calendar:${outlookEvent.id}`;
 
           // Create cancellation note
-          const cancelNote: NewNote = {
-            thread: { source },
-            key: "cancellation",
+          const cancelNote = {
+            key: "cancellation" as const,
             content: "This event was cancelled.",
-            contentType: "text",
+            contentType: "text" as const,
             created: outlookEvent.lastModifiedDateTime
               ? new Date(outlookEvent.lastModifiedDateTime)
               : new Date(),
           };
 
-          // Convert to Note type with blocked tag and cancellation note
-          const thread: NewThreadWithNotes = {
-            type: ThreadType.Note,
+          // Convert to link with cancellation note
+          const link: NewLinkWithNotes = {
+            type: "event",
+            title: "Cancelled Event",
             created: outlookEvent.createdDateTime
               ? new Date(outlookEvent.createdDateTime)
               : new Date(),
@@ -441,8 +443,8 @@ export class OutlookCalendar
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           };
 
-          // Send thread update
-          await this.tools.integrations.saveThread(thread);
+          // Send link update
+          await this.tools.integrations.saveLink(link);
           continue;
         }
 
@@ -494,49 +496,24 @@ export class OutlookCalendar
           continue;
         }
 
-        // For recurring events, DON'T add tags at series level
-        // Tags (RSVPs) should be per-occurrence via the scheduleOccurrences array
-        // For non-recurring events, add tags normally
-        let tags: Partial<Record<Tag, NewActor[]>> | null = null;
+        // For recurring events, DON'T add contacts at series level
+        // Contacts (RSVPs) should be per-occurrence via the scheduleOccurrences array
+        // For non-recurring events, add contacts to the schedule
         const hasRecurrence = !!threadData.schedules?.[0]?.recurrenceRule;
-        if (validAttendees.length > 0 && !hasRecurrence) {
-          const attendTags: NewActor[] = [];
-          const skipTags: NewActor[] = [];
-          const undecidedTags: NewActor[] = [];
-
-          // Iterate through valid attendees and group by response status
-          validAttendees.forEach((attendee) => {
-            const newActor: NewActor = {
+        if (validAttendees.length > 0 && !hasRecurrence && threadData.schedules?.[0]) {
+          const contacts: NewScheduleContact[] = validAttendees.map((attendee) => ({
+            contact: {
               email: attendee.emailAddress!.address!,
               name: attendee.emailAddress!.name,
-            };
-
-            const response = attendee.status?.response;
-            if (response === "accepted") {
-              attendTags.push(newActor);
-            } else if (response === "declined") {
-              skipTags.push(newActor);
-            } else if (
-              response === "tentativelyAccepted" ||
-              response === "none" ||
-              response === "notResponded"
-            ) {
-              undecidedTags.push(newActor);
-            }
-            // organizer has no response status, so they won't get a tag
-          });
-
-          // Only set tags if we have at least one
-          if (
-            attendTags.length > 0 ||
-            skipTags.length > 0 ||
-            undecidedTags.length > 0
-          ) {
-            tags = {};
-            if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
-            if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
-            if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
-          }
+            },
+            status: attendee.status?.response === "accepted" ? "attend" as const
+              : attendee.status?.response === "declined" ? "skip" as const
+              : null,
+            role: attendee.type === "required" ? "required" as const
+              : attendee.type === "optional" ? "optional" as const
+              : "required" as const,
+          }));
+          threadData.schedules[0].contacts = contacts;
         }
 
         // Build actions array for videoconferencing and calendar links
@@ -562,45 +539,43 @@ export class OutlookCalendar
           });
         }
 
-        // Create note with description (actions moved to thread level)
-        const notes: NewNote[] = [];
+        // Build description note if available
         const hasDescription =
           outlookEvent.body?.content &&
           outlookEvent.body.content.trim().length > 0;
         const hasActions = actions.length > 0;
 
-        if (hasDescription) {
-          notes.push({
-            thread: {
-              source: `outlook-calendar:${outlookEvent.id}`,
-            },
-            key: "description",
-            content: outlookEvent.body!.content!,
-            contentType: (outlookEvent.body?.contentType === "html"
-              ? "html"
-              : "text") as ContentType,
-          });
-        }
+        const descriptionNote = hasDescription ? {
+          key: "description",
+          content: outlookEvent.body!.content!,
+          contentType: (outlookEvent.body?.contentType === "html"
+            ? "html"
+            : "text") as ContentType,
+        } : null;
 
-        // Build NewThreadWithNotes from the transformed thread
-        const threadWithNotes: NewThreadWithNotes = {
-          ...threadData,
+        // Build NewLinkWithNotes from the transformed thread data
+        const linkWithNotes: NewLinkWithNotes = {
+          source: `outlook-calendar:${outlookEvent.id}`,
+          type: "event",
+          title: threadData.title || "",
+          created: threadData.created,
           author: authorContact,
           meta: {
             ...threadData.meta,
             syncProvider: "microsoft",
             syncableId: calendarId,
           },
-          tags: tags && Object.keys(tags).length > 0 ? tags : threadData.tags,
           actions: hasActions ? actions : undefined,
-          notes,
+          notes: descriptionNote ? [descriptionNote] : [],
           preview: hasDescription ? outlookEvent.body!.content! : null,
+          schedules: threadData.schedules,
+          scheduleOccurrences: threadData.scheduleOccurrences,
           ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
           ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
         };
 
-        // Call the event callback using hoisted token
-        await this.tools.integrations.saveThread(threadWithNotes);
+        // Save link - database handles upsert automatically
+        await this.tools.integrations.saveLink(linkWithNotes);
       } catch (error) {
         console.error(`Error processing event ${outlookEvent.id}:`, error);
         // Continue processing other events
@@ -647,54 +622,40 @@ export class OutlookCalendar
         archived: true,
       };
 
-      const occurrenceUpdate: NewThreadWithNotes = {
-        type: ThreadType.Event,
+      const occurrenceUpdate: NewLinkWithNotes = {
+        type: "event",
+        title: "",
         source: masterCanonicalUrl,
         meta: { syncProvider: "microsoft", syncableId: calendarId },
         scheduleOccurrences: [cancelledOccurrence],
         notes: [],
       };
 
-      await this.tools.integrations.saveThread(occurrenceUpdate);
+      await this.tools.integrations.saveLink(occurrenceUpdate);
       return;
     }
 
-    // Determine RSVP status for attendees
+    // Build contacts from attendees for this occurrence
     const validAttendees =
       event.attendees?.filter(
         (att) => att.emailAddress?.address && att.type !== "resource"
       ) || [];
 
-    let tags: Partial<Record<Tag, import("@plotday/twister").NewActor[]>> = {};
-    if (validAttendees.length > 0) {
-      const attendTags: import("@plotday/twister").NewActor[] = [];
-      const skipTags: import("@plotday/twister").NewActor[] = [];
-      const undecidedTags: import("@plotday/twister").NewActor[] = [];
-
-      validAttendees.forEach((attendee) => {
-        const newActor: import("@plotday/twister").NewActor = {
-          email: attendee.emailAddress!.address!,
-          name: attendee.emailAddress!.name,
-        };
-
-        const response = attendee.status?.response;
-        if (response === "accepted") {
-          attendTags.push(newActor);
-        } else if (response === "declined") {
-          skipTags.push(newActor);
-        } else if (
-          response === "tentativelyAccepted" ||
-          response === "none" ||
-          response === "notResponded"
-        ) {
-          undecidedTags.push(newActor);
-        }
-      });
-
-      if (attendTags.length > 0) tags[Tag.Attend] = attendTags;
-      if (skipTags.length > 0) tags[Tag.Skip] = skipTags;
-      if (undecidedTags.length > 0) tags[Tag.Undecided] = undecidedTags;
-    }
+    const contacts: NewScheduleContact[] | undefined =
+      validAttendees.length > 0
+        ? validAttendees.map((attendee) => ({
+            contact: {
+              email: attendee.emailAddress!.address!,
+              name: attendee.emailAddress!.name,
+            },
+            status: attendee.status?.response === "accepted" ? "attend" as const
+              : attendee.status?.response === "declined" ? "skip" as const
+              : null,
+            role: attendee.type === "required" ? "required" as const
+              : attendee.type === "optional" ? "optional" as const
+              : "required" as const,
+          }))
+        : undefined;
 
     // Build schedule occurrence object
     // Always include start to ensure upsert can infer scheduling when
@@ -706,7 +667,7 @@ export class OutlookCalendar
     const occurrence: NewScheduleOccurrence = {
       occurrence: new Date(originalStart),
       start: occurrenceStart,
-      tags: Object.keys(tags).length > 0 ? tags : undefined,
+      contacts,
       ...(initialSync ? { unread: false } : {}),
     };
 
@@ -715,18 +676,18 @@ export class OutlookCalendar
       occurrence.end = instanceSchedule.end;
     }
 
-    // Send occurrence data to the twist via callback
-    // Build a minimal NewThread with source and scheduleOccurrences
-    // The source saves directly via integrations.saveThread
-    const occurrenceUpdate: NewThreadWithNotes = {
-      type: ThreadType.Event,
+    // Send occurrence data via saveLink
+    // Build a minimal link with source and scheduleOccurrences
+    const occurrenceUpdate: NewLinkWithNotes = {
+      type: "event",
+      title: "",
       source: masterCanonicalUrl,
       meta: { syncProvider: "microsoft", syncableId: calendarId },
       scheduleOccurrences: [occurrence],
       notes: [],
     };
 
-    await this.tools.integrations.saveThread(occurrenceUpdate);
+    await this.tools.integrations.saveLink(occurrenceUpdate);
   }
 
   async onOutlookWebhook(
@@ -775,145 +736,9 @@ export class OutlookCalendar
     await this.runTask(callback);
   }
 
-  async onThreadUpdated(
-    thread: Thread,
-    changes: {
-      tagsAdded: Record<Tag, ActorId[]>;
-      tagsRemoved: Record<Tag, ActorId[]>;
-    }
-  ): Promise<void> {
-    try {
-      // Only process calendar events
-      const source = thread.source;
-      if (
-        !source ||
-        typeof source !== "string" ||
-        !source.startsWith("outlook-calendar:")
-      ) {
-        return;
-      }
-
-      // Check if RSVP tags changed
-      const attendChanged =
-        Tag.Attend in changes.tagsAdded || Tag.Attend in changes.tagsRemoved;
-      const skipChanged =
-        Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
-      const undecidedChanged =
-        Tag.Undecided in changes.tagsAdded ||
-        Tag.Undecided in changes.tagsRemoved;
-
-      if (!attendChanged && !skipChanged && !undecidedChanged) {
-        return; // No RSVP-related tag changes
-      }
-
-      // Collect unique actor IDs from RSVP tag changes
-      const actorIds = new Set<ActorId>();
-      for (const tag of [Tag.Attend, Tag.Skip, Tag.Undecided]) {
-        if (tag in changes.tagsAdded) {
-          for (const id of changes.tagsAdded[tag]) actorIds.add(id);
-        }
-        if (tag in changes.tagsRemoved) {
-          for (const id of changes.tagsRemoved[tag]) actorIds.add(id);
-        }
-      }
-
-      // Determine new RSVP status based on most recent tag change
-      const hasAttend =
-        thread.tags?.[Tag.Attend] && thread.tags[Tag.Attend].length > 0;
-      const hasSkip =
-        thread.tags?.[Tag.Skip] && thread.tags[Tag.Skip].length > 0;
-      const hasUndecided =
-        thread.tags?.[Tag.Undecided] &&
-        thread.tags[Tag.Undecided].length > 0;
-
-      let newStatus: "accepted" | "declined" | "tentativelyAccepted";
-
-      // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
-      if (hasAttend && (hasSkip || hasUndecided)) {
-        if (Tag.Attend in changes.tagsAdded) {
-          newStatus = "accepted";
-        } else if (Tag.Skip in changes.tagsAdded) {
-          newStatus = "declined";
-        } else if (Tag.Undecided in changes.tagsAdded) {
-          newStatus = "tentativelyAccepted";
-        } else {
-          return;
-        }
-      } else if (hasSkip && hasUndecided) {
-        if (Tag.Skip in changes.tagsAdded) {
-          newStatus = "declined";
-        } else if (Tag.Undecided in changes.tagsAdded) {
-          newStatus = "tentativelyAccepted";
-        } else {
-          return;
-        }
-      } else if (hasAttend) {
-        newStatus = "accepted";
-      } else if (hasSkip) {
-        newStatus = "declined";
-      } else if (hasUndecided) {
-        newStatus = "tentativelyAccepted";
-      } else {
-        // No RSVP tags present - reset to tentativelyAccepted (acts as "needsAction")
-        newStatus = "tentativelyAccepted";
-      }
-
-      // Extract calendar info from metadata
-      if (!thread.meta) {
-        console.error("[RSVP Sync] Missing thread metadata", {
-          thread_id: thread.id,
-        });
-        return;
-      }
-
-      const baseEventId = thread.meta.id;
-      const calendarId = thread.meta.calendarId;
-
-      if (
-        !baseEventId ||
-        !calendarId ||
-        typeof baseEventId !== "string" ||
-        typeof calendarId !== "string"
-      ) {
-        console.error("[RSVP Sync] Missing or invalid event/calendar ID", {
-          has_event_id: !!baseEventId,
-          has_calendar_id: !!calendarId,
-          event_id_type: typeof baseEventId,
-          calendar_id_type: typeof calendarId,
-        });
-        return;
-      }
-
-      // Determine the event ID to update
-      const eventId = baseEventId;
-
-      // For each actor who changed RSVP, use actAs() to sync with their credentials.
-      // If the actor has auth, the callback fires immediately.
-      // If not, actAs() creates a private auth note automatically.
-      for (const actorId of actorIds) {
-        await this.tools.integrations.actAs(
-          OutlookCalendar.PROVIDER,
-          actorId,
-          thread.id,
-          this.syncActorRSVP,
-          calendarId as string,
-          eventId,
-          newStatus,
-          actorId as string
-        );
-      }
-    } catch (error) {
-      console.error("[RSVP Sync] Error in callback", {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        thread_id: thread.id,
-      });
-    }
-  }
-
   /**
-   * Sync RSVP for an actor. If the actor has auth, this is called immediately.
-   * If not, actAs() creates a private auth note and calls this when they authorize.
+   * Sync a schedule contact RSVP change back to Outlook Calendar.
+   * Called via actAs() which provides the actor's auth token.
    */
   async syncActorRSVP(
     token: AuthToken,
@@ -933,7 +758,6 @@ export class OutlookCalendar
       );
     } catch (error) {
       console.error("[RSVP Sync] Failed to sync RSVP", {
-        actor_id: actorId,
         event_id: eventId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1001,7 +825,7 @@ export class OutlookCalendar
   }
 
   /**
-   * Update RSVP status for a specific actor using a pre-authenticated GraphApi instance.
+   * Update RSVP status for the authenticated user on an Outlook Calendar event.
    * Looks up the actor's email from the Graph API to find the correct attendee.
    */
   private async updateEventRSVPWithApi(
@@ -1009,7 +833,7 @@ export class OutlookCalendar
     calendarId: string,
     eventId: string,
     status: "accepted" | "declined" | "tentativelyAccepted",
-    actorId: ActorId
+    _actorId: ActorId
   ): Promise<void> {
     // First, fetch the current event to check if status already matches
     const resource =
@@ -1034,9 +858,7 @@ export class OutlookCalendar
 
     const actorEmail = meData?.mail || meData?.userPrincipalName;
     if (!actorEmail) {
-      console.warn("[RSVP Sync] Could not determine actor email", {
-        actor_id: actorId,
-      });
+      console.warn("[RSVP Sync] Could not determine actor email");
       return;
     }
 
@@ -1049,7 +871,6 @@ export class OutlookCalendar
 
     if (!actorAttendee) {
       console.warn("[RSVP Sync] Actor is not an attendee of this event", {
-        actor_id: actorId,
         event_id: eventId,
       });
       return;
