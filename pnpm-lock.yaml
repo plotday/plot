@@ -24,7 +24,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/asana:
+  sources/asana:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -43,7 +43,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/github:
+  sources/github:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -53,7 +53,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/github-issues:
+  sources/github-issues:
     dependencies:
       '@octokit/rest':
         specifier: ^21.1.1
@@ -66,7 +66,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/gmail:
+  sources/gmail:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -76,9 +76,9 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/google-calendar:
+  sources/google-calendar:
     dependencies:
-      '@plotday/tool-google-contacts':
+      '@plotday/source-google-contacts':
         specifier: workspace:^
         version: link:../google-contacts
       '@plotday/twister':
@@ -89,7 +89,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/google-contacts:
+  sources/google-contacts:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -99,9 +99,9 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/google-drive:
+  sources/google-drive:
     dependencies:
-      '@plotday/tool-google-contacts':
+      '@plotday/source-google-contacts':
         specifier: workspace:^
         version: link:../google-contacts
       '@plotday/twister':
@@ -112,7 +112,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/jira:
+  sources/jira:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -125,7 +125,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/linear:
+  sources/linear:
     dependencies:
       '@linear/sdk':
         specifier: ^72.0.0
@@ -138,7 +138,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/outlook-calendar:
+  sources/outlook-calendar:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -148,7 +148,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/slack:
+  sources/slack:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -209,12 +209,12 @@ importers:
 
   twists/calendar-sync:
     dependencies:
-      '@plotday/tool-google-calendar':
+      '@plotday/source-google-calendar':
         specifier: workspace:^
-        version: link:../../tools/google-calendar
-      '@plotday/tool-outlook-calendar':
+        version: link:../../sources/google-calendar
+      '@plotday/source-outlook-calendar':
         specifier: workspace:^
-        version: link:../../tools/outlook-calendar
+        version: link:../../sources/outlook-calendar
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -238,9 +238,9 @@ importers:
 
   twists/code-review:
     dependencies:
-      '@plotday/tool-github':
+      '@plotday/source-github':
         specifier: workspace:^
-        version: link:../../tools/github
+        version: link:../../sources/github
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -251,9 +251,9 @@ importers:
 
   twists/document-actions:
     dependencies:
-      '@plotday/tool-google-drive':
+      '@plotday/source-google-drive':
         specifier: workspace:^
-        version: link:../../tools/google-drive
+        version: link:../../sources/google-drive
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -264,12 +264,12 @@ importers:
 
   twists/message-tasks:
     dependencies:
-      '@plotday/tool-gmail':
+      '@plotday/source-gmail':
         specifier: workspace:^
-        version: link:../../tools/gmail
-      '@plotday/tool-slack':
+        version: link:../../sources/gmail
+      '@plotday/source-slack':
         specifier: workspace:^
-        version: link:../../tools/slack
+        version: link:../../sources/slack
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -283,18 +283,18 @@ importers:
 
   twists/project-sync:
     dependencies:
-      '@plotday/tool-asana':
+      '@plotday/source-asana':
         specifier: workspace:^
-        version: link:../../tools/asana
+        version: link:../../sources/asana
+      '@plotday/source-jira':
+        specifier: workspace:^
+        version: link:../../sources/jira
+      '@plotday/source-linear':
+        specifier: workspace:^
+        version: link:../../sources/linear
       '@plotday/tool-github-issues':
         specifier: workspace:^
-        version: link:../../tools/github-issues
-      '@plotday/tool-jira':
-        specifier: workspace:^
-        version: link:../../tools/jira
-      '@plotday/tool-linear':
-        specifier: workspace:^
-        version: link:../../tools/linear
+        version: link:../../sources/github-issues
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -1208,7 +1208,7 @@ packages:
 
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
-    deprecated: Glob versions prior to v9 are no longer supported
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   globby@11.1.0:
     resolution: {integrity: sha512-jhIXaOzy1sb8IyocaruWSn1TjmnBVs8Ayhcy83rmxNJ8q2uWKCAj3CnJY+KpGSXCueAPc0i05kVvVKtP1t9S3g==}

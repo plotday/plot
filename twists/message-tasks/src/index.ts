@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 
-import { Gmail } from "@plotday/tool-gmail";
-import { Slack } from "@plotday/tool-slack";
+import { Gmail } from "@plotday/source-gmail";
+import { Slack } from "@plotday/source-slack";
 import {
   type ThreadFilter,
   ThreadType,

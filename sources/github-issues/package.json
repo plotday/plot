@@ -1,0 +1,53 @@
+{
+  "name": "@plotday/source-github-issues",
+  "displayName": "GitHub Issues",
+  "description": "Sync with GitHub Issues",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^",
+    "@octokit/rest": "^21.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "tools/github-issues"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "tool",
+    "github",
+    "issues",
+    "project-management"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

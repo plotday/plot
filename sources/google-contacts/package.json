@@ -1,0 +1,52 @@
+{
+  "name": "@plotday/source-google-contacts",
+  "displayName": "Google Contacts",
+  "description": "Sync with Google Contacts",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.6.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "tools/google-contacts"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "agent",
+    "tool",
+    "google-contacts",
+    "contacts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

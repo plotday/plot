@@ -1,4 +1,4 @@
-import type { NewSchedule, NewScheduleOccurrence } from "./schedule";
+import type { NewSchedule, NewScheduleOccurrence, Schedule } from "./schedule";
 import { type Tag } from "./tag";
 import { type Callback } from "./tools/callbacks";
 import { type AuthProvider } from "./tools/integrations";
@@ -496,6 +496,8 @@ type ThreadFields = ThreadCommon & {
   order: number;
   /** Array of interactive actions attached to the thread (external, conferencing, callback) */
   actions: Array<Action> | null;
+  /** The schedule associated with this thread, if any */
+  schedule?: Schedule;
 };
 
 export type Thread = ThreadFields &

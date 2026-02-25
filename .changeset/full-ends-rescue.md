@@ -1,6 +1,6 @@
 ---
-"@plotday/tool-outlook-calendar": minor
-"@plotday/tool-google-calendar": minor
+"@plotday/source-outlook-calendar": minor
+"@plotday/source-google-calendar": minor
 "@plotday/tool-github-issues": minor
 "@plotday/tool-google-drive": minor
 "@plotday/tool-github": minor

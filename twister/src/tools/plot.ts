@@ -19,7 +19,6 @@ import {
 import {
   type Schedule,
   type NewSchedule,
-  type ScheduleUpdate,
 } from "../schedule";
 
 export enum ThreadAccess {
@@ -516,27 +515,6 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createSchedule(schedule: NewSchedule): Promise<Schedule>;
-
-  /**
-   * Updates an existing schedule.
-   *
-   * Only the fields provided in the update object will be modified.
-   *
-   * @param schedule - The schedule update containing the ID and fields to change
-   * @returns Promise resolving to the updated schedule
-   *
-   * @example
-   * ```typescript
-   * // Reschedule
-   * await this.plot.updateSchedule({
-   *   id: scheduleId,
-   *   start: new Date("2025-03-20T10:00:00Z"),
-   *   end: new Date("2025-03-20T11:00:00Z")
-   * });
-   * ```
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract updateSchedule(schedule: ScheduleUpdate): Promise<Schedule>;
 
   /**
    * Retrieves all schedules for a thread.

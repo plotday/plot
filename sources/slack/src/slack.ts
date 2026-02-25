@@ -1,0 +1,359 @@
+import {
+  type NewThreadWithNotes,
+  Source,
+  type ToolBuilder,
+} from "@plotday/twister";
+import {
+  type MessageChannel,
+  type MessageSyncOptions,
+  type MessagingSource,
+} from "@plotday/twister/common/messaging";
+import {
+  AuthProvider,
+  type AuthToken,
+  type Authorization,
+  Integrations,
+  type Channel,
+} from "@plotday/twister/tools/integrations";
+import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+
+import {
+  SlackApi,
+  type SlackChannel,
+  type SlackMessage,
+  type SyncState,
+  syncSlackChannel,
+  transformSlackThread,
+} from "./slack-api";
+
+/**
+ * Slack integration source.
+ *
+ * Provides seamless integration with Slack, supporting message
+ * synchronization, real-time updates via webhooks, and thread handling.
+ * Designed for multitenant "Add to Slack" installations.
+ *
+ * **Features:**
+ * - OAuth 2.0 authentication with Slack (bot token)
+ * - Workspace-level installations with bot scopes
+ * - Real-time message synchronization
+ * - Webhook-based change notifications via Slack Events API
+ * - Support for threaded messages
+ * - User mentions and reactions
+ * - Batch processing for large channels
+ *
+ * **Required OAuth Bot Scopes:**
+ * - `channels:history` - Read public channel messages
+ * - `channels:read` - View basic channel info
+ * - `groups:history` - Read private channel messages
+ * - `groups:read` - View basic private channel info
+ * - `users:read` - View users in workspace
+ * - `users:read.email` - View user email addresses
+ * - `chat:write` - Send messages as the bot
+ * - `im:history` - Read direct messages with the bot
+ * - `mpim:history` - Read group direct messages
+ */
+export class Slack extends Source<Slack> implements MessagingSource {
+  static readonly PROVIDER = AuthProvider.Slack;
+  static readonly SCOPES = [
+    "channels:history",
+    "channels:read",
+    "groups:history",
+    "groups:read",
+    "users:read",
+    "users:read.email",
+    "chat:write",
+    "im:history",
+    "mpim:history",
+  ];
+
+  build(build: ToolBuilder) {
+    return {
+      integrations: build(Integrations, {
+        providers: [
+          {
+            provider: Slack.PROVIDER,
+            scopes: Slack.SCOPES,
+            getChannels: this.listSyncChannels,
+            onChannelEnabled: this.onChannelEnabled,
+            onChannelDisabled: this.onChannelDisabled,
+          },
+        ],
+      }),
+      network: build(Network, { urls: ["https://slack.com/api/*"] }),
+    };
+  }
+
+  async listSyncChannels(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Channel[]> {
+    const api = new SlackApi(token.token);
+    const channels = await api.getChannels();
+    return channels
+      .filter((c: SlackChannel) => c.is_member && !c.is_archived)
+      .map((c: SlackChannel) => ({ id: c.id, title: c.name }));
+  }
+
+  async onChannelEnabled(channel: Channel): Promise<void> {
+    await this.set(`sync_enabled_${channel.id}`, true);
+
+    // Auto-start sync: setup webhook and queue first batch
+    await this.setupChannelWebhook(channel.id);
+
+    // Default to 30 days of history
+    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const oldest = (timeMin.getTime() / 1000).toString();
+
+    const initialState: SyncState = {
+      channelId: channel.id,
+      oldest,
+    };
+
+    await this.set(`sync_state_${channel.id}`, initialState);
+
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "full",
+      channel.id
+    );
+    await this.run(syncCallback);
+  }
+
+  async onChannelDisabled(channel: Channel): Promise<void> {
+    await this.stopSync(channel.id);
+
+    // Archive all threads from this channel
+    await this.tools.integrations.archiveThreads({
+      meta: { syncProvider: "slack", syncableId: channel.id },
+    });
+
+    await this.clear(`sync_enabled_${channel.id}`);
+  }
+
+  private async getApi(channelId: string): Promise<SlackApi> {
+    const token = await this.tools.integrations.get(Slack.PROVIDER, channelId);
+    if (!token) {
+      throw new Error("No Slack authentication token available");
+    }
+    return new SlackApi(token.token);
+  }
+
+  async getChannels(channelId: string): Promise<MessageChannel[]> {
+    const api = await this.getApi(channelId);
+    const channels = await api.getChannels();
+
+    return channels
+      .filter(
+        (channel: SlackChannel) => channel.is_member && !channel.is_archived
+      )
+      .map((channel: SlackChannel) => ({
+        id: channel.id,
+        name: channel.name,
+        description: channel.topic?.value || channel.purpose?.value || null,
+        primary: channel.name === "general", // Slack convention
+      }));
+  }
+
+  async startSync(
+    options: {
+      channelId: string;
+    } & MessageSyncOptions,
+  ): Promise<void> {
+    const { channelId } = options;
+
+    // Setup webhook for this channel (Slack Events API)
+    await this.setupChannelWebhook(channelId);
+
+    // Calculate oldest timestamp for sync
+    let oldest: string | undefined;
+    if (options?.timeMin) {
+      const timeMin =
+        typeof options.timeMin === "string"
+          ? new Date(options.timeMin)
+          : options.timeMin;
+      oldest = (timeMin.getTime() / 1000).toString();
+    }
+
+    const initialState: SyncState = {
+      channelId,
+      oldest,
+    };
+
+    await this.set(`sync_state_${channelId}`, initialState);
+
+    // Start sync batch using run tool for long-running operation
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "full",
+      channelId
+    );
+    await this.run(syncCallback);
+  }
+
+  async stopSync(channelId: string): Promise<void> {
+    // Clear webhook
+    await this.clear(`channel_webhook_${channelId}`);
+
+    // Clear sync state
+    await this.clear(`sync_state_${channelId}`);
+  }
+
+  private async setupChannelWebhook(channelId: string): Promise<void> {
+    const webhookUrl = await this.tools.network.createWebhook(
+      {},
+      this.onSlackWebhook,
+      channelId
+    );
+
+    // Check if webhook URL is localhost
+    if (URL.parse(webhookUrl)?.hostname === "localhost") {
+      return;
+    }
+
+    // Store webhook URL for this channel
+    // Note: Slack Events API setup typically requires manual configuration
+    // in the Slack app settings to point to this webhook URL
+    await this.set(`channel_webhook_${channelId}`, {
+      url: webhookUrl,
+      channelId,
+      created: new Date().toISOString(),
+    });
+  }
+
+  async syncBatch(
+    batchNumber: number,
+    mode: "full" | "incremental",
+    channelId: string
+  ): Promise<void> {
+    try {
+      const state = await this.get<SyncState>(`sync_state_${channelId}`);
+      if (!state) {
+        throw new Error("No sync state found");
+      }
+
+      const api = await this.getApi(channelId);
+      const result = await syncSlackChannel(api, state);
+
+      if (result.threads.length > 0) {
+        await this.processMessageThreads(result.threads, channelId);
+      }
+
+      await this.set(`sync_state_${channelId}`, result.state);
+
+      if (result.state.more) {
+        const syncCallback = await this.callback(
+          this.syncBatch,
+          batchNumber + 1,
+          mode,
+          channelId
+        );
+        await this.run(syncCallback);
+      } else {
+        if (mode === "full") {
+          await this.clear(`sync_state_${channelId}`);
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Error in sync batch ${batchNumber} for channel ${channelId}:`,
+        error
+      );
+
+      throw error;
+    }
+  }
+
+  private async processMessageThreads(
+    threads: SlackMessage[][],
+    channelId: string
+  ): Promise<void> {
+    for (const thread of threads) {
+      try {
+        // Transform Slack thread to NewThreadWithNotes
+        const activityThread = transformSlackThread(thread, channelId);
+
+        if (activityThread.notes.length === 0) continue;
+
+        // Inject sync metadata for the parent to identify the source
+        activityThread.meta = {
+          ...activityThread.meta,
+          syncProvider: "slack",
+          syncableId: channelId,
+        };
+
+        // Save thread directly via integrations
+        await this.tools.integrations.saveThread(activityThread);
+      } catch (error) {
+        console.error(`Failed to process thread:`, error);
+        // Continue processing other threads
+      }
+    }
+  }
+
+  async onSlackWebhook(
+    request: WebhookRequest,
+    channelId: string
+  ): Promise<void> {
+    const body = request.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      console.warn("Invalid webhook body format");
+      return;
+    }
+
+    // Slack sends a challenge parameter for URL verification
+    const bodyObj = body as { challenge?: string; event?: any };
+    if (bodyObj.challenge) {
+      // Note: The webhook infrastructure should handle responding with the challenge
+      return;
+    }
+
+    // Validate webhook authenticity
+    // In production, you should verify the request signature
+    // using the signing secret from your Slack app
+
+    const event = bodyObj.event;
+    if (!event) {
+      console.warn("No event in webhook body");
+      return;
+    }
+
+    // Only process message events for the specific channel
+    if (
+      event.type === "message" &&
+      event.channel === channelId &&
+      !event.subtype // Ignore bot messages and special subtypes
+    ) {
+      // Trigger incremental sync
+      await this.startIncrementalSync(channelId);
+    }
+  }
+
+  private async startIncrementalSync(channelId: string): Promise<void> {
+    const webhookData = await this.get<any>(`channel_webhook_${channelId}`);
+    if (!webhookData) {
+      console.error("No channel webhook data found");
+      return;
+    }
+
+    // For incremental sync, we only fetch recent messages
+    const incrementalState: SyncState = {
+      channelId,
+      latest: (Date.now() / 1000).toString(),
+      oldest: ((Date.now() - 60 * 60 * 1000) / 1000).toString(), // Last hour
+    };
+
+    await this.set(`sync_state_${channelId}`, incrementalState);
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "incremental",
+      channelId
+    );
+    await this.run(syncCallback);
+  }
+}
+
+export default Slack;
