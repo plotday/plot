@@ -60,7 +60,7 @@ export type ScheduleContactRole = "organizer" | "required" | "optional";
 export type ScheduleContact = {
   contact: Actor;
   status: ScheduleContactStatus | null;
-  role: ScheduleContactRole | null;
+  role: ScheduleContactRole;
   archived: boolean;
 };
 
