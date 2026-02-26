@@ -111,8 +111,16 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
             linkTypes: [
-              { type: "pull_request", label: "Pull Request" },
-              { type: "review", label: "Review" },
+              {
+                type: "pull_request",
+                label: "Pull Request",
+                logo: "https://api.iconify.design/logos/github-icon.svg",
+                statuses: [
+                  { status: "open", label: "Open" },
+                  { status: "closed", label: "Closed" },
+                  { status: "merged", label: "Merged" },
+                ],
+              },
             ],
           },
         ],
@@ -482,7 +490,11 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       created: new Date(pr.created_at),
       author: authorContact,
       assignee: assigneeContact,
-      status: pr.merged_at ? "done" : null,
+      status: pr.merged_at
+        ? "merged"
+        : pr.state === "closed"
+          ? "closed"
+          : "open",
       ...(pr.state === "closed" && !pr.merged_at ? { archived: true } : {}),
       meta: {
         provider: "github",
@@ -786,7 +798,11 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       created: new Date(pr.created_at),
       author: authorContact,
       assignee: assigneeContact,
-      status: pr.merged_at ? "done" : null,
+      status: pr.merged_at
+        ? "merged"
+        : pr.state === "closed"
+          ? "closed"
+          : "open",
       meta: {
         provider: "github",
         owner,

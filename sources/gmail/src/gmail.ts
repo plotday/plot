@@ -52,7 +52,7 @@ export class Gmail extends Source<Gmail> implements MessagingSource {
             getChannels: this.listSyncChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
-            linkTypes: [{ type: "email", label: "Email" }],
+            linkTypes: [{ type: "email", label: "Email", logo: "https://api.iconify.design/logos/google-gmail.svg" }],
           },
         ],
       }),

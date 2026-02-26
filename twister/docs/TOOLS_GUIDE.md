@@ -1104,6 +1104,59 @@ async triageEmail(emailContent: string) {
 
 ---
 
+## Link Type Safety Pattern
+
+When defining `linkTypes` in your source's provider config, use `as const satisfies` to get type-safe status strings:
+
+```typescript
+import type { LinkTypeConfig } from "@plotday/twister/tools/integrations";
+
+const LINK_TYPES = [
+  {
+    type: "issue",
+    label: "Issue",
+    logo: "https://api.iconify.design/simple-icons/linear.svg",
+    statuses: [
+      { status: "open", label: "Open" },
+      { status: "done", label: "Done" },
+    ],
+  },
+  {
+    type: "pull_request",
+    label: "Pull Request",
+    logo: "https://api.iconify.design/simple-icons/github.svg",
+    statuses: [
+      { status: "open", label: "Open" },
+      { status: "merged", label: "Merged" },
+      { status: "closed", label: "Closed" },
+    ],
+  },
+] as const satisfies LinkTypeConfig[];
+
+// Derive type-safe union types from the config
+type IssueStatus = (typeof LINK_TYPES)[0]["statuses"][number]["status"]; // "open" | "done"
+type PRStatus = (typeof LINK_TYPES)[1]["statuses"][number]["status"]; // "open" | "merged" | "closed"
+```
+
+Then reference `LINK_TYPES` in your provider config:
+
+```typescript
+build(build: SourceBuilder) {
+  return {
+    integrations: build(Integrations, {
+      providers: [{
+        provider: MySource.PROVIDER,
+        scopes: MySource.SCOPES,
+        linkTypes: [...LINK_TYPES],
+        // ...
+      }],
+    }),
+  };
+}
+```
+
+---
+
 ## Next Steps
 
 - **[Building Custom Tools](BUILDING_TOOLS.md)** - Create your own reusable tools

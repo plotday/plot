@@ -60,6 +60,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
               {
                 type: "issue",
                 label: "Issue",
+                logo: "https://api.iconify.design/logos/github-icon.svg",
                 statuses: [
                   { status: "open", label: "Open" },
                   { status: "closed", label: "Closed" },
@@ -68,6 +69,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
               {
                 type: "pull_request",
                 label: "Pull Request",
+                logo: "https://api.iconify.design/logos/github-icon.svg",
                 statuses: [
                   { status: "open", label: "Open" },
                   { status: "closed", label: "Closed" },

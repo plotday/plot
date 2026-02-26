@@ -1,10 +1,10 @@
 import {
   type Actor,
   type ActorId,
+  type Link,
   type NewContact,
   type NewLinkWithNotes,
   type Note,
-  type Thread,
   type ThreadMeta,
   ITool,
   Serializable,
@@ -37,7 +37,7 @@ export type LinkTypeConfig = {
   type: string;
   /** Human-readable label (e.g., "Issue", "Pull Request") */
   label: string;
-  /** Filename of a static asset in the source's assets/ directory (e.g., "issue.svg") */
+  /** URL to an icon for this link type. Prefer Iconify URLs (e.g., "https://api.iconify.design/simple-icons/linear.svg") */
   logo?: string;
   /** Possible status values for this type */
   statuses?: Array<{
@@ -62,10 +62,10 @@ export type IntegrationProviderConfig = {
   /** Called when a channel resource is disabled */
   onChannelDisabled: (channel: Channel) => Promise<void>;
   /**
-   * Called when a thread created by this source is updated by the user.
-   * Used for write-back to external services (e.g., marking an issue as done).
+   * Called when a link created by this source is updated by the user.
+   * Used for write-back to external services (e.g., changing issue status).
    */
-  onThreadUpdated?: (thread: Thread) => Promise<void>;
+  onLinkUpdated?: (link: Link) => Promise<void>;
   /**
    * Called when a note is created on a thread owned by this source.
    * Used for write-back to external services (e.g., adding a comment to an issue).

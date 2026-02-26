@@ -9,6 +9,7 @@ import { LinearWebhookClient } from "@linear/sdk/webhooks";
 import {
   type Action,
   ActionType,
+  type Link,
   ThreadMeta,
   ThreadType,
   type NewLinkWithNotes,
@@ -67,12 +68,14 @@ export class Linear extends Source<Linear> implements ProjectSource {
               {
                 type: "issue",
                 label: "Issue",
+                logo: "https://api.iconify.design/logos/linear-icon.svg",
                 statuses: [
                   { status: "open", label: "Open" },
                   { status: "done", label: "Done" },
                 ],
               },
             ],
+            onLinkUpdated: this.onLinkUpdated,
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
@@ -129,6 +132,45 @@ export class Linear extends Source<Linear> implements ProjectSource {
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
     await this.clear(`sync_enabled_${channel.id}`);
+  }
+
+  /**
+   * Called when a link's status is changed from the Flutter app.
+   * Maps the link status back to a Linear workflow state.
+   */
+  async onLinkUpdated(link: Link): Promise<void> {
+    const issueId = link.meta?.linearId as string | undefined;
+    if (!issueId) return;
+
+    const projectId = link.meta?.projectId as string | undefined;
+    if (!projectId) return;
+
+    const client = await this.getClient(projectId);
+    const issue = await client.issue(issueId);
+    const team = await issue.team;
+    if (!team) return;
+
+    const states = await team.states();
+    let targetState;
+
+    if (link.status === "done") {
+      targetState = states.nodes.find(
+        (s) =>
+          s.name === "Done" ||
+          s.name === "Completed" ||
+          s.type === "completed"
+      );
+    } else {
+      // "open" or any non-done status -> reopen
+      targetState = states.nodes.find(
+        (s) =>
+          s.name === "Todo" || s.name === "Backlog" || s.type === "unstarted"
+      );
+    }
+
+    if (targetState) {
+      await client.updateIssue(issueId, { stateId: targetState.id });
+    }
   }
 
   /**

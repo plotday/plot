@@ -53,6 +53,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
             {
               type: "task",
               label: "Task",
+              logo: "https://api.iconify.design/logos/asana.svg",
               statuses: [
                 { status: "open", label: "Open" },
                 { status: "done", label: "Done" },

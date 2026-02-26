@@ -1069,8 +1069,6 @@ export type Link = {
   actions: Array<Action> | null;
   /** Source metadata */
   meta: ThreadMeta | null;
-  /** URL to the source logo image for this link's type */
-  logo: string | null;
   /** URL to open the original item in its source application (e.g., "Open in Linear") */
   sourceUrl: string | null;
 };

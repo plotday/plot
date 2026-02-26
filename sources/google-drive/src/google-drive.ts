@@ -72,7 +72,7 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
-            linkTypes: [{ type: "document", label: "Document" }],
+            linkTypes: [{ type: "document", label: "Document", logo: "https://api.iconify.design/logos/google-drive.svg" }],
           },
         ],
       }),

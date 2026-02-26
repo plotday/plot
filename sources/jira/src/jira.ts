@@ -52,6 +52,7 @@ export class Jira extends Source<Jira> implements ProjectSource {
             {
               type: "issue",
               label: "Issue",
+              logo: "https://api.iconify.design/logos/jira.svg",
               statuses: [
                 { status: "open", label: "Open" },
                 { status: "done", label: "Done" },

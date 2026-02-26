@@ -125,7 +125,7 @@ export class GoogleCalendar
               GoogleCalendar.SCOPES,
               GoogleContacts.SCOPES
             ),
-            linkTypes: [{ type: "event", label: "Event" }],
+            linkTypes: [{ type: "event", label: "Event", logo: "https://api.iconify.design/logos/google-calendar.svg" }],
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,

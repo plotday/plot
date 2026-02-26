@@ -76,7 +76,7 @@ export class Slack extends Source<Slack> implements MessagingSource {
             getChannels: this.listSyncChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
-            linkTypes: [{ type: "message", label: "Message" }],
+            linkTypes: [{ type: "message", label: "Message", logo: "https://api.iconify.design/logos/slack-icon.svg" }],
           },
         ],
       }),

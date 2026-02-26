@@ -117,7 +117,7 @@ export class OutlookCalendar
           {
             provider: OutlookCalendar.PROVIDER,
             scopes: OutlookCalendar.SCOPES,
-            linkTypes: [{ type: "event", label: "Event" }],
+            linkTypes: [{ type: "event", label: "Event", logo: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }],
             getChannels: this.getChannels,
             onChannelEnabled: this.onChannelEnabled,
             onChannelDisabled: this.onChannelDisabled,
