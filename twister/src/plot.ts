@@ -183,11 +183,6 @@ export enum ThreadType {
   Event,
 }
 
-/** @deprecated Use ThreadType instead */
-export const ActivityType = ThreadType;
-/** @deprecated Use ThreadType instead */
-export type ActivityType = ThreadType;
-
 /**
  * Kinds of threads. Used only for visual categorization (icon).
  */
@@ -224,11 +219,6 @@ export enum ActionType {
   /** File attachment links stored in R2 */
   file = "file",
 }
-
-/** @deprecated Use ActionType instead */
-export const LinkType = ActionType;
-/** @deprecated Use ActionType instead. Note: LinkType previously aliased ActionType; the new Link type is a different concept (external entity). */
-export type LinkType = ActionType;
 
 /**
  * Video conferencing providers for conferencing links.
@@ -379,9 +369,6 @@ export type ThreadMeta = {
   [key: string]: JSONValue;
 };
 
-/** @deprecated Use ThreadMeta instead */
-export type ActivityMeta = ThreadMeta;
-
 /**
  * Tags on an item, along with the actors who added each tag.
  */
@@ -513,40 +500,13 @@ export type Thread = ThreadFields &
     | { type: ThreadType.Event }
   );
 
-/** @deprecated Use Thread instead */
-export type Activity = Thread;
-
 export type ThreadWithNotes = Thread & {
   notes: Note[];
 };
 
-/** @deprecated Use ThreadWithNotes instead */
-export type ActivityWithNotes = ThreadWithNotes;
-
 export type NewThreadWithNotes = NewThread & {
   notes: Omit<NewNote, "thread">[];
 };
-
-/** @deprecated Use NewThreadWithNotes instead */
-export type NewActivityWithNotes = NewThreadWithNotes;
-
-/** @deprecated ThreadOccurrence has moved to Schedule. Use ScheduleOccurrence from @plotday/twister/schedule instead. */
-export type ThreadOccurrence = never;
-
-/** @deprecated Use ScheduleOccurrence from @plotday/twister/schedule instead */
-export type ActivityOccurrence = never;
-
-/** @deprecated Use NewScheduleOccurrence from @plotday/twister/schedule instead */
-export type NewThreadOccurrence = never;
-
-/** @deprecated Use NewScheduleOccurrence from @plotday/twister/schedule instead */
-export type NewActivityOccurrence = never;
-
-/** @deprecated Use ScheduleOccurrenceUpdate from @plotday/twister/schedule instead */
-export type ThreadOccurrenceUpdate = never;
-
-/** @deprecated Use ScheduleOccurrenceUpdate from @plotday/twister/schedule instead */
-export type ActivityOccurrenceUpdate = never;
 
 /**
  * Configuration for automatic priority selection based on thread similarity.
@@ -763,18 +723,12 @@ export type NewThread = (
     scheduleOccurrences?: NewScheduleOccurrence[];
   };
 
-/** @deprecated Use NewThread instead */
-export type NewActivity = NewThread;
-
 export type ThreadFilter = {
   type?: ActorType;
   meta?: {
     [key: string]: JSONValue;
   };
 };
-
-/** @deprecated Use ThreadFilter instead */
-export type ActivityFilter = ThreadFilter;
 
 /**
  * Fields supported by bulk updates via `match`. Only simple scalar fields
@@ -833,9 +787,6 @@ export type ThreadUpdate =
        */
       match: ThreadFilter;
     } & ThreadBulkUpdateFields);
-
-/** @deprecated Use ThreadUpdate instead */
-export type ActivityUpdate = ThreadUpdate;
 
 /**
  * Represents a note within a thread.
@@ -1118,6 +1069,10 @@ export type Link = {
   actions: Array<Action> | null;
   /** Source metadata */
   meta: ThreadMeta | null;
+  /** URL to the source logo image for this link's type */
+  logo: string | null;
+  /** URL to open the original item in its source application (e.g., "Open in Linear") */
+  sourceUrl: string | null;
 };
 
 /**
@@ -1189,19 +1144,3 @@ export type NewLinkWithNotes = NewLink & {
   scheduleOccurrences?: NewScheduleOccurrence[];
 };
 
-/** @deprecated Use ActionType instead */
-export const ActivityLinkType = ActionType;
-/** @deprecated Use ActionType instead */
-export type ActivityLinkType = ActionType;
-/** @deprecated Use Action instead */
-export type ActivityLink = Action;
-
-/** @deprecated Use ThreadKind instead */
-export const ActivityKind = ThreadKind;
-/** @deprecated Use ThreadKind instead */
-export type ActivityKind = ThreadKind;
-
-/** @deprecated Use ThreadCommon instead */
-export type ActivityCommon = ThreadCommon;
-/** @deprecated Use ThreadFields instead */
-export type ActivityFields = ThreadFields;

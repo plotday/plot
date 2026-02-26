@@ -123,12 +123,6 @@ export class Slack extends Source<Slack> implements MessagingSource {
 
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "slack", syncableId: channel.id },
-    });
-
     await this.clear(`sync_enabled_${channel.id}`);
   }
 

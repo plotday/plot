@@ -375,6 +375,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       threadId: thread.id,
       historyId: thread.historyId,
     },
+    sourceUrl: canonicalUrl,
     notes: [],
     preview,
   };

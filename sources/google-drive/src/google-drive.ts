@@ -187,12 +187,6 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "google", syncableId: channel.id },
-    });
-
     await this.clear(`sync_enabled_${channel.id}`);
   }
 
@@ -709,6 +703,7 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
       type: "document",
       title: file.name,
       author,
+      sourceUrl: file.webViewLink ?? null,
       actions: actions.length > 0 ? actions : null,
       meta: {
         fileId: file.id,

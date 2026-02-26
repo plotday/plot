@@ -267,6 +267,7 @@ export function transformSlackThread(
       channelId: channelId,
       threadTs: threadTs,
     },
+    sourceUrl: canonicalUrl,
     notes: [],
     preview: firstText || null,
   };

@@ -133,6 +133,3 @@ export type SourceControlSource = {
    */
   closePR?(meta: ThreadMeta): Promise<void>;
 };
-
-/** @deprecated Use SourceControlSource instead */
-export type SourceControlTool = SourceControlSource;

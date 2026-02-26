@@ -1,7 +1,5 @@
 import {
   type Actor,
-  type ThreadFilter,
-  type NewThreadWithNotes,
   type Priority,
 } from "./plot";
 import type { Callback } from "./tools/callbacks";
@@ -14,17 +12,6 @@ import type {
 } from "./utils/types";
 
 export type { ToolBuilder };
-
-/**
- * @deprecated Sources now save threads directly via integrations.saveThread()
- * instead of using callbacks. Use Source class instead of Tool + SyncToolOptions.
- */
-export type SyncToolOptions = {
-  /** @deprecated Callback invoked for each synced item. */
-  onItem: (item: NewThreadWithNotes) => Promise<void>;
-  /** @deprecated Callback invoked when a syncable is disabled. */
-  onSyncableDisabled?: (filter: ThreadFilter) => Promise<void>;
-};
 
 /**
  * Abstrtact parent for both built-in tools and regular Tools.

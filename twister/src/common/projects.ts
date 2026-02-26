@@ -119,6 +119,3 @@ export type ProjectSource = {
     noteId?: string,
   ): Promise<string | void>;
 };
-
-/** @deprecated Use ProjectSource instead */
-export type ProjectTool = ProjectSource;

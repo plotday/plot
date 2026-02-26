@@ -19,65 +19,65 @@ Plot Twists are TypeScript classes that extend the `Twist` base class. Twists in
 - **Store intermediate state**: Use the Store tool to persist state between batches
 - **Examples**: Syncing large datasets, processing many API calls, or performing batch operations
 
-## Understanding Activities and Notes
+## Understanding Threads and Notes
 
-**CRITICAL CONCEPT**: An **Activity** represents something done or to be done (a task, event, or conversation), while **Notes** represent the updates and details on that activity.
+**CRITICAL CONCEPT**: A **Thread** represents something done or to be done (a task, event, or conversation), while **Notes** represent the updates and details on that thread.
 
-**Think of an Activity as a thread** on a messaging platform, and **Notes as the messages in that thread**.
+**Think of a Thread as a thread** on a messaging platform, and **Notes as the messages in that thread**.
 
 ### Key Guidelines
 
-1. **Always create Activities with an initial Note** - The title is just a summary; detailed content goes in Notes
-2. **Add Notes to existing Activities for updates** - Don't create a new Activity for each related message
-3. **Use Activity.source and Note.key for automatic upserts (Recommended)** - Set Activity.source to the external item's URL for deduplication, and use Note.key for upsertable note content. No manual ID tracking needed.
-4. **For advanced cases, use generated UUIDs** - Only when you need multiple Plot activities per external item (see SYNC_STRATEGIES.md)
-5. **Most Activities should be `ActivityType.Note`** - Use `Action` only for tasks with `done`, use `Event` only for items with `start`/`end`
+1. **Always create Threads with an initial Note** - The title is just a summary; detailed content goes in Notes
+2. **Add Notes to existing Threads for updates** - Don't create a new Thread for each related message
+3. **Use Thread.source and Note.key for automatic upserts (Recommended)** - Set Thread.source to the external item's URL for deduplication, and use Note.key for upsertable note content. No manual ID tracking needed.
+4. **For advanced cases, use generated UUIDs** - Only when you need multiple Plot threads per external item (see SYNC_STRATEGIES.md)
+5. **Most Threads should be `ThreadType.Note`** - Use `Action` only for tasks with `done`, use `Event` only for items with `start`/`end`
 
 ### Recommended Decision Tree (Strategy 2: Upsert via Source/Key)
 
 ```
 New event/task/conversation from external system?
   ├─ Has stable URL or ID?
-  │   └─ Yes → Set Activity.source to the canonical URL/ID
-  │             Create Activity (Plot handles deduplication automatically)
+  │   └─ Yes → Set Thread.source to the canonical URL/ID
+  │             Create Thread (Plot handles deduplication automatically)
   │             Use Note.key for different note types:
   │               - "description" for main content
   │               - "metadata" for status/priority/assignee
   │               - "comment-{id}" for individual comments
   │
-  └─ No stable identifier OR need multiple Plot activities per external item?
+  └─ No stable identifier OR need multiple Plot threads per external item?
       └─ Use Advanced Pattern (Strategy 3: Generate and Store IDs)
           See SYNC_STRATEGIES.md for details
 ```
 
 ### Advanced Decision Tree (Strategy 3: Generate and Store IDs)
 
-Only use when source/key upserts aren't sufficient (e.g., creating multiple activities from one external item):
+Only use when source/key upserts aren't sufficient (e.g., creating multiple threads from one external item):
 
 ```
 New event/task/conversation?
   ├─ Yes → Generate UUID with Uuid.Generate()
-  │         Create new Activity with that UUID
-  │         Store mapping: external_id → activity_uuid
+  │         Create new Thread with that UUID
+  │         Store mapping: external_id → thread_uuid
   │
   └─ No (update/reply/comment) → Look up mapping by external_id
-      ├─ Found → Add Note to existing Activity using stored UUID
-      └─ Not found → Create new Activity with UUID + store mapping
+      ├─ Found → Add Note to existing Thread using stored UUID
+      └─ Not found → Create new Thread with UUID + store mapping
 ```
 
 ## Twist Structure Pattern
 
 ```typescript
 import {
-  type Activity,
-  type NewActivityWithNotes,
-  type ActivityFilter,
+  type Thread,
+  type NewThreadWithNotes,
+  type ThreadFilter,
   type Priority,
   type ToolBuilder,
   Twist,
-  ActivityType,
+  ThreadType,
 } from "@plotday/twister";
-import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
 // Import your tools:
 // import { GoogleCalendar } from "@plotday/tool-google-calendar";
 // import { Linear } from "@plotday/tool-linear";
@@ -85,26 +85,14 @@ import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
 export default class MyTwist extends Twist<MyTwist> {
   build(build: ToolBuilder) {
     return {
-      // myTool: build(MyTool, {
-      //   onItem: this.handleItem,
-      //   onSyncableDisabled: this.onSyncableDisabled,
-      // }),
       plot: build(Plot, {
-        activity: { access: ActivityAccess.Create },
+        thread: { access: ThreadAccess.Create },
       }),
     };
   }
 
   async activate(_priority: Pick<Priority, "id">) {
     // Auth and resource selection handled in the twist edit modal.
-  }
-
-  async handleItem(activity: NewActivityWithNotes): Promise<void> {
-    await this.tools.plot.createActivity(activity);
-  }
-
-  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
-    await this.tools.plot.updateActivity({ match: filter, archived: true });
   }
 }
 ```
@@ -185,18 +173,18 @@ async activate(_priority: Pick<Priority, "id">) {
 }
 ```
 
-**Store Parent Activity for Later (optional):**
+**Store Parent Thread for Later (optional):**
 
 ```typescript
 async activate(_priority: Pick<Priority, "id">) {
-  const activityId = await this.tools.plot.createActivity({
-    type: ActivityType.Note,
+  const threadId = await this.tools.plot.createThread({
+    type: ThreadType.Note,
     title: "Setup complete",
     notes: [{
-      content: "Your twist is ready. Activities will appear as they sync.",
+      content: "Your twist is ready. Threads will appear as they sync.",
     }],
   });
-  await this.set("setup_activity_id", activityId);
+  await this.set("setup_thread_id", threadId);
 }
 ```
 
@@ -204,44 +192,22 @@ async activate(_priority: Pick<Priority, "id">) {
 
 Twists respond to events through callbacks declared in `build()`:
 
-**Receive synced items from a tool (most common):**
-
-```typescript
-build(build: ToolBuilder) {
-  return {
-    myTool: build(MyTool, {
-      onItem: this.handleItem,
-      onSyncableDisabled: this.onSyncableDisabled,
-    }),
-    plot: build(Plot, { activity: { access: ActivityAccess.Create } }),
-  };
-}
-
-async handleItem(activity: NewActivityWithNotes): Promise<void> {
-  await this.tools.plot.createActivity(activity);
-}
-
-async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
-  await this.tools.plot.updateActivity({ match: filter, archived: true });
-}
-```
-
-**React to activity changes (for two-way sync):**
+**React to thread changes (for two-way sync):**
 
 ```typescript
 plot: build(Plot, {
-  activity: {
-    access: ActivityAccess.Create,
-    updated: this.onActivityUpdated,
+  thread: {
+    access: ThreadAccess.Create,
+    updated: this.onThreadUpdated,
   },
   note: {
     created: this.onNoteCreated,
   },
 }),
 
-async onActivityUpdated(activity: Activity, changes: { tagsAdded, tagsRemoved }): Promise<void> {
-  const tool = this.getToolForActivity(activity);
-  if (tool?.updateIssue) await tool.updateIssue(activity);
+async onThreadUpdated(thread: Thread, changes: { tagsAdded, tagsRemoved }): Promise<void> {
+  const tool = this.getToolForThread(thread);
+  if (tool?.updateIssue) await tool.updateIssue(thread);
 }
 
 async onNoteCreated(note: Note): Promise<void> {
@@ -254,7 +220,7 @@ async onNoteCreated(note: Note): Promise<void> {
 
 ```typescript
 plot: build(Plot, {
-  activity: { access: ActivityAccess.Respond },
+  thread: { access: ThreadAccess.Respond },
   note: {
     intents: [{
       description: "Respond to general questions",
@@ -265,43 +231,43 @@ plot: build(Plot, {
 }),
 ```
 
-## Activity Links
+## Actions
 
-Activity links enable user interaction:
+Actions enable user interaction:
 
 ```typescript
-import { type ActivityLink, ActivityLinkType } from "@plotday/twister";
+import { type Action, ActionType } from "@plotday/twister";
 
-// External URL link
-const urlLink: ActivityLink = {
+// External URL action
+const urlAction: Action = {
   title: "Open website",
-  type: ActivityLinkType.external,
+  type: ActionType.external,
   url: "https://example.com",
 };
 
-// Callback link (uses Callbacks tool — use linkCallback, not callback)
-const token = await this.linkCallback(this.onLinkClicked, "context");
-const callbackLink: ActivityLink = {
+// Callback action (uses Callbacks tool — use linkCallback, not callback)
+const token = await this.linkCallback(this.onActionClicked, "context");
+const callbackAction: Action = {
   title: "Click me",
-  type: ActivityLinkType.callback,
+  type: ActionType.callback,
   callback: token,
 };
 
-// Add to activity note
-await this.tools.plot.createActivity({
-  type: ActivityType.Note,
-  title: "Task with links",
+// Add to thread note
+await this.tools.plot.createThread({
+  type: ThreadType.Note,
+  title: "Task with actions",
   notes: [
     {
-      content: "Click the links below to take action.",
-      links: [urlLink, callbackLink],
+      content: "Click the actions below to take action.",
+      actions: [urlAction, callbackAction],
     },
   ],
 });
 
-// Callback handler receives the ActivityLink as first argument
-async onLinkClicked(link: ActivityLink, context: string): Promise<void> {
-  // Handle link click
+// Callback handler receives the Action as first argument
+async onActionClicked(action: Action, context: string): Promise<void> {
+  // Handle action click
 }
 ```
 
@@ -317,9 +283,9 @@ build(build: ToolBuilder) {
       providers: [{
         provider: AuthProvider.Google,
         scopes: ["https://www.googleapis.com/auth/calendar"],
-        getSyncables: this.getSyncables,      // List available resources after auth
-        onSyncEnabled: this.onSyncEnabled,    // User enabled a resource
-        onSyncDisabled: this.onSyncDisabled,  // User disabled a resource
+        getChannels: this.getChannels,          // List available resources after auth
+        onChannelEnabled: this.onChannelEnabled, // User enabled a resource
+        onChannelDisabled: this.onChannelDisabled, // User disabled a resource
       }],
     }),
     // ...
@@ -327,7 +293,7 @@ build(build: ToolBuilder) {
 }
 
 // Get a token for API calls:
-const token = await this.tools.integrations.get(AuthProvider.Google, syncableId);
+const token = await this.tools.integrations.get(AuthProvider.Google, channelId);
 if (!token) throw new Error("No auth token available");
 const client = new ApiClient({ accessToken: token.token });
 ```
@@ -338,7 +304,7 @@ For per-user write-backs (e.g., RSVP, comments attributed to the acting user):
 await this.tools.integrations.actAs(
   AuthProvider.Google,
   actorId,       // The user who performed the action
-  activityId,    // Activity to prompt for auth if needed
+  threadId,      // Thread to prompt for auth if needed
   this.performWriteBack,
   ...extraArgs
 );
@@ -346,70 +312,43 @@ await this.tools.integrations.actAs(
 
 ## Sync Pattern
 
-### Recommended: Using External Tools with SyncToolOptions
+### Upsert via Source/Key (Strategy 2)
 
-Most twists use external tools (CalendarTool, ProjectTool, etc.) that handle sync internally. The twist just receives `NewActivityWithNotes` objects and saves them:
-
-```typescript
-build(build: ToolBuilder) {
-  return {
-    calendarTool: build(GoogleCalendar, {
-      onItem: this.handleEvent,                     // Receives synced items
-      onSyncableDisabled: this.onSyncableDisabled,  // Clean up when disabled
-    }),
-    plot: build(Plot, { activity: { access: ActivityAccess.Create } }),
-  };
-}
-
-// Tools deliver NewActivityWithNotes — twist saves them
-async handleEvent(activity: NewActivityWithNotes): Promise<void> {
-  await this.tools.plot.createActivity(activity);
-}
-
-async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
-  await this.tools.plot.updateActivity({ match: filter, archived: true });
-}
-```
-
-### Custom Sync: Upsert via Source/Key (Strategy 2)
-
-For direct API integration without an external tool, use source/key for automatic upserts:
+Use source/key for automatic upserts:
 
 ```typescript
 async handleEvent(event: ExternalEvent): Promise<void> {
-  const activity: NewActivityWithNotes = {
+  const thread: NewThreadWithNotes = {
     source: event.htmlLink,  // Canonical URL for automatic deduplication
-    type: ActivityType.Event,
+    type: ThreadType.Event,
     title: event.summary || "(No title)",
-    start: event.start?.dateTime || event.start?.date || null,
-    end: event.end?.dateTime || event.end?.date || null,
     notes: [],
   };
 
   if (event.description) {
-    activity.notes.push({
-      activity: { source: event.htmlLink },
+    thread.notes.push({
+      thread: { source: event.htmlLink },
       key: "description",  // This key enables note-level upserts
       content: event.description,
     });
   }
 
   // Create or update — Plot handles deduplication automatically
-  await this.tools.plot.createActivity(activity);
+  await this.tools.plot.createThread(thread);
 }
 ```
 
 ### Advanced: Generate and Store IDs (Strategy 3)
 
-Only use this pattern when you need to create multiple Plot activities from a single external item, or when the external system doesn't provide stable identifiers. See SYNC_STRATEGIES.md for details.
+Only use this pattern when you need to create multiple Plot threads from a single external item, or when the external system doesn't provide stable identifiers. See SYNC_STRATEGIES.md for details.
 
 ```typescript
 async handleEventAdvanced(
-  incomingActivity: NewActivityWithNotes,
+  incomingThread: NewThreadWithNotes,
   calendarId: string
 ): Promise<void> {
   // Extract external event ID from meta (adapt based on your tool's data)
-  const externalId = incomingActivity.meta?.eventId;
+  const externalId = incomingThread.meta?.eventId;
 
   if (!externalId) {
     console.error("Event missing external ID");
@@ -418,38 +357,38 @@ async handleEventAdvanced(
 
   // Check if we've already synced this event
   const mappingKey = `event_mapping:${calendarId}:${externalId}`;
-  const existingActivityId = await this.get<Uuid>(mappingKey);
+  const existingThreadId = await this.get<Uuid>(mappingKey);
 
-  if (existingActivityId) {
+  if (existingThreadId) {
     // Event already exists - add update as a Note (add message to thread)
-    if (incomingActivity.notes?.[0]?.content) {
+    if (incomingThread.notes?.[0]?.content) {
       await this.tools.plot.createNote({
-        activity: { id: existingActivityId },
-        content: incomingActivity.notes[0].content,
+        thread: { id: existingThreadId },
+        content: incomingThread.notes[0].content,
       });
     }
     return;
   }
 
   // New event - generate UUID and store mapping
-  const activityId = Uuid.Generate();
-  await this.set(mappingKey, activityId);
+  const threadId = Uuid.Generate();
+  await this.set(mappingKey, threadId);
 
-  // Create new Activity with initial Note (new thread with first message)
-  await this.tools.plot.createActivity({
-    ...incomingActivity,
-    id: activityId,
+  // Create new Thread with initial Note (new thread with first message)
+  await this.tools.plot.createThread({
+    ...incomingThread,
+    id: threadId,
   });
 }
 ```
 
 ## Resource Selection
 
-Resource selection (calendars, projects, channels) is handled automatically in the twist edit modal via the Integrations tool. Users see a list of available resources returned by your tool's `getSyncables()` method and toggle them on/off. You do **not** need to build custom selection UI.
+Resource selection (calendars, projects, channels) is handled automatically in the twist edit modal via the Integrations tool. Users see a list of available resources returned by your tool's `getChannels()` method and toggle them on/off. You do **not** need to build custom selection UI.
 
 ```typescript
 // In your tool:
-async getSyncables(_auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+async getChannels(_auth: Authorization, token: AuthToken): Promise<Channel[]> {
   const client = new ApiClient({ accessToken: token.token });
   const calendars = await client.listCalendars();
   return calendars.map(c => ({
@@ -501,10 +440,10 @@ async syncBatch(resourceId: string): Promise<void> {
   // Process results using source/key pattern (automatic upserts, no manual tracking)
   // If each item makes ~10 requests, keep batch size ≤ 100 items to stay under limit
   for (const item of result.items) {
-    // Each createActivity may make ~5-10 requests depending on notes/links
-    await this.tools.plot.createActivity({
+    // Each createThread may make ~5-10 requests depending on notes/links
+    await this.tools.plot.createThread({
       source: item.url, // Use item's canonical URL for automatic deduplication
-      type: ActivityType.Note,
+      type: ThreadType.Note,
       title: item.title,
       notes: [{
         activity: { source: item.url },
@@ -533,8 +472,8 @@ async syncBatch(resourceId: string): Promise<void> {
     await this.clear(`sync_state_${resourceId}`);
 
     // Optionally notify user of completion
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
+    await this.tools.plot.createThread({
+      type: ThreadType.Note,
       title: "Sync complete",
       notes: [
         {
@@ -546,9 +485,9 @@ async syncBatch(resourceId: string): Promise<void> {
 }
 ```
 
-## Activity Sync Best Practices
+## Thread Sync Best Practices
 
-When syncing activities from external systems, follow these patterns for optimal user experience:
+When syncing threads from external systems, follow these patterns for optimal user experience:
 
 ### The `initialSync` Flag
 
@@ -561,8 +500,8 @@ All sync-based tools should distinguish between initial sync (first import) and 
 
 **Example:**
 ```typescript
-const activity: NewActivity = {
-  type: ActivityType.Event,
+const thread: NewThread = {
+  type: ThreadType.Event,
   source: event.url,
   title: event.title,
   ...(initialSync ? { unread: false } : {}),     // false for initial, omit for incremental
@@ -577,9 +516,9 @@ const activity: NewActivity = {
 
 ### Two-Way Sync: Avoiding Race Conditions
 
-When implementing two-way sync where items created in Plot are pushed to an external system (e.g. Notes becoming comments), a race condition can occur: the external system may send a webhook for the newly created item before you've updated the Activity/Note with the external key. The webhook handler won't find the item by external key and may create a duplicate.
+When implementing two-way sync where items created in Plot are pushed to an external system (e.g. Notes becoming comments), a race condition can occur: the external system may send a webhook for the newly created item before you've updated the Thread/Note with the external key. The webhook handler won't find the item by external key and may create a duplicate.
 
-**Solution:** Embed the Plot `Activity.id` / `Note.id` in the external item's metadata when creating it, and update `Activity.source` / `Note.key` after creation. When processing webhooks, check for the Plot ID in metadata first.
+**Solution:** Embed the Plot `Thread.id` / `Note.id` in the external item's metadata when creating it, and update `Thread.source` / `Note.key` after creation. When processing webhooks, check for the Plot ID in metadata first.
 
 ```typescript
 async pushNoteAsComment(note: Note, externalItemId: string): Promise<void> {
@@ -622,8 +561,8 @@ try {
 } catch (error) {
   console.error("Operation failed:", error);
 
-  await this.tools.plot.createActivity({
-    type: ActivityType.Note,
+  await this.tools.plot.createThread({
+    type: ThreadType.Note,
     title: "Operation failed",
     notes: [
       {
@@ -637,11 +576,11 @@ try {
 ## Common Pitfalls
 
 - **Don't use instance variables for state** - Anything stored in memory is lost after function execution. Always use the Store tool for data that needs to persist.
-- **Processing self-created activities** - Other users may change an Activity created by the twist, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
-- **Always create Activities with Notes** - See "Understanding Activities and Notes" section above for the thread/message pattern and decision tree.
-- **Use correct Activity types** - Most should be `ActivityType.Note`. Only use `Action` for tasks with `done`, and `Event` for items with `start`/`end`.
-- **Use Activity.source and Note.key for automatic upserts (Recommended)** - Set Activity.source to the external item's URL for automatic deduplication. Only use UUID generation and storage for advanced cases (see SYNC_STRATEGIES.md).
-- **Add Notes to existing Activities** - For source/key pattern, reference activities by source. For UUID pattern, look up stored mappings before creating new Activities. Think thread replies, not new threads.
+- **Processing self-created threads** - Other users may change a Thread created by the twist, resulting in a callback. Be sure to check the `changes === null` and/or `thread.author.id !== this.id` to avoid re-processing.
+- **Always create Threads with Notes** - See "Understanding Threads and Notes" section above for the thread/message pattern and decision tree.
+- **Use correct Thread types** - Most should be `ThreadType.Note`. Only use `Action` for tasks with `done`, and `Event` for items with `start`/`end`.
+- **Use Thread.source and Note.key for automatic upserts (Recommended)** - Set Thread.source to the external item's URL for automatic deduplication. Only use UUID generation and storage for advanced cases (see SYNC_STRATEGIES.md).
+- **Add Notes to existing Threads** - For source/key pattern, reference threads by source. For UUID pattern, look up stored mappings before creating new Threads. Think thread replies, not new threads.
 - Tools are declared in the `build` method and accessed via `this.tools.toolName` in twist methods.
 - **Don't forget request limits** - Each execution has ~1000 requests (HTTP requests, tool calls). Break long loops into batches with `this.runTask()` to get fresh request limits. Calculate requests per item to determine safe batch size (e.g., if each item needs ~10 requests, batch size = ~100 items).
 - **Always use Callbacks tool for persistent references** - Direct function references don't survive worker restarts.

@@ -140,9 +140,6 @@ export type NewSchedule = {
   contacts?: NewScheduleContact[];
 };
 
-/** @deprecated Schedules are updated via Thread. Use NewSchedule instead. */
-export type ScheduleUpdate = Partial<Omit<NewSchedule, "threadId">>;
-
 /**
  * Represents a specific instance of a recurring schedule.
  * All field values are computed by merging the recurring schedule's

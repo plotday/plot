@@ -176,11 +176,6 @@ export class OutlookCalendar
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
     await this.clear(`sync_enabled_${channel.id}`);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "microsoft", syncableId: channel.id },
-    });
   }
 
   private async getApi(calendarId: string): Promise<GraphApi> {
@@ -565,6 +560,7 @@ export class OutlookCalendar
             syncProvider: "microsoft",
             syncableId: calendarId,
           },
+          sourceUrl: outlookEvent.webLink ?? null,
           actions: hasActions ? actions : undefined,
           notes: descriptionNote ? [descriptionNote] : [],
           preview: hasDescription ? outlookEvent.body!.content! : null,

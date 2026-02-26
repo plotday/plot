@@ -128,12 +128,6 @@ export class Linear extends Source<Linear> implements ProjectSource {
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "linear", syncableId: channel.id },
-    });
-
     await this.clear(`sync_enabled_${channel.id}`);
   }
 
@@ -432,6 +426,7 @@ export class Linear extends Source<Linear> implements ProjectSource {
         projectId,
       },
       actions: threadActions.length > 0 ? threadActions : undefined,
+      sourceUrl: issue.url ?? null,
       notes,
       preview: hasDescription ? description : null,
       ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates

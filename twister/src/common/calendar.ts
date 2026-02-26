@@ -124,6 +124,3 @@ export type CalendarSource = {
    */
   stopSync(calendarId: string): Promise<void>;
 };
-
-/** @deprecated Use CalendarSource instead */
-export type CalendarTool = CalendarSource;

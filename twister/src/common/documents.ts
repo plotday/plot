@@ -133,6 +133,3 @@ export type DocumentSource = {
     noteId?: string,
   ): Promise<string | void>;
 };
-
-/** @deprecated Use DocumentSource instead */
-export type DocumentTool = DocumentSource;

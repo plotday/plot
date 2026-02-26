@@ -3,10 +3,8 @@ import {
   type ActorId,
   type NewContact,
   type NewLinkWithNotes,
-  type NewThreadWithNotes,
   type Note,
   type Thread,
-  type ThreadFilter,
   type ThreadMeta,
   ITool,
   Serializable,
@@ -26,9 +24,6 @@ export type Channel = {
   children?: Channel[];
 };
 
-/** @deprecated Use Channel instead */
-export type Syncable = Channel;
-
 /**
  * Configuration for an OAuth provider in a source's build options.
  * Declares the provider, scopes, and lifecycle callbacks.
@@ -42,6 +37,8 @@ export type LinkTypeConfig = {
   type: string;
   /** Human-readable label (e.g., "Issue", "Pull Request") */
   label: string;
+  /** Filename of a static asset in the source's assets/ directory (e.g., "issue.svg") */
+  logo?: string;
   /** Possible status values for this type */
   statuses?: Array<{
     /** Machine-readable status (e.g., "open", "done") */
@@ -75,13 +72,6 @@ export type IntegrationProviderConfig = {
    */
   onNoteCreated?: (note: Note, meta: ThreadMeta) => Promise<void>;
 
-  // Deprecated aliases
-  /** @deprecated Use getChannels instead */
-  getSyncables?: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
-  /** @deprecated Use onChannelEnabled instead */
-  onSyncEnabled?: (channel: Channel) => Promise<void>;
-  /** @deprecated Use onChannelDisabled instead */
-  onSyncDisabled?: (channel: Channel) => Promise<void>;
 };
 
 /**
@@ -196,17 +186,6 @@ export abstract class Integrations extends ITool {
   abstract saveLink(link: NewLinkWithNotes): Promise<Uuid>;
 
   /**
-   * Saves a thread with notes to the source's priority.
-   *
-   * @deprecated Use saveLink() instead. saveThread() will be removed in a future version.
-   *
-   * @param thread - The thread with notes to save
-   * @returns Promise resolving to the saved thread's UUID
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract saveThread(thread: NewThreadWithNotes): Promise<Uuid>;
-
-  /**
    * Saves contacts to the source's priority.
    *
    * @param contacts - Array of contacts to save
@@ -215,16 +194,6 @@ export abstract class Integrations extends ITool {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract saveContacts(contacts: NewContact[]): Promise<Actor[]>;
 
-  /**
-   * Archives threads matching a filter.
-   *
-   * Useful for bulk archiving when a channel is disabled.
-   *
-   * @param filter - Filter to match threads to archive
-   * @returns Promise that resolves when archiving is complete
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract archiveThreads(filter: ThreadFilter): Promise<void>;
 }
 
 /**

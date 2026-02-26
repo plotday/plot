@@ -114,12 +114,6 @@ export class Asana extends Source<Asana> implements ProjectSource {
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "asana", syncableId: channel.id },
-    });
-
     await this.clear(`sync_enabled_${channel.id}`);
   }
 
@@ -400,6 +394,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
         syncableId: projectId,
       },
       actions: threadActions.length > 0 ? threadActions : undefined,
+      sourceUrl: taskUrl,
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned tasks
       status: task.completed && task.completed_at ? "done" : "open",

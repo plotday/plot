@@ -156,12 +156,6 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "github-issues", syncableId: channel.id },
-    });
-
     await this.clear(`sync_enabled_${channel.id}`);
     await this.clear(`repo_info_${channel.id}`);
   }
@@ -492,6 +486,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
         projectId: repoId,
       },
       actions: threadActions.length > 0 ? threadActions : undefined,
+      sourceUrl: issue.html_url ?? null,
       notes,
       preview: hasDescription ? description : null,
       ...(initialSync ? { unread: false } : {}),

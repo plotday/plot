@@ -80,6 +80,3 @@ export type MessagingSource = {
    */
   stopSync(channelId: string): Promise<void>;
 };
-
-/** @deprecated Use MessagingSource instead */
-export type MessagingTool = MessagingSource;

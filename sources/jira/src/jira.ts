@@ -127,12 +127,6 @@ export class Jira extends Source<Jira> implements ProjectSource {
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "atlassian", syncableId: channel.id },
-    });
-
     await this.clear(`sync_enabled_${channel.id}`);
   }
 
@@ -441,6 +435,7 @@ export class Jira extends Source<Jira> implements ProjectSource {
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
       status: fields.resolutiondate ? "done" : "open",
       actions: threadActions.length > 0 ? threadActions : undefined,
+      sourceUrl: issueUrl ?? null,
       notes,
       preview: description || null,
     };

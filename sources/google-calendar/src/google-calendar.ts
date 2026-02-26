@@ -207,11 +207,6 @@ export class GoogleCalendar
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "google", syncableId: channel.id },
-    });
   }
 
   private async getApi(calendarId: string): Promise<GoogleApi> {
@@ -798,6 +793,7 @@ export class GoogleCalendar
             author: authorContact,
             meta: activityData.meta ?? null,
             actions: hasActions ? actions : undefined,
+            sourceUrl: event.htmlLink ?? null,
             notes: descriptionNote ? [descriptionNote] : [],
             preview: hasDescription ? description : null,
             schedules: activityData.schedules,

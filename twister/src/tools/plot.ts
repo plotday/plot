@@ -35,11 +35,6 @@ export enum ThreadAccess {
   Create,
 }
 
-/** @deprecated Use ThreadAccess instead */
-export const ActivityAccess = ThreadAccess;
-/** @deprecated Use ThreadAccess instead */
-export type ActivityAccess = ThreadAccess;
-
 export enum PriorityAccess {
   /**
    * Create a new Priority within the twist's Priority.

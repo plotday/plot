@@ -210,12 +210,6 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
-
-    // Archive all threads from this channel
-    await this.tools.integrations.archiveThreads({
-      meta: { syncProvider: "github", syncableId: channel.id },
-    });
-
     await this.clear(`sync_enabled_${channel.id}`);
   }
 
@@ -801,6 +795,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
         prNodeId: pr.id,
       },
       actions: threadActions,
+      sourceUrl: pr.html_url,
       notes,
       preview: hasDescription ? pr.body : null,
       ...(initialSync ? { unread: false } : {}),

@@ -459,11 +459,11 @@ build(build: SourceBuilder) {
 
 ## Architecture: Sources Save Directly
 
-**Sources save data directly** via `integrations.saveThread()`. Sources build `NewActivityWithNotes` objects and save them, rather than passing them through a parent twist.
+**Sources save data directly** via `integrations.saveLink()`. Sources build `NewLinkWithNotes` objects and save them, rather than passing them through a parent twist.
 
 This means:
-- Sources request `Plot` with `ContactAccess.Write` (for contacts on activities)
-- Sources declare `static readonly Options: SyncToolOptions` to receive configuration from the parent
+- Sources request `Plot` with `ContactAccess.Write` (for contacts on threads)
+- Sources declare providers via `Integrations` with lifecycle callbacks
 - Sources call save methods directly to persist synced data
 
 ## Critical: Callback Serialization Pattern
@@ -809,7 +809,7 @@ After creating a new source, add it to `pnpm-workspace.yaml` if not already cove
 5. **❌ Using mutable IDs in `source`** — Use immutable IDs (Jira issue ID, not issue key)
 6. **❌ Not breaking loops into batches** — Each execution has ~1000 request limit
 7. **❌ Missing localhost guard** — Webhook registration fails silently on localhost
-8. **❌ Calling `plot.createActivity()` from a source** — Sources save data directly via `integrations.saveThread()`
+8. **❌ Calling `plot.createThread()` from a source** — Sources save data directly via `integrations.saveLink()`
 9. **❌ Breaking callback signatures** — Old callbacks auto-upgrade; add optional params at end only
 10. **❌ Passing `undefined` in serializable values** — Use `null` instead
 11. **❌ Forgetting to clean up on disable** — Delete callbacks, webhooks, and stored state
