@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-google-drive",
+  "plotTwistId": "c27741c2-0f26-444c-9e50-e1d70dab0dee",
   "displayName": "Google Drive",
   "description": "Sync documents comments from Google Drive",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/source-google-contacts": "workspace:^",

@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-github",
+  "plotTwistId": "ba3afb64-af6e-4c64-bcff-5fa8575d21f0",
   "displayName": "GitHub",
   "description": "Sync with GitHub pull requests and code reviews",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"

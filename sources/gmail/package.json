@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-gmail",
+  "plotTwistId": "7176b853-4495-4bba-82ee-645ae5d398d7",
   "displayName": "Gmail",
   "description": "Sync with Gmail inbox and messages",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"

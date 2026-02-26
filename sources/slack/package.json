@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-slack",
+  "plotTwistId": "d8cbc41f-71f5-4cb6-a0bb-3ade462c4084",
   "displayName": "Slack",
   "description": "Sync with Slack channels and messages",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"

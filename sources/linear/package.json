@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-linear",
+  "plotTwistId": "d23218d6-1e26-4a4d-9a24-63898a494c51",
   "displayName": "Linear",
   "description": "Sync with Linear project management",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^",

@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-asana",
+  "plotTwistId": "d8f4e839-c152-41a2-926c-700e23d4fc77",
   "displayName": "Asana",
   "description": "Sync with Asana project management",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^",

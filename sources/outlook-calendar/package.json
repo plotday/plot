@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-outlook-calendar",
+  "plotTwistId": "cf518010-30c1-4594-b3df-295a19d65459",
   "displayName": "Outlook Calendar",
   "description": "Sync with Microsoft Outlook Calendar",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"

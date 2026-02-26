@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-jira",
+  "plotTwistId": "07f11ed7-9555-431d-b01a-99aff550d778",
   "displayName": "Jira",
   "description": "Sync with Jira project management",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^",

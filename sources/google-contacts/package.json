@@ -1,5 +1,6 @@
 {
   "name": "@plotday/source-google-contacts",
+  "plotTwistId": "748bb590-5da3-4782-aa6f-6a98fc2d3555",
   "displayName": "Google Contacts",
   "description": "Sync with Google Contacts",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -22,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"
