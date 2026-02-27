@@ -705,6 +705,7 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
       author,
       sourceUrl: file.webViewLink ?? null,
       actions: actions.length > 0 ? actions : null,
+      channelId: folderId,
       meta: {
         fileId: file.id,
         folderId,

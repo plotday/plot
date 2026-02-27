@@ -322,6 +322,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       );
 
       if (link) {
+        link.channelId = repoId;
         link.meta = {
           ...link.meta,
           syncProvider: "github-issues",
@@ -693,6 +694,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       author: authorContact,
       assignee: assigneeContact ?? null,
       status: issue.closed_at ? "closed" : "open",
+      channelId: repoId,
       meta: {
         githubIssueNumber: issue.number,
         githubRepoId: repoId,
@@ -750,6 +752,7 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
           author: commentAuthor,
         } as any,
       ],
+      channelId: repoId,
       meta: {
         githubIssueNumber: issue.number,
         githubRepoId: repoId,

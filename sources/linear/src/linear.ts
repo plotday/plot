@@ -312,6 +312,7 @@ export class Linear extends Source<Linear> implements ProjectSource {
 
       if (link) {
         // Inject sync metadata for bulk operations (e.g. disable filtering)
+        link.channelId = projectId;
         link.meta = {
           ...link.meta,
           syncProvider: "linear",
@@ -708,6 +709,7 @@ export class Linear extends Source<Linear> implements ProjectSource {
       author: authorContact,
       assignee: assigneeContact ?? null,
       status: issue.completedAt || issue.canceledAt ? "done" : "open",
+      channelId: projectId,
       meta: {
         linearId: issue.id,
         projectId,
@@ -767,6 +769,7 @@ export class Linear extends Source<Linear> implements ProjectSource {
           author: commentAuthor,
         } as any,
       ],
+      channelId: projectId,
       meta: {
         linearId: issueId,
         projectId,

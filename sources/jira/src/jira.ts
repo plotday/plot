@@ -272,6 +272,7 @@ export class Jira extends Source<Jira> implements ProjectSource {
       // Set unread based on sync type (false for initial sync to avoid notification overload)
       linkWithNotes.unread = !state.initialSync;
       // Inject sync metadata for filtering on disable
+      linkWithNotes.channelId = projectId;
       linkWithNotes.meta = { ...linkWithNotes.meta, syncProvider: "atlassian", syncableId: projectId };
       await this.tools.integrations.saveLink(linkWithNotes);
     }

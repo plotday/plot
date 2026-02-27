@@ -22,6 +22,8 @@ export type Channel = {
   title: string;
   /** Optional nested channel resources (e.g., subfolders) */
   children?: Channel[];
+  /** Priority ID this channel is routed to (set when channel is enabled) */
+  priorityId?: string;
 };
 
 /**
@@ -139,9 +141,17 @@ export abstract class Integrations extends ITool {
    * Returns the token of the user who enabled sync on the given channel.
    * If the channel is not enabled or the token is expired/invalid, returns null.
    *
-   * @param provider - The OAuth provider
    * @param channelId - The channel resource ID (e.g., calendar ID)
    * @returns Promise resolving to the access token or null
+   */
+  abstract get(channelId: string): Promise<AuthToken | null>;
+  /**
+   * Retrieves an access token for a channel resource.
+   *
+   * @param provider - The OAuth provider (deprecated, ignored for single-provider sources)
+   * @param channelId - The channel resource ID (e.g., calendar ID)
+   * @returns Promise resolving to the access token or null
+   * @deprecated Use get(channelId) instead. The provider is implicit from the source.
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract get(provider: AuthProvider, channelId: string): Promise<AuthToken | null>;

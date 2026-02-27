@@ -386,6 +386,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
       type: "task",
       title: task.name,
       created: task.created_at ? new Date(task.created_at) : undefined,
+      channelId: projectId,
       meta: {
         taskGid: task.gid,
         projectId,
@@ -622,6 +623,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
         type: "task",
         title: task.name,
         created: task.created_at ? new Date(task.created_at) : undefined,
+        channelId: projectId,
         meta: {
           taskGid: task.gid,
           projectId,
@@ -704,6 +706,7 @@ export class Asana extends Source<Asana> implements ProjectSource {
             author: storyAuthor,
           } as any,
         ],
+        channelId: projectId,
         meta: {
           taskGid,
           projectId,

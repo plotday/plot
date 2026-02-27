@@ -827,6 +827,8 @@ export type Link = {
   meta: ThreadMeta | null;
   /** URL to open the original item in its source application (e.g., "Open in Linear") */
   sourceUrl: string | null;
+  /** Channel ID that produced this link (matches source_channel.channel_id) */
+  channelId: string | null;
 };
 
 /**

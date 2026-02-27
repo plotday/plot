@@ -272,6 +272,7 @@ export class Slack extends Source<Slack> implements MessagingSource {
         if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
         // Inject sync metadata for the parent to identify the source
+        activityThread.channelId = channelId;
         activityThread.meta = {
           ...activityThread.meta,
           syncProvider: "slack",

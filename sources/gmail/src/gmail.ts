@@ -280,7 +280,8 @@ export class Gmail extends Source<Gmail> implements MessagingSource {
 
         if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
-        // Inject sync metadata for the parent to identify the source
+        // Inject channel ID for priority routing and sync metadata
+        activityThread.channelId = channelId;
         activityThread.meta = {
           ...activityThread.meta,
           syncProvider: "google",

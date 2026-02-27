@@ -428,6 +428,7 @@ export class OutlookCalendar
               : new Date(),
             preview: "Cancelled",
             source,
+            channelId: calendarId,
             meta: { syncProvider: "microsoft", syncableId: calendarId },
             notes: [cancelNote],
             ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
@@ -551,6 +552,7 @@ export class OutlookCalendar
           title: threadData.title || "",
           created: threadData.created,
           author: authorContact,
+          channelId: calendarId,
           meta: {
             ...threadData.meta,
             syncProvider: "microsoft",
@@ -618,6 +620,7 @@ export class OutlookCalendar
         type: "event",
         title: "",
         source: masterCanonicalUrl,
+        channelId: calendarId,
         meta: { syncProvider: "microsoft", syncableId: calendarId },
         scheduleOccurrences: [cancelledOccurrence],
         notes: [],
@@ -674,6 +677,7 @@ export class OutlookCalendar
       type: "event",
       title: "",
       source: masterCanonicalUrl,
+      channelId: calendarId,
       meta: { syncProvider: "microsoft", syncableId: calendarId },
       scheduleOccurrences: [occurrence],
       notes: [],

@@ -696,6 +696,7 @@ export class GoogleCalendar
             };
 
             // Inject sync metadata for the parent to identify the source
+            link.channelId = calendarId;
             link.meta = { ...link.meta, syncProvider: "google", syncableId: calendarId };
 
             // Send link - database handles upsert automatically
@@ -801,6 +802,7 @@ export class GoogleCalendar
           };
 
           // Inject sync metadata for the parent to identify the source
+          link.channelId = calendarId;
           link.meta = { ...link.meta, syncProvider: "google", syncableId: calendarId };
 
           // Send link - database handles upsert automatically
@@ -867,6 +869,7 @@ export class GoogleCalendar
         type: "event",
         title: "",
         source: masterCanonicalUrl,
+        channelId: calendarId,
         meta: { syncProvider: "google", syncableId: calendarId },
         scheduleOccurrences: [cancelledOccurrence],
         notes: [],
@@ -921,6 +924,7 @@ export class GoogleCalendar
       type: "event",
       title: "",
       source: masterCanonicalUrl,
+      channelId: calendarId,
       meta: { syncProvider: "google", syncableId: calendarId },
       scheduleOccurrences: [occurrence],
       notes: [],

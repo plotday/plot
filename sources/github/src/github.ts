@@ -494,6 +494,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
           ? "closed"
           : "open",
       ...(pr.state === "closed" && !pr.merged_at ? { archived: true } : {}),
+      channelId: repositoryId,
       meta: {
         provider: "github",
         owner,
@@ -544,6 +545,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
           author: reviewAuthor,
         } as any,
       ],
+      channelId: repositoryId,
       meta: {
         provider: "github",
         owner,
@@ -585,6 +587,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
           author: commentAuthor,
         } as any,
       ],
+      channelId: repositoryId,
       meta: {
         provider: "github",
         owner,
@@ -674,6 +677,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
       );
 
       if (thread) {
+        thread.channelId = repositoryId;
         thread.meta = {
           ...thread.meta,
           syncProvider: "github",
