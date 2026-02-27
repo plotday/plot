@@ -1,11 +1,9 @@
 import * as asana from "asana";
 
 import {
-  type Thread,
   type Action,
   ActionType,
   ThreadMeta,
-  ThreadType,
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type {
@@ -405,38 +403,33 @@ export class Asana extends Source<Asana> implements ProjectSource {
   }
 
   /**
-   * Update task with new values
-   *
-   * @param thread - The updated thread
+   * Update task with new values from the app
    */
-  async updateIssue(thread: Thread): Promise<void> {
-    // Extract Asana task GID and project ID from meta
-    const taskGid = thread.meta?.taskGid as string | undefined;
+  async updateIssue(link: import("@plotday/twister").Link): Promise<void> {
+    const taskGid = link.meta?.taskGid as string | undefined;
     if (!taskGid) {
-      throw new Error("Asana task GID not found in thread meta");
+      throw new Error("Asana task GID not found in link meta");
     }
-    const projectId = thread.meta?.projectId as string | undefined;
+    const projectId = link.meta?.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Asana project ID not found in thread meta");
+      throw new Error("Asana project ID not found in link meta");
     }
 
     const client = await this.getClient(projectId);
     const updateFields: any = {};
 
     // Handle title
-    if (thread.title !== null) {
-      updateFields.name = thread.title;
+    if (link.title) {
+      updateFields.name = link.title;
     }
 
     // Handle assignee
-    updateFields.assignee = thread.assignee?.id || null;
+    updateFields.assignee = link.assignee?.id || null;
 
-    // Handle completion status based on done
-    // Asana only has completed boolean (no In Progress state)
-    updateFields.completed =
-      thread.type === ThreadType.Action && thread.done !== null;
+    // Handle completion status based on link status
+    const isDone = link.status === "done" || link.status === "closed" || link.status === "completed";
+    updateFields.completed = isDone;
 
-    // Apply updates if any fields changed
     if (Object.keys(updateFields).length > 0) {
       await client.tasks.updateTask(taskGid, updateFields);
     }

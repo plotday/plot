@@ -1,6 +1,18 @@
-import type { NewThread } from "@plotday/twister";
-import { ThreadType, ConferencingProvider } from "@plotday/twister";
+import { ConferencingProvider } from "@plotday/twister";
 import type { NewSchedule, NewScheduleOccurrence } from "@plotday/twister/schedule";
+
+/**
+ * Intermediate representation of a transformed Google Calendar event.
+ * Contains the fields needed to construct a `NewLinkWithNotes` in the calendar source.
+ */
+export type TransformedEvent = {
+  title: string;
+  meta: Record<string, any>;
+  /** "event" for timed events, undefined for cancelled/all-day events */
+  type?: string;
+  schedules?: Array<Omit<NewSchedule, "threadId">>;
+  scheduleOccurrences?: NewScheduleOccurrence[];
+};
 
 export type GoogleEvent = {
   id: string;
@@ -340,7 +352,7 @@ export function extractConferencingLinks(
 export function transformGoogleEvent(
   event: GoogleEvent,
   calendarId: string
-): NewThread {
+): TransformedEvent {
   // Determine if this is an all-day event
   const isAllDay = event.start?.date && !event.start?.dateTime;
 
@@ -359,8 +371,7 @@ export function transformGoogleEvent(
   // Handle cancelled events differently
   const isCancelled = event.status === "cancelled";
 
-  const shared = {
-    source: `google-calendar:${event.id}`,
+  const result: TransformedEvent = {
     title: event.summary || (isCancelled ? "Cancelled event" : ""),
     meta: {
       id: event.id,
@@ -380,12 +391,9 @@ export function transformGoogleEvent(
         : null,
       description: event.description || null,
     },
-  } as const;
-
-  const thread: NewThread =
-    isCancelled || isAllDay
-      ? { type: ThreadType.Note, ...shared }
-      : { type: ThreadType.Event, ...shared };
+    // Timed events get type "event"; cancelled/all-day events get no type
+    type: isCancelled || isAllDay ? undefined : "event",
+  };
 
   // Build schedule from start/end if not cancelled
   if (!isCancelled && start) {
@@ -419,17 +427,17 @@ export function transformGoogleEvent(
       // and create schedule occurrence entries for each
       const rdates = parseRDates(event.recurrence);
       if (rdates.length > 0) {
-        thread.scheduleOccurrences = rdates.map((rdate) => ({
+        result.scheduleOccurrences = rdates.map((rdate) => ({
           occurrence: rdate,
           start: rdate,
         }));
       }
     }
 
-    thread.schedules = [schedule];
+    result.schedules = [schedule];
   }
 
-  return thread;
+  return result;
 }
 
 export async function syncGoogleCalendar(

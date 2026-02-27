@@ -89,7 +89,6 @@ export type NoteIntentHandler = {
  *   async activate(priority) {
  *     // Create a welcome thread
  *     await this.plot.createThread({
- *       type: ThreadType.Note,
  *       title: "Welcome to Plot!",
  *       actions: [{
  *         title: "Get Started",
@@ -497,7 +496,6 @@ export abstract class Plot extends ITool {
    * ```typescript
    * // Schedule a timed event
    * const threadId = await this.plot.createThread({
-   *   type: ThreadType.Event,
    *   title: "Team standup"
    * });
    * await this.plot.createSchedule({

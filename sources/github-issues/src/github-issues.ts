@@ -4,7 +4,6 @@ import {
   type Action,
   ActionType,
   type ThreadMeta,
-  ThreadType,
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type {
@@ -499,26 +498,24 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
   }
 
   /**
-   * Update issue with new values
+   * Update issue with new values from the app
    */
   async updateIssue(
-    thread: import("@plotday/twister").Thread
+    link: import("@plotday/twister").Link
   ): Promise<void> {
-    const issueNumber = thread.meta?.githubIssueNumber as number | undefined;
+    const issueNumber = link.meta?.githubIssueNumber as number | undefined;
     if (!issueNumber) {
-      throw new Error("GitHub issue number not found in thread meta");
+      throw new Error("GitHub issue number not found in link meta");
     }
 
-    const repoFullName = thread.meta?.githubRepoFullName as
-      | string
-      | undefined;
+    const repoFullName = link.meta?.githubRepoFullName as string | undefined;
     if (!repoFullName) {
-      throw new Error("GitHub repo name not found in thread meta");
+      throw new Error("GitHub repo name not found in link meta");
     }
 
-    const projectId = thread.meta?.projectId as string | undefined;
+    const projectId = link.meta?.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Project ID not found in thread meta");
+      throw new Error("Project ID not found in link meta");
     }
 
     const octokit = await this.getClient(projectId);
@@ -529,17 +526,14 @@ export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource 
       assignees?: string[];
     } = {};
 
-    // Handle open/close status
-    if (thread.type === ThreadType.Action && thread.done !== null) {
-      updateFields.state = "closed";
-    } else {
-      updateFields.state = "open";
-    }
+    // Handle open/close status based on link status
+    const isDone = link.status === "done" || link.status === "closed" || link.status === "completed";
+    updateFields.state = isDone ? "closed" : "open";
 
     // Handle assignee - use actor name as GitHub login
-    if (thread.assignee) {
-      if (thread.assignee.name) {
-        updateFields.assignees = [thread.assignee.name];
+    if (link.assignee) {
+      if (link.assignee.name) {
+        updateFields.assignees = [link.assignee.name];
       }
     } else {
       updateFields.assignees = [];

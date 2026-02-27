@@ -11,7 +11,6 @@ import {
   ActionType,
   type Link,
   ThreadMeta,
-  ThreadType,
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type {
@@ -479,22 +478,19 @@ export class Linear extends Source<Linear> implements ProjectSource {
   }
 
   /**
-   * Update issue with new values
-   *
-   * @param thread - The updated thread
+   * Update issue with new values from the app
    */
   async updateIssue(
-    thread: import("@plotday/twister").Thread
+    link: import("@plotday/twister").Link
   ): Promise<void> {
-    // Get the Linear issue ID from thread meta
-    const issueId = thread.meta?.linearId as string | undefined;
+    const issueId = link.meta?.linearId as string | undefined;
     if (!issueId) {
-      throw new Error("Linear issue ID not found in thread meta");
+      throw new Error("Linear issue ID not found in link meta");
     }
 
-    const projectId = thread.meta?.projectId as string | undefined;
+    const projectId = link.meta?.projectId as string | undefined;
     if (!projectId) {
-      throw new Error("Project ID not found in thread meta");
+      throw new Error("Project ID not found in link meta");
     }
 
     const client = await this.getClient(projectId);
@@ -502,37 +498,27 @@ export class Linear extends Source<Linear> implements ProjectSource {
     const updateFields: any = {};
 
     // Handle title
-    if (thread.title !== null) {
-      updateFields.title = thread.title;
-    }
-
-    // Handle order -> sortOrder
-    if (thread.order !== undefined && thread.order !== null) {
-      updateFields.sortOrder = thread.order;
+    if (link.title) {
+      updateFields.title = link.title;
     }
 
     // Handle assignee - map Plot actor to Linear user via email lookup
-    if (!thread.assignee) {
+    if (!link.assignee) {
       updateFields.assigneeId = null;
     } else {
-      const email = thread.assignee.email;
+      const email = link.assignee.email;
       if (email) {
-        // Check cache first
         let linearUserId = await this.get<string>(`linear_user:${email}`);
-
         if (!linearUserId) {
-          // Query Linear for user by email
           const users = await client.users({
             filter: { email: { eq: email } },
           });
           const linearUser = users.nodes[0];
-
           if (linearUser) {
             linearUserId = linearUser.id;
             await this.set(`linear_user:${email}`, linearUserId);
           }
         }
-
         if (linearUserId) {
           updateFields.assigneeId = linearUserId;
         } else {
@@ -547,28 +533,25 @@ export class Linear extends Source<Linear> implements ProjectSource {
       }
     }
 
-    // Handle state based on assignee + done combination
+    // Handle state based on link status and assignee
     const team = await issue.team;
     if (team) {
       const states = await team.states();
       let targetState;
 
-      // Determine target state based on combination
-      if (thread.type === ThreadType.Action && thread.done !== null) {
-        // Completed
+      const isDone = link.status === "done" || link.status === "closed" || link.status === "completed" || link.status === "resolved";
+      if (isDone) {
         targetState = states.nodes.find(
           (s) =>
             s.name === "Done" ||
             s.name === "Completed" ||
             s.type === "completed"
         );
-      } else if (thread.assignee !== null) {
-        // In Progress (has assignee, not done)
+      } else if (link.assignee) {
         targetState = states.nodes.find(
           (s) => s.name === "In Progress" || s.type === "started"
         );
       } else {
-        // Backlog/Todo (no assignee, not done)
         targetState = states.nodes.find(
           (s) =>
             s.name === "Todo" || s.name === "Backlog" || s.type === "unstarted"
@@ -580,7 +563,6 @@ export class Linear extends Source<Linear> implements ProjectSource {
       }
     }
 
-    // Apply updates if any fields changed
     if (Object.keys(updateFields).length > 0) {
       await client.updateIssue(issueId, updateFields);
     }

@@ -73,9 +73,7 @@ import {
  *     });
  *
  *     await this.plot.createThread({
- *       type: ThreadType.Action,
  *       title: "Connect Google Calendar",
- *       actions: [authLink]
  *     });
  *   }
  *

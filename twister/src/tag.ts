@@ -6,16 +6,12 @@
  */
 export enum Tag {
   // Special tags
-  Now = 1,
-  Later = 2,
+  Todo = 1,
   Done = 3,
-  Archived = 4,
-  Someday = 7,
 
   // Toggle tags
   Pinned = 100,
   Urgent = 101,
-  Inbox = 102,
   Goal = 103,
   Decision = 104,
   Waiting = 105,

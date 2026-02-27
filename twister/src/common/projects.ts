@@ -1,5 +1,5 @@
 import type {
-  Thread,
+  Link,
   ThreadMeta,
 } from "../index";
 
@@ -86,18 +86,15 @@ export type ProjectSource = {
   stopSync(projectId: string): Promise<void>;
 
   /**
-   * Updates an issue/task with new values.
+   * Updates an issue/task in the external service based on link changes.
    *
    * Optional method for bidirectional sync. When implemented, allows Plot to
-   * sync thread updates back to the external service.
+   * sync link updates (status, assignee, title) back to the external service.
    *
-   * Auth is obtained automatically via integrations.get(provider, projectId)
-   * using the projectId from thread.meta.
-   *
-   * @param thread - The updated thread
+   * @param link - The updated link with source metadata
    * @returns Promise that resolves when the update is synced
    */
-  updateIssue?(thread: Thread): Promise<void>;
+  updateIssue?(link: Link): Promise<void>;
 
   /**
    * Adds a comment to an issue/task.

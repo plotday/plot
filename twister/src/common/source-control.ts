@@ -1,5 +1,5 @@
 import type {
-  Thread,
+  Link,
   ThreadMeta,
 } from "../index";
 
@@ -116,12 +116,12 @@ export type SourceControlSource = {
    * Updates a pull request's review status (approve, request changes).
    *
    * Optional method for bidirectional sync. When implemented, allows Plot to
-   * sync thread status changes back to the external service.
+   * sync link status changes back to the external service.
    *
-   * @param thread - The updated thread with review status
+   * @param link - The updated link with review status
    * @returns Promise that resolves when the update is synced
    */
-  updatePRStatus?(thread: Thread): Promise<void>;
+  updatePRStatus?(link: Link): Promise<void>;
 
   /**
    * Closes a pull request without merging.

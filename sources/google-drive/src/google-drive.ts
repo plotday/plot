@@ -748,7 +748,7 @@ export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
       author: commentAuthor,
       created: new Date(comment.createdTime),
       ...(comment.assigneeEmailAddress
-        ? { tags: { [Tag.Now]: [{ email: comment.assigneeEmailAddress }] } }
+        ? { tags: { [Tag.Todo]: [{ email: comment.assigneeEmailAddress }] } }
         : {}),
     };
   }

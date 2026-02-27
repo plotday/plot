@@ -1,15 +1,11 @@
 import {
-  type Thread,
   type Action,
   ActionType,
   type ActorId,
   ConferencingProvider,
   type ContentType,
   type NewLinkWithNotes,
-  type NewActor,
   type NewContact,
-  type NewNote,
-  Tag,
   Source,
   type ToolBuilder,
 } from "@plotday/twister";

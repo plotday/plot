@@ -1,7 +1,19 @@
-import type { NewThread } from "@plotday/twister";
-import { ThreadType } from "@plotday/twister";
+import type { ThreadMeta } from "@plotday/twister";
 import type { NewSchedule, NewScheduleOccurrence } from "@plotday/twister/schedule";
 import type { Calendar } from "@plotday/twister/common/calendar";
+
+/**
+ * Intermediate type returned by transformOutlookEvent.
+ * Contains the data extracted from an Outlook event that will be
+ * assembled into a NewLinkWithNotes by the caller.
+ */
+export type TransformedOutlookEvent = {
+  title: string;
+  meta: ThreadMeta;
+  created?: Date;
+  schedules?: Array<Omit<NewSchedule, "threadId">>;
+  scheduleOccurrences?: NewScheduleOccurrence[];
+};
 
 /**
  * Microsoft Graph API event type
@@ -463,12 +475,13 @@ export function parseOutlookRecurrenceCount(
 }
 
 /**
- * Transform Microsoft Graph event to Plot Thread
+ * Transform Microsoft Graph event into an intermediate representation.
+ * The caller assembles this into a NewLinkWithNotes.
  */
 export function transformOutlookEvent(
   event: OutlookEvent,
   calendarId: string
-): NewThread | null {
+): TransformedOutlookEvent | null {
   // Skip deleted events
   if (event["@removed"]) {
     return null;
@@ -489,8 +502,7 @@ export function transformOutlookEvent(
   // Handle cancelled events differently
   const isCancelled = event.isCancelled === true;
 
-  const shared = {
-    source: `outlook-calendar:${event.id}`,
+  const result: TransformedOutlookEvent = {
     title: isCancelled
       ? event.subject
         ? `Cancelled: ${event.subject}`
@@ -505,12 +517,10 @@ export function transformOutlookEvent(
       originalStart: start instanceof Date ? start.toISOString() : start,
       originalEnd: end instanceof Date ? end.toISOString() : end,
     },
-  } as const;
-
-  const thread: NewThread =
-    isCancelled || isAllDay
-      ? { type: ThreadType.Note, ...shared }
-      : { type: ThreadType.Event, ...shared };
+    created: event.createdDateTime
+      ? new Date(event.createdDateTime)
+      : undefined,
+  };
 
   // Build the primary schedule from start/end
   if (!isCancelled && start) {
@@ -542,14 +552,14 @@ export function transformOutlookEvent(
       }
     }
 
-    thread.schedules = [schedule];
+    result.schedules = [schedule];
 
     // Parse RDATEs (additional occurrence dates not in the recurrence rule)
     // Note: Microsoft Graph API doesn't support RDATE, so this will always be empty
     if (event.recurrence && event.type === "seriesMaster") {
       const rdates = parseOutlookRDates(event.recurrence);
       if (rdates.length > 0) {
-        thread.scheduleOccurrences = rdates.map((rdate) => ({
+        result.scheduleOccurrences = rdates.map((rdate) => ({
           occurrence: rdate,
           start: rdate,
         }));
@@ -565,17 +575,13 @@ export function transformOutlookEvent(
     event.seriesMasterId &&
     event.originalStart
   ) {
-    // This is a modified instance of a recurring event
-    // Store the exception info in metadata
-    if (thread.meta) {
-      thread.meta.seriesMasterId = event.seriesMasterId;
-      thread.meta.originalStartDate = new Date(
-        event.originalStart
-      ).toISOString();
-    }
+    result.meta.seriesMasterId = event.seriesMasterId;
+    result.meta.originalStartDate = new Date(
+      event.originalStart
+    ).toISOString();
   }
 
-  return thread;
+  return result;
 }
 
 /**

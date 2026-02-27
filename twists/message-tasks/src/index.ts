@@ -4,7 +4,6 @@ import { Gmail } from "@plotday/source-gmail";
 import { Slack } from "@plotday/source-slack";
 import {
   type ThreadFilter,
-  ThreadType,
   type NewThreadWithNotes,
   type NewContact,
   type Note,
@@ -92,12 +91,14 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   }
 
   async onSlackThread(thread: NewThreadWithNotes): Promise<void> {
-    const channelId = thread.meta?.channelId as string;
+    // TODO: meta was removed from threads; channelId may still be present at runtime from sources
+    const channelId = (thread as any).meta?.channelId as string;
     return this.onMessageThread(thread, "slack", channelId);
   }
 
   async onGmailThread(thread: NewThreadWithNotes): Promise<void> {
-    const channelId = thread.meta?.channelId as string;
+    // TODO: meta was removed from threads; channelId may still be present at runtime from sources
+    const channelId = (thread as any).meta?.channelId as string;
     return this.onMessageThread(thread, "gmail", channelId);
   }
 
@@ -311,7 +312,8 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   ): Promise<void> {
     if (!thread.notes || thread.notes.length === 0) return;
 
-    const threadId = "source" in thread ? thread.source : undefined;
+    // TODO: source was removed from threads; may still be present at runtime from sources
+    const threadId = (thread as any).source as string | undefined;
     if (!threadId) {
       console.warn("Thread has no source, skipping");
       return;
@@ -480,7 +482,8 @@ If a task is needed, create a clear, actionable title that describes what the us
     provider: MessageProvider,
     channelId: string
   ): Promise<void> {
-    const threadId = "source" in thread ? thread.source : undefined;
+    // TODO: source was removed from threads; may still be present at runtime from sources
+    const threadId = (thread as any).source as string | undefined;
     if (!threadId) {
       console.warn("Thread has no source, skipping task creation");
       return;
@@ -488,10 +491,8 @@ If a task is needed, create a clear, actionable title that describes what the us
 
     const sourceRef = this.formatSourceReference(thread, provider, channelId);
 
-    // Create task thread - database handles upsert automatically
+    // Create task thread
     const taskId = await this.tools.plot.createThread({
-      source: `message-tasks:${threadId}`,
-      type: ThreadType.Action,
       title: analysis.taskTitle || thread.title || "Action needed from message",
       notes: analysis.taskNote
         ? [
@@ -507,10 +508,6 @@ If a task is needed, create a clear, actionable title that describes what the us
       preview: analysis.taskNote
         ? `${analysis.taskNote}\n\n---\n${sourceRef}`
         : sourceRef,
-      meta: {
-        originalThreadId: threadId,
-        channelId,
-      },
       // Use pickPriority for automatic priority matching
       pickPriority: { content: 50, mentions: 50 },
     });
@@ -573,7 +570,7 @@ Return true only if there's clear evidence the task is done.`,
       if (result.isCompleted && result.confidence >= 0.7) {
         await this.tools.plot.updateThread({
           id: taskInfo.taskId,
-          done: new Date(),
+          archived: true,
         });
       }
     } catch (error) {

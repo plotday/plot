@@ -1,10 +1,8 @@
 import { Version3Client } from "jira.js";
 
 import {
-  type Thread,
   type Action,
   ActionType,
-  ThreadType,
   type NewLinkWithNotes,
   NewContact,
 } from "@plotday/twister";
@@ -473,32 +471,28 @@ export class Jira extends Source<Jira> implements ProjectSource {
   }
 
   /**
-   * Update issue with new values
-   *
-   * @param thread - The updated thread
+   * Update issue with new values from the app
    */
-  async updateIssue(thread: Thread): Promise<void> {
-    // Extract Jira issue key and project ID from meta
-    const issueKey = thread.meta?.issueKey as string | undefined;
+  async updateIssue(link: import("@plotday/twister").Link): Promise<void> {
+    const issueKey = link.meta?.issueKey as string | undefined;
     if (!issueKey) {
-      throw new Error("Jira issue key not found in thread meta");
+      throw new Error("Jira issue key not found in link meta");
     }
-    const projectId = thread.meta?.projectId as string;
+    const projectId = link.meta?.projectId as string;
 
     const client = await this.getClient(projectId);
 
     // Handle field updates (title, assignee)
     const updateFields: any = {};
 
-    if (thread.title !== null) {
-      updateFields.summary = thread.title;
+    if (link.title) {
+      updateFields.summary = link.title;
     }
 
-    updateFields.assignee = thread.assignee
-      ? { id: thread.assignee.id }
+    updateFields.assignee = link.assignee
+      ? { id: link.assignee.id }
       : null;
 
-    // Apply field updates if any
     if (Object.keys(updateFields).length > 0) {
       await client.issues.editIssue({
         issueIdOrKey: issueKey,
@@ -506,47 +500,42 @@ export class Jira extends Source<Jira> implements ProjectSource {
       });
     }
 
-    // Handle workflow state transitions based on assignee + done combination
-    // Get available transitions for this issue
+    // Handle workflow state transitions based on link status and assignee
     const transitions = await client.issues.getTransitions({
       issueIdOrKey: issueKey,
     });
 
     let targetTransition;
 
-    // Determine target state based on combination
-    if (thread.type === ThreadType.Action && thread.done !== null) {
-      // Completed - look for "Done", "Close", or "Resolve" transition
+    const isDone = link.status === "done" || link.status === "closed" || link.status === "completed" || link.status === "resolved";
+    if (isDone) {
       targetTransition = transitions.transitions?.find(
-        (t) =>
-          t.name?.toLowerCase() === "done" ||
-          t.name?.toLowerCase() === "close" ||
-          t.name?.toLowerCase() === "resolve" ||
-          t.to?.name?.toLowerCase() === "done" ||
-          t.to?.name?.toLowerCase() === "closed" ||
-          t.to?.name?.toLowerCase() === "resolved"
+        (tr) =>
+          tr.name?.toLowerCase() === "done" ||
+          tr.name?.toLowerCase() === "close" ||
+          tr.name?.toLowerCase() === "resolve" ||
+          tr.to?.name?.toLowerCase() === "done" ||
+          tr.to?.name?.toLowerCase() === "closed" ||
+          tr.to?.name?.toLowerCase() === "resolved"
       );
-    } else if (thread.assignee !== null) {
-      // In Progress (has assignee, not done) - look for "Start Progress" or "In Progress" transition
+    } else if (link.assignee) {
       targetTransition = transitions.transitions?.find(
-        (t) =>
-          t.name?.toLowerCase() === "start progress" ||
-          t.name?.toLowerCase() === "in progress" ||
-          t.to?.name?.toLowerCase() === "in progress"
+        (tr) =>
+          tr.name?.toLowerCase() === "start progress" ||
+          tr.name?.toLowerCase() === "in progress" ||
+          tr.to?.name?.toLowerCase() === "in progress"
       );
     } else {
-      // Backlog/Todo (no assignee, not done) - look for "To Do", "Open", or "Reopen" transition
       targetTransition = transitions.transitions?.find(
-        (t) =>
-          t.name?.toLowerCase() === "reopen" ||
-          t.name?.toLowerCase() === "to do" ||
-          t.name?.toLowerCase() === "open" ||
-          t.to?.name?.toLowerCase() === "to do" ||
-          t.to?.name?.toLowerCase() === "open"
+        (tr) =>
+          tr.name?.toLowerCase() === "reopen" ||
+          tr.name?.toLowerCase() === "to do" ||
+          tr.name?.toLowerCase() === "open" ||
+          tr.to?.name?.toLowerCase() === "to do" ||
+          tr.to?.name?.toLowerCase() === "open"
       );
     }
 
-    // Execute transition if found
     if (targetTransition) {
       await client.issues.doTransition({
         issueIdOrKey: issueKey,

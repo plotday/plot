@@ -152,7 +152,7 @@ You can provide either or both inline and standalone links. Only use standalone 
           thread,
           content: task,
           tags: {
-            [Tag.Now]: [{ id: note.author.id }],
+            [Tag.Todo]: [{ id: note.author.id }],
           },
         })
       ) ?? []),

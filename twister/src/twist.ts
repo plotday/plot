@@ -24,8 +24,7 @@ import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
  *   async activate(priority: Pick<Priority, "id">) {
  *     // Initialize twist for the given priority
  *     await this.tools.plot.createThread({
- *       type: ThreadType.Note,
- *       note: "Hello, good looking!",
+ *       title: "Hello, good looking!",
  *     });
  *   }
  * }

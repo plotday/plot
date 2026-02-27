@@ -20,7 +20,7 @@ export { type AuthProvider } from "./tools/integrations";
  *
  * ### Entity Types (Thread, Priority, Note, Actor)
  * - **Required fields**: No `?`, cannot be `undefined`
- *   - Example: `id: Uuid`, `type: ThreadType`
+ *   - Example: `id: Uuid`, `title: string`
  * - **Nullable fields**: Use `| null` to allow explicit clearing
  *   - Example: `assignee: ActorId | null`, `done: Date | null`
  *   - `null` = field is explicitly unset/cleared
@@ -34,7 +34,7 @@ export { type AuthProvider } from "./tools/integrations";
  * ### New* Types (NewThread, NewNote, NewPriority)
  * Used for creating or updating entities. Support partial updates by distinguishing omitted vs cleared fields:
  * - **Required fields**: Must be provided (no `?`)
- *   - Example: `type: ThreadType` in NewThread
+ *   - Example: `title: string` in NewPriority
  * - **Optional fields**: Use `?` to make them optional
  *   - Example: `title?: string`, `author?: NewActor`
  *   - `undefined` (omitted) = don't set/update this field
@@ -54,18 +54,13 @@ export { type AuthProvider } from "./tools/integrations";
  * ```typescript
  * // Creating a new thread
  * const newThread: NewThread = {
- *   type: ThreadType.Action,  // Required
- *   title: "Review PR",          // Optional, provided
- *   assignee: null,              // Optional nullable, explicitly clearing
- *   // priority is omitted (undefined), will auto-select or use default
+ *   title: "Review pull request",
  * };
  *
  * // Updating a thread - only change what's specified
  * const update: ThreadUpdate = {
  *   id: threadId,
- *   done: new Date(),       // Mark as done
- *   assignee: null,         // Clear assignee
- *   // title is omitted, won't be changed
+ *   archived: true,
  * };
  * ```
  */
@@ -167,39 +162,6 @@ export type NewPriority = Pick<Priority, "title"> &
  */
 export type PriorityUpdate = ({ id: Uuid } | { key: string }) &
   Partial<Pick<Priority, "title" | "archived">>;
-
-/**
- * Enumeration of supported thread types in Plot.
- *
- * Each thread type has different behaviors and rendering characteristics
- * within the Plot application.
- */
-export enum ThreadType {
-  /** A note or piece of information without actionable requirements */
-  Note,
-  /** An actionable item that can be completed */
-  Action,
-  /** A scheduled occurrence with start and optional end time */
-  Event,
-}
-
-/**
- * Kinds of threads. Used only for visual categorization (icon).
- */
-export enum ThreadKind {
-  document = "document", // any external document or item in an external system
-  messages = "messages", // emails and chat threads
-  meeting = "meeting", // in-person meeting
-  videoconference = "videoconference",
-  phone = "phone",
-  focus = "focus",
-  meal = "meal",
-  exercise = "exercise",
-  family = "family",
-  travel = "travel",
-  social = "social",
-  entertainment = "entertainment",
-}
 
 /**
  * Enumeration of supported action types.
@@ -342,9 +304,7 @@ export type Action =
  * ```typescript
  * // Calendar event metadata
  * await plot.createThread({
- *   type: ThreadType.Event,
  *   title: "Team Meeting",
- *   start: new Date("2024-01-15T10:00:00Z"),
  *   meta: {
  *     calendarId: "primary",
  *     htmlLink: "https://calendar.google.com/event/abc123",
@@ -354,7 +314,6 @@ export type Action =
  *
  * // Project issue metadata
  * await plot.createThread({
- *   type: ThreadType.Action,
  *   title: "Fix login bug",
  *   meta: {
  *     projectId: "TEAM",
@@ -386,18 +345,10 @@ export type ThreadCommon = {
   /** Unique identifier for the thread */
   id: Uuid;
   /**
-   * When this thread was originally created in its source system.
-   *
-   * For threads created in Plot, this is when the user created it.
-   * For threads synced from external systems (GitHub issues, emails, calendar events),
-   * this is the original creation time in that system.
-   *
-   * Defaults to the current time when creating new threads.
+   * When this thread was created.
    */
   created: Date;
-  /** Information about who created the thread */
-  author: Actor;
-  /** Whether this thread is private (only visible to author) */
+  /** Whether this thread is private (only visible to creator) */
   private: boolean;
   /** Whether this thread has been archived */
   archived: boolean;
@@ -408,97 +359,19 @@ export type ThreadCommon = {
 };
 
 /**
- * Common fields shared by all thread types (Note, Action, Event).
- * Does not include the discriminant `type` field or type-specific fields like `done`.
+ * Fields on a Thread entity.
+ * Threads are simple containers for links and notes.
  */
 type ThreadFields = ThreadCommon & {
-  /**
-   * Globally unique, stable identifier for the item in an external system.
-   * MUST use immutable system-generated IDs, not human-readable slugs or titles.
-   *
-   * Recommended format: `${domain}:${type}:${id}`
-   *
-   * Examples:
-   *   - `linear:issue:549dd8bd-2bc9-43d1-95d5-4b4af0c5af1b` (Linear issue by UUID)
-   *   - `jira:10001:issue:12345` (Jira issue by numeric ID with cloud ID)
-   *   - `gmail:thread:18d4e5f2a3b1c9d7` (Gmail thread by system ID)
-   *
-   * ⚠️ AVOID: URLs with mutable components like team names or issue keys
-   *   - Bad: `https://linear.app/team/issue/TEAM-123/title` (team and title can change)
-   *   - Bad: `jira:issue:PROJECT-42` (issue key can change)
-   *
-   * When set, uniquely identifies the thread within a priority tree for upsert operations.
-   */
-  source: string | null;
   /** The display title/summary of the thread */
   title: string;
-  /** Optional kind for additional categorization within the thread */
-  kind: ThreadKind | null;
-  /**
-   * The actor assigned to this thread.
-   *
-   * **For actions (tasks):**
-   * - If not provided (undefined), defaults to the user who installed the twist (twist owner)
-   * - To create an **unassigned action**, explicitly set `assignee: null`
-   * - For synced tasks from external systems, typically set `assignee: null` for unassigned items
-   *
-   * **For notes and events:** Assignee is optional and typically null.
-   * When marking a thread as done, it becomes an Action; if no assignee is set,
-   * the twist owner is assigned automatically.
-   *
-   * @example
-   * ```typescript
-   * // Create action assigned to twist owner (default behavior)
-   * const task: NewThread = {
-   *   type: ThreadType.Action,
-   *   title: "Follow up on email"
-   *   // assignee omitted → defaults to twist owner
-   * };
-   *
-   * // Create UNASSIGNED action (for backlog items)
-   * const backlogTask: NewThread = {
-   *   type: ThreadType.Action,
-   *   title: "Review PR #123",
-   *   assignee: null  // Explicitly set to null
-   * };
-   *
-   * // Create action with explicit assignee
-   * const assignedTask: NewThread = {
-   *   type: ThreadType.Action,
-   *   title: "Deploy to production",
-   *   assignee: {
-   *     id: userId as ActorId,
-   *     type: ActorType.User,
-   *     name: "Alice"
-   *   }
-   * };
-   * ```
-   */
-  assignee: Actor | null;
   /** The priority context this thread belongs to */
   priority: Priority;
-  /** Metadata about the thread, typically from an external system that created it */
-  meta: ThreadMeta | null;
-  /** Sort order for the thread (fractional positioning) */
-  order: number;
-  /** Array of interactive actions attached to the thread (external, conferencing, callback) */
-  actions: Array<Action> | null;
   /** The schedule associated with this thread, if any */
   schedule?: Schedule;
 };
 
-export type Thread = ThreadFields &
-  (
-    | { type: ThreadType.Note }
-    | {
-        type: ThreadType.Action;
-        /**
-         * Timestamp when the thread was marked as complete. Null if not completed.
-         */
-        done: Date | null;
-      }
-    | { type: ThreadType.Event }
-  );
+export type Thread = ThreadFields;
 
 export type ThreadWithNotes = Thread & {
   notes: Note[];
@@ -517,7 +390,6 @@ export type NewThreadWithNotes = NewThread & {
  *
  * Scoring rules:
  * - content: Uses vector similarity on thread embedding (cosine similarity)
- * - type: Exact match on ThreadType
  * - mentions: Percentage of existing thread's mentions that appear in new thread
  * - meta.field: Exact match on top-level meta fields (e.g., "meta.sourceId")
  *
@@ -529,8 +401,8 @@ export type NewThreadWithNotes = NewThread & {
  * // Require exact content match with strong similarity
  * pickPriority: { content: true }
  *
- * // Score based on content (max 100 points) and require exact type match
- * pickPriority: { content: 100, type: true }
+ * // Score based on content (max 100 points) and mentions
+ * pickPriority: { content: 100, mentions: true }
  *
  * // Match on meta and score content
  * pickPriority: { "meta.projectId": true, content: 50 }
@@ -538,7 +410,6 @@ export type NewThreadWithNotes = NewThread & {
  */
 export type PickPriorityConfig = {
   content?: number | true;
-  type?: number | true;
   mentions?: number | true;
   [key: `meta.${string}`]: number | true;
 };
@@ -546,86 +417,25 @@ export type PickPriorityConfig = {
 /**
  * Type for creating new threads.
  *
- * Requires only the thread type, with all other fields optional.
- * The author will be automatically assigned by the Plot system based on
- * the current execution context. The ID can be optionally provided by
- * tools for tracking and update detection purposes.
- *
- * **Important: Defaults for Actions**
- *
- * When creating a Thread of type `Action`:
- * - **`assignee` omitted** → Defaults to twist owner → Assigned action
- *
- * To create unassigned backlog items (common for synced tasks), you MUST explicitly set:
- * - `assignee: null` → Unassigned
- *
- * Scheduling is handled separately via the Schedule type.
- * Use `plot.createSchedule()` to schedule threads.
- *
- * Priority can be specified in three ways:
- * 1. Explicit priority: `priority: { id: "..." }` - Use specific priority (disables pickPriority)
- * 2. Pick priority config: `pickPriority: { ... }` - Auto-select based on similarity
- * 3. Neither: Defaults to `pickPriority: { content: true }` for automatic matching
+ * Threads are simple containers. All other fields are optional.
  *
  * @example
  * ```typescript
- * // Action assigned to twist owner
- * const urgentTask: NewThread = {
- *   type: ThreadType.Action,
+ * const thread: NewThread = {
  *   title: "Review pull request"
- *   // assignee omitted → defaults to twist owner
- * };
- *
- * // UNASSIGNED backlog item (for synced tasks)
- * const backlogTask: NewThread = {
- *   type: ThreadType.Action,
- *   title: "Refactor user service",
- *   assignee: null    // Must explicitly set to null
- * };
- *
- * // Note
- * const note: NewThread = {
- *   type: ThreadType.Note,
- *   title: "Meeting notes"
- * };
- *
- * // Event (schedule separately with plot.createSchedule())
- * const event: NewThread = {
- *   type: ThreadType.Event,
- *   title: "Team standup"
  * };
  * ```
  */
-export type NewThread = (
-  | { type: ThreadType.Note; done?: never }
-  | { type: ThreadType.Action; done?: Date | null }
-  | { type: ThreadType.Event; done?: never }
-) &
-  Partial<
-    Omit<
-      ThreadFields,
-      "author" | "assignee" | "priority" | "tags" | "mentions" | "id" | "source"
-    >
-  > &
+export type NewThread = Partial<
+  Omit<ThreadFields, "priority" | "tags" | "mentions" | "id">
+> &
   (
     | {
-        /**
-         * Unique identifier for the thread, generated by Uuid.Generate().
-         * Specifying an ID allows tools to track and upsert threads.
-         */
+        /** Unique identifier for the thread, generated by Uuid.Generate(). */
         id: Uuid;
       }
     | {
-        /**
-         * Canonical URL for the item in an external system.
-         * For example, https://acme.atlassian.net/browse/PROJ-42 could represent a Jira issue.
-         * When set, it uniquely identifies the thread within a priority tree. This performs
-         * an upsert.
-         */
-        source: string;
-      }
-    | {
-        /* Neither id nor source is required. An id will be generated and returned. */
+        /* id is optional. An id will be generated and returned. */
       }
   ) &
   (
@@ -639,16 +449,6 @@ export type NewThread = (
       }
   ) & {
     /**
-     * The person that created the item. By default, it will be the twist itself.
-     */
-    author?: NewActor;
-
-    /**
-     * The person that assigned to the item.
-     */
-    assignee?: NewActor | null;
-
-    /**
      * All tags to set on the new thread.
      */
     tags?: NewTags;
@@ -659,9 +459,6 @@ export type NewThread = (
      *   as read for the author if they are the twist owner (user)
      * - true: Thread is explicitly unread for ALL users (use sparingly)
      * - false: Thread is marked as read for all users in the priority at creation time
-     *
-     * For the default behavior, omit this field entirely.
-     * Use false for initial sync to avoid marking historical items as unread.
      */
     unread?: boolean;
 
@@ -670,61 +467,27 @@ export type NewThread = (
      * - true: Archive the thread
      * - false: Unarchive the thread
      * - undefined (default): Preserve current archive state
-     *
-     * Best practice: Set to false during initial syncs to ensure threads
-     * are unarchived. Omit during incremental syncs to preserve user's choice.
      */
     archived?: boolean;
 
     /**
      * Optional preview content for the thread. Can be Markdown formatted.
      * The preview will be automatically generated from this content (truncated to 100 chars).
-     *
-     * - string: Use this content for preview generation
-     * - null: Explicitly disable preview (no preview will be shown)
-     * - undefined (default): Fall back to legacy behavior (generate from first note with content)
-     *
-     * This field is write-only and won't be returned when reading threads.
      */
     preview?: string | null;
 
     /**
      * Optional schedules to create alongside the thread.
-     *
-     * When provided, schedules are created after the thread is inserted.
-     * The threadId is automatically filled from the created thread.
-     *
-     * For calendar integrations, this replaces the old start/end/recurrenceRule
-     * fields that were previously on the thread itself.
-     *
-     * @example
-     * ```typescript
-     * const event: NewThread = {
-     *   type: ThreadType.Event,
-     *   title: "Team standup",
-     *   schedules: [{
-     *     start: new Date("2025-01-15T10:00:00Z"),
-     *     end: new Date("2025-01-15T10:30:00Z"),
-     *     recurrenceRule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
-     *   }]
-     * };
-     * ```
      */
     schedules?: Array<Omit<NewSchedule, "threadId">>;
 
     /**
-     * Optional schedule occurrence overrides. For recurring schedules,
-     * these define per-occurrence modifications (e.g., rescheduled meetings,
-     * per-occurrence RSVP tags).
-     *
-     * Requires a schedule to be present (either via `schedules` field or
-     * an existing schedule on the thread).
+     * Optional schedule occurrence overrides.
      */
     scheduleOccurrences?: NewScheduleOccurrence[];
   };
 
 export type ThreadFilter = {
-  type?: ActorType;
   meta?: {
     [key: string]: JSONValue;
   };
@@ -735,23 +498,14 @@ export type ThreadFilter = {
  * that can be applied uniformly across many threads are included.
  */
 type ThreadBulkUpdateFields = Partial<
-  Pick<ThreadFields, "kind" | "title" | "private" | "archived" | "meta" | "order" | "actions">
-> & {
-  /** Update the type of all matching threads. */
-  type?: ThreadType;
-  /**
-   * Timestamp when the threads were marked as complete. Null to clear.
-   * Setting done will automatically set the type to Action if not already.
-   */
-  done?: Date | null;
-};
+  Pick<ThreadFields, "title" | "private" | "archived">
+>;
 
 /**
  * Fields supported by single-thread updates via `id` or `source`.
- * Includes all bulk fields plus assignee, tags, and preview.
+ * Includes all bulk fields plus tags and preview.
  */
-type ThreadSingleUpdateFields = ThreadBulkUpdateFields &
-  Partial<Pick<ThreadFields, "assignee">> & {
+type ThreadSingleUpdateFields = ThreadBulkUpdateFields & {
     /**
      * Tags to change on the thread. Use an empty array of NewActor to remove a tag.
      * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
@@ -795,6 +549,8 @@ export type ThreadUpdate =
  * They are always ordered by creation time within their parent thread.
  */
 export type Note = ThreadCommon & {
+  /** The author of this note */
+  author: Actor;
   /**
    * Globally unique, stable identifier for the note within its thread.
    * Can be used to upsert without knowing the id.

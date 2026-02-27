@@ -1,9 +1,7 @@
 import {
-  type Thread,
   type Action,
   ActionType,
   type ThreadMeta,
-  ThreadType,
   type NewLinkWithNotes,
   Source,
   type ToolBuilder,
@@ -871,24 +869,23 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
   /**
    * Update a PR's review status (approve or request changes)
    */
-  async updatePRStatus(thread: Thread): Promise<void> {
-    const meta = thread.meta;
-    if (!meta) return;
+  async updatePRStatus(link: import("@plotday/twister").Link): Promise<void> {
+    if (!link.meta) return;
 
-    const owner = meta.owner as string;
-    const repo = meta.repo as string;
-    const prNumber = meta.prNumber as number;
+    const owner = link.meta.owner as string;
+    const repo = link.meta.repo as string;
+    const prNumber = link.meta.prNumber as number;
     const syncableId = `${owner}/${repo}`;
 
     if (!owner || !repo || !prNumber) {
-      throw new Error("Owner, repo, and prNumber required in thread meta");
+      throw new Error("Owner, repo, and prNumber required in link meta");
     }
 
     const token = await this.getToken(syncableId);
 
-    // Map thread done state to review event
-    // done = approved, not done = no action (can't undo approval via API easily)
-    if (thread.type === ThreadType.Action && thread.done !== null) {
+    // Map link status to PR review event
+    const isDone = link.status === "done" || link.status === "closed" || link.status === "approved";
+    if (isDone) {
       const response = await this.githubFetch(
         token,
         `/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
@@ -903,7 +900,7 @@ export class GitHub extends Source<GitHub> implements SourceControlSource {
 
       if (!response.ok) {
         throw new Error(
-          `Failed to update PR status: ${response.status} ${await response.text()}`,
+          `Failed to update PR status: ${response.status}`,
         );
       }
     }
