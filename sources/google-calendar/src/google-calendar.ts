@@ -14,11 +14,6 @@ import type {
   NewScheduleOccurrence,
 } from "@plotday/twister/schedule";
 import {
-  type Calendar,
-  type CalendarSource,
-  type SyncOptions,
-} from "@plotday/twister/common/calendar";
-import {
   AuthProvider,
   type AuthToken,
   type Authorization,
@@ -26,6 +21,18 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+
+type Calendar = {
+  id: string;
+  name: string;
+  description: string | null;
+  primary: boolean;
+};
+
+type SyncOptions = {
+  timeMin?: Date | null;
+  timeMax?: Date | null;
+};
 
 import {
   GoogleApi,
@@ -103,10 +110,7 @@ import {
  * }
  * ```
  */
-export class GoogleCalendar
-  extends Source<GoogleCalendar>
-  implements CalendarSource
-{
+export class GoogleCalendar extends Source<GoogleCalendar> {
   static readonly PROVIDER = AuthProvider.Google;
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",

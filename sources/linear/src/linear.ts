@@ -13,11 +13,6 @@ import {
   ThreadMeta,
   type NewLinkWithNotes,
 } from "@plotday/twister";
-import type {
-  Project,
-  ProjectSyncOptions,
-  ProjectSource,
-} from "@plotday/twister/common/projects";
 import type { NewContact } from "@plotday/twister/plot";
 import { Source } from "@plotday/twister/source";
 import type { ToolBuilder } from "@plotday/twister/tool";
@@ -30,6 +25,17 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+
+type Project = {
+  id: string;
+  name: string;
+  description: string | null;
+  key: string | null;
+};
+
+type ProjectSyncOptions = {
+  timeMin?: Date;
+};
 
 // Cloudflare Workers provides Buffer global
 declare const Buffer: {
@@ -52,7 +58,7 @@ type SyncState = {
  * Implements the ProjectSource interface for syncing Linear teams and issues
  * with Plot threads.
  */
-export class Linear extends Source<Linear> implements ProjectSource {
+export class Linear extends Source<Linear> {
   static readonly PROVIDER = AuthProvider.Linear;
   static readonly SCOPES = ["read", "write", "admin"];
 

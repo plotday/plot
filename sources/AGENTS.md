@@ -114,12 +114,6 @@ import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
-// Choose the correct common interface for your source category:
-// import type { CalendarSource, SyncOptions } from "@plotday/twister/common/calendar";
-// import type { ProjectSource, ProjectSyncOptions } from "@plotday/twister/common/projects";
-// import type { MessagingSource, MessageSyncOptions } from "@plotday/twister/common/messaging";
-// import type { DocumentSource, DocumentSyncOptions } from "@plotday/twister/common/documents";
-
 type SyncState = {
   cursor: string | null;
   batchNumber: number;
@@ -127,7 +121,7 @@ type SyncState = {
   initialSync: boolean;
 };
 
-export class MySource extends Source<MySource> implements ProjectSource {
+export class MySource extends Source<MySource> {
   // 1. Static constants
   static readonly PROVIDER = AuthProvider.Linear; // Use appropriate provider
   static readonly SCOPES = ["read", "write"];
@@ -378,20 +372,6 @@ export class MySource extends Source<MySource> implements ProjectSource {
 
 export default MySource;
 ```
-
-## Common Source Interfaces
-
-Choose the correct interface based on what your service provides. Import from `@plotday/twister/common/*`.
-
-| Interface | For | Examples | Key resource |
-|-----------|-----|----------|-------------|
-| `CalendarSource` | Calendar/scheduling services | Google Calendar, Outlook, Apple Calendar | Calendars with events |
-| `ProjectSource` | Project/task management | Linear, Jira, Asana, GitHub Issues, Todoist, ClickUp, Trello, Monday | Projects with issues/tasks |
-| `MessagingSource` | Email and chat services | Gmail, Slack, Discord, Microsoft Teams, Intercom | Channels/inboxes with threads |
-| `DocumentSource` | Document/file services | Google Drive, Notion, Dropbox, OneDrive, Confluence | Folders with documents |
-| None | Services that don't fit above | CRM, analytics, monitoring | Define your own interface |
-
-Each interface requires these methods: `get[Resources]()`, `startSync()`, `stopSync()`. Some have optional methods for bidirectional sync (`updateIssue`, `addIssueComment`, `addDocumentComment`, etc.).
 
 ## The Integrations Pattern (Auth + Channels)
 
@@ -780,7 +760,7 @@ After creating a new source, add it to `pnpm-workspace.yaml` if not already cove
 
 ## Source Development Checklist
 
-- [ ] Extend `Source<YourSource>` and implement the correct common interface
+- [ ] Extend `Source<YourSource>`
 - [ ] Declare `static readonly PROVIDER`, `static readonly SCOPES`
 - [ ] Declare `static readonly Options: SyncToolOptions` and `declare readonly Options: SyncToolOptions`
 - [ ] Declare all dependencies in `build()`: Integrations, Network, Callbacks, Tasks, Plot

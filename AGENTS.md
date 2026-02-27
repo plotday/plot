@@ -10,15 +10,6 @@ Sources are packages that connect to external services (Linear, Slack, Google Ca
 
 **Start here:** `sources/AGENTS.md` — Complete source development guide with scaffold, patterns, and checklist.
 
-**Choose your interface:**
-
-| Interface | For | Import |
-|-----------|-----|--------|
-| `CalendarSource` | Calendar/scheduling | `@plotday/twister/common/calendar` |
-| `ProjectSource` | Project/task management | `@plotday/twister/common/projects` |
-| `MessagingSource` | Email and chat | `@plotday/twister/common/messaging` |
-| `DocumentSource` | Document/file storage | `@plotday/twister/common/documents` |
-
 ### Building a Twist (orchestrator)
 
 Twists are the entry point that users install. They declare which tools to use and implement domain logic.
@@ -34,8 +25,6 @@ All types in `twister/src/` with full JSDoc:
 - **Twist base**: `twister/src/twist.ts`
 - **Built-in tools**: `twister/src/tools/*.ts`
   - `callbacks.ts`, `store.ts`, `tasks.ts`, `plot.ts`, `ai.ts`, `network.ts`, `integrations.ts`, `twists.ts`
-- **Common interfaces**: `twister/src/common/*.ts`
-  - `calendar.ts`, `messaging.ts`, `projects.ts`, `documents.ts`
 - **Core types**: `twister/src/plot.ts`, `twister/src/tag.ts`
 
 ## Additional Resources

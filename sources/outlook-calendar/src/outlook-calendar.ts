@@ -13,11 +13,6 @@ import type {
   NewScheduleContact,
   NewScheduleOccurrence,
 } from "@plotday/twister/schedule";
-import type {
-  Calendar,
-  CalendarSource,
-  SyncOptions,
-} from "@plotday/twister/common/calendar";
 import {
   AuthProvider,
   type AuthToken,
@@ -26,6 +21,18 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+
+type Calendar = {
+  id: string;
+  name: string;
+  description: string | null;
+  primary: boolean;
+};
+
+type SyncOptions = {
+  timeMin?: Date | null;
+  timeMax?: Date | null;
+};
 
 import {
   GraphApi,
@@ -99,10 +106,7 @@ type WatchState = {
  * }
  * ```
  */
-export class OutlookCalendar
-  extends Source<OutlookCalendar>
-  implements CalendarSource
-{
+export class OutlookCalendar extends Source<OutlookCalendar> {
   static readonly PROVIDER = AuthProvider.Microsoft;
   static readonly SCOPES = ["https://graph.microsoft.com/calendars.readwrite"];
 

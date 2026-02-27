@@ -6,11 +6,6 @@ import {
   type ThreadMeta,
   type NewLinkWithNotes,
 } from "@plotday/twister";
-import type {
-  Project,
-  ProjectSyncOptions,
-  ProjectSource,
-} from "@plotday/twister/common/projects";
 import type { NewContact } from "@plotday/twister/plot";
 import { Source } from "@plotday/twister/source";
 import type { ToolBuilder } from "@plotday/twister/tool";
@@ -23,6 +18,17 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+
+type Project = {
+  id: string;
+  name: string;
+  description: string | null;
+  key: string | null;
+};
+
+type ProjectSyncOptions = {
+  timeMin?: Date;
+};
 
 type SyncState = {
   page: number;
@@ -44,7 +50,7 @@ type RepoInfo = {
  * Implements the ProjectSource interface for syncing GitHub Issues
  * with Plot threads. Explicitly filters out pull requests.
  */
-export class GitHubIssues extends Source<GitHubIssues> implements ProjectSource {
+export class GitHubIssues extends Source<GitHubIssues> {
   static readonly PROVIDER = AuthProvider.GitHub;
   static readonly SCOPES = ["repo"];
 

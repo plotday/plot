@@ -6,11 +6,6 @@ import {
   ThreadMeta,
   type NewLinkWithNotes,
 } from "@plotday/twister";
-import type {
-  Project,
-  ProjectSyncOptions,
-  ProjectSource,
-} from "@plotday/twister/common/projects";
 import type { NewContact } from "@plotday/twister/plot";
 import { Source } from "@plotday/twister/source";
 import type { ToolBuilder } from "@plotday/twister/tool";
@@ -23,6 +18,17 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+
+type Project = {
+  id: string;
+  name: string;
+  description: string | null;
+  key: string | null;
+};
+
+type ProjectSyncOptions = {
+  timeMin?: Date;
+};
 
 type SyncState = {
   offset: number;
@@ -37,7 +43,7 @@ type SyncState = {
  * Implements the ProjectSource interface for syncing Asana projects and tasks
  * with Plot threads.
  */
-export class Asana extends Source<Asana> implements ProjectSource {
+export class Asana extends Source<Asana> {
   static readonly PROVIDER = AuthProvider.Asana;
   static readonly SCOPES = ["default"];
 

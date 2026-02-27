@@ -6,11 +6,6 @@ import {
   type NewLinkWithNotes,
   NewContact,
 } from "@plotday/twister";
-import type {
-  Project,
-  ProjectSyncOptions,
-  ProjectSource,
-} from "@plotday/twister/common/projects";
 import { Source } from "@plotday/twister/source";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
@@ -22,6 +17,17 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+
+type Project = {
+  id: string;
+  name: string;
+  description: string | null;
+  key: string | null;
+};
+
+type ProjectSyncOptions = {
+  timeMin?: Date;
+};
 
 type SyncState = {
   startAt: number;
@@ -36,7 +42,7 @@ type SyncState = {
  * Implements the ProjectSource interface for syncing Jira projects and issues
  * with Plot threads.
  */
-export class Jira extends Source<Jira> implements ProjectSource {
+export class Jira extends Source<Jira> {
   static readonly PROVIDER = AuthProvider.Atlassian;
   static readonly SCOPES = ["read:jira-work", "write:jira-work", "read:jira-user"];
 

@@ -3,11 +3,6 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import {
-  type MessageChannel,
-  type MessageSyncOptions,
-  type MessagingSource,
-} from "@plotday/twister/common/messaging";
-import {
   AuthProvider,
   type AuthToken,
   type Authorization,
@@ -15,6 +10,17 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+
+type MessageChannel = {
+  id: string;
+  name: string;
+  description: string | null;
+  primary: boolean;
+};
+
+type MessageSyncOptions = {
+  timeMin?: Date;
+};
 
 import {
   GmailApi,
@@ -35,7 +41,7 @@ import {
  * - `https://www.googleapis.com/auth/gmail.readonly` - Read emails
  * - `https://www.googleapis.com/auth/gmail.modify` - Modify labels
  */
-export class Gmail extends Source<Gmail> implements MessagingSource {
+export class Gmail extends Source<Gmail> {
   static readonly PROVIDER = AuthProvider.Google;
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",

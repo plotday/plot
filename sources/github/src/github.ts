@@ -6,11 +6,6 @@ import {
   Source,
   type ToolBuilder,
 } from "@plotday/twister";
-import type {
-  Repository,
-  SourceControlSyncOptions,
-  SourceControlSource,
-} from "@plotday/twister/common/source-control";
 import type { NewContact } from "@plotday/twister/plot";
 import {
   AuthProvider,
@@ -21,6 +16,20 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+
+type Repository = {
+  id: string;
+  name: string;
+  description: string | null;
+  url: string | null;
+  owner: string | null;
+  defaultBranch: string | null;
+  private: boolean;
+};
+
+type SourceControlSyncOptions = {
+  timeMin?: Date;
+};
 
 type SyncState = {
   page: number;
@@ -89,7 +98,7 @@ type GitHubRepo = {
  * Implements the SourceControlSource interface for syncing GitHub repositories
  * and pull requests with Plot threads.
  */
-export class GitHub extends Source<GitHub> implements SourceControlSource {
+export class GitHub extends Source<GitHub> {
   static readonly PROVIDER = AuthProvider.GitHub;
   static readonly SCOPES = ["repo"];
 

@@ -1,6 +1,11 @@
 import type { ThreadMeta } from "@plotday/twister";
 import type { NewSchedule, NewScheduleOccurrence } from "@plotday/twister/schedule";
-import type { Calendar } from "@plotday/twister/common/calendar";
+type Calendar = {
+  id: string;
+  name: string;
+  description: string | null;
+  primary: boolean;
+};
 
 /**
  * Intermediate type returned by transformOutlookEvent.

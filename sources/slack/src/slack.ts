@@ -3,11 +3,6 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import {
-  type MessageChannel,
-  type MessageSyncOptions,
-  type MessagingSource,
-} from "@plotday/twister/common/messaging";
-import {
   AuthProvider,
   type AuthToken,
   type Authorization,
@@ -15,6 +10,17 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+
+type MessageChannel = {
+  id: string;
+  name: string;
+  description: string | null;
+  primary: boolean;
+};
+
+type MessageSyncOptions = {
+  timeMin?: Date;
+};
 
 import {
   SlackApi,
@@ -52,7 +58,7 @@ import {
  * - `im:history` - Read direct messages with the bot
  * - `mpim:history` - Read group direct messages
  */
-export class Slack extends Source<Slack> implements MessagingSource {
+export class Slack extends Source<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
   static readonly SCOPES = [
     "channels:history",

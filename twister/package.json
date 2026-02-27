@@ -105,31 +105,6 @@
       "types": "./dist/utils/uuid.d.ts",
       "default": "./dist/utils/uuid.js"
     },
-    "./common/calendar": {
-      "@plotday/source": "./src/common/calendar.ts",
-      "types": "./dist/common/calendar.d.ts",
-      "default": "./dist/common/calendar.js"
-    },
-    "./common/messaging": {
-      "@plotday/source": "./src/common/messaging.ts",
-      "types": "./dist/common/messaging.d.ts",
-      "default": "./dist/common/messaging.js"
-    },
-    "./common/projects": {
-      "@plotday/source": "./src/common/projects.ts",
-      "types": "./dist/common/projects.d.ts",
-      "default": "./dist/common/projects.js"
-    },
-    "./common/documents": {
-      "@plotday/source": "./src/common/documents.ts",
-      "types": "./dist/common/documents.d.ts",
-      "default": "./dist/common/documents.js"
-    },
-    "./common/source-control": {
-      "@plotday/source": "./src/common/source-control.ts",
-      "types": "./dist/common/source-control.d.ts",
-      "default": "./dist/common/source-control.js"
-    },
     "./twist-guide": {
       "@plotday/source": "./src/twist-guide.ts",
       "types": "./dist/twist-guide.d.ts",
@@ -204,31 +179,6 @@
       "@plotday/source": "./src/llm-docs/tools/store.ts",
       "types": "./dist/llm-docs/tools/store.d.ts",
       "default": "./dist/llm-docs/tools/store.js"
-    },
-    "./llm-docs/common/calendar": {
-      "@plotday/source": "./src/llm-docs/common/calendar.ts",
-      "types": "./dist/llm-docs/common/calendar.d.ts",
-      "default": "./dist/llm-docs/common/calendar.js"
-    },
-    "./llm-docs/common/messaging": {
-      "@plotday/source": "./src/llm-docs/common/messaging.ts",
-      "types": "./dist/llm-docs/common/messaging.d.ts",
-      "default": "./dist/llm-docs/common/messaging.js"
-    },
-    "./llm-docs/common/projects": {
-      "@plotday/source": "./src/llm-docs/common/projects.ts",
-      "types": "./dist/llm-docs/common/projects.d.ts",
-      "default": "./dist/llm-docs/common/projects.js"
-    },
-    "./llm-docs/common/documents": {
-      "@plotday/source": "./src/llm-docs/common/documents.ts",
-      "types": "./dist/llm-docs/common/documents.d.ts",
-      "default": "./dist/llm-docs/common/documents.js"
-    },
-    "./llm-docs/common/source-control": {
-      "@plotday/source": "./src/llm-docs/common/source-control.ts",
-      "types": "./dist/llm-docs/common/source-control.d.ts",
-      "default": "./dist/llm-docs/common/source-control.js"
     },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },

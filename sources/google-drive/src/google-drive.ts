@@ -10,11 +10,6 @@ import {
   Tag,
 } from "@plotday/twister";
 import {
-  type DocumentFolder,
-  type DocumentSyncOptions,
-  type DocumentSource,
-} from "@plotday/twister/common/documents";
-import {
   AuthProvider,
   type AuthToken,
   type Authorization,
@@ -22,6 +17,17 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+
+type DocumentFolder = {
+  id: string;
+  name: string;
+  description: string | null;
+  root: boolean;
+};
+
+type DocumentSyncOptions = {
+  timeMin?: Date;
+};
 
 import {
   GoogleApi,
@@ -55,7 +61,7 @@ import {
  * **Required OAuth Scopes:**
  * - `https://www.googleapis.com/auth/drive` - Read/write files, folders, comments
  */
-export class GoogleDrive extends Source<GoogleDrive> implements DocumentSource {
+export class GoogleDrive extends Source<GoogleDrive> {
   static readonly PROVIDER = AuthProvider.Google;
   static readonly SCOPES = ["https://www.googleapis.com/auth/drive"];
 

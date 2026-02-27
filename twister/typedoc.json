@@ -14,7 +14,6 @@
     "src/tools/plot.ts",
     "src/tools/store.ts",
     "src/tools/tasks.ts",
-    "src/common/calendar.ts",
     "src/utils/types.ts",
     "src/utils/hash.ts"
   ],
