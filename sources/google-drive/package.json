@@ -24,7 +24,8 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "deploy": "plot deploy"
+    "deploy": "plot deploy",
+    "lint": "plot lint"
   },
   "dependencies": {
     "@plotday/source-google-contacts": "workspace:^",
