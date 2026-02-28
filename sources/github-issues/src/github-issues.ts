@@ -54,40 +54,33 @@ export class GitHubIssues extends Source<GitHubIssues> {
   static readonly PROVIDER = AuthProvider.GitHub;
   static readonly SCOPES = ["repo"];
 
+  readonly provider = AuthProvider.GitHub;
+  readonly scopes = GitHubIssues.SCOPES;
+  readonly linkTypes = [
+    {
+      type: "issue",
+      label: "Issue",
+      logo: "https://api.iconify.design/logos/github-icon.svg",
+      statuses: [
+        { status: "open", label: "Open" },
+        { status: "closed", label: "Closed" },
+      ],
+    },
+    {
+      type: "pull_request",
+      label: "Pull Request",
+      logo: "https://api.iconify.design/logos/github-icon.svg",
+      statuses: [
+        { status: "open", label: "Open" },
+        { status: "closed", label: "Closed" },
+        { status: "merged", label: "Merged" },
+      ],
+    },
+  ];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [
-          {
-            provider: GitHubIssues.PROVIDER,
-            scopes: GitHubIssues.SCOPES,
-            linkTypes: [
-              {
-                type: "issue",
-                label: "Issue",
-                logo: "https://api.iconify.design/logos/github-icon.svg",
-                statuses: [
-                  { status: "open", label: "Open" },
-                  { status: "closed", label: "Closed" },
-                ],
-              },
-              {
-                type: "pull_request",
-                label: "Pull Request",
-                logo: "https://api.iconify.design/logos/github-icon.svg",
-                statuses: [
-                  { status: "open", label: "Open" },
-                  { status: "closed", label: "Closed" },
-                  { status: "merged", label: "Merged" },
-                ],
-              },
-            ],
-            getChannels: this.getChannels,
-            onChannelEnabled: this.onChannelEnabled,
-            onChannelDisabled: this.onChannelDisabled,
-          },
-        ],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.github.com/*"] }),
       tasks: build(Tasks),
     };
@@ -97,10 +90,7 @@ export class GitHubIssues extends Source<GitHubIssues> {
    * Create GitHub API client using channel-based auth
    */
   private async getClient(channelId: string): Promise<Octokit> {
-    const token = await this.tools.integrations.get(
-      GitHubIssues.PROVIDER,
-      channelId
-    );
+    const token = await this.tools.integrations.get(channelId);
     if (!token) {
       throw new Error("No GitHub authentication token available");
     }

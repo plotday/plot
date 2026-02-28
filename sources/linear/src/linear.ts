@@ -62,31 +62,23 @@ export class Linear extends Source<Linear> {
   static readonly PROVIDER = AuthProvider.Linear;
   static readonly SCOPES = ["read", "write", "admin"];
 
+  readonly provider = AuthProvider.Linear;
+  readonly scopes = Linear.SCOPES;
+  readonly linkTypes = [
+    {
+      type: "issue",
+      label: "Issue",
+      logo: "https://api.iconify.design/logos/linear-icon.svg",
+      statuses: [
+        { status: "open", label: "Open" },
+        { status: "done", label: "Done" },
+      ],
+    },
+  ];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [
-          {
-            provider: Linear.PROVIDER,
-            scopes: Linear.SCOPES,
-            linkTypes: [
-              {
-                type: "issue",
-                label: "Issue",
-                logo: "https://api.iconify.design/logos/linear-icon.svg",
-                statuses: [
-                  { status: "open", label: "Open" },
-                  { status: "done", label: "Done" },
-                ],
-              },
-            ],
-            onLinkUpdated: this.onLinkUpdated,
-            getChannels: this.getChannels,
-            onChannelEnabled: this.onChannelEnabled,
-            onChannelDisabled: this.onChannelDisabled,
-          },
-        ],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.linear.app/*"] }),
       tasks: build(Tasks),
     };
@@ -96,7 +88,7 @@ export class Linear extends Source<Linear> {
    * Create Linear API client using channel-based auth
    */
   private async getClient(projectId: string): Promise<LinearClient> {
-    const token = await this.tools.integrations.get(Linear.PROVIDER, projectId);
+    const token = await this.tools.integrations.get(projectId);
     if (!token) {
       throw new Error("No Linear authentication token available");
     }

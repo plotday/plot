@@ -27,10 +27,6 @@ export type Channel = {
 };
 
 /**
- * Configuration for an OAuth provider in a source's build options.
- * Declares the provider, scopes, and lifecycle callbacks.
- */
-/**
  * Describes a link type that a source creates.
  * Used for display in the UI (icons, labels).
  */
@@ -50,6 +46,13 @@ export type LinkTypeConfig = {
   }>;
 };
 
+/**
+ * Configuration for an OAuth provider.
+ *
+ * @deprecated Sources should declare `provider`, `scopes`, and `linkTypes` as class
+ * properties, and implement channel lifecycle methods directly on the Source class.
+ * This type is retained for backward compatibility.
+ */
 export type IntegrationProviderConfig = {
   /** The OAuth provider */
   provider: AuthProvider;
@@ -88,38 +91,38 @@ export type IntegrationOptions = {
  * Built-in tool for managing OAuth authentication and channel resources.
  *
  * The Integrations tool:
- * 1. Declares providers/scopes in build options with lifecycle callbacks
- * 2. Manages channel resources (calendars, projects, etc.) per actor
- * 3. Returns tokens for the user who enabled sync on a channel
- * 4. Supports per-actor auth via actAs() for write-back operations
- * 5. Provides saveThread/saveContacts/archiveThreads for Sources to save data directly
+ * 1. Manages channel resources (calendars, projects, etc.) per actor
+ * 2. Returns tokens for the user who enabled sync on a channel
+ * 3. Supports per-actor auth via actAs() for write-back operations
+ * 4. Provides saveLink/saveContacts for Sources to save data directly
  *
- * Auth and channel management is handled in the twist edit modal in Flutter,
- * removing the need for sources to create auth activities or selection UIs.
+ * Sources declare their provider, scopes, and channel lifecycle methods as
+ * class properties and methods. The Integrations tool reads these automatically.
+ * Auth and channel management is handled in the twist edit modal in Flutter.
  *
  * @example
  * ```typescript
  * class CalendarSource extends Source<CalendarSource> {
- *   static readonly PROVIDER = AuthProvider.Google;
- *   static readonly SCOPES = ["https://www.googleapis.com/auth/calendar"];
+ *   readonly provider = AuthProvider.Google;
+ *   readonly scopes = ["https://www.googleapis.com/auth/calendar"];
  *
  *   build(build: ToolBuilder) {
  *     return {
- *       integrations: build(Integrations, {
- *         providers: [{
- *           provider: AuthProvider.Google,
- *           scopes: CalendarSource.SCOPES,
- *           getChannels: this.getChannels,
- *           onChannelEnabled: this.onChannelEnabled,
- *           onChannelDisabled: this.onChannelDisabled,
- *         }]
- *       }),
+ *       integrations: build(Integrations),
  *     };
  *   }
  *
  *   async getChannels(auth: Authorization, token: AuthToken): Promise<Channel[]> {
  *     const calendars = await this.listCalendars(token);
  *     return calendars.map(c => ({ id: c.id, title: c.name }));
+ *   }
+ *
+ *   async onChannelEnabled(channel: Channel) {
+ *     // Start syncing
+ *   }
+ *
+ *   async onChannelDisabled(channel: Channel) {
+ *     // Stop syncing
  *   }
  * }
  * ```

@@ -47,28 +47,23 @@ export class Asana extends Source<Asana> {
   static readonly PROVIDER = AuthProvider.Asana;
   static readonly SCOPES = ["default"];
 
+  readonly provider = AuthProvider.Asana;
+  readonly scopes = Asana.SCOPES;
+  readonly linkTypes = [
+    {
+      type: "task",
+      label: "Task",
+      logo: "https://api.iconify.design/logos/asana.svg",
+      statuses: [
+        { status: "open", label: "Open" },
+        { status: "done", label: "Done" },
+      ],
+    },
+  ];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [{
-          provider: Asana.PROVIDER,
-          scopes: Asana.SCOPES,
-          linkTypes: [
-            {
-              type: "task",
-              label: "Task",
-              logo: "https://api.iconify.design/logos/asana.svg",
-              statuses: [
-                { status: "open", label: "Open" },
-                { status: "done", label: "Done" },
-              ],
-            },
-          ],
-          getChannels: this.getChannels,
-          onChannelEnabled: this.onChannelEnabled,
-          onChannelDisabled: this.onChannelDisabled,
-        }],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://app.asana.com/*"] }),
       tasks: build(Tasks),
     };
@@ -78,7 +73,7 @@ export class Asana extends Source<Asana> {
    * Create Asana API client with auth token
    */
   private async getClient(projectId: string): Promise<asana.Client> {
-    const token = await this.tools.integrations.get(Asana.PROVIDER, projectId);
+    const token = await this.tools.integrations.get(projectId);
     if (!token) {
       throw new Error("No Asana authentication token available");
     }

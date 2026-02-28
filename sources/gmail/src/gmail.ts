@@ -48,27 +48,20 @@ export class Gmail extends Source<Gmail> {
     "https://www.googleapis.com/auth/gmail.modify",
   ];
 
+  readonly provider = AuthProvider.Google;
+  readonly scopes = Gmail.SCOPES;
+  readonly linkTypes = [{ type: "email", label: "Email", logo: "https://api.iconify.design/logos/google-gmail.svg" }];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [
-          {
-            provider: Gmail.PROVIDER,
-            scopes: Gmail.SCOPES,
-            getChannels: this.listSyncChannels,
-            onChannelEnabled: this.onChannelEnabled,
-            onChannelDisabled: this.onChannelDisabled,
-            linkTypes: [{ type: "email", label: "Email", logo: "https://api.iconify.design/logos/google-gmail.svg" }],
-          },
-        ],
-      }),
+      integrations: build(Integrations),
       network: build(Network, {
         urls: ["https://gmail.googleapis.com/gmail/v1/*"],
       }),
     };
   }
 
-  async listSyncChannels(
+  async getChannels(
     _auth: Authorization,
     token: AuthToken
   ): Promise<Channel[]> {
@@ -110,14 +103,14 @@ export class Gmail extends Source<Gmail> {
   }
 
   private async getApi(channelId: string): Promise<GmailApi> {
-    const token = await this.tools.integrations.get(Gmail.PROVIDER, channelId);
+    const token = await this.tools.integrations.get(channelId);
     if (!token) {
       throw new Error("No Google authentication token available");
     }
     return new GmailApi(token.token);
   }
 
-  async getChannels(channelId: string): Promise<MessageChannel[]> {
+  async listLabels(channelId: string): Promise<MessageChannel[]> {
     const api = await this.getApi(channelId);
     const labels = await api.getLabels();
 

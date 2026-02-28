@@ -117,23 +117,13 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
     "https://www.googleapis.com/auth/calendar.events",
   ];
 
+  readonly provider = AuthProvider.Google;
+  readonly scopes = Integrations.MergeScopes(GoogleCalendar.SCOPES, GoogleContacts.SCOPES);
+  readonly linkTypes = [{ type: "event", label: "Event", logo: "https://api.iconify.design/logos/google-calendar.svg" }];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [
-          {
-            provider: GoogleCalendar.PROVIDER,
-            scopes: Integrations.MergeScopes(
-              GoogleCalendar.SCOPES,
-              GoogleContacts.SCOPES
-            ),
-            linkTypes: [{ type: "event", label: "Event", logo: "https://api.iconify.design/logos/google-calendar.svg" }],
-            getChannels: this.getChannels,
-            onChannelEnabled: this.onChannelEnabled,
-            onChannelDisabled: this.onChannelDisabled,
-          },
-        ],
-      }),
+      integrations: build(Integrations),
       network: build(Network, {
         urls: ["https://www.googleapis.com/calendar/*"],
       }),
@@ -213,10 +203,7 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
 
   private async getApi(calendarId: string): Promise<GoogleApi> {
     // Get token for the syncable (calendar) from integrations
-    const token = await this.tools.integrations.get(
-      GoogleCalendar.PROVIDER,
-      calendarId
-    );
+    const token = await this.tools.integrations.get(calendarId);
 
     if (!token) {
       throw new Error("Authorization no longer available");

@@ -258,17 +258,12 @@ export default class GoogleContacts
     "https://www.googleapis.com/auth/contacts.other.readonly",
   ];
 
+  readonly provider = AuthProvider.Google;
+  readonly scopes = GoogleContacts.SCOPES;
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [{
-          provider: GoogleContacts.PROVIDER,
-          scopes: GoogleContacts.SCOPES,
-          getChannels: this.getChannels,
-          onChannelEnabled: this.onChannelEnabled,
-          onChannelDisabled: this.onChannelDisabled,
-        }],
-      }),
+      integrations: build(Integrations),
       network: build(Network, {
         urls: ["https://people.googleapis.com/*"],
       }),
@@ -280,10 +275,7 @@ export default class GoogleContacts
   }
 
   async onChannelEnabled(channel: Channel): Promise<void> {
-    const token = await this.tools.integrations.get(
-      GoogleContacts.PROVIDER,
-      channel.id
-    );
+    const token = await this.tools.integrations.get(channel.id);
     if (!token) {
       throw new Error("No Google authentication token available");
     }
@@ -303,10 +295,7 @@ export default class GoogleContacts
   }
 
   async getContacts(syncableId: string): Promise<NewContact[]> {
-    const token = await this.tools.integrations.get(
-      GoogleContacts.PROVIDER,
-      syncableId
-    );
+    const token = await this.tools.integrations.get(syncableId);
     if (!token) {
       throw new Error(
         "No Google authentication token available for the provided syncableId"
@@ -322,10 +311,7 @@ export default class GoogleContacts
   }
 
   async startSync(syncableId: string): Promise<void> {
-    const token = await this.tools.integrations.get(
-      GoogleContacts.PROVIDER,
-      syncableId
-    );
+    const token = await this.tools.integrations.get(syncableId);
     if (!token) {
       throw new Error(
         "No Google authentication token available for the provided syncableId"
@@ -348,10 +334,7 @@ export default class GoogleContacts
 
   async syncBatch(batchNumber: number, syncableId: string): Promise<void> {
     try {
-      const token = await this.tools.integrations.get(
-        GoogleContacts.PROVIDER,
-        syncableId
-      );
+      const token = await this.tools.integrations.get(syncableId);
       if (!token) {
         throw new Error(
           "No authentication token available for the provided syncableId"

@@ -46,28 +46,23 @@ export class Jira extends Source<Jira> {
   static readonly PROVIDER = AuthProvider.Atlassian;
   static readonly SCOPES = ["read:jira-work", "write:jira-work", "read:jira-user"];
 
+  readonly provider = AuthProvider.Atlassian;
+  readonly scopes = Jira.SCOPES;
+  readonly linkTypes = [
+    {
+      type: "issue",
+      label: "Issue",
+      logo: "https://api.iconify.design/logos/jira.svg",
+      statuses: [
+        { status: "open", label: "Open" },
+        { status: "done", label: "Done" },
+      ],
+    },
+  ];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [{
-          provider: Jira.PROVIDER,
-          scopes: Jira.SCOPES,
-          linkTypes: [
-            {
-              type: "issue",
-              label: "Issue",
-              logo: "https://api.iconify.design/logos/jira.svg",
-              statuses: [
-                { status: "open", label: "Open" },
-                { status: "done", label: "Done" },
-              ],
-            },
-          ],
-          getChannels: this.getChannels,
-          onChannelEnabled: this.onChannelEnabled,
-          onChannelDisabled: this.onChannelDisabled,
-        }],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://*.atlassian.net/*"] }),
       tasks: build(Tasks),
     };
@@ -77,7 +72,7 @@ export class Jira extends Source<Jira> {
    * Create Jira API client using channel-based auth
    */
   private async getClient(projectId: string): Promise<Version3Client> {
-    const token = await this.tools.integrations.get(Jira.PROVIDER, projectId);
+    const token = await this.tools.integrations.get(projectId);
     if (!token) {
       throw new Error("No Jira authentication token available");
     }
@@ -313,7 +308,7 @@ export class Jira extends Source<Jira> {
    * Get the cloud ID using channel-based auth
    */
   private async getCloudId(projectId: string): Promise<string> {
-    const token = await this.tools.integrations.get(Jira.PROVIDER, projectId);
+    const token = await this.tools.integrations.get(projectId);
     if (!token) throw new Error("No Jira token available");
     const cloudId = token.provider?.cloud_id;
     if (!cloudId) throw new Error("Jira cloud ID not found");

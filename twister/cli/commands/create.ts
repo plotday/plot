@@ -10,10 +10,12 @@ interface CreateOptions {
   dir?: string;
   name?: string;
   displayName?: string;
+  source?: boolean;
 }
 
 export async function createCommand(options: CreateOptions) {
-  out.header("Create a new Plot twist");
+  const isSource = !!options.source;
+  out.header(isSource ? "Create a new Plot source" : "Create a new Plot twist");
 
   let response: { name: string; displayName: string };
 
@@ -94,8 +96,9 @@ export async function createCommand(options: CreateOptions) {
   const plotTwistId = crypto.randomUUID();
 
   // Create package.json
+  const packageName = isSource ? `@plotday/source-${response.name}` : response.name;
   const packageJson: any = {
-    name: response.name,
+    name: packageName,
     displayName: response.displayName || response.name,
     main: "src/index.ts",
     types: "src/index.ts",
@@ -127,6 +130,39 @@ export async function createCommand(options: CreateOptions) {
     JSON.stringify(tsconfigJson, null, 2) + "\n"
   );
 
+  const sourceTemplate = `import { Source, type ToolBuilder } from "@plotday/twister";
+import {
+  AuthProvider,
+  type AuthToken,
+  type Authorization,
+  Integrations,
+  type Channel,
+} from "@plotday/twister/tools/integrations";
+
+export default class MySource extends Source<MySource> {
+  readonly provider = AuthProvider.Google; // Change to your provider
+  readonly scopes = ["https://example.com/scope"];
+
+  build(build: ToolBuilder) {
+    return {
+      integrations: build(Integrations),
+    };
+  }
+
+  async getChannels(_auth: Authorization, _token: AuthToken): Promise<Channel[]> {
+    return [];
+  }
+
+  async onChannelEnabled(_channel: Channel): Promise<void> {
+    // Start syncing this channel
+  }
+
+  async onChannelDisabled(_channel: Channel): Promise<void> {
+    // Stop syncing and clean up
+  }
+}
+`;
+
   const twistTemplate = `import {
   type Activity,
   Twist,
@@ -151,7 +187,11 @@ export default class MyTwist extends Twist<MyTwist> {
   }
 }
 `;
-  fs.writeFileSync(path.join(twistPath, "src", "index.ts"), twistTemplate);
+
+  fs.writeFileSync(
+    path.join(twistPath, "src", "index.ts"),
+    isSource ? sourceTemplate : twistTemplate
+  );
 
   // Detect and use appropriate package manager
   const packageManager = detectPackageManager();

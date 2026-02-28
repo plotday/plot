@@ -65,23 +65,13 @@ export class GoogleDrive extends Source<GoogleDrive> {
   static readonly PROVIDER = AuthProvider.Google;
   static readonly SCOPES = ["https://www.googleapis.com/auth/drive"];
 
+  readonly provider = AuthProvider.Google;
+  readonly scopes = Integrations.MergeScopes(GoogleDrive.SCOPES, GoogleContacts.SCOPES);
+  readonly linkTypes = [{ type: "document", label: "Document", logo: "https://api.iconify.design/logos/google-drive.svg" }];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [
-          {
-            provider: GoogleDrive.PROVIDER,
-            scopes: Integrations.MergeScopes(
-              GoogleDrive.SCOPES,
-              GoogleContacts.SCOPES
-            ),
-            getChannels: this.getChannels,
-            onChannelEnabled: this.onChannelEnabled,
-            onChannelDisabled: this.onChannelDisabled,
-            linkTypes: [{ type: "document", label: "Document", logo: "https://api.iconify.design/logos/google-drive.svg" }],
-          },
-        ],
-      }),
+      integrations: build(Integrations),
       network: build(Network, {
         urls: ["https://www.googleapis.com/drive/*"],
       }),
@@ -198,10 +188,7 @@ export class GoogleDrive extends Source<GoogleDrive> {
 
   private async getApi(folderId: string): Promise<GoogleApi> {
     // Get token for the channel (folder) from integrations
-    const token = await this.tools.integrations.get(
-      GoogleDrive.PROVIDER,
-      folderId
-    );
+    const token = await this.tools.integrations.get(folderId);
 
     if (!token) {
       throw new Error("Authorization no longer available");

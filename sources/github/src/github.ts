@@ -107,31 +107,24 @@ export class GitHub extends Source<GitHub> {
   /** PRs per page for batch sync */
   private static readonly PAGE_SIZE = 50;
 
+  readonly provider = AuthProvider.GitHub;
+  readonly scopes = GitHub.SCOPES;
+  readonly linkTypes = [
+    {
+      type: "pull_request",
+      label: "Pull Request",
+      logo: "https://api.iconify.design/logos/github-icon.svg",
+      statuses: [
+        { status: "open", label: "Open" },
+        { status: "closed", label: "Closed" },
+        { status: "merged", label: "Merged" },
+      ],
+    },
+  ];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [
-          {
-            provider: GitHub.PROVIDER,
-            scopes: GitHub.SCOPES,
-            getChannels: this.getChannels,
-            onChannelEnabled: this.onChannelEnabled,
-            onChannelDisabled: this.onChannelDisabled,
-            linkTypes: [
-              {
-                type: "pull_request",
-                label: "Pull Request",
-                logo: "https://api.iconify.design/logos/github-icon.svg",
-                statuses: [
-                  { status: "open", label: "Open" },
-                  { status: "closed", label: "Closed" },
-                  { status: "merged", label: "Merged" },
-                ],
-              },
-            ],
-          },
-        ],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.github.com/*"] }),
       tasks: build(Tasks),
     };
@@ -160,10 +153,7 @@ export class GitHub extends Source<GitHub> {
    * Get an authenticated token for a channel repository
    */
   private async getToken(channelId: string): Promise<string> {
-    const authToken = await this.tools.integrations.get(
-      GitHub.PROVIDER,
-      channelId,
-    );
+    const authToken = await this.tools.integrations.get(channelId);
     if (!authToken) {
       throw new Error("No GitHub authentication token available");
     }

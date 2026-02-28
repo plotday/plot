@@ -72,25 +72,18 @@ export class Slack extends Source<Slack> {
     "mpim:history",
   ];
 
+  readonly provider = AuthProvider.Slack;
+  readonly scopes = Slack.SCOPES;
+  readonly linkTypes = [{ type: "message", label: "Message", logo: "https://api.iconify.design/logos/slack-icon.svg" }];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [
-          {
-            provider: Slack.PROVIDER,
-            scopes: Slack.SCOPES,
-            getChannels: this.listSyncChannels,
-            onChannelEnabled: this.onChannelEnabled,
-            onChannelDisabled: this.onChannelDisabled,
-            linkTypes: [{ type: "message", label: "Message", logo: "https://api.iconify.design/logos/slack-icon.svg" }],
-          },
-        ],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://slack.com/api/*"] }),
     };
   }
 
-  async listSyncChannels(
+  async getChannels(
     _auth: Authorization,
     token: AuthToken
   ): Promise<Channel[]> {
@@ -133,14 +126,14 @@ export class Slack extends Source<Slack> {
   }
 
   private async getApi(channelId: string): Promise<SlackApi> {
-    const token = await this.tools.integrations.get(Slack.PROVIDER, channelId);
+    const token = await this.tools.integrations.get(channelId);
     if (!token) {
       throw new Error("No Slack authentication token available");
     }
     return new SlackApi(token.token);
   }
 
-  async getChannels(channelId: string): Promise<MessageChannel[]> {
+  async listWorkspaceChannels(channelId: string): Promise<MessageChannel[]> {
     const api = await this.getApi(channelId);
     const channels = await api.getChannels();
 

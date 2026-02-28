@@ -110,20 +110,13 @@ export class OutlookCalendar extends Source<OutlookCalendar> {
   static readonly PROVIDER = AuthProvider.Microsoft;
   static readonly SCOPES = ["https://graph.microsoft.com/calendars.readwrite"];
 
+  readonly provider = AuthProvider.Microsoft;
+  readonly scopes = OutlookCalendar.SCOPES;
+  readonly linkTypes = [{ type: "event", label: "Event", logo: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }];
+
   build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [
-          {
-            provider: OutlookCalendar.PROVIDER,
-            scopes: OutlookCalendar.SCOPES,
-            linkTypes: [{ type: "event", label: "Event", logo: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }],
-            getChannels: this.getChannels,
-            onChannelEnabled: this.onChannelEnabled,
-            onChannelDisabled: this.onChannelDisabled,
-          },
-        ],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://graph.microsoft.com/*"] }),
     };
   }
@@ -179,10 +172,7 @@ export class OutlookCalendar extends Source<OutlookCalendar> {
   }
 
   private async getApi(calendarId: string): Promise<GraphApi> {
-    const token = await this.tools.integrations.get(
-      OutlookCalendar.PROVIDER,
-      calendarId
-    );
+    const token = await this.tools.integrations.get(calendarId);
     if (!token) {
       throw new Error("No Microsoft authentication token available");
     }
