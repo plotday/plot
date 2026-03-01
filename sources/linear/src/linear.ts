@@ -69,6 +69,8 @@ export class Linear extends Source<Linear> {
       type: "issue",
       label: "Issue",
       logo: "https://api.iconify.design/logos/linear-icon.svg",
+      logoDark: "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
+      logoMono: "https://api.iconify.design/simple-icons/linear.svg",
       statuses: [
         { status: "open", label: "Open" },
         { status: "done", label: "Done" },

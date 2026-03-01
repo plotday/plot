@@ -53,6 +53,7 @@ export class Jira extends Source<Jira> {
       type: "issue",
       label: "Issue",
       logo: "https://api.iconify.design/logos/jira.svg",
+      logoMono: "https://api.iconify.design/simple-icons/jira.svg",
       statuses: [
         { status: "open", label: "Open" },
         { status: "done", label: "Done" },

@@ -35,8 +35,12 @@ export type LinkTypeConfig = {
   type: string;
   /** Human-readable label (e.g., "Issue", "Pull Request") */
   label: string;
-  /** URL to an icon for this link type. Prefer Iconify URLs (e.g., "https://api.iconify.design/simple-icons/linear.svg") */
+  /** URL to an icon for this link type (light mode). Prefer Iconify `logos/*` URLs. */
   logo?: string;
+  /** URL to an icon for dark mode. Use when the default logo is invisible on dark backgrounds (e.g., Iconify `simple-icons/*` with `?color=`). */
+  logoDark?: string;
+  /** URL to a monochrome icon (uses `currentColor`). Prefer Iconify `simple-icons/*` URLs without a `?color=` param. */
+  logoMono?: string;
   /** Possible status values for this type */
   statuses?: Array<{
     /** Machine-readable status (e.g., "open", "done") */

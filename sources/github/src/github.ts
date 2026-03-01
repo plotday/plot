@@ -114,6 +114,8 @@ export class GitHub extends Source<GitHub> {
       type: "pull_request",
       label: "Pull Request",
       logo: "https://api.iconify.design/logos/github-icon.svg",
+      logoDark: "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
+      logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
         { status: "open", label: "Open" },
         { status: "closed", label: "Closed" },

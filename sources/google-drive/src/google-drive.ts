@@ -67,7 +67,7 @@ export class GoogleDrive extends Source<GoogleDrive> {
 
   readonly provider = AuthProvider.Google;
   readonly scopes = Integrations.MergeScopes(GoogleDrive.SCOPES, GoogleContacts.SCOPES);
-  readonly linkTypes = [{ type: "document", label: "Document", logo: "https://api.iconify.design/logos/google-drive.svg" }];
+  readonly linkTypes = [{ type: "document", label: "Document", logo: "https://api.iconify.design/logos/google-drive.svg", logoMono: "https://api.iconify.design/simple-icons/googledrive.svg" }];
 
   build(build: ToolBuilder) {
     return {

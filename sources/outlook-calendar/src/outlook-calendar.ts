@@ -112,7 +112,7 @@ export class OutlookCalendar extends Source<OutlookCalendar> {
 
   readonly provider = AuthProvider.Microsoft;
   readonly scopes = OutlookCalendar.SCOPES;
-  readonly linkTypes = [{ type: "event", label: "Event", logo: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }];
+  readonly linkTypes = [{ type: "event", label: "Event", logo: "https://api.iconify.design/logos/microsoft-icon.svg", logoDark: "https://api.iconify.design/simple-icons/microsoftoutlook.svg?color=%230078D4", logoMono: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }];
 
   build(build: ToolBuilder) {
     return {

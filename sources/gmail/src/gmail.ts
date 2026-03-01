@@ -50,7 +50,7 @@ export class Gmail extends Source<Gmail> {
 
   readonly provider = AuthProvider.Google;
   readonly scopes = Gmail.SCOPES;
-  readonly linkTypes = [{ type: "email", label: "Email", logo: "https://api.iconify.design/logos/google-gmail.svg" }];
+  readonly linkTypes = [{ type: "email", label: "Email", logo: "https://api.iconify.design/logos/google-gmail.svg", logoMono: "https://api.iconify.design/simple-icons/gmail.svg" }];
 
   build(build: ToolBuilder) {
     return {

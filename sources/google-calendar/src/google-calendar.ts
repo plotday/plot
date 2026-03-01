@@ -34,6 +34,11 @@ type SyncOptions = {
   timeMax?: Date | null;
 };
 
+type PendingOccurrence = {
+  occurrence: NewScheduleOccurrence;
+  cancelled: boolean;
+};
+
 import {
   GoogleApi,
   type GoogleEvent,
@@ -119,7 +124,7 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
 
   readonly provider = AuthProvider.Google;
   readonly scopes = Integrations.MergeScopes(GoogleCalendar.SCOPES, GoogleContacts.SCOPES);
-  readonly linkTypes = [{ type: "event", label: "Event", logo: "https://api.iconify.design/logos/google-calendar.svg" }];
+  readonly linkTypes = [{ type: "event", label: "Event", logo: "https://api.iconify.design/logos/google-calendar.svg", logoMono: "https://api.iconify.design/simple-icons/googlecalendar.svg" }];
 
   build(build: ToolBuilder) {
     return {
@@ -603,6 +608,13 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
         }
 
         if (mode === "full") {
+          // Discard buffered occurrences whose masters never appeared
+          // (e.g. instances of cancelled/deleted recurring events)
+          const pendingKeys = await this.tools.store.list("pending_occ:");
+          for (const key of pendingKeys) {
+            await this.clear(key);
+          }
+
           await this.clear(`sync_state_${calendarId}`);
         }
         // Always clear lock when sync completes (no more batches)
@@ -796,6 +808,17 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
           link.channelId = calendarId;
           link.meta = { ...link.meta, syncProvider: "google", syncableId: calendarId };
 
+          // Merge any buffered occurrences that arrived before this master event
+          const pendingKey = `pending_occ:google-calendar:${event.id}`;
+          const pendingOccurrences = await this.get<PendingOccurrence[]>(pendingKey);
+          if (pendingOccurrences) {
+            link.scheduleOccurrences = [
+              ...(link.scheduleOccurrences || []),
+              ...pendingOccurrences.map(p => p.occurrence),
+            ];
+            await this.clear(pendingKey);
+          }
+
           // Send link - database handles upsert automatically
           await this.tools.integrations.saveLink(link);
         }
@@ -829,7 +852,7 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
     }
 
     // Canonical URL for the master recurring event
-    const masterCanonicalUrl = `google-calendar:${calendarId}:${event.recurringEventId}`;
+    const masterCanonicalUrl = `google-calendar:${event.recurringEventId}`;
 
     // Transform the instance data
     const instanceData = transformGoogleEvent(event, calendarId);
@@ -855,6 +878,15 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
         end: end,
         archived: true,
       };
+
+      // During initial sync, buffer the occurrence for later merging with its master
+      if (initialSync) {
+        const pendingKey = `pending_occ:${masterCanonicalUrl}`;
+        const existing = await this.get<PendingOccurrence[]>(pendingKey) || [];
+        existing.push({ occurrence: cancelledOccurrence, cancelled: true });
+        await this.set(pendingKey, existing);
+        return;
+      }
 
       const occurrenceUpdate: NewLinkWithNotes = {
         type: "event",
@@ -909,8 +941,16 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
       occurrence.end = instanceSchedule.end;
     }
 
-    // Build a minimal link with source and scheduleOccurrences
-    // The source saves directly via integrations.saveLink
+    // During initial sync, buffer the occurrence for later merging with its master
+    if (initialSync) {
+      const pendingKey = `pending_occ:${masterCanonicalUrl}`;
+      const existing = await this.get<PendingOccurrence[]>(pendingKey) || [];
+      existing.push({ occurrence, cancelled: false });
+      await this.set(pendingKey, existing);
+      return;
+    }
+
+    // For incremental sync, save immediately (master should exist)
     const occurrenceUpdate: NewLinkWithNotes = {
       type: "event",
       title: "",

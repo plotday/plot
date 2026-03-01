@@ -17,8 +17,11 @@ export { Uuid } from "./utils/uuid";
  * - Shared schedules (userId is null): visible to all members of the thread's priority
  * - Per-user schedules (userId set): private ordering/scheduling for a specific user
  *
- * For recurring events, start/end represent the first occurrence, with recurrenceRule
- * defining the pattern.
+ * For recurring events in the SDK, start/end represent the first occurrence's
+ * time. In the database, the `at`/`on` range is expanded to span from the first
+ * occurrence start to the last occurrence end (or open-ended if no fixed end).
+ * The `duration` column stores the per-occurrence duration, enabling range overlap
+ * queries to correctly find all recurring events with occurrences in a given window.
  */
 export type Schedule = {
   /** When this schedule was created */

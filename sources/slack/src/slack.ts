@@ -74,7 +74,7 @@ export class Slack extends Source<Slack> {
 
   readonly provider = AuthProvider.Slack;
   readonly scopes = Slack.SCOPES;
-  readonly linkTypes = [{ type: "message", label: "Message", logo: "https://api.iconify.design/logos/slack-icon.svg" }];
+  readonly linkTypes = [{ type: "message", label: "Message", logo: "https://api.iconify.design/logos/slack-icon.svg", logoMono: "https://api.iconify.design/simple-icons/slack.svg" }];
 
   build(build: ToolBuilder) {
     return {
