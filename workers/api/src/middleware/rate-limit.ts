@@ -211,7 +211,7 @@ export const syncRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
 
 /**
  * Moderate rate limiter for deployment endpoints
- * 2 requests per minute per user per twist
+ * 10 requests per minute per user per twist
  *
  * NOTE: Changed from 30/hour to 2/min due to Cloudflare API period limitations
  *
@@ -249,5 +249,5 @@ export const deploymentRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
         "unknown"
       );
     },
-    handler: createRateLimitHandler("deployment", 2, 60),
+    handler: createRateLimitHandler("deployment", 10, 60),
   });
