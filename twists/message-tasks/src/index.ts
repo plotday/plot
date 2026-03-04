@@ -1,22 +1,15 @@
 import { Type } from "typebox";
 
-import { Gmail } from "@plotday/tool-gmail";
-import { Slack } from "@plotday/tool-slack";
 import {
-  type ActivityFilter,
-  ActivityType,
-  type NewActivityWithNotes,
-  type NewContact,
+  type Link,
   type Note,
   type Priority,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
 import { AI, type AIMessage } from "@plotday/twister/tools/ai";
-import { ActivityAccess, Plot } from "@plotday/twister/tools/plot";
+import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
 import { Uuid } from "@plotday/twister/utils/uuid";
-
-type MessageProvider = "slack" | "gmail";
 
 type Instruction = {
   id: string;
@@ -36,18 +29,11 @@ type ThreadTask = {
 export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
   build(build: ToolBuilder) {
     return {
-      slack: build(Slack, {
-        onItem: this.onSlackThread,
-        onSyncableDisabled: this.onSyncableDisabled,
-      }),
-      gmail: build(Gmail, {
-        onItem: this.onGmailThread,
-        onSyncableDisabled: this.onSyncableDisabled,
-      }),
       ai: build(AI),
       plot: build(Plot, {
-        activity: {
-          access: ActivityAccess.Create,
+        link: true,
+        thread: {
+          access: ThreadAccess.Create,
         },
         note: {
           intents: [
@@ -91,18 +77,51 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     // Auth and channel selection are now handled in the twist edit modal.
   }
 
-  async onSlackThread(thread: NewActivityWithNotes): Promise<void> {
-    const channelId = thread.meta?.syncableId as string;
-    return this.onMessageThread(thread, "slack", channelId);
+  // ============================================================================
+  // Link Lifecycle
+  // ============================================================================
+
+  async onLinkCreated(link: Link, notes: Note[]): Promise<void> {
+    if (!notes.length) return;
+
+    const threadId = link.source;
+    if (!threadId) {
+      console.warn("Link has no source, skipping");
+      return;
+    }
+
+    // Check if we already have a task for this thread
+    const existingTask = await this.getThreadTask(threadId);
+
+    if (existingTask) {
+      // Already has a task — check latest note for completion
+      const lastNote = notes[notes.length - 1];
+      if (lastNote) {
+        await this.checkNoteForCompletion(lastNote, existingTask);
+        await this.updateThreadTaskCheck(threadId);
+      }
+      return;
+    }
+
+    // Analyze link with AI to see if it needs a task
+    const analysis = await this.analyzeLink(link, notes);
+
+    if (!analysis.needsTask || analysis.confidence < 0.6) {
+      return;
+    }
+
+    await this.createTaskFromLink(link, notes, analysis);
   }
 
-  async onGmailThread(thread: NewActivityWithNotes): Promise<void> {
-    const channelId = thread.meta?.syncableId as string;
-    return this.onMessageThread(thread, "gmail", channelId);
-  }
+  async onLinkNoteCreated(note: Note, link: Link): Promise<void> {
+    const threadId = link.source;
+    if (!threadId) return;
 
-  async onSyncableDisabled(filter: ActivityFilter): Promise<void> {
-    await this.tools.plot.updateActivity({ match: filter, archived: true });
+    const existingTask = await this.getThreadTask(threadId);
+    if (!existingTask) return;
+
+    await this.checkNoteForCompletion(note, existingTask);
+    await this.updateThreadTaskCheck(threadId);
   }
 
   // ============================================================================
@@ -157,7 +176,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     const instructions = await this.getInstructions();
     if (instructions.length >= 20) {
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content:
           "You've reached the limit of 20 instructions. Remove one first with \"forget instruction\" before adding more.",
       });
@@ -174,7 +193,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     if (summary === "UNCLEAR") {
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content: `I didn't understand that as an instruction. Try something like:\n- "Ignore threads from #random"\n- "Always create tasks for messages from Sarah"\n- "Never create tasks for bot messages"`,
       });
       return;
@@ -192,7 +211,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     await this.setInstructions(instructions);
 
     await this.tools.plot.createNote({
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content: `Saved: "${summary}"`,
     });
   }
@@ -202,7 +221,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     if (instructions.length === 0) {
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content: `No instructions yet. Mention me with an instruction like "Ignore threads from #random" to add one.`,
       });
       return;
@@ -213,7 +232,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
       .join("\n");
 
     await this.tools.plot.createNote({
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content: `**Instructions:**\n${list}`,
     });
   }
@@ -226,7 +245,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     if (instructions.length === 0) {
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content: "No instructions to remove.",
       });
       return;
@@ -286,7 +305,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
         .join("\n");
 
       await this.tools.plot.createNote({
-        activity: { id: note.activity.id },
+        thread: { id: note.thread.id },
         content: `Couldn't find a matching instruction. Here are the current ones:\n${list}`,
       });
       return;
@@ -295,64 +314,28 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     await this.setInstructions(instructions.filter((i) => i.id !== target.id));
 
     await this.tools.plot.createNote({
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content: `Removed: "${target.summary}"`,
     });
   }
 
   // ============================================================================
-  // Message Thread Processing
+  // Link Analysis & Task Creation
   // ============================================================================
 
-  async onMessageThread(
-    thread: NewActivityWithNotes,
-    provider: MessageProvider,
-    channelId: string
-  ): Promise<void> {
-    if (!thread.notes || thread.notes.length === 0) return;
-
-    const threadId = "source" in thread ? thread.source : undefined;
-    if (!threadId) {
-      console.warn("Thread has no source, skipping");
-      return;
-    }
-
-    // Check if we already have a task for this thread
-    const existingTask = await this.getThreadTask(threadId);
-
-    if (existingTask) {
-      // Thread already has a task - check if it needs updating
-      await this.checkThreadForCompletion(thread, existingTask);
-      await this.updateThreadTaskCheck(threadId);
-      return;
-    }
-
-    // Analyze thread with AI to see if it needs a task
-    const analysis = await this.analyzeThread(thread);
-
-    if (!analysis.needsTask || analysis.confidence < 0.6) {
-      return;
-    }
-
-    // Create task from thread
-    await this.createTaskFromThread(thread, analysis, provider, channelId);
-  }
-
-  private async analyzeThread(thread: NewActivityWithNotes): Promise<{
+  private async analyzeLink(link: Link, notes: Note[]): Promise<{
     needsTask: boolean;
     taskTitle: string | null;
     taskNote: string | null;
     confidence: number;
     isCompleted: boolean;
   }> {
-    // Load user instructions
     const instructions = await this.getInstructions();
     const instructionBlock =
       instructions.length > 0
         ? `\n\nUser instructions (follow these as rules):\n${instructions.map((i) => `- ${i.summary}`).join("\n")}`
         : "";
 
-    // Build conversation for AI
     const messages: AIMessage[] = [
       {
         role: "system",
@@ -376,16 +359,12 @@ DO NOT create tasks for:
 
 If a task is needed, create a clear, actionable title that describes what the user needs to do.${instructionBlock}`,
       },
-      ...thread.notes.map((note, idx) => {
-        const author: NewContact | null =
-          note.author && "email" in note.author ? note.author : null;
-        return {
-          role: "user" as const,
-          content: `[Message ${idx + 1}] From ${
-            author?.name || author?.email || "someone"
-          }: ${note.content || "(empty message)"}`,
-        };
-      }),
+      ...notes.map((note, idx) => ({
+        role: "user" as const,
+        content: `[Message ${idx + 1}] From ${
+          note.author?.name || note.author?.email || "someone"
+        }: ${note.content || "(empty message)"}`,
+      })),
     ];
 
     const schema = Type.Object({
@@ -437,7 +416,7 @@ If a task is needed, create a clear, actionable title that describes what the us
         isCompleted: output.isCompleted,
       };
     } catch (error) {
-      console.error("Failed to analyze thread with AI:", error);
+      console.error("Failed to analyze link with AI:", error);
       return {
         needsTask: false,
         taskTitle: null,
@@ -448,52 +427,42 @@ If a task is needed, create a clear, actionable title that describes what the us
     }
   }
 
-  private formatSourceReference(
-    thread: NewActivityWithNotes,
-    provider: MessageProvider,
-    channelId: string
-  ): string {
-    if (provider === "gmail") {
-      const firstNote = thread.notes?.[0];
-      const author: NewContact | null =
-        firstNote?.author && "email" in firstNote.author
-          ? firstNote.author
-          : null;
-      const senderName = author?.name || author?.email;
-      const subject = thread.title;
+  private formatSourceReference(link: Link, notes: Note[]): string {
+    if (link.type === "email") {
+      const firstNote = notes[0];
+      const senderName = firstNote?.author?.name || firstNote?.author?.email;
+      const subject = link.title;
       if (senderName && subject) return `From ${senderName}: ${subject}`;
       if (senderName) return `From ${senderName}`;
       if (subject) return `Re: ${subject}`;
-      return `From Gmail`;
+      return `From email`;
     }
-    return `From #${channelId}`;
+    if (link.type === "message") {
+      return link.channelId ? `From #${link.channelId}` : "From message";
+    }
+    return link.title || "From linked source";
   }
 
-  private async createTaskFromThread(
-    thread: NewActivityWithNotes,
+  private async createTaskFromLink(
+    link: Link,
+    notes: Note[],
     analysis: {
       needsTask: boolean;
       taskTitle: string | null;
       taskNote: string | null;
       confidence: number;
-    },
-    provider: MessageProvider,
-    channelId: string
+    }
   ): Promise<void> {
-    const threadId = "source" in thread ? thread.source : undefined;
+    const threadId = link.source;
     if (!threadId) {
-      console.warn("Thread has no source, skipping task creation");
+      console.warn("Link has no source, skipping task creation");
       return;
     }
 
-    const sourceRef = this.formatSourceReference(thread, provider, channelId);
+    const sourceRef = this.formatSourceReference(link, notes);
 
-    // Create task activity - database handles upsert automatically
-    const taskId = await this.tools.plot.createActivity({
-      source: `message-tasks:${threadId}`,
-      type: ActivityType.Action,
-      title: analysis.taskTitle || thread.title || "Action needed from message",
-      start: new Date(),
+    const taskId = await this.tools.plot.createThread({
+      title: analysis.taskTitle || link.title || "Action needed from message",
       notes: analysis.taskNote
         ? [
             {
@@ -508,30 +477,20 @@ If a task is needed, create a clear, actionable title that describes what the us
       preview: analysis.taskNote
         ? `${analysis.taskNote}\n\n---\n${sourceRef}`
         : sourceRef,
-      meta: {
-        originalThreadId: threadId,
-        channelId,
-      },
-      // Use pickPriority for automatic priority matching
       pickPriority: { content: 50, mentions: 50 },
     });
 
-    // Store mapping
     await this.storeThreadTask(threadId, taskId);
   }
 
-  private async checkThreadForCompletion(
-    thread: NewActivityWithNotes,
+  private async checkNoteForCompletion(
+    note: Note,
     taskInfo: ThreadTask
   ): Promise<void> {
-    // Only check the last few messages for completion signals
-    const recentMessages = thread.notes.slice(-3);
-
-    // Build a simple prompt to check for completion
     const messages: AIMessage[] = [
       {
         role: "system",
-        content: `You are checking if a task appears to be completed based on recent messages in a thread.
+        content: `You are checking if a task appears to be completed based on a message in a thread.
 
 Look for signals like:
 - "Done", "Completed", "Finished"
@@ -542,10 +501,10 @@ Look for signals like:
 
 Return true only if there's clear evidence the task is done.`,
       },
-      ...recentMessages.map((note) => ({
-        role: "user" as const,
+      {
+        role: "user",
         content: `User: ${note.content || ""}`,
-      })),
+      },
     ];
 
     const schema = Type.Object({
@@ -572,13 +531,13 @@ Return true only if there's clear evidence the task is done.`,
       };
 
       if (result.isCompleted && result.confidence >= 0.7) {
-        await this.tools.plot.updateActivity({
+        await this.tools.plot.updateThread({
           id: taskInfo.taskId,
-          done: new Date(),
+          archived: true,
         });
       }
     } catch (error) {
-      console.error("Failed to check thread for completion:", error);
+      console.error("Failed to check note for completion:", error);
     }
   }
 }

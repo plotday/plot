@@ -1,6 +1,6 @@
 packages:
   - twister
-  - tools/*
+  - sources/*
   - twists/*
 
 onlyBuiltDependencies:

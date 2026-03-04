@@ -115,7 +115,7 @@ async upgrade()            // When new version is deployed
 
 ### Twist Tools
 
-Twist tools provide capabilities to twists. They are usually unopinionated and do nothing on their own. Use built-in tools or create your own.
+Twist tools provide capabilities to twists. They are usually unopinionated and do nothing on their own.
 
 **Built-in Tools:**
 
@@ -128,6 +128,8 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 - **Callbacks** - Persistent function references
 
 [View all tools →](https://twist.plot.day/documents/Built-in_Tools.html)
+
+External service integrations (Google Calendar, Slack, Linear, etc.) are built as **Sources** — see [Building Sources](https://twist.plot.day/documents/Building_Sources.html).
 
 ### Activities and Notes
 
@@ -206,7 +208,7 @@ plot priority create           # Create new priority
 - [Core Concepts](https://twist.plot.day/documents/Core_Concepts.html) - Twists, tools, and architecture
 - [Sync Strategies](https://twist.plot.day/documents/Sync_Strategies.html) - Data synchronization patterns (upserts, deduplication, ID management)
 - [Built-in Tools](https://twist.plot.day/documents/Built-in_Tools.html) - Plot, Store, AI, and more
-- [Building Custom Tools](https://twist.plot.day/documents/Building_Custom_Tools.html) - Create reusable twist tools
+- [Building Sources](https://twist.plot.day/documents/Building_Sources.html) - Build external service integrations
 - [Runtime Environment](https://twist.plot.day/documents/Runtime_Environment.html) - Execution constraints and optimization
 - [Advanced Topics](https://twist.plot.day/documents/Advanced.html) - Complex patterns and techniques
 

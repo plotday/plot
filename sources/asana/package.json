@@ -1,0 +1,51 @@
+{
+  "name": "@plotday/source-asana",
+  "plotTwistId": "d8f4e839-c152-41a2-926c-700e23d4fc77",
+  "displayName": "Asana",
+  "description": "Tasks from Asana",
+  "logoUrl": "https://api.iconify.design/logos/asana.svg",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.7.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^",
+    "asana": "^3.0.10"
+  },
+  "devDependencies": {
+    "@types/asana": "^0.18.17",
+    "@types/node": "^25.0.3",
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "tools/asana"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "tool",
+    "asana",
+    "project-management"
+  ]
+}

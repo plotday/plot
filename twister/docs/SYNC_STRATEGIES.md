@@ -1,6 +1,6 @@
 # Sync Strategies
 
-This guide explains good ways to build tools that sync other services with Plot. Choosing the right strategy depends on whether you need to update items, deduplicate them, or simply create them once.
+This guide explains good ways to build sources that sync other services with Plot. Choosing the right strategy depends on whether you need to update items, deduplicate them, or simply create them once.
 
 ## Table of Contents
 
@@ -115,7 +115,7 @@ interface Activity {
 ### Example: Calendar Event Sync
 
 ```typescript
-export default class GoogleCalendarTool extends Tool<GoogleCalendarTool> {
+export default class GoogleCalendarSource extends Source<GoogleCalendarSource> {
   async syncEvent(event: calendar_v3.Schema$Event): Promise<void> {
     const activity: NewActivityWithNotes = {
       // Use the event's canonical URL as the source
@@ -168,7 +168,7 @@ export default class GoogleCalendarTool extends Tool<GoogleCalendarTool> {
 ### Example: Task/Issue Sync
 
 ```typescript
-export default class LinearTool extends Tool<LinearTool> {
+export default class LinearSource extends Source<LinearSource> {
   async syncIssue(issue: LinearIssue): Promise<void> {
     const activity: NewActivityWithNotes = {
       source: issue.url, // Linear provides stable URLs
@@ -274,7 +274,7 @@ Use this strategy when:
 ### Example: Multiple Activities from Single Source
 
 ```typescript
-export default class EmailTool extends Tool<EmailTool> {
+export default class GmailSource extends Source<GmailSource> {
   /**
    * Creates separate activities for email threads and individual messages.
    * One email thread can have multiple Plot activities.
@@ -694,9 +694,9 @@ if (existingId) {
 
 ## Best Practices
 
-### 1. Be Consistent Within a Tool
+### 1. Be Consistent Within a Source
 
-Choose one strategy per tool and stick with it. Mixing strategies in the same tool can lead to confusion and bugs.
+Choose one strategy per source and stick with it. Mixing strategies in the same source can lead to confusion and bugs.
 
 ### 2. Use Descriptive Keys
 
@@ -805,4 +805,4 @@ For more information:
 
 - [Core Concepts](CORE_CONCEPTS.md) - Understanding activities, notes, and priorities
 - [Tools Guide](TOOLS_GUIDE.md) - Complete reference for the Plot tool
-- [Building Tools](BUILDING_TOOLS.md) - Creating custom tools
+- [Building Sources](BUILDING_SOURCES.md) - Creating external service integrations

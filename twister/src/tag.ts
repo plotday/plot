@@ -1,21 +1,17 @@
 /**
- * Activity tags. Three types:
+ * Thread tags. Three types:
  * 1. Special tags, which trigger other behaviors
  * 2. Toggle tags, which anyone can toggle a shared value on or off
  * 3. Count tags, where everyone can add or remove their own
  */
 export enum Tag {
   // Special tags
-  Now = 1,
-  Later = 2,
+  Todo = 1,
   Done = 3,
-  Archived = 4,
-  Someday = 7,
 
   // Toggle tags
   Pinned = 100,
   Urgent = 101,
-  Inbox = 102,
   Goal = 103,
   Decision = 104,
   Waiting = 105,
@@ -44,9 +40,4 @@ export enum Tag {
   Applause = 1016,
   Cool = 1017,
   Sad = 1018,
-  // RSVP tags - mutually exclusive per actor
-  // When an actor adds one of these tags, the other two are automatically removed
-  Attend = 1019,
-  Skip = 1020,
-  Undecided = 1021,
 }

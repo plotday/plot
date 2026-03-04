@@ -1,6 +1,6 @@
 # Multi-User Priority Auth
 
-Twists and tools operating in shared priorities must handle authentication for multiple users. This guide covers the patterns for per-user auth and private auth activities.
+Twists and sources operating in shared priorities must handle authentication for multiple users. This guide covers the patterns for per-user auth and private auth activities.
 
 ## Auth Models
 

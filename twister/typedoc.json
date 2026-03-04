@@ -14,7 +14,6 @@
     "src/tools/plot.ts",
     "src/tools/store.ts",
     "src/tools/tasks.ts",
-    "src/common/calendar.ts",
     "src/utils/types.ts",
     "src/utils/hash.ts"
   ],
@@ -38,7 +37,7 @@
     "docs/GETTING_STARTED.md",
     "docs/CORE_CONCEPTS.md",
     "docs/TOOLS_GUIDE.md",
-    "docs/BUILDING_TOOLS.md",
+    "docs/BUILDING_SOURCES.md",
     "docs/CLI_REFERENCE.md",
     "docs/RUNTIME.md"
   ],

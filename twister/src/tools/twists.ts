@@ -45,7 +45,7 @@ export type Log = {
  *     "https://googleapis.com/*": ["use"]
  *   },
  *   "plot": {
- *     "activity:mentioned": ["read", "write", "update"],
+ *     "thread:mentioned": ["read", "write", "update"],
  *     "priority": ["read", "write", "update"]
  *   }
  * }

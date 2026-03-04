@@ -55,6 +55,7 @@ program
   .option("-d, --dir <directory>", "Directory to create the twist in")
   .option("-n, --name <name>", "Package name (kebab-case)")
   .option("--display-name <displayName>", "Display name for the twist")
+  .option("--source", "Create a source instead of a twist")
   .action(createCommand);
 
 // Top-level lint command

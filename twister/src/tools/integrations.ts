@@ -1,79 +1,89 @@
-import { type Actor, type ActorId, ITool, Serializable } from "..";
+import {
+  type Actor,
+  type ActorId,
+  type NewContact,
+  type NewLinkWithNotes,
+  ITool,
+  Serializable,
+} from "..";
+import type { JSONValue } from "../utils/types";
 import type { Uuid } from "../utils/uuid";
 
 /**
  * A resource that can be synced (e.g., a calendar, project, channel).
- * Returned by getSyncables() and managed by users in the twist setup/edit modal.
+ * Returned by getChannels() and managed by users in the twist setup/edit modal.
  */
-export type Syncable = {
+export type Channel = {
   /** External ID shared across users (e.g., Google calendar ID) */
   id: string;
   /** Display name shown in the UI */
   title: string;
-  /** Optional nested syncable resources (e.g., subfolders) */
-  children?: Syncable[];
+  /** Optional nested channel resources (e.g., subfolders) */
+  children?: Channel[];
+  /** Priority ID this channel is routed to (set when channel is enabled) */
+  priorityId?: string;
 };
 
 /**
- * Configuration for an OAuth provider in a tool's build options.
- * Declares the provider, scopes, and lifecycle callbacks.
+ * Describes a link type that a source creates.
+ * Used for display in the UI (icons, labels).
  */
-export type IntegrationProviderConfig = {
-  /** The OAuth provider */
-  provider: AuthProvider;
-  /** OAuth scopes to request */
-  scopes: string[];
-  /** Returns available syncables for the authorized actor. Must not use Plot tool. */
-  getSyncables: (auth: Authorization, token: AuthToken) => Promise<Syncable[]>;
-  /** Called when a syncable resource is enabled for syncing */
-  onSyncEnabled: (syncable: Syncable) => Promise<void>;
-  /** Called when a syncable resource is disabled */
-  onSyncDisabled: (syncable: Syncable) => Promise<void>;
+export type LinkTypeConfig = {
+  /** Machine-readable type identifier (e.g., "issue", "pull_request") */
+  type: string;
+  /** Human-readable label (e.g., "Issue", "Pull Request") */
+  label: string;
+  /** URL to an icon for this link type (light mode). Prefer Iconify `logos/*` URLs. */
+  logo?: string;
+  /** URL to an icon for dark mode. Use when the default logo is invisible on dark backgrounds (e.g., Iconify `simple-icons/*` with `?color=`). */
+  logoDark?: string;
+  /** URL to a monochrome icon (uses `currentColor`). Prefer Iconify `simple-icons/*` URLs without a `?color=` param. */
+  logoMono?: string;
+  /** Possible status values for this type */
+  statuses?: Array<{
+    /** Machine-readable status (e.g., "open", "done") */
+    status: string;
+    /** Human-readable label (e.g., "Open", "Done") */
+    label: string;
+  }>;
 };
 
 /**
- * Options passed to Integrations in the build() method.
- */
-export type IntegrationOptions = {
-  /** Provider configurations with lifecycle callbacks */
-  providers: IntegrationProviderConfig[];
-};
-
-/**
- * Built-in tool for managing OAuth authentication and syncable resources.
+ * Built-in tool for managing OAuth authentication and channel resources.
  *
- * The redesigned Integrations tool:
- * 1. Declares providers/scopes in build options with lifecycle callbacks
- * 2. Manages syncable resources (calendars, projects, etc.) per actor
- * 3. Returns tokens for the user who enabled sync on a syncable
- * 4. Supports per-actor auth via actAs() for write-back operations
+ * The Integrations tool:
+ * 1. Manages channel resources (calendars, projects, etc.) per actor
+ * 2. Returns tokens for the user who enabled sync on a channel
+ * 3. Supports per-actor auth via actAs() for write-back operations
+ * 4. Provides saveLink/saveContacts for Sources to save data directly
  *
- * Auth and syncable management is handled in the twist edit modal in Flutter,
- * removing the need for tools to create auth activities or selection UIs.
+ * Sources declare their provider, scopes, and channel lifecycle methods as
+ * class properties and methods. The Integrations tool reads these automatically.
+ * Auth and channel management is handled in the twist edit modal in Flutter.
  *
  * @example
  * ```typescript
- * class CalendarTool extends Tool<CalendarTool> {
- *   static readonly PROVIDER = AuthProvider.Google;
- *   static readonly SCOPES = ["https://www.googleapis.com/auth/calendar"];
+ * class CalendarSource extends Source<CalendarSource> {
+ *   readonly provider = AuthProvider.Google;
+ *   readonly scopes = ["https://www.googleapis.com/auth/calendar"];
  *
  *   build(build: ToolBuilder) {
  *     return {
- *       integrations: build(Integrations, {
- *         providers: [{
- *           provider: AuthProvider.Google,
- *           scopes: CalendarTool.SCOPES,
- *           getSyncables: this.getSyncables,
- *           onSyncEnabled: this.onSyncEnabled,
- *           onSyncDisabled: this.onSyncDisabled,
- *         }]
- *       }),
+ *       integrations: build(Integrations),
  *     };
  *   }
  *
- *   async getSyncables(auth: Authorization, token: AuthToken): Promise<Syncable[]> {
+ *   async getChannels(auth: Authorization, token: AuthToken): Promise<Channel[]> {
  *     const calendars = await this.listCalendars(token);
  *     return calendars.map(c => ({ id: c.id, title: c.name }));
+ *   }
+ *
+ *   async onChannelEnabled(channel: Channel) {
+ *     // Start syncing
+ *   }
+ *
+ *   async onChannelDisabled(channel: Channel) {
+ *     // Stop syncing
  *   }
  * }
  * ```
@@ -90,17 +100,25 @@ export abstract class Integrations extends ITool {
   }
 
   /**
-   * Retrieves an access token for a syncable resource.
+   * Retrieves an access token for a channel resource.
    *
-   * Returns the token of the user who enabled sync on the given syncable.
-   * If the syncable is not enabled or the token is expired/invalid, returns null.
+   * Returns the token of the user who enabled sync on the given channel.
+   * If the channel is not enabled or the token is expired/invalid, returns null.
    *
-   * @param provider - The OAuth provider
-   * @param syncableId - The syncable resource ID (e.g., calendar ID)
+   * @param channelId - The channel resource ID (e.g., calendar ID)
    * @returns Promise resolving to the access token or null
    */
+  abstract get(channelId: string): Promise<AuthToken | null>;
+  /**
+   * Retrieves an access token for a channel resource.
+   *
+   * @param provider - The OAuth provider (deprecated, ignored for single-provider sources)
+   * @param channelId - The channel resource ID (e.g., calendar ID)
+   * @returns Promise resolving to the access token or null
+   * @deprecated Use get(channelId) instead. The provider is implicit from the source.
+   */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract get(provider: AuthProvider, syncableId: string): Promise<AuthToken | null>;
+  abstract get(provider: AuthProvider, channelId: string): Promise<AuthToken | null>;
 
   /**
    * Execute a callback as a specific actor, requesting auth if needed.
@@ -127,7 +145,57 @@ export abstract class Integrations extends ITool {
     ...extraArgs: TArgs
   ): Promise<void>;
 
+  /**
+   * Saves a link with notes to the source's priority.
+   *
+   * Creates a thread+link pair. The thread is a lightweight container;
+   * the link holds the external entity data (source, meta, type, status, etc.).
+   *
+   * This method is available only to Sources (not regular Twists).
+   *
+   * @param link - The link with notes to save
+   * @returns Promise resolving to the saved thread's UUID
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveLink(link: NewLinkWithNotes): Promise<Uuid>;
+
+  /**
+   * Saves contacts to the source's priority.
+   *
+   * @param contacts - Array of contacts to save
+   * @returns Promise resolving to the saved actors
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveContacts(contacts: NewContact[]): Promise<Actor[]>;
+
+  /**
+   * Archives links matching the given filter that were created by this source.
+   *
+   * For each archived link's thread, if no other non-archived links remain,
+   * the thread is also archived.
+   *
+   * @param filter - Filter criteria for which links to archive
+   * @returns Promise that resolves when archiving is complete
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract archiveLinks(filter: ArchiveLinkFilter): Promise<void>;
+
 }
+
+/**
+ * Filter criteria for archiving links.
+ * All fields are optional; only provided fields are used for matching.
+ */
+export type ArchiveLinkFilter = {
+  /** Filter by channel ID */
+  channelId?: string;
+  /** Filter by link type (e.g., "issue", "pull_request") */
+  type?: string;
+  /** Filter by link status (e.g., "open", "closed") */
+  status?: string;
+  /** Filter by metadata fields (uses containment matching) */
+  meta?: Record<string, JSONValue>;
+};
 
 /**
  * Enumeration of supported OAuth providers.
