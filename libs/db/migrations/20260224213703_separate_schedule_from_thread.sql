@@ -111,10 +111,29 @@ DROP TRIGGER "set_thread_order_on_start_trigger" ON "public"."thread";
 
 -- 1. Migrate thread scheduling → schedule (shared schedules)
 -- Explicitly set user_id and order to NULL for shared schedules
+-- Handle dirty data:
+--   - schedule_recurrence_duration: recurrence_rule and duration must both be set or both NULL
+--     When recurrence_rule exists without duration, derive duration from at/on range
+--     When duration exists without recurrence_rule, clear duration
+--   - schedule_at_xor_on: exactly one of at/on must be set; prefer at when both exist
 INSERT INTO schedule (id, created_at, updated_at, archived_at, user_id, "order", "at", "on",
     recurrence_rule, duration, recurrence_exdates, thread_id)
-SELECT uuidv7(), t.created_at, t.updated_at, NULL, NULL, NULL, t.at, t."on",
-    t.recurrence_rule, t.duration, t.recurrence_exdates, t.id
+SELECT uuidv7(), t.created_at, t.updated_at, NULL, NULL, NULL,
+    CASE WHEN t.at IS NOT NULL THEN t.at ELSE NULL END,
+    CASE WHEN t.at IS NOT NULL THEN NULL ELSE t."on" END,
+    t.recurrence_rule,
+    CASE
+        WHEN t.recurrence_rule IS NOT NULL AND t.duration IS NULL THEN
+            CASE
+                WHEN t.at IS NOT NULL THEN upper(t.at) - lower(t.at)
+                WHEN t."on" IS NOT NULL THEN (upper(t."on") - lower(t."on")) * INTERVAL '1 day'
+                ELSE INTERVAL '1 hour'
+            END
+        WHEN t.recurrence_rule IS NULL AND t.duration IS NOT NULL THEN NULL
+        ELSE t.duration
+    END,
+    CASE WHEN t.recurrence_rule IS NOT NULL THEN t.recurrence_exdates ELSE NULL END,
+    t.id
 FROM thread t
 WHERE t.at IS NOT NULL OR t."on" IS NOT NULL;
 
