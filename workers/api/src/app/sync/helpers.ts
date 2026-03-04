@@ -34,6 +34,7 @@ export interface ReadParams {
   cursorId: string | null;
   archived: boolean | undefined;
   limit: number;
+  priorityId: string | null;
   priorityPath: string | null;
   threadId: string | null;
   rangeStart: string | null;
@@ -64,6 +65,7 @@ export function parseReadParams(c: Context<{ Bindings: Bindings }>): ReadParams 
     cursorId: c.req.query("cursor_id") || null,
     archived,
     limit,
+    priorityId: c.req.query("priority_id") || null,
     priorityPath: c.req.query("priority_path") || null,
     threadId: c.req.query("thread_id") || null,
     rangeStart: c.req.query("range_start") || null,

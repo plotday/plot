@@ -50,7 +50,7 @@ SELECT
     a.updated_by,
     COALESCE(a.archived_at, upe.archived_at) AS archived_at,
     a.priority_id,
-    a.priority_path,
+    upe.path AS priority_path,
     a.draft,
     a.private,
     a.title,
@@ -126,7 +126,7 @@ SELECT
     a.updated_by,
     COALESCE(a.archived_at, upe.archived_at, a.updated_at) AS archived_at,
     a.priority_id,
-    a.priority_path,
+    upe.path AS priority_path,
     a.draft,
     a.private,
     NULL::text AS title,
@@ -157,6 +157,7 @@ SELECT
     ua.archived_at,
     at.occurrence,
     at.updated_at,
+    ua.priority_id,
     ua.priority_path,
     at.tags
 FROM

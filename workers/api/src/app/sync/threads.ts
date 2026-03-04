@@ -16,6 +16,7 @@ threads.get("/sync/threads", async (c) => {
     cursorId,
     archived,
     limit,
+    priorityId,
     priorityPath,
     rangeStart,
     rangeEnd,
@@ -67,8 +68,12 @@ threads.get("/sync/threads", async (c) => {
       }
     }
 
-    // Priority path filter
-    if (priorityPath) {
+    // Priority filter: prefer ID-based lookup, fall back to path for backward compatibility
+    if (priorityId) {
+      query = query.where(
+        sql<boolean>`priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`
+      );
+    } else if (priorityPath) {
       query = query.where(
         sql<boolean>`priority_path <@ ${priorityPath}::ltree`
       );

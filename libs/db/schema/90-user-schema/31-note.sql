@@ -85,6 +85,7 @@ SELECT
     n.id,
     nt.updated_at,
     ua.archived_at,
+    ua.priority_id,
     ua.priority_path,
     nt.tags
 FROM

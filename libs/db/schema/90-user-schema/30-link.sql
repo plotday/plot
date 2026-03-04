@@ -25,7 +25,7 @@ SELECT
     l.meta,
     l.source_url,
     l.priority_id,
-    l.priority_path
+    upe.path AS priority_path
 FROM
     link_x l
     JOIN "user".priority_expanded upe ON l.priority_id = upe.priority_id;

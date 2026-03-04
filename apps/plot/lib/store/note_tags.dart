@@ -8,18 +8,17 @@ class NoteTags extends Table with SyncableTable, UuidTable {
 }
 
 class NoteTagsBase extends BaseTable {
-  NoteTagsBase({this.priorityPath, this.threadId})
+  NoteTagsBase({this.threadId})
     : super(
         table: 'user_note_tags',
         syncEndpoint: 'note-tags',
         name: "note_tags",
-        filterName: priorityPath ?? threadId?.toString(),
+        filterName: threadId?.toString(),
         order: 'updated_at',
         ascending:
             false, // Get latest items first for reverse chronological sync
       );
 
-  final String? priorityPath;
   final Uuid? threadId;
 
   @override
@@ -35,9 +34,6 @@ class NoteTagsBase extends BaseTable {
       initial: initial,
       archived: archived,
     );
-    if (priorityPath != null) {
-      params['priority_path'] = priorityPath!;
-    }
     return params;
   }
 

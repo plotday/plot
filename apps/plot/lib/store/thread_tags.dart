@@ -13,7 +13,7 @@ class ThreadTags extends Table with SyncableTable, UuidTable {
 }
 
 class ThreadTagsBase extends BaseTable {
-  ThreadTagsBase({this.priorityPath})
+  ThreadTagsBase({this.priorityId, this.priorityPath})
     : super(
         table: 'user_thread_tags',
         syncEndpoint: 'thread-tags',
@@ -24,6 +24,7 @@ class ThreadTagsBase extends BaseTable {
             false, // Get latest items first for reverse chronological sync
       );
 
+  final PriorityId? priorityId;
   final String? priorityPath;
 
   @override
@@ -39,8 +40,8 @@ class ThreadTagsBase extends BaseTable {
       initial: initial,
       archived: archived,
     );
-    if (priorityPath != null) {
-      params['priority_path'] = priorityPath!;
+    if (priorityId != null) {
+      params['priority_id'] = priorityId.toString();
     }
     return params;
   }

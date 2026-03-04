@@ -16,6 +16,7 @@ noteTags.get("/sync/note-tags", async (c) => {
     cursorId,
     archived,
     limit,
+    priorityId,
     priorityPath,
     rangeStart,
     rangeEnd,
@@ -43,7 +44,12 @@ noteTags.get("/sync/note-tags", async (c) => {
       query = query.where("archived_at", "is", null);
     }
 
-    if (priorityPath) {
+    // Priority filter: prefer ID-based lookup, fall back to path for backward compatibility
+    if (priorityId) {
+      query = query.where(
+        sql<boolean>`priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`
+      );
+    } else if (priorityPath) {
       query = query.where(
         sql<boolean>`priority_path <@ ${priorityPath}::ltree`
       );

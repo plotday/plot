@@ -876,7 +876,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Trigger sync
     if (triggerSync) {
-      Thread.pullAgenda(priorityToLoad.path, archived: state.showArchived == true);
+      Thread.pullAgenda(priorityToLoad.id, priorityToLoad.path, archived: state.showArchived == true);
     }
   }
 
@@ -914,7 +914,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Trigger sync
     if (triggerSync) {
-      Thread.pullActivityFeed(priorityToLoad.path, archived: state.showArchived == true);
+      Thread.pullActivityFeed(priorityToLoad.id, priorityToLoad.path, archived: state.showArchived == true);
     }
   }
 

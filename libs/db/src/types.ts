@@ -3207,6 +3207,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           id: string | null
+          priority_id: string | null
           priority_path: unknown
           tags: Json | null
           updated_at: string | null
@@ -3362,6 +3363,7 @@ export type Database = {
           archived_at: string | null
           id: string | null
           occurrence: string | null
+          priority_id: string | null
           priority_path: unknown
           tags: Json | null
           updated_at: string | null

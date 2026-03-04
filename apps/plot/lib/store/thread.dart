@@ -111,6 +111,7 @@ class RecurrenceRuleConverter extends TypeConverter<RecurrenceRule?, String?>
 
 class ThreadsBase extends BaseTable {
   ThreadsBase({
+    this.priorityId,
     this.priorityPath,
     this.initial = false,
     String? syncName,
@@ -127,6 +128,7 @@ class ThreadsBase extends BaseTable {
             : 200, // No limit for initial pull (active OR unread)
       );
 
+  final PriorityId? priorityId;
   final String? priorityPath;
   final bool initial;
 
@@ -143,8 +145,8 @@ class ThreadsBase extends BaseTable {
       initial: initial,
       archived: archived,
     );
-    if (priorityPath != null) {
-      params['priority_path'] = priorityPath!;
+    if (priorityId != null) {
+      params['priority_id'] = priorityId.toString();
     }
     return params;
   }
@@ -229,7 +231,7 @@ class ThreadsBase extends BaseTable {
 }
 
 class SchedulesBase extends BaseTable {
-  SchedulesBase({this.priorityPath})
+  SchedulesBase({this.priorityId, this.priorityPath})
     : super(
         table: 'user_schedule',
         syncEndpoint: 'schedules',
@@ -239,6 +241,7 @@ class SchedulesBase extends BaseTable {
         ascending: false,
       );
 
+  final PriorityId? priorityId;
   final String? priorityPath;
 
   @override
@@ -254,8 +257,8 @@ class SchedulesBase extends BaseTable {
       initial: initial,
       archived: archived,
     );
-    if (priorityPath != null) {
-      params['priority_path'] = priorityPath!;
+    if (priorityId != null) {
+      params['priority_id'] = priorityId.toString();
     }
     return params;
   }
@@ -386,6 +389,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// Pull one page of activity feed (backward from now).
   /// Uses SyncState entity "activity-feed:{priorityPath}" to track position.
   static Future<void> pullActivityFeed(
+    PriorityId? priorityId,
     Path? priorityPath, {
     bool archived = false,
   }) async {
@@ -393,6 +397,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     final pulledTo = await Store.get.pullTo(
       Store.get.threads,
       ThreadsBase(
+        priorityId: priorityId,
         priorityPath: path,
         syncName: 'activity-feed',
         sortBy: 'activity_at',
@@ -406,14 +411,14 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     await Store.get.pullTo(
       Store.get.schedules,
-      SchedulesBase(priorityPath: path),
+      SchedulesBase(priorityId: priorityId, priorityPath: path),
       pullTo: pulledTo,
       ascending: false,
       archived: archived,
     );
     await Store.get.pullTo(
       Store.get.threadTags,
-      ThreadTagsBase(priorityPath: path),
+      ThreadTagsBase(priorityId: priorityId, priorityPath: path),
       pullTo: pulledTo,
       ascending: false,
       archived: archived,
@@ -423,6 +428,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// Pull one page of agenda (forward from today).
   /// Uses SyncState entity "agenda:{priorityPath}" to track position.
   static Future<void> pullAgenda(
+    PriorityId? priorityId,
     Path? priorityPath, {
     bool archived = false,
   }) async {
@@ -430,6 +436,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     final pulledTo = await Store.get.pullTo(
       Store.get.threads,
       ThreadsBase(
+        priorityId: priorityId,
         priorityPath: path,
         syncName: 'agenda',
         sortBy: 'agenda_at',
@@ -443,14 +450,14 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     await Store.get.pullTo(
       Store.get.schedules,
-      SchedulesBase(priorityPath: path),
+      SchedulesBase(priorityId: priorityId, priorityPath: path),
       pullTo: pulledTo,
       ascending: true,
       archived: archived,
     );
     await Store.get.pullTo(
       Store.get.threadTags,
-      ThreadTagsBase(priorityPath: path),
+      ThreadTagsBase(priorityId: priorityId, priorityPath: path),
       pullTo: pulledTo,
       ascending: true,
       archived: archived,
