@@ -139,19 +139,27 @@ WHERE t.at IS NOT NULL OR t."on" IS NOT NULL;
 
 -- 2. Migrate thread_exception → schedule (occurrence exceptions)
 -- Inherit at/on from parent thread if exception doesn't have its own
-INSERT INTO schedule (id, created_at, updated_at, archived_at, "at", "on",
+-- Handle dirty data:
+--   - schedule_order_user: explicitly set user_id and order to NULL
+--   - schedule_at_xor_on: prefer at when both exist; skip if neither exists
+INSERT INTO schedule (id, created_at, updated_at, archived_at, user_id, "order", "at", "on",
     duration, occurrence, thread_id)
-SELECT uuidv7(), te.created_at, te.updated_at, te.archived_at,
-    COALESCE(te.at, t.at), COALESCE(te."on", t."on"),
+SELECT uuidv7(), te.created_at, te.updated_at, te.archived_at, NULL, NULL,
+    CASE WHEN COALESCE(te.at, t.at) IS NOT NULL THEN COALESCE(te.at, t.at) ELSE NULL END,
+    CASE WHEN COALESCE(te.at, t.at) IS NOT NULL THEN NULL ELSE COALESCE(te."on", t."on") END,
     te.duration, te.occurrence, te.thread_id
 FROM thread_exception te
-JOIN thread t ON t.id = te.thread_id;
+JOIN thread t ON t.id = te.thread_id
+WHERE COALESCE(te.at, t.at) IS NOT NULL OR COALESCE(te."on", t."on") IS NOT NULL;
 
 -- 3. Migrate thread_user_state → schedule (per-user schedules)
+-- Only migrate rows where "on" is set (schedule_at_xor_on requires exactly one of at/on)
+-- and where user_id and order are both set (schedule_order_user constraint)
 INSERT INTO schedule (id, created_at, updated_at, user_id, "order", "on", thread_id)
 SELECT uuidv7(), tus.updated_at, tus.updated_at, tus.user_id, tus."order",
     tus."on", tus.thread_id
-FROM thread_user_state tus;
+FROM thread_user_state tus
+WHERE tus.user_id IS NOT NULL AND tus."order" IS NOT NULL AND tus."on" IS NOT NULL;
 
 -- ============================================================
 -- END DATA MIGRATION
