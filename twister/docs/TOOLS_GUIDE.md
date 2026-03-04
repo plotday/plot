@@ -1159,6 +1159,6 @@ build(build: SourceBuilder) {
 
 ## Next Steps
 
-- **[Building Custom Tools](BUILDING_TOOLS.md)** - Create your own reusable tools
+- **[Building Sources](BUILDING_SOURCES.md)** - Build external service integrations
 - **[Runtime Environment](RUNTIME.md)** - Understanding execution constraints
 - **API Reference** - Explore detailed API docs in the sidebar

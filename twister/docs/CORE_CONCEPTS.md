@@ -65,10 +65,11 @@ export default class MyTwist extends Twist<MyTwist> {
 
 Use twists for:
 
-- **Integrations** - Connecting external services (Google Calendar, GitHub, Slack)
 - **Automations** - Automatic task creation, reminders, status updates
 - **Data Processing** - Analyzing and organizing activities
 - **Notifications** - Sending alerts based on conditions
+
+For external service integrations (Google Calendar, GitHub, Slack, etc.), build a **Source** instead. Sources extend `Source<T>` (which itself extends `Twist<T>`) and provide the OAuth and channel lifecycle needed for syncing external data. See [Building Sources](BUILDING_SOURCES.md).
 
 ---
 
@@ -92,15 +93,11 @@ Core Plot functionality provided by the Twist Creator:
 
 See the [Built-in Tools Guide](TOOLS_GUIDE.md) for complete documentation.
 
-#### 2. Custom Tools
+#### 2. Sources
 
-Tools you create or install from npm packages:
+External service integrations are built as Sources, which extend `Source<T>`. Sources declare OAuth providers, expose channels for users to enable/disable, and sync data from services like Google Calendar, Slack, GitHub, and more.
 
-- **External Service Integrations** - Google Calendar, Slack, GitHub
-- **Data Processors** - Text analysis, image processing
-- **Utilities** - Date formatting, validation
-
-See [Building Custom Tools](BUILDING_TOOLS.md) to create your own.
+See [Building Sources](BUILDING_SOURCES.md) to create your own.
 
 ### Declaring Tool Dependencies
 
@@ -758,5 +755,5 @@ await this.tools.plot.createActivity({
 ## Next Steps
 
 - **[Built-in Tools Guide](TOOLS_GUIDE.md)** - Learn about Plot, Store, AI, and more
-- **[Building Custom Tools](BUILDING_TOOLS.md)** - Create reusable tools
+- **[Building Sources](BUILDING_SOURCES.md)** - Build external service integrations
 - **[Runtime Environment](RUNTIME.md)** - Understand execution constraints

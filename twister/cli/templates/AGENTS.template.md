@@ -78,9 +78,7 @@ import {
   ThreadType,
 } from "@plotday/twister";
 import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
-// Import your tools:
-// import { GoogleCalendar } from "@plotday/tool-google-calendar";
-// import { Linear } from "@plotday/tool-linear";
+// Import your sources or tools as needed
 
 export default class MyTwist extends Twist<MyTwist> {
   build(build: ToolBuilder) {
@@ -132,31 +130,6 @@ For complete API documentation of built-in tools including all methods, types, a
 - `@plotday/twister/tools/twists` - Manage other Twists
 
 **Critical**: Never use instance variables for state. They are lost after function execution. Always use Store methods.
-
-### External Tools (Add to package.json)
-
-Add tool dependencies to `package.json`:
-
-```json
-{
-  "dependencies": {
-    "@plotday/twister": "workspace:^",
-    "@plotday/tool-google-calendar": "workspace:^"
-  }
-}
-```
-
-#### Available External Tools
-
-- `@plotday/tool-google-calendar`: Google Calendar sync (CalendarTool)
-- `@plotday/tool-outlook-calendar`: Outlook Calendar sync (CalendarTool)
-- `@plotday/tool-google-contacts`: Google Contacts sync (supporting tool)
-- `@plotday/tool-google-drive`: Google Drive sync (DocumentTool)
-- `@plotday/tool-gmail`: Gmail sync (MessagingTool)
-- `@plotday/tool-slack`: Slack sync (MessagingTool)
-- `@plotday/tool-linear`: Linear sync (ProjectTool)
-- `@plotday/tool-jira`: Jira sync (ProjectTool)
-- `@plotday/tool-asana`: Asana sync (ProjectTool)
 
 ## Lifecycle Methods
 

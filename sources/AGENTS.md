@@ -340,6 +340,7 @@ export class MySource extends Source<MySource> {
       notes: [{
         key: "description",  // Enables note upsert
         content: item.description || null,
+        contentType: item.descriptionHtml ? "html" as const : "text" as const,
         links: item.url ? [{
           type: LinkType.external,
           title: "Open in Service",
@@ -580,6 +581,61 @@ https://slack.com/app_redirect?channel=<id>&message_ts=<ts>  — Slack uses full
 "reply-<commentId>-<replyId>"    — Reply to a comment
 ```
 
+## HTML Content Handling
+
+**Never strip HTML tags locally.** When external APIs return HTML content, pass it through with `contentType: "html"` and let the server convert it to clean markdown. Local regex-based tag stripping produces broken encoding, loses link structure, and collapses whitespace.
+
+### Pattern
+
+```typescript
+// ✅ CORRECT: Pass raw HTML with contentType
+const note = {
+  key: "description",
+  content: item.bodyHtml,             // Raw HTML from API
+  contentType: "html" as const,       // Server converts to markdown
+};
+
+// ✅ CORRECT: Use plain text when that's what you have
+const note = {
+  key: "description",
+  content: item.bodyText,
+  contentType: "text" as const,
+};
+
+// ❌ WRONG: Stripping HTML locally
+const stripped = html.replace(/<[^>]+>/g, " ").trim();
+const note = { content: stripped };    // Broken encoding, lost links
+```
+
+### When APIs provide both HTML and plain text
+
+Prefer HTML — the server-side `toMarkdown()` conversion (via Cloudflare AI) produces cleaner output with proper links, formatting, and character encoding. Only use plain text if no HTML is available.
+
+```typescript
+function extractBody(part: MessagePart): { content: string; contentType: "text" | "html" } {
+  // Prefer HTML for server-side conversion
+  const htmlPart = findPart(part, "text/html");
+  if (htmlPart) return { content: decode(htmlPart), contentType: "html" };
+
+  const textPart = findPart(part, "text/plain");
+  if (textPart) return { content: decode(textPart), contentType: "text" };
+
+  return { content: "", contentType: "text" };
+}
+```
+
+### Previews
+
+For `preview` fields on threads/links, use a plain-text source (like Gmail's `snippet` or a truncated title) — never raw HTML. Previews are displayed directly and are not processed by the server.
+
+### ContentType values
+
+| Value | Meaning |
+|-------|---------|
+| `"text"` | Plain text — auto-links URLs, preserves line breaks |
+| `"markdown"` | Already markdown (default if omitted) |
+| `"html"` | HTML — converted to markdown server-side |
+
 ## Sync Metadata Injection
 
 **Every synced activity MUST include sync metadata** in `activity.meta` for bulk operations (e.g., archiving all activities when a sync is disabled):
@@ -601,7 +657,9 @@ async onChannelDisabled(filter: ActivityFilter): Promise<void> {
 }
 ```
 
-## Initial vs. Incremental Sync
+## Initial vs. Incremental Sync (REQUIRED)
+
+**Every source MUST track whether it is performing an initial sync (first import) or an incremental sync (ongoing updates).** Omitting this causes notification spam from bulk historical imports.
 
 | Field | Initial Sync | Incremental Sync | Reason |
 |-------|-------------|------------------|--------|
@@ -615,6 +673,43 @@ const activity = {
   ...(initialSync ? { archived: false } : {}),
 };
 ```
+
+### How to propagate the flag
+
+The `initialSync` flag must flow from the entry point (`onChannelEnabled` / `startSync`) through every batch to the point where activities are created. There are two patterns:
+
+**Pattern A: Store in SyncState** (used in the scaffold above)
+
+The scaffold's `SyncState` type includes `initialSync: boolean`. Set it to `true` in `startBatchSync`, read it in `syncBatch`, and preserve it across batches. Webhook/incremental handlers pass `false`.
+
+**Pattern B: Pass as callback argument** (used by sources like Gmail that don't store `initialSync` in state)
+
+Pass `initialSync` as an explicit argument through `this.callback()`:
+
+```typescript
+// onChannelEnabled — initial sync
+const syncCallback = await this.callback(this.syncBatch, 1, "full", channel.id, true);
+
+// startIncrementalSync — not initial
+const syncCallback = await this.callback(this.syncBatch, 1, "incremental", channelId, false);
+
+// syncBatch — accept and propagate the flag
+async syncBatch(
+  batchNumber: number,
+  mode: "full" | "incremental",
+  channelId: string,
+  initialSync?: boolean  // optional for backward compat with old serialized callbacks
+): Promise<void> {
+  const isInitial = initialSync ?? (mode === "full");  // safe default for old callbacks
+  // ... pass isInitial to processItems and to next batch callback
+}
+```
+
+**Whichever pattern you use, verify that ALL entry points set the flag correctly:**
+- `onChannelEnabled` → `true` (first import)
+- `startSync` → `true` (manual full sync)
+- Webhook / incremental handler → `false`
+- Next batch callback → propagate current value
 
 ## Webhook Patterns
 
@@ -773,8 +868,10 @@ After creating a new source, add it to `pnpm-workspace.yaml` if not already cove
 - [ ] Verify webhook signatures
 - [ ] Use canonical `source` URLs for activity upserts (immutable IDs)
 - [ ] Use `note.key` for note-level upserts
+- [ ] Set `contentType: "html"` on notes with HTML content — **never strip HTML locally**
 - [ ] Inject `syncProvider` and `channelId` into `activity.meta`
-- [ ] Handle `initialSync` flag: `unread: false` and `archived: false` for initial, omit both for incremental
+- [ ] Set `created` on notes using the external system's timestamp (not sync time)
+- [ ] Handle `initialSync` flag in **every sync entry point**: `onChannelEnabled`/`startSync` set `true`, webhooks/incremental set `false`, and the flag is propagated through all batch callbacks to where activities are created. Set `unread: false` and `archived: false` for initial, omit both for incremental
 - [ ] Create contacts for authors/assignees with `NewContact`
 - [ ] Clean up all stored state and callbacks in `stopSync()` and `onChannelDisabled()`
 - [ ] Add `package.json` with correct structure, `tsconfig.json`, and `src/index.ts` re-export
@@ -786,14 +883,17 @@ After creating a new source, add it to `pnpm-workspace.yaml` if not already cove
 2. **❌ Storing functions with `this.set()`** — Convert to tokens first
 3. **❌ Not validating callback token exists** — Always check before `callbacks.run()`
 4. **❌ Forgetting sync metadata** — Always inject `syncProvider` and `channelId` into `activity.meta`
-5. **❌ Using mutable IDs in `source`** — Use immutable IDs (Jira issue ID, not issue key)
-6. **❌ Not breaking loops into batches** — Each execution has ~1000 request limit
-7. **❌ Missing localhost guard** — Webhook registration fails silently on localhost
-8. **❌ Calling `plot.createThread()` from a source** — Sources save data directly via `integrations.saveLink()`
-9. **❌ Breaking callback signatures** — Old callbacks auto-upgrade; add optional params at end only
-10. **❌ Passing `undefined` in serializable values** — Use `null` instead
-11. **❌ Forgetting to clean up on disable** — Delete callbacks, webhooks, and stored state
-12. **❌ Two-way sync without metadata correlation** — Embed Plot ID in external item metadata to prevent duplicates from race conditions (see SYNC_STRATEGIES.md §6)
+5. **❌ Not propagating `initialSync` through the full sync pipeline** — The flag must flow from the entry point (`onChannelEnabled`/`startSync` → `true`, webhook → `false`) through every batch callback to where activities are created. Missing this causes notification spam from bulk historical imports
+6. **❌ Using mutable IDs in `source`** — Use immutable IDs (Jira issue ID, not issue key)
+7. **❌ Not breaking loops into batches** — Each execution has ~1000 request limit
+8. **❌ Missing localhost guard** — Webhook registration fails silently on localhost
+9. **❌ Calling `plot.createThread()` from a source** — Sources save data directly via `integrations.saveLink()`
+10. **❌ Breaking callback signatures** — Old callbacks auto-upgrade; add optional params at end only
+11. **❌ Passing `undefined` in serializable values** — Use `null` instead
+12. **❌ Forgetting to clean up on disable** — Delete callbacks, webhooks, and stored state
+13. **❌ Two-way sync without metadata correlation** — Embed Plot ID in external item metadata to prevent duplicates from race conditions (see SYNC_STRATEGIES.md §6)
+14. **❌ Stripping HTML tags locally** — Pass raw HTML with `contentType: "html"` for server-side conversion. Local regex stripping breaks encoding and loses links
+15. **❌ Not setting `created` on notes from external data** — Always pass the external system's timestamp (e.g., `internalDate` from Gmail, `created_at` from an API) as the note's `created` field. Omitting it defaults to sync time, making all notes appear to have been created "just now"
 
 ## Study These Examples
 
@@ -802,7 +902,7 @@ After creating a new source, add it to `pnpm-workspace.yaml` if not already cove
 | `linear/` | ProjectSource | Clean reference implementation, webhook handling, bidirectional sync |
 | `google-calendar/` | CalendarSource | Recurring events, RSVP write-back, watch renewal, cross-source auth sharing |
 | `slack/` | MessagingSource | Team-sharded webhooks, thread model, Slack-specific auth |
-| `gmail/` | MessagingSource | PubSub webhooks, email thread transformation |
+| `gmail/` | MessagingSource | PubSub webhooks, email thread transformation, HTML contentType, callback-arg initialSync pattern |
 | `google-drive/` | DocumentSource | Document comments, reply threading, file watching |
 | `jira/` | ProjectSource | Immutable vs mutable IDs, comment metadata for dedup |
 | `asana/` | ProjectSource | HMAC webhook verification, section-based projects |

@@ -68,30 +68,9 @@ build(build: ToolBuilder) {
 - **Callbacks**: Create persistent function references for webhooks
 - **Network**: HTTP access permissions and webhook management
 
-#### External Tools
+#### Sources
 
-Add external tool dependencies to `package.json`:
-
-```json
-{
-  "dependencies": {
-    "@plotday/twister": "workspace:^",
-    "@plotday/tool-google-calendar": "workspace:^"
-  }
-}
-```
-
-Then use them in your twist:
-
-```typescript
-import GoogleCalendarTool from "@plotday/tool-google-calendar";
-
-build(build: ToolBuilder) {
-  return {
-    googleCalendar: build(GoogleCalendarTool),
-  };
-}
-```
+External service integrations (Google Calendar, Slack, Linear, etc.) are built as Sources. See the [Building Sources](https://twist.plot.day/documents/Building_Sources.html) guide.
 
 ### Activity Types
 

@@ -30,7 +30,7 @@ All types in `twister/src/` with full JSDoc:
 ## Additional Resources
 
 - **Full Documentation**: <https://twist.plot.day>
-- **Building Sources Guide**: `twister/docs/BUILDING_TOOLS.md`
+- **Building Sources Guide**: `sources/AGENTS.md`
 - **Runtime Environment**: `twister/docs/RUNTIME.md`
 - **Tools Guide**: `twister/docs/TOOLS_GUIDE.md`
 - **Multi-User Auth**: `twister/docs/MULTI_USER_AUTH.md`
@@ -43,8 +43,9 @@ All types in `twister/src/` with full JSDoc:
 2. **❌ Long-running operations without batching** — Break into chunks with `runTask()` (~1000 requests per execution)
 3. **❌ Passing functions to `this.callback()`** — See `sources/AGENTS.md` for callback serialization pattern
 4. **❌ Forgetting sync metadata** — Always inject `syncProvider` and `channelId` into `thread.meta`
-5. **❌ Not handling initial vs incremental sync** — `unread: false` for initial, omit for incremental
+5. **❌ Not handling initial vs incremental sync** — Propagate `initialSync` flag from entry point (`onChannelEnabled` → `true`, webhook → `false`) through all batch callbacks. Set `unread: false` and `archived: false` for initial, omit for incremental
 6. **❌ Missing localhost guard in webhooks** — Skip webhook registration when URL contains "localhost"
+7. **❌ Stripping HTML tags locally** — Pass raw HTML with `contentType: "html"` for server-side markdown conversion
 
 ---
 
