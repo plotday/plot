@@ -1,0 +1,14 @@
+#!/bin/bash
+# MCP server wrapper for readonly production database access.
+# POSTGRES_PASSWORD must be set in the environment (via pnpm claude-prod).
+# Start proxy with: pnpm --filter @plotday/db prod-db-connect
+
+if ! nc -z localhost 5433 2>/dev/null; then
+  exit 1
+fi
+
+if [ -z "$POSTGRES_PASSWORD" ]; then
+  exit 1
+fi
+
+exec /opt/homebrew/bin/toolbox --prebuilt postgres --stdio

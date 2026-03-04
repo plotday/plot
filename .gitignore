@@ -36,8 +36,11 @@ coverage
 .nx/cache
 .nx/workspace-data
 
-.claude
-.mcp.json
+# Claude Code - personal/ephemeral only
+**/.claude/settings.local.json
+.claude/plans/
+.claude/.cache/
+.claude/worktrees/
 
 # Ruby bundler (for Fastlane)
 .bundle/
