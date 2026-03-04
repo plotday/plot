@@ -21,7 +21,7 @@ import 'package:plot/widget/time_range_input.dart';
 ///
 /// ```dart
 /// final modal = Modal(
-///   header: Text('Schedule Activity'),
+///   header: Text('Schedule Thread'),
 ///   constraints: BoxConstraints(maxHeight: 500, maxWidth: 750),
 ///   builder: (context) {
 ///     DateTimeRange range = DateTimeRange(

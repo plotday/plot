@@ -2,7 +2,7 @@ import { Hono } from "hono";
 
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
-import { parseReadParams } from "./helpers";
+import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { rpcUser } from "../../rpc";
 import { notifySync, notifyUserSync } from "./notify";
 
@@ -22,19 +22,13 @@ priorities.get("/sync/priorities", async (c) => {
 
     // Apply sort
     if (updatedSince) {
-      query = query.orderBy("updated_at", "asc").orderBy("id", "asc");
+      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
     } else {
       query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
     }
 
     if (updatedSince) {
-      if (cursorId) {
-        query = query.where(
-          sql<boolean>`(updated_at > ${updatedSince}::timestamptz OR (updated_at = ${updatedSince}::timestamptz AND id > ${cursorId}))`
-        );
-      } else {
-        query = query.where(sql<boolean>`updated_at > ${updatedSince}::timestamptz`);
-      }
+      query = query.where(updatedSinceCursor(updatedSince, cursorId));
     }
 
     if (archived === true) {

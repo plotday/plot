@@ -1,7 +1,7 @@
 import type { Note } from "@plotday/twister/plot";
 
 import { createLogger } from "@plotday/worker-util";
-import { createNote } from "./activity";
+import { createNote } from "./thread";
 import type { Plot } from "./index";
 
 const MENU_INTENT = `Describe what this twist can do. Example: "What can you do?"`;
@@ -115,7 +115,7 @@ export async function handleIntent(
   if (!matchedIntent) {
     // No intent matched - create a reply note
     await createNote(plot, {
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content:
         "I didn't recognize what you're asking for. Try asking me 'What can you do?' to see what I can help with.",
     });
@@ -198,7 +198,7 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this twist can
 
   // Create reply note with the description
   await createNote(plot, {
-    activity: { id: note.activity.id },
+    thread: { id: note.thread.id },
     content: description,
   });
 }
@@ -218,7 +218,7 @@ async function handleRemoveTwist(plot: Plot, note: Note): Promise<void> {
 
     // Create farewell note
     await createNote(plot, {
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content:
         "I've been removed from this priority. You can add me back anytime if you need me!",
     });
@@ -228,7 +228,7 @@ async function handleRemoveTwist(plot: Plot, note: Note): Promise<void> {
 
     // Create error note
     await createNote(plot, {
-      activity: { id: note.activity.id },
+      thread: { id: note.thread.id },
       content: `There was an error removing me: ${
         error instanceof Error ? error.message : "Unknown error"
       }`,

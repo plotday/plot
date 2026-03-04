@@ -36,12 +36,19 @@ export async function addContacts(
 
   if (contacts.length === 0) return [];
 
-  const normalizedContacts = contacts.map((contact) => ({
-    email: contact.email.toLowerCase(),
-    name: normalizeName(contact.name),
-    avatar: contact.avatar,
-    source: contact.source,
-  }));
+  const normalizedContacts = Object.values(
+    Object.fromEntries(
+      contacts.map((contact) => [
+        contact.email.toLowerCase(),
+        {
+          email: contact.email.toLowerCase(),
+          name: normalizeName(contact.name),
+          avatar: contact.avatar,
+          source: contact.source,
+        },
+      ])
+    )
+  );
 
   const contactsToUpsert = normalizedContacts.map((contact) => ({
     email: contact.email,

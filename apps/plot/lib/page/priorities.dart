@@ -1,4 +1,5 @@
 import 'package:auto_route/auto_route.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
@@ -56,104 +57,202 @@ class PrioritiesPage extends StatelessWidget {
               scrollable: false,
               body: BlocBuilder<LayoutBloc, LayoutState>(
                 builder: (context, layoutState) {
-                  return Column(
-                    children: [
-                      Expanded(
-                        child: BlocBuilder<PrioritiesBloc, PrioritiesState>(
-                          builder: (builderContext, state) {
-                            return BlocBuilder<NowBloc, NowState>(
-                              builder: (builderContext, nowState) {
-                                return PrioritiesList(
+                  return BlocBuilder<PrioritiesBloc, PrioritiesState>(
+                    builder: (builderContext, state) {
+                      return BlocBuilder<NowBloc, NowState>(
+                        builder: (builderContext, nowState) {
+                          final selected = nowState is NowLoaded
+                              ? nowState.context
+                              : null;
+                          final plotPriority = state.root?.children
+                              .firstWhereOrNull((p) => p.key == '@plot');
+
+                          return Column(
+                            children: [
+                              Expanded(
+                                child: PrioritiesList(
                                   root: state.root!,
                                   priorities: state.priorities,
-                                  selected: nowState is NowLoaded
-                                      ? nowState.context
-                                      : null,
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                      if (layoutState.multiPanel)
-                        FAnimatedTheme(
-                          data: darkenTheme(
-                            context,
-                            context.theme,
-                            context.colour,
-                            steps: 2,
-                          ),
-                          child: Builder(
-                            builder: (context) => DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: context.theme.colors.background,
-                                border: Border(
-                                  top: BorderSide(
-                                    color: context.theme.colors.border,
-                                    width: 0.5,
-                                  ),
+                                  selected: selected,
+                                  showPlotSection: !layoutState.multiPanel,
                                 ),
                               ),
-                              child: Column(
-                                children: [
-                                  SizedBox(height: 8),
-                                  ValueListenableBuilder<bool>(
-                                    valueListenable: BroadcastClient
-                                        .instance
-                                        .connectionState,
-                                    builder: (context, isConnected, _) {
-                                      if (isConnected) {
-                                        return ListTile(
-                                          title: 'Twists',
-                                          textStyle:
-                                              context.theme.typography.sm,
-                                          icon: PlotIcon.twist,
-                                          command: CommandWrapper(
-                                            ManageTwists(),
-                                            icon: Value(null),
+                              if (layoutState.multiPanel)
+                                FAnimatedTheme(
+                                  data: darkenTheme(
+                                    context,
+                                    context.theme,
+                                    context.colour,
+                                    steps: 2,
+                                  ),
+                                  child: Builder(
+                                    builder: (context) => DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color: context.theme.colors.background,
+                                        border: Border(
+                                          top: BorderSide(
+                                            color: context.theme.colors.border,
+                                            width: 0.5,
                                           ),
-                                        );
-                                      }
-                                      return ListTile(
-                                        title: 'Offline',
-                                        textStyle: context.theme.typography.sm,
-                                        icon: PlotIcon.offline,
-                                        command: CommandWrapper(
-                                          ShowOfflineInfo(),
-                                          icon: Value(null),
                                         ),
-                                      );
-                                    },
+                                      ),
+                                      child: Builder(
+                                        builder: (context) {
+                                          // Extract @plot children by key
+                                          final gettingStarted = plotPriority
+                                              ?.children
+                                              .firstWhereOrNull(
+                                                (c) => c.key == '@plot.getting-started',
+                                              );
+                                          final helpFeedback = plotPriority
+                                              ?.children
+                                              .firstWhereOrNull(
+                                                (c) => c.key?.startsWith('@help-feedback') == true,
+                                              );
+                                          final twistDev = plotPriority
+                                              ?.children
+                                              .firstWhereOrNull(
+                                                (c) => c.key == '@plot.twist-dev',
+                                              );
+
+                                          return Column(
+                                            children: [
+                                              SizedBox(height: 8),
+                                              // 1. Getting Started
+                                              if (gettingStarted != null &&
+                                                  gettingStarted.archivedAt == null)
+                                                ListTile(
+                                                  title: 'Getting Started',
+                                                  textStyle: context.theme.typography.sm,
+                                                  icon: PlotIcon.gettingStarted,
+                                                  selected: selected?.id == gettingStarted.id,
+                                                  selectedBorder: false,
+                                                  command: CommandWrapper(
+                                                    ChangeCurrentPriority(gettingStarted),
+                                                    icon: Value(null),
+                                                    subtitle: Value(null),
+                                                  ),
+                                                ),
+                                              // 2. Connections + Twists
+                                              ValueListenableBuilder<bool>(
+                                                valueListenable: BroadcastClient
+                                                    .instance
+                                                    .connectionState,
+                                                builder: (context, isConnected, _) {
+                                                  if (isConnected) {
+                                                    return ListTile(
+                                                      title: 'Connections + Twists',
+                                                      textStyle: context
+                                                          .theme
+                                                          .typography
+                                                          .sm,
+                                                      icon: PlotIcon.connection,
+                                                      command: CommandWrapper(
+                                                        ManageConnectionsAndTwists(),
+                                                        icon: Value(null),
+                                                      ),
+                                                    );
+                                                  }
+                                                  return ListTile(
+                                                    title: 'Offline',
+                                                    textStyle:
+                                                        context.theme.typography.sm,
+                                                    icon: PlotIcon.offline,
+                                                    command: CommandWrapper(
+                                                      ShowOfflineInfo(),
+                                                      icon: Value(null),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                              // 3. Twist Development
+                                              if (twistDev != null &&
+                                                  twistDev.archivedAt == null)
+                                                ListTile(
+                                                  title: 'Twist Development',
+                                                  textStyle: context.theme.typography.sm,
+                                                  icon: PlotIcon.code,
+                                                  selected: selected?.id == twistDev.id,
+                                                  selectedBorder: false,
+                                                  command: CommandWrapper(
+                                                    ChangeCurrentPriority(twistDev),
+                                                    icon: Value(null),
+                                                    subtitle: Value(null),
+                                                  ),
+                                                ),
+                                              // 4. Help + Feedback
+                                              if (helpFeedback != null &&
+                                                  helpFeedback.archivedAt == null)
+                                                ListTile(
+                                                  title: 'Help + Feedback',
+                                                  textStyle: context.theme.typography.sm,
+                                                  icon: PlotIcon.help,
+                                                  selected: selected?.id == helpFeedback.id,
+                                                  selectedBorder: false,
+                                                  command: CommandWrapper(
+                                                    ChangeCurrentPriority(helpFeedback),
+                                                    icon: Value(null),
+                                                    subtitle: Value(null),
+                                                  ),
+                                                  leadingBuilder: (isHovered, hasFocus) =>
+                                                      SizedBox(
+                                                        width: 20,
+                                                        child: helpFeedback.unread
+                                                            ? Center(
+                                                                child: Container(
+                                                                  width: 6.0,
+                                                                  height: 6.0,
+                                                                  decoration: BoxDecoration(
+                                                                    color: context.theme.colors.foreground,
+                                                                    shape: BoxShape.circle,
+                                                                  ),
+                                                                ),
+                                                              )
+                                                            : null,
+                                                      ),
+                                                ),
+                                              // 5. Account
+                                              BlocBuilder<UserBloc, UserState>(
+                                                builder: (context, userState) {
+                                                  if (userState is UserReady) {
+                                                    final userName =
+                                                        userState.user.name ??
+                                                        userState
+                                                            .user
+                                                            .primaryEmail ??
+                                                        'User';
+                                                    return ListTile(
+                                                      title: userName,
+                                                      subtitle: userState
+                                                          .user
+                                                          .primaryEmail,
+                                                      textStyle: context
+                                                          .theme
+                                                          .typography
+                                                          .sm,
+                                                      icon: PlotIcon.account,
+                                                      command: CommandWrapper(
+                                                        ShowSettings(),
+                                                        icon: Value(null),
+                                                      ),
+                                                    );
+                                                  }
+                                                  return const SizedBox.shrink();
+                                                },
+                                              ),
+                                              SizedBox(height: 12),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    ),
                                   ),
-                                  BlocBuilder<UserBloc, UserState>(
-                                    builder: (context, userState) {
-                                      if (userState is UserReady) {
-                                        final userName =
-                                            userState.user.name ??
-                                            userState.user.primaryEmail ??
-                                            'User';
-                                        return ListTile(
-                                          title: userName,
-                                          subtitle: userState.user.primaryEmail,
-                                          textStyle:
-                                              context.theme.typography.sm,
-                                          icon: PlotIcon.settings,
-                                          command: CommandWrapper(
-                                            ShowSettings(),
-                                            icon: Value(null),
-                                          ),
-                                        );
-                                      }
-                                      return const SizedBox.shrink();
-                                    },
-                                  ),
-                                  SizedBox(height: 12),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
+                                ),
+                            ],
+                          );
+                        },
+                      );
+                    },
                   );
                 },
               ),

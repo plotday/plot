@@ -8,26 +8,12 @@ part of 'store.dart';
  */
 enum Tag {
   // Compute tags
-  now(
+  todo(
     1,
-    PlotIcon.now,
-    'Do Now',
+    PlotIcon.todo,
+    'Todo',
     type: TagType.compute,
-    shortcodes: ['do', 'arrow_forward'],
-  ),
-  later(
-    2,
-    PlotIcon.later,
-    'Do Later',
-    type: TagType.compute,
-    shortcodes: ['later', 'alarm_clock'],
-  ),
-  someday(
-    7,
-    PlotIcon.someday,
-    'Do Someday',
-    type: TagType.compute,
-    shortcodes: ['someday'],
+    shortcodes: ['todo', 'do'],
   ),
   done(
     3,
@@ -69,7 +55,6 @@ enum Tag {
 
   // Toggle tags
   pinned(100, PlotIcon.pinned, 'Pinned', shortcodes: ['pushpin']),
-  inbox(102, PlotIcon.todo, 'Inbox', shortcodes: ['todo', 'inbox_tray']),
   decision(
     104,
     PlotIcon.decision,
@@ -198,27 +183,6 @@ enum Tag {
     'Sad',
     type: TagType.count,
     shortcodes: ['sad', 'cry'],
-  ),
-  attend(
-    1019,
-    PlotIcon.attend,
-    'Attend',
-    type: TagType.count,
-    shortcodes: ['attend', 'yes', 'person_gesturing_ok'],
-  ),
-  skip(
-    1020,
-    PlotIcon.skip,
-    'Skip',
-    type: TagType.count,
-    shortcodes: ['skip', 'no', 'no_good'],
-  ),
-  undecided(
-    1021,
-    PlotIcon.undecided,
-    'Undecided',
-    type: TagType.count,
-    shortcodes: ['undecided', 'shrug', 'person_shrugging'],
   );
 
   final int id;
@@ -251,12 +215,6 @@ enum Tag {
           (icon != null && !tag._hidden && tag.icon == icon),
     );
   }
-
-  // Check if this tag is an RSVP tag (mutually exclusive)
-  bool get isRsvp => this == Tag.attend || this == Tag.skip || this == Tag.undecided;
-
-  // Get all RSVP tags (for removal during exclusivity enforcement)
-  static List<Tag> get rsvpTags => [Tag.attend, Tag.skip, Tag.undecided];
 
   @override
   String toString() => name;

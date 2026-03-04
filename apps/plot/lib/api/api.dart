@@ -132,7 +132,7 @@ Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
   }
 }
 
-Future<T> put<T>(String url, {Map<String, dynamic> body = const {}}) async {
+Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
   try {
     final response = await http.put(
       Uri.parse(Env.apiRoot + url),

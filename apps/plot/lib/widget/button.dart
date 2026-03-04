@@ -2,8 +2,13 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
+import 'package:prism_flutter/prism_flutter.dart';
+
 import 'package:plot/command/command.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/util/shortcut.dart';
+import 'package:plot/util/platform.dart';
 import 'spinner.dart';
 
 enum ButtonStyle { primary, secondary, ghost }
@@ -19,6 +24,7 @@ class Button extends StatefulWidget {
     super.key,
   }) : iconOnly = false,
        style = ButtonStyle.secondary,
+       color = null,
        forceHover = false;
 
   const Button.primary(
@@ -31,6 +37,7 @@ class Button extends StatefulWidget {
        iconOnly = false,
        selected = false,
        selectedColor = null,
+       color = null,
        forceHover = false;
 
   const Button.ghost(
@@ -43,6 +50,7 @@ class Button extends StatefulWidget {
     super.key,
   }) : style = ButtonStyle.ghost,
        iconOnly = false,
+       color = null,
        forceHover = false;
 
   const Button.icon(
@@ -52,6 +60,7 @@ class Button extends StatefulWidget {
     this.enabled = true,
     this.selected = false,
     this.selectedColor,
+    this.color,
     this.forceHover = false,
     super.key,
   }) : iconOnly = true,
@@ -62,6 +71,8 @@ class Button extends StatefulWidget {
   final bool enabled;
   final bool selected;
   final Color? selectedColor;
+  /// Color override for non-selected state icon/text.
+  final Color? color;
   final bool forceHover;
   final bool iconOnly;
   final bool expand;
@@ -79,64 +90,167 @@ class _ButtonState extends State<Button> {
     FBaseButtonStyle Function(FButtonStyle) fStyle;
     if (widget.selected) {
       fStyle = (baseStyle) {
-        final selectedStyle = switch (widget.style) {
-          ButtonStyle.primary => context.theme.buttonStyles.primary,
-          ButtonStyle.secondary => context.theme.buttonStyles.outline,
-          ButtonStyle.ghost => context.theme.buttonStyles.ghost,
-        };
-        final color = widget.selectedColor ?? context.theme.colors.primary;
-        var result = selectedStyle.copyWith(
-          // ignore: unused_result
-          contentStyle: selectedStyle.contentStyle.copyWith(
-            textStyle: selectedStyle.contentStyle.textStyle.map(
-              (style) => style.copyWith(color: color),
-            ),
-            iconStyle: selectedStyle.iconContentStyle.iconStyle.map(
-              (style) => style.copyWith(color: color),
-            ),
-          ),
-          // ignore: unused_result
-          iconContentStyle: selectedStyle.iconContentStyle.copyWith(
-            iconStyle: selectedStyle.iconContentStyle.iconStyle.map(
-              (style) => style.copyWith(color: color),
-            ),
-          ),
-        );
+        // Ghost selected: keep ghost decoration, just color the text/icon
+        // Primary/secondary selected: use primary style (tint background)
+        var style = widget.style == ButtonStyle.ghost
+            ? context.theme.buttonStyles.ghost
+            : context.theme.buttonStyles.primary;
 
-        // Apply circular border radius for icon buttons
         if (widget.iconOnly) {
-          result = result.copyWith(
-            decoration: result.decoration.map(
-              (decoration) =>
-                  decoration.copyWith(borderRadius: BorderRadius.circular(999)),
+          style = style.copyWith(
+            decoration: style.decoration.map(
+              (d) => d.copyWith(borderRadius: BorderRadius.circular(999)),
             ),
           );
         }
 
-        return result;
+        final color = widget.selectedColor ?? context.theme.colors.primary;
+
+        if (widget.style == ButtonStyle.ghost) {
+          // Ghost selected: override text/icon color only
+          final hoverColor = Color.lerp(
+            color,
+            context.colour.foreground,
+            0.3,
+          );
+          style = style.copyWith(
+            // ignore: unused_result
+            contentStyle: style.contentStyle.copyWith(
+              textStyle: FWidgetStateMap({
+                WidgetState.hovered | WidgetState.pressed:
+                    style.contentStyle.textStyle
+                        .resolve({WidgetState.hovered})
+                        .copyWith(color: hoverColor),
+                WidgetState.any: style.contentStyle.textStyle
+                    .resolve({})
+                    .copyWith(color: color),
+              }),
+              iconStyle: FWidgetStateMap({
+                WidgetState.hovered | WidgetState.pressed:
+                    style.contentStyle.iconStyle
+                        .resolve({WidgetState.hovered})
+                        .copyWith(color: hoverColor),
+                WidgetState.any: style.contentStyle.iconStyle
+                    .resolve({})
+                    .copyWith(color: color),
+              }),
+            ),
+            // ignore: unused_result
+            iconContentStyle: style.iconContentStyle.copyWith(
+              iconStyle: FWidgetStateMap({
+                WidgetState.hovered | WidgetState.pressed:
+                    style.iconContentStyle.iconStyle
+                        .resolve({WidgetState.hovered})
+                        .copyWith(color: hoverColor),
+                WidgetState.any: style.iconContentStyle.iconStyle
+                    .resolve({})
+                    .copyWith(color: color),
+              }),
+            ),
+          );
+        } else if (widget.selectedColor != null) {
+          // Primary/secondary selected with custom color: tint with selectedColor
+          final oklch = widget.selectedColor!.toRayRgb8().toOklch();
+          final colourScheme = context.colour;
+          final isLight = colourScheme.brightness == Brightness.light;
+
+          final bgColor = oklch
+              .withLightness(isLight ? 0.94 : 0.26)
+              .withChroma(isLight ? 0.04 : 0.03)
+              .toColor();
+          final hoverBgColor = oklch
+              .withLightness(isLight ? 0.90 : 0.30)
+              .withChroma(isLight ? 0.06 : 0.05)
+              .toColor();
+          final borderColor = oklch.withOpacity(0.35).toColor();
+          final hoverBorderColor = oklch.withOpacity(0.5).toColor();
+          final fgColor = widget.selectedColor!;
+
+          style = style.copyWith(
+            // ignore: unused_result
+            decoration: FWidgetStateMap({
+              WidgetState.hovered | WidgetState.pressed: BoxDecoration(
+                borderRadius: widget.iconOnly
+                    ? BorderRadius.circular(999)
+                    : style.decoration.resolve({}).borderRadius
+                        as BorderRadius?,
+                color: hoverBgColor,
+                border: Border.all(color: hoverBorderColor),
+              ),
+              WidgetState.any: BoxDecoration(
+                borderRadius: widget.iconOnly
+                    ? BorderRadius.circular(999)
+                    : style.decoration.resolve({}).borderRadius
+                        as BorderRadius?,
+                color: bgColor,
+                border: Border.all(color: borderColor),
+              ),
+            }),
+            // ignore: unused_result
+            contentStyle: style.contentStyle.copyWith(
+              textStyle: FWidgetStateMap({
+                WidgetState.any: style.contentStyle.textStyle
+                    .resolve({})
+                    .copyWith(color: fgColor),
+              }),
+              iconStyle: FWidgetStateMap({
+                WidgetState.any: style.contentStyle.iconStyle
+                    .resolve({})
+                    .copyWith(color: fgColor),
+              }),
+            ),
+            // ignore: unused_result
+            iconContentStyle: style.iconContentStyle.copyWith(
+              iconStyle: FWidgetStateMap({
+                WidgetState.any: style.iconContentStyle.iconStyle
+                    .resolve({})
+                    .copyWith(color: fgColor),
+              }),
+            ),
+          );
+        }
+
+        return style;
       };
     } else {
       fStyle = switch (widget.style) {
         ButtonStyle.primary => FButtonStyle.primary(),
-        ButtonStyle.secondary => FButtonStyle.outline(),
+        ButtonStyle.secondary => FButtonStyle.secondary(),
         ButtonStyle.ghost => FButtonStyle.ghost(),
       };
 
-      // Apply circular border radius for icon buttons
+      // Apply circular border radius and optional color for icon buttons
       if (widget.iconOnly) {
         fStyle = (baseStyle) {
           final unselectedStyle = switch (widget.style) {
             ButtonStyle.primary => context.theme.buttonStyles.primary,
-            ButtonStyle.secondary => context.theme.buttonStyles.outline,
+            ButtonStyle.secondary => context.theme.buttonStyles.secondary,
             ButtonStyle.ghost => context.theme.buttonStyles.ghost,
           };
 
-          return unselectedStyle.copyWith(
+          var result = unselectedStyle.copyWith(
             decoration: unselectedStyle.decoration.map(
               (decoration) =>
                   decoration.copyWith(borderRadius: BorderRadius.circular(999)),
             ),
           );
+
+          if (widget.color != null) {
+            final iconStyle = result.iconContentStyle.iconStyle;
+            result = result.copyWith(
+              // ignore: unused_result
+              iconContentStyle: result.iconContentStyle.copyWith(
+                iconStyle: FWidgetStateMap({
+                  WidgetState.hovered | WidgetState.pressed:
+                      iconStyle.resolve({WidgetState.hovered}),
+                  WidgetState.any:
+                      iconStyle.resolve({}).copyWith(color: widget.color),
+                }),
+              ),
+            );
+          }
+
+          return result;
         };
       }
     }
@@ -214,19 +328,33 @@ class _ButtonState extends State<Button> {
 
     result = FTooltip(
       tipBuilder: (context, controller) {
-        if (widget.command.subtitle != null &&
-            widget.command.subtitle!.isNotEmpty) {
+        final hasSubtitle = widget.command.subtitle != null &&
+            widget.command.subtitle!.isNotEmpty;
+        final shortcutText = hasPhysicalKeyboard() &&
+                widget.command.shortcut != null
+            ? formatShortcut(widget.command.shortcut)
+            : '';
+
+        if (hasSubtitle || shortcutText.isNotEmpty) {
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(widget.command.title),
-              Text(
-                widget.command.subtitle!,
-                style: context.theme.typography.sm.copyWith(
-                  color: context.theme.colors.mutedForeground,
+              if (hasSubtitle)
+                Text(
+                  widget.command.subtitle!,
+                  style: context.theme.typography.sm.copyWith(
+                    color: context.theme.colors.mutedForeground,
+                  ),
                 ),
-              ),
+              if (shortcutText.isNotEmpty)
+                Text(
+                  shortcutText,
+                  style: context.theme.typography.sm.copyWith(
+                    color: context.theme.colors.mutedForeground,
+                  ),
+                ),
             ],
           );
         }

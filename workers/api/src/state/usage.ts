@@ -310,13 +310,11 @@ export class Usage extends DurableObject<Bindings> {
 
       if (helpPriority) {
         const activity = await db
-          .insertInto("activity")
+          .insertInto("thread")
           .values({
             priority_id: helpPriority.id,
-            type: "action",
             title: "Twist processing suspended due to high usage",
             created_by: priorityTwistId,
-            author_id: priorityTwistId,
           })
           .returning("id")
           .executeTakeFirstOrThrow();
@@ -324,7 +322,7 @@ export class Usage extends DurableObject<Bindings> {
         await db
           .insertInto("note")
           .values({
-            activity_id: activity.id,
+            thread_id: activity.id,
             content: `The twist **${pt.name}** was automatically suspended because it exceeded cost safety limits.\n\n**Reason:** ${reason}\n\nTo resume processing, clear the suspension in the database.`,
             created_by: priorityTwistId,
             author_id: priorityTwistId,

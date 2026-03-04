@@ -8,7 +8,6 @@ import { twistFactory } from "../twist";
 import { Integrations } from "../twist/tools/integrations";
 import { Store } from "../twist/tools/store";
 import { createLogger } from "@plotday/worker-util";
-import type { IntegrationProviderConfig } from "@plotday/twister/tools/integrations";
 import type { ProviderDeclaration } from "../twist/tools/factory";
 import { disposeRpc } from "../utils/rpc";
 import { handleValidationError } from "../utils/validation";
@@ -94,12 +93,12 @@ function createReadOnlyIntegrations(
   environment: string
 ): Integrations {
   // Create stub provider configs (no lifecycle callbacks needed for read-only)
-  const providerConfigs: IntegrationProviderConfig[] = providers.map((p) => ({
+  const providerConfigs = providers.map((p) => ({
     provider: p.provider as any,
     scopes: p.scopes,
-    getSyncables: async () => [],
-    onSyncEnabled: async () => {},
-    onSyncDisabled: async () => {},
+    getChannels: async () => [],
+    onChannelEnabled: async () => {},
+    onChannelDisabled: async () => {},
   }));
 
   const store = new Store({
@@ -113,6 +112,7 @@ function createReadOnlyIntegrations(
     store,
     env,
     db,
+    priorityId: "", // Read-only context - save operations not used
     priorityTwistId,
     twistId: twistPackageId,
     environment: environment as any,
@@ -125,7 +125,7 @@ function createReadOnlyIntegrations(
 // ============================================================================
 
 // GET /twist/:id/integrations
-// Returns accounts, providers, and syncables for the edit modal.
+// Returns accounts, providers, and channels for the edit modal.
 twistIntegrations.get("/twist/:id/integrations", async (c) => {
   const priorityTwistId = c.req.param("id");
 
@@ -165,7 +165,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
   // Query each Integrations instance and merge results
   const allProviders: any[] = [];
   const allAccounts: any[] = [];
-  const allSyncables: any[] = [];
+  const allChannels: any[] = [];
 
   for (const [pathStr, providers] of pathToProviders) {
     const path = pathStr.split(":");
@@ -185,13 +185,13 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
 
     allProviders.push(...data.providers);
     allAccounts.push(...data.accounts);
-    allSyncables.push(...data.syncables);
+    allChannels.push(...data.syncables);
   }
 
   return c.json({
     providers: allProviders,
     accounts: allAccounts,
-    syncables: allSyncables,
+    syncables: allChannels,
   });
 });
 
@@ -277,13 +277,26 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
 });
 
 // POST /twist/:id/syncables/:provider/:syncableId/enable
-// Enable a syncable resource.
+// Enable a channel. Optionally accepts { priorityId } in body.
 twistIntegrations.post(
   "/twist/:id/syncables/:provider/:syncableId/enable",
   async (c) => {
     const priorityTwistId = c.req.param("id");
     const provider = c.req.param("provider");
-    const syncableId = c.req.param("syncableId");
+    const channelId = c.req.param("syncableId");
+
+    // Parse optional body for priorityId and createThreads
+    let priorityId: string | undefined;
+    let createThreads: boolean | undefined;
+    try {
+      const body = await c.req.json();
+      priorityId = body?.priorityId;
+      if (typeof body?.createThreads === "boolean") {
+        createThreads = body.createThreads;
+      }
+    } catch {
+      // No body or invalid JSON — fine, fields stay undefined
+    }
 
     const logger = createLogger({ priority_twist_id: priorityTwistId });
 
@@ -332,26 +345,30 @@ twistIntegrations.post(
         integrationsPathStr.split(":"),
         "enableSync",
         provider,
-        syncableId,
-        currentActorId
+        channelId,
+        currentActorId,
+        undefined, // title
+        priorityId,
+        createThreads
       );
       disposeRpc(result);
 
-      logger.info("Syncable enabled", {
+      logger.info("Channel enabled", {
         provider,
-        syncable_id: syncableId,
+        channel_id: channelId,
         actor_id: currentActorId,
+        priority_id: priorityId,
       });
 
       return c.json({ success: true });
     } catch (error) {
-      logger.error("Error enabling syncable", error as Error, {
+      logger.error("Error enabling channel", error as Error, {
         provider,
-        syncable_id: syncableId,
+        channel_id: channelId,
       });
       return c.json(
         {
-          message: `Failed to enable syncable: ${
+          message: `Failed to enable channel: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },
@@ -362,13 +379,13 @@ twistIntegrations.post(
 );
 
 // POST /twist/:id/syncables/:provider/:syncableId/disable
-// Disable a syncable resource.
+// Disable a channel.
 twistIntegrations.post(
   "/twist/:id/syncables/:provider/:syncableId/disable",
   async (c) => {
     const priorityTwistId = c.req.param("id");
     const provider = c.req.param("provider");
-    const syncableId = c.req.param("syncableId");
+    const channelId = c.req.param("syncableId");
 
     const logger = createLogger({ priority_twist_id: priorityTwistId });
 
@@ -410,24 +427,111 @@ twistIntegrations.post(
         integrationsPathStr.split(":"),
         "disableSync",
         provider,
-        syncableId
+        channelId
       );
       disposeRpc(result);
 
-      logger.info("Syncable disabled", {
+      logger.info("Channel disabled", {
         provider,
-        syncable_id: syncableId,
+        channel_id: channelId,
       });
 
       return c.json({ success: true });
     } catch (error) {
-      logger.error("Error disabling syncable", error as Error, {
+      logger.error("Error disabling channel", error as Error, {
         provider,
-        syncable_id: syncableId,
+        channel_id: channelId,
       });
       return c.json(
         {
-          message: `Failed to disable syncable: ${
+          message: `Failed to disable channel: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+        },
+        500
+      );
+    }
+  }
+);
+
+// PATCH /twist/:id/syncables/:provider/:syncableId
+// Update the priority routing for an already-enabled channel.
+const ChannelPrioritySchema = z.object({
+  priorityId: z.string().nullable(),
+});
+
+twistIntegrations.patch(
+  "/twist/:id/syncables/:provider/:syncableId",
+  async (c) => {
+    const priorityTwistId = c.req.param("id");
+    const provider = c.req.param("provider");
+    const channelId = c.req.param("syncableId");
+
+    const rawBody = await c.req.json();
+    const parseResult = ChannelPrioritySchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return handleValidationError(parseResult.error);
+    }
+    const { priorityId } = parseResult.data;
+
+    const logger = createLogger({ priority_twist_id: priorityTwistId });
+
+    const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+    if (!twistInfo) {
+      return c.json({ message: "Twist not found" }, 404);
+    }
+
+    const config = await loadTwistConfig(
+      c.env,
+      twistInfo.twistPackageId,
+      twistInfo.version
+    );
+    if (!config) {
+      return c.json({ message: "Twist config not found" }, 404);
+    }
+
+    const integrationsPathStr = config.integrationsMap[provider];
+    if (!integrationsPathStr) {
+      return c.json(
+        { message: `Provider ${provider} not configured` },
+        400
+      );
+    }
+
+    try {
+      // Use read-only Integrations to set channel priority directly
+      const providerDecl = config.providers.filter((p) => p.provider === provider);
+      const integrations = createReadOnlyIntegrations(
+        integrationsPathStr.split(":"),
+        providerDecl,
+        c.env,
+        c.var.db,
+        priorityTwistId,
+        twistInfo.twistPackageId,
+        twistInfo.environment
+      );
+
+      await integrations.setChannelPriority(
+        provider as any,
+        channelId,
+        priorityId
+      );
+
+      logger.info("Channel priority updated", {
+        provider,
+        channel_id: channelId,
+        priority_id: priorityId ?? undefined,
+      });
+
+      return c.json({ success: true });
+    } catch (error) {
+      logger.error("Error updating channel priority", error as Error, {
+        provider,
+        channel_id: channelId,
+      });
+      return c.json(
+        {
+          message: `Failed to update channel priority: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },
@@ -438,7 +542,7 @@ twistIntegrations.post(
 );
 
 // POST /twist/:id/syncables/:provider/refresh
-// Re-fetch the syncable list from the external service for a provider+actor.
+// Re-fetch the channel list from the external service for a provider+actor.
 twistIntegrations.post(
   "/twist/:id/syncables/:provider/refresh",
   async (c) => {
@@ -489,25 +593,25 @@ twistIntegrations.post(
 
       const result = await twistWrapper.callCallback(
         integrationsPathStr.split(":"),
-        "refreshSyncables",
+        "refreshChannels",
         provider,
         currentActorId
       );
       disposeRpc(result);
 
-      logger.info("Syncables refreshed", {
+      logger.info("Channels refreshed", {
         provider,
         actor_id: currentActorId,
       });
 
       return c.json({ success: true });
     } catch (error) {
-      logger.error("Error refreshing syncables", error as Error, {
+      logger.error("Error refreshing channels", error as Error, {
         provider,
       });
       return c.json(
         {
-          message: `Failed to refresh syncables: ${
+          message: `Failed to refresh channels: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },

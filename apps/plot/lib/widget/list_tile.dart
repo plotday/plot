@@ -8,7 +8,9 @@ import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/time.dart';
-import 'package:plot/style/layout.dart';
+import 'package:plot/style/spacing.dart';
+import 'package:prism_flutter/prism_flutter.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'logging.dart';
@@ -104,6 +106,15 @@ class ListTile extends StatefulWidget {
     /// Disable hover highlighting entirely (keyboard focus highlighting still works).
     this.noHoverHighlight = false,
 
+    /// Skip the full-row background color (for tiles that manage their own highlight).
+    this.noBackground = false,
+
+    /// Overrides the default highlight background color.
+    this.highlightColor,
+
+    /// Overrides the default selected background color.
+    this.selectedColor,
+
     this.onHover,
 
     /// Optional external FocusNode for managing keyboard focus.
@@ -139,12 +150,18 @@ class ListTile extends StatefulWidget {
     /// Custom padding for the tile.
     this.padding,
 
+    /// Border radius for the background decoration.
+    this.borderRadius,
+
     /// Optional text style override for the title.
     /// If not provided, uses sm for headers and base for items.
     this.textStyle,
 
     /// Index for reorderable list. If provided, enables drag on left portion only.
     this.reorderableIndex,
+
+    /// Cross-axis alignment for the leading/body/trailing row.
+    this.crossAxisAlignment = CrossAxisAlignment.center,
 
     /// Whether to show the keyboard shortcut (default: false).
     this.showShortcut = false,
@@ -159,6 +176,9 @@ class ListTile extends StatefulWidget {
   final int indentLevel;
   final bool disableInternalHover;
   final bool noHoverHighlight;
+  final bool noBackground;
+  final Color? highlightColor;
+  final Color? selectedColor;
   final Widget? details;
   final Command? command;
   final Command? longPressCommand;
@@ -173,6 +193,7 @@ class ListTile extends StatefulWidget {
   final IconData? icon;
   final bool centered;
   final EdgeInsetsGeometry? padding;
+  final BorderRadius? borderRadius;
   final TextStyle? textStyle;
 
   final void Function(bool hovered)? onHover;
@@ -181,6 +202,7 @@ class ListTile extends StatefulWidget {
   final Future<bool> Function(BuildContext context, CommandReturn result)?
   onRun;
   final int? reorderableIndex;
+  final CrossAxisAlignment crossAxisAlignment;
   final bool showShortcut;
 
   @override
@@ -316,85 +338,111 @@ class _ListTileState extends State<ListTile> {
         child: ReorderableDragStartListener(
           index: widget.reorderableIndex ?? 0,
           enabled: widget.reorderableIndex != null && hasPhysicalKeyboard(),
-          child: Container(
-            decoration: BoxDecoration(
-              color: widget.selected
-                  ? context.theme.colors.primaryForeground
-                  : _focusNode.hasFocus ||
-                        (!widget.noHoverHighlight &&
-                            !widget.disableInternalHover &&
-                            _isHovered) ||
-                        widget.highlighted
-                  ? context.theme.plotColors.highlight
-                  : null,
-            ),
-            padding: EdgeInsets.only(left: widget.indentLevel * 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: widget.leadingBuilder == null
-                      ? widget.padding?.resolve(null).left ?? 20
-                      : 0,
-                ),
+          child: Builder(
+            builder: (context) {
+              final isHighlighted = _focusNode.hasFocus ||
+                  (!widget.noHoverHighlight &&
+                      !widget.disableInternalHover &&
+                      _isHovered) ||
+                  widget.highlighted;
 
-                ...[
-                  if (widget.leadingBuilder != null)
-                    widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
-                ].whereType<Widget>(),
-                Expanded(
-                  child: hasPhysicalKeyboard()
-                      // Desktop: GestureDetector participates in gesture arena,
-                      // properly competes with ReorderableDragStartListener
-                      ? GestureDetector(
-                          onTap: widget.command != null ? () => run() : null,
-                          onLongPress: widget.longPressCommand != null
-                              ? _runLongPress
-                              : null,
-                          child: _buildContent(),
-                        )
-                      // Mobile: Listener bypasses gesture arena,
-                      // no conflict with Swipeable or scroll
-                      : Listener(
-                          onPointerDown: (event) {
-                            _tapStartPosition = event.position;
-                            _tapStartTime = Time.now();
-                          },
-                          onPointerUp: (event) {
-                            if (_tapStartPosition != null) {
-                              final delta = event.position - _tapStartPosition!;
-                              final duration = Time.now().difference(
-                                _tapStartTime!,
-                              );
-                              if (delta.distance < 10 &&
-                                  duration < Duration(milliseconds: 500)) {
-                                if (widget.command != null) {
-                                  run();
+              final showBorder = widget.selected && widget.selectedBorder;
+              final container = Container(
+                decoration: BoxDecoration(
+                  color: widget.noBackground
+                      ? null
+                      : widget.selected
+                      ? (widget.selectedColor ?? context.theme.colors.primaryForeground)
+                      : isHighlighted
+                      ? (widget.highlightColor ?? context.theme.plotColors.highlight)
+                      : null,
+                  borderRadius: widget.borderRadius,
+                  border: widget.borderRadius != null ? null : Border.symmetric(
+                    horizontal: BorderSide(
+                      color: showBorder
+                          ? context.colour.colours.accentBackground
+                              .withLightness(
+                                context.colour.brightness == Brightness.light
+                                    ? 0.85
+                                    : 0.35,
+                              )
+                              .toColor()
+                          : const Color(0x00000000),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                padding: EdgeInsets.only(left: widget.indentLevel * 16),
+                child: Row(
+                  crossAxisAlignment: widget.crossAxisAlignment,
+                  children: [
+                    SizedBox(
+                      width: widget.leadingBuilder == null
+                          ? widget.padding?.resolve(null).left ?? 20
+                          : 0,
+                    ),
+
+                    ...[
+                      if (widget.leadingBuilder != null)
+                        widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
+                    ].whereType<Widget>(),
+                    Expanded(
+                      child: hasPhysicalKeyboard()
+                          // Desktop: GestureDetector participates in gesture arena,
+                          // properly competes with ReorderableDragStartListener
+                          ? GestureDetector(
+                              onTap: widget.command != null ? () => run() : null,
+                              onLongPress: widget.longPressCommand != null
+                                  ? _runLongPress
+                                  : null,
+                              child: _buildContent(),
+                            )
+                          // Mobile: Listener bypasses gesture arena,
+                          // no conflict with Swipeable or scroll
+                          : Listener(
+                              onPointerDown: (event) {
+                                _tapStartPosition = event.position;
+                                _tapStartTime = Time.now();
+                              },
+                              onPointerUp: (event) {
+                                if (_tapStartPosition != null) {
+                                  final delta = event.position - _tapStartPosition!;
+                                  final duration = Time.now().difference(
+                                    _tapStartTime!,
+                                  );
+                                  if (delta.distance < 10 &&
+                                      duration < Duration(milliseconds: 500)) {
+                                    if (widget.command != null) {
+                                      run();
+                                    }
+                                  }
                                 }
-                              }
-                            }
-                            _tapStartPosition = null;
-                            _tapStartTime = null;
-                          },
-                          child: GestureDetector(
-                            onLongPress: widget.longPressCommand != null
-                                ? _runLongPress
-                                : null,
-                            child: _buildContent(),
-                          ),
-                        ),
+                                _tapStartPosition = null;
+                                _tapStartTime = null;
+                              },
+                              child: GestureDetector(
+                                onLongPress: widget.longPressCommand != null
+                                    ? _runLongPress
+                                    : null,
+                                child: _buildContent(),
+                              ),
+                            ),
+                    ),
+                    ...[
+                      if (widget.trailingBuilder != null)
+                        widget.trailingBuilder!(_isHovered, _focusNode.hasFocus),
+                    ].whereType<Widget>(),
+                    SizedBox(
+                      width: widget.trailingBuilder == null
+                          ? widget.padding?.resolve(null).right ?? 20
+                          : 0,
+                    ),
+                  ],
                 ),
-                ...[
-                  if (widget.trailingBuilder != null)
-                    widget.trailingBuilder!(_isHovered, _focusNode.hasFocus),
-                ].whereType<Widget>(),
-                SizedBox(
-                  width: widget.trailingBuilder == null
-                      ? widget.padding?.resolve(null).right ?? 20
-                      : 0,
-                ),
-              ],
-            ),
+              );
+
+              return container;
+            },
           ),
         ),
       ),
@@ -410,8 +458,11 @@ class _ListTileState extends State<ListTile> {
         builder: (context) {
           // Build the icon widget
           final iconWidget = () {
-            // Check for custom icon widget first (like Button does)
-            final customIcon = widget.command?.buildIcon(context);
+            // Skip command's buildIcon when leadingBuilder already provides
+            // a visual indicator (avoids double icons in priority tiles).
+            final customIcon = widget.leadingBuilder == null
+                ? widget.command?.buildIcon(context)
+                : null;
             if (customIcon != null) {
               if (_showSpinner) {
                 return Spinner(
@@ -456,7 +507,7 @@ class _ListTileState extends State<ListTile> {
               iconWidget,
               Expanded(
                 child: Padding(
-                  padding: (widget.padding?.resolve(null) ?? widgetPaddingSm)
+                  padding: (widget.padding?.resolve(null) ?? context.theme.spacing.paddingSm)
                       .copyWith(
                         left: 0,
                         right: 0,
@@ -491,6 +542,7 @@ class _ListTileState extends State<ListTile> {
                               ? Row(children: [Expanded(child: commandBody)])
                               : Text.rich(
                                   TextSpan(
+                                    style: TextStyle(height: 1),
                                     children: [
                                       TextSpan(
                                         text:

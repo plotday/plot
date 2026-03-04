@@ -55,8 +55,8 @@ class PermissionDescriptions {
 
   /// Maps entity + flags combinations to specific descriptions
   static const _plotPermissionDescriptions = {
-    'activity:new|write': 'Create topics with notes',
-    'activity:mentioned|read,write,update': 'Respond to mentions in topics',
+    'activity:new|write': 'Create threads with notes',
+    'activity:mentioned|read,write,update': 'Respond to mentions in threads',
     'priority|write': 'Create priorities',
     'priority|read,write,update': 'Read, create, and update priorities',
     'contact|read': 'Read contacts',

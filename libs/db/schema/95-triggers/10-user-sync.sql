@@ -1,15 +1,15 @@
--- User sync triggers for activity table
-CREATE TRIGGER user_sync_activity_insert
-  AFTER INSERT ON activity
+-- User sync triggers for thread table
+CREATE TRIGGER user_sync_thread_insert
+  AFTER INSERT ON thread
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_activity();
+  EXECUTE FUNCTION sync_user_for_thread();
 
-CREATE TRIGGER user_sync_activity_update
-  AFTER UPDATE ON activity
+CREATE TRIGGER user_sync_thread_update
+  AFTER UPDATE ON thread
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_activity();
+  EXECUTE FUNCTION sync_user_for_thread();
 
 -- User sync triggers for note table
 CREATE TRIGGER user_sync_note_insert
@@ -63,18 +63,18 @@ CREATE TRIGGER user_sync_priority_twist_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_priority_twist();
 
--- User sync triggers for activity_read table
-CREATE TRIGGER user_sync_activity_read_insert
-  AFTER INSERT ON activity_read
+-- User sync triggers for thread_read table
+CREATE TRIGGER user_sync_thread_read_insert
+  AFTER INSERT ON thread_read
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_activity_read();
+  EXECUTE FUNCTION sync_user_for_thread_read();
 
-CREATE TRIGGER user_sync_activity_read_update
-  AFTER UPDATE ON activity_read
+CREATE TRIGGER user_sync_thread_read_update
+  AFTER UPDATE ON thread_read
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_activity_read();
+  EXECUTE FUNCTION sync_user_for_thread_read();
 
 -- User sync triggers for priority_contact table
 CREATE TRIGGER user_sync_priority_contact_insert
@@ -89,18 +89,18 @@ CREATE TRIGGER user_sync_priority_contact_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_priority_contact();
 
--- User sync triggers for activity_tag table
-CREATE TRIGGER user_sync_activity_tag_insert
-  AFTER INSERT ON activity_tag
+-- User sync triggers for thread_tag table
+CREATE TRIGGER user_sync_thread_tag_insert
+  AFTER INSERT ON thread_tag
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_activity_tag();
+  EXECUTE FUNCTION sync_user_for_thread_tag();
 
-CREATE TRIGGER user_sync_activity_tag_update
-  AFTER UPDATE ON activity_tag
+CREATE TRIGGER user_sync_thread_tag_update
+  AFTER UPDATE ON thread_tag
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_activity_tag();
+  EXECUTE FUNCTION sync_user_for_thread_tag();
 
 -- User sync triggers for note_tag table
 CREATE TRIGGER user_sync_note_tag_insert
@@ -140,3 +140,29 @@ CREATE TRIGGER user_sync_priority_user_update
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_priority_user();
+
+-- User sync triggers for source_channel table
+CREATE TRIGGER user_sync_source_channel_insert
+  AFTER INSERT ON source_channel
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_source_channel();
+
+CREATE TRIGGER user_sync_source_channel_update
+  AFTER UPDATE ON source_channel
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_source_channel();
+
+-- User sync triggers for schedule table
+CREATE TRIGGER user_sync_schedule_insert
+  AFTER INSERT ON schedule
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_schedule();
+
+CREATE TRIGGER user_sync_schedule_update
+  AFTER UPDATE ON schedule
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_schedule();

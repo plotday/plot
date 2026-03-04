@@ -1,20 +1,19 @@
 part of 'priority.dart';
 
+/// Which list the user last selected a thread from.
+/// Used by Previous/Next Thread commands to determine navigation list.
+enum ThreadListSource { agenda, activityFeed }
+
 @immutable
 class PriorityState extends Equatable {
   factory PriorityState({
     required Priority context,
-    Activity? activity,
-    Activity? draft,
+    Thread? thread,
+    Thread? draft,
     Note? draftNote,
-    Map<Date, ScheduledDay> schedule = const {},
-    int first = 0,
-    Date? firstDate,
-    BoundedDateRange? range,
-    Date? previous,
-    Date? next,
     bool showArchived = false,
     List<AgendaItem>? agendaItems,
+    bool agendaDoneEnd = false,
     List<Tag> filter = const [],
     String search = '',
     List<PriorityTwist> twists = const [],
@@ -22,46 +21,21 @@ class PriorityState extends Equatable {
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
     Priority? targetPriority,
+    List<AgendaItem> activityFeedItems = const [],
+    bool activityFeedDoneEnd = false,
+    List<AgendaItem>? reorderViewItems,
   }) {
-    final agenda = agendaItems ?? _makeAgenda(schedule, context: context);
-
-    // Calculate range from agenda items if not provided
-    BoundedDateRange? calculatedRange = range;
-    if (calculatedRange == null && schedule.isNotEmpty && agenda.isNotEmpty) {
-      final dates = agenda
-          .whereType<AgendaHeaderItem>()
-          .where((header) => header.date != null)
-          .map((header) => header.date!)
-          .toList();
-
-      if (dates.isNotEmpty) {
-        dates.sort();
-        calculatedRange = CustomBoundedDateRange(
-          dates.first,
-          dates.last.addDays(1),
-        );
-      }
-    }
-
-    draft ??= Activity(priority: context, draft: true);
+    draft ??= Thread(priority: context, draft: true);
 
     return PriorityState._(
       context: context,
-      activity: activity,
+      thread: thread,
       draft: draft,
-      draftNote: draftNote ?? Note.draft(activityId: draft.id),
-      schedule: schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule,
-      agendaItems: agenda.isNotEmpty ? List.unmodifiable(agenda) : agenda,
-      first: firstDate != null
-          ? -_findDate(agenda, firstDate)
-          : range != null
-          ? first // Preserve first on updates (when range is set)
-          : (first != 0
-                ? first
-                : -_findNow(agenda)), // Calculate first only on initial load
-      range: calculatedRange,
-      next: next,
-      previous: previous,
+      draftNote: draftNote ?? Note.draft(threadId: draft.id),
+      agendaItems: agendaItems != null && agendaItems.isNotEmpty
+          ? List.unmodifiable(agendaItems)
+          : agendaItems ?? const [],
+      agendaDoneEnd: agendaDoneEnd,
       showArchived: showArchived,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
       search: search,
@@ -72,20 +46,23 @@ class PriorityState extends Equatable {
           ? List.unmodifiable(tagSuggestions)
           : tagSuggestions,
       targetPriority: targetPriority,
+      activityFeedItems: activityFeedItems.isNotEmpty
+          ? List.unmodifiable(activityFeedItems)
+          : activityFeedItems,
+      activityFeedDoneEnd: activityFeedDoneEnd,
+      reorderViewItems: reorderViewItems != null
+          ? List.unmodifiable(reorderViewItems)
+          : null,
     );
   }
 
   const PriorityState._({
     required this.context,
-    this.activity,
+    this.thread,
     required this.draft,
     required this.draftNote,
-    required this.range,
-    required this.previous,
-    required this.next,
     required this.agendaItems,
-    this.schedule = const {},
-    this.first = 0,
+    this.agendaDoneEnd = false,
     this.showArchived = false,
     this.filter = const [],
     this.search = '',
@@ -94,19 +71,18 @@ class PriorityState extends Equatable {
     this.tags = const [],
     this.tagSuggestions = const [],
     this.targetPriority,
+    this.activityFeedItems = const [],
+    this.activityFeedDoneEnd = false,
+    this.reorderViewItems,
   });
 
   final Priority context;
-  final Activity? activity;
-  final Activity draft;
+  final Thread? thread;
+  final Thread draft;
   final Note draftNote;
-  final Map<Date, ScheduledDay> schedule;
-  final int first;
-  final BoundedDateRange? range;
-  final Date? previous;
-  final Date? next;
   final bool showArchived;
   final List<AgendaItem> agendaItems;
+  final bool agendaDoneEnd;
   final List<Tag> filter;
   final String search;
   final List<PriorityTwist> twists;
@@ -114,42 +90,26 @@ class PriorityState extends Equatable {
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
   final Priority? targetPriority;
+  final List<AgendaItem> activityFeedItems;
+  final bool activityFeedDoneEnd;
 
-  bool get doneStart =>
-      range != null && (previous == null || range!.includes(previous!));
-  bool get doneEnd {
-    final range = this.range;
-    final next = this.next;
-    return range != null && (next == null || next < range.end);
-  }
+  /// Cached agendaViewItems from an optimistic reorder. When set,
+  /// [agendaViewItems] returns this directly instead of re-deriving.
+  /// Cleared when new agenda data arrives.
+  final List<AgendaItem>? reorderViewItems;
 
-  /// "Now + Next": items from the "Now" header onward,
-  /// with date headers and sub-priority-only headers stripped.
-  /// The split point is the first incomplete action marked now=true,
-  /// backed up to include the preceding "Now" header (but not date headers).
-  List<AgendaItem> get upNextItems {
-    final nowActivityIndex = _findNowActivity(agendaItems);
+  bool get doneStart => true;
+  bool get doneEnd => agendaDoneEnd;
 
-    // Look backward for the "Now" header (now=true, not a date header).
-    // We skip over activities (not just headers) because reordering can
-    // place a now=false activity between the Now header and the first
-    // now=true activity.
-    var startIndex = nowActivityIndex;
-    for (int i = nowActivityIndex - 1; i >= 0; i--) {
-      final item = agendaItems[i];
-      if (item is AgendaHeaderItem) {
-        if (item.now && item.date == null) {
-          startIndex = i;
-          break;
-        }
-        // Stop at non-now headers (e.g. date or priority headers from
-        // an earlier section) to avoid pulling in unrelated items.
-        break;
-      }
-      // Continue past activities — reorder may place them here.
-    }
+  /// "Agenda": items starting from today, moving forward.
+  /// Strips sub-priority-only headers and event timing headers
+  /// (timing info shown inside ThreadWidget), keeping only current-event
+  /// headers. Synthesizes a "Now" header at the top when needed.
+  List<AgendaItem> get agendaViewItems {
+    if (reorderViewItems != null) return reorderViewItems!;
+    final now = Time.now();
 
-    final result = agendaItems.sublist(startIndex).where((item) {
+    final result = agendaItems.where((item) {
       // Strip today's date header (replaced by synthesized "Now" header)
       if (item is AgendaHeaderItem &&
           item.date != null &&
@@ -163,31 +123,61 @@ class PriorityState extends Equatable {
           item.dateTimeRange == null) {
         return false;
       }
-      // Strip event headers (timing info now shown inside ActivityWidget)
+      // Strip event headers (timing info now shown inside ThreadWidget).
+      // Keep only current event headers (event happening now) since they
+      // replace the "Now" text header.
       if (item is AgendaHeaderItem &&
-          item.activity != null &&
-          item.dateTimeRange != null) {
+          item.thread != null &&
+          item.dateTimeRange != null &&
+          (!item.now || !item.dateTimeRange!.includes(now))) {
         return false;
       }
       return true;
     }).toList();
 
-    // If no "Now" header at the top, synthesize one.
-    // This happens when there are no past activities, so _makeAgenda only
-    // creates a date header (no separate "Now" header).
+    // If there's a current event header (event happening now), use it
+    // as the starting point (it replaces the "Now" text header).
+    final nowEventIdx = result.indexWhere(
+      (item) =>
+          item is AgendaHeaderItem &&
+          item.thread != null &&
+          item.dateTimeRange != null &&
+          item.now &&
+          item.dateTimeRange!.includes(now),
+    );
+    if (nowEventIdx > 0) {
+      result.removeRange(0, nowEventIdx);
+    }
+
+    // If _makeAgenda already created a "Now" text header (e.g. between past
+    // threads and todos), strip orphaned items before it so we don't
+    // synthesize a duplicate.
+    if (nowEventIdx <= 0) {
+      final nowTextIdx = result.indexWhere(
+        (item) =>
+            item is AgendaHeaderItem &&
+            item.now &&
+            item.text == 'Now' &&
+            item.thread == null,
+      );
+      if (nowTextIdx > 0) {
+        result.removeRange(0, nowTextIdx);
+      }
+    }
+
+    // Synthesize a "Now" header at the top if not already present.
     if (result.isEmpty ||
         result.first is! AgendaHeaderItem ||
         !(result.first as AgendaHeaderItem).now) {
-      // Find countdown info: look for the next event in remaining items
+      // Find countdown info: look for the next event
       DateTimeRange? dateTimeRange;
-      for (int i = nowActivityIndex; i < agendaItems.length; i++) {
-        final item = agendaItems[i];
+      for (final item in agendaItems) {
         if (item is AgendaHeaderItem &&
             item.dateTimeRange != null &&
-            item.activity != null) {
+            item.thread != null) {
           final eventStart = item.dateTimeRange!.start;
-          if (eventStart != null && eventStart.isAfter(Time.now())) {
-            dateTimeRange = DateTimeRange(Time.now(), eventStart);
+          if (eventStart != null && eventStart.isAfter(now)) {
+            dateTimeRange = DateTimeRange(now, eventStart);
           }
           break;
         }
@@ -199,31 +189,6 @@ class PriorityState extends Equatable {
     }
 
     return result;
-  }
-
-  /// "Activity": flat list of ALL activities sorted by activityFeedAt descending,
-  /// with coarse time-based section headers (Today, Yesterday, X days ago, etc.).
-  List<AgendaItem> get activityFeedItems {
-    final activities =
-        agendaItems
-            .whereType<AgendaActivityItem>()
-            .map((item) => item.activity)
-            .toList()
-          ..sort((a, b) => b.activityFeedAt.compareTo(a.activityFeedAt));
-
-    final items = <AgendaItem>[];
-    String? currentBucket;
-    for (final activity in activities) {
-      final (label, bucketDate) = _timeAgoBucket(
-        activity.activityFeedAt.toDate(),
-      );
-      if (label != currentBucket) {
-        currentBucket = label;
-        items.add(AgendaHeaderItem(text: label, date: bucketDate));
-      }
-      items.add(AgendaActivityItem(activity));
-    }
-    return items;
   }
 
   /// Returns a coarse time bucket label and representative date for grouping.
@@ -258,7 +223,7 @@ class PriorityState extends Equatable {
   static DateTime? _findFirstHourGap(
     DateTime dayStart,
     DateTime dayEnd,
-    List<Activity> events,
+    List<Thread> events,
   ) {
     const oneHour = Duration(hours: 1);
 
@@ -304,95 +269,107 @@ class PriorityState extends Equatable {
     return null;
   }
 
-  /// Builds the agenda UI items from schedule data.
+  /// Builds the agenda UI items from a flat list of threads (sorted by agendaAt).
   ///
-  /// This method performs time-dependent calculations using Time.now():
-  /// - Places the "now" indicator at the current time or event
-  /// - Determines which events are "current" (happening right now)
-  /// - Splits activities into past/future relative to current time
-  /// - Calculates schedule gaps based on current time
-  ///
-  /// Because these calculations depend on the current time, this method
-  /// must be re-run periodically (every minute) even when the underlying
-  /// schedule data hasn't changed. This is handled by ExpiringStreamTransformer
-  /// in PriorityBloc._loadSchedule().
+  /// Groups threads by date, places "now" indicators, handles events and gaps.
+  /// Time-dependent calculations use Time.now() for "now" indicator placement.
   static List<AgendaItem> _makeAgenda(
-    Map<Date, ScheduledDay> schedule, {
+    List<Thread> threads, {
     required Priority context,
+    required int horizonDays,
   }) {
+    log.info('[_makeAgenda] rebuilding agenda (${threads.length} threads)');
     final items = <AgendaItem>[];
     final now = Time.now();
     final today = Date.today();
 
-    // Determine sort key: (order, timestamp)
-    // Order 0: Future events
-    // Order 1: Past activities (sorted by timestamp)
-    // Order 2: Incomplete actions
-    (int, DateTime?) getSortKey(Activity activity) {
-      // Future events (order 0)
-      if (activity.type == ActivityType.event &&
-          activity.at?.start?.isAfter(now) == true) {
-        return (0, activity.at!.start);
-      }
-      return (activity.todo ? 2 : 1, activity.agendaAt);
+    // Group threads by date
+    final threadsByDate = <Date, List<Thread>>{};
+    for (final thread in threads) {
+      final date = thread.agendaAt.toDate();
+      threadsByDate.putIfAbsent(date, () => []).add(thread);
     }
 
-    // Helper function to add activities grouped by priority
-    void addActivitiesGrouped(
-      List<Activity> activities, {
+    // Determine sort key: (order, timestamp)
+    // Order 0: Future scheduled activities
+    // Order 1: Past threads (sorted by timestamp)
+    // Order 2: Incomplete actions (todos)
+    (int, DateTime?) getSortKey(Thread thread) {
+      if (thread.at?.start?.isAfter(now) == true) {
+        return (0, thread.at!.start);
+      }
+      return (thread.todo ? 2 : 1, thread.agendaAt);
+    }
+
+    // Helper function to add threads grouped by priority.
+    // Todos are extracted from all groups and added as a flat sorted list
+    // at the end so cross-priority reordering works correctly.
+    void addThreadsGrouped(
+      List<Thread> threads, {
       DateTime? scheduleAt,
       Priority? skipHeaderFor,
     }) {
-      if (activities.isEmpty) return;
+      if (threads.isEmpty) return;
 
-      final prioritizedActivities = Activity.prioritize(
-        activities,
-        context: context,
-      );
-      for (final entry in prioritizedActivities.entries) {
-        // Sort activities: future events first, past activities interleaved chronologically, incomplete actions last
-        final sortedActivities = entry.value.toList()
-          ..sort((a, b) {
-            final (orderA, timestampA) = getSortKey(a);
-            final (orderB, timestampB) = getSortKey(b);
+      // Separate todos from non-todos so todos can be sorted as a flat list.
+      // Link schedule instances are always treated as non-todo (scheduled events).
+      final allTodos = <Thread>[];
+      final nonTodoThreads = <Thread>[];
+      for (final thread in threads) {
+        if (thread.todo && !thread.isLinkScheduleInstance) {
+          allTodos.add(thread);
+        } else {
+          nonTodoThreads.add(thread);
+        }
+      }
 
-            // First compare by category order
-            final orderComparison = orderA.compareTo(orderB);
-            if (orderComparison != 0) {
-              return orderComparison;
-            }
+      // Add all todos first as a flat list sorted by user-defined order
+      if (allTodos.isNotEmpty) {
+        allTodos.sort((a, b) => a.order.compareTo(b.order));
+        items.addAll(
+          allTodos.map((Thread a) => AgendaThreadItem(a)),
+        );
+      }
 
-            // For incomplete actions, sort by user-defined order
-            if (a.todo && b.todo) {
-              return a.order.compareTo(b.order);
-            }
+      // Add non-todo threads grouped by priority
+      if (nonTodoThreads.isNotEmpty) {
+        final prioritizedThreads = Thread.prioritize(
+          nonTodoThreads,
+          context: context,
+        );
+        for (final entry in prioritizedThreads.entries) {
+          final sortedThreads = entry.value.toList()
+            ..sort((a, b) {
+              final (orderA, timestampA) = getSortKey(a);
+              final (orderB, timestampB) = getSortKey(b);
 
-            // Within the same category, compare by timestamp
-            if (timestampA != null && timestampB != null) {
-              return timestampA.compareTo(timestampB);
-            }
+              final orderComparison = orderA.compareTo(orderB);
+              if (orderComparison != 0) return orderComparison;
 
-            // Fallback to existing comparison
-            return a.compareTo(b);
-          });
+              if (timestampA != null && timestampB != null) {
+                return timestampA.compareTo(timestampB);
+              }
 
-        // Add header only if there are multiple priorities or priority != skipHeaderFor
-        if (entry.key.id != skipHeaderFor?.id ||
-            prioritizedActivities.length > 1) {
-          items.add(
-            AgendaHeaderItem(priority: entry.key, scheduleAt: scheduleAt),
+              return a.compareTo(b);
+            });
+
+          if (entry.key.id != skipHeaderFor?.id ||
+              prioritizedThreads.length > 1) {
+            items.add(
+              AgendaHeaderItem(priority: entry.key, scheduleAt: scheduleAt),
+            );
+          }
+          items.addAll(
+            sortedThreads.map((Thread a) => AgendaThreadItem(a)),
           );
         }
-        items.addAll(
-          sortedActivities.map((Activity a) => AgendaActivityItem(a)),
-        );
       }
     }
 
-    // Add event header and activity, then return remaining activities
-    List<Activity> makeBlock({
-      required Activity event,
-      required List<Activity> activities,
+    // Add event header and thread, then return remaining threads
+    List<Thread> makeBlock({
+      required Thread event,
+      required List<Thread> threads,
       bool current = false,
       DateTime? scheduleAt,
     }) {
@@ -414,40 +391,61 @@ class PriorityState extends Equatable {
             priority: event.priority,
             dateTimeRange: event.at,
             now: current,
-            activity: event,
+            thread: event,
           ),
         );
-        // Add the event as an activity widget below the header
-        items.add(AgendaActivityItem(event, now: current));
+        // Add the event as a thread widget below the header
+        items.add(AgendaThreadItem(event, now: current));
       }
 
-      // Split activities into todos vs notes/done
-      final todos = activities.where((a) => a.todo).toList();
-      final notesAndDone = activities.where((a) => !a.todo).toList();
+      // Extract pinned todos whose pinnedAfterTime matches this event's
+      // start time and insert them directly after the event.
+      // (Pinned to event end time = gap start → handled in gap section.)
+      if (event.at?.start != null) {
+        final (pinnedHere, unpinned) = threads.partition(
+          (a) =>
+              a.isPinnedTodo &&
+              a.pinnedAfterTime!.isAtSameMomentAs(event.at!.start!),
+        );
+        if (pinnedHere.isNotEmpty) {
+          log.info(
+            '[agenda:makeBlock] ${pinnedHere.length} pinned todo(s) '
+            'after event "${event.title}": '
+            '${pinnedHere.map((t) => '"${t.title}"').join(', ')}',
+          );
+          pinnedHere.sort((a, b) => a.order.compareTo(b.order));
+          items.addAll(
+            pinnedHere.map((Thread a) => AgendaThreadItem(a)),
+          );
+          threads = unpinned;
+        }
+      }
 
-      // Filter todos by priority (existing logic)
+      // Split threads into todos vs notes/done
+      final todos = threads.where((a) => a.todo).toList();
+      final notesAndDone = threads.where((a) => !a.todo).toList();
+
+      // Filter todos by priority
       final (matchingTodos, remainingTodos) = todos.partition(
-        (Activity a) =>
-            // Priority match
+        (Thread a) =>
             (event.priority.id == a.priority.id ||
                 event.priority.isParent(a.priority)) &&
-            // Not after the event
             !(a.at?.start != null &&
                 event.at?.start != null &&
+                event.at?.end != null &&
                 a.at!.start!.isSameOrAfter(event.at!.end!)),
       );
 
       // Filter notes/done by time (agendaAt within event's time range)
       final (matchingNotesAndDone, remainingNotesAndDone) = notesAndDone
-          .partition((Activity a) {
+          .partition((Thread a) {
             if (event.at?.start == null || event.at?.end == null) return false;
             final agendaAt = a.agendaAt;
             return !agendaAt.isBefore(event.at!.start!) &&
                 agendaAt.isBefore(event.at!.end!);
           });
 
-      // Split matching notes/done into in-priority vs out-of-priority
-      final inPriorityActivities = [...matchingTodos, ...matchingNotesAndDone]
+      final inPriorityThreads = [...matchingTodos, ...matchingNotesAndDone]
           .where(
             (a) =>
                 event.priority.id == a.priority.id ||
@@ -463,28 +461,39 @@ class PriorityState extends Equatable {
           )
           .toList();
 
-      // Add in-priority activities first
-      addActivitiesGrouped(
-        inPriorityActivities,
+      addThreadsGrouped(
+        inPriorityThreads,
         scheduleAt: scheduleAt,
         skipHeaderFor: event.priority,
       );
+      addThreadsGrouped(outOfPriorityNotes, scheduleAt: scheduleAt);
 
-      // Add out-of-priority notes after
-      addActivitiesGrouped(outOfPriorityNotes, scheduleAt: scheduleAt);
-
-      // Return remaining todos and notes/done that didn't match
       return [...remainingTodos, ...remainingNotesAndDone];
     }
 
+    // Sort dates for iteration
+    final sortedDates = threadsByDate.keys
+        .where((date) => !date.isBefore(today))
+        .toList()..sort();
+
     bool processedToday = false;
-    for (final day in schedule.values) {
-      final isToday = day.date == today;
-      final isPast = day.date.isBefore(today);
+    for (final date in sortedDates) {
+      final dayThreads = threadsByDate[date]!;
+      final isToday = date == today;
       final todayStartIndex = isToday ? items.length : -1;
 
-      // Insert today header before any future day if today has no activities
-      if (!isPast && !isToday && !processedToday) {
+      // Separate scheduled (timed events) from unscheduled
+      final scheduled = dayThreads
+          .where((a) => (a.at != null && !a.todo) || a.isLinkScheduleInstance)
+          .toList()
+        ..sort((a, b) => (a.at?.start ?? DateTime(0)).compareTo(
+            b.at?.start ?? DateTime(0)));
+      final unscheduled = dayThreads
+          .where((a) => (a.at == null || a.todo) && !a.isLinkScheduleInstance)
+          .toList();
+
+      // Insert today header before any future day if today has no threads
+      if (!date.isBefore(today) && !isToday && !processedToday) {
         final nineAM = today.toStart().add(const Duration(hours: 9));
         final dayScheduleStart = now.isAfter(nineAM) ? now : nineAM;
         items.add(
@@ -498,258 +507,215 @@ class PriorityState extends Equatable {
         processedToday = true;
       }
 
-      if (isPast) {
-        // All activities on past days are shown as-is
-        makeBlock(
-          event: Activity(priority: context, on: Day(day.date), draft: true),
-          activities: day.activities,
-          scheduleAt: null,
-        );
-      } else {
-        var remainingScheduled = day.scheduled;
-        var remainingUnscheduled = day.unscheduled;
+      var remainingScheduled = scheduled;
+      var remainingUnscheduled = unscheduled;
 
-        bool dateHeaderIsNow = false;
-        bool nextIsNow = false;
-        bool createdDateHeader = false;
+      bool dateHeaderIsNow = false;
+      bool nextIsNow = false;
+      bool createdDateHeader = false;
 
-        // Calculate scheduleAt for day headers
-        final nineAM = day.date.toStart().add(const Duration(hours: 9));
-        final dayScheduleStart = isToday && now.isAfter(nineAM) ? now : nineAM;
-        final dayScheduleEnd = day.date.toEnd();
-        final dayScheduleAt =
-            _findFirstHourGap(
-              dayScheduleStart,
-              dayScheduleEnd,
-              day.scheduled,
-            ) ??
-            dayScheduleStart;
+      // Calculate scheduleAt for day headers
+      final nineAM = date.toStart().add(const Duration(hours: 9));
+      final dayScheduleStart = isToday && now.isAfter(nineAM) ? now : nineAM;
+      final dayScheduleEnd = date.toEnd();
+      final dayScheduleAt =
+          _findFirstHourGap(dayScheduleStart, dayScheduleEnd, scheduled) ??
+          dayScheduleStart;
 
-        if (isToday) {
-          processedToday = true;
-          // Find current event and collect remaining events
-          Activity? currentEvent;
-          final afterNowScheduled = <Activity>[];
-          final beforeNowScheduled = <Activity>[];
-          for (final event in day.scheduled) {
-            if (event.at?.includes(now) == true &&
-                (currentEvent == null ||
-                    currentEvent.agendaAt < event.agendaAt)) {
-              currentEvent = event;
-            }
-            if (event.at?.start != null && event.at!.start!.isAfter(now)) {
-              afterNowScheduled.add(event);
-            }
-            // Collect past events (ended before now)
-            if (event.at?.end != null && event.at!.end!.isBefore(now)) {
+      if (isToday) {
+        processedToday = true;
+        // Find current event and collect remaining events
+        Thread? currentEvent;
+        final afterNowScheduled = <Thread>[];
+        final beforeNowScheduled = <Thread>[];
+        for (final event in scheduled) {
+          if (event.at?.includes(now) == true &&
+              (currentEvent == null ||
+                  currentEvent.agendaAt < event.agendaAt)) {
+            currentEvent = event;
+          }
+          if (event.at?.start != null && event.at!.start!.isAfter(now)) {
+            afterNowScheduled.add(event);
+          }
+          if (event.at?.end != null && event.at!.end!.isBefore(now)) {
+            // Past link schedule instances are read-only external events
+            // that don't need attention once passed; exclude them.
+            if (!event.isLinkScheduleInstance) {
               beforeNowScheduled.add(event);
             }
           }
-          remainingScheduled = [
-            if (currentEvent != null) currentEvent,
-            ...afterNowScheduled,
-          ];
+        }
+        remainingScheduled = [
+          if (currentEvent != null) currentEvent,
+          ...afterNowScheduled,
+        ];
 
-          // Determine what should be marked as "now"
-          final firstRemainingEvent = remainingScheduled.firstOrNull;
-          if (firstRemainingEvent == null ||
-              now.isBefore(firstRemainingEvent.at?.start ?? now)) {
-            // Before first event or no events - date header is "now"
-            dateHeaderIsNow = true;
-          } else if (currentEvent != null) {
-            // During an event - that event will be "now"
-            nextIsNow = true;
-          } else {
-            // In a gap between/after events - that gap will be "now"
-            nextIsNow = true;
-          }
+        final firstRemainingEvent = remainingScheduled.firstOrNull;
+        if (firstRemainingEvent == null ||
+            now.isBefore(firstRemainingEvent.at?.start ?? now)) {
+          dateHeaderIsNow = true;
+        } else {
+          nextIsNow = true;
+        }
 
-          final (
-            beforeNowUnscheduled,
-            afterNowUnscheduled,
-          ) = remainingUnscheduled.partition(
-            (activity) =>
-                currentEvent == null ||
-                activity.agendaAt.isBefore(currentEvent.agendaAt),
-          );
+        final (
+          allBeforeNowUnscheduled,
+          afterNowUnscheduled,
+        ) = remainingUnscheduled.partition(
+          (thread) =>
+              currentEvent == null ||
+              thread.agendaAt.isBefore(currentEvent.agendaAt),
+        );
 
-          // Apply "Now" header when not in an event (covers: gaps, after events, no events)
-          if (currentEvent == null && beforeNowUnscheduled.isNotEmpty) {
-            // Split activities into past and future
-            final (pastActivities, otherBeforeNowActivities) =
-                beforeNowUnscheduled.partition((activity) => !activity.todo);
+        // Keep pinned todos out of today's grouped sections so they flow
+        // through to the event loop's makeBlock for placement after their
+        // target events.
+        final pinnedTodos = allBeforeNowUnscheduled
+            .where((a) => a.isPinnedTodo)
+            .toList();
+        final beforeNowUnscheduled = allBeforeNowUnscheduled
+            .where((a) => !a.isPinnedTodo)
+            .toList();
 
-            if (pastActivities.isNotEmpty) {
-              // Add date header if needed
-              if (!createdDateHeader) {
-                items.add(
-                  AgendaHeaderItem(
-                    priority: null,
-                    date: day.date,
-                    now: dateHeaderIsNow,
-                    scheduleAt: dayScheduleAt,
-                  ),
-                );
-                createdDateHeader = true;
-              }
+        if (currentEvent == null && beforeNowUnscheduled.isNotEmpty) {
+          final (pastThreads, otherBeforeNowThreads) =
+              beforeNowUnscheduled.partition(
+                  (thread) => !thread.todo || thread.isLinkScheduleInstance);
 
-              // Add past activities grouped by priority (include past events)
-              addActivitiesGrouped(
-                [...pastActivities, ...beforeNowScheduled],
-                scheduleAt: dayScheduleAt,
-                skipHeaderFor: context,
-              );
-
-              // Add "Now" header
+          if (pastThreads.isNotEmpty) {
+            if (!createdDateHeader) {
               items.add(
                 AgendaHeaderItem(
                   priority: null,
-                  dateTimeRange:
-                      afterNowScheduled.firstOrNull?.at?.start != null
-                      ? DateTimeRange(
-                          now,
-                          afterNowScheduled.firstOrNull!.at!.start!,
-                        )
-                      : null,
-                  now: true,
-                  text: currentEvent?.title ?? 'Now',
+                  date: date,
+                  now: dateHeaderIsNow,
+                  scheduleAt: dayScheduleAt,
                 ),
               );
-
-              if (otherBeforeNowActivities.isNotEmpty) {
-                // Sort all todos by user-defined order (no priority grouping)
-                final sortedTodos = otherBeforeNowActivities.toList()
-                  ..sort((a, b) => a.order.compareTo(b.order));
-                items.addAll(
-                  sortedTodos.map((Activity a) => AgendaActivityItem(a)),
-                );
-              }
-
-              remainingUnscheduled = afterNowUnscheduled;
-            } else {
-              // No past activities, use existing logic
-              if (beforeNowUnscheduled.isNotEmpty ||
-                  beforeNowScheduled.isNotEmpty) {
-                items.add(
-                  AgendaHeaderItem(
-                    priority: null,
-                    date: day.date,
-                    now: dateHeaderIsNow,
-                    scheduleAt: dayScheduleAt,
-                  ),
-                );
-                createdDateHeader = true;
-                addActivitiesGrouped(
-                  [...beforeNowUnscheduled, ...beforeNowScheduled],
-                  scheduleAt: dayScheduleAt,
-                  skipHeaderFor: context,
-                );
-              }
-              remainingUnscheduled = afterNowUnscheduled;
+              createdDateHeader = true;
             }
+
+            addThreadsGrouped(
+              [...pastThreads, ...beforeNowScheduled],
+              scheduleAt: dayScheduleAt,
+              skipHeaderFor: context,
+            );
+
+            items.add(
+              AgendaHeaderItem(
+                priority: null,
+                dateTimeRange:
+                    afterNowScheduled.firstOrNull?.at?.start != null
+                    ? DateTimeRange(
+                        now,
+                        afterNowScheduled.firstOrNull!.at!.start!,
+                      )
+                    : null,
+                now: true,
+                text: 'Now',
+              ),
+            );
+
+            if (otherBeforeNowThreads.isNotEmpty) {
+              final sortedTodos = otherBeforeNowThreads.toList()
+                ..sort((a, b) => a.order.compareTo(b.order));
+              items.addAll(
+                sortedTodos.map((Thread a) => AgendaThreadItem(a)),
+              );
+            }
+
+            remainingUnscheduled = [
+              ...afterNowUnscheduled,
+              ...pinnedTodos,
+            ];
           } else {
-            // Use existing logic when there are still scheduled events
             if (beforeNowUnscheduled.isNotEmpty ||
                 beforeNowScheduled.isNotEmpty) {
               items.add(
                 AgendaHeaderItem(
                   priority: null,
-                  date: day.date,
+                  date: date,
                   now: dateHeaderIsNow,
                   scheduleAt: dayScheduleAt,
                 ),
               );
               createdDateHeader = true;
-              addActivitiesGrouped(
+              addThreadsGrouped(
                 [...beforeNowUnscheduled, ...beforeNowScheduled],
                 scheduleAt: dayScheduleAt,
                 skipHeaderFor: context,
               );
             }
-            remainingUnscheduled = afterNowUnscheduled;
+            remainingUnscheduled = [
+              ...afterNowUnscheduled,
+              ...pinnedTodos,
+            ];
           }
-        }
-
-        DateTime? previousEnd;
-        for (final event in remainingScheduled) {
-          // Compute gap before this event
-          final gapStart = previousEnd ?? day.date.toStart();
-          final gapEnd = event.at?.start;
-
-          if (gapEnd != null && gapEnd.isAfter(gapStart)) {
-            // Create gap header
-            final gapRange = DateTimeRange(gapStart, gapEnd);
-            final startOfDay = gapStart == day.date.toStart();
-
-            if (startOfDay && !createdDateHeader) {
-              // Add date header for start-of-day gap
-              items.add(
-                AgendaHeaderItem(
-                  priority: null,
-                  date: day.date,
-                  now: dateHeaderIsNow,
-                  scheduleAt: dayScheduleAt,
-                ),
-              );
-              createdDateHeader = true;
-            } else if (!startOfDay) {
-              // Add time header for mid-day gap
-              items.add(
-                AgendaHeaderItem(
-                  priority: null,
-                  dateTimeRange: gapRange,
-                  now: nextIsNow,
-                  scheduleAt: gapStart,
-                ),
-              );
-              nextIsNow = false;
-              // Add remaining activities to the gap
-              addActivitiesGrouped(
-                remainingUnscheduled,
-                scheduleAt: gapStart,
-                skipHeaderFor: context,
-              );
-              // Clear to prevent duplication in subsequent blocks
-              remainingUnscheduled = [];
-            }
-          }
-
-          remainingUnscheduled = makeBlock(
-            event: event,
-            activities: remainingUnscheduled,
-            current: nextIsNow,
-            scheduleAt: dayScheduleAt,
-          );
-          nextIsNow = false;
-          previousEnd = event.at?.end;
-        }
-
-        // Add gap to end of day if needed
-        final gapStart = previousEnd ?? day.date.toStart();
-        final gapEnd = day.date.toEnd();
-
-        if (gapEnd.isAfter(gapStart)) {
-          final gapRange = DateTimeRange(gapStart, gapEnd);
-          final startOfDay = gapStart == day.date.toStart();
-
-          if (startOfDay && !createdDateHeader) {
-            // Add date header if full day is empty
+        } else {
+          if (beforeNowUnscheduled.isNotEmpty ||
+              beforeNowScheduled.isNotEmpty) {
             items.add(
               AgendaHeaderItem(
                 priority: null,
-                date: day.date,
+                date: date,
                 now: dateHeaderIsNow,
                 scheduleAt: dayScheduleAt,
               ),
             );
-            // Add remaining activities to the full day
-            addActivitiesGrouped(
-              remainingUnscheduled,
+            createdDateHeader = true;
+            addThreadsGrouped(
+              [...beforeNowUnscheduled, ...beforeNowScheduled],
               scheduleAt: dayScheduleAt,
               skipHeaderFor: context,
             );
+          }
+          remainingUnscheduled = [
+            ...afterNowUnscheduled,
+            ...pinnedTodos,
+          ];
+        }
+      }
+
+      DateTime? previousEnd;
+      for (final event in remainingScheduled) {
+        final gapStart = previousEnd ?? date.toStart();
+        final gapEnd = event.at?.start;
+
+        if (gapEnd != null && gapEnd.isAfter(gapStart)) {
+          final gapRange = DateTimeRange(gapStart, gapEnd);
+          final startOfDay = gapStart == date.toStart();
+
+          if (startOfDay && !createdDateHeader) {
+            items.add(
+              AgendaHeaderItem(
+                priority: null,
+                date: date,
+                now: dateHeaderIsNow,
+                scheduleAt: dayScheduleAt,
+              ),
+            );
+            createdDateHeader = true;
+
+            // Add unpinned todos at start of day, before the first event.
+            // Pinned todos stay in remainingUnscheduled for makeBlock.
+            final todosForStart = remainingUnscheduled
+                .where(
+                  (a) =>
+                      a.todo &&
+                      !a.isLinkScheduleInstance &&
+                      !a.isPinnedTodo,
+                )
+                .toList();
+            if (todosForStart.isNotEmpty) {
+              todosForStart.sort((a, b) => a.order.compareTo(b.order));
+              items.addAll(
+                todosForStart.map((Thread a) => AgendaThreadItem(a)),
+              );
+              remainingUnscheduled = remainingUnscheduled
+                  .where((a) => !todosForStart.contains(a))
+                  .toList();
+            }
           } else if (!startOfDay) {
-            // Add time header for end-of-day gap
             items.add(
               AgendaHeaderItem(
                 priority: null,
@@ -758,74 +724,184 @@ class PriorityState extends Equatable {
                 scheduleAt: gapStart,
               ),
             );
-            // Add remaining activities to the end-of-day gap
-            addActivitiesGrouped(
-              remainingUnscheduled,
+            nextIsNow = false;
+            {
+              // Extract pinned todos whose pinnedAfterTime matches this
+              // gap's start time (= preceding event's end time).
+              final (pinnedHere, rest) = remainingUnscheduled.partition(
+                (a) =>
+                    a.isPinnedTodo &&
+                    a.pinnedAfterTime!.isAtSameMomentAs(gapStart),
+              );
+              // Keep remaining pinned todos for later gaps/events.
+              final pinned =
+                  rest.where((a) => a.isPinnedTodo).toList();
+              final nonPinned =
+                  rest.where((a) => !a.isPinnedTodo).toList();
+              // Add non-pinned items first via addThreadsGrouped.
+              final gapItemsStart = items.length;
+              addThreadsGrouped(
+                nonPinned,
+                scheduleAt: gapStart,
+                skipHeaderFor: context,
+              );
+              // Insert pinned todos at order-based positions among
+              // gap items so they interleave correctly with existing
+              // items (e.g. link schedule instances).
+              if (pinnedHere.isNotEmpty) {
+                log.info(
+                  '[agenda:gap] ${pinnedHere.length} pinned todo(s) '
+                  'in gap starting $gapStart: '
+                  '${pinnedHere.map((t) => '"${t.title}"').join(', ')}',
+                );
+                pinnedHere.sort((a, b) => a.order.compareTo(b.order));
+                for (final pinnedTodo in pinnedHere) {
+                  var insertAt = items.length;
+                  for (var j = gapItemsStart; j < items.length; j++) {
+                    final item = items[j];
+                    if (item is AgendaThreadItem &&
+                        pinnedTodo.order.compareTo(
+                              item.thread.order,
+                            ) <
+                            0) {
+                      insertAt = j;
+                      break;
+                    }
+                  }
+                  items.insert(
+                    insertAt,
+                    AgendaThreadItem(pinnedTodo),
+                  );
+                }
+              }
+              remainingUnscheduled = pinned;
+            }
+          }
+        }
+
+        remainingUnscheduled = makeBlock(
+          event: event,
+          threads: remainingUnscheduled,
+          current: nextIsNow,
+          scheduleAt: dayScheduleAt,
+        );
+        nextIsNow = false;
+        previousEnd = event.at?.end;
+      }
+
+      // Add gap to end of day if needed
+      final gapStart = previousEnd ?? date.toStart();
+      final gapEnd = date.toEnd();
+
+      if (gapEnd.isAfter(gapStart)) {
+        final gapRange = DateTimeRange(gapStart, gapEnd);
+        final startOfDay = gapStart == date.toStart();
+
+        if (startOfDay && !createdDateHeader) {
+          items.add(
+            AgendaHeaderItem(
+              priority: null,
+              date: date,
+              now: dateHeaderIsNow,
+              scheduleAt: dayScheduleAt,
+            ),
+          );
+          addThreadsGrouped(
+            remainingUnscheduled,
+            scheduleAt: dayScheduleAt,
+            skipHeaderFor: context,
+          );
+        } else if (!startOfDay) {
+          items.add(
+            AgendaHeaderItem(
+              priority: null,
+              dateTimeRange: gapRange,
+              now: nextIsNow,
               scheduleAt: gapStart,
-              skipHeaderFor: context,
+            ),
+          );
+          // Extract pinned todos matching this gap's start time.
+          final (pinnedHere, rest) = remainingUnscheduled.partition(
+            (a) =>
+                a.isPinnedTodo &&
+                a.pinnedAfterTime!.isAtSameMomentAs(gapStart),
+          );
+          // Add non-pinned items first via addThreadsGrouped.
+          final gapItemsStart = items.length;
+          addThreadsGrouped(
+            rest.where((a) => !a.isPinnedTodo).toList(),
+            scheduleAt: gapStart,
+            skipHeaderFor: context,
+          );
+          // Insert pinned todos at order-based positions among
+          // gap items so they interleave correctly.
+          if (pinnedHere.isNotEmpty) {
+            log.info(
+              '[agenda:endGap] ${pinnedHere.length} pinned todo(s) '
+              'in end-of-day gap starting $gapStart: '
+              '${pinnedHere.map((t) => '"${t.title}"').join(', ')}',
             );
+            pinnedHere.sort((a, b) => a.order.compareTo(b.order));
+            for (final pinnedTodo in pinnedHere) {
+              var insertAt = items.length;
+              for (var j = gapItemsStart; j < items.length; j++) {
+                final item = items[j];
+                if (item is AgendaThreadItem &&
+                    pinnedTodo.order.compareTo(
+                          item.thread.order,
+                        ) <
+                        0) {
+                  insertAt = j;
+                  break;
+                }
+              }
+              items.insert(
+                insertAt,
+                AgendaThreadItem(pinnedTodo),
+              );
+            }
           }
         }
       }
 
       // Post-process today's items to add action-based "now" indicator
       if (isToday && todayStartIndex >= 0) {
-        // Find the first incomplete action
-        int? firstIncompleteActionIndex;
+        int? firstTodoIndex;
         for (int i = todayStartIndex; i < items.length; i++) {
           final item = items[i];
-          if (item is AgendaActivityItem &&
-              item.activity.type == ActivityType.action &&
-              item.activity.todo) {
-            firstIncompleteActionIndex = i;
+          if (item is AgendaThreadItem && item.thread.todo) {
+            firstTodoIndex = i;
             break;
           }
         }
 
-        if (firstIncompleteActionIndex != null) {
-          final firstIncompleteActionItem =
-              items[firstIncompleteActionIndex] as AgendaActivityItem;
+        if (firstTodoIndex != null) {
+          final firstTodoItem = items[firstTodoIndex] as AgendaThreadItem;
 
-          // Check what immediately precedes the first incomplete action
-          bool hasPrecedingNoteOrDoneAction = false;
-
-          if (firstIncompleteActionIndex > todayStartIndex) {
-            final precedingItem = items[firstIncompleteActionIndex - 1];
-            if (precedingItem is AgendaActivityItem) {
-              final activity = precedingItem.activity;
-              // Check if it's a note or a done action
-              if (activity.type == ActivityType.note ||
-                  (activity.type == ActivityType.action && activity.done)) {
-                hasPrecedingNoteOrDoneAction = true;
-              }
+          bool hasPrecedingThread = false;
+          if (firstTodoIndex > todayStartIndex) {
+            final precedingItem = items[firstTodoIndex - 1];
+            if (precedingItem is AgendaThreadItem) {
+              hasPrecedingThread = true;
             }
           }
 
-          // Mark the first incomplete action with now=true
-          items[firstIncompleteActionIndex] = AgendaActivityItem(
-            firstIncompleteActionItem.activity,
+          items[firstTodoIndex] = AgendaThreadItem(
+            firstTodoItem.thread,
             now: true,
           );
 
-          // If not preceded by note/done action, also mark the previous header
-          // (but only if it's an event or day header, not a priority header)
-          if (!hasPrecedingNoteOrDoneAction) {
-            for (
-              int i = firstIncompleteActionIndex - 1;
-              i >= todayStartIndex;
-              i--
-            ) {
+          if (!hasPrecedingThread) {
+            for (int i = firstTodoIndex - 1; i >= todayStartIndex; i--) {
               final item = items[i];
               if (item is AgendaHeaderItem) {
-                // Only mark event/day headers with now, not priority headers
                 if (item.date != null || item.dateTimeRange != null) {
-                  // Replace the header with a new one that has now=true
                   items[i] = AgendaHeaderItem(
                     priority: item.priority,
                     dateTimeRange: item.dateTimeRange,
                     date: item.date,
                     now: true,
-                    activity: item.activity,
+                    thread: item.thread,
                     text: item.text,
                   );
                 }
@@ -852,22 +928,92 @@ class PriorityState extends Equatable {
       );
     }
 
+    // Fill in date headers for every day from today through the horizon
+    final horizon = today.addDays(horizonDays);
+    final existingDates = <Date>{};
+    for (final item in items) {
+      if (item is AgendaHeaderItem && item.date != null) {
+        existingDates.add(item.date!);
+      }
+    }
+
+    final missingHeaders = <AgendaHeaderItem>[];
+    for (var date = today; date <= horizon; date = date.addDays(1)) {
+      if (!existingDates.contains(date)) {
+        final nineAM = date.toStart().add(const Duration(hours: 9));
+        missingHeaders.add(
+          AgendaHeaderItem(
+            date: date,
+            scheduleAt: nineAM,
+          ),
+        );
+      }
+    }
+
+    // Merge missing date headers into items in chronological order
+    if (missingHeaders.isNotEmpty) {
+      final merged = <AgendaItem>[];
+      var missingIndex = 0;
+
+      for (final item in items) {
+        // Insert any missing headers that come before this item's date
+        if (item is AgendaHeaderItem && item.date != null) {
+          while (missingIndex < missingHeaders.length &&
+              missingHeaders[missingIndex].date! < item.date!) {
+            merged.add(missingHeaders[missingIndex]);
+            missingIndex++;
+          }
+        }
+        merged.add(item);
+      }
+
+      // Append any remaining missing headers after all existing items
+      while (missingIndex < missingHeaders.length) {
+        merged.add(missingHeaders[missingIndex]);
+        missingIndex++;
+      }
+
+      items
+        ..clear()
+        ..addAll(merged);
+    }
+
+    // Mark consecutive date-only headers as compact
+    for (int i = 1; i < items.length; i++) {
+      final prev = items[i - 1];
+      final curr = items[i];
+      if (prev is AgendaHeaderItem &&
+          prev.date != null &&
+          prev.priority == null &&
+          prev.thread == null &&
+          curr is AgendaHeaderItem &&
+          curr.date != null &&
+          curr.priority == null &&
+          curr.thread == null) {
+        items[i] = AgendaHeaderItem(
+          priority: curr.priority,
+          dateTimeRange: curr.dateTimeRange,
+          date: curr.date,
+          now: curr.now,
+          thread: curr.thread,
+          text: curr.text,
+          scheduleAt: curr.scheduleAt,
+          compact: true,
+        );
+      }
+    }
+
     return items;
   }
 
   PriorityState copyWith({
     Priority? context,
-    Value<Activity?> activity = const Value.absent(),
-    Activity? draft,
+    Value<Thread?> thread = const Value.absent(),
+    Thread? draft,
     Note? draftNote,
-    Map<Date, ScheduledDay>? schedule,
-    int? first,
-    Date? firstDate,
-    BoundedDateRange? range,
-    Value<Date?> previous = const Value.absent(),
-    Value<Date?> next = const Value.absent(),
     bool? showArchived,
     List<AgendaItem>? agendaItems,
+    bool? agendaDoneEnd,
     List<Tag>? filter,
     String? search,
     List<PriorityTwist>? twists,
@@ -875,26 +1021,19 @@ class PriorityState extends Equatable {
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
     Value<Priority?> targetPriority = const Value.absent(),
+    List<AgendaItem>? activityFeedItems,
+    bool? activityFeedDoneEnd,
+    Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
   }) {
     return PriorityState(
       context: context ?? this.context,
-      activity: activity.or(this.activity),
+      thread: thread.or(this.thread),
       draft: draft ?? this.draft,
       draftNote: draftNote ?? this.draftNote,
-      schedule: schedule != null
-          ? (schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule)
-          : this.schedule,
-      first: first ?? this.first,
-      firstDate: firstDate,
-      range: range ?? this.range,
-      next: next.or(this.next),
-      previous: previous.or(this.previous),
       showArchived: showArchived ?? this.showArchived,
-      agendaItems: agendaItems != null
-          ? (agendaItems.isNotEmpty
-                ? List.unmodifiable(agendaItems)
-                : agendaItems)
-          : (schedule == null ? this.agendaItems : null),
+      agendaItems: agendaItems ?? this.agendaItems,
+      agendaDoneEnd: agendaDoneEnd ?? this.agendaDoneEnd,
+      reorderViewItems: reorderViewItems.or(this.reorderViewItems),
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
@@ -914,22 +1053,24 @@ class PriorityState extends Equatable {
                 : tagSuggestions)
           : this.tagSuggestions,
       targetPriority: targetPriority.or(this.targetPriority),
+      activityFeedItems: activityFeedItems != null
+          ? (activityFeedItems.isNotEmpty
+                ? List.unmodifiable(activityFeedItems)
+                : activityFeedItems)
+          : this.activityFeedItems,
+      activityFeedDoneEnd: activityFeedDoneEnd ?? this.activityFeedDoneEnd,
     );
   }
 
   @override
   List<Object?> get props => [
     context,
-    activity,
+    thread,
     draft,
     draftNote,
-    schedule,
-    first,
-    range,
-    previous,
-    next,
     showArchived,
     agendaItems,
+    agendaDoneEnd,
     filter,
     search,
     twists,
@@ -937,53 +1078,14 @@ class PriorityState extends Equatable {
     tags,
     tagSuggestions,
     targetPriority,
+    activityFeedItems,
+    activityFeedDoneEnd,
+    reorderViewItems,
   ];
 
   @override
   String toString() {
-    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, first: $first, range: $range, showArchived: $showArchived, filter: $filter, search: $search, twists: ${twists.length}, tags: ${tags.length})';
-  }
-
-  /// Returns the index of the first AgendaHeaderItem with a date on or after the given date.
-  /// Returns 0 if no such AgendaHeaderItem is found.
-  static int _findDate(List<AgendaItem> agendaItems, Date targetDate) {
-    for (int i = 0; i < agendaItems.length; i++) {
-      final item = agendaItems[i];
-      if (item is AgendaHeaderItem &&
-          item.date != null &&
-          item.date! >= targetDate) {
-        return i;
-      }
-    }
-    return 0;
-  }
-
-  /// Returns the index of the AgendaHeaderItem with now=true.
-  /// Prefers the "Now" divider header (no date) over date headers.
-  /// Returns 0 if no such AgendaHeaderItem is found.
-  static int _findNow(List<AgendaItem> agendaItems) {
-    int? firstNow;
-    for (int i = 0; i < agendaItems.length; i++) {
-      final item = agendaItems[i];
-      if (item is AgendaHeaderItem && item.now) {
-        if (item.date == null) return i;
-        firstNow ??= i;
-      }
-    }
-    return firstNow ?? 0;
-  }
-
-  /// Returns the index of the first AgendaActivityItem with now=true.
-  /// This is the first incomplete action, which is the true "up next" split point.
-  /// Falls back to _findNow (the now header) if no activity has now=true.
-  static int _findNowActivity(List<AgendaItem> agendaItems) {
-    for (int i = 0; i < agendaItems.length; i++) {
-      final item = agendaItems[i];
-      if (item is AgendaActivityItem && item.now) {
-        return i;
-      }
-    }
-    return _findNow(agendaItems);
+    return 'PriorityState(context: ${context.title}, thread: ${thread?.title}, draft: $draft, showArchived: $showArchived, filter: $filter, search: $search, twists: ${twists.length}, tags: ${tags.length})';
   }
 }
 
@@ -992,11 +1094,11 @@ sealed class AgendaItem {
 
   T when<T>({
     required T Function(AgendaHeaderItem) header,
-    required T Function(AgendaActivityItem) activity,
+    required T Function(AgendaThreadItem) activity,
   }) {
     return switch (this) {
       AgendaHeaderItem h => header(h),
-      AgendaActivityItem a => activity(a),
+      AgendaThreadItem a => activity(a),
     };
   }
 }
@@ -1007,31 +1109,33 @@ class AgendaHeaderItem extends AgendaItem {
     this.dateTimeRange,
     this.date,
     this.now = false,
-    this.activity,
+    this.thread,
     this.text,
     this.scheduleAt,
+    this.compact = false,
   });
 
   final Priority? priority;
   final DateTimeRange? dateTimeRange;
   final Date? date;
   final bool now;
-  final Activity? activity;
+  final Thread? thread;
   final String? text;
   final DateTime? scheduleAt;
+  final bool compact;
 
   @override
   String toString() =>
-      'AgendaHeaderItem(priority: ${priority?.title}, dateTimeRange: $dateTimeRange, date: $date, now: $now, text: $text, scheduleAt: $scheduleAt)';
+      'AgendaHeaderItem(priority: ${priority?.title}, dateTimeRange: $dateTimeRange, date: $date, now: $now, text: $text, scheduleAt: $scheduleAt, compact: $compact)';
 }
 
-class AgendaActivityItem extends AgendaItem {
-  const AgendaActivityItem(this.activity, {this.now = false});
+class AgendaThreadItem extends AgendaItem {
+  const AgendaThreadItem(this.thread, {this.now = false});
 
-  final Activity activity;
+  final Thread thread;
   final bool now;
 
   @override
   String toString() =>
-      'AgendaActivityItem(activity: ${activity.title}, now: $now)';
+      'AgendaThreadItem(thread: ${thread.title}, now: $now)';
 }

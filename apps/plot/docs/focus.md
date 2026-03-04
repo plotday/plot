@@ -77,7 +77,7 @@ This means Cmd-K shows actions for the context, not the focused item. Use Enter 
 
 #### 1. FocusNode Management
 
-**Location**: `lib/widget/bidirectional_list.dart` - `BidirectionalListController`
+**Location**: `lib/widget/infinite_list.dart` - `InfiniteListController`
 
 **Responsibilities:**
 
@@ -123,9 +123,9 @@ color: _focusNode.hasFocus || (!widget.disableInternalHover && _isHovered)
     : null
 ```
 
-#### 3. BidirectionalList
+#### 3. InfiniteList
 
-**Location**: `lib/widget/bidirectional_list.dart`
+**Location**: `lib/widget/infinite_list.dart`
 
 **Changes:**
 
@@ -169,7 +169,7 @@ These are used with Flutter's Actions/Shortcuts system to handle keyboard input.
 **OpenFocusedItemActions Class:**
 
 - Extends `ShowActions`
-- Takes `BidirectionalListController` and action builder function
+- Takes `InfiniteListController` and action builder function
 - When run:
   1. Gets `focusedIndex` from controller
   2. Builds action groups for that index
@@ -185,7 +185,7 @@ These are used with Flutter's Actions/Shortcuts system to handle keyboard input.
 **Structure:**
 
 ```dart
-BidirectionalListSelector(
+InfiniteListSelector(
   builder: (context, listController) => Shortcuts(
     shortcuts: {
       Up: MoveFocusUpIntent(),
@@ -242,7 +242,7 @@ BlocBuilder<LayoutBloc, LayoutState>(
       shortcuts[Down] = MoveFocusDownIntent();
     }
 
-    return BidirectionalListSelector(
+    return InfiniteListSelector(
       builder: (context, listController) => Shortcuts(
         shortcuts: shortcuts,
         child: Actions(
@@ -257,7 +257,7 @@ BlocBuilder<LayoutBloc, LayoutState>(
 
 **Conditional Shortcuts:**
 
-- Wraps BidirectionalListSelector in `BlocBuilder<LayoutBloc>`
+- Wraps InfiniteListSelector in `BlocBuilder<LayoutBloc>`
 - Checks `layoutState.middlePanelVisible`
 - Dynamically builds shortcuts map based on visibility
 - This allows Up/Down to work on PriorityPage when ActivityPage is not visible
@@ -284,14 +284,14 @@ import 'package:flutter/widgets.dart'  show Actions, CallbackAction, KeyEventRes
 ### Focus State
 
 - **Stored in**: FocusNode (Flutter's built-in system)
-- **Per-list**: Each `BidirectionalListController` manages its own FocusNodes
+- **Per-list**: Each `InfiniteListController` manages its own FocusNodes
 - **Global**: Only one FocusNode can have focus at a time (Flutter's FocusManager ensures this)
 - **Persistence**: `lastFocusedIndex` stored per controller for restoration
 
 ### Hover State
 
-- **Stored in**: `BidirectionalListController._hoveredIndex`
-- **Updated by**: MouseRegion in BidirectionalList
+- **Stored in**: `InfiniteListController._hoveredIndex`
+- **Updated by**: MouseRegion in InfiniteList
 - **Behavior**: Hovering calls `setHovered()` which clears focus and updates `_hoveredIndex`
 
 ### Selection State
@@ -381,7 +381,7 @@ import 'package:flutter/widgets.dart'  show Actions, CallbackAction, KeyEventRes
 
 ### Reverse Lists
 
-ActivityPage uses `reverse: true` on BidirectionalList. When calling `moveFocus(offset)`:
+ActivityPage uses `reverse: true` on InfiniteList. When calling `moveFocus(offset)`:
 
 - Positive offset moves toward the end (down in visual order)
 - Negative offset moves toward the start (up in visual order)
@@ -389,7 +389,7 @@ ActivityPage uses `reverse: true` on BidirectionalList. When calling `moveFocus(
 
 ### Index Calculations
 
-- `BidirectionalList` items are indexed from `first` to `first + count - 1`
+- `InfiniteList` items are indexed from `first` to `first + count - 1`
 - Controllers track index in this range
 - `getFocusNode(index)` uses the list index directly
 - Pages map between list index and their internal models (e.g., activity groups)
@@ -481,7 +481,7 @@ ActivityPage uses `reverse: true` on BidirectionalList. When calling `moveFocus(
 
 ### Core Files
 
-- `lib/widget/bidirectional_list.dart` - Focus management controller
+- `lib/widget/infinite_list.dart` - Focus management controller
 - `lib/widget/list_tile.dart` - FocusNode acceptance and visual feedback
 - `lib/action/activity.dart` - Intent classes and OpenFocusedItemActions
 

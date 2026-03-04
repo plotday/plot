@@ -20,7 +20,7 @@ userSettings.get("/sync/user-settings", async (c) => {
       .where("user_id", "=", userId);
 
     if (updatedSince) {
-      query = query.where(sql<boolean>`updated_at > ${updatedSince}::timestamptz`);
+      query = query.where(sql<boolean>`date_trunc('milliseconds', updated_at) > ${updatedSince}::timestamptz`);
     }
 
     return query.execute();

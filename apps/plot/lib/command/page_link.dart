@@ -74,19 +74,19 @@ class OpenPageLink extends Command {
         // Navigate to priority page: /priorityId
         context.router.push(PriorityRoute(priorityIdString: segments[0]));
       } else if (segments.length >= 2) {
-        // Navigate to nested route: /priorityId/activityId or /priorityId/new
+        // Navigate to nested route: /priorityId/threadId or /priorityId/new
         if (segments[1] == 'new') {
           context.router.push(
             PriorityRoute(
               priorityIdString: segments[0],
-              children: [NewActivityRoute()],
+              children: [NewThreadRoute()],
             ),
           );
         } else {
           context.router.push(
             PriorityRoute(
               priorityIdString: segments[0],
-              children: [ActivityRoute(activityIdString: segments[1])],
+              children: [ThreadRoute(threadIdString: segments[1])],
             ),
           );
         }

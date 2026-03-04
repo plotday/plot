@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { assertPriorityAccess } from "./authorize";
-import { parseReadParams } from "./helpers";
+import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { rpcUser } from "../../rpc";
 import { notifySync } from "./notify";
 
@@ -26,20 +26,14 @@ priorityMembers.get("/sync/priority-members", async (c) => {
 
     // Apply sort
     if (updatedSince) {
-      query = query.orderBy("updated_at", "asc").orderBy("contact_id", "asc");
+      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("contact_id", "asc");
     } else {
       query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("contact_id", sortDir);
     }
 
     // Use composite cursor on (updated_at, contact_id)
     if (updatedSince) {
-      if (cursorId) {
-        query = query.where(
-          sql<boolean>`(updated_at > ${updatedSince}::timestamptz OR (updated_at = ${updatedSince}::timestamptz AND contact_id > ${cursorId}))`
-        );
-      } else {
-        query = query.where(sql<boolean>`updated_at > ${updatedSince}::timestamptz`);
-      }
+      query = query.where(updatedSinceCursor(updatedSince, cursorId, "contact_id"));
     }
 
     if (archived === true) {

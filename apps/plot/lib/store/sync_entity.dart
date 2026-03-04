@@ -22,7 +22,7 @@ class SyncEntity {
   final Future<void> Function() pullFn;
 
   /// Optional group parent for related entities that sync together
-  /// e.g., ActivityException and ActivityTags have Activity as groupParent
+  /// e.g., Schedules and ThreadTags have Thread as groupParent
   final SyncEntity? groupParent;
 
   const SyncEntity({

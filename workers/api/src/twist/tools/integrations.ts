@@ -4,18 +4,23 @@ import {
   type Actor,
   type ActorId,
   ActorType,
+  type Action,
+  ActionType,
   type Link,
-  LinkType,
+  type NewContact,
+  type NewLinkWithNotes,
+  type Note,
+  type ThreadMeta,
 } from "@plotday/twister/plot";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
+  type ArchiveLinkFilter,
   type AuthProvider,
   type AuthToken,
   type Authorization,
-  type IntegrationOptions,
-  type IntegrationProviderConfig,
+  type Channel,
+  type LinkTypeConfig,
   type Integrations as IAuth,
-  type Syncable,
 } from "@plotday/twister/tools/integrations";
 import type { Uuid } from "@plotday/twister/utils/uuid";
 
@@ -31,9 +36,28 @@ import superjson from "superjson";
 
 import type { Storage } from "../../state/storage";
 import { createLogger } from "@plotday/worker-util";
+import { rpc } from "../../rpc";
 import { getRpcFunctionName } from "../../utils/rpc";
+import { fromDbLink } from "./plot/converters";
+import type { Plot } from "./plot/index";
 import type { Store } from "./store";
 import { Tool } from "./tool";
+
+/** Internal provider config used by the Integrations tool. */
+type IntegrationProviderConfig = {
+  provider: AuthProvider;
+  scopes: string[];
+  linkTypes?: LinkTypeConfig[];
+  getChannels: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
+  onChannelEnabled: (channel: Channel) => Promise<void>;
+  onChannelDisabled: (channel: Channel) => Promise<void>;
+  onLinkUpdated?: (link: Link) => Promise<void>;
+  onNoteCreated?: (note: Note, meta: ThreadMeta) => Promise<void>;
+};
+
+type IntegrationOptions = {
+  providers: IntegrationProviderConfig[];
+};
 
 const AUTH_EMAIL_CONFLICT_ERROR = "AuthEmailConflictError";
 
@@ -45,10 +69,12 @@ type AuthState = {
   callback?: Callback;
 };
 
-type SyncableConfig = {
+type ChannelConfig = {
   enabled: boolean;
   enabledBy?: ActorId;
   title?: string | null;
+  priorityId?: string | null;
+  createThreads?: boolean;
 };
 
 type PendingActAs = {
@@ -62,6 +88,7 @@ export class Integrations extends Tool implements IAuth {
   private store: Store;
   private env: Bindings;
   private db: Kysely<DB>;
+  private priorityId: string;
   private priorityTwistId: string;
   // These are callbacks we create and call
   private callbacks: DurableObjectStub<CallbacksState>;
@@ -69,18 +96,20 @@ export class Integrations extends Tool implements IAuth {
   private _environment: TwistEnvironment;
   private path: string[];
   private providerConfigs: IntegrationProviderConfig[];
-
+  /** Source metadata passed from factory when the twist is a Source. */
+  private sourceProvider: { provider: string; scopes: string[]; linkTypes?: any[] } | null = null;
   /**
    * Extract provider metadata from integration options during deployment.
    * Returns provider/scopes pairs without lifecycle callbacks.
    */
   static Providers(
     options?: IntegrationOptions
-  ): Array<{ provider: string; scopes: string[] }> {
+  ): Array<{ provider: string; scopes: string[]; linkTypes?: any[] }> {
     if (!options?.providers) return [];
     return options.providers.map((p) => ({
       provider: p.provider,
       scopes: [...p.scopes],
+      linkTypes: p.linkTypes ?? [],
     }));
   }
 
@@ -96,16 +125,20 @@ export class Integrations extends Tool implements IAuth {
     store: Store;
     env: Bindings;
     db: Kysely<DB>;
+    priorityId: string;
     priorityTwistId: string;
     twistId: string;
     environment: TwistEnvironment;
     path: string[];
     integrationOptions?: IntegrationOptions;
+    /** Source metadata (provider, scopes, linkTypes) from the Source class. Set by factory for sources. */
+    sourceProvider?: { provider: string; scopes: string[]; linkTypes?: any[] } | null;
   }) {
     super();
     this.store = options.store;
     this.env = options.env;
     this.db = options.db;
+    this.priorityId = options.priorityId;
     this.priorityTwistId = options.priorityTwistId;
     this._twistId = options.twistId;
     this._environment = options.environment;
@@ -114,11 +147,26 @@ export class Integrations extends Tool implements IAuth {
       options.priorityTwistId
     );
     this.path = options.path;
-    // Provider config callbacks (onSyncEnabled, onSyncDisabled, getSyncables)
+    this.sourceProvider = options.sourceProvider ?? null;
+    // Provider config callbacks (onChannelEnabled, onChannelDisabled, getChannels)
     // are no longer called as RPC stubs — they're returned as __dispatch info
     // and invoked locally by the twist worker entrypoint with proper this binding.
     // No need to dup any RPC stubs.
     this.providerConfigs = options.integrationOptions?.providers ?? [];
+
+    // For sources using the new API (sourceProvider set), synthesize a provider config
+    // so existing methods that read providerConfigs still work.
+    if (this.sourceProvider && this.providerConfigs.length === 0) {
+      this.providerConfigs = [{
+        provider: this.sourceProvider.provider as AuthProvider,
+        scopes: this.sourceProvider.scopes,
+        linkTypes: this.sourceProvider.linkTypes,
+        // Placeholder callbacks — never called directly, dispatch uses sourceMethod instead
+        getChannels: async () => [],
+        onChannelEnabled: async () => {},
+        onChannelDisabled: async () => {},
+      }];
+    }
   }
 
   // ============================================================================
@@ -126,30 +174,43 @@ export class Integrations extends Tool implements IAuth {
   // ============================================================================
 
   /**
-   * Get a token for a syncable resource.
-   * Returns the token of the user who enabled sync on the given syncable.
+   * Get a token for a channel.
+   * Returns the token of the user who enabled sync on the given channel.
+   * Supports both get(channelId) and get(provider, channelId) signatures.
    */
-  async get(provider: AuthProvider, syncableId: string): Promise<AuthToken | null> {
-    // Look up syncable config to find who enabled it
-    const configKey = `syncable_config:${provider}:${syncableId}`;
-    const config = await this.store.get<SyncableConfig>(configKey);
+  async get(channelIdOrProvider: string, channelId?: string): Promise<AuthToken | null> {
+    // Support both signatures: get(channelId) and get(provider, channelId)
+    let provider: AuthProvider;
+    let resolvedChannelId: string;
+    if (channelId !== undefined) {
+      provider = channelIdOrProvider as AuthProvider;
+      resolvedChannelId = channelId;
+    } else {
+      // Single-arg form: use the first provider from config
+      provider = this.providerConfigs[0]?.provider;
+      resolvedChannelId = channelIdOrProvider;
+      if (!provider) return null;
+    }
+
+    // Look up channel config to find who enabled it
+    const config = await this.getChannelConfig(provider, resolvedChannelId);
 
     if (config?.enabled && config.enabledBy) {
       return this.getActorToken(provider, config.enabledBy);
     }
 
-    // Migration fallback: no syncable_config exists for pre-redesign users.
+    // Migration fallback: no channel_config exists for pre-redesign users.
     // Find any actor with a valid token for this provider.
     const tokenKeys = await this.store.list(`auth_token:${provider}:`);
     for (const key of tokenKeys) {
       const actorId = key.slice(`auth_token:${provider}:`.length) as ActorId;
       const token = await this.getActorToken(provider, actorId);
       if (token) {
-        // Auto-create syncable_config so subsequent calls use the fast path
-        await this.store.set(configKey, {
+        // Auto-create channel_config so subsequent calls use the fast path
+        await this.store.set(`channel_config:${provider}:${channelId}`, {
           enabled: true,
           enabledBy: actorId,
-        } satisfies SyncableConfig);
+        } satisfies ChannelConfig);
         return token;
       }
     }
@@ -210,9 +271,9 @@ export class Integrations extends Tool implements IAuth {
       extraArgs: [], // onAuth will look up pending callbacks itself
     }) as unknown as Callback;
 
-    const authLink: Link = {
+    const authLink: Action = {
       title: `Continue with ${PROVIDER_CONFIGS[provider]?.name ?? provider}`,
-      type: LinkType.auth,
+      type: ActionType.auth,
       provider,
       scopes: providerConfig.scopes,
       callback: onAuthCallback,
@@ -239,15 +300,206 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Declare what syncable resources an actor has access to.
+   * Declare what channels an actor has access to.
    */
-  async setSyncables(
+  async setChannels(
     provider: AuthProvider,
     actorId: ActorId,
-    syncables: Syncable[]
+    channels: Channel[]
   ): Promise<void> {
-    const key = `syncable_access:${provider}:${actorId}`;
-    await this.store.set(key, syncables);
+    await this.store.set(`channel_access:${provider}:${actorId}`, channels);
+  }
+
+  // ============================================================================
+  // Source save operations (delegates to internal Plot instance)
+  // ============================================================================
+
+  /**
+   * Get or create an internal Plot tool instance for save operations.
+   * Sources use this to save threads/contacts without direct Plot access.
+   * When overridePriorityId is provided, creates a separate Plot instance for that priority.
+   */
+  private _plotCache = new Map<string, Plot>();
+  private getPlot(overridePriorityId?: string): Plot {
+    const effectivePriorityId = overridePriorityId || this.priorityId;
+    const cacheKey = effectivePriorityId || "__none__";
+    let plot = this._plotCache.get(cacheKey);
+    if (!plot) {
+      // Lazy import to avoid circular dependency at module load time
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { Plot: PlotClass } = require("./plot/index") as { Plot: typeof Plot };
+      plot = new PlotClass({
+        db: this.db,
+        priorityId: effectivePriorityId,
+        priorityTwistId: this.priorityTwistId,
+        options: {
+          thread: { access: 1 /* ThreadAccess.Create */ },
+          contact: { access: 1 /* ContactAccess.Write */ },
+        },
+        env: this.env,
+      });
+      this._plotCache.set(cacheKey, plot);
+    }
+    return plot;
+  }
+
+  /**
+   * Saves a link with notes to the source's priority.
+   * Creates both a thread (container) and a link (external entity).
+   * For account-based sources (no priorityId), resolves priority from link.channelId.
+   * Delegates to an internal Plot instance.
+   */
+  async saveLink(link: NewLinkWithNotes): Promise<Uuid> {
+    let targetPriorityId = this.priorityId;
+    let createThreads = true;
+
+    // For account-based sources, resolve priority and create_threads from channel
+    if (!targetPriorityId && link.channelId) {
+      const channel = await this.db
+        .selectFrom("source_channel")
+        .select(["priority_id", "create_threads"])
+        .where("priority_twist_id", "=", this.priorityTwistId)
+        .where("channel_id", "=", link.channelId)
+        .executeTakeFirst();
+      targetPriorityId = channel?.priority_id ?? "";
+      createThreads = channel?.create_threads ?? true;
+    }
+
+    if (!targetPriorityId) {
+      throw new Error("Cannot save link: no priority resolved. Set channelId on the link or use a priority-bound source.");
+    }
+
+    const plot = this.getPlot(targetPriorityId);
+
+    // If create_threads is false, create only the link row without a thread
+    if (!createThreads) {
+      return plot.createLinkOnly(link);
+    }
+
+    return plot.createLink(link);
+  }
+
+  /**
+   * Saves contacts to the source's priority.
+   * Delegates to an internal Plot instance.
+   */
+  async saveContacts(contacts: NewContact[]): Promise<Actor[]> {
+    const plot = this.getPlot();
+    return plot.addContacts(contacts);
+  }
+
+  /**
+   * Archives links matching the given filter that were created by this source.
+   * For each archived link's thread, if no other active links remain,
+   * the thread is also archived. Notifies sync DOs for affected priorities.
+   */
+  async archiveLinks(filter: ArchiveLinkFilter): Promise<void> {
+    const filterJson: Record<string, unknown> = {};
+    if (filter.channelId !== undefined) filterJson.channelId = filter.channelId;
+    if (filter.type !== undefined) filterJson.type = filter.type;
+    if (filter.status !== undefined) filterJson.status = filter.status;
+    if (filter.meta !== undefined) filterJson.meta = filter.meta;
+
+    const affectedPriorityIds = await rpc(this.db, "archive_links", {
+      p_created_by: this.priorityTwistId,
+      // @ts-ignore - filterJson is valid JSON but Record<string, unknown> doesn't satisfy the strict Json type
+      p_filter: filterJson,
+    }) as unknown as string[] | null;
+
+    if (affectedPriorityIds && affectedPriorityIds.length > 0) {
+      const plot = this.getPlot();
+      await plot.notifySyncDOs(new Set(affectedPriorityIds));
+    }
+  }
+
+  /**
+   * Dispatch method called by the entrypoint when synced data changes.
+   * Routes link updates to the appropriate source callback.
+   */
+  async dispatch(
+    dispatchItem: any
+  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[] }>> {
+    // Handle channel_note dispatch — route to source's onNoteCreated
+    if (dispatchItem?.itemType === "channel_note" && this.sourceProvider) {
+      const { item, isCreate = true } = dispatchItem;
+      if (!isCreate || !item) return [];
+
+      // Skip notes created by this twist (prevent loops)
+      if (item.created_by === this.priorityTwistId) return [];
+
+      const note: Note = {
+        id: item.id,
+        created: item.created_at ? new Date(item.created_at) : new Date(),
+        thread: {
+          id: item.thread_id,
+          title: item.thread_title,
+          priority: { id: item.priority_id },
+        } as any,
+        author: {
+          id: item.author_id ?? item.created_by,
+          name: item.author_name,
+          type:
+            item.author_type === "user"
+              ? ActorType.User
+              : item.author_type === "priority_twist"
+              ? ActorType.Twist
+              : ActorType.Contact,
+        },
+        content: item.content,
+        key: item.key || null,
+        reNote: item.re_note_id ? { id: item.re_note_id } : null,
+        mentions: item.mentions || [],
+        tags: item.tags || {},
+        private: item.private ?? false,
+        archived: item.archived_at !== null,
+        actions: item.actions,
+      };
+
+      // Build meta from link metadata
+      const meta: ThreadMeta = { ...(item.link_meta as any ?? {}) };
+      meta.channelId = item.link_channel_id;
+      meta.linkSource = item.link_source;
+
+      // Resolve reNote key for reply targeting
+      if (item.re_note_id) {
+        const reNote = await this.db
+          .selectFrom("note")
+          .select("key")
+          .where("id", "=", item.re_note_id)
+          .executeTakeFirst();
+        if (reNote?.key) {
+          meta.reNoteKey = reNote.key;
+        }
+      }
+
+      return [{ sourceMethod: "onNoteCreated", args: [note, meta] }];
+    }
+
+    if (dispatchItem?.itemType !== "link") return [];
+
+    const dbLink = dispatchItem.item;
+    if (!dbLink) return [];
+
+    // Convert DB link to SDK Link type
+    const sdkLink = fromDbLink(dbLink);
+
+    // Source pattern: dispatch directly to source method
+    if (this.sourceProvider) {
+      return [{ sourceMethod: "onLinkUpdated", args: [sdkLink] }];
+    }
+
+    // Legacy pattern: dispatch via option path
+    const providerIndex = this.providerConfigs.findIndex(
+      (p) => p.onLinkUpdated
+    );
+    if (providerIndex < 0) return [];
+
+    return [
+      {
+        optionPath: ["providers", String(providerIndex), "onLinkUpdated"],
+        args: [sdkLink],
+      },
+    ];
   }
 
   // ============================================================================
@@ -451,95 +703,116 @@ export class Integrations extends Tool implements IAuth {
       }
     }
 
-    // 3. Return dispatch for getSyncables — called locally by entrypoint with proper this binding,
-    // result forwarded to setSyncables via forwardTo directive.
+    // 3. Return dispatch for getChannels — called locally by entrypoint with proper this binding,
+    // result forwarded to setChannels via forwardTo directive.
+    const authToken: AuthToken = {
+      token: token.access_token,
+      scopes: token.scopes,
+    };
+    const forwardTo = {
+      functionName: "setChannels",
+      prependArgs: [tokenInfo.provider, actor.id],
+    };
+
+    // Source pattern: dispatch directly to source method
+    if (this.sourceProvider) {
+      return {
+        __dispatch: [{
+          sourceMethod: "getChannels",
+          args: [authorization, authToken],
+          forwardTo,
+        }],
+      } as any;
+    }
+
+    // Legacy pattern: dispatch via option path
     const providerIndex = this.providerConfigs.findIndex(
       p => p.provider === tokenInfo.provider
     );
     if (providerIndex >= 0) {
-      const authToken: AuthToken = {
-        token: token.access_token,
-        scopes: token.scopes,
-      };
-      const dispatch = {
+      return {
         __dispatch: [{
-          optionPath: ["providers", providerIndex, "getSyncables"],
+          optionPath: ["providers", providerIndex, "getChannels"],
           args: [authorization, authToken],
-          forwardTo: {
-            functionName: "setSyncables",
-            prependArgs: [tokenInfo.provider, actor.id],
-          },
+          forwardTo,
         }],
-      };
-      return dispatch as any;
+      } as any;
     }
   }
 
   /**
    * Remove an actor's auth for a provider.
-   * Handles syncable reassignment and calls onRemoved.
+   * Handles channel reassignment and calls onRemoved.
    */
   async removeAuth(provider: AuthProvider, actorId: ActorId): Promise<void> {
     const tokenKey = `auth_token:${provider}:${actorId}`;
 
-    // Handle syncables this actor enabled (flatten tree to check all levels)
-    const accessKey = `syncable_access:${provider}:${actorId}`;
-    const actorSyncablesTree = await this.store.get<Syncable[]>(accessKey) ?? [];
-    const actorSyncables = this.flattenSyncables(actorSyncablesTree);
+    // Handle channels this actor enabled (flatten tree to check all levels)
+    const actorChannelsTree = await this.getChannelAccess(provider, actorId);
+    const actorChannels = this.flattenChannels(actorChannelsTree);
 
     // Accumulate dispatch entries for callbacks that need to run on the twist worker
-    const dispatches: Array<{ optionPath: (string | number)[]; args: any[] }> = [];
-    const providerIndex = this.providerConfigs.findIndex(p => p.provider === provider);
+    const dispatches: Array<{ optionPath?: (string | number)[]; sourceMethod?: string; args: any[] }> = [];
+    const useSourceMethod = !!this.sourceProvider;
+    const providerIndex = useSourceMethod ? -1 : this.providerConfigs.findIndex(p => p.provider === provider);
 
-    for (const syncable of actorSyncables) {
-      const configKey = `syncable_config:${provider}:${syncable.id}`;
-      const syncConfig = await this.store.get<SyncableConfig>(configKey);
+    for (const channel of actorChannels) {
+      const channelConfig = await this.getChannelConfig(provider, channel.id);
 
-      if (syncConfig?.enabled && syncConfig.enabledBy === actorId) {
-        // This actor enabled this syncable - need to reassign or disable
-        const newOwner = await this.findAlternateOwner(provider, syncable.id, actorId);
+      if (channelConfig?.enabled && channelConfig.enabledBy === actorId) {
+        // This actor enabled this channel - need to reassign or disable
+        const newOwner = await this.findAlternateOwner(provider, channel.id, actorId);
+        const configKey = `channel_config:${provider}:${channel.id}`;
 
         if (newOwner) {
           // Reassign: disable with old owner, enable with new
-          if (providerIndex >= 0) {
+          if (useSourceMethod) {
+            dispatches.push({ sourceMethod: "onChannelDisabled", args: [channel] });
+          } else if (providerIndex >= 0) {
             dispatches.push({
-              optionPath: ["providers", providerIndex, "onSyncDisabled"],
-              args: [syncable],
+              optionPath: ["providers", String(providerIndex), "onChannelDisabled"],
+              args: [channel],
             });
           }
 
           await this.store.set(configKey, {
             enabled: true,
             enabledBy: newOwner,
-            title: syncable.title,
-          } satisfies SyncableConfig);
+            title: channel.title,
+          } satisfies ChannelConfig);
 
-          if (providerIndex >= 0) {
+          if (useSourceMethod) {
+            dispatches.push({ sourceMethod: "onChannelEnabled", args: [channel] });
+          } else if (providerIndex >= 0) {
             dispatches.push({
-              optionPath: ["providers", providerIndex, "onSyncEnabled"],
-              args: [syncable],
+              optionPath: ["providers", String(providerIndex), "onChannelEnabled"],
+              args: [channel],
             });
           }
         } else {
           // No alternate owner - disable
-          if (providerIndex >= 0) {
+          if (useSourceMethod) {
+            dispatches.push({ sourceMethod: "onChannelDisabled", args: [channel] });
+          } else if (providerIndex >= 0) {
             dispatches.push({
-              optionPath: ["providers", providerIndex, "onSyncDisabled"],
-              args: [syncable],
+              optionPath: ["providers", String(providerIndex), "onChannelDisabled"],
+              args: [channel],
             });
           }
 
           await this.store.set(configKey, {
             enabled: false,
-            title: syncable.title,
-          } satisfies SyncableConfig);
+            title: channel.title,
+          } satisfies ChannelConfig);
         }
       }
     }
 
-    // Delete auth token and syncable access
+    // Delete auth token and channel access
     await this.store.clear(tokenKey);
-    await this.store.clear(accessKey);
+    await this.store.clear(`channel_access:${provider}:${actorId}`);
+    // Clean up old key if it exists
+    await this.store.clear(`syncable_access:${provider}:${actorId}`);
 
     // Return dispatch info for the entrypoint to invoke locally
     if (dispatches.length > 0) {
@@ -548,68 +821,118 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Enable sync for a syncable resource.
+   * Enable sync for a channel.
    * Called from API endpoint when user toggles sync on.
    */
   async enableSync(
     provider: AuthProvider,
-    syncableId: string,
+    channelId: string,
     actorId: ActorId,
-    title?: string
+    title?: string,
+    priorityId?: string,
+    createThreads?: boolean
   ): Promise<void> {
-    const configKey = `syncable_config:${provider}:${syncableId}`;
-
-    // Find the title from the actor's syncable access list if not provided
+    // Find the title from the actor's channel access list if not provided
     if (!title) {
-      const accessKey = `syncable_access:${provider}:${actorId}`;
-      const syncables = await this.store.get<Syncable[]>(accessKey) ?? [];
-      const syncable = this.findSyncableInTree(syncables, syncableId);
-      title = syncable?.title;
+      const channels = await this.getChannelAccess(provider, actorId);
+      const channel = this.findChannelInTree(channels, channelId);
+      title = channel?.title;
     }
 
-    await this.store.set(configKey, {
+    await this.store.set(`channel_config:${provider}:${channelId}`, {
       enabled: true,
       enabledBy: actorId,
       title: title ?? null,
-    } satisfies SyncableConfig);
+      ...(priorityId !== undefined ? { priorityId } : {}),
+      ...(createThreads !== undefined ? { createThreads } : {}),
+    } satisfies ChannelConfig);
 
-    // Return dispatch info for onSyncEnabled callback.
+    // Write to source_channel DB table (dual-write with KV)
+    await this.db
+      .insertInto("source_channel")
+      .values({
+        priority_twist_id: this.priorityTwistId,
+        channel_id: channelId,
+        title: title ?? channelId,
+        priority_id: priorityId ?? null,
+        enabled: true,
+        create_threads: createThreads ?? true,
+      })
+      .onConflict((oc) =>
+        oc.columns(["priority_twist_id", "channel_id"]).doUpdateSet({
+          enabled: true,
+          title: title ?? channelId,
+          priority_id: priorityId ?? null,
+          create_threads: createThreads ?? true,
+          updated_at: new Date(),
+        })
+      )
+      .execute();
+
+    // Return dispatch info for onChannelEnabled callback.
     // The entrypoint will invoke this locally on the twist worker with proper this binding.
+    const channelArg = { id: channelId, title: title ?? channelId, priorityId: priorityId ?? undefined };
+
+    // Source pattern: dispatch directly to source method
+    if (this.sourceProvider) {
+      return {
+        __dispatch: [{ sourceMethod: "onChannelEnabled", args: [channelArg] }],
+      } as any;
+    }
+
+    // Legacy pattern: dispatch via option path
     const providerIndex = this.providerConfigs.findIndex(p => p.provider === provider);
     if (providerIndex >= 0) {
       return {
         __dispatch: [{
-          optionPath: ["providers", providerIndex, "onSyncEnabled"],
-          args: [{ id: syncableId, title: title ?? syncableId }],
+          optionPath: ["providers", providerIndex, "onChannelEnabled"],
+          args: [channelArg],
         }],
       } as any;
     }
   }
 
   /**
-   * Disable sync for a syncable resource.
+   * Disable sync for a channel.
    * Called from API endpoint when user toggles sync off.
    */
   async disableSync(
     provider: AuthProvider,
-    syncableId: string
+    channelId: string
   ): Promise<void> {
-    const configKey = `syncable_config:${provider}:${syncableId}`;
-    const existing = await this.store.get<SyncableConfig>(configKey);
+    const existing = await this.getChannelConfig(provider, channelId);
 
-    await this.store.set(configKey, {
+    await this.store.set(`channel_config:${provider}:${channelId}`, {
       enabled: false,
       title: existing?.title ?? null,
-    } satisfies SyncableConfig);
+    } satisfies ChannelConfig);
 
-    // Return dispatch info for onSyncDisabled callback.
+    // Write to source_channel DB table (dual-write with KV)
+    await this.db
+      .updateTable("source_channel")
+      .set({ enabled: false, updated_at: new Date() })
+      .where("priority_twist_id", "=", this.priorityTwistId)
+      .where("channel_id", "=", channelId)
+      .execute();
+
+    // Return dispatch info for onChannelDisabled callback.
     // The entrypoint will invoke this locally on the twist worker with proper this binding.
+    const channelArg = { id: channelId, title: existing?.title ?? channelId };
+
+    // Source pattern: dispatch directly to source method
+    if (this.sourceProvider) {
+      return {
+        __dispatch: [{ sourceMethod: "onChannelDisabled", args: [channelArg] }],
+      } as any;
+    }
+
+    // Legacy pattern: dispatch via option path
     const providerIndex = this.providerConfigs.findIndex(p => p.provider === provider);
     if (providerIndex >= 0) {
       return {
         __dispatch: [{
-          optionPath: ["providers", providerIndex, "onSyncDisabled"],
-          args: [{ id: syncableId, title: existing?.title ?? syncableId }],
+          optionPath: ["providers", providerIndex, "onChannelDisabled"],
+          args: [channelArg],
         }],
       } as any;
     }
@@ -617,7 +940,7 @@ export class Integrations extends Tool implements IAuth {
 
   /**
    * Get all integration data for the edit modal.
-   * Returns accounts, providers, and syncables.
+   * Returns accounts, providers, and channels.
    */
   async getIntegrationData(currentActorId?: ActorId): Promise<{
     providers: Array<{ provider: AuthProvider; scopes: string[] }>;
@@ -633,6 +956,8 @@ export class Integrations extends Tool implements IAuth {
       title: string;
       enabled: boolean;
       enabledBy: ActorId | undefined;
+      priorityId: string | null | undefined;
+      createThreads: boolean;
       currentUserHasAccess: boolean;
       children?: Array<{
         provider: AuthProvider;
@@ -640,6 +965,8 @@ export class Integrations extends Tool implements IAuth {
         title: string;
         enabled: boolean;
         enabledBy: ActorId | undefined;
+        priorityId: string | null | undefined;
+        createThreads: boolean;
         currentUserHasAccess: boolean;
         children?: any[];
       }>;
@@ -680,21 +1007,23 @@ export class Integrations extends Tool implements IAuth {
       name: string | null;
     }> = [];
 
-    // Track which syncable IDs have access from any current-user contact
-    const syncableAccessByCurrentUser = new Set<string>();
+    // Track which channel IDs have access from any current-user contact
+    const channelAccessByCurrentUser = new Set<string>();
 
-    // Collect syncable trees per provider (merged across actors)
-    type AnnotatedSyncable = {
+    // Collect channel trees per provider (merged across actors)
+    type AnnotatedChannel = {
       provider: AuthProvider;
       id: string;
       title: string;
       enabled: boolean;
       enabledBy: ActorId | undefined;
+      priorityId: string | null | undefined;
+      createThreads: boolean;
       currentUserHasAccess: boolean;
-      children?: AnnotatedSyncable[];
+      children?: AnnotatedChannel[];
     };
 
-    const syncableTreesByProvider = new Map<AuthProvider, Syncable[]>();
+    const channelTreesByProvider = new Map<AuthProvider, Channel[]>();
 
     for (const providerConfig of this.providerConfigs) {
       const provider = providerConfig.provider;
@@ -711,7 +1040,7 @@ export class Integrations extends Tool implements IAuth {
         }
       }
 
-      // Build accounts and collect syncable trees
+      // Build accounts and collect channel trees
       for (const actorId of knownActorIds) {
         const tokenKey = `auth_token:${provider}:${actorId}`;
         const tokenData = await this.store.get<StoredTokenData>(tokenKey);
@@ -735,47 +1064,47 @@ export class Integrations extends Tool implements IAuth {
           name,
         });
 
-        // Get this actor's syncable access (may be a tree)
-        const accessKey = `syncable_access:${provider}:${actorId}`;
-        const actorSyncables = await this.store.get<Syncable[]>(accessKey) ?? [];
+        // Get this actor's channel access (may be a tree)
+        const actorChannels = await this.getChannelAccess(provider, actorId as ActorId);
 
         // Track access for the current user
         if (currentUserContactIds.has(actorId)) {
-          for (const s of this.flattenSyncables(actorSyncables)) {
-            syncableAccessByCurrentUser.add(`${provider}:${s.id}`);
+          for (const s of this.flattenChannels(actorChannels)) {
+            channelAccessByCurrentUser.add(`${provider}:${s.id}`);
           }
         }
 
         // Use the first actor's tree as the canonical tree for this provider
         // (all actors with the same provider should see the same structure)
-        if (!syncableTreesByProvider.has(provider) && actorSyncables.length > 0) {
-          syncableTreesByProvider.set(provider, actorSyncables);
+        if (!channelTreesByProvider.has(provider) && actorChannels.length > 0) {
+          channelTreesByProvider.set(provider, actorChannels);
         }
       }
     }
 
-    // Annotate syncable trees with config and access info
-    const annotateSyncableTree = async (
+    // Annotate channel trees with config and access info
+    const annotateChannelTree = async (
       provider: AuthProvider,
-      syncables: Syncable[]
-    ): Promise<AnnotatedSyncable[]> => {
-      const result: AnnotatedSyncable[] = [];
-      for (const syncable of syncables) {
-        const configKey = `syncable_config:${provider}:${syncable.id}`;
-        const syncConfig = await this.store.get<SyncableConfig>(configKey);
-        const mapKey = `${provider}:${syncable.id}`;
+      channels: Channel[]
+    ): Promise<AnnotatedChannel[]> => {
+      const result: AnnotatedChannel[] = [];
+      for (const channel of channels) {
+        const channelConfig = await this.getChannelConfig(provider, channel.id);
+        const mapKey = `${provider}:${channel.id}`;
 
-        const annotated: AnnotatedSyncable = {
+        const annotated: AnnotatedChannel = {
           provider,
-          id: syncable.id,
-          title: syncable.title,
-          enabled: syncConfig?.enabled ?? false,
-          enabledBy: syncConfig?.enabledBy,
-          currentUserHasAccess: syncableAccessByCurrentUser.has(mapKey),
+          id: channel.id,
+          title: channel.title,
+          enabled: channelConfig?.enabled ?? false,
+          enabledBy: channelConfig?.enabledBy,
+          priorityId: channelConfig?.priorityId ?? null,
+          createThreads: channelConfig?.createThreads ?? true,
+          currentUserHasAccess: channelAccessByCurrentUser.has(mapKey),
         };
 
-        if (syncable.children && syncable.children.length > 0) {
-          annotated.children = await annotateSyncableTree(provider, syncable.children);
+        if (channel.children && channel.children.length > 0) {
+          annotated.children = await annotateChannelTree(provider, channel.children);
         }
 
         result.push(annotated);
@@ -785,9 +1114,9 @@ export class Integrations extends Tool implements IAuth {
 
     // Apply visibility rules recursively:
     // Show a node if it's enabled, the user has access, or any descendant matches
-    const filterVisibleTree = (syncables: AnnotatedSyncable[]): AnnotatedSyncable[] => {
-      const result: AnnotatedSyncable[] = [];
-      for (const s of syncables) {
+    const filterVisibleTree = (channels: AnnotatedChannel[]): AnnotatedChannel[] => {
+      const result: AnnotatedChannel[] = [];
+      for (const s of channels) {
         const filteredChildren = s.children ? filterVisibleTree(s.children) : undefined;
         const hasVisibleChildren = filteredChildren && filteredChildren.length > 0;
         if (s.enabled || s.currentUserHasAccess || hasVisibleChildren) {
@@ -800,27 +1129,24 @@ export class Integrations extends Tool implements IAuth {
       return result;
     };
 
-    // Build annotated and filtered syncable trees per provider
-    const allSyncables: AnnotatedSyncable[] = [];
-    for (const [provider, tree] of syncableTreesByProvider) {
-      const annotated = await annotateSyncableTree(provider, tree);
+    // Build annotated and filtered channel trees per provider
+    const allChannels: AnnotatedChannel[] = [];
+    for (const [provider, tree] of channelTreesByProvider) {
+      const annotated = await annotateChannelTree(provider, tree);
       const visible = filterVisibleTree(annotated);
-      allSyncables.push(...visible);
+      allChannels.push(...visible);
     }
 
-    return { providers, accounts, syncables: allSyncables };
+    return { providers, accounts, syncables: allChannels };
   }
 
   /**
-   * Re-calls getSyncables for a provider+actor using stored token,
-   * updating syncable_access with the latest list.
+   * Re-calls getChannels for a provider+actor using stored token,
+   * updating channel_access with the latest list.
    */
-  async refreshSyncables(provider: AuthProvider, actorId: ActorId): Promise<any> {
+  async refreshChannels(provider: AuthProvider, actorId: ActorId): Promise<any> {
     const token = await this.getActorToken(provider, actorId);
     if (!token) return;
-
-    const providerIndex = this.providerConfigs.findIndex(p => p.provider === provider);
-    if (providerIndex < 0 || !this.providerConfigs[providerIndex]?.getSyncables) return;
 
     const tokenKey = `auth_token:${provider}:${actorId}`;
     const tokenData = await this.store.get<StoredTokenData>(tokenKey);
@@ -836,28 +1162,47 @@ export class Integrations extends Tool implements IAuth {
       },
     };
 
+    const forwardTo = {
+      functionName: "setChannels",
+      prependArgs: [provider, actorId],
+    };
+
+    // Source pattern: dispatch directly to source method
+    if (this.sourceProvider) {
+      return {
+        __dispatch: [{
+          sourceMethod: "getChannels",
+          args: [auth, token],
+          forwardTo,
+        }],
+      } as any;
+    }
+
+    // Legacy pattern: dispatch via option path
+    const providerIndex = this.providerConfigs.findIndex(p => p.provider === provider);
+    if (providerIndex < 0) return;
+
     return {
       __dispatch: [{
-        optionPath: ["providers", providerIndex, "getSyncables"],
+        optionPath: ["providers", providerIndex, "getChannels"],
         args: [auth, token],
-        forwardTo: {
-          functionName: "setSyncables",
-          prependArgs: [provider, actorId],
-        },
+        forwardTo,
       }],
     } as any;
   }
 
   /**
-   * Migration: populate syncable_access for pre-redesign auth tokens.
+   * Migration: populate channel_access for pre-redesign auth tokens.
    * Called during deployment upgrade phase via callPreLifecycle.
-   * Scans existing auth tokens and calls getSyncables for each to
-   * populate syncable_access so the edit modal shows syncables.
+   * Scans existing auth tokens and calls getChannels for each to
+   * populate channel_access so the edit modal shows channels.
    */
   async preUpgrade(): Promise<any> {
     const tokenKeys = await this.store.list("auth_token:");
+    const useSourceMethod = !!this.sourceProvider;
     const dispatches: Array<{
-      optionPath: (string | number)[];
+      optionPath?: (string | number)[];
+      sourceMethod?: string;
       args: any[];
       forwardTo: { functionName: string; prependArgs: any[] };
     }> = [];
@@ -869,22 +1214,19 @@ export class Integrations extends Tool implements IAuth {
       const provider = parts[1] as AuthProvider;
       const actorId = parts.slice(2).join(":") as ActorId;
 
-      // Skip if syncable_access already exists (already migrated)
-      const accessKey = `syncable_access:${provider}:${actorId}`;
+      // Skip if channel_access already exists (already migrated)
+      const accessKey = `channel_access:${provider}:${actorId}`;
       const existing = await this.store.get(accessKey);
       if (existing) continue;
+      // Also check old key
+      const oldExisting = await this.store.get(`syncable_access:${provider}:${actorId}`);
+      if (oldExisting) continue;
 
       // Get token
       const token = await this.getActorToken(provider, actorId);
       if (!token) continue;
 
-      // Find matching provider config index
-      const providerIndex = this.providerConfigs.findIndex(
-        (p) => p.provider === provider
-      );
-      if (providerIndex < 0) continue;
-
-      // Build Authorization for getSyncables dispatch
+      // Build Authorization for getChannels dispatch
       const tokenData = await this.store.get<StoredTokenData>(key);
       const email = tokenData ? this.extractEmail(tokenData.providerData) : null;
       const auth: Authorization = {
@@ -897,14 +1239,30 @@ export class Integrations extends Tool implements IAuth {
         },
       };
 
-      dispatches.push({
-        optionPath: ["providers", providerIndex, "getSyncables"],
-        args: [auth, token],
-        forwardTo: {
-          functionName: "setSyncables",
-          prependArgs: [provider, actorId],
-        },
-      });
+      const forwardTo = {
+        functionName: "setChannels",
+        prependArgs: [provider, actorId],
+      };
+
+      if (useSourceMethod) {
+        dispatches.push({
+          sourceMethod: "getChannels",
+          args: [auth, token],
+          forwardTo,
+        });
+      } else {
+        // Find matching provider config index
+        const providerIndex = this.providerConfigs.findIndex(
+          (p) => p.provider === provider
+        );
+        if (providerIndex < 0) continue;
+
+        dispatches.push({
+          optionPath: ["providers", providerIndex, "getChannels"],
+          args: [auth, token],
+          forwardTo,
+        });
+      }
     }
 
     if (dispatches.length > 0) {
@@ -917,13 +1275,91 @@ export class Integrations extends Tool implements IAuth {
   // ============================================================================
 
   /**
-   * Find a syncable by ID anywhere in a tree of syncables.
+   * Read channel config with backward-compatible fallback to old storage keys.
    */
-  private findSyncableInTree(syncables: Syncable[], id: string): Syncable | undefined {
-    for (const s of syncables) {
+
+  /**
+   * Update the priority routing for an already-enabled channel.
+   */
+  async setChannelPriority(provider: AuthProvider, channelId: string, priorityId: string | null): Promise<void> {
+    const existing = await this.getChannelConfig(provider, channelId);
+    if (!existing) return;
+
+    await this.store.set(`channel_config:${provider}:${channelId}`, {
+      ...existing,
+      priorityId,
+    } satisfies ChannelConfig);
+
+    // Write to source_channel DB table (dual-write with KV)
+    await this.db
+      .updateTable("source_channel")
+      .set({ priority_id: priorityId, updated_at: new Date() })
+      .where("priority_twist_id", "=", this.priorityTwistId)
+      .where("channel_id", "=", channelId)
+      .execute();
+  }
+
+  private async getChannelConfig(provider: AuthProvider, channelId: string): Promise<ChannelConfig | null> {
+    // Try source_channel DB table first
+    const dbRow = await this.db
+      .selectFrom("source_channel")
+      .select(["enabled", "title", "priority_id", "create_threads"])
+      .where("priority_twist_id", "=", this.priorityTwistId)
+      .where("channel_id", "=", channelId)
+      .executeTakeFirst();
+
+    if (dbRow) {
+      // DB doesn't store enabledBy — fall back to KV for that field
+      const kvConfig = await this.store.get<ChannelConfig>(`channel_config:${provider}:${channelId}`);
+      return {
+        enabled: dbRow.enabled,
+        enabledBy: kvConfig?.enabledBy,
+        title: dbRow.title,
+        priorityId: dbRow.priority_id,
+        createThreads: dbRow.create_threads,
+      };
+    }
+
+    // Dual-read fallback: check KV
+    const config = await this.store.get<ChannelConfig>(`channel_config:${provider}:${channelId}`);
+    if (config) {
+      // Migrate KV data to DB lazily
+      await this.db
+        .insertInto("source_channel")
+        .values({
+          priority_twist_id: this.priorityTwistId,
+          channel_id: channelId,
+          title: config.title ?? channelId,
+          priority_id: config.priorityId ?? null,
+          enabled: config.enabled,
+        })
+        .onConflict((oc) => oc.columns(["priority_twist_id", "channel_id"]).doNothing())
+        .execute();
+      return config;
+    }
+
+    // Backward compat: read from old storage key prefix
+    return this.store.get<ChannelConfig>(`syncable_config:${provider}:${channelId}`);
+  }
+
+  /**
+   * Read channel access list with backward-compatible fallback to old storage keys.
+   */
+  private async getChannelAccess(provider: AuthProvider, actorId: ActorId): Promise<Channel[]> {
+    const channels = await this.store.get<Channel[]>(`channel_access:${provider}:${actorId}`);
+    if (channels) return channels;
+    // Backward compat: read from old storage key prefix
+    return await this.store.get<Channel[]>(`syncable_access:${provider}:${actorId}`) ?? [];
+  }
+
+  /**
+   * Find a channel by ID anywhere in a tree of channels.
+   */
+  private findChannelInTree(channels: Channel[], id: string): Channel | undefined {
+    for (const s of channels) {
       if (s.id === id) return s;
       if (s.children) {
-        const found = this.findSyncableInTree(s.children, id);
+        const found = this.findChannelInTree(s.children, id);
         if (found) return found;
       }
     }
@@ -931,14 +1367,14 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Flatten a tree of syncables into a flat array.
+   * Flatten a tree of channels into a flat array.
    */
-  private flattenSyncables(syncables: Syncable[]): Syncable[] {
-    const result: Syncable[] = [];
-    for (const s of syncables) {
+  private flattenChannels(channels: Channel[]): Channel[] {
+    const result: Channel[] = [];
+    for (const s of channels) {
       result.push(s);
       if (s.children) {
-        result.push(...this.flattenSyncables(s.children));
+        result.push(...this.flattenChannels(s.children));
       }
     }
     return result;
@@ -1068,16 +1504,16 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Find an alternate actor who has access to a syncable (for reassignment).
+   * Find an alternate actor who has access to a channel (for reassignment).
    */
   private async findAlternateOwner(
     _provider: AuthProvider,
-    _syncableId: string,
+    _channelId: string,
     _excludeActorId: ActorId
   ): Promise<ActorId | null> {
-    // For now, return null - the syncable will be disabled when the owner is removed.
+    // For now, return null - the channel will be disabled when the owner is removed.
     // A more complete implementation would scan all actors with tokens for this provider
-    // and find one who has access to the syncable.
+    // and find one who has access to the channel.
     return null;
   }
 

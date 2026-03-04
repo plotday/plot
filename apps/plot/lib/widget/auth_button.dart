@@ -18,7 +18,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:plot/env.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
-import 'package:plot/store/store.dart' show AuthLink;
+import 'package:plot/store/store.dart' show AuthUserAction;
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/analytics/tracker.dart';
@@ -92,7 +92,7 @@ class AuthButton extends StatefulWidget {
 
   // Run an OAuth authorization flow for the given link
   AuthButton.authorize({
-    required AuthLink link,
+    required AuthUserAction link,
     void Function()? onAuth,
     this.onError,
     super.key,
@@ -143,7 +143,7 @@ class AuthButton extends StatefulWidget {
   final void Function()? _onLinkAuth;
   final Future<void> Function()? _onRedirectAuth;
   final List<String> scopes;
-  final AuthLink? _link;
+  final AuthUserAction? _link;
   final void Function(String error)? onError;
 
   @override
@@ -396,9 +396,7 @@ class _AuthButtonState extends State<AuthButton> {
     }
   }
 
-  Future<_AuthUrlResult> _generateAuthUrl({
-    String? redirectUri,
-  }) async {
+  Future<_AuthUrlResult> _generateAuthUrl({String? redirectUri}) async {
     final effectiveRedirectUri = redirectUri ?? Env.authCallbackUrl;
 
     String? platform;
@@ -442,20 +440,23 @@ class _AuthButtonState extends State<AuthButton> {
   @override
   Widget build(BuildContext context) {
     final config = getAuthProviderConfig(widget.provider);
-    return FButton(
-      mainAxisSize: .min,
-      onPress: _isLoading ? null : _onPress,
-      style: buildAuthButtonStyle(context, config),
-      prefix: _isLoading
-          ? Spinner(color: config.textColor, size: config.iconSize)
-          : _ProviderIcon(provider: widget.provider, size: config.iconSize),
-      child: Text(
-        config.buttonText,
-        style: context.theme.typography.base.copyWith(
-          fontWeight: config.fontWeight,
-          fontFamily: config.fontFamily,
-          color: _isLoading ? config.disabledTextColor : config.textColor,
-          height: 1,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 300),
+      child: FButton(
+        mainAxisSize: .min,
+        onPress: _isLoading ? null : _onPress,
+        style: buildAuthButtonStyle(context, config),
+        prefix: _isLoading
+            ? Spinner(color: config.textColor, size: config.iconSize)
+            : _ProviderIcon(provider: widget.provider, size: config.iconSize),
+        child: Text(
+          config.buttonText,
+          style: context.theme.typography.base.copyWith(
+            fontWeight: config.fontWeight,
+            fontFamily: config.fontFamily,
+            color: _isLoading ? config.disabledTextColor : config.textColor,
+            height: 1,
+          ),
         ),
       ),
     );
@@ -501,12 +502,14 @@ class _AuthButtonState extends State<AuthButton> {
       }
 
       // POST code to API for server-side token exchange
-      final uri = Uri.parse('${Env.apiRoot}/auth').replace(queryParameters: {
-        'code': code,
-        'clientId': clientId,
-        'redirectUri': _desktopCallbackUrl,
-        'provider': 'google',
-      });
+      final uri = Uri.parse('${Env.apiRoot}/auth').replace(
+        queryParameters: {
+          'code': code,
+          'clientId': clientId,
+          'redirectUri': _desktopCallbackUrl,
+          'provider': 'google',
+        },
+      );
       final tokenResponse = await http.post(uri);
 
       if (tokenResponse.statusCode != 200) {
@@ -578,12 +581,17 @@ class _AuthButtonState extends State<AuthButton> {
     const charset =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
-    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
-        .join();
+    return List.generate(
+      length,
+      (_) => charset[random.nextInt(charset.length)],
+    ).join();
   }
 }
 
-FButtonStyle buildAuthButtonStyle(BuildContext context, AuthProviderConfig config) {
+FButtonStyle buildAuthButtonStyle(
+  BuildContext context,
+  AuthProviderConfig config,
+) {
   return FButtonStyle(
     decoration: FWidgetStateMap({
       WidgetState.any: BoxDecoration(
@@ -611,7 +619,7 @@ FButtonStyle buildAuthButtonStyle(BuildContext context, AuthProviderConfig confi
       ),
     }),
     contentStyle: FButtonContentStyle(
-      padding: context.theme.buttonStyles.secondary.contentStyle.padding,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       textStyle: FWidgetStateMap.all(
         context.theme.typography.base.copyWith(
           fontWeight: config.fontWeight,

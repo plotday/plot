@@ -6,7 +6,6 @@ import 'package:forui/forui.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
-import 'package:plot/style/layout.dart';
 import 'package:plot/style/spacing.dart';
 import 'icon.dart';
 import 'list_tile.dart';
@@ -42,6 +41,7 @@ class SelectModal<T> extends Modal {
     required this.itemBuilder,
     this.selectedValue,
     this.prompt = 'Search',
+    this.subtitle,
     this.onSelect,
     this.initialItems,
     this.emptyMessage,
@@ -55,6 +55,7 @@ class SelectModal<T> extends Modal {
            itemBuilder: itemBuilder,
            selectedValue: selectedValue,
            prompt: prompt,
+           subtitle: subtitle,
            onSelect: onSelect,
            initialItems: initialItems,
            emptyMessage: emptyMessage,
@@ -76,6 +77,9 @@ class SelectModal<T> extends Modal {
 
   /// The placeholder text for the search input.
   final String prompt;
+
+  /// Optional subtitle displayed below the search area and above the list.
+  final String? subtitle;
 
   /// Optional callback when an item is selected.
   /// Receives the context, selected item, and current search text.
@@ -107,6 +111,7 @@ class SelectModal<T> extends Modal {
     required Widget Function(T) itemBuilder,
     T? selectedValue,
     String prompt = 'Search',
+    String? subtitle,
     Future<bool> Function(BuildContext context, T item, String searchText)?
     onSelect,
     String? emptyMessage,
@@ -131,6 +136,7 @@ class SelectModal<T> extends Modal {
       itemBuilder: itemBuilder,
       selectedValue: selectedValue,
       prompt: prompt,
+      subtitle: subtitle,
       onSelect: onSelect,
       initialItems: initialItems,
       emptyMessage: emptyMessage,
@@ -148,6 +154,7 @@ class _SelectModal<T> extends StatefulWidget {
     required this.itemBuilder,
     this.selectedValue,
     required this.prompt,
+    this.subtitle,
     this.onSelect,
     this.initialItems,
     this.emptyMessage,
@@ -159,6 +166,7 @@ class _SelectModal<T> extends StatefulWidget {
   final Widget Function(T) itemBuilder;
   final T? selectedValue;
   final String prompt;
+  final String? subtitle;
   final Future<bool> Function(BuildContext context, T item, String searchText)?
   onSelect;
   final List<SelectGroup<T>>? initialItems;
@@ -180,6 +188,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   bool _isLoading = false;
   int _requestId = 0; // For canceling stale requests
   int _highlightedIndex = 0;
+  bool _mouseHasMoved = false;
   bool _enterHandled =
       false; // Prevents double-fire between Shortcuts and onSubmit
 
@@ -557,7 +566,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       padding: false,
                       autofocus: true,
                       builder: (context, focusNode) => Padding(
-                        padding: widgetPadding,
+                        padding: context.theme.spacing.padding,
                         child: ValueListenableBuilder<int>(
                           valueListenable: ModalProvider.of(
                             context,
@@ -598,7 +607,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       builder: (context, stackLength, _) {
                         if (stackLength <= 1) return const SizedBox.shrink();
                         return Container(
-                          padding: widgetPaddingSm,
+                          padding: context.theme.spacing.paddingSm,
                           alignment: Alignment.centerLeft,
                           child: FButton.icon(
                             style: FButtonStyle.ghost(),
@@ -610,6 +619,17 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           ),
                         );
                       },
+                    ),
+                  if (widget.subtitle != null)
+                    Padding(
+                      padding: context.theme.spacing.paddingSm,
+                      child: Text(
+                        widget.subtitle!,
+                        style: TextStyle(
+                          color: context.theme.colors.mutedForeground,
+                          fontSize: context.theme.typography.sm.fontSize,
+                        ),
+                      ),
                     ),
                   if (loadingIndicator != null) loadingIndicator,
                   if (errorBox != null) errorBox,
@@ -642,7 +662,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           if (group.title != null) {
                             // Check if this group has a shortcut (metadata will be ShortcutActivator)
                             header = Padding(
-                              padding: widgetPaddingSm.copyWith(
+                              padding: context.theme.spacing.paddingSm.copyWith(
                                 right: context.theme.spacing.xxl,
                               ),
                               child: Row(
@@ -729,12 +749,21 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             if (info != null) info,
                             MouseRegion(
                               onEnter: (_) {
+                                if (!_mouseHasMoved) return;
                                 listController.setHovered(index);
                                 setState(() => _highlightedIndex = index);
                               },
                               onExit: (_) {
+                                if (!_mouseHasMoved) return;
                                 listController.setHovered(null);
                                 setState(() => _highlightedIndex = -1);
+                              },
+                              onHover: (_) {
+                                if (!_mouseHasMoved) {
+                                  setState(() => _mouseHasMoved = true);
+                                  listController.setHovered(index);
+                                  setState(() => _highlightedIndex = index);
+                                }
                               },
                               child: Container(
                                 decoration: BoxDecoration(

@@ -1,6 +1,7 @@
 import { Box, Button, Container, Stack, Text, Title } from "@mantine/core";
 
 import { IconCheck } from "@tabler/icons-react";
+import { Link } from "react-router";
 
 import type { Route } from "./+types/pricing";
 import classes from "./pricing.module.css";
@@ -194,8 +195,8 @@ export default function Pricing() {
                 <Button
                   variant={plan.ctaVariant}
                   fullWidth
-                  component="a"
-                  href="https://app.plot.day"
+                  component={Link}
+                  to="/start"
                 >
                   {plan.cta}
                 </Button>
@@ -226,8 +227,8 @@ export default function Pricing() {
             <Button
               variant="gradient"
               size="lg"
-              component="a"
-              href="https://app.plot.day"
+              component={Link}
+              to="/start"
             >
               Start your free trial
             </Button>
@@ -273,8 +274,8 @@ export default function Pricing() {
             <Button
               variant="white"
               size="xl"
-              component="a"
-              href="https://app.plot.day"
+              component={Link}
+              to="/start"
             >
               Get started free
             </Button>

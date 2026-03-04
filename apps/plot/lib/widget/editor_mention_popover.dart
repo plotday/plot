@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:super_editor/super_editor.dart';
 import 'package:follow_the_leader/follow_the_leader.dart';
 
+import 'package:plot/style/layout.dart';
 import 'editor.dart';
 
 /// A popover that displays a list of mentionable items (twists and contacts).
@@ -240,7 +241,7 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
       constraints: const BoxConstraints(maxWidth: 250, maxHeight: 200),
       decoration: BoxDecoration(
         color: theme.colors.background,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(borderRadiusMd),
         border: Border.all(color: theme.colors.border, width: 1),
         boxShadow: [
           BoxShadow(
@@ -251,7 +252,7 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(borderRadiusMd),
         child: _buildItemList(context),
       ),
     );

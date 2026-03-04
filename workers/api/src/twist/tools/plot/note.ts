@@ -1,7 +1,7 @@
 import type { Database } from "@plotday/db";
 import {
-  type Activity,
-  type Link,
+  type Thread,
+  type Action,
   type ActorId,
   type ActorType,
   type NewNote,
@@ -17,10 +17,10 @@ import { rpc } from "../../../rpc";
 import {
   convertNoteToMarkdown,
   handleDbOperationError,
-  markActivityReadForAuthor,
+  markThreadReadForAuthor,
   processNewActor,
   processNewActorArray,
-} from "./activity-helpers";
+} from "./thread-helpers";
 import type { Plot } from "./index";
 
 /**
@@ -72,7 +72,7 @@ export async function createNote(
     // Skip fully empty notes (no content, no links, no mentions)
     const isEmpty =
       (!note.content || note.content.trim() === "") &&
-      (!note.links || note.links.length === 0) &&
+      (!note.actions || note.actions.length === 0) &&
       (!note.mentions || note.mentions.length === 0);
 
     if (isEmpty) {
@@ -86,26 +86,26 @@ export async function createNote(
     // Resolve activity ID - either provided directly or looked up by source
     let activityId: string;
 
-    if ("id" in note.activity) {
+    if ("id" in note.thread) {
       // ID provided directly
-      activityId = note.activity.id;
-    } else if ("source" in note.activity) {
-      // Look up activity by source and priority root (composite unique key)
+      activityId = note.thread.id;
+    } else if ("source" in note.thread) {
+      // Look up activity by source and priority root via the link table
       const priorityRoot = await plot.getPriorityRoot();
-      const existingActivity = await plot.db
-        .selectFrom("activity")
-        .select("id")
-        .where("source", "=", note.activity.source)
+      const existingLink = await plot.db
+        .selectFrom("link")
+        .select("thread_id")
+        .where("source", "=", note.thread.source)
         .where("source_priority_root", "=", priorityRoot)
         .executeTakeFirst();
 
-      if (!existingActivity) {
+      if (!existingLink || !existingLink.thread_id) {
         throw new Error(
-          `Activity not found with source "${note.activity.source}": Not found`
+          `Activity not found with source "${note.thread.source}": Not found`
         );
       }
 
-      activityId = existingActivity.id;
+      activityId = existingLink.thread_id;
     } else {
       throw new Error("Note activity must provide either id or source");
     }
@@ -114,12 +114,20 @@ export async function createNote(
     // When called from createActivity/createActivities, the caller already has
     // priority_id, so we skip this query to avoid a redundant round-trip.
     let priorityId: string;
+    let threadCreatedBy: string | null = null;
     if (activityContext) {
       priorityId = activityContext.priority_id;
+      // Still need created_by for auto-mention logic
+      const threadRow = await plot.db
+        .selectFrom("thread")
+        .select("created_by")
+        .where("id", "=", activityId)
+        .executeTakeFirst();
+      threadCreatedBy = threadRow?.created_by ?? null;
     } else {
       const activityData = await plot.db
-        .selectFrom("activity")
-        .select("priority_id")
+        .selectFrom("thread")
+        .select(["priority_id", "created_by"])
         .where("id", "=", activityId)
         .executeTakeFirst();
 
@@ -128,6 +136,7 @@ export async function createNote(
       }
 
       priorityId = activityData.priority_id;
+      threadCreatedBy = activityData.created_by;
     }
 
     // Skip priority access validation for notes - activities may have been moved
@@ -158,17 +167,39 @@ export async function createNote(
       );
     }
 
+    // Auto-mention the calling twist so it stays routed for future notes
+    if (mentionIds === null) mentionIds = [];
+    if (!mentionIds.includes(plot.priorityTwistId as ActorId)) {
+      mentionIds.push(plot.priorityTwistId as ActorId);
+    }
+
+    // Auto-mention the thread-creating twist (if different from calling twist)
+    // so the thread creator continues to receive notes
+    if (
+      threadCreatedBy &&
+      threadCreatedBy !== plot.priorityTwistId
+    ) {
+      const isCreatorTwist = await plot.db
+        .selectFrom("priority_twist")
+        .select("id")
+        .where("id", "=", threadCreatedBy)
+        .executeTakeFirst();
+      if (isCreatorTwist && !mentionIds.includes(threadCreatedBy as ActorId)) {
+        mentionIds.push(threadCreatedBy as ActorId);
+      }
+    }
+
     // Convert Note to database format
     const dbNote: any = {
       author_id: authorId,
       created_by: plot.priorityTwistId,
-      activity_id: activityId,
+      thread_id: activityId,
       source_created_at:
         note.created?.toISOString() ?? new Date().toISOString(),
       draft: false,
       private: note.private ?? false,
       content: contentToStore,
-      links: note.links ? JSON.stringify(note.links) : null,
+      actions: note.actions ? JSON.stringify(note.actions) : null,
       mentions: mentionIds,
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
@@ -194,14 +225,14 @@ export async function createNote(
           .insertInto("note")
           .values(dbNote)
           .onConflict((oc) =>
-            oc.columns(["activity_id", "key"]).doUpdateSet((eb) => ({
+            oc.columns(["thread_id", "key"]).doUpdateSet((eb) => ({
               author_id: eb.ref("excluded.author_id"),
               created_by: eb.ref("excluded.created_by"),
               source_created_at: eb.ref("excluded.source_created_at"),
               draft: eb.ref("excluded.draft"),
               private: eb.ref("excluded.private"),
               content: eb.ref("excluded.content"),
-              links: eb.ref("excluded.links"),
+              actions: eb.ref("excluded.actions"),
               mentions: eb.ref("excluded.mentions"),
               updated_by: eb.ref("excluded.updated_by"),
               sync_depth: eb.ref("excluded.sync_depth"),
@@ -234,7 +265,7 @@ export async function createNote(
       if (userIds.length > 0) {
         const activityReadEntries = userIds.map(
           (userId) => ({
-            activity_id: activityId,
+            thread_id: activityId,
             user_id: userId,
             read_at: dbResult.source_created_at,
           })
@@ -242,10 +273,10 @@ export async function createNote(
 
         try {
           await plot.db
-            .insertInto("activity_read")
+            .insertInto("thread_read")
             .values(activityReadEntries)
             .onConflict((oc) =>
-              oc.columns(["user_id", "activity_id"]).doUpdateSet((eb) => ({
+              oc.columns(["user_id", "thread_id"]).doUpdateSet((eb) => ({
                 read_at: eb.ref("excluded.read_at"),
               }))
             )
@@ -258,7 +289,7 @@ export async function createNote(
             "Failed to upsert activity_read entries for note",
             upsertError as Error,
             {
-              activity_id: activityId,
+              thread_id: activityId,
               count: activityReadEntries.length,
             }
           );
@@ -266,7 +297,7 @@ export async function createNote(
       }
     } else if (!skipActivityRead && note?.unread === undefined) {
       // Default: mark read for just the author if they are the twist owner
-      await markActivityReadForAuthor(
+      await markThreadReadForAuthor(
         plot,
         authorId as string,
         activityId,
@@ -323,10 +354,10 @@ export async function createNote(
     return dbResult.id as Uuid;
   } catch (error) {
     handleDbOperationError(error, "createNote", plot.priorityTwistId, {
-      activity_id: "id" in note.activity ? note.activity.id : undefined,
+      thread_id: "id" in note.thread ? note.thread.id : undefined,
       has_key: "key" in note && !!note.key,
       has_content: !!note.content,
-      has_links: !!note.links?.length,
+      has_links: !!note.actions?.length,
     });
   }
 }
@@ -378,17 +409,17 @@ export async function createNotes(
     // Resolve the activity ID from the first note
     let activityId: string | undefined;
     const firstNote = processedNotes[0];
-    if ("id" in firstNote.activity) {
-      activityId = firstNote.activity.id;
-    } else if ("source" in firstNote.activity) {
+    if ("id" in firstNote.thread) {
+      activityId = firstNote.thread.id;
+    } else if ("source" in firstNote.thread) {
       const priorityRoot = await plot.getPriorityRoot();
       const data = await plot.db
-        .selectFrom("activity")
-        .select("id")
-        .where("source", "=", firstNote.activity.source)
+        .selectFrom("link")
+        .select("thread_id")
+        .where("source", "=", firstNote.thread.source)
         .where("source_priority_root", "=", priorityRoot)
         .executeTakeFirst();
-      activityId = data?.id;
+      activityId = data?.thread_id ?? undefined;
     }
 
     if (activityId) {
@@ -399,7 +430,7 @@ export async function createNotes(
       const keyNotes = await plot.db
         .selectFrom("note")
         .select(["id", "key"])
-        .where("activity_id", "=", activityId)
+        .where("thread_id", "=", activityId)
         .where("key", "in", keys)
         .execute();
 
@@ -465,7 +496,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     // Validate access to the note's activity
     const noteData = await plot.db
       .selectFrom("note")
-      .select("activity_id")
+      .select("thread_id")
       .where("id", "=", noteId)
       .executeTakeFirst();
 
@@ -475,13 +506,13 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
 
     // Validate access to the activity's priority
     const activityData = await plot.db
-      .selectFrom("activity")
+      .selectFrom("thread")
       .select("priority_id")
-      .where("id", "=", noteData.activity_id)
+      .where("id", "=", noteData.thread_id)
       .executeTakeFirst();
 
     if (!activityData) {
-      throw new Error(`Activity not found: ${noteData.activity_id}`);
+      throw new Error(`Activity not found: ${noteData.thread_id}`);
     }
 
     const priorityId = activityData.priority_id;
@@ -508,8 +539,8 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
         dbUpdate.content = note.content;
       }
     }
-    if (note.links !== undefined) {
-      dbUpdate.links = note.links ? JSON.stringify(note.links) : note.links;
+    if (note.actions !== undefined) {
+      dbUpdate.actions = note.actions ? JSON.stringify(note.actions) : note.actions;
     }
     if (note.private !== undefined) {
       dbUpdate.private = note.private;
@@ -613,7 +644,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
 
 export async function getNotes(
   plot: Plot,
-  activity: Activity
+  activity: Thread
 ): Promise<Note[]> {
   try {
     // Validate access to the priority
@@ -631,16 +662,16 @@ export async function getNotes(
         "created_by",
         "updated_by",
         "archived_at",
-        "activity_id",
+        "thread_id",
         "draft",
         "private",
         "content",
         "key",
-        "links",
+        "actions",
         "mentions",
         "re_note_id",
       ])
-      .where("activity_id", "=", activity.id)
+      .where("thread_id", "=", activity.id)
       .orderBy("created_at", "asc")
       .execute();
 
@@ -700,7 +731,7 @@ export async function getNotes(
         created: row.source_created_at
           ? new Date(row.source_created_at)
           : new Date(row.created_at),
-        activity: activity, // Use the activity parameter passed to the function
+        thread: activity, // Use the thread parameter passed to the function
         author: {
           id: author.id as ActorId,
           type: author.type as unknown as ActorType,
@@ -712,7 +743,7 @@ export async function getNotes(
         content: row.content,
         key: row.key || null,
         reNote: row.re_note_id ? { id: row.re_note_id as Uuid } : null,
-        links: row.links as Link[] | null,
+        actions: row.actions as Action[] | null,
         mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? [],
         tags:
           (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) || {},

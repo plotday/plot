@@ -291,7 +291,7 @@ class _HeaderState extends State<Header> {
                     border: Border(
                       bottom: BorderSide(
                         color: context.theme.colors.border,
-                        width: 0.5,
+                        width: 1,
                       ),
                     ),
                   ),

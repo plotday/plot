@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ActivityType } from "@plotday/twister/plot";
-import { ActivityAccess } from "@plotday/twister/tools/plot";
+import { ThreadAccess } from "@plotday/twister/tools/plot";
 
 import { Plot } from "../plot";
 
 vi.mock("../../../rpc", () => ({
   rpc: vi.fn(async (_db: unknown, fn: string) => {
-    if (fn === "find_matching_activities_scored") return [];
+    if (fn === "find_matching_threads_scored") return [];
     if (fn === "get_priority_twist_owner_contact") return "contact-1";
     if (fn === "get_users_with_priority_access") return [];
     return null;
@@ -23,6 +22,9 @@ function createSelectQuery(result: SelectResult, executeResult?: any[]) {
   const query: any = {};
   query.select = vi.fn(() => query);
   query.selectAll = vi.fn(() => query);
+  query.innerJoin = vi.fn(() => query);
+  query.leftJoin = vi.fn(() => query);
+  query.distinct = vi.fn(() => query);
   query.where = vi.fn(() => query);
   query.orderBy = vi.fn(() => query);
   query.limit = vi.fn(() => query);
@@ -117,7 +119,7 @@ describe("Plot", () => {
   });
 
   describe("Permission Validation", () => {
-    it("requireActivityAccess throws when no access is granted", () => {
+    it("requireThreadAccess throws when no access is granted", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
@@ -126,19 +128,19 @@ describe("Plot", () => {
         env: envMock,
       });
 
-      expect(() => plot.requireActivityAccess(ActivityAccess.Create)).toThrow(
+      expect(() => plot.requireThreadAccess(ThreadAccess.Create)).toThrow(
         "Activity access not requested"
       );
     });
 
-    it("requireActivityAccess allows Create when Create is granted", () => {
+    it("requireThreadAccess allows Create when Create is granted", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
@@ -146,18 +148,18 @@ describe("Plot", () => {
 
       // Should not throw
       expect(() =>
-        plot.requireActivityAccess(ActivityAccess.Create)
+        plot.requireThreadAccess(ThreadAccess.Create)
       ).not.toThrow();
     });
 
-    it("ActivityAccess.Create includes Respond permissions", () => {
+    it("ThreadAccess.Create includes Respond permissions", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
@@ -165,13 +167,13 @@ describe("Plot", () => {
 
       // Create permission (1) should include Respond permission (0)
       expect(() =>
-        plot.requireActivityAccess(ActivityAccess.Respond)
+        plot.requireThreadAccess(ThreadAccess.Respond)
       ).not.toThrow();
     });
   });
 
   describe("Activity Creation", () => {
-    it("createActivity requires ActivityAccess.Create permission", async () => {
+    it("createThread requires ThreadAccess.Create permission", async () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
@@ -181,36 +183,53 @@ describe("Plot", () => {
       });
 
       await expect(
-        plot.createActivity({
-          type: ActivityType.Note,
+        plot.createThread({
           title: "Test Activity",
         })
       ).rejects.toThrow("Activity access not requested");
     });
 
-    it("createActivity with Event type requires start time", async () => {
+    it("createThread without start time succeeds for non-source activities", async () => {
+      const now = new Date();
+
+      const insertedActivity = {
+        id: "activity-123",
+        author_id: "pt-1",
+        created_by: "pt-1",
+        priority_id: "priority-1",
+        type: "note",
+        title: "Test Event",
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      };
+
+      const activityInsert = createInsertQuery(insertedActivity);
+      dbMock.insertInto = vi.fn((table: string) => {
+        if (table === "thread") return activityInsert;
+        return createInsertQuery(null);
+      });
+
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
       });
 
-      await expect(
-        plot.createActivity({
-          type: ActivityType.Event,
-          title: "Test Event",
-          // No start time provided
-        })
-      ).rejects.toThrow("Events must have a start and end.");
+      const result = await plot.createThread({
+        title: "Test Event",
+        // No start time provided - should still succeed
+      });
+
+      expect(result).toBe("activity-123");
     });
 
-    it("createActivity with Action type auto-assigns start", async () => {
+    it("createThread with Action type auto-assigns start", async () => {
       const now = new Date();
       vi.useFakeTimers();
       vi.setSystemTime(now);
@@ -229,7 +248,7 @@ describe("Plot", () => {
 
       const activityInsert = createInsertQuery(insertedActivity);
       dbMock.insertInto = vi.fn((table: string) => {
-        if (table === "activity") return activityInsert;
+        if (table === "thread") return activityInsert;
         return createInsertQuery(null);
       });
 
@@ -238,15 +257,14 @@ describe("Plot", () => {
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
       });
 
-      await plot.createActivity({
-        type: ActivityType.Action,
+      await plot.createThread({
         title: "Test Action",
         // No start time provided - should be auto-assigned
       });
@@ -262,7 +280,7 @@ describe("Plot", () => {
       vi.useRealTimers();
     });
 
-    it("createActivity returns activity ID", async () => {
+    it("createThread returns activity ID", async () => {
       const now = new Date();
 
       // Setup the activity that will be "inserted"
@@ -290,7 +308,7 @@ describe("Plot", () => {
 
       const activityInsert = createInsertQuery(insertedActivity);
       dbMock.insertInto = vi.fn((table: string) => {
-        if (table === "activity") return activityInsert;
+        if (table === "thread") return activityInsert;
         return createInsertQuery(null);
       });
 
@@ -299,15 +317,14 @@ describe("Plot", () => {
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
       });
 
-      const result = await plot.createActivity({
-        type: ActivityType.Note,
+      const result = await plot.createThread({
         title: "Test Activity",
       });
 
@@ -323,8 +340,8 @@ describe("Plot", () => {
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
@@ -332,7 +349,7 @@ describe("Plot", () => {
 
       await expect(
         plot.createNote({
-          activity: { id: "activity-123" as any },
+          thread: { id: "activity-123" as any },
           content: "", // Empty content
           // No links
           // No mentions
@@ -345,7 +362,7 @@ describe("Plot", () => {
 
       const insertedNote = {
         id: "note-123",
-        activity_id: "activity-123",
+        thread_id: "activity-123",
         author_id: "pt-1",
         created_by: "pt-1",
         content: "Test content",
@@ -364,7 +381,7 @@ describe("Plot", () => {
         return createInsertQuery(null);
       });
       dbMock.selectFrom = vi.fn((table: string) => {
-        if (table === "activity") {
+        if (table === "thread") {
           return createSelectQuery({ priority_id: "priority-1" });
         }
         return createSelectQuery(null);
@@ -375,21 +392,21 @@ describe("Plot", () => {
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
       });
 
       await plot.createNote({
-        activity: { id: "activity-123" as any },
+        thread: { id: "activity-123" as any },
         content: "Test content",
         key: "test-key",
       });
 
       // Verify onConflict was configured for activity_id,key
-      expect(noteInsert._onConflictColumns).toEqual(["activity_id", "key"]);
+      expect(noteInsert._onConflictColumns).toEqual(["thread_id", "key"]);
     });
 
     it("createNotes filters out empty notes silently", async () => {
@@ -397,7 +414,7 @@ describe("Plot", () => {
 
       const insertedNote = {
         id: "note-123",
-        activity_id: "activity-123",
+        thread_id: "activity-123",
         author_id: "pt-1",
         created_by: "pt-1",
         content: "Valid content",
@@ -415,7 +432,7 @@ describe("Plot", () => {
         return createInsertQuery(null);
       });
       dbMock.selectFrom = vi.fn((table: string) => {
-        if (table === "activity") {
+        if (table === "thread") {
           return createSelectQuery({ priority_id: "priority-1" });
         }
         return createSelectQuery(null);
@@ -426,8 +443,8 @@ describe("Plot", () => {
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
@@ -436,15 +453,15 @@ describe("Plot", () => {
       // Call createNotes with a mix of valid and empty notes
       const results = await plot.createNotes([
         {
-          activity: { id: "activity-123" as any },
+          thread: { id: "activity-123" as any },
           content: "", // Empty - should be filtered out
         },
         {
-          activity: { id: "activity-123" as any },
+          thread: { id: "activity-123" as any },
           content: "Valid content", // Valid - should be created
         },
         {
-          activity: { id: "activity-123" as any },
+          thread: { id: "activity-123" as any },
           content: "   ", // Whitespace only - should be filtered out
         },
       ]);
@@ -456,7 +473,7 @@ describe("Plot", () => {
   });
 
   describe("Source-Based Lookup", () => {
-    it("getActivity retrieves by source identifier", async () => {
+    it("getThread retrieves by source identifier", async () => {
       const now = new Date();
       const userActivityRow = {
         id: "activity-123",
@@ -492,22 +509,25 @@ describe("Plot", () => {
       };
 
       dbMock.selectFrom = vi.fn((table: string) => {
+        if (table === "link") {
+          return createSelectQuery({ thread_id: "activity-123" });
+        }
         if (table === "priority_twist") {
           return createSelectQuery({ owner_id: "user-1" });
         }
         if (table === "priority") {
           return createSelectQuery({ path: "work.projects" });
         }
-        if (table === "activity") {
+        if (table === "thread") {
           return createSelectQuery({ id: "activity-123" });
         }
-        if (table === "user.activity") {
+        if (table === "user.thread") {
           return createSelectQuery(userActivityRow);
         }
         if (table === "actor") {
           return createSelectQuery(authorRow);
         }
-        if (table === "activity_tags") {
+        if (table === "thread_tags") {
           return createSelectQuery({ tags: null });
         }
         return createSelectQuery(null);
@@ -518,21 +538,21 @@ describe("Plot", () => {
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          activity: {
-            access: ActivityAccess.Create,
+          thread: {
+            access: ThreadAccess.Create,
           },
         },
         env: envMock,
       });
 
-      const result = await plot.getActivity({ source: "external://item-456" });
+      const result = await plot.getThread({ source: "external://item-456" });
 
       // Verify the result
       expect(result).not.toBeNull();
       expect(result!.id).toBe("activity-123");
 
       // Verify user activity lookup was performed
-      expect(dbMock.selectFrom).toHaveBeenCalledWith("user.activity");
+      expect(dbMock.selectFrom).toHaveBeenCalledWith("user.thread");
     });
   });
 

@@ -15,8 +15,11 @@ import { type UserSync } from "./state/user-sync";
 import type {
   NoteCreate,
   NoteUpdate,
-  ActivityCreate,
-  ActivityUpdate,
+  ThreadUpdate,
+  ThreadReadChange,
+  ChannelLinkCreate,
+  ChannelLinkUpdate,
+  ChannelNoteCreate,
 } from "./twist/view-types";
 
 export type TwistEnvironment = "personal" | "private" | "review" | "public";
@@ -40,16 +43,19 @@ export type LogMessage = {
 };
 
 /**
- * Tag change event for activity updates.
- * Aggregates tag additions/removals per activity for twist callbacks.
+ * Tag change event for thread updates.
+ * Aggregates tag additions/removals per thread for twist callbacks.
  */
-export type ActivityTagChange = {
-  activityId: string;
+export type ThreadTagChange = {
+  threadId: string;
   occurrence: string | null;
   tagId: number;
   actorId: string;
   changeType: "added" | "removed";
 };
+
+/** @deprecated Use ThreadTagChange */
+export type ActivityTagChange = ThreadTagChange;
 
 /**
  * Batched twist update message.
@@ -62,16 +68,22 @@ export type TwistBatchMessage = {
   twistId: number;
   environment: TwistEnvironment;
   version: string;
-  // Notes created on activities this twist created or was mentioned in
+  // Notes created on threads this twist created or was mentioned in
   newNotes: NoteCreate[];
   // Notes updated by this twist (for the update callback)
   updatedNotes: NoteUpdate[];
-  // Activities created by this twist (for the create callback)
-  newActivities: ActivityCreate[];
-  // Activities updated that this twist created (for the update callback)
-  updatedActivities: ActivityUpdate[];
-  // Tag changes for building tagsAdded/tagsRemoved per activity
-  activityTagChanges: ActivityTagChange[];
+  // Threads updated that this twist created (for the update callback)
+  updatedThreads: ThreadUpdate[];
+  // Tag changes for building tagsAdded/tagsRemoved per thread
+  threadTagChanges: ThreadTagChange[];
+  // Links created in connected source channels
+  channelNewLinks: ChannelLinkCreate[];
+  // Links updated in connected source channels
+  channelUpdatedLinks: ChannelLinkUpdate[];
+  // Notes created on threads with links from connected channels
+  channelNewNotes: ChannelNoteCreate[];
+  // Thread read status changes for threads this twist created
+  threadReads: ThreadReadChange[];
   // Priority twist config changes
   priorityTwist: any | null;
 };

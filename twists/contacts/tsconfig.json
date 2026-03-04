@@ -1,4 +1,0 @@
-{
-  "extends": "@plotday/twister/tsconfig.base.json",
-  "include": ["src/*.ts"]
-}

@@ -80,6 +80,9 @@ export function twistFactory({
     // Track options schema captured during deployment introspection
     let optionsSchema: Record<string, unknown> | undefined;
 
+    // Source metadata (provider, scopes, linkTypes) — set during deployment, loaded at runtime
+    let sourceProvider: { provider: string; scopes: string[]; linkTypes?: any[] } | null = null;
+
     // Load priority_twist config for Options resolution at runtime
     let priorityTwistConfig: Record<string, unknown> | undefined;
 
@@ -88,10 +91,12 @@ export function twistFactory({
       if (!config) {
         throw new Error(`Twist configuration not found: ${id}:${version}`);
       }
+      const parsedConfig = JSON.parse(config);
       ({
         permissions: storedPermissions,
         toolPermissions: storedToolPermissions,
-      } = JSON.parse(config));
+      } = parsedConfig);
+      sourceProvider = parsedConfig.sourceProvider ?? null;
 
       // Load user config from priority_twist for Options resolution
       if (priorityTwistId && priorityTwistId !== "__deployment__") {
@@ -132,6 +137,7 @@ export function twistFactory({
           env,
           ctx,
           config: priorityTwistConfig,
+          sourceProvider,
         });
       }
 
@@ -197,6 +203,7 @@ export function twistFactory({
         priorityTwistId,
         env,
         ctx,
+        sourceProvider,
       });
 
       // Track tool for permission collection
@@ -287,10 +294,20 @@ export function twistFactory({
         );
       }
 
+      // Collect source metadata if this is a Source
+      sourceProvider = await twist.getSourceMetadata(twistInit) ?? null;
+
       // Collect and merge provider declarations from all Integrations instances
       const allProviders: ProviderDeclaration[] = [];
       for (const { id: toolId, options } of toolInstances) {
         allProviders.push(...collectToolProviders(toolId, options));
+      }
+      // For sources using the new API, add provider declaration from source metadata
+      if (sourceProvider) {
+        allProviders.push({
+          provider: sourceProvider.provider,
+          scopes: sourceProvider.scopes,
+        });
       }
       providers = mergeProviderDeclarations(allProviders);
 
@@ -310,6 +327,14 @@ export function twistFactory({
             }
           }
         }
+        // For sources: map the source's provider to the Integrations tool path
+        if (toolId === "Integrations" && sourceProvider) {
+          const pathString = path.join(":");
+          const existing = integrationsMap[sourceProvider.provider];
+          if (!existing || path.length < existing.split(":").length) {
+            integrationsMap[sourceProvider.provider] = pathString;
+          }
+        }
       }
     } else {
       // RUNTIME: Tools are validated per-path in builtInToolFactory as they're created
@@ -323,7 +348,15 @@ export function twistFactory({
       providers,
       integrationsMap,
       optionsSchema,
-      activate: async (priority: Pick<Priority, "id">, context?: { actor: { id: string; type: number } }) => {
+      sourceProvider,
+      activate: async (
+        priority: Pick<Priority, "id">,
+        context?: {
+          actor: { id: string; type: number };
+          /** Authorization for source activation (Sources only). */
+          auth?: { provider: string; scopes: string[]; actor: { id: string; type: number; email?: string | null; name?: string | null } };
+        }
+      ) => {
         await env.TWIST_LOGS_QUEUE.send({
           twistRootId: id,
           environment,

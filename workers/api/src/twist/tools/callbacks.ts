@@ -1,4 +1,4 @@
-import { type Link, LinkType } from "@plotday/twister/plot";
+import { type Action, ActionType } from "@plotday/twister/plot";
 import type {
   Callback,
   Callbacks as ICallbackTool,
@@ -148,38 +148,41 @@ export class Callbacks extends Tool implements ICallbackTool {
   /**
    * Static method to handle activity link callbacks from API endpoints
    */
-  static async HandleLinkCallback(
+  static async HandleActionCallback(
     callbacks: DurableObjectNamespace<CallbacksState>,
     token: string,
-    link: Link
+    action: Action
   ): Promise<any> {
     try {
-      // Extract callback token from the link
-      if (link.type !== LinkType.callback) {
-        throw new Error("Link is not a callback type");
+      // Extract callback token from the action
+      if (action.type !== ActionType.callback) {
+        throw new Error("Action is not a callback type");
       }
 
-      const callbackToken = link.callback;
+      const callbackToken = action.callback;
       if (!callbackToken) {
-        throw new Error("No callback token found in activity link");
+        throw new Error("No callback token found in thread action");
       }
 
       if (callbackToken !== token) {
         throw new Error("Callback token mismatch");
       }
 
-      // Execute the callback with the full activity link as argument
+      // Execute the callback with the full thread action as argument
       const result = await CallbacksState.CallCallback(
         callbacks,
         callbackToken,
-        link
+        action
       );
 
       return result;
     } catch (error) {
       const logger = createLogger();
-      logger.error("Error handling link callback", error as Error, { callback_token: token });
+      logger.error("Error handling action callback", error as Error, { callback_token: token });
       throw error;
     }
   }
+
+  /** @deprecated Use HandleActionCallback */
+  static HandleLinkCallback = Callbacks.HandleActionCallback;
 }

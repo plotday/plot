@@ -5,8 +5,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/analytics/tracker.dart';
-import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/util/time_service.dart';
 import 'package:plot/widget/modal.dart';
 import 'command.dart';
@@ -152,7 +152,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       child: Padding(
-        padding: widgetPadding,
+        padding: context.theme.spacing.padding,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,7 +265,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
                   Expanded(
                     child: FButton(
                       onPress: _unfreezeTime,
-                      style: FButtonStyle.outline(),
+                      style: FButtonStyle.secondary(),
                       child: const Text('Unfreeze'),
                     ),
                   ),

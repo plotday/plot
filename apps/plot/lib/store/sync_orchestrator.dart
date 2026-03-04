@@ -5,7 +5,7 @@ final _syncOrchestratorLog = Logger('plot.sync_orchestrator');
 /// Orchestrates sync operations across all entities with dependency awareness.
 ///
 /// Provides:
-/// - Type-safe entity references (SyncOrchestrator.activity, etc.)
+/// - Type-safe entity references (SyncOrchestrator.thread, etc.)
 /// - Automatic dependency ordering via topological sort
 /// - Parallel execution of independent entities
 /// - Push and pull with dependency validation
@@ -82,15 +82,23 @@ class SyncOrchestrator {
     },
   );
 
-  /// Activity entity (depends on priority and actor)
-  /// Note: Activity.push() and Activity.pull() also handle ActivityExceptions and ActivityTags
-  static final activity = SyncEntity(
-    debugName: 'activity',
+  /// Source channel entity (depends on priority_twist)
+  static final sourceChannel = SyncEntity(
+    debugName: 'source_channel',
+    dependsOn: [priorityTwist],
+    pushFn: () async => false, // Read-only from API
+    pullFn: SourceChannel.pull,
+  );
+
+  /// Thread entity (depends on priority and actor)
+  /// Note: Thread.push() and Thread.pull() also handle Schedules, Links, and ThreadTags
+  static final thread = SyncEntity(
+    debugName: 'thread',
     dependsOn: [priority, actor],
-    pushFn: Activity.push,
+    pushFn: Thread.push,
     pullFn: () async {
-      await Activity.pullInitial();
-      await Activity.pull();
+      await Thread.pullInitial();
+      await Thread.pull();
     },
   );
 
@@ -102,11 +110,11 @@ class SyncOrchestrator {
     pullFn: Session.pull,
   );
 
-  /// Note entity (depends on activity and actor)
+  /// Note entity (depends on thread and actor)
   /// Note: Note.push(), Note.pullInitial(), and Note.pullUpdates() also handle NoteTags
   static final note = SyncEntity(
     debugName: 'note',
-    dependsOn: [activity, actor],
+    dependsOn: [thread, actor],
     pushFn: Note.push,
     pullFn: () async {
       await Note.pullUpdates();
@@ -122,7 +130,8 @@ class SyncOrchestrator {
     priorityMember,
     priorityActor,
     priorityTwist,
-    activity,
+    sourceChannel,
+    thread,
     session,
     note,
   ];
@@ -131,21 +140,26 @@ class SyncOrchestrator {
   // PUBLIC API
   // ============================================================================
 
-  /// Maps database table names to SyncEntity instances
+  /// Maps table names to [SyncEntity] instances.
   ///
+  /// Accepts both Drift table names (e.g. 'user_thread') from local saves
+  /// and broadcast entity names (e.g. 'thread') from server sync notifications.
   /// Returns null for unknown table names.
   static SyncEntity? getEntityByTableName(String table) {
     return switch (table) {
-      'actor' || 'user_actor' => actor,
+      'user_actor' || 'actor' => actor,
       'user_settings' => userSettings,
-      'priority' => priority,
+      'user_priority' || 'priority' => priority,
       'priority_user' => priorityUser,
       'priority_member' => priorityMember,
       'user_priority_actor' => priorityActor,
-      'priority_twist' => priorityTwist,
-      'activity' || 'activity_read' => activity,
+      'user_twist' || 'priority_twist' => priorityTwist,
+      'user_source_channel' || 'source_channel' => sourceChannel,
+      'user_thread' || 'user_link' || 'user_schedule' || 'user_thread_tags' ||
+      'thread' || 'thread_read' || 'schedule' =>
+        thread,
       'session' => session,
-      'note' => note,
+      'user_note' || 'user_note_tags' || 'note' => note,
       _ => null,
     };
   }

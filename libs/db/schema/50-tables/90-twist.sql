@@ -53,7 +53,10 @@ CREATE TABLE "public"."twist" (
     "description" text,
     "version" text NOT NULL,
     "permissions" jsonb,
-    "options" jsonb
+    "options" jsonb,
+    "is_source" boolean NOT NULL DEFAULT false,
+    "logo_url" text,
+    "logo_url_dark" text
 );
 
 CREATE INDEX idx_twist_admin_id ON "public"."twist" ("twist_admin_id");

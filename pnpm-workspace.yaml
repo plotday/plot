@@ -4,7 +4,7 @@ packages:
   - libs/*
   - twists/*
   - public/twister
-  - public/tools/*
+  - public/sources/*
   - public/twists/*
 
 onlyBuiltDependencies:

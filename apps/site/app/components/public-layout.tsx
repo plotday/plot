@@ -42,10 +42,10 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
             Pricing
           </Anchor>
           {!hideGetStartedPaths.some((path) =>
-            location.pathname.startsWith(path)
+            location.pathname.startsWith(path),
           ) && (
-            <Button variant="outline" component="a" href="https://app.plot.day">
-              Get started
+            <Button variant="outline" component={Link} to="/start">
+              Try Plot
             </Button>
           )}
         </Group>

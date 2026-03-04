@@ -482,43 +482,43 @@ export class PrivacyReporting extends DurableObject<Bindings> {
 
     const sentinelId = sentinel.id;
 
-    // Replace Jira-sourced activity author references
+    // Replace Jira-sourced link author references
     await db
-      .updateTable("activity")
+      .updateTable("link")
       .set({ author_id: sentinelId })
       .where("author_id", "=", contactId)
       .where("source", "like", "jira:%")
       .execute();
 
-    // Replace Jira-sourced activity assignee references
+    // Replace Jira-sourced link assignee references
     await db
-      .updateTable("activity")
+      .updateTable("link")
       .set({ assignee_id: sentinelId })
       .where("assignee_id", "=", contactId)
       .where("source", "like", "jira:%")
       .execute();
 
     // Replace Jira-sourced note author references
-    const jiraActivities = await db
-      .selectFrom("activity")
-      .select("id")
+    const jiraLinks = await db
+      .selectFrom("link")
+      .select("thread_id")
       .where("source", "like", "jira:%")
       .execute();
 
-    if (jiraActivities.length > 0) {
-      const jiraActivityIds = jiraActivities.map((a) => a.id);
+    if (jiraLinks.length > 0) {
+      const jiraThreadIds = jiraLinks.map((l) => l.thread_id);
 
       await db
         .updateTable("note")
         .set({ author_id: sentinelId })
         .where("author_id", "=", contactId)
-        .where("activity_id", "in", jiraActivityIds)
+        .where("thread_id", "in", jiraThreadIds)
         .execute();
 
       // Replace mentions using raw SQL (array_replace)
       // This is a best-effort operation
       try {
-        await sql`UPDATE note SET mentions = array_replace(mentions, ${contactId}::uuid, ${sentinelId}::uuid) WHERE ${contactId}::uuid = ANY(mentions) AND activity_id = ANY(${jiraActivityIds}::uuid[])`.execute(db);
+        await sql`UPDATE note SET mentions = array_replace(mentions, ${contactId}::uuid, ${sentinelId}::uuid) WHERE ${contactId}::uuid = ANY(mentions) AND thread_id = ANY(${jiraThreadIds}::uuid[])`.execute(db);
       } catch (mentionError) {
         // Mentions replacement failed - log and continue
         logger.info("Mention replacement failed, skipping", {
@@ -529,14 +529,14 @@ export class PrivacyReporting extends DurableObject<Bindings> {
 
     // Check if contact has remaining non-Jira references
     const nonJiraAuthorResult = await db
-      .selectFrom("activity")
+      .selectFrom("link")
       .select((eb) => eb.fn.countAll().as("count"))
       .where("author_id", "=", contactId)
       .where("source", "not like", "jira:%")
       .executeTakeFirstOrThrow();
 
     const nonJiraAssigneeResult = await db
-      .selectFrom("activity")
+      .selectFrom("link")
       .select((eb) => eb.fn.countAll().as("count"))
       .where("assignee_id", "=", contactId)
       .where("source", "not like", "jira:%")

@@ -385,17 +385,29 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
                 const SizedBox(height: 8),
 
-                Text(
-                  'Enter the 6-digit code from your email:',
-                  style: context.theme.typography.base,
-                  textAlign: TextAlign.center,
-                ),
-
-                // OTP input field
-                OtpInput(
-                  key: ValueKey('sf_$_otpResetCounter'),
-                  controller: _otpController,
-                  onComplete: _handleVerifySecondFactor,
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Opacity(
+                      opacity: _isLoading ? 0.3 : 1.0,
+                      child: Column(
+                        spacing: 8,
+                        children: [
+                          Text(
+                            'Enter the 6-digit code from your email:',
+                            style: context.theme.typography.base,
+                            textAlign: TextAlign.center,
+                          ),
+                          OtpInput(
+                            key: ValueKey('sf_$_otpResetCounter'),
+                            controller: _otpController,
+                            onComplete: _handleVerifySecondFactor,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_isLoading) const Spinner.message('Verifying...'),
+                  ],
                 ),
 
                 const SizedBox(height: 8),
@@ -441,17 +453,29 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
                 const SizedBox(height: 8),
 
-                Text(
-                  'Enter the 6-digit code from your email:',
-                  style: context.theme.typography.base,
-                  textAlign: TextAlign.center,
-                ),
-
-                // OTP input field
-                OtpInput(
-                  key: ValueKey(_otpResetCounter),
-                  controller: _otpController,
-                  onComplete: _handleVerifyOtp,
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Opacity(
+                      opacity: _isLoading ? 0.3 : 1.0,
+                      child: Column(
+                        spacing: 8,
+                        children: [
+                          Text(
+                            'Enter the 6-digit code from your email:',
+                            style: context.theme.typography.base,
+                            textAlign: TextAlign.center,
+                          ),
+                          OtpInput(
+                            key: ValueKey(_otpResetCounter),
+                            controller: _otpController,
+                            onComplete: _handleVerifyOtp,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_isLoading) const Spinner.message('Verifying...'),
+                  ],
                 ),
 
                 const SizedBox(height: 8),

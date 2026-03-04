@@ -24,32 +24,32 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "user".upsert_activity_tag (
+CREATE OR REPLACE FUNCTION "user".upsert_thread_tag (
     user_id uuid,
     p_actor_id uuid,
-    p_activity_id uuid,
+    p_thread_id uuid,
     p_tag_id integer,
     p_occurrence text DEFAULT NULL::text,
     p_updated_by integer DEFAULT 0,
     p_archived_at timestamptz DEFAULT NULL::timestamptz
 )
-    RETURNS activity_tag
+    RETURNS thread_tag
     LANGUAGE plpgsql
     SET search_path TO 'public', 'user'
     AS $function$
 DECLARE
     v_priority_id uuid;
     v_tag_type tag_type;
-    v_row activity_tag;
+    v_row thread_tag;
 BEGIN
     SELECT
         priority_id INTO v_priority_id
     FROM
-        activity
+        thread
     WHERE
-        id = p_activity_id;
+        id = p_thread_id;
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Activity not found';
+        RAISE EXCEPTION 'Thread not found';
     END IF;
     PERFORM "user".assert_priority_access(user_id, v_priority_id);
 
@@ -61,9 +61,9 @@ BEGIN
         RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
     END IF;
 
-    INSERT INTO activity_tag (actor_id, activity_id, occurrence, tag_id, updated_by, archived_at)
-        VALUES (p_actor_id, p_activity_id, p_occurrence, p_tag_id, COALESCE(p_updated_by, 0), p_archived_at)
-    ON CONFLICT (actor_id, activity_id, occurrence, tag_id)
+    INSERT INTO thread_tag (actor_id, thread_id, occurrence, tag_id, updated_by, archived_at)
+        VALUES (p_actor_id, p_thread_id, p_occurrence, p_tag_id, COALESCE(p_updated_by, 0), p_archived_at)
+    ON CONFLICT (actor_id, thread_id, occurrence, tag_id)
         DO UPDATE SET
             archived_at = EXCLUDED.archived_at,
             updated_by = EXCLUDED.updated_by,
@@ -95,7 +95,7 @@ BEGIN
         a.priority_id INTO v_priority_id
     FROM
         note n
-        JOIN activity a ON a.id = n.activity_id
+        JOIN thread a ON a.id = n.thread_id
     WHERE
         n.id = p_note_id;
     IF v_priority_id IS NULL THEN
@@ -124,60 +124,6 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "user".upsert_activity_exception (
-    user_id uuid,
-    p_id uuid,
-    p_activity_id uuid,
-    p_occurrence text,
-    p_archived_at timestamptz DEFAULT NULL::timestamptz,
-    p_updated_by integer DEFAULT 0,
-    p_at tstzrange DEFAULT NULL::tstzrange,
-    p_on daterange DEFAULT NULL::daterange,
-    p_duration interval DEFAULT NULL::interval,
-    p_done_at timestamptz DEFAULT NULL::timestamptz,
-    p_title text DEFAULT NULL::text,
-    p_preview text DEFAULT NULL::text,
-    p_meta jsonb DEFAULT NULL::jsonb
-)
-    RETURNS activity_exception
-    LANGUAGE plpgsql
-    SET search_path TO 'public', 'user'
-    AS $function$
-DECLARE
-    v_priority_id uuid;
-    v_row activity_exception;
-BEGIN
-    SELECT
-        priority_id INTO v_priority_id
-    FROM
-        activity
-    WHERE
-        id = p_activity_id;
-    IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Activity not found';
-    END IF;
-    PERFORM "user".assert_priority_access(user_id, v_priority_id);
-
-    INSERT INTO activity_exception (id, activity_id, occurrence, archived_at, updated_by, at, "on", duration, done_at, title, preview, meta)
-        VALUES (COALESCE(p_id, uuidv7()), p_activity_id, p_occurrence, p_archived_at, COALESCE(p_updated_by, 0), p_at, p_on, p_duration, p_done_at, p_title, p_preview, p_meta)
-    ON CONFLICT (activity_id, occurrence)
-        DO UPDATE SET
-            archived_at = EXCLUDED.archived_at,
-            updated_by = EXCLUDED.updated_by,
-            at = EXCLUDED.at,
-            "on" = EXCLUDED."on",
-            duration = EXCLUDED.duration,
-            done_at = EXCLUDED.done_at,
-            title = EXCLUDED.title,
-            preview = EXCLUDED.preview,
-            meta = EXCLUDED.meta,
-            updated_at = now()
-    RETURNING * INTO v_row;
-
-    RETURN v_row;
-END;
-$function$;
-
 CREATE OR REPLACE FUNCTION "user".upsert_note (
     user_id uuid,
     p_id uuid,
@@ -185,11 +131,11 @@ CREATE OR REPLACE FUNCTION "user".upsert_note (
     p_created_by uuid,
     p_updated_by integer,
     p_archived_at timestamptz,
-    p_activity_id uuid,
+    p_thread_id uuid,
     p_draft boolean,
     p_private boolean,
     p_content text,
-    p_links jsonb,
+    p_actions jsonb,
     p_mentions uuid[],
     p_re_note_id uuid,
     p_source_created_at timestamptz,
@@ -208,11 +154,11 @@ BEGIN
     SELECT
         priority_id INTO v_priority_id
     FROM
-        activity
+        thread
     WHERE
-        id = p_activity_id;
+        id = p_thread_id;
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Activity not found';
+        RAISE EXCEPTION 'Thread not found';
     END IF;
     PERFORM "user".assert_priority_access(user_id, v_priority_id);
 
@@ -240,9 +186,9 @@ BEGIN
     END IF;
 
     IF p_id IS NULL THEN
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, activity_id, draft, private, content, links, mentions, re_note_id, source_created_at, key)
-            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_activity_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_links, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key)
-        ON CONFLICT (activity_id, key)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key)
+            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key)
+        ON CONFLICT (thread_id, key)
             DO UPDATE SET
                 author_id = note.author_id,
                 created_by = note.created_by,
@@ -251,7 +197,7 @@ BEGIN
                 draft = EXCLUDED.draft,
                 private = EXCLUDED.private,
                 content = EXCLUDED.content,
-                links = EXCLUDED.links,
+                actions = EXCLUDED.actions,
                 mentions = EXCLUDED.mentions,
                 re_note_id = EXCLUDED.re_note_id,
                 source_created_at = EXCLUDED.source_created_at,
@@ -259,8 +205,8 @@ BEGIN
                 updated_at = now()
         RETURNING * INTO v_row;
     ELSE
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, activity_id, draft, private, content, links, mentions, re_note_id, source_created_at, key)
-            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_activity_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_links, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key)
+            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key)
         ON CONFLICT (id)
             DO UPDATE SET
                 author_id = note.author_id,
@@ -270,7 +216,7 @@ BEGIN
                 draft = EXCLUDED.draft,
                 private = EXCLUDED.private,
                 content = EXCLUDED.content,
-                links = EXCLUDED.links,
+                actions = EXCLUDED.actions,
                 mentions = EXCLUDED.mentions,
                 re_note_id = EXCLUDED.re_note_id,
                 source_created_at = EXCLUDED.source_created_at,
@@ -374,7 +320,10 @@ CREATE OR REPLACE FUNCTION "user".upsert_priority_twist (
 DECLARE
     v_row priority_twist;
 BEGIN
-    PERFORM "user".assert_priority_access(user_id, p_priority_id);
+    -- Source accounts have NULL priority_id; skip access check for those
+    IF p_priority_id IS NOT NULL THEN
+        PERFORM "user".assert_priority_access(user_id, p_priority_id);
+    END IF;
     IF p_owner_id IS DISTINCT FROM user_id THEN
         RAISE EXCEPTION 'owner_id must match user_id';
     END IF;
@@ -757,34 +706,34 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "user".upsert_activity_read (
+CREATE OR REPLACE FUNCTION "user".upsert_thread_read (
     user_id uuid,
-    p_activity_id uuid,
+    p_thread_id uuid,
     p_read_at timestamptz
 )
-    RETURNS activity_read
+    RETURNS thread_read
     LANGUAGE plpgsql
     SET search_path TO 'public', 'user'
     AS $function$
 #variable_conflict use_column
 DECLARE
     v_priority_id uuid;
-    v_row activity_read;
+    v_row thread_read;
 BEGIN
     SELECT
         priority_id INTO v_priority_id
     FROM
-        activity
+        thread
     WHERE
-        id = p_activity_id;
+        id = p_thread_id;
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Activity not found';
+        RAISE EXCEPTION 'Thread not found';
     END IF;
-    PERFORM "user".assert_priority_access(upsert_activity_read.user_id, v_priority_id);
+    PERFORM "user".assert_priority_access(upsert_thread_read.user_id, v_priority_id);
 
-    INSERT INTO activity_read (user_id, activity_id, read_at)
-        VALUES (upsert_activity_read.user_id, p_activity_id, COALESCE(p_read_at, now()))
-    ON CONFLICT (user_id, activity_id)
+    INSERT INTO thread_read (user_id, thread_id, read_at)
+        VALUES (upsert_thread_read.user_id, p_thread_id, COALESCE(p_read_at, now()))
+    ON CONFLICT (user_id, thread_id)
         DO UPDATE SET
             read_at = EXCLUDED.read_at,
             updated_at = now()
@@ -794,9 +743,9 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "user".delete_activity_read (
+CREATE OR REPLACE FUNCTION "user".delete_thread_read (
     user_id uuid,
-    p_activity_id uuid
+    p_thread_id uuid
 )
     RETURNS void
     LANGUAGE plpgsql
@@ -808,17 +757,18 @@ BEGIN
     SELECT
         priority_id INTO v_priority_id
     FROM
-        activity
+        thread
     WHERE
-        id = p_activity_id;
+        id = p_thread_id;
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Activity not found';
+        RAISE EXCEPTION 'Thread not found';
     END IF;
-    PERFORM "user".assert_priority_access(delete_activity_read.user_id, v_priority_id);
+    PERFORM "user".assert_priority_access(delete_thread_read.user_id, v_priority_id);
 
-    DELETE FROM activity_read
+    DELETE FROM thread_read
     WHERE
-        activity_read.user_id = delete_activity_read.user_id
-        AND activity_read.activity_id = p_activity_id;
+        thread_read.user_id = delete_thread_read.user_id
+        AND thread_read.thread_id = p_thread_id;
 END;
 $function$;
+

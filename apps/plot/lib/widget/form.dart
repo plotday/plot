@@ -4,6 +4,7 @@ import 'package:plot/widget/select_tile.dart';
 import 'package:plot/command/base.dart';
 import 'package:plot/command/logging.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 
 /// Simple command for form submission when display command cannot be built
@@ -571,22 +572,22 @@ class FormInfo extends FormItem {
     FocusNode? focusNode,
     FormButtonController? controller,
   }) {
-    return Padding(
+    return Container(
       padding: EdgeInsets.only(bottom: divider ? context.theme.spacing.md : 0),
-      child: Container(
+      decoration: divider
+          ? BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: context.theme.colors.border,
+                  width: 1,
+                ),
+              ),
+            )
+          : null,
+      child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: text != null ? context.theme.spacing.lg : 0,
         ),
-        decoration: divider
-            ? BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: context.theme.colors.border,
-                    width: 1,
-                  ),
-                ),
-              )
-            : null,
         child: text != null
             ? SelectableText(text!, style: context.theme.typography.base)
             : builder!(context),
@@ -626,6 +627,209 @@ class FormDivider extends FormItem {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(color: context.theme.colors.border, width: 1),
+        ),
+      ),
+    );
+  }
+}
+
+/// Toggle form item with a switch for boolean values
+class FormToggle extends FormItem {
+  FormToggle({
+    required super.key,
+    super.label,
+    this.details,
+    bool initialValue = true,
+    this.onChanged,
+  }) : _value = initialValue,
+       super(required: false);
+
+  /// Optional description text shown below the toggle.
+  final String? details;
+
+  /// Callback when value changes.
+  final VoidCallback? onChanged;
+
+  bool _value;
+  final List<VoidCallback> _listeners = [];
+
+  @override
+  bool getValue() => _value;
+
+  @override
+  void setValue(dynamic value) {
+    if (value is bool) {
+      _value = value;
+      onChanged?.call();
+      _notifyListeners();
+    }
+  }
+
+  @override
+  bool get canActivate => true;
+
+  @override
+  Future<void> activate(BuildContext context) async {
+    _value = !_value;
+    onChanged?.call();
+    _notifyListeners();
+  }
+
+  @override
+  bool isValid() => true;
+
+  void addListener(VoidCallback listener) {
+    _listeners.add(listener);
+  }
+
+  void removeListener(VoidCallback listener) {
+    _listeners.remove(listener);
+  }
+
+  void _notifyListeners() {
+    for (final listener in _listeners) {
+      listener();
+    }
+  }
+
+  @override
+  Widget build(
+    BuildContext context,
+    bool highlighted, {
+    bool enabled = true,
+    FocusNode? focusNode,
+    FormButtonController? controller,
+  }) {
+    return _FormToggleWidget(
+      label: label ?? key,
+      details: details,
+      value: _value,
+      highlighted: highlighted,
+      enabled: enabled,
+      focusNode: focusNode,
+      onToggle: () => activate(context),
+    );
+  }
+}
+
+class _FormToggleWidget extends StatefulWidget {
+  const _FormToggleWidget({
+    required this.label,
+    this.details,
+    required this.value,
+    required this.highlighted,
+    required this.enabled,
+    required this.onToggle,
+    this.focusNode,
+  });
+
+  final String label;
+  final String? details;
+  final bool value;
+  final bool highlighted;
+  final bool enabled;
+  final VoidCallback onToggle;
+  final FocusNode? focusNode;
+
+  @override
+  State<_FormToggleWidget> createState() => _FormToggleWidgetState();
+}
+
+class _FormToggleWidgetState extends State<_FormToggleWidget> {
+  FocusNode? _internalFocusNode;
+  bool _isHovered = false;
+
+  FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focusNode == null) {
+      _internalFocusNode = FocusNode();
+    }
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _internalFocusNode?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isHighlighted =
+        widget.enabled &&
+        (_focusNode.hasFocus || _isHovered || widget.highlighted);
+
+    return FocusableActionDetector(
+      focusNode: _focusNode,
+      enabled: widget.enabled,
+      child: FormTileLayout(
+        label: '',
+        rightBackgroundColor:
+            isHighlighted ? context.theme.colors.secondary : null,
+        isActive: isHighlighted,
+        content: GestureDetector(
+          onTap: widget.enabled ? widget.onToggle : null,
+          child: MouseRegion(
+            cursor: widget.enabled
+                ? SystemMouseCursors.click
+                : SystemMouseCursors.basic,
+            onEnter: widget.enabled
+                ? (_) => setState(() => _isHovered = true)
+                : null,
+            onExit: widget.enabled
+                ? (_) => setState(() => _isHovered = false)
+                : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.label,
+                        style: context.theme.typography.base.copyWith(
+                          color: widget.enabled
+                              ? context.theme.colors.foreground
+                              : context.theme.plotColors.muted,
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 32,
+                      height: 20,
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: FSwitch(
+                          value: widget.value,
+                          onChange: (_) => widget.onToggle(),
+                          enabled: widget.enabled,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (widget.details != null)
+                  Padding(
+                    padding: EdgeInsets.only(top: context.theme.spacing.xs),
+                    child: Text(
+                      widget.details!,
+                      style: context.theme.typography.sm.copyWith(
+                        color: context.theme.plotColors.muted,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

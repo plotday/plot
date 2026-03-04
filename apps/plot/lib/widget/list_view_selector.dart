@@ -2,7 +2,7 @@ import 'package:plot/widget/widget.dart';
 
 /// Controller for managing focus and hover state in a list view.
 ///
-/// Simplified version of BidirectionalListController for use with ListView.
+/// Simplified version of InfiniteListController for use with ListView.
 /// Manages FocusNodes for each list item and tracks hover/focus state.
 class ListViewSelectorController extends ChangeNotifier {
   ListViewSelectorController({
@@ -211,7 +211,7 @@ class MoveListSelectionIntent extends Intent {
 
 /// A selector widget that provides keyboard navigation and focus management for a ListView.
 ///
-/// Simplified version of BidirectionalListSelector for use with standard ListView.
+/// Simplified version of InfiniteListSelector for use with standard ListView.
 /// Provides a controller with focus/hover management and callbacks for selection changes.
 class ListViewSelector extends StatefulWidget {
   final Widget Function(

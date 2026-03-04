@@ -58,25 +58,28 @@ export function notifyUserSync(c: Context<{ Bindings: Bindings }>, userId: strin
 }
 
 /**
- * Look up the priority_id for an activity.
+ * Look up the priority_id for a thread.
  */
-export async function getPriorityForActivity(db: Kysely<DB>, activityId: string): Promise<string> {
+export async function getPriorityForThread(db: Kysely<DB>, threadId: string): Promise<string> {
   const row = await db
-    .selectFrom("activity")
+    .selectFrom("thread")
     .select("priority_id")
-    .where("id", "=", activityId)
+    .where("id", "=", threadId)
     .executeTakeFirstOrThrow();
   return row.priority_id;
 }
 
+/** @deprecated Use getPriorityForThread */
+export const getPriorityForActivity = getPriorityForThread;
+
 /**
- * Look up the priority_id for a note (via its parent activity).
+ * Look up the priority_id for a note (via its parent thread).
  */
 export async function getPriorityForNote(db: Kysely<DB>, noteId: string): Promise<string> {
   const row = await db
     .selectFrom("note")
-    .innerJoin("activity", "activity.id", "note.activity_id")
-    .select("activity.priority_id")
+    .innerJoin("thread", "thread.id", "note.thread_id")
+    .select("thread.priority_id")
     .where("note.id", "=", noteId)
     .executeTakeFirstOrThrow();
   return row.priority_id;

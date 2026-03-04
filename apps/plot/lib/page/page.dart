@@ -1,10 +1,9 @@
-export 'activity.dart';
+export 'thread.dart';
 export 'email_sign_in.dart';
 export 'invite.dart';
 export 'loading.dart';
-export 'new_activity.dart';
+export 'new_thread.dart';
 export 'password_setup.dart';
-export 'platform_picker_page.dart';
 export 'priorities.dart';
 export 'priority.dart';
 export 'sign_in.dart';

@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 
 /// Shared layout component for form tiles (FormTextField, FormSelect, FormButton).
 ///
@@ -40,7 +40,7 @@ class FormTileLayout extends StatelessWidget {
           Positioned.fill(child: Container(color: rightBackgroundColor)),
         // Content layer (with padding)
         Padding(
-          padding: widgetPaddingSm,
+          padding: context.theme.spacing.paddingSm,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

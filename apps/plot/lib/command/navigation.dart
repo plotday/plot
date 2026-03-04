@@ -48,7 +48,7 @@ class ToggleLeftSidebarCommand extends Command {
 class ToggleMiddleSidebarCommand extends Command {
   ToggleMiddleSidebarCommand({required this.isVisible})
     : super(
-        title: isVisible ? 'Close Topics' : 'Open Topics',
+        title: isVisible ? 'Close Threads' : 'Open Threads',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,

@@ -5,12 +5,17 @@ typedef PriorityTwistId = Uuid;
 @DataClassName('PriorityTwistRow')
 class PriorityTwists extends Table
     with SyncableTable, UuidTable, CreatedTable, DeletableTable {
-  BlobColumn get priorityId => blob().map(const UuidConverter())();
+  BlobColumn get priorityId =>
+      blob().nullable().map(const UuidConverter())();
   Int64Column get twistId => int64()(); // Changed from UUID to bigint
   TextColumn get twistEnvironment =>
       text()(); // Read from user_twist view (JOIN with twist table)
+  BoolColumn get isSource => boolean().withDefault(const Constant(false))();
   TextColumn get name => text()();
   TextColumn get config => text().map(const JsonConverter())();
+  TextColumn get linkTypes => text().nullable()();
+  TextColumn get logoUrl => text().nullable()();
+  TextColumn get logoUrlDark => text().nullable()();
 }
 
 class PriorityTwistsBase extends BaseTable {
@@ -28,6 +33,10 @@ class PriorityTwistsBase extends BaseTable {
     json.remove('updated_by');
     json.remove('owner_id');
     json.remove('user_id');
+    // Serialize link_types JSON to string for text column storage
+    if (json['link_types'] != null && json['link_types'] is! String) {
+      json['link_types'] = jsonEncode(json['link_types']);
+    }
     return PriorityTwistRow.fromJson(json);
   }
 
@@ -44,6 +53,10 @@ class PriorityTwist extends PriorityTwistRow {
 
   // In-memory cache for PriorityTwist lookups
   static final Map<PriorityTwistId, PriorityTwist> _cache = {};
+
+  /// Look up a PriorityTwist by ID from the in-memory cache.
+  /// Returns null if the twist is not cached.
+  static PriorityTwist? fromCache(PriorityTwistId id) => _cache[id];
 
   /// Clear the entire PriorityTwist cache
   static void clearCache() {
@@ -174,19 +187,53 @@ class PriorityTwist extends PriorityTwistRow {
     return query;
   }
 
+  /// Watch source accounts (sources with no priority, i.e. account-based).
+  static Stream<List<PriorityTwist>> watchSourceAccounts() {
+    final query = Store.get.select(table)
+      ..where((t) => t.priorityId.isNull())
+      ..where((t) => t.isSource.equals(true))
+      ..where((t) => t.archivedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
+    return query.watch().map((rows) {
+      final twists = rows.map((row) => PriorityTwist(row)).toList();
+      for (final twist in twists) {
+        _cache[twist.id] = twist;
+      }
+      return twists;
+    });
+  }
+
   PriorityTwist(PriorityTwistRow row)
     : super(
         id: row.id,
         priorityId: row.priorityId,
         twistId: row.twistId,
         twistEnvironment: row.twistEnvironment,
+        isSource: row.isSource,
         name: row.name,
         config: row.config,
+        linkTypes: row.linkTypes,
+        logoUrl: row.logoUrl,
+        logoUrlDark: row.logoUrlDark,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         archivedAt: row.archivedAt,
         pending: row.pending,
       );
+
+  /// Parse the linkTypes JSON string into a list of LinkTypeConfig.
+  List<LinkTypeConfig>? get parsedLinkTypes {
+    final raw = linkTypes;
+    if (raw == null) return null;
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .map((e) => LinkTypeConfig.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> save() async {
     await Store.get.save(

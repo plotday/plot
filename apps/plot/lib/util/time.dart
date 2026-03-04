@@ -792,6 +792,34 @@ extension DurationExtension on Duration {
   bool get isNonZero => inSeconds > 0;
 }
 
+/// Formats a [dateTime] into a compact relative label for schedule display.
+///
+/// Timed events include the time portion (e.g. "Today, 2 PM").
+/// All-day events (midnight start) omit the time (e.g. "Today").
+String formatRelativeSchedule(DateTime dateTime, BuildContext context) {
+  final today = Date.today();
+  final date = dateTime.toDate();
+  final time = dateTime.toTimeOfDay();
+  final isAllDay = time.isMidnight;
+  final timeStr = isAllDay ? '' : ', ${time.formatShort(context)}';
+
+  final diff = date.difference(today).inDays;
+
+  if (date == today) {
+    return 'Today$timeStr';
+  } else if (diff == -1) {
+    return 'Yesterday$timeStr';
+  } else if (diff == 1) {
+    return 'Tomorrow$timeStr';
+  } else if (diff >= 2 && diff <= 6) {
+    return '${dateTime.format('EEEE')}$timeStr';
+  } else if (diff >= -6 && diff <= -2) {
+    return 'Last ${dateTime.format('EEEE')}$timeStr';
+  } else {
+    return '${dateTime.format('MMM d')}$timeStr';
+  }
+}
+
 extension TimeOfDayExtension on TimeOfDay {
   bool operator <(TimeOfDay other) {
     return hour < other.hour || (hour == other.hour && minute < other.minute);

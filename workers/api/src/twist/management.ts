@@ -33,7 +33,7 @@ async function cleanupFailedInstallation(
     // Step 1: Archive all activities created by this twist
     logger.info("Cleaning up activities for failed installation");
     await db
-      .updateTable("activity")
+      .updateTable("thread")
       .set({ archived_at: new Date().toISOString() })
       .where("created_by", "=", priorityTwistId)
       .where("archived_at", "is", null)
@@ -316,6 +316,7 @@ export async function getById(
         "priority_twist.updated_at",
         "twist.permissions",
         "twist.options",
+        "twist.is_source",
       ])
       .where("priority_twist.id", "=", priority_twist_id)
       .where("priority_twist.archived_at", "is", null)
@@ -358,6 +359,7 @@ export async function getByPriority(
         "priority_child_twist.created_at",
         "priority_child_twist.updated_at",
         "priority_child_twist.twist_environment",
+        "priority_child_twist.is_source",
         "priority_child_twist.version",
         "priority_child_twist.author_name",
         "priority_child_twist.author_email",
@@ -556,13 +558,13 @@ export async function createDraft(
 }
 
 /**
- * Activate a draft twist: assign priority, call activate lifecycle, enable syncables.
+ * Activate a draft twist: assign priority, call activate lifecycle, enable channels.
  */
 export async function activateDraft(
   db: Kysely<DB>,
   env: Bindings,
   draftId: string,
-  priorityId: string,
+  priorityId: string | undefined,
   name: string,
   config: Record<string, any> | undefined,
   syncables: Array<{ provider: string; syncableId: string }> | undefined,
@@ -585,44 +587,79 @@ export async function activateDraft(
     throw new Error("Draft not found or already activated");
   }
 
-  // Check for name conflicts on the target priority
-  const existingTwist = await db
-    .selectFrom("priority_twist")
-    .select(["id"])
-    .where("priority_id", "=", priorityId)
-    .where("name", "=", name)
-    .where("archived_at", "is", null)
-    .executeTakeFirst();
-  if (existingTwist) {
-    throw new Error(`Twist with name "${name}" already exists for this priority.`);
+  // Check for name conflicts on the target priority (only if priorityId provided)
+  if (priorityId) {
+    const existingTwist = await db
+      .selectFrom("priority_twist")
+      .select(["id"])
+      .where("priority_id", "=", priorityId)
+      .where("name", "=", name)
+      .where("archived_at", "is", null)
+      .executeTakeFirst();
+    if (existingTwist) {
+      throw new Error(`Twist with name "${name}" already exists for this priority.`);
+    }
   }
 
-  // Set priority_id, name, and config
+  // Set priority_id (may be null for sources), name, and config
   await db
     .updateTable("priority_twist")
-    .set({ priority_id: priorityId, name, ...(config ? { config } : {}) })
+    .set({
+      ...(priorityId ? { priority_id: priorityId } : {}),
+      name,
+      ...(config ? { config } : {}),
+    })
     .where("id", "=", draftId)
     .execute();
 
   // Call activate lifecycle
   try {
     const twistWrapper = await activate.twistFactory({
-      priorityId,
+      priorityId: priorityId ?? draftId, // Sources use draftId as context
       priorityTwistId: draftId,
     });
+
+    const actorContext: { actor: { id: string; type: number }; auth?: any } = {
+      actor: { id: draft.owner_id, type: 0 /* ActorType.User */ },
+    };
+
+    // For sources, construct Authorization from sourceProvider metadata and owner contact
+    if (twistWrapper.sourceProvider) {
+      const ownerContact = await db
+        .selectFrom("contact")
+        .select(["id", "email", "name"])
+        .where("user_id", "=", draft.owner_id)
+        .executeTakeFirst();
+
+      if (ownerContact) {
+        actorContext.auth = {
+          provider: twistWrapper.sourceProvider.provider,
+          scopes: twistWrapper.sourceProvider.scopes,
+          actor: {
+            id: ownerContact.id,
+            type: 0 /* ActorType.User */,
+            email: ownerContact.email,
+            name: ownerContact.name,
+          },
+        };
+      }
+    }
+
     await twistWrapper.activate(
-      { id: priorityId as Uuid },
-      { actor: { id: draft.owner_id, type: 0 /* ActorType.User */ } }
+      { id: (priorityId ?? draftId) as Uuid },
+      actorContext,
     );
   } catch (activationError) {
     logger.error("Twist activation failed during draft activation", activationError as Error);
 
     // Rollback: set priority_id back to NULL (keep draft alive for retry)
-    await db
-      .updateTable("priority_twist")
-      .set({ priority_id: null })
-      .where("id", "=", draftId)
-      .execute();
+    if (priorityId) {
+      await db
+        .updateTable("priority_twist")
+        .set({ priority_id: null })
+        .where("id", "=", draftId)
+        .execute();
+    }
 
     throw new Error(
       `Failed to activate twist: ${
@@ -631,11 +668,11 @@ export async function activateDraft(
     );
   }
 
-  // Enable selected syncables via callCallback to the Integrations tool
+  // Enable selected channels via callCallback to the Integrations tool
   if (syncables && syncables.length > 0) {
-    logger.info("activateDraft: enabling syncables", {
-      syncable_count: syncables.length,
-      syncables: syncables.map(s => `${s.provider}:${s.syncableId}`),
+    logger.info("activateDraft: enabling channels", {
+      channel_count: syncables.length,
+      channels: syncables.map(s => `${s.provider}:${s.syncableId}`),
     });
 
     // Look up integrationsMap from twist config KV
@@ -683,7 +720,7 @@ export async function activateDraft(
 
     if (contact) {
       const twistWrapper = await activate.twistFactory({
-        priorityId,
+        priorityId: priorityId ?? draftId,
         priorityTwistId: draftId,
       });
 
@@ -723,7 +760,7 @@ export async function activateDraft(
             (result as any)[Symbol.dispose]();
           }
         } catch (error) {
-          logger.warn("Failed to enable syncable during activation", {
+          logger.warn("Failed to enable channel during activation", {
             provider,
             syncable_id: syncableId,
             error_message: error instanceof Error ? error.message : String(error),
@@ -732,9 +769,9 @@ export async function activateDraft(
       }
     }
   } else {
-    logger.info("activateDraft: no syncables to enable", {
-      has_syncables: !!syncables,
-      syncable_count: syncables?.length ?? 0,
+    logger.info("activateDraft: no channels to enable", {
+      has_channels: !!syncables,
+      channel_count: syncables?.length ?? 0,
     });
   }
 
@@ -787,7 +824,7 @@ export async function archiveAndDeleteTwist(
 
     // First, archive all activities created by this twist
     await db
-      .updateTable("activity")
+      .updateTable("thread")
       .set({ archived_at: new Date().toISOString() })
       .where("created_by", "=", priority_twist_id)
       .where("archived_at", "is", null)

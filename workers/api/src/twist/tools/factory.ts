@@ -92,6 +92,7 @@ export function createTool(
     env,
     ctx,
     config,
+    sourceProvider,
   }: {
     twistId: string;
     environment: TwistEnvironment;
@@ -101,6 +102,8 @@ export function createTool(
     env: Bindings;
     ctx: { exports: ExecutionContext["exports"] };
     config?: Record<string, unknown>;
+    /** Source metadata (provider, scopes, linkTypes) for Sources using the new API. */
+    sourceProvider?: { provider: string; scopes: string[]; linkTypes?: any[] } | null;
   }
 ): Tool {
   switch (id) {
@@ -139,10 +142,12 @@ export function createTool(
         }),
         env,
         db,
+        priorityId,
         priorityTwistId,
         twistId,
         environment,
         integrationOptions: options as any,
+        sourceProvider,
       });
     case "Store":
       return new Store({

@@ -14,7 +14,7 @@ FHeaderStyles buildHeaderStyles(
     rootStyle: baseStyles.rootStyle.copyWith(
       titleTextStyle: typography.base.copyWith(
         color: colourScheme.muted,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w500,
         height: 1,
       ),
       actionSpacing: 0,

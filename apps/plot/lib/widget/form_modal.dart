@@ -6,7 +6,6 @@ import 'package:plot/command/command.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
-import 'package:plot/style/layout.dart';
 import 'package:plot/style/spacing.dart';
 import 'icon.dart';
 import 'modal.dart';
@@ -60,6 +59,7 @@ class FormModalState extends State<_FormModal> {
   List<StaticFormGroup> _formGroups = [];
   List<FocusNode> _focusNodes = [];
   int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
+  bool _mouseHasMoved = false;
   final Map<FormButton, FormButtonController> _buttonControllers = {};
   final ScrollController _scrollController = ScrollController();
   int _lastModalStackDepth = 0;
@@ -542,7 +542,7 @@ class FormModalState extends State<_FormModal> {
                       children: [
                         // Title header
                         Container(
-                          padding: widgetPadding,
+                          padding: context.theme.spacing.padding,
                           margin: const EdgeInsets.only(bottom: 8),
                           decoration: BoxDecoration(
                             border: Border(
@@ -599,7 +599,7 @@ class FormModalState extends State<_FormModal> {
                                   (index == 0 ||
                                       group != _getGroupAtIndex(index - 1))) {
                                 header = Padding(
-                                  padding: widgetPaddingSm,
+                                  padding: context.theme.spacing.paddingSm,
                                   child: Text(
                                     group.title!,
                                     style: TextStyle(
@@ -625,10 +625,22 @@ class FormModalState extends State<_FormModal> {
                                       item is FormButton || item.canActivate
                                       ? SystemMouseCursors.click
                                       : SystemMouseCursors.basic,
-                                  onEnter: (_) =>
-                                      listController.setHovered(index),
-                                  onExit: (_) =>
-                                      listController.setHovered(null),
+                                  onEnter: (_) {
+                                    if (_mouseHasMoved) {
+                                      listController.setHovered(index);
+                                    }
+                                  },
+                                  onExit: (_) {
+                                    if (_mouseHasMoved) {
+                                      listController.setHovered(null);
+                                    }
+                                  },
+                                  onHover: (_) {
+                                    if (!_mouseHasMoved) {
+                                      setState(() => _mouseHasMoved = true);
+                                      listController.setHovered(index);
+                                    }
+                                  },
                                   child: Column(
                                     key: ValueKey(index),
                                     crossAxisAlignment:

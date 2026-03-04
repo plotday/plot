@@ -61,7 +61,7 @@ class PriorityUser extends PriorityUserRow {
   }
 
   /// Deletes all local data for a priority tree (self + descendants):
-  /// note tags, activity tags, activity exceptions, notes, activities,
+  /// note tags, thread tags, thread exceptions, notes, threads,
   /// priority twists, and the priorities themselves.
   ///
   /// Sessions are intentionally left intact as user focus history.
@@ -77,17 +77,17 @@ class PriorityUser extends PriorityUserRow {
     final treeIdBytes = treePriorities.map((p) => p.id.toBytes()).toList();
     if (treeIdBytes.isEmpty) return;
 
-    // Find all activities in this tree
-    final activities = await (db.select(db.activities)
+    // Find all threads in this tree
+    final threads = await (db.select(db.threads)
           ..where((a) => a.priorityId.isIn(treeIdBytes)))
         .get();
-    final activityIdBytes = activities.map((a) => a.id.toBytes()).toList();
+    final threadIdBytes = threads.map((a) => a.id.toBytes()).toList();
 
     // Find all notes in this tree (needed for note tag cleanup)
     List<Uint8List> noteIdBytes = [];
-    if (activityIdBytes.isNotEmpty) {
+    if (threadIdBytes.isNotEmpty) {
       final notes = await (db.select(db.notes)
-            ..where((n) => n.activityId.isIn(activityIdBytes)))
+            ..where((n) => n.threadId.isIn(threadIdBytes)))
           .get();
       noteIdBytes = notes.map((n) => n.id.toBytes()).toList();
     }
@@ -98,17 +98,17 @@ class PriorityUser extends PriorityUserRow {
             ..where((nt) => nt.id.isIn(noteIdBytes)))
           .go();
     }
-    if (activityIdBytes.isNotEmpty) {
-      await (db.delete(db.activityTags)
-            ..where((at) => at.id.isIn(activityIdBytes)))
+    if (threadIdBytes.isNotEmpty) {
+      await (db.delete(db.threadTags)
+            ..where((at) => at.id.isIn(threadIdBytes)))
           .go();
-      await (db.delete(db.activityExceptions)
-            ..where((ae) => ae.activityId.isIn(activityIdBytes)))
+      await (db.delete(db.schedules)
+            ..where((s) => s.threadId.isIn(threadIdBytes)))
           .go();
       await (db.delete(db.notes)
-            ..where((n) => n.activityId.isIn(activityIdBytes)))
+            ..where((n) => n.threadId.isIn(threadIdBytes)))
           .go();
-      await (db.delete(db.activities)
+      await (db.delete(db.threads)
             ..where((a) => a.priorityId.isIn(treeIdBytes)))
           .go();
     }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/style/layout.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/toast.dart';
 
@@ -286,7 +287,7 @@ class _ModalProviderState extends State<ModalProvider> {
                           border: Border.all(
                             color: dialogContext.theme.colors.border,
                           ),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(borderRadiusMd),
                         ),
                       ),
                       constraints: BoxConstraints(
@@ -296,7 +297,7 @@ class _ModalProviderState extends State<ModalProvider> {
                       builder: (context, style) => Padding(
                         padding: EdgeInsets.all(1),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(borderRadiusMd),
                           child: buildModalContent(dialogContext),
                         ),
                       ),

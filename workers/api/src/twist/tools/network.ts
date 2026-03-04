@@ -352,39 +352,10 @@ export class Network extends Tool implements INetwork {
    *          instead of a webhook URL
    */
   private async createGmailWebhook(
-    authorization: Authorization,
+    scopes: string[],
     callbackFunctionName: string,
     extraArgs?: any[]
   ): Promise<string> {
-    if (!this.store) {
-      throw new Error("Store not initialized for Gmail webhooks");
-    }
-
-    // Retrieve integration data from store
-    const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
-    const tokenData = await this.store.get<{
-      access_token: string;
-      refresh_token?: string;
-      scopes: string[];
-    }>(tokenKey);
-
-    if (!tokenData) {
-      throw new Error(
-        `No integration found for authorization ${authorization.provider}:${authorization.actor.id}`
-      );
-    }
-
-    const scopes = tokenData.scopes || [];
-
-    // Verify authorization contains Gmail scopes
-    const hasGmailScope = scopes.some((scope) => GMAIL_SCOPES.includes(scope));
-    if (!hasGmailScope) {
-      throw new Error(
-        `Authorization ${authorization.provider}:${authorization.actor.id} does not have Gmail scopes. ` +
-          `Required: ${GMAIL_SCOPES.join(", ")}`
-      );
-    }
-
     // Get GCP configuration from environment
     if (
       !this.env?.GCP_PROJECT_ID ||
@@ -412,8 +383,7 @@ export class Network extends Tool implements INetwork {
         extraArgs,
         meta: {
           scopes,
-          provider: authorization.provider,
-          actorId: authorization.actor.id,
+          provider: AuthProvider.Google,
         },
       });
 
@@ -491,26 +461,38 @@ export class Network extends Tool implements INetwork {
     }
 
     // Handle Gmail webhooks (Google provider with Gmail scopes)
-    if (provider === AuthProvider.Google && authorization) {
-      // Check if authorization has Gmail scopes
-      const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
-      const tokenData = await this.store?.get<{
-        scopes: string[];
-      }>(tokenKey);
+    // Supports both explicit provider/authorization and auto-detection from stored auth
+    if (this.store && this.env?.GCP_PROJECT_ID) {
+      let gmailScopes: string[] | null = null;
 
-      if (tokenData) {
-        const scopes = tokenData.scopes || [];
-        const hasGmailScope = scopes.some((scope) =>
-          GMAIL_SCOPES.includes(scope)
-        );
-
-        if (hasGmailScope) {
-          return this.createGmailWebhook(
-            authorization,
-            callbackFunctionName,
-            extraArgs
-          );
+      if (provider === AuthProvider.Google && authorization) {
+        // Explicit authorization: look up scopes from stored token
+        const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
+        const tokenData = await this.store.get<{ scopes: string[] }>(tokenKey);
+        if (tokenData) {
+          const scopes = tokenData.scopes || [];
+          if (scopes.some((scope) => GMAIL_SCOPES.includes(scope))) {
+            gmailScopes = scopes;
+          }
         }
+      } else if (!provider) {
+        // Auto-detect: scan store for any Google auth token with Gmail scopes
+        const googleAuthKeys = await this.store.list("auth_token:google:");
+        for (const key of googleAuthKeys) {
+          const tokenData = await this.store.get<{ scopes: string[] }>(key);
+          if (tokenData?.scopes?.some((s) => GMAIL_SCOPES.includes(s))) {
+            gmailScopes = tokenData.scopes;
+            break;
+          }
+        }
+      }
+
+      if (gmailScopes) {
+        return this.createGmailWebhook(
+          gmailScopes,
+          callbackFunctionName,
+          extraArgs
+        );
       }
     }
 

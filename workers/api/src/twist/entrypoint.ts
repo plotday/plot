@@ -210,8 +210,28 @@ class ToolShed {
 }
 
 async function buildTwist(priorityTwistId, builtInToolFactory) {
+  // Check if the twist is a Source (has isSource static property)
+  const isSource = TwistConstructor.isSource === true;
+
+  // Enforce bidirectional tool access:
+  // - Sources cannot use Plot (must use integrations.saveLink() instead)
+  // - Twists cannot use Integrations (only Sources can)
+  const wrappedFactory = (path, id, options) => {
+    if (isSource && id === "Plot") {
+      throw new Error(
+        "Sources cannot use the Plot tool directly. Use integrations.saveLink() instead."
+      );
+    }
+    if (!isSource && id === "Integrations") {
+      throw new Error(
+        "Twists cannot use the Integrations tool. Only Sources can use integrations."
+      );
+    }
+    return builtInToolFactory(path, id, options);
+  };
+
   // Create ToolShed
-  const toolShed = new ToolShed([], priorityTwistId, builtInToolFactory);
+  const toolShed = new ToolShed([], priorityTwistId, wrappedFactory);
 
   // Construct twist with toolShed
   const twist = new TwistConstructor(priorityTwistId, toolShed);
@@ -266,7 +286,25 @@ async function callPreLifecycle(toolBuilder, methodName, ...args) {
         const toolPath = toolBuilder.path.concat([toolId]);
 
         for (const callbackInfo of result.__dispatch) {
-          if (callbackInfo?.optionPath && callbackInfo?.args && options) {
+          // sourceMethod dispatch: call method directly on twist instance (Source pattern)
+          if (callbackInfo?.sourceMethod && callbackInfo?.args) {
+            const twist = toolBuilder.rootToolShed.twist;
+            const method = twist[callbackInfo.sourceMethod];
+            if (typeof method === 'function') {
+              if (callbackInfo.forwardTo) {
+                const cbResult = await method.call(twist, ...callbackInfo.args);
+                await tool.callCallback(
+                  callbackInfo.forwardTo.functionName,
+                  ...callbackInfo.forwardTo.prependArgs,
+                  cbResult
+                );
+              } else {
+                await method.call(twist, ...callbackInfo.args);
+              }
+            }
+          }
+          // optionPath dispatch: navigate options object to find callback (legacy pattern)
+          else if (callbackInfo?.optionPath && callbackInfo?.args && options) {
             let cb = options;
             for (const key of callbackInfo.optionPath) {
               cb = cb?.[key];
@@ -342,6 +380,23 @@ export default class extends WorkerEntrypoint {
     const { twist } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
   }
 
+  /**
+   * Returns source metadata (provider, scopes, linkTypes) from the Source instance.
+   * Called by the factory to pass source config to the Integrations built-in tool.
+   * Returns null for regular twists.
+   */
+  async getSourceMetadata(twistInit) {
+    const isSource = TwistConstructor.isSource === true;
+    if (!isSource) return null;
+
+    const { twist } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
+    return {
+      provider: twist.provider,
+      scopes: twist.scopes,
+      linkTypes: twist.linkTypes || [],
+    };
+  }
+
   async activate(twistInit, priority, context) {
     console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
     try {
@@ -350,8 +405,19 @@ export default class extends WorkerEntrypoint {
       // Pre-phase: deepest tools first
       await callPreLifecycle(tools, 'preActivate', priority, context);
 
-      // Twist method
-      await twist.activate(priority, context);
+      // Source-aware activation: Sources receive { auth, actor } instead of (priority, context)
+      const isSource = TwistConstructor.isSource === true;
+      if (isSource && context?.auth) {
+        const sourceContext = {
+          auth: context.auth,
+          actor: context.actor ? { id: context.actor.id, type: context.actor.type } : undefined,
+        };
+        await twist.activate(sourceContext);
+      } else {
+        // Regular twist activation
+        const twistContext = context ? { actor: { id: context.actor.id, type: context.actor.type } } : undefined;
+        await twist.activate(priority, twistContext);
+      }
 
       // Post-phase: top-level tools first
       await callPostLifecycle(tools, 'postActivate', priority, context);
@@ -450,7 +516,24 @@ export default class extends WorkerEntrypoint {
       // onSyncEnabled/onSyncDisabled lose their context when called via RPC.
       if (result && result.__dispatch && Array.isArray(result.__dispatch)) {
         for (const callbackInfo of result.__dispatch) {
-          if (callbackInfo?.optionPath && callbackInfo?.args && options) {
+          // sourceMethod dispatch: call method directly on twist instance (Source pattern)
+          if (callbackInfo?.sourceMethod && callbackInfo?.args) {
+            const method = twist[callbackInfo.sourceMethod];
+            if (typeof method === 'function') {
+              if (callbackInfo.forwardTo) {
+                const cbResult = await method.call(twist, ...callbackInfo.args);
+                await tool.callCallback(
+                  callbackInfo.forwardTo.functionName,
+                  ...callbackInfo.forwardTo.prependArgs,
+                  cbResult
+                );
+              } else {
+                await method.call(twist, ...callbackInfo.args);
+              }
+            }
+          }
+          // optionPath dispatch: navigate options object to find callback (legacy pattern)
+          else if (callbackInfo?.optionPath && callbackInfo?.args && options) {
             // Navigate the option path to find the callback function
             let cb = options;
             for (const key of callbackInfo.optionPath) {
@@ -480,7 +563,7 @@ export default class extends WorkerEntrypoint {
                     cbResult
                   );
                 } else {
-                  const cbResult = await cb.call(context, ...callbackInfo.args);
+                  await cb.call(context, ...callbackInfo.args);
                 }
               } catch (error) {
                 throw error;
@@ -524,8 +607,38 @@ export default class extends WorkerEntrypoint {
 
           // Iterate over all callbacks returned by dispatch
           for (const callbackInfo of callbacks) {
-            // Invoke the callback locally in twist worker
-            if (callbackInfo && callbackInfo.optionPath && callbackInfo.args && options) {
+            // sourceMethod dispatch: call method directly on twist instance (Source pattern)
+            if (callbackInfo?.sourceMethod && callbackInfo?.args) {
+              const method = twist[callbackInfo.sourceMethod];
+              if (typeof method === 'function') {
+                try {
+                  await method.call(twist, ...callbackInfo.args);
+                } catch (error) {
+                  const errorData = {
+                    message: error instanceof Error ? error.message : String(error),
+                    twistStack: error instanceof Error ? error.stack || '' : '',
+                    operation: \`dispatch sourceMethod: \${callbackInfo.sourceMethod}\`,
+                    originalError: error instanceof Error ? error.name : 'Error',
+                  };
+                  const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
+                  twistError.name = 'TwistError';
+                  throw twistError;
+                }
+
+                if (callbackInfo.deferredTagRemoval) {
+                  const { noteId, actorId } = callbackInfo.deferredTagRemoval;
+                  try {
+                    if (typeof tool.removeTagFromNote === 'function') {
+                      await tool.removeTagFromNote(noteId, actorId);
+                    }
+                  } catch (error) {
+                    console.warn('Failed to remove deferred Twisting tag:', error);
+                  }
+                }
+              }
+            }
+            // optionPath dispatch: navigate options object to find callback (legacy pattern)
+            else if (callbackInfo && callbackInfo.optionPath && callbackInfo.args && options) {
               // Navigate the option path to find the callback
               let callback = options;
               for (const key of callbackInfo.optionPath) {
@@ -613,6 +726,10 @@ export abstract class TwistEntrypoint extends WorkerEntrypoint {
   abstract fetch(): Promise<Response>;
 
   abstract init(_twistInit: TwistInit): Promise<void>;
+
+  abstract getSourceMetadata(
+    _twistInit: TwistInit
+  ): Promise<{ provider: string; scopes: string[]; linkTypes: any[] } | null>;
 
   abstract activate(
     _twistInit: TwistInit,

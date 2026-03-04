@@ -16,8 +16,8 @@ Supported platforms:
 - Note: Content associated with an activity, such as Markdown notes and links.
 - Priority: Similar to a project or folder for Activity. Priorities are nested using paths, and display all Activity related to them and their descendants.
 - Twist: The Plot version of an extension/plugin/app/agent. Users add them to a Priority where they have access to that Priority and its descendants. They tend to implement opinionated workflows (e.g. create tasks from emails).
-- Tool: Provide capabilities to twists. Some are built-in and implemented in the API, while others are available as separate packages. They tend to be unopinionated building blocks (e.g. watch and send Gmail messages).
-- Twist Creator aka Twister: The SDK for building twists and tools. Sometimes represented with 🌪️.
+- Source: A Plot package that syncs data from external services (replaces the old Tool pattern for external integrations). Sources save threads directly via `integrations.saveThread()`. They expose channels that users can enable/disable.
+- Twist Creator aka Twister: The SDK for building twists and sources. Sometimes represented with 🌪️.
 - RSVP Tags: Special count tags (Attend, Skip, Undecided) that are mutually exclusive per actor. When an actor adds one RSVP tag, any other RSVP tags they have are automatically removed. This exclusivity is enforced at both the database level and in the Flutter app for offline support. The exclusivity respects occurrence boundaries for recurring events.
 - Count Tag Ownership: Count tags can only be added/removed by the user themselves. Users cannot modify count tags for other actors. This is enforced by database trigger functions (`update_activity_tags`, `update_note_tags`) and validated in the Flutter app.
 
@@ -38,12 +38,12 @@ Atlas is used for schema diffing and migration management. Type generation uses 
   - The website (mostly marketing, plus some Twist management) is in "apps/site/".
   - APIs and server tasks are implemented using Cloudflare Workers, located in "workers/".
     - The API also implements the twist runtime including built-in tools.
-  - Non-open-source twists (particularly the default Plot twist) are in "twists/".
+  - Non-open-source twists and sources are in "twists/".
 - There is a public monorepo mounted as a git submodule at `public/` containing:
-  - The Plot Twist Creator aka Twister is at `public/twister/`. It's the SDK for building twists and twist tools, but with a name that's friendly for non-developers.
-    - Twister includes all type definitions for building twists and tool, including type definitions for built-in tools (which are implemented in the api).
+  - The Plot Twist Creator aka Twister is at `public/twister/`. It's the SDK for building twists and sources, but with a name that's friendly for non-developers.
+    - Twister includes all type definitions for building twists and sources, including type definitions for built-in tools (which are implemented in the api).
     - The CLI is also in the twister package.
-  - Public twist tools at `public/tools/`.
+  - Public sources at `public/sources/`.
   - Public twists at `public/twists/`.
 
 ## Twister Entity Standards
@@ -77,14 +77,14 @@ This pattern allows functions to distinguish between:
 
 ## Twist Creator Development
 
-The Twist Creator repository (`public/twist/`) contains all type definitions and is the single source of truth for twist types. This repo uses it via pnpm workspace links.
+The Twist Creator repository (`public/twist/`) contains all type definitions and is the single source of truth for twist and source types. This repo uses it via pnpm workspace links.
 
 ### Creator Location and Structure
 
 - **Creator Repository**: `public/twist/` (git submodule)
-- **Type Definitions**: `public/twist/src/` (twist.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
+- **Type Definitions**: `public/twist/src/` (twist.ts, plot.ts, tag.ts, sources/\*.ts, common/\*.ts)
 - **Workspace Link**: Configured in `pnpm-workspace.yaml` as `public/twist`
-- **Import Pattern**: Use `@plotday/twister`, `@plotday/twister/plot`, `@plotday/twister/tools/*`, etc.
+- **Import Pattern**: Use `@plotday/twister`, `@plotday/twister/plot`, `@plotday/twister/sources/*`, etc.
 
 ### Making Changes to SDK Types
 
@@ -102,6 +102,8 @@ The Twist Creator repository (`public/twist/`) contains all type definitions and
   - Built-in tools (`workers/api/src/twist/tools/*`) implement Twister interfaces
 - **Twists** (`twists/*/src/`): Import Twister types directly
   - Example: `import { Twist, type Priority } from "@plotday/twister"`
+- **Sources** (`public/sources/*/src/`): Import Twister types for external integrations
+  - Example: `import { Source, type Channel } from "@plotday/twister"`
 
 ### Adding New Twister Exports
 
@@ -135,11 +137,11 @@ Only publish after testing locally:
 - **TypeScript Configuration**: Uses `moduleResolution: "bundler"` in `libs/tsconfig/base.json` to support Twister package exports
 - **Workspace Dependencies**: API and twists use `"@plotday/twister": "workspace:*"` for local development
 
-## Twists and Tools
+## Twists and Sources
 
-### Twist Tool Types
+### Built-in Tools vs Sources
 
-There are two types of tools for twists:
+Sources have replaced the old Tool pattern for external integrations. Sources sync data from external services and expose channels that users can enable/disable.
 
 #### BuiltInTools (workers/api/src/twist/tools/\*)
 
@@ -149,18 +151,20 @@ There are two types of tools for twists:
 - Examples: `Plot`, `Integrations`, `Store`
 - Use this pattern for tools that need direct access to the Plot backend infrastructure
 
-#### Regular Tools
+#### Sources
 
-- Implemented in separate packages outside this monorepo
-- Extend the base `Tool` class from the Twist Creator
+- Implemented in separate packages in `public/sources/`
+- Extend the base `Source` class from the Twist Creator
 - Run in isolation, inside the twist worker, with access only to the other tools they request
-- These tools typically build on built-in tools and often implement integrations with external services
+- Sources sync data from external services and expose channels via `getChannels()`
+- Users enable/disable channels, triggering `onChannelEnabled()` / `onChannelDisabled()` callbacks
+- Sources save threads directly via `integrations.saveThread()`
 
 ### Runtime Limitations
 
-All twist and tool functions are executed in a sandboxed, ephemeral environment with limited resources. This means:
+All twist and source functions are executed in a sandboxed, ephemeral environment with limited resources. This means:
 
-- Anything stored in memory (e.g. as a variable in the twist/tool object) is lost
+- Anything stored in memory (e.g. as a variable in the twist/source object) is lost
   after the function completes. Use the store tool instead. Only use memory for
   temporary caching.
 - Each execution has limited CPU time
@@ -199,18 +203,18 @@ async syncBatch(args: any, context: { calendarId: string; batchNumber: number })
 
 ### Callbacks for Persistent Function References
 
-When tools need to pass function references that persist across worker invocations, use the **callback tool** instead of direct function passing. Regular function passing cannot be serialized and will not survive worker restarts.
+When sources need to pass function references that persist across worker invocations, use the **callback tool** instead of direct function passing. Regular function passing cannot be serialized and will not survive worker restarts.
 
 #### When to Use Callbacks
 
-- **Webhook handlers**: Setting up webhooks that need to callback to your tool
+- **Webhook handlers**: Setting up webhooks that need to callback to your source
 - **Scheduled operations**: Functions that run after worker timeouts
 - **Event handlers**: Persistent event callbacks that survive restarts
-- **Inter-tool communication**: When tools need to call back to their parent
+- **Inter-source communication**: When sources need to call back to their parent
 
 #### Using the Callback Tool
 
-All twists and tools have access to the `callback` tool. It provides a simple interface for creating persistent function references:
+All twists and sources have access to the `callback` tool. It provides a simple interface for creating persistent function references:
 
 ```typescript
 // Create a persistent callback
@@ -230,15 +234,15 @@ const result = await this.callback.call(token, {
 // Clean up when no longer needed
 await this.callback.delete(token);
 
-// Or clean up all callbacks for this tool's parent
+// Or clean up all callbacks for this source's parent
 await this.callback.deleteAll();
 ```
 
 #### Callback Tool API
 
-- **`create(functionName, context?)`**: Creates a callback to the tool's parent
+- **`create(functionName, context?)`**: Creates a callback to the source's parent
 
-  - `functionName`: Name of the function to call on the parent tool/twist
+  - `functionName`: Name of the function to call on the parent source/twist
   - `context`: Optional data to pass as context to the callback
   - Returns: Promise resolving to a callback token
 
@@ -249,14 +253,14 @@ await this.callback.deleteAll();
   - Returns: Promise resolving to the callback result
 
 - **`delete(token)`**: Removes a specific callback
-- **`deleteAll()`**: Removes all callbacks for the tool's parent
+- **`deleteAll()`**: Removes all callbacks for the source's parent
 
 #### Important Notes
 
-- Callbacks are **hardcoded to target the tool's parent** for security
+- Callbacks are **hardcoded to target the source's parent** for security
 - Only `functionName` and `context` parameters are supported for simplicity
 - Callbacks persist across worker restarts and timeouts
-- Use callbacks instead of direct function references in webhook, auth, and tasks tools
+- Use callbacks instead of direct function references in webhook, auth, and tasks sources
 
 ### Activity Sync Best Practices
 
@@ -264,7 +268,7 @@ When syncing activities from external systems, follow these patterns to ensure c
 
 #### The `initialSync` Flag Pattern
 
-All sync-based tools should track whether they're performing an initial sync (first import) or an incremental sync (ongoing updates):
+All sync-based sources should track whether they're performing an initial sync (first import) or an incremental sync (ongoing updates):
 
 ```typescript
 async startSync(authToken: string, resourceId: string): Promise<void> {
@@ -315,11 +319,11 @@ async syncBatch(
 
 ### Multi-User Priority Auth
 
-Twists and tools that require authentication must handle multi-user priorities correctly. There are three auth models:
+Twists and sources that require authentication must handle multi-user priorities correctly. There are three auth models:
 
 #### Auth Models
 
-1. **No auth**: The twist/tool doesn't need external credentials (e.g. a text-only twist).
+1. **No auth**: The twist/source doesn't need external credentials (e.g. a text-only twist).
 2. **Read-only single auth**: One user connects (installer), and all synced data is visible to priority members. No per-user write-back needed.
 3. **Two-way per-user auth**: Write-backs (comments, RSVP, issue updates) should use the acting user's credentials when available, falling back to the installer's.
 
@@ -343,7 +347,7 @@ async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
 
 #### Per-User Auth for Write-Backs
 
-For two-way sync, try the acting user's credentials first, then fall back to the installer's. The simplest pattern passes the actor's ID as `authToken` — the tool's `getClient()` will look it up via `integrations.get(provider, actorId)`:
+For two-way sync, try the acting user's credentials first, then fall back to the installer's. The simplest pattern passes the actor's ID as `authToken` — the source's `getClient()` will look it up via `integrations.get(provider, actorId)`:
 
 ```typescript
 // In onNoteCreated (note.author.id is available):
@@ -363,26 +367,26 @@ for (const authToken of [actorId, installerAuthToken]) {
 
 For `onActivityUpdated` where the acting user is not available in the callback signature, continue using the installer's auth token.
 
-### Google Tool Integration Pattern
+### Google Source Integration Pattern
 
-When building Google-based tools (calendar, contacts, gmail, etc.), use this pattern to enable cross-tool integration with a single OAuth flow and automatic data syncing.
+When building Google-based sources (calendar, contacts, gmail, etc.), use this pattern to enable cross-source integration with a single OAuth flow and automatic data syncing.
 
 #### Pattern Overview
 
-This pattern allows one Google tool to:
+This pattern allows one Google source to:
 
-1. Request combined OAuth scopes for multiple tools in a single authorization flow
-2. Automatically trigger syncing in related tools after successful authorization
-3. Share authorization tokens explicitly across tool boundaries
+1. Request combined OAuth scopes for multiple sources in a single authorization flow
+2. Automatically trigger syncing in related sources after successful authorization
+3. Share authorization tokens explicitly across source boundaries
 
 #### Implementation Steps
 
 **1. Export Scopes as Static Constants**
 
-Each tool should export its required scopes for reuse:
+Each source should export its required scopes for reuse:
 
 ```typescript
-export default class GoogleCalendar extends Tool<GoogleCalendar> {
+export default class GoogleCalendar extends Source<GoogleCalendar> {
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
     "https://www.googleapis.com/auth/calendar.events",
@@ -397,19 +401,19 @@ export default class GoogleCalendar extends Tool<GoogleCalendar> {
 }
 ```
 
-**2. Add `syncWithAuth()` Method to Consumer Tools**
+**2. Add `syncWithAuth()` Method to Consumer Sources**
 
-Tools that can be triggered by other tools should implement a `syncWithAuth()` method:
+Sources that can be triggered by other sources should implement a `syncWithAuth()` method:
 
 ```typescript
-export default class GoogleContacts extends Tool<GoogleContacts> {
+export default class GoogleContacts extends Source<GoogleContacts> {
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/contacts.readonly",
     "https://www.googleapis.com/auth/contacts.other.readonly",
   ];
 
   /**
-   * Start contact sync using an existing Authorization from another tool.
+   * Start contact sync using an existing Authorization from another source.
    */
   async syncWithAuth(
     authorization: Authorization,
@@ -438,24 +442,24 @@ export default class GoogleContacts extends Tool<GoogleContacts> {
 }
 ```
 
-**3. Add Dependency and Combine Scopes in Coordinator Tool**
+**3. Add Dependency and Combine Scopes in Coordinator Source**
 
-The coordinating tool (e.g., google-calendar) should:
+The coordinating source (e.g., google-calendar) should:
 
-- Declare the consumer tool as a dependency
+- Declare the consumer source as a dependency
 - Combine scopes in `requestAuth()`
 - Trigger `syncWithAuth()` in `onAuthSuccess()`
 
 ```typescript
-import GoogleContacts from "@plotday/tool-google-contacts";
+import GoogleContacts from "@plotday/source-google-contacts";
 
-export class GoogleCalendar extends Tool<GoogleCalendar> {
+export class GoogleCalendar extends Source<GoogleCalendar> {
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
     "https://www.googleapis.com/auth/calendar.events",
   ];
 
-  build(build: ToolBuilder) {
+  build(build: SourceBuilder) {
     return {
       integrations: build(Integrations),
       googleContacts: build(GoogleContacts), // Add dependency
@@ -494,12 +498,12 @@ export class GoogleCalendar extends Tool<GoogleCalendar> {
 
 **4. Update package.json Dependencies**
 
-Add the consumer tool as a workspace dependency:
+Add the consumer source as a workspace dependency:
 
 ```json
 {
   "dependencies": {
-    "@plotday/tool-google-contacts": "workspace:^",
+    "@plotday/source-google-contacts": "workspace:^",
     "@plotday/twister": "workspace:^"
   }
 }
@@ -507,26 +511,26 @@ Add the consumer tool as a workspace dependency:
 
 #### Key Benefits
 
-- **Single OAuth Flow**: Users authorize once for all related Google tools
+- **Single OAuth Flow**: Users authorize once for all related Google sources
 - **Automatic Integration**: Contacts sync automatically when calendar is authorized
 - **Explicit Token Passing**: Authorization is passed as a parameter, avoiding path-dependent storage issues
-- **Independent Storage**: Each tool maintains its own storage namespace
-- **Scope Validation**: Consumer tools validate they have required scopes before syncing
+- **Independent Storage**: Each source maintains its own storage namespace
+- **Scope Validation**: Consumer sources validate they have required scopes before syncing
 - **Graceful Degradation**: If consumer sync fails, coordinator auth still succeeds
 
 #### Extending the Pattern
 
-This pattern can be extended to other Google tools:
+This pattern can be extended to other Google sources:
 
 ```typescript
-// Gmail tool following the same pattern
-export class GoogleGmail extends Tool<GoogleGmail> {
+// Gmail source following the same pattern
+export class GoogleGmail extends Source<GoogleGmail> {
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
   ];
 
-  build(build: ToolBuilder) {
+  build(build: SourceBuilder) {
     return {
       integrations: build(Integrations),
       googleContacts: build(GoogleContacts), // Reuse contacts integration
@@ -545,12 +549,12 @@ export class GoogleGmail extends Tool<GoogleGmail> {
 
 #### Important Notes
 
-- **Tool Dependency**: The coordinator tool directly depends on consumer tools
+- **Source Dependency**: The coordinator source directly depends on consumer sources
 - **Workspace Packages**: Use `workspace:^` for local development
-- **Build Order**: Rebuild Twister, then rebuild all modified tools
+- **Build Order**: Rebuild Twister, then rebuild all modified sources
 - **Scope Overlap**: Duplicate scopes in combined arrays are automatically deduplicated by OAuth provider
 - **Error Handling**: Always wrap consumer sync calls in try-catch to prevent coordinator failure
-- **Package Names**: Use full package names like `@plotday/tool-google-contacts` in imports and dependencies
+- **Package Names**: Use full package names like `@plotday/source-google-contacts` in imports and dependencies
 
 ## Database Schema Changes
 
@@ -775,7 +779,7 @@ env file copying, and pnpm install.
 
 ### Conditional Setup (run when needed)
 
-**Submodule changes** (modifying `public/` — twister types, tools, twists):
+**Submodule changes** (modifying `public/` — twister types, sources, twists):
 ```bash
 cd public && git checkout -b <branch-name>
 cd twister && pnpm build && cd ../..

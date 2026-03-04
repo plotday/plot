@@ -101,6 +101,7 @@ class CommandWrapper extends Command {
   final Command command;
   final Future<CommandReturn> Function(Command command, BuildContext context)?
   _run;
+  final bool _iconOverridden;
 
   CommandWrapper(
     this.command, {
@@ -110,6 +111,7 @@ class CommandWrapper extends Command {
     String? title,
     Value<String?> subtitle = const Value<String?>.absent(),
   }) : _run = run,
+       _iconOverridden = icon.present,
        super(
          title: title ?? command.title,
          eventObject: command.eventObject,
@@ -130,7 +132,7 @@ class CommandWrapper extends Command {
 
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
-      command.buildIcon(context, hoverIcon: hoverIcon);
+      _iconOverridden ? null : command.buildIcon(context, hoverIcon: hoverIcon);
 
   @override
   Widget? buildBody(BuildContext context) => command.buildBody(context);

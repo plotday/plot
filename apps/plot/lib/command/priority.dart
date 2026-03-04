@@ -37,6 +37,12 @@ abstract class PriorityCommand extends Command {
   final Priority? priority;
 
   @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    if (priority == null) return null;
+    return ColorDot(color: priority!.displayColor);
+  }
+
+  @override
   Widget buildBody(BuildContext context) {
     return Row(
       children: [
@@ -83,6 +89,44 @@ class ChangeCurrentPriority extends PriorityCommand {
   }
 }
 
+class OpenGettingStarted extends Command {
+  OpenGettingStarted(this.priority)
+    : super(
+        title: 'Getting Started',
+        icon: PlotIcon.gettingStarted,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.viewed,
+      );
+
+  final Priority priority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandRoute(
+      PriorityRoute(priorityIdString: priority.id.toShortString()),
+    );
+  }
+}
+
+class OpenHelpFeedback extends Command {
+  OpenHelpFeedback(this.priority)
+    : super(
+        title: 'Help + Feedback',
+        icon: PlotIcon.help,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.viewed,
+      );
+
+  final Priority priority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandRoute(
+      PriorityRoute(priorityIdString: priority.id.toShortString()),
+    );
+  }
+}
+
 class PriorityGroup extends CommandGroup {
   PriorityGroup({required super.title, required this.builder});
 
@@ -107,7 +151,7 @@ class ChangeCurrentPriorityCommands extends Commands {
   }) : super(
          groups: [
            PriorityGroup(
-             title: 'Change Current Priority',
+             title: 'Priorities',
              builder: (priority) => ChangeCurrentPriority(priority!),
            ),
          ],
@@ -415,6 +459,7 @@ class ShowPriorityCommands extends ShowCommands {
           groups: current
               ? currentPriorityCommandGroups(priority)
               : priorityCommandGroups(priority),
+          prompt: priority.title,
         ),
       );
 }
@@ -434,10 +479,9 @@ List<Command> priorityCommands(Priority priority) => [
 
 List<Command> currentPriorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
-  NewActivity(),
-  NewAction(),
-  OpenNextActivity(),
-  OpenPreviousActivity(),
+  NewThread(),
+  OpenNextThread(),
+  OpenPreviousThread(),
 ];
 
 List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [

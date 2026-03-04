@@ -1,23 +1,24 @@
 import {
-  LinkType,
-  ActivityType,
+  ActionType,
+  type Actor,
   type Priority,
+  Tag,
   ThemeColor,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
 import {
-  ActivityAccess,
   Plot,
   PriorityAccess,
+  ThreadAccess,
 } from "@plotday/twister/tools/plot";
 
 class PlotTwist extends Twist<PlotTwist> {
   build(build: ToolBuilder) {
     return {
       plot: build(Plot, {
-        activity: {
-          access: ActivityAccess.Create,
+        thread: {
+          access: ThreadAccess.Create,
         },
         priority: {
           access: PriorityAccess.Create,
@@ -26,7 +27,9 @@ class PlotTwist extends Twist<PlotTwist> {
     };
   }
 
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
+    const todoActors = context?.actor ? [{ id: context.actor.id }] : [];
+
     const onboardingPriority = await this.tools.plot.createPriority({
       title: "Getting Started",
       key: "@plot.getting-started",
@@ -38,38 +41,100 @@ class PlotTwist extends Twist<PlotTwist> {
       return;
     }
 
-    // Welcome note
-    await this.tools.plot.createActivity({
+    // Welcome to Plot!
+    await this.tools.plot.createThread({
       title: "Welcome to Plot!",
       notes: [
         {
-          content: `Plot is a workspace for making progress on what matters most to you. **Priorities**, **Activities**, and **Notes** are the core building blocks of Plot:\n\n
-- **Priorities**: These are the roles, goals, and projects in your life; they are the areas you direct your focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.
-- **Activities**: This is what you do to make progress in your priorities. They include what has happened and what's coming next, all laid out on a timeline. More about the types of activities below.
-- **Notes**: All activities can have notes, which include private notes, shared messages, and updates from connected apps. Notes give you context on progress for that activity.`,
+          content:
+            "Plot is your workspace for making progress on what matters most. **Priorities**, **Threads**, and **Notes** are the core building blocks of Plot:\n\n" +
+            "- **Priorities**: The roles, goals, and projects in your life — the areas you direct your focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.\n" +
+            '- **Threads**: Everything related to something you work on, collected in one place. A thread can contain notes, messages, links syncing with external items, and chats with twists. Threads are the core thing you mark "to do" and schedule.\n' +
+            "- **Notes**: The content within threads. Notes can be personal notes, messages to others, or synced comments with connected apps. Notes can become tasks and can be assigned to multiple people.",
         },
         {
           content:
-            "There are four types of activities you can use to organize your work and capture progress in Plot:\n\n" +
-            "- **Note activities**: Use these for meeting notes, research, or documentation. Notes can also sync notifications and comments from connected apps, keeping everything up to date.\n" +
-            "- **Message activities**: Special Note activities designed for email threads and chat conversations. Each message becomes a note within the activity for easy reference.\n" +
-            "- **Action activities**: Tasks and to-dos. They can be unplanned (Do Someday), current (Do Now), or scheduled into the future (Do Later). Mark them done when complete.\n" +
-            "- **Event activities**: Scheduled calendar events. Sync your calendar to see them on your timeline and add notes to any event. Recurring events share their notes across all occurrences.",
+            'Marking a thread "to do" means you need to do something with it — it could be as simple as reading and thinking, or it could mean taking action. Think of it like starring items in your inbox. Both "to do" and scheduling are personal to you — others in the same priority won\'t see your to-do list. You can also schedule threads so you deal with them at the right time.',
         },
         {
-          content: `The goal is to keep everything related to your priorities in one place, so you can focus on taking the next action to move things forward. As you use Plot, you'll build a rich history of progress and context that helps you stay aligned with your goals.`,
+          content:
+            "Threads can contain links to items in external services — documents, calendar events, web pages, issues, and more. These are created by connections (more on that later). Links keep everything related to your work in one place, so you always have the context you need.",
         },
       ],
-      preview: `Plot is a workspace for making progress on what matters most to you. **Priorities**, **Activities**, and **Notes** are the core building blocks of Plot:\n\n
-- **Priorities**: These are the roles, goals, and projects in your life; they are the areas you direct your focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.
-- **Activities**: This is what you do to make progress in your priorities. They include what has happened and what's coming next, all laid out on a timeline. More about the types of activities below.
-- **Notes**: All activities can have notes, which include private notes, shared messages, and updates from connected apps. Notes give you context on progress for that activity.`,
+      preview: "Plot is your workspace for making progress on what matters.",
       priority: onboardingPriority,
-      type: ActivityType.Note,
     });
 
-    // Getting around
-    await this.tools.plot.createActivity({
+    // Create your initial Priorities (TO DO)
+    await this.tools.plot.createThread({
+      title: "Create your initial Priorities",
+      tags: { [Tag.Todo]: todoActors },
+      notes: [
+        {
+          content:
+            "Priorities are contexts for focus and often correspond to roles (like VP Marketing and Parent) and goals (like Launch New Product and Run a Marathon). **Nesting priorities** creates a hierarchy — for example, Work > Projects > Feature X > Planning — that lets you organize at different levels of detail.",
+        },
+        {
+          content:
+            "**Viewing a priority shows threads from it and all descendants.** When you view Work, you see everything under Work (including Projects, Feature X, etc.). When you view Work > Projects > Feature X, you only see that specific area. **Everything** is the special priority that shows all your threads across all priorities.",
+        },
+        {
+          content:
+            "**Best practice:** Organize from broad to specific. Example: Work > Marketing Campaign > Content Strategy, or Personal > Home Renovation > Kitchen Planning. Start with top-level contexts (Work, Personal, Family) then add specific projects within each. This allows you to zoom in for focus, and zoom out to make sure you're not missing anything.",
+        },
+      ],
+      preview:
+        "Priorities are contexts for focus and often correspond to roles (like VP Marketing and Parent) and goals (like Launch New Product and Run a Marathon). **Nesting priorities** creates a hierarchy — for example, Work > Projects > Feature X > Planning — that lets you organize at different levels of detail.",
+      priority: onboardingPriority,
+    });
+
+    // Add your Connections (TO DO)
+    await this.tools.plot.createThread({
+      title: "Add your Connections",
+      tags: { [Tag.Todo]: todoActors },
+      notes: [
+        {
+          content:
+            "**Connections** sync items from your other apps and services into Plot, often two-way. For example, connect your calendar to see events as threads, or connect your email to bring in conversations. You can view and interact with items right from Plot — see and add comments on documents, respond to messages, update issues — the goal is to bring everything into one place.",
+        },
+        {
+          content:
+            "Each connection has channels you can enable or disable, letting you control exactly what syncs. Use the **Connections** command in settings to browse available connections and manage which ones are active.",
+        },
+      ],
+      preview:
+        "**Connections** sync items from your other apps and services into Plot, often two-way. For example, connect your calendar to see events as threads, or connect your email to bring in conversations. You can view and interact with items right from Plot — see and add comments on documents, respond to messages, update issues — the goal is to bring everything into one place.",
+      priority: onboardingPriority,
+    });
+
+    // Explore Twists (TO DO)
+    await this.tools.plot.createThread({
+      title: "Explore Twists",
+      tags: { [Tag.Todo]: todoActors },
+      notes: [
+        {
+          content:
+            "**Twists** are automations, workflows, and agents that do helpful things with your threads — often working with items from your connections. For example, a twist might triage your inbox, summarize meeting notes, or create follow-up tasks from action items.",
+        },
+        {
+          content:
+            "You can also **create your own twists**, either by describing what you want (Plot AI will generate it for you) or by writing code. Custom twists can automate any workflow specific to your needs.",
+          actions: [
+            {
+              type: ActionType.external,
+              title: "Learn more about creating twists",
+              url: "https://twist.plot.day",
+            },
+          ],
+        },
+      ],
+      preview:
+        "**Twists** are automations, workflows, and agents that do helpful things with your threads — often working with items from your connections. For example, a twist might triage your inbox, summarize meeting notes, or create follow-up tasks from action items.",
+      priority: onboardingPriority,
+    });
+
+    // Getting Around
+    await this.tools.plot.createThread({
       title: "Getting Around",
       notes: [
         {
@@ -79,91 +144,43 @@ class PlotTwist extends Twist<PlotTwist> {
         {
           content:
             "**Keyboard Navigation**\n\n" +
-            "- **Cmd-K** (Ctrl-K on Windows): Open the command palette (you can see more keyboard shortcuts in here)\n" +
-            "- **Up/Down arrows**: Select a note within an activity, then Cmd-K (Ctrl-K) to open commands for that note\n" +
-            "- **Cmd-Up/Down** (Ctrl-Up/Down on Windows): Select activities in the activity list\n" +
-            "- **Cmd-Shift-Up/Down** (Ctrl-Shift-Up/Down on Windows): Open previous/next activity\n" +
-            "- **Cmd-N** (Ctrl-N on Windows): Create a new note (Cmd-Shift-N / Ctrl-Shift-N on web browsers)\n" +
-            "- **Cmd-Enter** (Ctrl-Enter on Windows): On the new activity page, create an action instead of a note",
+            "- **Cmd+/** (Ctrl+/ on Windows): Search across all your threads and priorities\n" +
+            "- **Cmd+K** (Ctrl+K on Windows): Open the command palette for quick actions\n" +
+            "- **Up/Down arrows**: Select a note within a thread, then Cmd+K (Ctrl+K) to open commands for that note\n" +
+            "- **Cmd+T** (Ctrl+T on Windows): Focus a thread in the agenda list, then Up/Down to navigate and Enter to open the command menu\n" +
+            "- **Cmd+Shift+T** (Ctrl+Shift+T on Windows): Focus a thread in the activity list, then Up/Down to navigate and Enter to open the command menu\n" +
+            "- **Cmd+Up/Down** (Ctrl+Up/Down on Windows): Open previous/next thread\n" +
+            "- **Cmd+N** (Ctrl+N on Windows): Create a new note (Cmd+Shift+N / Ctrl+Shift+N on web browsers)\n" +
+            "- **Cmd+Enter** (Ctrl+Enter on Windows): On the new thread page, create a task instead of a note",
         },
         {
           content:
             "**Touch Gestures**\n\n" +
             "- **Long press** on items to open the menu\n" +
-            "- **Swipe right** on activities: start Do Now (or mark done if already doing)\n" +
-            "- **Swipe left** on activities: schedule to Do Later",
+            "- **Swipe right** on threads: mark To Do (or mark done if already doing)\n" +
+            "- **Swipe left** on threads: schedule to do later",
         },
       ],
       preview: "Keyboard and touch shortcuts",
       priority: onboardingPriority,
-      type: ActivityType.Note,
     });
 
-    // Onboarding task
-    await this.tools.plot.createActivity({
-      title: "Create your initial Priorities",
+    // Clean up without losing anything
+    await this.tools.plot.createThread({
+      title: "Clean up without losing anything",
       notes: [
         {
           content:
-            "Priorities are contexts for focus and often correspond to roles (like VP Marketing and Parent) and goals (like Launch New Product and Run a Marathon). **Nesting priorities** creates a hierarchy - for example, Work > Projects > Feature X > Planning - that lets you organize at different levels of detail.",
+            "When you're done with the Getting Started threads and no longer need this priority, you can **archive it**. Archived priorities and their threads are always available in Plot — they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
         },
         {
-          content:
-            "**Viewing a priority shows activities from it and all descendants.** When you view Work, you see everything under Work (including Projects, Feature X, etc.). When you view Work > Projects > Feature X, you only see that specific area. **Everything** is the special priority that shows all your activities across all priorities.",
-        },
-        {
-          content:
-            "**Best practice:** Organize from broad to specific. Example: Work > Marketing Campaign > Content Strategy, or Personal > Home Renovation > Kitchen Planning. Start with top-level contexts (Work, Personal, Family) then add specific projects within each. This allows you to zoom in for focus, and zoom out to make sure you're not missing anything.",
+          content: "Archive the Getting Started priority",
+          tags: { [Tag.Todo]: todoActors },
         },
       ],
       preview:
-        "Priorities are contexts for focus and often correspond to roles (like VP Marketing and Parent) and goals (like Launch New Product and Run a Marathon). **Nesting priorities** creates a hierarchy - for example, Work > Projects > Feature X > Planning - that lets you organize at different levels of detail.",
+        "When you're done with the Getting Started threads and no longer need this priority, you can **archive it**. Archived priorities and their threads are always available in Plot — they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
       priority: onboardingPriority,
-      type: ActivityType.Action,
-      start: new Date(),
-    });
-
-    // Pick your twists
-    await this.tools.plot.createActivity({
-      title: "Pick your twists",
-      notes: [
-        {
-          content:
-            "**Twists** are ways to bring your work from other apps into Plot, automate workflows, and organize your activities. For example, sync your Google Calendar to see events in Plot, or automatically create tasks from emails. Use the **Twists** button to explore available twists and add them to this priority or any of your other priorities.",
-        },
-        {
-          content:
-            "You can also **create your own twists**, either by describing what you want (Plot AI will generate it for you) or by writing code. Custom twists can integrate any app or automate any workflow specific to your needs.",
-          links: [
-            {
-              type: LinkType.external,
-              title: "Learn more about creating twists",
-              url: "https://twist.plot.day",
-            },
-          ],
-        },
-      ],
-      preview:
-        "**Twists** are ways to bring your work from other apps into Plot, automate workflows, and organize your activities. For example, sync your Google Calendar to see events in Plot, or automatically create tasks from emails. Use the **Twists** button to explore available twists and add them to this priority or any of your other priorities.",
-      priority: onboardingPriority,
-      type: ActivityType.Action,
-      start: new Date(),
-    });
-
-    // Archive when done
-    await this.tools.plot.createActivity({
-      title: "Archive this priority",
-      notes: [
-        {
-          content:
-            "When you're done with the onboarding activities and no longer need this Getting Started priority, you can **archive it**. Archived priorities and their activities are always available in Plot - they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
-        },
-      ],
-      preview:
-        "When you're done with the onboarding activities and no longer need this Getting Started priority, you can **archive it**. Archived priorities and their activities are always available in Plot - they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
-      priority: onboardingPriority,
-      type: ActivityType.Action,
-      start: new Date(),
     });
   }
 }

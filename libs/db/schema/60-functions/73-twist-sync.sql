@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION public.sync_twist_for_activity ()
+CREATE OR REPLACE FUNCTION public.sync_twist_for_thread ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SET search_path TO 'public'
@@ -38,7 +38,7 @@ BEGIN
             o.draft = FALSE
             AND n.draft = FALSE;
     END IF;
-    -- Exit early if all changes were to draft activities (nothing to sync)
+    -- Exit early if all changes were to draft threads (nothing to sync)
     IF v_create_timestamp IS NULL AND v_update_timestamp IS NULL THEN
         RETURN NULL;
     END IF;
@@ -57,12 +57,26 @@ BEGIN
             WHERE
                 n.draft = FALSE
                 AND pct.archived_at IS NULL
-                -- Track sync for the twist that created this activity
+                -- Track sync for the twist that created this thread
                 AND n.created_by = pct.id
+
+            UNION
+
+            -- Direct match for account-based sources (NULL priority_id)
+            SELECT DISTINCT
+                pct.id
+            FROM
+                new_table n
+                JOIN priority_twist pct ON n.created_by = pct.id
+            WHERE
+                n.draft = FALSE
+                AND pct.priority_id IS NULL
+                AND pct.archived_at IS NULL
+
             ORDER BY
-                pct.id LOOP
+                id LOOP
                     INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                        VALUES (v_priority_twist_id, 'activity', 'create', v_create_timestamp)
+                        VALUES (v_priority_twist_id, 'thread', 'create', v_create_timestamp)
                     ON CONFLICT (priority_twist_id, entity, operation)
                         DO UPDATE SET
                             last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
@@ -81,19 +95,35 @@ BEGIN
                 o.draft = TRUE
                 AND n.draft = FALSE
                 AND pct.archived_at IS NULL
-                -- Track sync for the twist that created this activity
+                -- Track sync for the twist that created this thread
                 AND n.created_by = pct.id
+
+            UNION
+
+            -- Direct match for account-based sources (NULL priority_id)
+            SELECT DISTINCT
+                pct.id
+            FROM
+                new_table n
+                JOIN old_table o ON o.id = n.id
+                JOIN priority_twist pct ON n.created_by = pct.id
+            WHERE
+                o.draft = TRUE
+                AND n.draft = FALSE
+                AND pct.priority_id IS NULL
+                AND pct.archived_at IS NULL
+
             ORDER BY
-                pct.id LOOP
+                id LOOP
                     INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                        VALUES (v_priority_twist_id, 'activity', 'create', v_create_timestamp)
+                        VALUES (v_priority_twist_id, 'thread', 'create', v_create_timestamp)
                     ON CONFLICT (priority_twist_id, entity, operation)
                         DO UPDATE SET
                             last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
                 END LOOP;
         END IF;
     END IF;
-    -- Process UPDATE operations (regular updates to already-published activities)
+    -- Process UPDATE operations (regular updates to already-published threads)
     IF v_update_timestamp IS NOT NULL THEN
         FOR v_priority_twist_id IN SELECT DISTINCT
             pct.id
@@ -107,12 +137,28 @@ BEGIN
             n.draft = FALSE
             AND o.draft = FALSE
             AND pct.archived_at IS NULL
-            -- Track sync for the twist that created this activity
+            -- Track sync for the twist that created this thread
             AND n.created_by = pct.id
+
+        UNION
+
+        -- Direct match for account-based sources (NULL priority_id)
+        SELECT DISTINCT
+            pct.id
+        FROM
+            new_table n
+            JOIN old_table o ON o.id = n.id
+            JOIN priority_twist pct ON n.created_by = pct.id
+        WHERE
+            n.draft = FALSE
+            AND o.draft = FALSE
+            AND pct.priority_id IS NULL
+            AND pct.archived_at IS NULL
+
         ORDER BY
-            pct.id LOOP
+            id LOOP
                 INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                    VALUES (v_priority_twist_id, 'activity', 'update', v_update_timestamp)
+                    VALUES (v_priority_twist_id, 'thread', 'update', v_update_timestamp)
                 ON CONFLICT (priority_twist_id, entity, operation)
                     DO UPDATE SET
                         last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
@@ -122,7 +168,7 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.sync_twist_for_activity_tag ()
+CREATE OR REPLACE FUNCTION public.sync_twist_for_thread_tag ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SET search_path TO 'public'
@@ -131,37 +177,52 @@ DECLARE
     v_max_updated_at timestamptz;
     v_priority_twist_id uuid;
 BEGIN
-    -- Only consider tags on non-draft activities
+    -- Only consider tags on non-draft threads
     SELECT
         MAX(n.updated_at) INTO v_max_updated_at
     FROM
         new_table n
-        JOIN activity a ON a.id = n.activity_id
+        JOIN thread a ON a.id = n.thread_id
     WHERE
         a.draft = FALSE;
-    -- Exit early if all changes were to tags on draft activities
+    -- Exit early if all changes were to tags on draft threads
     IF v_max_updated_at IS NULL THEN
         RETURN NULL;
     END IF;
-    -- Track sync state for twists that created the affected activities
-    -- Only consider tags on non-draft activities
+    -- Track sync state for twists that created the affected threads
+    -- Only consider tags on non-draft threads
     FOR v_priority_twist_id IN SELECT DISTINCT
         pct.id
     FROM
         new_table n
-        JOIN activity a ON a.id = n.activity_id
+        JOIN thread a ON a.id = n.thread_id
         JOIN priority p_child ON p_child.id = a.priority_id
                 JOIN priority p_parent ON p_child.path <@ p_parent.path
                 JOIN priority_twist pct ON pct.priority_id = p_parent.id
     WHERE
         a.draft = FALSE
         AND pct.archived_at IS NULL
-        -- Track sync for the twist that created this activity
+        -- Track sync for the twist that created this thread
         AND a.created_by = pct.id
+
+    UNION
+
+    -- Direct match for account-based sources (NULL priority_id)
+    SELECT DISTINCT
+        pct.id
+    FROM
+        new_table n
+        JOIN thread a ON a.id = n.thread_id
+        JOIN priority_twist pct ON a.created_by = pct.id
+    WHERE
+        a.draft = FALSE
+        AND pct.priority_id IS NULL
+        AND pct.archived_at IS NULL
+
     ORDER BY
-        pct.id LOOP
+        id LOOP
             INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
-                VALUES (v_priority_twist_id, 'activity', 'update', v_max_updated_at)
+                VALUES (v_priority_twist_id, 'thread', 'update', v_max_updated_at)
             ON CONFLICT (priority_twist_id, entity, operation)
                 DO UPDATE SET
                     last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
@@ -182,12 +243,12 @@ DECLARE
 BEGIN
     -- Determine timestamps for create and update operations
     IF TG_OP = 'INSERT' THEN
-        -- For inserts, all non-draft notes on non-draft activities are creates
+        -- For inserts, all non-draft notes on non-draft threads are creates
         SELECT
             MAX(n.created_at) INTO v_create_timestamp
         FROM
             new_table n
-            JOIN activity a ON a.id = n.activity_id
+            JOIN thread a ON a.id = n.thread_id
         WHERE
             n.draft = FALSE
             AND a.draft = FALSE;
@@ -199,7 +260,7 @@ BEGIN
         FROM
             new_table n
             JOIN old_table o ON o.id = n.id
-            JOIN activity a ON a.id = n.activity_id
+            JOIN thread a ON a.id = n.thread_id
         WHERE
             o.draft = TRUE
             AND n.draft = FALSE
@@ -210,27 +271,27 @@ BEGIN
         FROM
             new_table n
             JOIN old_table o ON o.id = n.id
-            JOIN activity a ON a.id = n.activity_id
+            JOIN thread a ON a.id = n.thread_id
         WHERE
             o.draft = FALSE
             AND n.draft = FALSE
             AND a.draft = FALSE;
     END IF;
-    -- Exit early if all changes were to draft notes or notes on draft activities
+    -- Exit early if all changes were to draft notes or notes on draft threads
     IF v_create_timestamp IS NULL AND v_update_timestamp IS NULL THEN
         RETURN NULL;
     END IF;
     -- Process CREATE operations (new inserts or published drafts)
-    -- For creates: track sync state for twists that created activity OR are mentioned
+    -- For creates: track sync state for twists that are mentioned in the note
     -- Split into separate branches to avoid referencing old_table during INSERT
     IF v_create_timestamp IS NOT NULL THEN
         IF TG_OP = 'INSERT' THEN
-            -- INSERT: no old_table reference, all non-draft notes on non-draft activities are creates
+            -- INSERT: no old_table reference, all non-draft notes on non-draft threads are creates
             FOR v_priority_twist_id IN SELECT DISTINCT
                 pct.id
             FROM
                 new_table n
-                JOIN activity a ON a.id = n.activity_id
+                JOIN thread a ON a.id = n.thread_id
                 JOIN priority p_child ON p_child.id = a.priority_id
                 JOIN priority p_parent ON p_child.path <@ p_parent.path
                 JOIN priority_twist pct ON pct.priority_id = p_parent.id
@@ -239,21 +300,25 @@ BEGIN
                 AND a.draft = FALSE
                 AND pct.archived_at IS NULL
                 AND n.created_by != pct.id
-                -- Track sync for twists that created activity OR are mentioned anywhere in thread
-                AND (a.created_by = pct.id
-                    OR pct.id = ANY (n.mentions)
-                    OR EXISTS (
-                        SELECT
-                            1
-                        FROM
-                            note
-                        WHERE
-                            note.activity_id = a.id
-                            AND note.id != n.id
-                            AND pct.id = ANY (note.mentions)
-                            AND note.archived_at IS NULL))
+                -- Only route to twists mentioned in this note
+                AND pct.id = ANY (n.mentions)
+
+            UNION
+
+            -- Direct match for account-based sources (NULL priority_id)
+            SELECT DISTINCT
+                pct.id
+            FROM
+                new_table n
+                JOIN priority_twist pct ON pct.id = ANY (n.mentions)
+            WHERE
+                n.draft = FALSE
+                AND pct.priority_id IS NULL
+                AND pct.archived_at IS NULL
+                AND n.created_by != pct.id
+
                     ORDER BY
-                        pct.id LOOP
+                        id LOOP
                         INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
                             VALUES (v_priority_twist_id, 'note', 'create', v_create_timestamp)
                         ON CONFLICT (priority_twist_id, entity, operation)
@@ -267,7 +332,7 @@ BEGIN
             FROM
                 new_table n
                 JOIN old_table o ON o.id = n.id
-                JOIN activity a ON a.id = n.activity_id
+                JOIN thread a ON a.id = n.thread_id
                 JOIN priority p_child ON p_child.id = a.priority_id
                 JOIN priority p_parent ON p_child.path <@ p_parent.path
                 JOIN priority_twist pct ON pct.priority_id = p_parent.id
@@ -277,21 +342,27 @@ BEGIN
                 AND a.draft = FALSE
                 AND pct.archived_at IS NULL
                 AND n.created_by != pct.id
-                -- Track sync for twists that created activity OR are mentioned anywhere in thread
-                AND (a.created_by = pct.id
-                    OR pct.id = ANY (n.mentions)
-                    OR EXISTS (
-                        SELECT
-                            1
-                        FROM
-                            note
-                        WHERE
-                            note.activity_id = a.id
-                            AND note.id != n.id
-                            AND pct.id = ANY (note.mentions)
-                            AND note.archived_at IS NULL))
+                -- Only route to twists mentioned in this note
+                AND pct.id = ANY (n.mentions)
+
+            UNION
+
+            -- Direct match for account-based sources (NULL priority_id)
+            SELECT DISTINCT
+                pct.id
+            FROM
+                new_table n
+                JOIN old_table o ON o.id = n.id
+                JOIN priority_twist pct ON pct.id = ANY (n.mentions)
+            WHERE
+                o.draft = TRUE
+                AND n.draft = FALSE
+                AND pct.priority_id IS NULL
+                AND pct.archived_at IS NULL
+                AND n.created_by != pct.id
+
                     ORDER BY
-                        pct.id LOOP
+                        id LOOP
                         INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
                             VALUES (v_priority_twist_id, 'note', 'create', v_create_timestamp)
                         ON CONFLICT (priority_twist_id, entity, operation)
@@ -308,7 +379,7 @@ BEGIN
         FROM
             new_table n
             JOIN old_table o ON o.id = n.id
-            JOIN activity a ON a.id = n.activity_id
+            JOIN thread a ON a.id = n.thread_id
             JOIN priority p_child ON p_child.id = a.priority_id
                 JOIN priority p_parent ON p_child.path <@ p_parent.path
                 JOIN priority_twist pct ON pct.priority_id = p_parent.id
@@ -319,8 +390,24 @@ BEGIN
             AND pct.archived_at IS NULL
             -- Track sync for note creator
             AND n.created_by = pct.id
+
+        UNION
+
+        -- Direct match for account-based sources (NULL priority_id)
+        SELECT DISTINCT
+            pct.id
+        FROM
+            new_table n
+            JOIN old_table o ON o.id = n.id
+            JOIN priority_twist pct ON n.created_by = pct.id
+        WHERE
+            n.draft = FALSE
+            AND o.draft = FALSE
+            AND pct.priority_id IS NULL
+            AND pct.archived_at IS NULL
+
         ORDER BY
-            pct.id LOOP
+            id LOOP
                 INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
                     VALUES (v_priority_twist_id, 'note', 'update', v_update_timestamp)
                 ON CONFLICT (priority_twist_id, entity, operation)
@@ -341,28 +428,28 @@ DECLARE
     v_max_updated_at timestamptz;
     v_priority_twist_id uuid;
 BEGIN
-    -- Only consider tags on non-draft notes on non-draft activities
+    -- Only consider tags on non-draft notes on non-draft threads
     SELECT
         MAX(n.updated_at) INTO v_max_updated_at
     FROM
         new_table n
         JOIN note nt ON nt.id = n.note_id
-        JOIN activity a ON a.id = nt.activity_id
+        JOIN thread a ON a.id = nt.thread_id
     WHERE
         nt.draft = FALSE
         AND a.draft = FALSE;
-    -- Exit early if all changes were to tags on draft notes or draft activities
+    -- Exit early if all changes were to tags on draft notes or draft threads
     IF v_max_updated_at IS NULL THEN
         RETURN NULL;
     END IF;
     -- Track sync state for twists that created the affected notes
-    -- Only consider tags on non-draft notes on non-draft activities
+    -- Only consider tags on non-draft notes on non-draft threads
     FOR v_priority_twist_id IN SELECT DISTINCT
         pct.id
     FROM
         new_table n
         JOIN note nt ON nt.id = n.note_id
-        JOIN activity a ON a.id = nt.activity_id
+        JOIN thread a ON a.id = nt.thread_id
         JOIN priority p_child ON p_child.id = a.priority_id
                 JOIN priority p_parent ON p_child.path <@ p_parent.path
                 JOIN priority_twist pct ON pct.priority_id = p_parent.id
@@ -372,8 +459,23 @@ BEGIN
         AND pct.archived_at IS NULL
         -- Track sync for the twist that created this note
         AND nt.created_by = pct.id
+
+    UNION
+
+    -- Direct match for account-based sources (NULL priority_id)
+    SELECT DISTINCT
+        pct.id
+    FROM
+        new_table n
+        JOIN note nt ON nt.id = n.note_id
+        JOIN priority_twist pct ON nt.created_by = pct.id
+    WHERE
+        nt.draft = FALSE
+        AND pct.priority_id IS NULL
+        AND pct.archived_at IS NULL
+
     ORDER BY
-        pct.id LOOP
+        id LOOP
             INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
                 VALUES (v_priority_twist_id, 'note', 'update', v_max_updated_at)
             ON CONFLICT (priority_twist_id, entity, operation)
@@ -384,3 +486,105 @@ BEGIN
 END;
 $function$;
 
+-- Sync twist state when links are created or updated
+-- Links don't have a draft concept, so all inserts are creates and all updates are updates
+CREATE OR REPLACE FUNCTION public.sync_twist_for_link ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_create_timestamp timestamptz;
+    v_update_timestamp timestamptz;
+    v_priority_twist_id uuid;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        SELECT
+            MAX(created_at) INTO v_create_timestamp
+        FROM
+            new_table;
+    ELSE
+        SELECT
+            MAX(n.updated_at) INTO v_update_timestamp
+        FROM
+            new_table n;
+    END IF;
+    -- Exit early if nothing to sync
+    IF v_create_timestamp IS NULL AND v_update_timestamp IS NULL THEN
+        RETURN NULL;
+    END IF;
+    -- Process CREATE operations (new inserts)
+    IF v_create_timestamp IS NOT NULL THEN
+        FOR v_priority_twist_id IN SELECT DISTINCT
+            pct.id
+        FROM
+            new_table n
+            JOIN thread t ON t.id = n.thread_id
+            JOIN priority p_child ON p_child.id = t.priority_id
+            JOIN priority p_parent ON p_child.path <@ p_parent.path
+            JOIN priority_twist pct ON pct.priority_id = p_parent.id
+        WHERE
+            pct.archived_at IS NULL
+            -- Track sync for the twist that created this link
+            AND n.created_by = pct.id
+
+        UNION
+
+        -- Direct match for account-based sources (NULL priority_id)
+        SELECT DISTINCT
+            pct.id
+        FROM
+            new_table n
+            JOIN priority_twist pct ON n.created_by = pct.id
+        WHERE
+            pct.priority_id IS NULL
+            AND pct.archived_at IS NULL
+
+        ORDER BY
+            id LOOP
+                INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
+                    VALUES (v_priority_twist_id, 'link', 'create', v_create_timestamp)
+                ON CONFLICT (priority_twist_id, entity, operation)
+                    DO UPDATE SET
+                        last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
+            END LOOP;
+    END IF;
+    -- Process UPDATE operations
+    IF v_update_timestamp IS NOT NULL THEN
+        FOR v_priority_twist_id IN SELECT DISTINCT
+            pct.id
+        FROM
+            new_table n
+            JOIN thread t ON t.id = n.thread_id
+            JOIN priority p_child ON p_child.id = t.priority_id
+            JOIN priority p_parent ON p_child.path <@ p_parent.path
+            JOIN priority_twist pct ON pct.priority_id = p_parent.id
+        WHERE
+            pct.archived_at IS NULL
+            -- Track sync for the twist that created this link
+            AND n.created_by = pct.id
+
+        UNION
+
+        -- Direct match for account-based sources (NULL priority_id)
+        SELECT DISTINCT
+            pct.id
+        FROM
+            new_table n
+            JOIN priority_twist pct ON n.created_by = pct.id
+        WHERE
+            pct.priority_id IS NULL
+            AND pct.archived_at IS NULL
+
+        ORDER BY
+            id LOOP
+                INSERT INTO priority_twist_sync (priority_twist_id, entity, operation, last_update_at)
+                    VALUES (v_priority_twist_id, 'link', 'update', v_update_timestamp)
+                ON CONFLICT (priority_twist_id, entity, operation)
+                    DO UPDATE SET
+                        last_update_at = GREATEST (priority_twist_sync.last_update_at, EXCLUDED.last_update_at);
+            END LOOP;
+    END IF;
+    RETURN NULL;
+END;
+$function$;

@@ -9,7 +9,6 @@ import 'auto_sign_in.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
-import 'state/local_preferences.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
@@ -64,32 +63,29 @@ class AppRouter extends RootStackRouter {
       page: AppShellRoute.page,
       path: '/',
       children: [
-        AutoRoute(page: PlatformPickerRoute.page, path: 'start'),
         AutoRoute(
           page: SignInRoute.page,
           path: 'login',
-          guards: [PlatformPickerGuard(), AuthGuard()],
+          guards: [AuthGuard()],
         ),
         AutoRoute(
           page: EmailSignInRoute.page,
           path: 'login/email',
-          guards: [PlatformPickerGuard(), AuthGuard()],
+          guards: [AuthGuard()],
         ),
         AutoRoute(
           page: PasswordSetupRoute.page,
           path: 'account/password',
-          guards: [PlatformPickerGuard()],
         ),
         AutoRoute(
           page: InviteRoute.page,
           path: 'invite/:token',
-          guards: [PlatformPickerGuard(), AuthGuard()],
+          guards: [AuthGuard()],
         ),
         AutoRoute(
           page: EmptyShellRoute("Now"),
           path: '',
           guards: [
-            PlatformPickerGuard(),
             AuthGuard(),
             AutoRouteGuardCallback((resolver, router) async {
               if (resolver.context.read<NowBloc>().loading) {
@@ -108,7 +104,7 @@ class AppRouter extends RootStackRouter {
         ),
         AutoRoute(
           page: PrioritiesShellRoute.page,
-          guards: [PlatformPickerGuard(), AuthGuard()],
+          guards: [AuthGuard()],
           path: '',
           children: [
             AutoRoute(
@@ -119,22 +115,22 @@ class AppRouter extends RootStackRouter {
                   page: PriorityRoute.page,
                   path: ':priorityId',
                   children: [
-                    // This route redirects to NewActivityRoute when the middle panel is
+                    // This route redirects to NewThreadRoute when the middle panel is
                     // already showing PriorityPage.
                     AutoRoute(page: PriorityOnlyRoute.page, path: ''),
                     AutoRoute(
-                      page: NewActivityRoute.page,
+                      page: NewThreadRoute.page,
                       guards: [
                         AutoRouteGuardCallback((resolver, router) async {
                           final priorityBloc = resolver.context
                               .read<PriorityBloc>();
-                          priorityBloc.setActivity(null);
+                          priorityBloc.setThread(null);
                           resolver.next();
                         }),
                       ],
                       path: 'new',
                     ),
-                    AutoRoute(page: ActivityRoute.page, path: ':activityId'),
+                    AutoRoute(page: ThreadRoute.page, path: ':threadId'),
                   ],
                 ),
               ],
@@ -183,40 +179,6 @@ extension FocusedRouterExtension on BuildContext {
   StackRouter get focusedRouter {
     var focusContext = FocusManager.instance.primaryFocus?.context;
     return focusContext?.router ?? router;
-  }
-}
-
-/// Guard that ensures web users see the platform picker on first visit
-class PlatformPickerGuard extends AutoRouteGuard {
-  PlatformPickerGuard();
-
-  @override
-  void onNavigation(NavigationResolver resolver, StackRouter router) async {
-    // Only check on web
-    if (!kIsWeb) {
-      resolver.next();
-      return;
-    }
-
-    // Don't redirect if already on platform picker
-    if (resolver.route.name == PlatformPickerRoute.page.name) {
-      resolver.next();
-      return;
-    }
-
-    // Check if user has selected web platform
-    final localPreferencesBloc = resolver.context.read<LocalPreferencesBloc>();
-    final hasSelectedWeb = await localPreferencesBloc
-        .getHasSelectedWebPlatform();
-
-    if (!hasSelectedWeb) {
-      // User hasn't selected web yet, redirect to platform picker
-      _logger.info('PlatformPickerGuard: Redirecting to PlatformPickerRoute');
-      resolver.redirectUntil(PlatformPickerRoute());
-    } else {
-      // User has selected web, proceed with navigation
-      resolver.next();
-    }
   }
 }
 
@@ -339,7 +301,7 @@ class RouteLogger extends AutoRouterObserver {
   /// Normalize route names to screen names
   /// Examples:
   /// - PriorityRoute -> Priority
-  /// - NewActivityRoute -> New Activity
+  /// - NewThreadRoute -> New Thread
   String _normalizeScreenName(String routeName) {
     return routeName
         // Remove "Route" suffix

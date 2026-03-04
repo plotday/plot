@@ -15,8 +15,8 @@ import 'package:plot/widget/select_modal.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'command.dart';
@@ -36,6 +36,7 @@ final settingsCommands = StaticCommandGroup(
   title: 'App',
   shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
   commands: [
+    ManageConnections(),
     ManageTwists(),
     CopyPageLink(), OpenCopiedPageLink(),
     ChangeAppearance(),
@@ -66,7 +67,7 @@ class ChangeAppearance extends ShowCommands {
     : super(
         title: 'Change Light/Dark Mode',
         icon: FontAwesomeIcons.sun,
-        commands: Commands(groups: [appearanceCommands]),
+        commands: Commands(groups: [appearanceCommands], prompt: 'Appearance'),
       );
 }
 
@@ -103,7 +104,7 @@ class ChangeEnterBehavior extends Command {
             : '$modifierKey-Enter saves the note';
 
         return Padding(
-          padding: widgetPaddingSm,
+          padding: context.theme.spacing.paddingSm,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -246,7 +247,7 @@ class _OfflineInfoContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: widgetPadding,
+      padding: context.theme.spacing.padding,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -273,16 +274,13 @@ class _OfflineInfoContent extends StatelessWidget {
                   context,
                   Value(const CommandDone()),
                 ),
-                style: FButtonStyle.outline(),
+                style: FButtonStyle.secondary(),
                 child: const Text('Close'),
               ),
               const SizedBox(width: 12),
               FButton(
                 onPress: () async {
-                  Modal.pop<CommandReturn>(
-                    context,
-                    Value(const CommandDone()),
-                  );
+                  Modal.pop<CommandReturn>(context, Value(const CommandDone()));
                   try {
                     await Base.signOut();
                   } catch (e, t) {

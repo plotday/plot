@@ -7,7 +7,7 @@ FTileStyle buildTileStyle(FTileStyle baseStyle, FColors colors) {
     backgroundColor: FWidgetStateMap({
       WidgetState.selected | WidgetState.hovered | WidgetState.pressed:
           colors.primaryForeground,
-      WidgetState.any: colors.primaryForeground,
+      WidgetState.any: const Color(0x00000000),
     }),
   );
 }

@@ -12,7 +12,7 @@ class RescheduleEventModal extends StatefulWidget {
     super.key,
   });
 
-  final Activity activity;
+  final Thread activity;
   final bool showPrioritySelector;
 
   @override

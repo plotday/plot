@@ -6,7 +6,7 @@ import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/activity.dart';
+import 'package:plot/state/thread.dart';
 import 'package:plot/widget/icon.dart';
 import 'logging.dart';
 
@@ -33,12 +33,12 @@ class SetActivityFilters extends Command {
 
   static String _generateSubtitle(List<Tag> filters) {
     if (filters.isEmpty) {
-      return 'Show all topics';
+      return 'Show all threads';
     } else if (filters.length == 1) {
-      return 'Show topics with ${filters.first.name}';
+      return 'Show threads with ${filters.first.name}';
     } else {
       final names = filters.map((tag) => tag.name).join(', ');
-      return 'Show topics with $names';
+      return 'Show threads with $names';
     }
   }
 
@@ -52,12 +52,12 @@ class SetActivityFilters extends Command {
       // PriorityBloc not in scope, continue
     }
 
-    // Try to find ActivityBloc in scope
+    // Try to find ThreadBloc in scope
     try {
-      final activityBloc = context.read<ActivityBloc>();
+      final activityBloc = context.read<ThreadBloc>();
       activityBloc.updateFilter(filters);
     } on ProviderNotFoundException {
-      // ActivityBloc not in scope, continue
+      // ThreadBloc not in scope, continue
     }
 
     return const CommandDone();
@@ -81,9 +81,9 @@ class ToggleActivityFilter extends Command {
   final Tag tag;
 
   static bool? _isTagActive(BuildContext context, Tag tag) {
-    // Try to get current filters from ActivityBloc
+    // Try to get current filters from ThreadBloc
     try {
-      final activityBloc = context.read<ActivityBloc>();
+      final activityBloc = context.read<ThreadBloc>();
       return activityBloc.state.filter.contains(tag);
     } on ProviderNotFoundException {
       // Try PriorityBloc instead
@@ -99,9 +99,9 @@ class ToggleActivityFilter extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Try to find ActivityBloc in scope
+    // Try to find ThreadBloc in scope
     try {
-      final activityBloc = context.read<ActivityBloc>();
+      final activityBloc = context.read<ThreadBloc>();
       final currentFilters = List<Tag>.from(activityBloc.state.filter);
 
       if (currentFilters.contains(tag)) {
@@ -114,7 +114,7 @@ class ToggleActivityFilter extends Command {
 
       activityBloc.updateFilter(currentFilters);
     } on ProviderNotFoundException {
-      // ActivityBloc not in scope, continue
+      // ThreadBloc not in scope, continue
     }
 
     // Try to find PriorityBloc in scope
@@ -158,7 +158,7 @@ class ToggleNoteFilter extends Command {
 
   static bool? _isTagActive(BuildContext context, Tag tag) {
     try {
-      final activityBloc = context.read<ActivityBloc>();
+      final activityBloc = context.read<ThreadBloc>();
       return activityBloc.state.filter.contains(tag);
     } on ProviderNotFoundException {
       return null;
@@ -168,7 +168,7 @@ class ToggleNoteFilter extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final activityBloc = context.read<ActivityBloc>();
+      final activityBloc = context.read<ThreadBloc>();
       final currentFilters = List<Tag>.from(activityBloc.state.filter);
 
       if (currentFilters.contains(tag)) {
@@ -181,7 +181,7 @@ class ToggleNoteFilter extends Command {
 
       activityBloc.updateFilter(currentFilters);
     } on ProviderNotFoundException {
-      log.warning('ActivityBloc not found in context for ToggleNoteFilter');
+      log.warning('ThreadBloc not found in context for ToggleNoteFilter');
     }
 
     return const CommandDone();

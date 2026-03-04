@@ -38,20 +38,20 @@ class _LoadingPageState extends State<LoadingPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       center: true,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          spacing: 16,
-          children: [
-            if (_showSpinner) Spinner(size: 22),
-            if (widget.message != null)
-              Text(
+      body: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (_showSpinner) Spinner(size: 22),
+          if (widget.message != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 60),
+              child: Text(
                 widget.message!,
-                style: TextStyle(color: context.theme.colors.mutedForeground),
+                style:
+                    TextStyle(color: context.theme.colors.mutedForeground),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

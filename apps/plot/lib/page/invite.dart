@@ -5,7 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
-import 'package:plot/store/store.dart' hide Link;
+import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/widget/widget.dart';

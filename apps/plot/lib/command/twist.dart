@@ -1,7 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -13,14 +12,794 @@ import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/widget/auth_button.dart'
     show getAuthProviderConfig, buildAuthButtonStyle;
 import 'package:plot/store/store.dart';
-import 'package:plot/state/now.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/api/twist_api.dart';
+import 'package:plot/api/twist_permission.dart' show PermissionFlag;
 import 'package:plot/env.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
+import 'package:plot/widget/setup_link_channels.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
+
+// ============================================================================
+// Entry point: Manage Connections and Twists
+// ============================================================================
+
+class ManageConnectionsAndTwists extends ShowForm {
+  ManageConnectionsAndTwists()
+    : super(
+        title: 'Manage Connections and Twists',
+        icon: PlotIcon.connection,
+        form: (context) => _buildForm(),
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      return await super.run(context);
+    } on ApiException catch (e, t) {
+      log.warning('Failed to load twists', e, t);
+      return const CommandMessage(
+        'Could not connect to Plot servers.',
+        isError: true,
+      );
+    } on NetworkException catch (e, t) {
+      log.warning('Failed to load twists', e, t);
+      return const CommandMessage(
+        'Could not connect to Plot servers.',
+        isError: true,
+      );
+    }
+  }
+
+  static Future<FormData> _buildForm() async {
+    return FormData(
+      title: 'Connections and Twists',
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'sources_desc',
+              text: 'Connections sync your accounts and data into Plot.',
+            ),
+            FormButton(
+              key: 'manage_sources',
+              buildCommand: (_) => ManageConnections(),
+            ),
+            FormDivider(key: 'divider'),
+          ],
+        ),
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'twists_desc',
+              text: 'Twists add workflows and automations to your priorities.',
+            ),
+            FormButton(
+              key: 'manage_twists',
+              buildCommand: (_) => ManageTwists(),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// Manage Connections
+// ============================================================================
+
+/// Item model for the ManageConnections SelectModal.
+sealed class _ConnectionItem {
+  String get filterText;
+}
+
+class _ActiveSource extends _ConnectionItem {
+  final String id; // priority_twist_id
+  final String name;
+  final String? accountName;
+  final String? accountEmail;
+  final String? logoUrl;
+  final String? logoUrlDark;
+  final AuthProvider? provider;
+  final int enabledCount;
+
+  _ActiveSource({
+    required this.id,
+    required this.name,
+    this.accountName,
+    this.accountEmail,
+    this.logoUrl,
+    this.logoUrlDark,
+    this.provider,
+    required this.enabledCount,
+  });
+
+  @override
+  String get filterText => '${accountName ?? ''} $name'.trim();
+}
+
+class _AvailableSource extends _ConnectionItem {
+  final Twist twist;
+
+  _AvailableSource(this.twist);
+
+  @override
+  String get filterText => '${twist.name} ${twist.description ?? ''}';
+}
+
+class ManageConnections extends Command {
+  ManageConnections()
+    : super(
+        title: 'Manage Connections',
+        icon: PlotIcon.connection,
+        eventObject: EventObject.twist,
+        eventAction: EventAction.opened,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      Future<void> Function()? refreshFn;
+      await SelectModal.open<_ConnectionItem>(
+        context,
+        items: (search) => _fetchItems(search),
+        itemBuilder: (item) => _buildItem(item),
+        prompt: 'Connections',
+        onRefreshNeeded: (refresh) => refreshFn = refresh,
+        onSelect: (ctx, item, _) async {
+          if (item is _ActiveSource) {
+            await EditSource(
+              priorityTwistId: item.id,
+              name: item.name,
+            ).run(ctx);
+          } else if (item is _AvailableSource) {
+            await AddSourceDetail(item.twist).run(ctx);
+            final activatedId = AddSourceDetail.lastActivatedSourceId;
+            AddSourceDetail.lastActivatedSourceId = null;
+            if (activatedId != null && ctx.mounted) {
+              await EditSource(
+                priorityTwistId: activatedId,
+                name: item.twist.name,
+              ).run(ctx);
+            }
+          }
+          // Refresh items after returning from child command
+          await refreshFn?.call();
+          return false; // Keep SelectModal open
+        },
+      );
+      return const CommandSkipped();
+    } on ApiException catch (e, t) {
+      log.warning('Failed to load sources', e, t);
+      return const CommandMessage(
+        'Could not connect to Plot servers.',
+        isError: true,
+      );
+    } on NetworkException catch (e, t) {
+      log.warning('Failed to load sources', e, t);
+      return const CommandMessage(
+        'Could not connect to Plot servers.',
+        isError: true,
+      );
+    }
+  }
+
+  static Future<List<SelectGroup<_ConnectionItem>>> _fetchItems(
+    String? search,
+  ) async {
+    // Fetch sources and available twists in parallel
+    final defaultPriority = await Priority.getDefault();
+    final results = await Future.wait([
+      TwistApi.getUserSources(),
+      TwistApi.getAllTwists(defaultPriority),
+    ]);
+
+    final sourcesData = results[0] as List<Map<String, dynamic>>;
+    final allTwists = results[1] as List<Twist>;
+
+    // Build active connections
+    final activeItems = <_ActiveSource>[];
+
+    for (final json in sourcesData) {
+      final idValue = json['id'];
+      final id = idValue is int ? idValue.toString() : idValue as String;
+
+      // Fetch integrations to get account/channel info
+      TwistIntegrations? integrations;
+      try {
+        integrations = await TwistApi.getIntegrations(id);
+      } catch (_) {}
+
+      final enabledCount = integrations != null
+          ? _countEnabled(integrations.channels)
+          : 0;
+      final firstAccount =
+          integrations != null && integrations.accounts.isNotEmpty
+          ? integrations.accounts.first
+          : null;
+
+      if (enabledCount > 0) {
+        activeItems.add(
+          _ActiveSource(
+            id: id,
+            name: json['name'] as String,
+            accountName: firstAccount?.displayName,
+            accountEmail: firstAccount?.email,
+            logoUrl: json['logo_url'] as String?,
+            logoUrlDark: json['logo_url_dark'] as String?,
+            provider: firstAccount?.provider,
+            enabledCount: enabledCount,
+          ),
+        );
+      }
+    }
+
+    // Build available connections (all source twists, including active ones
+    // since additional accounts can be added)
+    final availableItems = allTwists
+        .where((t) => t.isSource)
+        .map((t) => _AvailableSource(t))
+        .toList();
+
+    // Sort
+    activeItems.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    availableItems.sort(
+      (a, b) =>
+          a.twist.name.toLowerCase().compareTo(b.twist.name.toLowerCase()),
+    );
+
+    // Filter by search
+    List<_ConnectionItem> filteredActive = activeItems;
+    List<_ConnectionItem> filteredAvailable = availableItems;
+    if (search != null && search.isNotEmpty) {
+      final words = search.toLowerCase().trim().split(RegExp(r'\s+'));
+      bool matches(_ConnectionItem item) {
+        final text = item.filterText.toLowerCase();
+        return words.every(
+          (w) => text.split(RegExp(r'[\s/]+')).any((fw) => fw.startsWith(w)),
+        );
+      }
+
+      filteredActive = activeItems.where(matches).toList();
+      filteredAvailable = availableItems.where(matches).toList();
+    }
+
+    return [
+      if (filteredActive.isNotEmpty)
+        SelectGroup(title: 'Active Connections', items: filteredActive),
+      if (filteredAvailable.isNotEmpty)
+        SelectGroup(title: 'Available Connections', items: filteredAvailable),
+    ];
+  }
+
+  static int _countEnabled(List<TwistChannel> channels) {
+    var count = 0;
+    for (final ch in channels) {
+      if (ch.enabled) count++;
+      count += _countEnabled(ch.children);
+    }
+    return count;
+  }
+
+  static Widget _buildItem(_ConnectionItem item) {
+    switch (item) {
+      case _ActiveSource():
+        return _ActiveSourceRow(item: item);
+      case _AvailableSource():
+        return _AvailableSourceRow(item: item);
+    }
+  }
+}
+
+class _ActiveSourceRow extends StatelessWidget {
+  const _ActiveSourceRow({required this.item});
+  final _ActiveSource item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+
+    // Build subtitle: account name with email if different
+    String? subtitle;
+    if (item.accountName != null) {
+      subtitle = item.accountName!;
+      if (item.accountEmail != null && item.accountEmail != item.accountName) {
+        subtitle = '$subtitle · ${item.accountEmail}';
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          _SourceLogo(
+            logoUrl: item.logoUrl,
+            logoUrlDark: item.logoUrlDark,
+            provider: item.provider,
+            size: theme.iconSizes.base,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Row(
+              children: [
+                Text(
+                  item.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: theme.typography.base.fontSize,
+                    color: theme.colors.foreground,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      subtitle,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: theme.typography.base.fontSize,
+                        color: theme.colors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (item.enabledCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colors.secondary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${item.enabledCount}',
+                style: TextStyle(
+                  fontSize: theme.typography.xs.fontSize,
+                  color: theme.colors.mutedForeground,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AvailableSourceRow extends StatelessWidget {
+  const _AvailableSourceRow({required this.item});
+  final _AvailableSource item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          _SourceLogo(
+            logoUrl: item.twist.logoUrl,
+            logoUrlDark: item.twist.logoUrlDark,
+            provider: item.twist.providers.firstOrNull,
+            size: theme.iconSizes.base,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Row(
+              children: [
+                Text(
+                  item.twist.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: theme.typography.base.fontSize,
+                    color: theme.colors.foreground,
+                  ),
+                ),
+                if (item.twist.description != null) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      item.twist.description!,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: theme.typography.base.fontSize,
+                        color: theme.colors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Displays a source logo from URL, falling back to provider icon.
+class _SourceLogo extends StatelessWidget {
+  const _SourceLogo({
+    this.logoUrl,
+    this.logoUrlDark,
+    this.provider,
+    required this.size,
+  });
+
+  final String? logoUrl;
+  final String? logoUrlDark;
+  final AuthProvider? provider;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final url = isDark && logoUrlDark != null ? logoUrlDark : logoUrl;
+    if (url != null) {
+      return LogoImage(url: url, size: size, fallback: _fallback());
+    }
+    return _fallback();
+  }
+
+  Widget _fallback() {
+    if (provider != null) {
+      return ProviderIcon(provider: provider!, size: size);
+    }
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Icon(PlotIcon.connection, size: size * 0.8),
+    );
+  }
+}
+
+/// Edit an existing source — shows integrations, channels, and management options.
+class EditSource extends ShowForm {
+  EditSource({
+    required this.priorityTwistId,
+    required this.name,
+    this.isAccountBased = true,
+    super.subtitle,
+  }) : super(
+         title: name,
+         icon: PlotIcon.settings,
+         form: (context) => _buildForm(priorityTwistId, name, isAccountBased),
+       );
+
+  final String priorityTwistId;
+  final String name;
+  final bool isAccountBased;
+
+  static Future<FormData> _buildForm(
+    String priorityTwistId,
+    String name,
+    bool isAccountBased,
+  ) async {
+    final integrations = await TwistApi.getIntegrations(priorityTwistId);
+    final refreshNotifier = ValueNotifier<int>(0);
+
+    Set<String> collectEnabled(List<TwistChannel> channels) {
+      final result = <String>{};
+      for (final s in channels) {
+        if (s.enabled) result.add('${s.provider.name}:${s.id}');
+        result.addAll(collectEnabled(s.children));
+      }
+      return result;
+    }
+
+    Map<String, String> collectPriorities(List<TwistChannel> channels) {
+      final result = <String, String>{};
+      for (final s in channels) {
+        if (s.priorityId != null) {
+          result['${s.provider.name}:${s.id}'] = s.priorityId!;
+        }
+        result.addAll(collectPriorities(s.children));
+      }
+      return result;
+    }
+
+    final initialEnabled = collectEnabled(integrations.channels);
+    final initialPriorities = collectPriorities(integrations.channels);
+    var integrationChanges = IntegrationChanges(
+      selectedChannels: Set.of(initialEnabled),
+      channelPriorities: Map.of(initialPriorities),
+    );
+
+    return FormData(
+      title: name,
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'integrations',
+              divider: false,
+              builder: (context) => SetupSourceWidget(
+                priorityTwistId: priorityTwistId,
+                isAccountBased: isAccountBased,
+                initialData: integrations,
+                refreshNotifier: refreshNotifier,
+                onChanged: (changes) {
+                  integrationChanges = changes;
+                },
+              ),
+            ),
+          ],
+        ),
+        StaticFormGroup(
+          items: [
+            FormButton(
+              key: 'save',
+              buildCommand: (values) {
+                return SaveSource(
+                  priorityTwistId: priorityTwistId,
+                  name: name,
+                  initialEnabled: initialEnabled,
+                  initialPriorities: initialPriorities,
+                  changes: integrationChanges,
+                );
+              },
+            ),
+            FormDivider(key: 'divider'),
+            FormButton(
+              key: 'archive',
+              buildCommand: (_) => PromptToArchiveSource(
+                priorityTwistId: priorityTwistId,
+                name: name,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Archive a source with confirmation.
+class PromptToArchiveSource extends ShowForm {
+  PromptToArchiveSource({required this.priorityTwistId, required this.name})
+    : super(
+        title: 'Archive',
+        icon: PlotIcon.archived,
+        form: (context) => _buildForm(priorityTwistId, name),
+      );
+
+  final String priorityTwistId;
+  final String name;
+
+  static Future<FormData> _buildForm(
+    String priorityTwistId,
+    String name,
+  ) async {
+    return FormData(
+      title: 'Archive Connection',
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'info',
+              text:
+                  'Archiving this connection will disconnect it and archive the threads it has created.',
+            ),
+            FormDivider(key: 'divider'),
+            FormButton(
+              key: 'archive',
+              buildCommand: (_) => _ArchiveSourceCommand(priorityTwistId, name),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ArchiveSourceCommand extends Command {
+  _ArchiveSourceCommand(this.priorityTwistId, this.name)
+    : super(
+        title: 'Archive Connection',
+        icon: PlotIcon.archived,
+        eventObject: EventObject.twist,
+        eventAction: EventAction.archived,
+      );
+
+  final String priorityTwistId;
+  final String name;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await TwistApi.archiveAndRemoveTwist(priorityTwistId);
+      return CommandMessage('Connection "$name" archived successfully');
+    } catch (e, t) {
+      log.warning('Failed to archive source', e, t);
+      return CommandMessage('Failed to archive connection', isError: true);
+    }
+  }
+}
+
+// ============================================================================
+// Add Source
+// ============================================================================
+
+/// Shows a filterable list of available sources to add.
+class AddSource extends ShowCommands {
+  AddSource()
+    : super(
+        title: 'Add Connection',
+        icon: PlotIcon.add,
+        commandsBuilder: (context) => _getSourceCommands(),
+      );
+
+  static Future<Commands> _getSourceCommands() async {
+    final defaultPriority = await Priority.getDefault();
+    final allTwists = await TwistApi.getAllTwists(defaultPriority);
+    final sourceTwists = allTwists.where((t) => t.isSource).toList();
+
+    sourceTwists.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+
+    final commands = sourceTwists
+        .map((twist) => AddSourceDetail(twist))
+        .toList();
+
+    return Commands(
+      groups: [
+        StaticCommandGroup(title: 'Available Connections', commands: commands),
+      ],
+    );
+  }
+}
+
+/// Shows source description and branded auth button for setup.
+class AddSourceDetail extends ShowForm {
+  AddSourceDetail(this.twist)
+    : super(
+        title: twist.name,
+        subtitle: twist.description,
+        icon: PlotIcon.connection,
+        form: (context) => _buildForm(context, twist),
+      );
+
+  final Twist twist;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Create draft before opening form
+    String? draftId;
+    try {
+      draftId = await TwistApi.createDraft(
+        twistId: twist.id,
+        twistEnvironment: twist.environment,
+        name: twist.name,
+      );
+    } catch (e, t) {
+      log.warning('Failed to create draft source', e, t);
+      return CommandMessage(
+        'Failed to set up connection. Please try again.',
+        isError: true,
+      );
+    }
+
+    _currentDraftId = draftId;
+    lastActivatedSourceId = null;
+
+    if (!context.mounted) return const CommandSkipped();
+    final result = await super.run(context);
+
+    // If the form was dismissed without activation, delete the draft
+    if (_currentDraftId != null) {
+      try {
+        await TwistApi.deleteDraft(draftId);
+      } catch (e, t) {
+        log.warning('Failed to delete draft source', e, t);
+      }
+      _currentDraftId = null;
+    }
+
+    return result;
+  }
+
+  static String? _currentDraftId;
+
+  /// Set after activation so ManageConnections can open EditSource.
+  static String? lastActivatedSourceId;
+
+  static void clearDraft() {
+    _currentDraftId = null;
+  }
+
+  static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
+    final draftId = _currentDraftId;
+    if (draftId == null) {
+      return FormData(
+        title: twist.name,
+        groups: [
+          StaticFormGroup(
+            items: [
+              FormInfo(
+                key: 'error',
+                text: 'Failed to create draft connection.',
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    // Pre-fetch integrations for the draft
+    final integrations = await TwistApi.getIntegrations(draftId);
+
+    return FormData(
+      title: 'Set up ${twist.name}',
+      groups: [
+        StaticFormGroup(
+          items: [
+            if (twist.description != null)
+              FormInfo(key: 'description', text: twist.description!),
+            ...integrations.providers.map(
+              (provider) => FormInfo(
+                key: 'auth_${provider.provider.name}',
+                divider: false,
+                builder: (formContext) => Padding(
+                  padding: formContext.theme.spacing.padding.copyWith(top: 0),
+                  child: Padding(
+                    padding: .only(top: context.theme.spacing.md),
+                    child: _IntegrationAuthButton(
+                      provider: provider,
+                      hasExistingAccount: false,
+                      priorityTwistId: draftId,
+                      onSuccess: () {
+                        // Activate the source (no priority needed)
+                        _activateSource(formContext, draftId, twist.name);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static Future<void> _activateSource(
+    BuildContext context,
+    String draftId,
+    String name,
+  ) async {
+    try {
+      await TwistApi.activateDraft(draftId: draftId, name: name);
+
+      lastActivatedSourceId = draftId;
+      clearDraft();
+
+      if (context.mounted) {
+        Modal.pop<CommandReturn>(context, Value(const CommandDone()));
+      }
+    } catch (e, t) {
+      log.warning('Failed to activate source', e, t);
+      if (context.mounted) {
+        context.showToast(
+          message: 'Failed to add connection. Please try again.',
+          isError: true,
+        );
+      }
+    }
+  }
+}
+
+// ============================================================================
+// Manage Twists (non-source only)
+// ============================================================================
 
 class ManageTwists extends ShowCommands {
   ManageTwists([Priority? priority])
@@ -60,9 +839,17 @@ class ManageTwists extends ShowCommands {
     final priorityTwists = results[0] as List<PriorityTwist>;
     final allTwists = results[1] as List<Twist>;
 
+    // Filter to non-sources only
+    final twistOnlyPriorityTwists = priorityTwists
+        .where((pt) => !pt.isSource)
+        .toList();
+    final twistOnlyAvailable = allTwists.where((t) => !t.isSource).toList();
+
     // Fetch priorities for each twist to get their paths
-    final editCommandsFutures = priorityTwists.map((twist) async {
-      final twistPriority = await Priority.getOne(twist.priorityId);
+    final editCommandsFutures = twistOnlyPriorityTwists.map((twist) async {
+      final twistPriority = twist.priorityId != null
+          ? await Priority.getOne(twist.priorityId!)
+          : null;
       return EditTwist(twist, priority: twistPriority);
     });
     final editCommands = await Future.wait(editCommandsFutures);
@@ -92,8 +879,8 @@ class ManageTwists extends ShowCommands {
       );
     });
 
-    final addCommands = allTwists
-        .map((twist) => ShowTwistInfo(twist, defaultPriority: priority))
+    final addCommands = twistOnlyAvailable
+        .map((twist) => ShowTwistInfo(twist))
         .toList();
 
     // Sort available twists by name, then environment
@@ -159,46 +946,43 @@ class EditTwist extends ShowForm {
     try {
       // Load priority if not provided
       final loadedPriority =
-          priority ?? await Priority.getOne(priorityTwist.priorityId);
+          priority ??
+          (priorityTwist.priorityId != null
+              ? await Priority.getOne(priorityTwist.priorityId!)
+              : null);
 
-      // Fetch all twists and integrations in parallel
-      final results = await Future.wait([
-        TwistApi.getAllTwists(loadedPriority),
-        TwistApi.getIntegrations(priorityTwist.id.toString()),
-      ]);
-      final allTwists = results[0] as List<Twist>;
-      final integrations = results[1] as TwistIntegrations;
+      // Fetch all twists for details (source accounts have no priority)
+      if (loadedPriority == null) {
+        return FormData(title: priorityTwist.name, groups: []);
+      }
+      final allTwists = await TwistApi.getAllTwists(loadedPriority);
       final matchingTwist = allTwists.firstWhere(
         (a) => a.id == priorityTwist.twistId.toString(),
         orElse: () => throw Exception('Twist not found'),
       );
 
-      // Compute initially enabled syncables from server state (including nested)
-      Set<String> collectEnabled(List<TwistSyncable> syncables) {
-        final result = <String>{};
-        for (final s in syncables) {
-          if (s.enabled) result.add('${s.provider.name}:${s.id}');
-          result.addAll(collectEnabled(s.children));
-        }
-        return result;
-      }
-
-      final initialEnabled = collectEnabled(integrations.syncables);
-
-      final refreshNotifier = ValueNotifier<int>(0);
-      var integrationChanges = IntegrationChanges(
-        selectedSyncables: Set.of(initialEnabled),
-      );
-
       // Build option form items
-      final hasOptions = matchingTwist.options != null &&
-          matchingTwist.options!.isNotEmpty;
+      final hasOptions =
+          matchingTwist.options != null && matchingTwist.options!.isNotEmpty;
       final optionItems = hasOptions
           ? TwistOptionItems(
               options: matchingTwist.options!,
               initialConfig: priorityTwist.config,
             )
           : null;
+
+      // Check if twist has link permission (and is not a source)
+      final hasLinkPermission =
+          !matchingTwist.isSource &&
+          matchingTwist.permissions != null &&
+          matchingTwist.permissions!.hasPermission(
+            'plot',
+            'link',
+            PermissionFlag.read,
+          );
+
+      // Track link channel changes
+      var linkChannelSelection = const LinkChannelSelection();
 
       return FormData(
         title: 'Edit ${priorityTwist.name}',
@@ -211,45 +995,35 @@ class EditTwist extends ShowForm {
                 initialValue: priorityTwist.name,
                 required: true,
               ),
-              FormInfo(
-                key: 'integrations',
-                divider: false,
-                builder: (context) => TwistIntegrationsWidget(
-                  priorityTwistId: priorityTwist.id.toString(),
-                  initialData: integrations,
-                  refreshNotifier: refreshNotifier,
-                  onChanged: (changes) {
-                    integrationChanges = changes;
-                  },
-                ),
-              ),
-              if (integrations.providers.isNotEmpty)
-                FormButton(
-                  key: 'add_account',
-                  buildCommand: (_) => ShowAddIntegrationAccount(
+              if (hasLinkPermission)
+                FormInfo(
+                  key: 'link_channels',
+                  divider: false,
+                  builder: (context) => SetupLinkChannelsWidget(
                     priorityTwistId: priorityTwist.id.toString(),
-                    onAccountAdded: () => refreshNotifier.value++,
+                    priorityId: priorityTwist.priorityId?.toString(),
+                    onChanged: (selection) {
+                      linkChannelSelection = selection;
+                    },
                   ),
                 ),
             ],
           ),
           if (optionItems != null)
-            StaticFormGroup(
-              title: 'Settings',
-              items: optionItems.items,
-            ),
+            StaticFormGroup(title: 'Settings', items: optionItems.items),
           StaticFormGroup(
             items: [
               FormButton(
                 key: 'save',
                 buildCommand: (values) {
                   final name = values['name'] as String;
-                  return SaveTwist(
+                  return SaveTwistSettings(
                     priorityTwist: priorityTwist,
                     name: name,
                     config: optionItems?.values,
-                    initialEnabled: initialEnabled,
-                    changes: integrationChanges,
+                    linkChannels: hasLinkPermission
+                        ? linkChannelSelection.entries
+                        : null,
                   );
                 },
               ),
@@ -336,21 +1110,17 @@ class ShowTwistDetails extends ShowForm {
 
 /// Shows twist details (description, author, permissions) with an "Add Twist" button.
 class ShowTwistInfo extends ShowForm {
-  ShowTwistInfo(this.twist, {Priority? defaultPriority})
+  ShowTwistInfo(this.twist)
     : super(
         title: _formatTwistName(twist.name, twist.environment),
         subtitle: twist.description,
         icon: PlotIcon.twist,
-        form: (context) => _buildForm(context, twist, defaultPriority),
+        form: (context) => _buildForm(context, twist),
       );
 
   final Twist twist;
 
-  static Future<FormData> _buildForm(
-    BuildContext context,
-    Twist twist,
-    Priority? defaultPriority,
-  ) async {
+  static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
     return FormData(
       title: twist.name,
       groups: [
@@ -361,11 +1131,7 @@ class ShowTwistInfo extends ShowForm {
               divider: true,
               builder: (context) => TwistDetails(twist: twist),
             ),
-            FormButton(
-              key: 'add',
-              buildCommand: (_) =>
-                  SetupTwist(twist, defaultPriority: defaultPriority),
-            ),
+            FormButton(key: 'add', buildCommand: (_) => SetupTwist(twist)),
           ],
         ),
       ],
@@ -386,18 +1152,17 @@ class ShowTwistInfo extends ShowForm {
 // Setup Twist (add flow with draft)
 // ============================================================================
 
-/// Opens the setup modal with priority selector, name, integrations, and syncables.
+/// Opens the setup modal with priority selector, name, integrations, and channels.
 /// Creates a draft twist for the auth flow, then activates it on submit.
 class SetupTwist extends ShowForm {
-  SetupTwist(this.twist, {this.defaultPriority})
+  SetupTwist(this.twist)
     : super(
         title: 'Add Twist',
         icon: PlotIcon.add,
-        form: (context) => _buildForm(context, twist, defaultPriority),
+        form: (context) => _buildForm(context, twist),
       );
 
   final Twist twist;
-  final Priority? defaultPriority;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -449,11 +1214,7 @@ class SetupTwist extends ShowForm {
         plotPriority.path.isParent(priority.path);
   }
 
-  static Future<FormData> _buildForm(
-    BuildContext context,
-    Twist twist,
-    Priority? defaultPriority,
-  ) async {
+  static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
     final draftId = _currentDraftId;
     if (draftId == null) {
       return FormData(
@@ -468,22 +1229,8 @@ class SetupTwist extends ShowForm {
       );
     }
 
-    // Get default priority from context
-    final nowBloc = context.read<NowBloc>();
-    final currentPriority = nowBloc.state is NowLoaded
-        ? (nowBloc.state as NowLoaded).priority
-        : null;
-    var initialPriority =
-        defaultPriority ?? currentPriority ?? await Priority.getDefault();
-
-    // Don't default to @plot or its descendants
-    final allPriorities = await Priority.get(order: PriorityOrder.nested);
-    final plotPriority = allPriorities.firstWhereOrNull(
-      (p) => p.key == '@plot',
-    );
-    if (plotPriority != null && _isUnderPlot(initialPriority, plotPriority)) {
-      initialPriority = await Priority.getDefault();
-    }
+    // Default to root priority ("Everything")
+    final initialPriority = await Priority.getDefault();
 
     // Pre-fetch integrations for the draft
     final integrations = await TwistApi.getIntegrations(draftId);
@@ -498,31 +1245,55 @@ class SetupTwist extends ShowForm {
         ? TwistOptionItems(options: twist.options!)
         : null;
 
+    // Check if twist has link permission (and is not a source)
+    final hasLinkPermission =
+        !twist.isSource &&
+        twist.permissions != null &&
+        twist.permissions!.hasPermission('plot', 'link', PermissionFlag.read);
+
+    // Priority notifier for link channels to react to priority changes
+    final priorityNotifier = ValueNotifier<String?>(
+      initialPriority.id.toString(),
+    );
+
+    // Track link channel changes
+    var linkChannelSelection = const LinkChannelSelection();
+
+    final prioritySelect = FormSelect<Priority>(
+      key: 'priority',
+      label: 'Add to Priority',
+      initialValue: initialPriority,
+      items: (search) async {
+        final priorities = await Priority.get(
+          order: PriorityOrder.nested,
+          search: search,
+        );
+        final plot = priorities.firstWhereOrNull((p) => p.key == '@plot');
+        if (plot == null) return priorities;
+        return priorities.where((p) => !_isUnderPlot(p, plot)).toList();
+      },
+      labelBuilder: (p) => PriorityLabel(priority: p),
+      titleBuilder: (p) => p.ancestorsLabel() != null
+          ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
+          : p.title,
+    );
+
+    // Update priority notifier when selection changes
+    if (hasLinkPermission) {
+      prioritySelect.addListener(() {
+        final selected = prioritySelect.getValue();
+        if (selected != null) {
+          priorityNotifier.value = selected.id.toString();
+        }
+      });
+    }
+
     return FormData(
       title: 'Set up ${twist.name}',
       groups: [
         StaticFormGroup(
           items: [
-            FormSelect<Priority>(
-              key: 'priority',
-              label: 'Add to Priority',
-              initialValue: initialPriority,
-              items: (search) async {
-                final priorities = await Priority.get(
-                  order: PriorityOrder.nested,
-                  search: search,
-                );
-                final plot = priorities.firstWhereOrNull(
-                  (p) => p.key == '@plot',
-                );
-                if (plot == null) return priorities;
-                return priorities.where((p) => !_isUnderPlot(p, plot)).toList();
-              },
-              labelBuilder: (p) => PriorityLabel(priority: p),
-              titleBuilder: (p) => p.ancestorsLabel() != null
-                  ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
-                  : p.title,
-            ),
+            prioritySelect,
             FormTextInput(
               key: 'name',
               label: 'Name',
@@ -532,7 +1303,7 @@ class SetupTwist extends ShowForm {
             FormInfo(
               key: 'integrations',
               divider: false,
-              builder: (context) => TwistIntegrationsWidget(
+              builder: (context) => SetupSourceWidget(
                 priorityTwistId: draftId,
                 setupMode: true,
                 initialData: integrations,
@@ -550,13 +1321,22 @@ class SetupTwist extends ShowForm {
                   onAccountAdded: () => refreshNotifier.value++,
                 ),
               ),
+            if (optionItems != null) ...optionItems.items,
+            if (hasLinkPermission)
+              FormInfo(
+                key: 'link_channels',
+                divider: false,
+                builder: (context) => SetupLinkChannelsWidget(
+                  priorityTwistId: draftId,
+                  priorityNotifier: priorityNotifier,
+                  setupMode: true,
+                  onChanged: (selection) {
+                    linkChannelSelection = selection;
+                  },
+                ),
+              ),
           ],
         ),
-        if (optionItems != null)
-          StaticFormGroup(
-            title: 'Settings',
-            items: optionItems.items,
-          ),
         StaticFormGroup(
           items: [
             FormButton(
@@ -564,13 +1344,15 @@ class SetupTwist extends ShowForm {
               buildCommand: (values) {
                 final selectedPriority = values['priority'] as Priority;
                 final name = values['name'] as String;
-                // Convert IntegrationChanges to SelectedSyncable list
-                final selectedSyncables = integrationChanges.selectedSyncables
+                // Update priority notifier for any last-minute change
+                priorityNotifier.value = selectedPriority.id.toString();
+                // Convert IntegrationChanges to SelectedChannel list
+                final selectedChannels = integrationChanges.selectedChannels
                     .map((key) {
                       final parts = key.split(':');
-                      return SelectedSyncable(
+                      return SelectedChannel(
                         provider: parts[0],
-                        syncableId: parts.sublist(1).join(':'),
+                        channelId: parts.sublist(1).join(':'),
                       );
                     })
                     .toList();
@@ -579,7 +1361,10 @@ class SetupTwist extends ShowForm {
                   priority: selectedPriority,
                   name: name,
                   config: optionItems?.values,
-                  syncables: selectedSyncables,
+                  channels: selectedChannels,
+                  linkChannels: hasLinkPermission
+                      ? linkChannelSelection.entries
+                      : null,
                 );
               },
             ),
@@ -590,14 +1375,15 @@ class SetupTwist extends ShowForm {
   }
 }
 
-/// Activates a draft twist: assigns priority, calls activate, enables syncables.
+/// Activates a draft twist: assigns priority, calls activate, enables channels.
 class ActivateTwist extends Command {
   ActivateTwist({
     required this.draftId,
     required this.priority,
     required this.name,
     this.config,
-    required this.syncables,
+    required this.channels,
+    this.linkChannels,
   }) : super(
          title: 'Activate Twist',
          icon: PlotIcon.twist,
@@ -609,7 +1395,8 @@ class ActivateTwist extends Command {
   final Priority priority;
   final String name;
   final Map<String, dynamic>? config;
-  final List<SelectedSyncable> syncables;
+  final List<SelectedChannel> channels;
+  final List<LinkChannelEntry>? linkChannels;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -619,13 +1406,10 @@ class ActivateTwist extends Command {
         priorityId: priority.id.toString(),
         name: name,
         config: config,
-        syncables: syncables.isNotEmpty
-            ? syncables
+        channels: channels.isNotEmpty
+            ? channels
                   .map(
-                    (s) => {
-                      'provider': s.provider,
-                      'syncableId': s.syncableId,
-                    },
+                    (s) => {'provider': s.provider, 'syncableId': s.channelId},
                   )
                   .toList()
             : null,
@@ -634,13 +1418,20 @@ class ActivateTwist extends Command {
       // Mark the draft as activated so cleanup doesn't delete it
       SetupTwist.clearDraft();
 
+      // Save link channel selections if any (draftId is now the priorityTwistId)
+      if (linkChannels != null && linkChannels!.isNotEmpty) {
+        await TwistApi.updateLinkChannels(
+          priorityTwistId: draftId,
+          channels: linkChannels!.map((e) => e.toJson()).toList(),
+        );
+      }
+
       // Sync new twist to local DB
       await PriorityTwist.pull();
 
-      // Pop all modals and reopen ManageTwists
+      // Pop all modals and reopen twist list
       if (context.mounted) {
         Modal.popAll(context);
-        // Schedule ManageTwists to open after the modal stack clears
         Future.microtask(() {
           if (context.mounted) {
             ManageTwists().run(context);
@@ -690,7 +1481,7 @@ class ShowAddIntegrationAccount extends ShowForm {
                   key: 'auth_${provider.provider.name}',
                   divider: false,
                   builder: (formContext) => Padding(
-                    padding: widgetPadding.copyWith(top: 0),
+                    padding: formContext.theme.spacing.padding.copyWith(top: 0),
                     child: _IntegrationAuthButton(
                       provider: provider,
                       hasExistingAccount: integrations.accounts.any(
@@ -804,14 +1595,26 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
     // account shows a UUID instead of the user's email.
     final scopes = {...providerScopes, 'openid', 'email'}.toList();
 
+    // Clear any cached sign-in so the account picker is always shown.
     await GoogleSignIn.instance.signOut();
-    final account = await GoogleSignIn.instance.authenticate(
-      scopeHint: scopes,
-    );
 
-    final serverAuth = await account.authorizationClient.authorizeServer(
-      scopes,
-    );
+    final GoogleSignInServerAuthorization? serverAuth;
+    if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      // On Apple platforms, calling authorizeServer on the instance-level
+      // client (null userId) triggers the combined sign-in + authorization
+      // flow: one prompt with account picker + consent + server auth code.
+      serverAuth = await GoogleSignIn.instance.authorizationClient
+          .authorizeServer(scopes);
+    } else {
+      // On Android, GIS separates authentication from authorization.
+      // authenticate() shows the Credential Manager account picker,
+      // then authorizeServer() shows consent for the selected account.
+      final account = await GoogleSignIn.instance.authenticate(
+        scopeHint: scopes,
+      );
+      serverAuth = await account.authorizationClient.authorizeServer(scopes);
+    }
     final code = serverAuth?.serverAuthCode;
     if (code == null) {
       throw Exception('No server auth code received from Google');
@@ -879,20 +1682,23 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
         ? 'Add another $providerName account'
         : config.buttonText;
 
-    return FButton(
-      mainAxisSize: .max,
-      style: buildAuthButtonStyle(context, config),
-      onPress: _isLoading ? null : _startAuth,
-      prefix: _isLoading
-          ? Spinner(color: config.loadingColor, size: config.iconSize)
-          : _buildProviderIcon(widget.provider.provider, config.iconSize),
-      child: Text(
-        label,
-        style: context.theme.typography.base.copyWith(
-          fontWeight: config.fontWeight,
-          fontFamily: config.fontFamily,
-          color: _isLoading ? config.disabledTextColor : config.textColor,
-          height: 1,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 300),
+      child: FButton(
+        mainAxisSize: .max,
+        style: buildAuthButtonStyle(context, config),
+        onPress: _isLoading ? null : _startAuth,
+        prefix: _isLoading
+            ? Spinner(color: config.loadingColor, size: config.iconSize)
+            : _buildProviderIcon(widget.provider.provider, config.iconSize),
+        child: Text(
+          label,
+          style: context.theme.typography.base.copyWith(
+            fontWeight: config.fontWeight,
+            fontFamily: config.fontFamily,
+            color: _isLoading ? config.disabledTextColor : config.textColor,
+            height: 1,
+          ),
         ),
       ),
     );
@@ -923,7 +1729,153 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
 // Edit/Update/Remove commands
 // ============================================================================
 
-/// Saves all edit twist changes: name, syncable toggles, and account removals.
+/// Saves source integration changes: channel toggles and account removals.
+class SaveSource extends Command {
+  SaveSource({
+    required this.priorityTwistId,
+    required this.name,
+    required this.initialEnabled,
+    this.initialPriorities = const {},
+    required this.changes,
+  }) : super(
+         title: 'Save',
+         icon: FontAwesomeIcons.check,
+         eventObject: EventObject.twist,
+         eventAction: EventAction.updated,
+       );
+
+  final String priorityTwistId;
+  final String name;
+  final Set<String> initialEnabled;
+  final Map<String, String> initialPriorities;
+  final IntegrationChanges changes;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      // 1. Compute providers being removed (skip their channel changes)
+      final removedProviders = changes.removedAccounts
+          .map((k) => k.split(':').first)
+          .toSet();
+
+      // 2. Enable/disable channels (skip removed providers)
+      final toEnable = changes.selectedChannels.difference(initialEnabled);
+      final toDisable = initialEnabled.difference(changes.selectedChannels);
+
+      for (final key in toEnable) {
+        final parts = key.split(':');
+        final provider = parts[0];
+        if (removedProviders.contains(provider)) continue;
+        final channelId = parts.sublist(1).join(':');
+        await TwistApi.enableChannel(
+          priorityTwistId: priorityTwistId,
+          provider: provider,
+          channelId: channelId,
+          priorityId: changes.channelPriorities[key],
+        );
+      }
+
+      for (final key in toDisable) {
+        final parts = key.split(':');
+        final provider = parts[0];
+        if (removedProviders.contains(provider)) continue;
+        final channelId = parts.sublist(1).join(':');
+        await TwistApi.disableChannel(
+          priorityTwistId: priorityTwistId,
+          provider: provider,
+          channelId: channelId,
+        );
+      }
+
+      // 2b. Update priority for channels that stayed enabled but changed priority
+      final stayEnabled = changes.selectedChannels.intersection(initialEnabled);
+      for (final key in stayEnabled) {
+        final parts = key.split(':');
+        final provider = parts[0];
+        if (removedProviders.contains(provider)) continue;
+        final newPriority = changes.channelPriorities[key];
+        final oldPriority = initialPriorities[key];
+        if (newPriority != null && newPriority != oldPriority) {
+          final channelId = parts.sublist(1).join(':');
+          await TwistApi.setChannelPriority(
+            priorityTwistId: priorityTwistId,
+            provider: provider,
+            channelId: channelId,
+            priorityId: newPriority,
+          );
+        }
+      }
+
+      // 3. Remove accounts
+      for (final accountKey in changes.removedAccounts) {
+        final parts = accountKey.split(':');
+        final provider = parts[0];
+        final actorId = parts.sublist(1).join(':');
+        await TwistApi.removeIntegration(
+          priorityTwistId: priorityTwistId,
+          provider: provider,
+          actorId: actorId,
+        );
+      }
+
+      return CommandMessage('Connection "$name" saved');
+    } catch (e, t) {
+      log.warning('Failed to save source', e, t);
+      return CommandMessage('Failed to save connection', isError: true);
+    }
+  }
+}
+
+/// Saves twist name and config settings (no integrations for twists).
+class SaveTwistSettings extends Command {
+  SaveTwistSettings({
+    required this.priorityTwist,
+    required this.name,
+    this.config,
+    this.linkChannels,
+  }) : super(
+         title: 'Save',
+         icon: FontAwesomeIcons.check,
+         eventObject: EventObject.twist,
+         eventAction: EventAction.updated,
+       );
+
+  final PriorityTwist priorityTwist;
+  final String? name;
+  final Map<String, dynamic>? config;
+  final List<LinkChannelEntry>? linkChannels;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      if (name == null) {
+        return CommandMessage('Name is required', isError: true);
+      }
+
+      await TwistApi.updateTwist(
+        priorityTwistId: priorityTwist.id.toString(),
+        name: name!,
+        config: config,
+      );
+
+      // Save link channel selections if provided
+      if (linkChannels != null) {
+        await TwistApi.updateLinkChannels(
+          priorityTwistId: priorityTwist.id.toString(),
+          channels: linkChannels!.map((e) => e.toJson()).toList(),
+        );
+      }
+
+      return CommandMessage('Twist "${name!}" saved');
+    } catch (e, t) {
+      log.warning('Failed to save twist', e, t);
+      return CommandMessage('Failed to save twist', isError: true);
+    }
+  }
+}
+
+/// Saves all edit twist changes: name, channel toggles, and account removals.
+/// Used by the SetupTwist flow which still needs integration handling.
 class SaveTwist extends Command {
   SaveTwist({
     required this.priorityTwist,
@@ -960,24 +1912,24 @@ class SaveTwist extends Command {
         config: config,
       );
 
-      // 2. Compute providers being removed (skip their syncable changes)
+      // 2. Compute providers being removed (skip their channel changes)
       final removedProviders = changes.removedAccounts
           .map((k) => k.split(':').first)
           .toSet();
 
-      // 3. Enable/disable syncables (skip removed providers)
-      final toEnable = changes.selectedSyncables.difference(initialEnabled);
-      final toDisable = initialEnabled.difference(changes.selectedSyncables);
+      // 3. Enable/disable channels (skip removed providers)
+      final toEnable = changes.selectedChannels.difference(initialEnabled);
+      final toDisable = initialEnabled.difference(changes.selectedChannels);
 
       for (final key in toEnable) {
         final parts = key.split(':');
         final provider = parts[0];
         if (removedProviders.contains(provider)) continue;
-        final syncableId = parts.sublist(1).join(':');
-        await TwistApi.enableSyncable(
+        final channelId = parts.sublist(1).join(':');
+        await TwistApi.enableChannel(
           priorityTwistId: ptId,
           provider: provider,
-          syncableId: syncableId,
+          channelId: channelId,
         );
       }
 
@@ -985,11 +1937,11 @@ class SaveTwist extends Command {
         final parts = key.split(':');
         final provider = parts[0];
         if (removedProviders.contains(provider)) continue;
-        final syncableId = parts.sublist(1).join(':');
-        await TwistApi.disableSyncable(
+        final channelId = parts.sublist(1).join(':');
+        await TwistApi.disableChannel(
           priorityTwistId: ptId,
           provider: provider,
-          syncableId: syncableId,
+          channelId: channelId,
         );
       }
 
@@ -1092,7 +2044,7 @@ class PromptToArchiveTwist extends ShowForm {
             FormInfo(
               key: 'info',
               text:
-                  'Archiving this twist will remove it and archive the topics it has created.',
+                  'Archiving this twist will remove it and archive the threads it has created.',
             ),
             FormDivider(key: 'divider'),
             FormButton(
@@ -1133,7 +2085,7 @@ class ArchiveTwist extends Command {
       );
 
       return CommandMessage(
-        'Twist "${twist.name}" and its topics archived successfully',
+        'Twist "${twist.name}" and its threads archived successfully',
       );
     } catch (e, t) {
       log.warning('Failed to archive twist', e, t);
@@ -1145,7 +2097,7 @@ class ArchiveTwist extends Command {
 class ArchiveActivitiesCreatedByTwist extends ShowForm {
   ArchiveActivitiesCreatedByTwist(this.twist)
     : super(
-        title: 'Archive Topics',
+        title: 'Archive Threads',
         icon: PlotIcon.archived,
         form: (context) => _buildForm(context, twist),
       );
@@ -1160,17 +2112,17 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
     final count = await _getActivityCount(twist.id);
 
     return FormData(
-      title: 'Archive Topics Created by Twist',
+      title: 'Archive Threads Created by Twist',
       groups: [
         StaticFormGroup(
           items: [
             FormInfo(
               key: 'info',
               text: count == 0
-                  ? 'No topics were created by this twist.'
+                  ? 'No threads were created by this twist.'
                   : count == 1
-                  ? '1 topic was created by this twist and will be archived.'
-                  : '$count topics were created by this twist and will be archived.',
+                  ? '1 thread was created by this twist and will be archived.'
+                  : '$count threads were created by this twist and will be archived.',
             ),
             if (count > 0)
               FormButton(
@@ -1185,9 +2137,7 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
 
   static Future<int> _getActivityCount(Uuid priorityTwistId) async {
     try {
-      final authorId = ActorId(priorityTwistId);
-      final query = Store.get.select(Store.get.activities)
-        ..where((a) => a.authorId.equalsValue(authorId))
+      final query = Store.get.select(Store.get.threads)
         ..where((a) => a.archivedAt.isNull());
       final result = await query.get();
       return result.length;
@@ -1201,7 +2151,7 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
 class _ArchiveActivitiesCommand extends Command {
   _ArchiveActivitiesCommand(this.twist, this.count)
     : super(
-        title: 'Archive Topics',
+        title: 'Archive Threads',
         icon: PlotIcon.archived,
         eventObject: EventObject.activity,
         eventAction: EventAction.archived,
@@ -1213,22 +2163,20 @@ class _ArchiveActivitiesCommand extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final authorId = ActorId(twist.id);
       final now = DateTime.now();
-      await (Store.get.update(Store.get.activities)
-            ..where((a) => a.authorId.equalsValue(authorId))
+      await (Store.get.update(Store.get.threads)
             ..where((a) => a.archivedAt.isNull()))
-          .write(ActivitiesCompanion(archivedAt: Value(now)));
+          .write(ThreadsCompanion(archivedAt: Value(now)));
 
       // Trigger sync to push archived changes to server
-      Activity.push();
+      Thread.push();
 
       return CommandMessage(
-        count == 1 ? '1 topic archived' : '$count topics archived',
+        count == 1 ? '1 thread archived' : '$count threads archived',
       );
     } catch (e, t) {
       log.warning('Failed to archive activities', e, t);
-      return CommandMessage('Failed to archive topics', isError: true);
+      return CommandMessage('Failed to archive threads', isError: true);
     }
   }
 }

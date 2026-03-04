@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/style/layout.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/string.dart';
 import 'package:plot/widget/twist_permission_helper.dart';
@@ -116,7 +115,7 @@ class TwistDetails extends StatelessWidget {
             // Metadata section
             if (twist.description != null) ...[
               Padding(
-                padding: widgetPadding.copyWith(top: 0),
+                padding: theme.spacing.padding.copyWith(top: 0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -167,7 +166,7 @@ class TwistDetails extends StatelessWidget {
 
             // Permissions section
             Padding(
-              padding: widgetPadding.copyWith(bottom: 0),
+              padding: theme.spacing.padding.copyWith(bottom: 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

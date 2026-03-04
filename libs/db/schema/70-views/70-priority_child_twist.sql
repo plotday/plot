@@ -4,6 +4,7 @@ SELECT
     pt.*,
     t.version,
     t.environment AS twist_environment,
+    t.is_source,
     p.name AS author_name,
     p.email AS author_email,
     p.url AS author_url,

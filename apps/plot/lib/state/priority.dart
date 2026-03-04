@@ -17,22 +17,19 @@ import 'logging.dart';
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
-  PriorityBloc({required Priority priority, Activity? activity})
+  PriorityBloc({required Priority priority, Thread? thread})
     : _subscriptions = [],
-      _activitySubscription = null,
+      _threadSubscription = null,
       _agendaSubscription = null,
       _tagsSubscription = null,
-      super(PriorityState(context: priority, activity: activity)) {
+      _draftModified = false,
+      super(PriorityState(context: priority, thread: thread)) {
     _loadPriority();
 
-    // Register callback to reload schedule when time changes (e.g., via TimeTravel)
+    // Register callback to reload agenda when time changes (e.g., via TimeTravel)
     Time.setOnTimeChanged(() {
-      if (state.range != null) {
-        log.fine(
-          'Time changed, reloading schedule to update time-dependent UI',
-        );
-        _loadSchedule(state.range!);
-      }
+      log.fine('Time changed, reloading agenda to update time-dependent UI');
+      _loadAgenda();
     });
   }
 
@@ -61,136 +58,121 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadPriority();
   }
 
-  void moveAgendaItem(int oldIndex, int newIndex, {AgendaItem? updatedItem}) {
-    if (oldIndex == newIndex) return;
+  /// Whether the draft has been modified by user actions (e.g. type toggle).
+  /// Prevents _loadDraft from overwriting user-initiated changes.
+  bool _draftModified;
 
-    final items = List<AgendaItem>.from(state.agendaItems);
-    final item = items.removeAt(oldIndex);
-    items.insert(newIndex, updatedItem ?? item);
+  /// Timestamp of last reorder operation. Used to suppress agenda rebuilds
+  /// briefly after a reorder so the optimistic update isn't overwritten.
+  DateTime? _reorderTimestamp;
 
-    emit(state.copyWith(agendaItems: items));
+  /// The expected order value of the last reordered thread. Used to detect
+  /// when the DB stream data has settled and includes the reorder, so we
+  /// can safely transition from optimistic reorderViewItems to _makeAgenda.
+  (ThreadId, double)? _pendingReorderOrder;
+
+  /// Timestamp of last optimistic thread update. Used to suppress agenda
+  /// rebuilds briefly so the optimistic state isn't overwritten by stale
+  /// stream notifications (which may arrive with partial data, e.g. thread
+  /// saved but schedule not yet saved).
+  DateTime? _optimisticTimestamp;
+
+  /// Optimistic reorder: caches the moved agendaViewItems so the UI
+  /// doesn't re-derive them (which can produce different item counts).
+  void moveAgendaItem(int viewOldIndex, int viewNewIndex,
+      {AgendaItem? updatedItem}) {
+    if (viewOldIndex == viewNewIndex) return;
+
+    _reorderTimestamp = DateTime.now();
+    final viewItems = List<AgendaItem>.from(state.agendaViewItems);
+
+    // The page strips the leading "Now" header from agendaViewItems before
+    // passing items to InfiniteList, so indices from onReorder are relative
+    // to the Now-stripped list. Adjust to agendaViewItems indices.
+    final nowOffset = (viewItems.isNotEmpty &&
+            viewItems.first is AgendaHeaderItem &&
+            (viewItems.first as AgendaHeaderItem).now)
+        ? 1
+        : 0;
+    final adjOld = viewOldIndex + nowOffset;
+    final adjNew = viewNewIndex + nowOffset;
+
+    final item = viewItems.removeAt(adjOld);
+    viewItems.insert(adjNew, updatedItem ?? item);
+
+    // Re-apply compact flags: consecutive date-only headers should be compact
+    for (int i = 1; i < viewItems.length; i++) {
+      final prev = viewItems[i - 1];
+      final curr = viewItems[i];
+      if (prev is AgendaHeaderItem &&
+          prev.date != null &&
+          prev.priority == null &&
+          prev.thread == null &&
+          curr is AgendaHeaderItem &&
+          curr.date != null &&
+          curr.priority == null &&
+          curr.thread == null) {
+        if (!curr.compact) {
+          viewItems[i] = AgendaHeaderItem(
+            priority: curr.priority,
+            dateTimeRange: curr.dateTimeRange,
+            date: curr.date,
+            now: curr.now,
+            thread: curr.thread,
+            text: curr.text,
+            scheduleAt: curr.scheduleAt,
+            compact: true,
+          );
+        }
+      } else if (curr is AgendaHeaderItem && curr.compact) {
+        viewItems[i] = AgendaHeaderItem(
+          priority: curr.priority,
+          dateTimeRange: curr.dateTimeRange,
+          date: curr.date,
+          now: curr.now,
+          thread: curr.thread,
+          text: curr.text,
+          scheduleAt: curr.scheduleAt,
+          compact: false,
+        );
+      }
+    }
+
+    // Record the expected order so the stream listener can detect when
+    // the DB data has settled and safely transition from the optimistic
+    // reorderViewItems to the derived _makeAgenda result.
+    final movedItem = viewItems[adjNew];
+    if (movedItem is AgendaThreadItem) {
+      _pendingReorderOrder = (movedItem.thread.id, movedItem.thread.order.value);
+    }
+
+    log.info(
+      '[moveAgendaItem] old=$viewOldIndex new=$viewNewIndex '
+      'adjOld=$adjOld adjNew=$adjNew nowOffset=$nowOffset '
+      'viewItems=${viewItems.length} emitting reorderViewItems '
+      'pendingOrder=${_pendingReorderOrder?.$2}',
+    );
+    emit(state.copyWith(reorderViewItems: Value(viewItems)));
+    log.info('[moveAgendaItem] emit returned');
+
+    // Cancel and restart the agenda subscription to flush any stale events
+    // sitting in the debounce pipeline. The fresh subscription will only
+    // produce events reflecting the post-reorder DB state.
+    _loadAgenda(triggerSync: false);
   }
 
   Future<void> fetchMoreAgendaItems(int first, int count) async {
-    if (state.range == null) return;
-
-    // Check if requested range is already within current loaded range with tolerance
-    // Only fetch if we're missing significant buffer (> 20% of a page)
-    final currentFirst = state.first;
-    final currentLast = state.first + state.agendaItems.length;
-    final requestedLast = first + count;
-
-    final missingBefore = currentFirst - first;
-    final missingAfter = requestedLast - currentLast;
-    final pageSize = count / 3; // Rough estimate of page size
-    final significantMissing = pageSize * 0.2; // 20% of page threshold
-
-    if (missingBefore <= significantMissing &&
-        missingAfter <= significantMissing) {
-      log.fine(
-        'Requested range [$first, $requestedLast) close enough to current range [$currentFirst, $currentLast). '
-        'Skipping fetch (missingBefore=$missingBefore, missingAfter=$missingAfter, threshold=$significantMissing).',
-      );
-      return;
+    final needed = first + count;
+    if (needed > _agendaLimit) {
+      _agendaLimit = needed;
+      _agendaHorizonDays += 90;
+      _loadAgenda(triggerSync: false);
+    } else if (!state.agendaDoneEnd) {
+      // JOIN multiplication: need more raw rows to get enough unique threads
+      _agendaLimit += 50;
+      _agendaHorizonDays += 90;
+      _loadAgenda(triggerSync: false);
     }
-
-    // Expand requested range by 15% in both directions
-    final buffer = (count * 0.15).ceil();
-    final expandedFirst = first - buffer;
-    final expandedCount = count + (2 * buffer);
-
-    log.fine(
-      'Expanding requested range [$first, ${first + count}) by 15% to [$expandedFirst, ${expandedFirst + expandedCount})',
-    );
-
-    final moveStart = state.doneStart
-        ? 0
-        : expandedFirst - state.first; // negative = need before
-    final moveEnd = state.doneEnd
-        ? 0
-        : expandedFirst -
-              state.first +
-              expandedCount -
-              state.agendaItems.length; // positive = need after
-
-    log.info(
-      '[fetchMoreAgendaItems] expandedFirst=$expandedFirst, expandedCount=$expandedCount, '
-      'moveStart=$moveStart, moveEnd=$moveEnd, doneStart=${state.doneStart}, doneEnd=${state.doneEnd}, '
-      'previous=${state.previous}, next=${state.next}, range=${state.range}',
-    );
-
-    final currentRange = state.range!;
-
-    // Calculate new start and end dates
-    // Strategy: Use previous/next boundaries when available, otherwise keep current boundary
-    // This prevents oscillation from proportion-based calculations
-
-    Date newStart = currentRange.start;
-    Date newEnd = currentRange.end;
-
-    // Calculate density-based expansion to satisfy BidirectionalList in fewer rounds
-    final rangeDays = currentRange.end
-        .toDateTime()
-        .difference(currentRange.start.toDateTime())
-        .inDays;
-    final itemsPerDay = rangeDays > 0
-        ? state.agendaItems.length / rangeDays
-        : 1.0;
-
-    // Expand backward if needed
-    if (moveStart < 0 && !state.doneStart) {
-      final itemsNeeded = -moveStart;
-      final daysNeeded = itemsPerDay > 0
-          ? (itemsNeeded / itemsPerDay).ceil()
-          : 7;
-      final daysToExpand = daysNeeded.clamp(7, 90);
-      newStart = currentRange.start.addDays(-daysToExpand);
-      log.fine(
-        'Expanding start by $daysToExpand days (need ~$itemsNeeded items, '
-        'density=${itemsPerDay.toStringAsFixed(1)}/day): $newStart',
-      );
-
-      // If we know the previous activity's date and our expansion doesn't
-      // reach it, jump to include it. Without this, the range expands
-      // incrementally but never reaches `previous`, leaving doneStart=false
-      // and showing an infinite spinner.
-      if (state.previous != null && newStart.isAfter(state.previous!)) {
-        log.fine(
-          'Jumping start to previous activity date ${state.previous} '
-          '(was $newStart)',
-        );
-        newStart = state.previous!;
-      }
-    }
-
-    // Expand forward if needed
-    if (moveEnd > 0 && !state.doneEnd) {
-      final itemsNeeded = moveEnd;
-      final daysNeeded = itemsPerDay > 0
-          ? (itemsNeeded / itemsPerDay).ceil()
-          : 7;
-      final daysToExpand = daysNeeded.clamp(7, 90);
-      newEnd = currentRange.end.addDays(daysToExpand);
-      log.fine(
-        'Expanding end by $daysToExpand days (need ~$itemsNeeded items, '
-        'density=${itemsPerDay.toStringAsFixed(1)}/day): $newEnd',
-      );
-
-      // Same jump logic as backward expansion
-      if (state.next != null && newEnd.isBefore(state.next!)) {
-        log.fine(
-          'Jumping end to next activity date ${state.next} '
-          '(was $newEnd)',
-        );
-        newEnd = state.next!.addDays(1);
-      }
-    }
-
-    final newRange = CustomBoundedDateRange(newStart, newEnd);
-    log.fine(
-      'Expanding range from ${currentRange.start}-${currentRange.end} to ${newRange.start}-${newRange.end}',
-    );
-    await _loadSchedule(newRange);
   }
 
   @override
@@ -201,24 +183,114 @@ class PriorityBloc extends Cubit<PriorityState> {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
-    _activitySubscription?.cancel();
+    _threadSubscription?.cancel();
     _agendaSubscription?.cancel();
+    _activityFeedSubscription?.cancel();
     _tagsSubscription?.cancel();
     return super.close();
   }
 
   PriorityId get currentId => state.context.id;
 
-  /// Optimistically remove an activity from the agenda for instant UI feedback.
+  /// Optimistically remove a thread from the agenda for instant UI feedback.
   /// The stream-based update will confirm the same state when it catches up.
-  void optimisticallyRemoveActivity(ActivityId id) {
+  /// Keeps link schedule instances so they remain at their scheduled times.
+  void optimisticallyRemoveThread(ThreadId id) {
+    _optimisticTimestamp = DateTime.now();
     final updatedItems = state.agendaItems
         .where((item) => item.when(
               header: (_) => true,
-              activity: (a) => a.activity.id != id,
+              activity: (a) =>
+                  a.thread.id != id || a.thread.isLinkScheduleInstance,
             ))
         .toList();
     emit(state.copyWith(agendaItems: updatedItems));
+  }
+
+  /// Optimistically update a thread in the agenda for instant UI feedback.
+  /// The stream-based update will confirm the same state when it catches up.
+  void optimisticallyUpdateThread(Thread updatedThread) {
+    _optimisticTimestamp = DateTime.now();
+
+    final foundInAgenda = state.agendaItems.any((item) => item.when(
+      header: (_) => false,
+      activity: (a) => a.thread.id == updatedThread.id,
+    ));
+
+    List<AgendaItem> updatedAgendaItems;
+    if (foundInAgenda) {
+      // Thread is in agenda — check if it should be removed or updated.
+      final shouldRemove = !updatedThread.todo &&
+          updatedThread.at == null &&
+          updatedThread.on == null;
+      if (shouldRemove) {
+        // Thread was only in agenda as a todo — remove it
+        updatedAgendaItems = state.agendaItems
+            .where((item) => item.when(
+                  header: (_) => true,
+                  activity: (a) => a.thread.id != updatedThread.id,
+                ))
+            .toList();
+      } else {
+        // In-place replacement (still belongs in agenda)
+        updatedAgendaItems = state.agendaItems.map((item) {
+          return item.when(
+            header: (_) => item,
+            activity: (a) => a.thread.id == updatedThread.id
+                ? AgendaThreadItem(updatedThread, now: a.now)
+                : item,
+          );
+        }).toList();
+      }
+    } else if (updatedThread.todo) {
+      // Thread becoming a todo but not in agenda yet — insert it after
+      // the last existing todo in today's section.
+      updatedAgendaItems = List<AgendaItem>.from(state.agendaItems);
+      final today = Date.today();
+      int insertIndex = -1;
+      bool inTodaySection = false;
+      for (int i = 0; i < updatedAgendaItems.length; i++) {
+        final item = updatedAgendaItems[i];
+        if (item is AgendaHeaderItem && item.date != null) {
+          if (!item.date!.isAfter(today)) {
+            inTodaySection = true;
+            if (insertIndex == -1) insertIndex = i + 1;
+          } else if (inTodaySection) {
+            break; // Passed today's section
+          }
+        }
+        if (inTodaySection &&
+            item is AgendaThreadItem &&
+            item.thread.todo &&
+            !item.thread.isLinkScheduleInstance) {
+          insertIndex = i + 1;
+        }
+      }
+      if (insertIndex == -1) {
+        // No today header found — insert after the first header
+        insertIndex = updatedAgendaItems.isNotEmpty ? 1 : 0;
+      }
+      updatedAgendaItems.insert(
+        insertIndex,
+        AgendaThreadItem(updatedThread),
+      );
+    } else {
+      updatedAgendaItems = state.agendaItems;
+    }
+
+    final updatedFeedItems = state.activityFeedItems.map((item) {
+      return item.when(
+        header: (_) => item,
+        activity: (a) => a.thread.id == updatedThread.id
+            ? AgendaThreadItem(updatedThread)
+            : item,
+      );
+    }).toList();
+
+    emit(state.copyWith(
+      agendaItems: updatedAgendaItems,
+      activityFeedItems: updatedFeedItems,
+    ));
   }
 
   Future<void> setPriority(Priority newPriority) async {
@@ -233,8 +305,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       subscription.cancel();
     }
     _subscriptions.clear();
-    _activitySubscription?.cancel();
+    _threadSubscription?.cancel();
     _agendaSubscription?.cancel();
+    _activityFeedSubscription?.cancel();
     _tagsSubscription?.cancel();
 
     // Load or create draft for new priority
@@ -242,7 +315,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info(
       '[setPriority] Switching to priority: ${newPriority.id} (${newPriority.title})',
     );
-    final drafts = await Activity.get(
+    final drafts = await Thread.get(
       priorityId: newPriority.id,
       draft: true,
       archived: null, // Get both archived and non-archived
@@ -251,24 +324,24 @@ class PriorityBloc extends Cubit<PriorityState> {
     drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     final existingDraft = drafts.firstOrNull;
 
-    Activity newDraft;
+    Thread newDraft;
     if (existingDraft != null) {
       newDraft = existingDraft;
       log.info(
         '[setPriority] Loaded existing draft: id=${existingDraft.id}, priority=${existingDraft.priority.id} (${existingDraft.priority.title}), archived=${existingDraft.archivedAt != null}',
       );
     } else {
-      newDraft = Activity(priority: newPriority, draft: true);
+      newDraft = Thread(priority: newPriority, draft: true);
       log.info(
         '[setPriority] Creating new draft for priority: id=${newDraft.id}, priority=${newPriority.id} (${newPriority.title})',
       );
     }
 
-    // Load draft note for the draft activity (also load archived notes)
+    // Load draft note for the draft thread (also load archived notes)
     // We get all draft notes (archived or not) and take the latest one
     final draftNotes =
         await (Store.get.select(Store.get.notes)
-              ..where((tbl) => tbl.activityId.equalsValue(newDraft.id))
+              ..where((tbl) => tbl.threadId.equalsValue(newDraft.id))
               ..where((tbl) => tbl.draft.equals(true))
               ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)])
               ..limit(1))
@@ -277,12 +350,12 @@ class PriorityBloc extends Cubit<PriorityState> {
         ? null
         : Note(
             id: draftNotes.first.id,
-            activityId: draftNotes.first.activityId,
+            threadId: draftNotes.first.threadId,
             authorId: draftNotes.first.authorId,
             draft: draftNotes.first.draft,
             private: draftNotes.first.private,
             content: draftNotes.first.content,
-            links: draftNotes.first.links,
+            actions: draftNotes.first.actions,
             mentions: draftNotes.first.mentions,
             createdAt: draftNotes.first.createdAt,
             sourceCreatedAt: draftNotes.first.sourceCreatedAt,
@@ -292,13 +365,13 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     if (draftNote != null) {
       log.info(
-        '[setPriority] Loaded draft note: id=${draftNote.id}, activityId=${draftNote.activityId}, content="${draftNote.content?.substring(0, draftNote.content!.length > 50 ? 50 : draftNote.content!.length) ?? ''}", archived=${draftNote.archivedAt != null}',
+        '[setPriority] Loaded draft note: id=${draftNote.id}, threadId=${draftNote.threadId}, content="${draftNote.content?.substring(0, draftNote.content!.length > 50 ? 50 : draftNote.content!.length) ?? ''}", archived=${draftNote.archivedAt != null}',
       );
     } else {
       // Create draft note in memory (will be saved when content is added)
-      draftNote = Note.draft(activityId: newDraft.id);
+      draftNote = Note.draft(threadId: newDraft.id);
       log.info(
-        '[setPriority] Created draft note in state: id=${draftNote.id}, activityId=${newDraft.id}',
+        '[setPriority] Created draft note in state: id=${draftNote.id}, threadId=${newDraft.id}',
       );
     }
 
@@ -315,52 +388,62 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadPriority();
   }
 
-  void setActivity(Activity? activity) {
-    if (state.activity == activity) {
+  /// Which list the user last selected a thread from.
+  /// Used by Previous/Next Thread commands to determine navigation list.
+  ThreadListSource? threadListSource;
+
+  void setThread(Thread? thread, {ThreadListSource? source}) {
+    if (source != null) {
+      threadListSource = source;
+    }
+    if (thread == null) {
+      threadListSource = null;
+    }
+    if (state.thread == thread) {
       return;
     }
-    emit(state.copyWith(activity: Value(activity)));
+    emit(state.copyWith(thread: Value(thread)));
 
-    // Manage activity subscription
-    if (activity != null) {
-      _loadActivity(activity);
+    // Manage thread subscription
+    if (thread != null) {
+      _loadThread(thread);
     } else {
-      _activitySubscription?.cancel();
-      _activitySubscription = null;
+      _threadSubscription?.cancel();
+      _threadSubscription = null;
     }
   }
 
-  /// Resets the draft to a new empty activity for the current priority.
-  /// This should be called when navigating to create a new activity.
+  /// Resets the draft to a new empty thread for the current priority.
+  /// This should be called when navigating to create a new thread.
   /// Reuses the existing draft ID to minimize archived drafts.
   void resetDraft() {
     final clearedDraft = state.draft.copyWith(
-      type: ActivityType
-          .note, // Default to note type (doesn't require scheduling)
       title: const Value(null),
       at: const Value(null),
       on: const Value(null),
       duration: const Value(null),
-      assigneeId: null,
       preview: const Value(null),
     );
     emit(state.copyWith(draft: clearedDraft));
   }
 
-  /// Updates the draft activity and optionally the note, saving both to the database.
+  /// Updates the draft thread and optionally the note, saving both to the database.
   /// This provides instant UI updates while persisting changes.
   ///
-  /// [activity] - Required activity to update
-  /// [note] - Optional note to save (must be a draft note for this activity)
-  Future<void> updateDraft(Activity activity, {Note? note}) async {
-    if (activity.id != state.draft.id) {
+  /// [thread] - Required thread to update
+  /// [note] - Optional note to save (must be a draft note for this thread)
+  Future<void> updateDraft(Thread thread, {Note? note}) async {
+    if (thread.id != state.draft.id) {
       log.warning(
-        '[updateDraft] Attempted to update draft with mismatched activity ID: ${activity.id} (expected ${state.draft.id})',
+        '[updateDraft] Attempted to update draft with mismatched thread ID: ${thread.id} (expected ${state.draft.id})',
       );
       return;
     }
 
-    emit(state.copyWith(draft: activity));
+    final threadChanged = thread != state.draft;
+    _draftModified = true;
+
+    emit(state.copyWith(draft: thread));
 
     if (note?.id == state.draftNote.id) {
       emit(state.copyWith(draftNote: note));
@@ -370,36 +453,38 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     }
 
-    await activity.save();
-    if (note != null) {
+    if (threadChanged) {
+      await thread.save();
+    }
+    if (note != null && note != state.draftNote) {
       log.info(
-        '[updateDraft] Saving note: id=${note.id}, activityId=${note.activityId}, content length=${note.content?.length ?? 0}',
+        '[updateDraft] Saving note: id=${note.id}, threadId=${note.threadId}, content length=${note.content?.length ?? 0}',
       );
-      await note.save();
+      await note.save(pushToRemote: false);
     }
   }
 
-  /// Gets an agenda item relative to the current activity by offset.
+  /// Gets an agenda item relative to the current thread by offset.
   ///
   /// [offset] - Positive for forward, negative for backward (e.g., +1 = next, -1 = previous)
-  /// [includeActivity] - Include ActivityAgendaItem in navigation (default: true)
+  /// [includeThread] - Include AgendaThreadItem in navigation (default: true)
   /// [includePriority] - Include PriorityAgendaItem in navigation (default: false)
   /// [includeDate] - Include DateAgendaItem in navigation (default: false)
   ///
   /// Returns the agenda item at the offset position. Boundary behavior:
   /// - If offset would go out of bounds but items exist in that direction, returns the furthest item
   /// - If already at the furthest item and trying to move further, returns null
-  /// - If no current activity is set, navigates relative to the "now" header position
+  /// - If no current thread is set, navigates relative to the "now" header position
   AgendaItem? getAgendaItem(
     int offset, {
-    bool includeActivity = true,
+    bool includeThread = true,
     bool includePriority = false,
     bool includeDate = false,
   }) {
     int currentIndex = -1;
 
-    if (state.activity == null) {
-      // No activity selected: start from the "now" header.
+    if (state.thread == null) {
+      // No thread selected: start from the "now" header.
       // There can be two now headers; use the last one (labeled "Now").
       for (int i = 0; i < state.agendaItems.length; i++) {
         final item = state.agendaItems[i];
@@ -411,13 +496,13 @@ class PriorityBloc extends Cubit<PriorityState> {
         currentIndex = 0;
       }
     } else {
-      // Activity selected: find its index
+      // Thread selected: find its index
       for (int i = 0; i < state.agendaItems.length; i++) {
-        final activity = state.agendaItems[i].when<Activity?>(
+        final thread = state.agendaItems[i].when<Thread?>(
           header: (header) => null,
-          activity: (agendaActivity) => agendaActivity.activity,
+          activity: (agendaItem) => agendaItem.thread,
         );
-        if (activity?.id == state.activity!.id) {
+        if (thread?.id == state.thread!.id) {
           currentIndex = i;
           break;
         }
@@ -430,7 +515,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Helper to check if an item matches the filter criteria
     bool matchesFilter(AgendaItem item) {
       return item.when<bool>(
-        activity: (agendaActivity) => includeActivity,
+        activity: (agendaItem) => includeThread,
         header: (header) =>
             (header.date != null && includeDate) ||
             (header.date == null && includePriority),
@@ -469,6 +554,82 @@ class PriorityBloc extends Cubit<PriorityState> {
     return state.agendaItems[targetIndex];
   }
 
+  /// Gets an activity feed item relative to the current thread by offset.
+  /// Mirrors [getAgendaItem] but operates on [state.activityFeedItems].
+  AgendaItem? getActivityFeedItem(int offset) {
+    final items = state.activityFeedItems;
+    if (items.isEmpty) return null;
+
+    int currentIndex = -1;
+
+    if (state.thread == null) {
+      // No thread selected: start from index 0 (most recent)
+      currentIndex = 0;
+      // If first item is a header, start before it so offset=1 finds first thread
+      if (items.first is AgendaHeaderItem) {
+        currentIndex = -1;
+      }
+    } else {
+      // Thread selected: find its index
+      for (int i = 0; i < items.length; i++) {
+        final thread = items[i].when<Thread?>(
+          header: (_) => null,
+          activity: (a) => a.thread,
+        );
+        if (thread?.id == state.thread!.id) {
+          currentIndex = i;
+          break;
+        }
+      }
+      if (currentIndex == -1) {
+        return null;
+      }
+    }
+
+    // Navigate through items, skipping headers
+    final direction = offset > 0 ? 1 : -1;
+    int targetIndex = currentIndex;
+    int moved = 0;
+    int? lastValidIndex;
+
+    while (moved != offset) {
+      final nextIndex = targetIndex + direction;
+
+      if (nextIndex < 0 || nextIndex >= items.length) {
+        if (lastValidIndex != null && lastValidIndex != currentIndex) {
+          return items[lastValidIndex];
+        }
+        return null;
+      }
+
+      targetIndex = nextIndex;
+
+      // Only navigate threads (skip headers)
+      if (items[targetIndex] is AgendaThreadItem) {
+        lastValidIndex = targetIndex;
+        moved += direction;
+      }
+    }
+
+    return items[targetIndex];
+  }
+
+  /// Determines which list to navigate based on prior context.
+  /// If the user previously selected from a list, use that.
+  /// Otherwise, prefer agenda if the current thread is in it.
+  ThreadListSource resolveThreadListSource() {
+    if (threadListSource != null) return threadListSource!;
+    // Check if current thread is in the agenda
+    if (state.thread != null) {
+      final inAgenda = state.agendaItems.any((item) => item.when(
+        header: (_) => false,
+        activity: (a) => a.thread.id == state.thread!.id,
+      ));
+      if (inAgenda) return ThreadListSource.agenda;
+    }
+    return ThreadListSource.activityFeed;
+  }
+
   void _loadPriority() {
     final priorityToLoad = state.targetPriority ?? state.context;
 
@@ -489,13 +650,13 @@ class PriorityBloc extends Cubit<PriorityState> {
         }
       }),
     );
-    if (state.activity != null) {
-      _loadActivity(state.activity!);
+    if (state.thread != null) {
+      _loadThread(state.thread!);
     }
 
     // Watch tags for the priority
     _tagsSubscription?.cancel();
-    _tagsSubscription = Activity.watchTagsForPriority(priorityToLoad.path)
+    _tagsSubscription = Thread.watchTagsForPriority(priorityToLoad.path)
         .listen((tags) {
           // Common tags (excluding action tags)
           final commonTagsFiltered = tags
@@ -536,66 +697,70 @@ class PriorityBloc extends Cubit<PriorityState> {
       }),
     );
 
-    _loadSchedule(
-      state.range ??
-          CustomBoundedDateRange(
-            Date.today()
-                .toDateTime()
-                .subtract(const Duration(days: 45))
-                .toDate(),
-            Date.today().toDateTime().add(const Duration(days: 14)).toDate(),
-          ),
-      firstDate: Date.today(),
-    );
+    _agendaLimit = 50;
+    _agendaHorizonDays = 90;
+    _loadAgenda();
+
+    _activityFeedLimit = 50;
+    _loadActivityFeed();
   }
 
-  void _loadActivity(Activity activity) {
-    // Cancel existing activity subscription
-    _activitySubscription?.cancel();
+  void _loadThread(Thread thread) {
+    // Cancel existing thread subscription
+    _threadSubscription?.cancel();
 
-    // Watch the activity
-    _activitySubscription = Activity.watchOne(activity.id).listen((
-      watchedActivity,
+    // Watch the thread
+    _threadSubscription = Thread.watchOne(thread.id).listen((
+      watchedThread,
     ) {
-      emit(state.copyWith(activity: Value(watchedActivity)));
+      emit(state.copyWith(thread: Value(watchedThread)));
     });
   }
 
-  /// Loads draft from database for the given priority
+  /// Loads draft from database for the given priority.
+  /// Skips if the draft has already been modified by user actions to avoid
+  /// overwriting user-initiated changes with stale DB state.
   Future<void> _loadDraft(Priority priority) async {
-    final existingDraft = await Activity.getDraftByPriority(priority.id);
+    final existingDraft = await Thread.getDraftByPriority(priority.id);
     if (existingDraft != null) {
+      if (_draftModified) return;
       emit(state.copyWith(draft: existingDraft));
     }
   }
 
-  /// Adds an activity by converting the current draft to a non-draft.
+  /// Adds a thread by converting the current draft to a non-draft.
   /// Creates a fresh draft for the priority afterward.
   /// If note is provided, converts it from draft to published and asynchronously generates a title.
-  /// Returns the saved activity.
-  Future<Activity> add(Activity activity, {Note? note}) async {
+  /// Returns the saved thread.
+  Future<Thread> add(Thread thread, {Note? note}) async {
     // Convert the draft to a non-draft
-    final savedActivity = activity.copyWith(draft: false);
-    await savedActivity.save();
+    final savedThread = thread.copyWith(draft: false);
+    await savedThread.save();
 
     // Convert draft note to published if provided
     if (note != null &&
         note.content != null &&
         note.content!.trim().isNotEmpty) {
-      final publishedNote = note.copyWith(
-        activityId: savedActivity.id,
+      var publishedNote = note.copyWith(
+        threadId: savedThread.id,
         draft: false,
       );
+
+      // If the thread is a task, assign the note to the current user
+      if (savedThread.todo) {
+        publishedNote = publishedNote.assignTo(Base.actorId);
+      }
+
       await publishedNote.save();
 
       // Asynchronously generate a better title using AI (fire and forget)
-      // The activity is already saved with a fallback title, so this update
+      // The thread is already saved with a fallback title, so this update
       // will happen in the background without blocking the UI
-      savedActivity
+      savedThread
           .generateTitle(note.content!)
           .then((title) async {
-            if (title != savedActivity.title) {
-              await savedActivity.copyWith(title: Value(title)).save();
+            if (title != savedThread.title) {
+              await savedThread.copyWith(title: Value(title)).save();
             }
           })
           .catchError((Object e) {
@@ -604,263 +769,210 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     // Create fresh draft for the priority
-    final newDraft = Activity(priority: activity.priority, draft: true);
+    final newDraft = Thread(priority: thread.priority, draft: true);
     emit(
       state.copyWith(
         draft: newDraft,
-        draftNote: Note.draft(activityId: newDraft.id),
+        draftNote: Note.draft(threadId: newDraft.id),
       ),
     );
 
-    return savedActivity;
+    return savedThread;
   }
 
-  Future<void> _loadSchedule(BoundedDateRange range, {Date? firstDate}) {
+  void _loadAgenda({bool triggerSync = true}) {
     final priorityToLoad = state.targetPriority ?? state.context;
 
-    log.fine('Loading schedule (${range.start} to ${range.end})');
+    log.fine('Loading agenda for priority ${priorityToLoad.id}');
     _agendaSubscription?.cancel();
 
-    // Ensure the new range overlaps with the previous one by at least one day
-    // Find the header at the scroll anchor position (BidirectionalList index 0)
-    var overlappingIndex = -1;
-    if (state.range != null && range.start != state.range?.start) {
-      // The scroll anchor is at agendaItems[0 - state.first]
-      final anchorIndex = 0 - state.first;
-
-      // Find the nearest header at or after the anchor position
-      if (anchorIndex >= 0 && anchorIndex < state.agendaItems.length) {
-        overlappingIndex = state.agendaItems.indexWhere(
-          (item) => item is AgendaHeaderItem && item.date != null,
-          anchorIndex, // Start search from anchor position
+    _agendaSubscription = Thread.watch(
+      priorityPath: priorityToLoad.path,
+      archived: state.showArchived,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      search: state.search.isNotEmpty ? state.search : null,
+      order: ThreadOrder.sorted,
+      limit: _agendaLimit,
+      includeUnscheduled: false,
+      range: CustomBoundedDateRange(
+        Date.today(),
+        Date.today().addDays(_agendaHorizonDays),
+      ),
+    ).transform(
+      ExpiringStreamTransformer((result) {
+        // Re-evaluate every minute on the minute to update time-dependent UI
+        final now = Time.now();
+        final expiry = now.add(
+          Duration(
+            seconds: 60 - now.second,
+            milliseconds: -now.millisecond,
+          ),
         );
+        return ExpiringResult(value: result, expiry: expiry);
+      }),
+    ).debounceTime(const Duration(milliseconds: 100)).listen((result) {
+      final (:threads, :rawRowCount) = result;
+
+      // After a reorder or optimistic update, suppress agenda rebuilds
+      // briefly so the optimistic state stays visible until all DB writes
+      // (thread, schedule, tags) are complete and the stream settles.
+      final now = DateTime.now();
+
+      // Time-based suppression for optimistic thread updates (non-reorder).
+      final suppressOptimistic = _optimisticTimestamp != null &&
+          now.difference(_optimisticTimestamp!) <
+              const Duration(milliseconds: 500);
+
+      // Data-driven suppression for reorders: keep reorderViewItems until
+      // the stream data includes the reordered thread at its expected order.
+      // Stale events are prevented by cancelling and restarting the
+      // subscription in moveAgendaItem, so no time-based fallback is needed.
+      final bool suppressReorder;
+      if (_pendingReorderOrder != null) {
+        final (threadId, expectedOrder) = _pendingReorderOrder!;
+        final settled = threads.any(
+          (t) => t.id == threadId && t.order.value == expectedOrder,
+        );
+        suppressReorder = !settled;
+        if (settled) {
+          _pendingReorderOrder = null;
+          _reorderTimestamp = null;
+        }
+      } else {
+        suppressReorder = false;
       }
 
-      // Fallback: if no header found at/after anchor, find the last header before it
-      if (overlappingIndex == -1 && anchorIndex > 0) {
-        for (var i = anchorIndex - 1; i >= 0; i--) {
-          if (state.agendaItems[i] is AgendaHeaderItem &&
-              (state.agendaItems[i] as AgendaHeaderItem).date != null) {
-            overlappingIndex = i;
-            break;
-          }
-        }
-      }
-    }
-    Date? overlappingDate;
-    if (overlappingIndex != -1) {
-      overlappingDate = state.agendaItems[overlappingIndex].when<Date?>(
-        header: (header) => header.date,
-        activity: (activity) => null,
+      final suppressRebuild = suppressReorder || suppressOptimistic;
+
+      log.info(
+        '[_loadAgenda] stream fired: suppress=$suppressRebuild '
+        '(reorder=$suppressReorder optimistic=$suppressOptimistic) '
+        'reorderAge=${_reorderTimestamp != null ? now.difference(_reorderTimestamp!).inMilliseconds : "null"}ms '
+        'hasReorderViewItems=${state.reorderViewItems != null} '
+        'pendingOrder=${_pendingReorderOrder?.$2}',
       );
-      if (overlappingDate != null && !range.includes(overlappingDate)) {
-        if (overlappingDate >= range.end) {
-          log.fine('Extending $range to include $overlappingDate');
-          // If the new range ends before the old range, extend it to overlap by one day
-          range = CustomBoundedDateRange(
-            range.start,
-            overlappingDate.addDays(1),
-          );
-        } else {
-          overlappingIndex = state.agendaItems.lastIndexWhere(
-            (item) => item is AgendaHeaderItem && item.date != null,
-          );
-          overlappingDate = state.agendaItems[overlappingIndex].when<Date?>(
-            header: (header) => header.date,
-            activity: (activity) => null,
-          );
-          if (overlappingDate != null && !range.includes(overlappingDate)) {
-            log.fine('Extending $range to include $overlappingDate');
-            // If the new range starts after the old range, extend it to overlap by one day
-            range = CustomBoundedDateRange(overlappingDate, range.end);
+
+      final agendaItems = suppressRebuild
+          ? state.agendaItems
+          : PriorityState._makeAgenda(threads, context: priorityToLoad, horizonDays: _agendaHorizonDays);
+
+      emit(
+        state.copyWith(
+          // If switching priorities, update context atomically with new agenda
+          context: state.targetPriority,
+          agendaItems: agendaItems,
+          agendaDoneEnd: false,
+          // Keep reorderViewItems during suppress, clear when real data arrives
+          reorderViewItems: suppressRebuild
+              ? const Value.absent()
+              : const Value(null),
+          // Clear targetPriority after switching
+          targetPriority: state.targetPriority != null
+              ? const Value(null)
+              : const Value.absent(),
+        ),
+      );
+    });
+
+    // Trigger sync
+    if (triggerSync) {
+      Thread.pullAgenda(priorityToLoad.path, archived: state.showArchived == true);
+    }
+  }
+
+  void _loadActivityFeed({bool triggerSync = true}) {
+    final priorityToLoad = state.targetPriority ?? state.context;
+    _activityFeedSubscription?.cancel();
+    _activityFeedSubscription = Thread.watch(
+      order: ThreadOrder.reverse,
+      priorityPath: priorityToLoad.path,
+      archived: state.showArchived,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      search: state.search.isNotEmpty ? state.search : null,
+      limit: _activityFeedLimit,
+    ).listen((result) {
+      final (:threads, :rawRowCount) = result;
+      final items = <AgendaItem>[];
+      String? currentBucket;
+      for (final thread in threads) {
+        final (label, bucketDate) = PriorityState._timeAgoBucket(
+          thread.activityAt.toDate(),
+        );
+        if (label != currentBucket) {
+          currentBucket = label;
+          if (label != 'Today') {
+            items.add(AgendaHeaderItem(text: label, date: bucketDate));
           }
         }
+        items.add(AgendaThreadItem(thread));
       }
+      emit(state.copyWith(
+        activityFeedItems: items,
+        activityFeedDoneEnd: rawRowCount < _activityFeedLimit,
+      ));
+    });
+
+    // Trigger sync
+    if (triggerSync) {
+      Thread.pullActivityFeed(priorityToLoad.path, archived: state.showArchived == true);
     }
-    log.fine(
-      'Range: ${range.start} to ${range.end}, overlappingIndex: $overlappingIndex, overlappingDate: $overlappingDate',
-    );
+  }
 
-    log.fine(
-      'Getting activities for priority ${priorityToLoad.id} in range $range',
-    );
-
-    // Create a completer to signal when the first result arrives
-    final completer = Completer<void>();
-
-    // Schedule.watch() uses distinct() to filter duplicate data emissions.
-    // However, PriorityState._makeAgenda() performs time-dependent calculations
-    // using Time.now() for "now" indicator placement and event transitions.
-    // We need to re-evaluate every minute to ensure these calculations use
-    // fresh time values, even when the underlying schedule data hasn't changed.
-    _agendaSubscription =
-        Schedule.watch(
-              range,
-              context: priorityToLoad,
-              archived: state.showArchived,
-              filter: state.filter.isNotEmpty ? state.filter : null,
-              search: state.search.isNotEmpty ? state.search : null,
-            )
-            .transform(
-              ExpiringStreamTransformer((schedule) {
-                // Re-evaluate every minute on the minute to update time-dependent UI
-                final now = Time.now();
-                final expiry = now.add(
-                  Duration(
-                    seconds: 60 - now.second,
-                    milliseconds: -now.millisecond,
-                  ),
-                );
-                return ExpiringResult(value: schedule, expiry: expiry);
-              }),
-            )
-            .debounceTime(const Duration(milliseconds: 100))
-            .listen((schedule) {
-              // Calculate the new first index based on date overlap
-              int first = state.first;
-
-              // If we have an overlapping date, find its new position in the agenda
-              // and adjust first to keep it at the same visual position.
-              // This needs to happen on EVERY emission since sync can insert new items.
-              if (overlappingDate != null) {
-                final newScheduleItems = PriorityState._makeAgenda(
-                  schedule.days,
-                  context: priorityToLoad,
-                );
-                final newIndex = newScheduleItems.indexWhere(
-                  (item) => item.when<bool>(
-                    header: (header) => header.date == overlappingDate,
-                    activity: (activity) => false,
-                  ),
-                );
-                if (newIndex != -1) {
-                  final newFirst = -newIndex;
-                  final firstDelta = (first - newFirst).abs();
-
-                  // Only adjust if the change is significant (> 3 items)
-                  // This prevents thrashing from small position changes
-                  if (firstDelta > 3) {
-                    log.fine(
-                      'Adjusting first from $first to $newFirst to keep anchor at $overlappingDate '
-                      '(delta=$firstDelta, now at index $newIndex)',
-                    );
-                    first = newFirst;
-                  } else {
-                    log.fine(
-                      'Anchor shift small (delta=$firstDelta), keeping first=$first stable',
-                    );
-                  }
-                } else {
-                  // overlappingDate not found in new agenda - reset to 0 (start of list)
-                  log.fine(
-                    'overlappingDate $overlappingDate not found in new agenda, resetting first to 0',
-                  );
-                  first = 0;
-                }
-              }
-
-              // Log anchor mapping and clamp first to valid bounds
-              final newAgenda = PriorityState._makeAgenda(
-                schedule.days,
-                context: priorityToLoad,
-              );
-              if (newAgenda.isNotEmpty) {
-                var anchorIndex = 0 - first;
-                final anchorItem =
-                    anchorIndex >= 0 && anchorIndex < newAgenda.length
-                    ? newAgenda[anchorIndex]
-                    : null;
-                final anchorDescription =
-                    anchorItem?.when(
-                      header: (h) =>
-                          'Header(date=${h.date}, priority=${h.priority?.title})',
-                      activity: (a) =>
-                          'Activity(id=${a.activity.id}, title=${a.activity.title})',
-                    ) ??
-                    'OUT OF BOUNDS';
-                log.info(
-                  '[_loadSchedule] Anchor mapping: first=$first, '
-                  'anchorIndex=$anchorIndex, agendaItems[$anchorIndex]=$anchorDescription',
-                );
-
-                // Clamp first to valid bounds if agenda shrunk
-                if (anchorIndex >= newAgenda.length) {
-                  final oldFirst = first;
-                  // Point anchor to the last valid item
-                  first = -(newAgenda.length - 1);
-                  anchorIndex = 0 - first;
-                  log.info(
-                    '[_loadSchedule] Clamped first from $oldFirst to $first '
-                    '(agenda length=${newAgenda.length}, new anchorIndex=$anchorIndex)',
-                  );
-                } else if (anchorIndex < 0) {
-                  final oldFirst = first;
-                  first = 0;
-                  log.info(
-                    '[_loadSchedule] Clamped first from $oldFirst to $first '
-                    '(anchorIndex was negative)',
-                  );
-                }
-              } else {
-                // Empty agenda - reset first to 0
-                if (first != 0) {
-                  log.info(
-                    '[_loadSchedule] Empty agenda, resetting first from $first to 0',
-                  );
-                  first = 0;
-                }
-              }
-
-              log.info(
-                '[_loadSchedule] Schedule updated: range=${range.start} to ${range.end}, '
-                'first=$first, dayCount=${schedule.days.length}, '
-                'previous=${schedule.previous}, next=${schedule.next}, '
-                'doneStart=${schedule.previous == null}, doneEnd=${schedule.next == null}',
-              );
-
-              emit(
-                state.copyWith(
-                  // If switching priorities, update context atomically with new agenda
-                  context: state.targetPriority,
-                  range: range,
-                  schedule: schedule.days,
-                  first: first,
-                  firstDate: firstDate,
-                  previous: Value(schedule.previous),
-                  next: Value(schedule.next),
-                  // Clear targetPriority after switching
-                  targetPriority: state.targetPriority != null
-                      ? const Value(null)
-                      : const Value.absent(),
-                ),
-              );
-
-              // Complete the future on first result
-              if (!completer.isCompleted) {
-                completer.complete();
-              }
-            });
-
-    return completer.future;
+  Future<void> fetchMoreActivityFeedItems(int first, int count) async {
+    final needed = first + count;
+    if (needed > _activityFeedLimit) {
+      _activityFeedLimit = needed;
+      _loadActivityFeed(triggerSync: false);
+    } else if (!state.activityFeedDoneEnd) {
+      // JOIN multiplication: need more raw rows to get enough unique threads
+      _activityFeedLimit += 50;
+      _loadActivityFeed(triggerSync: false);
+    }
   }
 
   final List<StreamSubscription<void>> _subscriptions;
-  StreamSubscription<void>? _activitySubscription;
+  StreamSubscription<void>? _threadSubscription;
   StreamSubscription<void>? _agendaSubscription;
+  StreamSubscription<void>? _activityFeedSubscription;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
+  int _agendaLimit = 50;
+  int _agendaHorizonDays = 90;
+  int _activityFeedLimit = 50;
+}
+
+/// Provides the [ThreadListSource] to descendant widgets so that
+/// [ChangeCurrentThread] can record which list a thread was selected from.
+class ThreadListSourceProvider extends InheritedWidget {
+  const ThreadListSourceProvider({
+    required this.source,
+    required super.child,
+    super.key,
+  });
+
+  final ThreadListSource source;
+
+  static ThreadListSource? maybeOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<ThreadListSourceProvider>()
+        ?.source;
+  }
+
+  @override
+  bool updateShouldNotify(ThreadListSourceProvider old) =>
+      source != old.source;
 }
 
 class PriorityBlocProvider extends StatefulWidget {
   const PriorityBlocProvider({
     this.priorityId,
-    this.activityId,
+    this.threadId,
     this.priority,
     required this.child,
     super.key,
   });
 
   final PriorityId? priorityId;
-  final ActivityId? activityId;
+  final ThreadId? threadId;
   final Priority? priority;
   final Widget child;
 
@@ -894,12 +1006,12 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
           ? Future.value(widget.priority!)
           : widget.priorityId != null
           ? Priority.getOne(widget.priorityId!)
-          : widget.activityId != null
-          ? Activity.getOne(
-              widget.activityId!,
-            ).then((activity) => activity.priority)
+          : widget.threadId != null
+          ? Thread.getOne(
+              widget.threadId!,
+            ).then((thread) => thread.priority)
           : Future<Priority>.error(
-              'Either priorityId or activityId must be provided',
+              'Either priorityId or threadId must be provided',
             ));
 
       // Success - update theme and create bloc
@@ -913,7 +1025,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     } catch (e, stackTrace) {
       // Level 1 failed - log and try fallback
       log.warning(
-        'Failed to load requested priority (${widget.priorityId ?? widget.activityId}): $e',
+        'Failed to load requested priority (${widget.priorityId ?? widget.threadId}): $e',
         e,
         stackTrace,
       );
@@ -963,7 +1075,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         final priority = widget.priority;
         if (priority == null || result.bloc == null) return;
         result.bloc!.setPriority(priority);
-        // Theme will be updated when new agenda loads (in _loadSchedule)
+        // Theme will be updated when new agenda loads (in _loadAgenda)
       });
     } else if (widget.priorityId != null &&
         widget.priorityId != oldWidget.priorityId) {
@@ -971,7 +1083,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         if (result.bloc == null) return;
         final priority = await Priority.getOne(widget.priorityId!);
         result.bloc!.setPriority(priority);
-        // Theme will be updated when new agenda loads (in _loadSchedule)
+        // Theme will be updated when new agenda loads (in _loadAgenda)
       });
     }
   }

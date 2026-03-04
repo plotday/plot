@@ -4,7 +4,7 @@ import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/state/activity.dart';
+import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -24,18 +24,18 @@ class AddNote extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Try to get ActivityBloc from context before any async operations
-    ActivityBloc? activityBloc;
+    // Try to get ThreadBloc from context before any async operations
+    ThreadBloc? activityBloc;
     try {
-      activityBloc = context.read<ActivityBloc>();
+      activityBloc = context.read<ThreadBloc>();
     } catch (e) {
-      // No ActivityBloc in context
+      // No ThreadBloc in context
       activityBloc = null;
     }
 
     final note = await _note;
 
-    // Use ActivityBloc.add() if available (resets the draft), otherwise save directly
+    // Use ThreadBloc.add() if available (resets the draft), otherwise save directly
     if (activityBloc != null) {
       await activityBloc.add(note);
     } else {
@@ -65,7 +65,7 @@ class AssignNote extends NoteCommand {
         title: 'Assign to Me',
         eventObject: EventObject.note,
         eventAction: EventAction.updated,
-        icon: PlotIcon.now,
+        icon: PlotIcon.todo,
       );
 
   final ActorId? actorId;
@@ -84,7 +84,7 @@ class AssignNote extends NoteCommand {
         return const CommandMessage('Already assigned');
       }
 
-      // Assign the note by adding Tag.now for the actor
+      // Assign the note by adding Tag.todo for the actor
       final updatedNote = note.assignTo(targetActorId);
       await updatedNote.save();
 
@@ -96,83 +96,110 @@ class AssignNote extends NoteCommand {
   }
 }
 
-class StartTask extends NoteCommand {
-  StartTask(super.note)
-    : super(
-        title: 'Make a Task',
+enum _SelfTaskState { unassigned, todo, done }
+
+class SelfTaskAction extends NoteCommand {
+  SelfTaskAction(super.note)
+    : _state = _computeState(note),
+      super(
+        title: _titleForState(_computeState(note)),
         eventObject: EventObject.note,
-        eventAction: EventAction.started,
-        icon: PlotIcon.now,
+        eventAction: _eventActionForState(_computeState(note)),
+        icon: _iconForState(_computeState(note)),
+        hoverIcon: _hoverIconForState(_computeState(note)),
       );
+
+  final _SelfTaskState _state;
+
+  static _SelfTaskState _computeState(Note note) {
+    final actorId = Base.actorId;
+    if (note.isCompletedBy(actorId)) return _SelfTaskState.done;
+    if (note.isAssignedTo(actorId)) return _SelfTaskState.todo;
+    return _SelfTaskState.unassigned;
+  }
+
+  static String _titleForState(_SelfTaskState state) => switch (state) {
+    _SelfTaskState.unassigned => 'Make a Task',
+    _SelfTaskState.todo => 'Mark Done',
+    _SelfTaskState.done => 'Remove Done',
+  };
+
+  static EventAction _eventActionForState(_SelfTaskState state) => switch (state) {
+    _SelfTaskState.unassigned => EventAction.started,
+    _SelfTaskState.todo => EventAction.finished,
+    _SelfTaskState.done => EventAction.untagged,
+  };
+
+  static IconData _iconForState(_SelfTaskState state) => switch (state) {
+    _SelfTaskState.unassigned => PlotIcon.selfTask,
+    _SelfTaskState.todo => PlotIcon.selfTaskTodo,
+    _SelfTaskState.done => PlotIcon.selfTaskDone,
+  };
+
+  static IconData? _hoverIconForState(_SelfTaskState state) => switch (state) {
+    _SelfTaskState.unassigned => null,
+    _SelfTaskState.todo => PlotIcon.selfTaskHover,
+    _SelfTaskState.done => PlotIcon.selfTaskDoneHover,
+  };
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final actorId = Base.actorId;
+      final Note updatedNote;
 
-      // Check if already assigned
-      if (note.isAssignedTo(actorId)) {
-        return const CommandMessage('Already assigned');
+      switch (_state) {
+        case _SelfTaskState.unassigned:
+          // Assign to self
+          updatedNote = note.assignTo(actorId);
+        case _SelfTaskState.todo:
+          // Mark done
+          updatedNote = note.completeFor(actorId);
+        case _SelfTaskState.done:
+          // Remove done (reverts to non-task, does NOT re-add todo)
+          updatedNote = note.setTag(Tag.done, actorId, false);
       }
 
-      // Assign the note by adding Tag.now for current user
-      final updatedNote = note.assignTo(actorId);
       await updatedNote.save();
-
       return const CommandDone();
     } catch (e, stackTrace) {
-      log.severe('Error in StartNote: $e', e, stackTrace);
-      return CommandMessage('Failed to start note', isError: true);
+      log.severe('Error in SelfTaskAction: $e', e, stackTrace);
+      return CommandMessage('Failed to update task', isError: true);
     }
   }
 }
 
-class FinishTask extends NoteCommand {
-  FinishTask(super.note, {this.actorId})
+class ToggleSelfTask extends NoteCommand {
+  ToggleSelfTask(super.note)
     : super(
-        title: 'Mark Done',
+        title: 'Add Task',
         eventObject: EventObject.note,
-        eventAction: EventAction.finished,
-        icon: note.isAssignedTo(actorId ?? Base.actorId)
-            ? FontAwesomeIcons.circle
-            : PlotIcon.done,
-        hoverIcon: note.isAssignedTo(actorId ?? Base.actorId)
-            ? FontAwesomeIcons.circleCheck
-            : null,
+        eventAction: note.isAssignedTo(Base.actorId)
+            ? EventAction.untagged
+            : EventAction.tagged,
+        icon: PlotIcon.selfTask,
       );
-
-  final ActorId? actorId;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final ActorId targetActorId;
-      final assignees = note.activeAssignees;
-
-      if (actorId != null) {
-        // Explicit actor specified
-        targetActorId = actorId!;
-      } else if (assignees.length == 1) {
-        // Single assignee: complete for them (even if different user)
-        targetActorId = assignees.first;
-      } else {
-        // Multiple (or zero) assignees: complete for current user
-        targetActorId = Base.actorId;
+      ThreadBloc? activityBloc;
+      try {
+        activityBloc = context.read<ThreadBloc>();
+      } catch (e) {
+        activityBloc = null;
       }
 
-      // Check if already completed by this actor
-      if (note.isCompletedBy(targetActorId)) {
-        return const CommandMessage('Already marked as done');
+      final updatedNote = note.toggleTag(Tag.todo, Base.actorId);
+      if (activityBloc != null &&
+          activityBloc.state.draft.id == updatedNote.id) {
+        await activityBloc.updateDraft(updatedNote);
       }
-
-      // Complete the note for this actor (replaces Tag.now with Tag.done)
-      final updatedNote = note.completeFor(targetActorId);
       await updatedNote.save();
-
       return const CommandDone();
     } catch (e, stackTrace) {
-      log.severe('Error in FinishNote: $e', e, stackTrace);
-      return CommandMessage('Failed to finish note', isError: true);
+      log.severe('Error in ToggleSelfTask: $e', e, stackTrace);
+      return CommandMessage('Failed to toggle task', isError: true);
     }
   }
 }
@@ -194,9 +221,9 @@ class ToggleNoteTag extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      ActivityBloc? activityBloc;
+      ThreadBloc? activityBloc;
       try {
-        activityBloc = context.read<ActivityBloc>();
+        activityBloc = context.read<ThreadBloc>();
       } catch (e) {
         activityBloc = null;
       }
@@ -246,11 +273,11 @@ class EditNote extends NoteCommand {
         icon: FontAwesomeIcons.penToSquare,
       );
 
-  final ActivityBloc? activityBloc;
+  final ThreadBloc? activityBloc;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final bloc = activityBloc ?? context.read<ActivityBloc>();
+    final bloc = activityBloc ?? context.read<ThreadBloc>();
     bloc.setEditingNote(note);
     return const CommandDone();
   }
@@ -268,7 +295,7 @@ class ReplyToNote extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final activityBloc = context.read<ActivityBloc>();
+      final activityBloc = context.read<ThreadBloc>();
       activityBloc.setReplyTo(note);
       return const CommandDone();
     } catch (e, stackTrace) {
@@ -299,10 +326,10 @@ class ArchiveNote extends NoteCommand {
   }
 }
 
-class SplitNoteToNewActivity extends NoteCommand {
-  SplitNoteToNewActivity(super.note)
+class SplitNoteToNewThread extends NoteCommand {
+  SplitNoteToNewThread(super.note)
     : super(
-        title: 'Split to New Topic',
+        title: 'Split to New Thread',
         eventObject: EventObject.note,
         eventAction: EventAction.moved,
         icon: PlotIcon.move,
@@ -311,36 +338,28 @@ class SplitNoteToNewActivity extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // Look up parent activity to get its priority
-      final parentActivity = await Activity.getOne(note.activityId);
+      // Look up parent thread to get its priority
+      final parentThread = await Thread.getOne(note.threadId);
 
-      // Determine activity type: if note has task tags, make it an action
-      final type = note.assignees.isNotEmpty
-          ? ActivityType.action
-          : parentActivity.type;
-
-      // Create a new activity in the same priority with preview from note content
-      final newActivity = Activity(
-        priority: parentActivity.priority,
-        type: type,
+      // Create a new thread in the same priority with preview from note content
+      final newThread = Thread(
+        priority: parentThread.priority,
         draft: false,
         preview: note.content,
         title: note.content,
       );
-      await newActivity.save();
+      await newThread.save();
 
-      // Move the note to the new activity and unarchive it
-      await note
-          .copyWith(activityId: newActivity.id, clearArchivedAt: true)
-          .save();
+      // Move the note to the new thread and unarchive it
+      await note.copyWith(threadId: newThread.id, clearArchivedAt: true).save();
 
       // Fire-and-forget AI title generation
       if (note.content != null && note.content!.trim().isNotEmpty) {
-        newActivity
+        newThread
             .generateTitle(note.content!)
             .then((title) async {
-              if (title != newActivity.title) {
-                await newActivity.copyWith(title: Value(title)).save();
+              if (title != newThread.title) {
+                await newThread.copyWith(title: Value(title)).save();
               }
             })
             .catchError((Object e) {
@@ -348,8 +367,8 @@ class SplitNoteToNewActivity extends NoteCommand {
             });
       }
 
-      // Navigate to the new activity in the current priority context
-      var routePriority = newActivity.priority;
+      // Navigate to the new thread in the current priority context
+      var routePriority = newThread.priority;
       if (context.mounted) {
         final nowBloc = context.read<NowBloc>();
         if (nowBloc.loadedState.context != null) {
@@ -360,16 +379,14 @@ class SplitNoteToNewActivity extends NoteCommand {
       return CommandRoute(
         PriorityRoute(
           priorityIdString: routePriority.id.toShortString(),
-          children: [
-            ActivityRoute(activityIdString: newActivity.id.toShortString()),
-          ],
+          children: [ThreadRoute(threadIdString: newThread.id.toShortString())],
         ),
         replace: true,
       );
     } catch (e, stackTrace) {
-      log.severe('Error in SplitNoteToNewActivity: $e', e, stackTrace);
+      log.severe('Error in SplitNoteToNewThread: $e', e, stackTrace);
       return CommandMessage(
-        'Failed to split note to new topic',
+        'Failed to split note to new thread',
         isError: true,
       );
     }
@@ -380,7 +397,7 @@ class PickNoteAssignee extends ShowCommands {
   PickNoteAssignee(this.note)
     : super(
         title: 'Assign',
-        icon: FontAwesomeIcons.circleUserCirclePlus,
+        icon: _computeIcon(note),
         commandsBuilder: (context) => _getAssigneeCommands(note),
         eventObject: EventObject.note,
         eventAction: EventAction.updated,
@@ -388,8 +405,22 @@ class PickNoteAssignee extends ShowCommands {
 
   final Note note;
 
+  /// Whether there are other assignees (not the current user)
+  bool get hasOtherAssignees =>
+      note.assignees.any((id) => id != Base.actorId);
+
+  static IconData _computeIcon(Note note) {
+    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
+    if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
+    // Check if all other assignees are done
+    final allOthersDone = otherAssignees.every(
+      (id) => note.isCompletedBy(id),
+    );
+    return allOthersDone ? PlotIcon.othersTaskDone : PlotIcon.othersTask;
+  }
+
   static Future<Commands> _getAssigneeCommands(Note note) async {
-    final activity = await Activity.getOne(note.activityId);
+    final activity = await Thread.getOne(note.threadId);
     // Refresh note to get latest tag state
     final freshNote = await note.refresh();
     return Commands(
@@ -399,41 +430,61 @@ class PickNoteAssignee extends ShowCommands {
           priorityId: activity.priority.id,
           builder: (actor) => actor == null
               ? _UnassignAllFromNote(freshNote)
-              : ToggleAssignNoteActor(freshNote, actor),
+              : AssignNoteActor(freshNote, actor),
         ),
       ],
     );
   }
 }
 
-class ToggleAssignNoteActor extends NoteCommand {
-  ToggleAssignNoteActor(super.note, this.actor)
-    : super(
+class AssignNoteActor extends NoteCommand {
+  AssignNoteActor(super.note, this.actor)
+    : _isDone = note.isCompletedBy(actor.id),
+      super(
         title: actor.nameOrEmail,
         eventObject: EventObject.note,
-        eventAction: note.isAssignedTo(actor.id)
-            ? EventAction.untagged
-            : EventAction.tagged,
-        icon: note.isAssignedTo(actor.id)
-            ? FontAwesomeIcons.circleCheck
-            : FontAwesomeIcons.circleUser,
+        eventAction: note.isCompletedBy(actor.id)
+            ? EventAction.clicked
+            : note.isAssignedTo(actor.id)
+                ? EventAction.untagged
+                : EventAction.tagged,
+        icon: note.isCompletedBy(actor.id)
+            ? PlotIcon.othersTaskDone
+            : note.isAssignedTo(actor.id)
+                ? PlotIcon.assignRemove
+                : PlotIcon.assignAdd,
       );
 
   final Actor actor;
+  final bool _isDone;
 
   @override
   String? get subtitle => actor.email;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    if (_isDone) {
+      return const CommandMessage('Only they can change their done status');
+    }
     try {
+      ThreadBloc? activityBloc;
+      try {
+        activityBloc = context.read<ThreadBloc>();
+      } catch (e) {
+        activityBloc = null;
+      }
+
       final isAssigned = note.isAssignedTo(actor.id);
-      final updatedNote = note.setTag(Tag.now, actor.id, !isAssigned);
+      final updatedNote = note.setTag(Tag.todo, actor.id, !isAssigned);
+      if (activityBloc != null &&
+          activityBloc.state.draft.id == updatedNote.id) {
+        await activityBloc.updateDraft(updatedNote);
+      }
       await updatedNote.save();
       return const CommandRefresh();
     } catch (e, stackTrace) {
-      log.severe('Error in ToggleAssignNoteActor: $e', e, stackTrace);
-      return CommandMessage('Failed to toggle assignment', isError: true);
+      log.severe('Error in AssignNoteActor: $e', e, stackTrace);
+      return CommandMessage('Failed to update assignment', isError: true);
     }
   }
 }
@@ -444,15 +495,26 @@ class _UnassignAllFromNote extends NoteCommand {
         title: 'Unassign All',
         eventObject: EventObject.note,
         eventAction: EventAction.untagged,
-        icon: FontAwesomeIcons.circleUserCircleXmark,
+        icon: PlotIcon.assignRemove,
       );
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
+      ThreadBloc? activityBloc;
+      try {
+        activityBloc = context.read<ThreadBloc>();
+      } catch (e) {
+        activityBloc = null;
+      }
+
       Note updatedNote = note;
       for (final actorId in note.activeAssignees) {
-        updatedNote = updatedNote.setTag(Tag.now, actorId, false);
+        updatedNote = updatedNote.setTag(Tag.todo, actorId, false);
+      }
+      if (activityBloc != null &&
+          activityBloc.state.draft.id == updatedNote.id) {
+        await activityBloc.updateDraft(updatedNote);
       }
       await updatedNote.save();
       return const CommandRefresh();
@@ -465,7 +527,7 @@ class _UnassignAllFromNote extends NoteCommand {
 
 List<StaticCommandGroup> noteCommandGroups(
   Note note, {
-  ActivityBloc? activityBloc,
+  ThreadBloc? activityBloc,
 }) {
   final actorId = Base.actorId;
   final tags = Tag.getAll()
@@ -492,16 +554,14 @@ List<StaticCommandGroup> noteCommandGroups(
     if (remove.isNotEmpty)
       StaticCommandGroup(title: 'Remove Tag', commands: remove),
     if (add.isNotEmpty) StaticCommandGroup(title: 'Add Tag', commands: add),
+    if (!note.draft)
+      StaticCommandGroup(title: '', commands: [ArchiveNote(note)]),
   ];
 }
 
-List<Command> noteCommands(Note note, {ActivityBloc? activityBloc}) {
-  final actorId = Base.actorId;
-  final isAssigned = note.isAssignedTo(actorId);
-
+List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
   return [
-    if (!isAssigned) StartTask(note),
-    if (isAssigned) FinishTask(note),
+    SelfTaskAction(note),
     if (!note.draft) ReplyToNote(note),
     if (!note.draft &&
         note.authorId == Base.actorId &&
@@ -510,16 +570,12 @@ List<Command> noteCommands(Note note, {ActivityBloc? activityBloc}) {
       EditNote(note, activityBloc: activityBloc),
     PickNoteAssignee(note),
     if (!note.draft && note.content != null && note.content!.trim().isNotEmpty)
-      SplitNoteToNewActivity(note),
+      SplitNoteToNewThread(note),
     if (note.content != null && note.content!.trim().isNotEmpty)
       CopyNoteContent(note),
-    if ((activityBloc?.state.activity.priority.personal != true ||
-            (note.draft &&
-                activityBloc?.state.activity.authorId.isCurrentUser ==
-                    false)) &&
+    if ((activityBloc?.state.thread.priority.personal != true || note.draft) &&
         (!note.private || note.authorId == Base.actorId))
       ToggleNotePrivate(note),
-    ArchiveNote(note),
   ];
 }
 
@@ -540,9 +596,9 @@ List<Command> topNoteTags(
   final maxToShow = 3 - activeNonHardcodedCount;
   if (maxToShow <= 0) return [];
 
-  // Filter out tags already on note and take maxToShow
+  // Filter out tags already on note (and archived, which is menu-only) and take maxToShow
   return tagSuggestions
-      .where((tag) => !note.hasTag(tag, actorId))
+      .where((tag) => tag != Tag.archived && !note.hasTag(tag, actorId))
       .take(maxToShow)
       .map((tag) => ToggleNoteTag(note, tag, actorId))
       .toList();
@@ -570,7 +626,7 @@ class CopyNoteContent extends NoteCommand {
 }
 
 class ShowNoteCommands extends ShowCommands {
-  ShowNoteCommands(Note note, {ActivityBloc? activityBloc})
+  ShowNoteCommands(Note note, {ThreadBloc? activityBloc})
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
@@ -578,4 +634,115 @@ class ShowNoteCommands extends ShowCommands {
           groups: noteCommandGroups(note, activityBloc: activityBloc),
         ),
       );
+}
+
+/// Assign picker for draft notes on NewThreadPage (uses callback instead of ThreadBloc).
+class PickDraftNoteAssignee extends ShowCommands {
+  PickDraftNoteAssignee({
+    required this.note,
+    required this.priorityId,
+    required this.onUpdate,
+  }) : super(
+          title: 'Assign',
+          icon: _computeIcon(note),
+          commandsBuilder: (context) =>
+              _getAssigneeCommands(note, priorityId, onUpdate),
+          eventObject: EventObject.note,
+          eventAction: EventAction.updated,
+        );
+
+  final Note note;
+  final Uuid priorityId;
+  final Future<void> Function(Note note) onUpdate;
+
+  static IconData _computeIcon(Note note) {
+    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
+    if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
+    final allOthersDone =
+        otherAssignees.every((id) => note.isCompletedBy(id));
+    return allOthersDone ? PlotIcon.othersTaskDone : PlotIcon.othersTask;
+  }
+
+  static Future<Commands> _getAssigneeCommands(
+    Note note,
+    Uuid priorityId,
+    Future<void> Function(Note note) onUpdate,
+  ) async {
+    return Commands(
+      prompt: 'Assign to',
+      groups: [
+        ActorGroup(
+          priorityId: priorityId,
+          builder: (actor) => actor == null
+              ? _UnassignAllFromDraftNote(note, onUpdate: onUpdate)
+              : _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),
+        ),
+      ],
+    );
+  }
+}
+
+class _AssignDraftNoteActor extends NoteCommand {
+  _AssignDraftNoteActor(
+    super.note,
+    this.actor, {
+    required this.onUpdate,
+  }) : super(
+          title: actor.nameOrEmail,
+          eventObject: EventObject.note,
+          eventAction: note.isAssignedTo(actor.id)
+              ? EventAction.untagged
+              : EventAction.tagged,
+          icon: note.isCompletedBy(actor.id)
+              ? PlotIcon.othersTaskDone
+              : note.isAssignedTo(actor.id)
+                  ? PlotIcon.assignRemove
+                  : PlotIcon.assignAdd,
+        );
+
+  final Actor actor;
+  final Future<void> Function(Note note) onUpdate;
+
+  @override
+  String? get subtitle => actor.email;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final isAssigned = note.isAssignedTo(actor.id);
+      final updatedNote = note.setTag(Tag.todo, actor.id, !isAssigned);
+      await onUpdate(updatedNote);
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in _AssignDraftNoteActor: $e', e, stackTrace);
+      return CommandMessage('Failed to update assignment', isError: true);
+    }
+  }
+}
+
+class _UnassignAllFromDraftNote extends NoteCommand {
+  _UnassignAllFromDraftNote(super.note, {required this.onUpdate})
+    : super(
+        title: 'Unassign All',
+        eventObject: EventObject.note,
+        eventAction: EventAction.untagged,
+        icon: PlotIcon.assignRemove,
+      );
+
+  final Future<void> Function(Note note) onUpdate;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      Note updatedNote = note;
+      for (final actorId in note.activeAssignees) {
+        updatedNote = updatedNote.setTag(Tag.todo, actorId, false);
+      }
+      await onUpdate(updatedNote);
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in _UnassignAllFromDraftNote: $e', e, stackTrace);
+      return CommandMessage('Failed to unassign all', isError: true);
+    }
+  }
 }

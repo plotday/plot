@@ -6,10 +6,6 @@
 import type { ColumnType } from "kysely";
 import type { IPostgresInterval } from "postgres-interval";
 
-export type ActivityKind = "document" | "entertainment" | "exercise" | "family" | "focus" | "meal" | "meeting" | "messages" | "phone" | "social" | "travel" | "videoconference";
-
-export type ActivityType = "action" | "event" | "note";
-
 export type ArrayType<T> = ArrayTypeImpl<T> extends (infer U)[]
   ? U[]
   : ArrayTypeImpl<T>;
@@ -51,155 +47,6 @@ export type SyncOperation = "create" | "update";
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export type TwistEnvironment = "personal" | "private" | "public" | "review";
-
-export interface Activity {
-  archived_at: Timestamp | null;
-  assignee_id: string | null;
-  at: string | null;
-  /**
-   * The actor to credit with creating this activity. For activities created by twists on behalf of contacts or users, this is the contact/user. For activities created directly by users or twists, this is the user/twist ID.
-   */
-  author_id: string;
-  created_at: Generated<Timestamp>;
-  /**
-   * The user_id or priority_twist_id that actually created this activity. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.
-   */
-  created_by: string;
-  /**
-   * The twist definition ID (twist_admin.id) that created this activity. Null for user-created activities. No longer used in unique constraint (replaced by source_priority_root).
-   */
-  created_by_twist_id: Int8 | null;
-  done_at: Timestamp | null;
-  draft: Generated<boolean>;
-  duration: Interval | null;
-  embedding: string | null;
-  id: Generated<string>;
-  kind: ActivityKind | null;
-  /**
-   * Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for unread status in user_activity and user_priority_unread views.
-   */
-  last_note_created_at: Timestamp | null;
-  /**
-   * Cached MAX(note.source_created_at) for non-draft, non-archived notes. Maintained by trigger. Used for display, sorting, and range_at computation in user_activity view.
-   */
-  last_note_source_created_at: Timestamp | null;
-  meta: Json | null;
-  on: string | null;
-  order: Generated<number>;
-  /**
-   * The PickPriorityConfig used to automatically select this activity's priority. Null if priority was explicitly specified. Used when moving activities to find similar activities to move. Not exposed to app or API.
-   */
-  pick_priority: Json | null;
-  preview: string | null;
-  priority_id: string;
-  private: Generated<boolean>;
-  recurrence_exdates: ArrayType<Timestamp> | null;
-  recurrence_rule: string | null;
-  /**
-   * External source identifier for deduplication and sync. Provided as a top-level field in the Activity type (not stored in meta). Indexed for efficient lookups. Used with source_priority_root for upsert behavior.
-   */
-  source: string | null;
-  /**
-   * When this activity was originally created in its source system (e.g., GitHub issue creation date, email sent date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the activity entered Plot's database.
-   */
-  source_created_at: Generated<Timestamp>;
-  /**
-   * Root element of the priority path (e.g., first segment of the ltree). Set by trigger when source is non-null. Used with source to ensure uniqueness per top-level priority.
-   */
-  source_priority_root: string | null;
-  sync_depth: number | null;
-  title: string | null;
-  type: Generated<ActivityType>;
-  updated_at: Generated<Timestamp>;
-  updated_by: Generated<number>;
-}
-
-export interface ActivityException {
-  activity_id: string;
-  archived_at: Timestamp | null;
-  at: string | null;
-  created_at: Generated<Timestamp>;
-  done_at: Timestamp | null;
-  duration: Interval | null;
-  id: Generated<string>;
-  meta: Json | null;
-  /**
-   * Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM
-   */
-  occurrence: string;
-  on: string | null;
-  preview: string | null;
-  title: string | null;
-  updated_at: Generated<Timestamp>;
-  updated_by: Generated<number>;
-}
-
-export interface ActivityRead {
-  activity_id: string;
-  read_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  user_id: string;
-}
-
-export interface ActivityTag {
-  activity_id: string;
-  actor_id: string;
-  archived_at: Timestamp | null;
-  id: Generated<Int8>;
-  /**
-   * Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM
-   */
-  occurrence: string | null;
-  sync_depth: number | null;
-  tag_id: number;
-  updated_at: Generated<Timestamp>;
-  updated_by: Generated<number>;
-}
-
-export interface ActivityTags {
-  activity_id: string | null;
-  occurrence: string | null;
-  tags: Json | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-}
-
-export interface ActivityX {
-  archived_at: Timestamp | null;
-  assignee_id: string | null;
-  at: string | null;
-  author_id: string | null;
-  created_at: Timestamp | null;
-  created_by: string | null;
-  created_by_twist_id: Int8 | null;
-  done_at: Timestamp | null;
-  draft: boolean | null;
-  duration: Interval | null;
-  embedding: string | null;
-  id: string | null;
-  kind: ActivityKind | null;
-  last_note_created_at: Timestamp | null;
-  last_note_source_created_at: Timestamp | null;
-  mentions: string[] | null;
-  meta: Json | null;
-  on: string | null;
-  order: number | null;
-  pick_priority: Json | null;
-  preview: string | null;
-  priority_id: string | null;
-  priority_path: string | null;
-  private: boolean | null;
-  recurrence_exdates: ArrayType<Timestamp> | null;
-  recurrence_rule: string | null;
-  source: string | null;
-  source_created_at: Timestamp | null;
-  source_priority_root: string | null;
-  sync_depth: number | null;
-  title: string | null;
-  type: ActivityType | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-}
 
 export interface Actor {
   archived_at: Timestamp | null;
@@ -378,8 +225,90 @@ export interface ExtensionsTapFunky {
   volatility: string | null;
 }
 
+export interface Link {
+  actions: Json | null;
+  assignee_id: string | null;
+  /**
+   * The actor to credit with creating this link. For links created by twists on behalf of contacts or users, this is the contact/user.
+   */
+  author_id: string | null;
+  channel_id: string | null;
+  created_at: Generated<Timestamp>;
+  /**
+   * The user_id or priority_twist_id that actually created this link. Used for filtering callbacks and permissions.
+   */
+  created_by: string | null;
+  embedding: string | null;
+  id: Generated<string>;
+  /**
+   * The PickPriorityConfig used to automatically select this link's priority. Null if priority was explicitly specified. Used when moving links to find similar links to move.
+   */
+  match: Json | null;
+  meta: Json | null;
+  preview: string | null;
+  priority_id: string | null;
+  /**
+   * External source identifier for deduplication and sync. Used with source_priority_root for upsert behavior.
+   */
+  source: string | null;
+  /**
+   * When this link was originally created in its source system. Defaults to now() but can be set by twists.
+   */
+  source_created_at: Generated<Timestamp>;
+  /**
+   * Root element of the priority path. Set by trigger when source is non-null. Used with source to ensure uniqueness per top-level priority.
+   */
+  source_priority_root: string | null;
+  source_url: string | null;
+  /**
+   * Source-defined status string (e.g., open, done, closed). Free text.
+   */
+  status: string | null;
+  sync_depth: number | null;
+  thread_id: string | null;
+  title: string | null;
+  /**
+   * The twist definition ID (twist_admin.id) that created this link. Null for user-created links.
+   */
+  twist_id: Int8 | null;
+  /**
+   * Source-defined type string (e.g., issue, pull_request, email, event). Free text, with structured registry in source linkTypes config.
+   */
+  type: string | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: Generated<number>;
+}
+
+export interface LinkX {
+  actions: Json | null;
+  assignee_id: string | null;
+  author_id: string | null;
+  channel_id: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  embedding: string | null;
+  id: string | null;
+  match: Json | null;
+  meta: Json | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_path: string | null;
+  source: string | null;
+  source_created_at: Timestamp | null;
+  source_priority_root: string | null;
+  source_url: string | null;
+  status: string | null;
+  sync_depth: number | null;
+  thread_id: string | null;
+  title: string | null;
+  twist_id: Int8 | null;
+  type: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
 export interface Note {
-  activity_id: string;
+  actions: Json | null;
   archived_at: Timestamp | null;
   /**
    * The actor to credit with creating this note. For notes created by twists on behalf of contacts or users, this is the contact/user. For notes created directly by users or twists, this is the user/twist ID.
@@ -394,10 +323,9 @@ export interface Note {
   draft: Generated<boolean>;
   id: Generated<string>;
   /**
-   * External identifier for deduplication and sync within an activity. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with activity_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).
+   * External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).
    */
   key: string | null;
-  links: Json | null;
   /**
    * Array of actor IDs (user_id, contact_id, or priority_twist_id) that are mentioned in this note via @-mentions.
    */
@@ -409,6 +337,7 @@ export interface Note {
    */
   source_created_at: Generated<Timestamp>;
   sync_depth: number | null;
+  thread_id: string;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
 }
@@ -465,6 +394,7 @@ export interface PriorityChildTwist {
   config: Json | null;
   created_at: Timestamp | null;
   id: string | null;
+  is_source: boolean | null;
   name: string | null;
   owner_id: string | null;
   priority_child_id: string | null;
@@ -493,6 +423,7 @@ export interface PriorityMember {
   invited_by: string | null;
   personal: boolean | null;
   priority_id: string | null;
+  role: string | null;
   status: string | null;
   updated_at: Timestamp | null;
 }
@@ -537,90 +468,134 @@ export interface PriorityTwist {
   updated_at: Generated<Timestamp>;
 }
 
-export interface PriorityTwistActivityCreate {
-  archived_at: Timestamp | null;
+export interface PriorityTwistChannel {
+  channel_id: string;
+  created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
+  id: Generated<Int8>;
+  priority_twist_id: string;
+  source_priority_twist_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface PriorityTwistChannelLinkCreate {
+  actions: Json | null;
   assignee_id: string | null;
-  at: string | null;
   author_id: string | null;
   author_name: string | null;
   author_type: string | null;
+  channel_id: string | null;
   created_at: Timestamp | null;
   created_by: string | null;
-  done_at: Timestamp | null;
-  draft: boolean | null;
-  duration: Interval | null;
   id: string | null;
-  mentions: string[] | null;
   meta: Json | null;
-  on: string | null;
-  order: number | null;
   preview: string | null;
   priority_id: string | null;
   priority_title: string | null;
   priority_twist_id: string | null;
-  private: boolean | null;
-  recurrence_exdates: ArrayType<Timestamp> | null;
-  recurrence_rule: string | null;
   source: string | null;
   source_created_at: Timestamp | null;
+  source_url: string | null;
+  status: string | null;
   sync_depth: number | null;
-  tags: Json | null;
+  thread_id: string | null;
   title: string | null;
-  type: ActivityType | null;
+  twist_id: Int8 | null;
+  type: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
 }
 
-export interface PriorityTwistActivityTagChange {
-  activity_id: string | null;
-  actor_id: string | null;
-  change_type: string | null;
-  occurrence: string | null;
+export interface PriorityTwistChannelLinkUpdate {
+  actions: Json | null;
+  assignee_id: string | null;
+  author_id: string | null;
+  author_name: string | null;
+  author_type: string | null;
+  channel_id: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  id: string | null;
+  meta: Json | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_title: string | null;
   priority_twist_id: string | null;
-  tag_id: number | null;
+  source: string | null;
+  source_created_at: Timestamp | null;
+  source_url: string | null;
+  status: string | null;
+  sync_depth: number | null;
+  thread_id: string | null;
+  title: string | null;
+  twist_id: Int8 | null;
+  type: string | null;
   updated_at: Timestamp | null;
+  updated_by: number | null;
 }
 
-export interface PriorityTwistActivityUpdate {
+export interface PriorityTwistChannelNoteCreate {
+  actions: Json | null;
   archived_at: Timestamp | null;
+  author_id: string | null;
+  author_name: string | null;
+  author_type: string | null;
+  content: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  draft: boolean | null;
+  id: string | null;
+  key: string | null;
+  link_channel_id: string | null;
+  link_id: string | null;
+  link_meta: Json | null;
+  link_source: string | null;
+  link_source_url: string | null;
+  link_title: string | null;
+  link_type: string | null;
+  mentions: string[] | null;
+  priority_id: string | null;
+  priority_twist_id: string | null;
+  private: boolean | null;
+  re_note_id: string | null;
+  source_created_at: Timestamp | null;
+  sync_depth: number | null;
+  tags: Json | null;
+  thread_created_by: string | null;
+  thread_id: string | null;
+  thread_title: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
+export interface PriorityTwistLinkUpdate {
+  actions: Json | null;
   assignee_id: string | null;
-  at: string | null;
   author_id: string | null;
   author_name: string | null;
   author_type: string | null;
   created_at: Timestamp | null;
   created_by: string | null;
-  done_at: Timestamp | null;
-  draft: boolean | null;
-  duration: Interval | null;
   id: string | null;
-  mentions: string[] | null;
   meta: Json | null;
-  on: string | null;
-  order: number | null;
   preview: string | null;
   priority_id: string | null;
   priority_title: string | null;
   priority_twist_id: string | null;
-  private: boolean | null;
-  recurrence_exdates: ArrayType<Timestamp> | null;
-  recurrence_rule: string | null;
   source: string | null;
   source_created_at: Timestamp | null;
+  status: string | null;
   sync_depth: number | null;
-  tags: Json | null;
+  thread_id: string | null;
   title: string | null;
-  type: ActivityType | null;
+  twist_id: Int8 | null;
+  type: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
 }
 
 export interface PriorityTwistNoteCreate {
-  activity_created_by: string | null;
-  activity_id: string | null;
-  activity_mentions: string[] | null;
-  activity_meta: Json | null;
-  activity_title: string | null;
+  actions: Json | null;
   archived_at: Timestamp | null;
   author_id: string | null;
   author_name: string | null;
@@ -629,10 +604,8 @@ export interface PriorityTwistNoteCreate {
   created_at: Timestamp | null;
   created_by: string | null;
   draft: boolean | null;
-  first_mentioned_at: Timestamp | null;
   id: string | null;
   key: string | null;
-  links: Json | null;
   mentions: string[] | null;
   priority_id: string | null;
   priority_twist_id: string | null;
@@ -641,16 +614,16 @@ export interface PriorityTwistNoteCreate {
   source_created_at: Timestamp | null;
   sync_depth: number | null;
   tags: Json | null;
+  thread_created_by: string | null;
+  thread_id: string | null;
+  thread_meta: Json | null;
+  thread_title: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
 }
 
 export interface PriorityTwistNoteUpdate {
-  activity_created_by: string | null;
-  activity_id: string | null;
-  activity_mentions: string[] | null;
-  activity_meta: Json | null;
-  activity_title: string | null;
+  actions: Json | null;
   archived_at: Timestamp | null;
   author_id: string | null;
   author_name: string | null;
@@ -661,7 +634,6 @@ export interface PriorityTwistNoteUpdate {
   draft: boolean | null;
   id: string | null;
   key: string | null;
-  links: Json | null;
   mentions: string[] | null;
   priority_id: string | null;
   priority_twist_id: string | null;
@@ -670,6 +642,10 @@ export interface PriorityTwistNoteUpdate {
   source_created_at: Timestamp | null;
   sync_depth: number | null;
   tags: Json | null;
+  thread_created_by: string | null;
+  thread_id: string | null;
+  thread_meta: Json | null;
+  thread_title: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
 }
@@ -682,11 +658,50 @@ export interface PriorityTwistSync {
   priority_twist_id: string;
 }
 
+export interface PriorityTwistThreadRead {
+  priority_id: string | null;
+  priority_twist_id: string | null;
+  read_at: Timestamp | null;
+  thread_id: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
+export interface PriorityTwistThreadTagChange {
+  actor_id: string | null;
+  change_type: string | null;
+  occurrence: string | null;
+  priority_twist_id: string | null;
+  tag_id: number | null;
+  thread_id: string | null;
+  updated_at: Timestamp | null;
+}
+
+export interface PriorityTwistThreadUpdate {
+  archived_at: Timestamp | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  draft: boolean | null;
+  id: string | null;
+  mentions: string[] | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_title: string | null;
+  priority_twist_id: string | null;
+  private: boolean | null;
+  sync_depth: number | null;
+  tags: Json | null;
+  title: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
 export interface PriorityUser {
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   personal: Generated<boolean>;
   priority_id: string;
+  role: Generated<string>;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -698,6 +713,35 @@ export interface Publisher {
   name: string;
   updated_at: Generated<Timestamp>;
   url: string | null;
+}
+
+export interface Schedule {
+  archived_at: Timestamp | null;
+  at: string | null;
+  created_at: Generated<Timestamp>;
+  done_at: Timestamp | null;
+  duration: Interval | null;
+  id: Generated<string>;
+  link_id: string | null;
+  occurrence: string | null;
+  on: string | null;
+  order: number | null;
+  recurrence_exdates: ArrayType<Timestamp> | null;
+  recurrence_rule: string | null;
+  thread_id: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
+export interface ScheduleContact {
+  archived_at: Timestamp | null;
+  contact_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  role: Generated<string>;
+  schedule_id: string;
+  status: string | null;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface Series {
@@ -725,6 +769,99 @@ export interface Session {
   user_id: string;
 }
 
+export interface SourceChannel {
+  /**
+   * Provider-specific global ID for the channel. The same calendar/project has the same ID across users.
+   */
+  channel_id: string;
+  create_threads: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
+  id: Generated<Int8>;
+  /**
+   * The priority this channel syncs data to. NULL means the channel is known but not routed to any priority.
+   */
+  priority_id: string | null;
+  priority_twist_id: string;
+  title: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Thread {
+  archived_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  /**
+   * The user_id or priority_twist_id that actually created this thread. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.
+   */
+  created_by: string;
+  draft: Generated<boolean>;
+  id: Generated<string>;
+  /**
+   * Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for unread status in user_thread and user_priority_unread views.
+   */
+  last_note_created_at: Timestamp | null;
+  /**
+   * Cached MAX(note.source_created_at) for non-draft, non-archived notes. Maintained by trigger. Used for display, sorting, and range_at computation in user_thread view.
+   */
+  last_note_source_created_at: Timestamp | null;
+  preview: string | null;
+  priority_id: string;
+  private: Generated<boolean>;
+  sync_depth: number | null;
+  title: string | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: Generated<number>;
+}
+
+export interface ThreadRead {
+  read_at: Generated<Timestamp>;
+  thread_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface ThreadTag {
+  actor_id: string;
+  archived_at: Timestamp | null;
+  id: Generated<Int8>;
+  /**
+   * Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM
+   */
+  occurrence: string | null;
+  sync_depth: number | null;
+  tag_id: number;
+  thread_id: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: Generated<number>;
+}
+
+export interface ThreadTags {
+  occurrence: string | null;
+  tags: Json | null;
+  thread_id: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
+export interface ThreadX {
+  archived_at: Timestamp | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  draft: boolean | null;
+  id: string | null;
+  last_note_created_at: Timestamp | null;
+  last_note_source_created_at: Timestamp | null;
+  mentions: string[] | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_path: string | null;
+  private: boolean | null;
+  sync_depth: number | null;
+  title: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
 export interface Token {
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
@@ -743,6 +880,9 @@ export interface Twist {
   description: string | null;
   environment: Generated<TwistEnvironment>;
   id: Generated<Int8>;
+  is_source: Generated<boolean>;
+  logo_url: string | null;
+  logo_url_dark: string | null;
   name: string;
   options: Json | null;
   permissions: Json | null;
@@ -782,70 +922,6 @@ export interface User {
   updated_at: Generated<Timestamp>;
 }
 
-export interface UserActivity {
-  archived_at: Timestamp | null;
-  assignee_id: string | null;
-  at: string | null;
-  author_id: string | null;
-  created_at: Timestamp | null;
-  created_by_twist_id: Int8 | null;
-  done_at: Timestamp | null;
-  draft: boolean | null;
-  duration: Interval | null;
-  id: string | null;
-  kind: ActivityKind | null;
-  last_note_created_at: Timestamp | null;
-  last_note_source_created_at: Timestamp | null;
-  mentions: string[] | null;
-  meta: Json | null;
-  on: string | null;
-  order: number | null;
-  preview: string | null;
-  priority_id: string | null;
-  priority_path: string | null;
-  private: boolean | null;
-  range_at: string | null;
-  range_on: string | null;
-  recurrence_exdates: ArrayType<Timestamp> | null;
-  recurrence_rule: string | null;
-  source: string | null;
-  source_created_at: Timestamp | null;
-  title: string | null;
-  type: ActivityType | null;
-  unread: boolean | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-  user_id: string | null;
-}
-
-export interface UserActivityException {
-  activity_id: string | null;
-  archived_at: Timestamp | null;
-  at: string | null;
-  id: string | null;
-  occurrence: string | null;
-  on: string | null;
-  preview: string | null;
-  priority_path: string | null;
-  range_at: string | null;
-  range_on: string | null;
-  title: string | null;
-  updated_at: Timestamp | null;
-  user_id: string | null;
-}
-
-export interface UserActivityTags {
-  archived_at: Timestamp | null;
-  id: string | null;
-  occurrence: string | null;
-  priority_path: string | null;
-  range_at: string | null;
-  range_on: string | null;
-  tags: Json | null;
-  updated_at: Timestamp | null;
-  user_id: string | null;
-}
-
 export interface UserActor {
   archived_at: Timestamp | null;
   avatar_url: string | null;
@@ -859,8 +935,33 @@ export interface UserActor {
   user_id: string | null;
 }
 
+export interface UserLink {
+  actions: Json | null;
+  assignee_id: string | null;
+  author_id: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  id: string | null;
+  meta: Json | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_path: string | null;
+  source: string | null;
+  source_created_at: Timestamp | null;
+  source_url: string | null;
+  status: string | null;
+  sync_depth: number | null;
+  thread_id: string | null;
+  title: string | null;
+  twist_id: Int8 | null;
+  type: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+  user_id: string | null;
+}
+
 export interface UserNote {
-  activity_id: string | null;
+  actions: Json | null;
   archived_at: Timestamp | null;
   author_id: string | null;
   content: string | null;
@@ -868,11 +969,11 @@ export interface UserNote {
   created_by: string | null;
   draft: boolean | null;
   id: string | null;
-  links: Json | null;
   mentions: string[] | null;
   private: boolean | null;
   re_note_id: string | null;
   source_created_at: Timestamp | null;
+  thread_id: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
   user_id: string | null;
@@ -882,8 +983,6 @@ export interface UserNoteTags {
   archived_at: Timestamp | null;
   id: string | null;
   priority_path: string | null;
-  range_at: string | null;
-  range_on: string | null;
   tags: Json | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -924,6 +1023,7 @@ export interface UserPriorityExpanded {
   joined_at: Timestamp | null;
   path: string | null;
   priority_id: string | null;
+  role: string | null;
   user_id: string | null;
 }
 
@@ -934,10 +1034,46 @@ export interface UserPriorityUnread {
   user_id: string | null;
 }
 
+export interface UserSchedule {
+  archived_at: Timestamp | null;
+  at: string | null;
+  contacts: Json | null;
+  created_at: Timestamp | null;
+  done_at: Timestamp | null;
+  duration: Interval | null;
+  id: string | null;
+  link_id: string | null;
+  occurrence: string | null;
+  on: string | null;
+  order: number | null;
+  priority_path: string | null;
+  range_at: string | null;
+  range_on: string | null;
+  recurrence_exdates: ArrayType<Timestamp> | null;
+  recurrence_rule: string | null;
+  schedule_user_id: string | null;
+  thread_id: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface UserSettings {
   enter_behavior: EnterBehavior | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
+}
+
+export interface UserSourceChannel {
+  channel_id: string | null;
+  create_threads: boolean | null;
+  created_at: Timestamp | null;
+  enabled: boolean | null;
+  id: Int8 | null;
+  priority_id: string | null;
+  priority_twist_id: string | null;
+  title: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
 }
 
 export interface UserSubscription {
@@ -960,11 +1096,46 @@ export interface UserSync {
   user_id: string;
 }
 
+export interface UserThread {
+  activity_at: Timestamp | null;
+  agenda_at: Timestamp | null;
+  archived_at: Timestamp | null;
+  created_at: Timestamp | null;
+  draft: boolean | null;
+  id: string | null;
+  last_note_created_at: Timestamp | null;
+  last_note_source_created_at: Timestamp | null;
+  mentions: string[] | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_path: string | null;
+  private: boolean | null;
+  title: string | null;
+  unread: boolean | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+  user_id: string | null;
+}
+
+export interface UserThreadTags {
+  archived_at: Timestamp | null;
+  id: string | null;
+  occurrence: string | null;
+  priority_path: string | null;
+  tags: Json | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface UserTwist {
   archived_at: Timestamp | null;
   config: Json | null;
   created_at: Timestamp | null;
   id: string | null;
+  is_source: boolean | null;
+  link_types: Json | null;
+  logo_url: string | null;
+  logo_url_dark: string | null;
   name: string | null;
   owner_id: string | null;
   priority_id: string | null;
@@ -975,12 +1146,6 @@ export interface UserTwist {
 }
 
 export interface DB {
-  activity: Activity;
-  activity_exception: ActivityException;
-  activity_read: ActivityRead;
-  activity_tag: ActivityTag;
-  activity_tags: ActivityTags;
-  activity_x: ActivityX;
   actor: Actor;
   "atlas_schema_revisions.atlas_schema_revisions": AtlasSchemaRevisionsAtlasSchemaRevisions;
   contact: Contact;
@@ -993,6 +1158,8 @@ export interface DB {
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
   "extensions.tap_funky": ExtensionsTapFunky;
+  link: Link;
+  link_x: LinkX;
   note: Note;
   note_tag: NoteTag;
   note_tags: NoteTags;
@@ -1006,16 +1173,29 @@ export interface DB {
   priority_settings_inherited: PrioritySettingsInherited;
   priority_tags: PriorityTags;
   priority_twist: PriorityTwist;
-  priority_twist_activity_create: PriorityTwistActivityCreate;
-  priority_twist_activity_tag_change: PriorityTwistActivityTagChange;
-  priority_twist_activity_update: PriorityTwistActivityUpdate;
+  priority_twist_channel: PriorityTwistChannel;
+  priority_twist_channel_link_create: PriorityTwistChannelLinkCreate;
+  priority_twist_channel_link_update: PriorityTwistChannelLinkUpdate;
+  priority_twist_channel_note_create: PriorityTwistChannelNoteCreate;
+  priority_twist_link_update: PriorityTwistLinkUpdate;
   priority_twist_note_create: PriorityTwistNoteCreate;
   priority_twist_note_update: PriorityTwistNoteUpdate;
   priority_twist_sync: PriorityTwistSync;
+  priority_twist_thread_read: PriorityTwistThreadRead;
+  priority_twist_thread_tag_change: PriorityTwistThreadTagChange;
+  priority_twist_thread_update: PriorityTwistThreadUpdate;
   priority_user: PriorityUser;
   publisher: Publisher;
+  schedule: Schedule;
+  schedule_contact: ScheduleContact;
   series: Series;
   session: Session;
+  source_channel: SourceChannel;
+  thread: Thread;
+  thread_read: ThreadRead;
+  thread_tag: ThreadTag;
+  thread_tags: ThreadTags;
+  thread_x: ThreadX;
   token: Token;
   twist: Twist;
   twist_admin: TwistAdmin;
@@ -1024,15 +1204,17 @@ export interface DB {
   user_settings: UserSettings;
   user_subscription: UserSubscription;
   user_sync: UserSync;
-  "user.activity": UserActivity;
-  "user.activity_exception": UserActivityException;
-  "user.activity_tags": UserActivityTags;
   "user.actor": UserActor;
+  "user.link": UserLink;
   "user.note": UserNote;
   "user.note_tags": UserNoteTags;
   "user.priority": UserPriority;
   "user.priority_actor": UserPriorityActor;
   "user.priority_expanded": UserPriorityExpanded;
   "user.priority_unread": UserPriorityUnread;
+  "user.schedule": UserSchedule;
+  "user.source_channel": UserSourceChannel;
+  "user.thread": UserThread;
+  "user.thread_tags": UserThreadTags;
   "user.twist": UserTwist;
 }

@@ -2,7 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
-import 'package:plot/state/activity.dart';
+import 'package:plot/state/thread.dart';
 import 'package:plot/util/platform.dart';
 
 class _NoteReplyReference extends StatefulWidget {
@@ -41,7 +41,8 @@ class _NoteReplyReferenceState extends State<_NoteReplyReference> {
         }
 
         return GestureDetector(
-          onTap: () => context.read<ActivityBloc>().setThreadFilter(widget.reNoteId),
+          onTap: () =>
+              context.read<ThreadBloc>().setThreadFilter(widget.reNoteId),
           child: MouseRegion(
             cursor: SystemMouseCursors.click,
             onEnter: (_) => setState(() => _isHovered = true),
@@ -129,10 +130,11 @@ class _NoteWidgetState extends State<NoteWidget> {
   @override
   Widget build(BuildContext context) {
     final noteContent = widget.note.content ?? '';
-    final noteLinks = widget.note.links ?? [];
+    final noteLinks = widget.note.actions ?? [];
 
     final listTile = ListTile(
-      padding: const .only(left: 10, right: 16, top: 8),
+      padding: const EdgeInsets.only(left: 10, right: 16, top: 8),
+      borderRadius: BorderRadius.circular(8),
       bodyBuilder: (context, highlighted) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -155,10 +157,26 @@ class _NoteWidgetState extends State<NoteWidget> {
                 bottom: 4,
               ),
               child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: 6,
+                runSpacing: 6,
                 children: noteLinks
-                    .map((link) => NoteLinkWidget(link: link, note: widget.note))
+                    .map(
+                      (link) => NoteActionWidget(
+                        link: link,
+                        note: widget.note,
+                        style: FButtonStyle.secondary(
+                          (s) => s.copyWith(
+                            contentStyle: (cs) => cs.copyWith(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                            ),
+                          ),
+                        ),
+                        textStyle: context.theme.typography.sm,
+                      ),
+                    )
                     .toList(),
               ),
             ),
@@ -236,16 +254,17 @@ class _NoteWidgetState extends State<NoteWidget> {
 
     Widget result;
     if (hasPhysicalKeyboard()) {
-      final activityBloc = context.read<ActivityBloc>();
+      final activityBloc = context.read<ThreadBloc>();
       result = ContextMenu(
-        items: () => noteCommands(
-          widget.note,
-          activityBloc: activityBloc,
-        ).map((cmd) => FItem(
-          title: Text(cmd.title),
-          prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
-          onPress: () => context.run(cmd),
-        )).toList(),
+        items: () => noteCommands(widget.note, activityBloc: activityBloc)
+            .map(
+              (cmd) => FItem(
+                title: Text(cmd.title),
+                prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+                onPress: () => context.run(cmd),
+              ),
+            )
+            .toList(),
         child: listTile,
       );
     } else {
@@ -289,9 +308,9 @@ class NoteCommands extends StatelessWidget {
         .map((tag) async {
           final key = ValueKey(Object.hash(note.id, tag.id));
 
-          // Use FinishTask when clicking Tag.now (matching ActivityWidget behavior)
-          final command = tag == Tag.now
-              ? FinishTask(note)
+          // Use SelfTaskAction when clicking Tag.todo (matching ThreadWidget behavior)
+          final command = tag == Tag.todo
+              ? SelfTaskAction(note)
               : ToggleNoteTag(note, tag, actorId);
 
           // Get actor names for tooltip
@@ -324,16 +343,20 @@ class NoteCommands extends StatelessWidget {
         .toList();
 
     // Get activity state for common tags
-    final activityBloc = context.watch<ActivityBloc>();
+    final activityBloc = context.watch<ThreadBloc>();
     final activityState = activityBloc.state;
 
     // Get commands (only if showCommands is true)
+    final pickAssignee = PickNoteAssignee(note);
+    // Hide the self slot when the tag bar already shows a todo/done tag for the note
+    final hasSelfTaskTag =
+        note.isAssignedTo(actorId) || note.isCompletedBy(actorId);
     final commandButtons = showCommands
         ? [
-            if (!note.isAssigned()) ...[
-              Button.icon(StartTask(note)),
-              Button.icon(FinishTask(note)),
-            ],
+            // Self slot: shown when not already visible as a tag
+            if (!hasSelfTaskTag) Button.icon(SelfTaskAction(note)),
+            // Others slot: only when others are assigned
+            if (pickAssignee.hasOtherAssignees) Button.icon(pickAssignee),
             // Add top tag buttons
             ...topNoteTags(
               note,
@@ -364,8 +387,8 @@ class NoteCommands extends StatelessWidget {
                   })
                   .map((tag) {
                     final key = ValueKey(Object.hash(note.id, tag.id));
-                    final command = tag == Tag.now
-                        ? FinishTask(note)
+                    final command = tag == Tag.todo
+                        ? SelfTaskAction(note)
                         : ToggleNoteTag(note, tag, actorId);
                     final count = note.tags[tag]?.length ?? 0;
                     // Use pulsing animation for twist tags

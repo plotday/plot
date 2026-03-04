@@ -714,7 +714,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "6e252a97a62003c30179277f9a810917443a3a57"
+      resolved-ref: "3d56e518195fe97294e81f76c74f1a4b6f7fc43b"
       url: "git@github.com:plotday/font_awesome_flutter.git"
     source: git
     version: "10.12.0"

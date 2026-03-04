@@ -1,7 +1,6 @@
 import {
-  ActivityType,
   Twist,
-  type NewActivity,
+  type NewThread,
   type Priority,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -20,9 +19,8 @@ export default class TwistCreator extends Twist<TwistCreator> {
     // Generate unique Twist ID
     const twistId = await this.tools.twist.create();
 
-    // Post first activity with getting started instructions
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
+    // Post first thread with getting started instructions
+    await this.tools.plot.createThread({
       title: "Getting Started",
       notes: [
         {
@@ -54,20 +52,19 @@ To get started:
       logsByEnvironment.get(log.environment)!.push(log);
     }
 
-    // Get stored parent activity IDs
+    // Get stored parent thread IDs
     const parentIds =
       ((await this.tools.store.get("log_parent_ids")) as Record<
         string,
         string
       > | null) ?? {};
 
-    // Create/update parent activities and child logs for each environment
+    // Create/update parent threads and child logs for each environment
     for (const [environment, envLogs] of logsByEnvironment.entries()) {
-      // Get or create parent activity for this environment
+      // Get or create parent thread for this environment
       let parentId = parentIds[environment];
       if (!parentId) {
-        parentId = await this.tools.plot.createActivity({
-          type: ActivityType.Note,
+        parentId = await this.tools.plot.createThread({
           title: `Twist Logs (${environment})`,
           notes: [
             {
@@ -79,9 +76,8 @@ To get started:
         await this.tools.store.set("log_parent_ids", parentIds);
       }
 
-      // Create child activities for all logs in this batch
-      const childActivities: NewActivity[] = envLogs.map((log) => ({
-        type: ActivityType.Note,
+      // Create child threads for all logs in this batch
+      const childThreads: NewThread[] = envLogs.map((log) => ({
         title: `[${log.severity}] ${log.message.substring(0, 50)}${
           log.message.length > 50 ? "..." : ""
         }`,
@@ -95,8 +91,8 @@ To get started:
         parent: { id: parentId },
       }));
 
-      // Batch create all log activities
-      await this.tools.plot.createActivities(childActivities);
+      // Batch create all log threads
+      await this.tools.plot.createThreads(childThreads);
     }
   }
 }

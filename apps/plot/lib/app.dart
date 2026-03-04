@@ -12,6 +12,24 @@ import 'widget/window.dart';
 import 'widget/widget.dart';
 import 'command/command.dart';
 
+class PlotScrollBehavior extends material.MaterialScrollBehavior {
+  const PlotScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    // Only Android uses the Material stretch/glow overscroll indicator.
+    // iOS/macOS use bounce physics (inherent feedback), Windows/web have none.
+    if (material.Theme.of(context).platform == material.TargetPlatform.android) {
+      return super.buildOverscrollIndicator(context, child, details);
+    }
+    return child;
+  }
+}
+
 class App extends StatefulWidget {
   const App({super.key});
 
@@ -57,6 +75,7 @@ class AppState extends State<App> {
                           builder: (theme, darkTheme) =>
                               material.MaterialApp.router(
                                 title: 'Plot',
+                                scrollBehavior: const PlotScrollBehavior(),
                                 localizationsDelegates:
                                     FLocalizations.localizationsDelegates,
                                 supportedLocales:

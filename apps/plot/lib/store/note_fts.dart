@@ -4,9 +4,9 @@ part of 'store.dart';
 /// This is a placeholder - the actual FTS5 table is created via custom SQL in migration.
 @DataClassName('NoteFtsRow')
 class NoteFts extends Table {
-  // Store IDs as reference to notes and activities tables
+  // Store IDs as reference to notes and threads tables
   BlobColumn get noteId => blob().map(const UuidConverter())();
-  BlobColumn get activityId => blob().map(const UuidConverter())();
+  BlobColumn get threadId => blob().map(const UuidConverter())();
   // Searchable text columns
   TextColumn get content => text()();
 
@@ -27,7 +27,7 @@ class NoteFts extends Table {
     await db.customStatement('''
       CREATE VIRTUAL TABLE note_fts USING fts5(
         note_id UNINDEXED,
-        activity_id UNINDEXED,
+        thread_id UNINDEXED,
         content,
         tokenize = 'porter ascii'
       )
@@ -37,8 +37,8 @@ class NoteFts extends Table {
     await db.customStatement('''
       CREATE TRIGGER note_fts_insert AFTER INSERT ON notes
       BEGIN
-        INSERT INTO note_fts(note_id, activity_id, content)
-        VALUES (NEW.id, NEW.activity_id, COALESCE(NEW.content, ''));
+        INSERT INTO note_fts(note_id, thread_id, content)
+        VALUES (NEW.id, NEW.thread_id, COALESCE(NEW.content, ''));
       END
     ''');
 
@@ -48,7 +48,7 @@ class NoteFts extends Table {
       BEGIN
         UPDATE note_fts
         SET content = COALESCE(NEW.content, ''),
-            activity_id = NEW.activity_id
+            thread_id = NEW.thread_id
         WHERE note_id = NEW.id;
       END
     ''');
@@ -63,8 +63,8 @@ class NoteFts extends Table {
 
     // Populate FTS5 table with existing notes
     await db.customStatement('''
-      INSERT INTO note_fts(note_id, activity_id, content)
-      SELECT id, activity_id, COALESCE(content, '')
+      INSERT INTO note_fts(note_id, thread_id, content)
+      SELECT id, thread_id, COALESCE(content, '')
       FROM notes
     ''');
   }

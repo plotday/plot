@@ -21,6 +21,8 @@ export interface DeployTwistOptions {
   environment: Exclude<TwistEnvironment, "public">;
   name: string;
   description?: string;
+  logoUrl?: string;
+  logoUrlDark?: string;
   userId?: string | null;
   userName?: string;
   userEmail?: string;
@@ -54,6 +56,8 @@ export async function deployTwist({
   environment,
   name,
   description,
+  logoUrl,
+  logoUrlDark,
   userId,
   userName,
   userEmail,
@@ -144,8 +148,15 @@ export async function deployTwist({
     });
     version = storeResult.version;
     permissions = storeResult.permissions;
-    providers = storeResult.providers;
     optionsSchema = storeResult.optionsSchema;
+
+    // Enrich providers with linkTypes from sourceProvider
+    const { sourceProvider } = storeResult;
+    providers = sourceProvider
+      ? storeResult.providers.map(p => p.provider === sourceProvider.provider
+          ? { ...p, linkTypes: sourceProvider.linkTypes }
+          : p)
+      : storeResult.providers;
   } catch (error) {
     logger.error("Error storing twist module", error as Error);
     // Provide user-friendly error message
@@ -197,6 +208,9 @@ export async function deployTwist({
         version,
         permissions: JSON.stringify(twistPermissions),
         options: optionsSchema ? JSON.stringify(optionsSchema) : null,
+        is_source: providers.length > 0,
+        logo_url: logoUrl ?? null,
+        logo_url_dark: logoUrlDark ?? null,
       })
       .where("id", "=", existingTwist.id)
       .returningAll()
@@ -218,6 +232,9 @@ export async function deployTwist({
         version,
         permissions: JSON.stringify(newTwistPermissions),
         options: optionsSchema ? JSON.stringify(optionsSchema) : null,
+        is_source: providers.length > 0,
+        logo_url: logoUrl ?? null,
+        logo_url_dark: logoUrlDark ?? null,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -321,6 +338,9 @@ export async function deployTwist({
             version,
             permissions: JSON.stringify(publicPermissions),
             options: optionsSchema ? JSON.stringify(optionsSchema) : null,
+            is_source: providers.length > 0,
+            logo_url: logoUrl ?? null,
+            logo_url_dark: logoUrlDark ?? null,
           })
           .onConflict((oc) =>
             oc.columns(["twist_admin_id", "environment"]).doUpdateSet({
@@ -329,6 +349,9 @@ export async function deployTwist({
               version,
               permissions: JSON.stringify(publicPermissions),
               options: optionsSchema ? JSON.stringify(optionsSchema) : null,
+              is_source: providers.length > 0,
+              logo_url: logoUrl ?? null,
+              logo_url_dark: logoUrlDark ?? null,
             })
           )
           .returningAll()

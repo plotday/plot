@@ -42,12 +42,12 @@ class PlotSpacing extends ThemeExtension<PlotSpacing> {
   /// This ensures error UI can render even when theme initialization fails.
   static const PlotSpacing fallback = PlotSpacing(
     xs: 2.0,
-    sm: 4.0,
-    md: 8.0,
-    lg: 12.0,
-    xl: 16.0,
-    xxl: 24.0,
-    xxxl: 32.0,
+    sm: 6.0,
+    md: 10.0,
+    lg: 14.0,
+    xl: 20.0,
+    xxl: 28.0,
+    xxxl: 36.0,
   );
 
   @override
@@ -68,6 +68,12 @@ class PlotSpacing extends ThemeExtension<PlotSpacing> {
     xxl: xxl ?? this.xxl,
     xxxl: xxxl ?? this.xxxl,
   );
+
+  /// Standard widget padding: `EdgeInsets.all(lg)`.
+  EdgeInsets get padding => EdgeInsets.all(lg);
+
+  /// Compact widget padding: `EdgeInsets.symmetric(horizontal: lg, vertical: sm)`.
+  EdgeInsets get paddingSm => EdgeInsets.symmetric(horizontal: lg, vertical: sm);
 
   @override
   PlotSpacing lerp(PlotSpacing? other, double t) {

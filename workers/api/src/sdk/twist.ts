@@ -74,6 +74,8 @@ const TwistDeploymentSchema = z
     env: z.record(z.string(), z.any()).optional(),
     name: z.string().optional(),
     description: z.string().optional(),
+    logoUrl: z.string().url().optional(),
+    logoUrlDark: z.string().url().optional(),
     publisherId: z.coerce.number().optional(),
     environment: z
       .enum(["personal", "private", "review"])
@@ -317,6 +319,8 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     dryRun,
     name,
     description,
+    logoUrl,
+    logoUrlDark,
     publisherId,
     environment,
   } = parseResult.data;
@@ -593,6 +597,8 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           environment,
           name: name!,
           description,
+          logoUrl,
+          logoUrlDark,
           userId,
           userName: user?.name || user?.email?.split("@")[0],
           userEmail: user?.email,
@@ -685,6 +691,8 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         environment,
         name: name!,
         description,
+        logoUrl,
+        logoUrlDark,
         userId,
         userName: user?.name || user?.email?.split("@")[0],
         userEmail: user?.email,

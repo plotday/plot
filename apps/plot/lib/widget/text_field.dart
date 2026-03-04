@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/modal.dart';
 
 enum TextFieldStyle { outline, ghost }
@@ -236,7 +237,7 @@ class EditableAreaState extends State<EditableArea> {
         _focusNode.requestFocus();
       },
       child: Container(
-        padding: widget.padding ? widgetPadding : EdgeInsets.zero,
+        padding: widget.padding ? context.theme.spacing.padding : EdgeInsets.zero,
         decoration: BoxDecoration(
           color: context.theme.plotColors.editableBackground,
           borderRadius: widget.flushToBottom

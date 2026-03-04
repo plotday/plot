@@ -13,7 +13,6 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   }
 
   static const String _kMentionMruKey = 'mention_mru_ids';
-  static const String _kHasSelectedWebPlatformKey = 'has_selected_web_platform';
   static const String _kShowAllPrioritiesKey = 'show_all_priorities';
   static const int _maxMruItems = 50;
 
@@ -37,9 +36,14 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   }
 
   /// Sort a list of items by mention MRU order
-  /// Items not in the MRU list will be placed after MRU items in their original order
-  List<T> sortByMentionMru<T>(List<T> items, String Function(T) getId) {
-    if (state.mentionMruIds.isEmpty) {
+  /// Items not in the MRU list will be placed after MRU items in their original order.
+  /// Low-priority items (e.g. contacts) sort after other non-MRU items.
+  List<T> sortByMentionMru<T>(
+    List<T> items,
+    String Function(T) getId, {
+    bool Function(T)? isLowPriority,
+  }) {
+    if (state.mentionMruIds.isEmpty && isLowPriority == null) {
       return items;
     }
 
@@ -50,24 +54,16 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
 
     return items.toList()
       ..sort((a, b) {
-        final aIndex = mruOrder[getId(a)] ?? 999999;
-        final bIndex = mruOrder[getId(b)] ?? 999999;
+        final aInMru = mruOrder.containsKey(getId(a));
+        final bInMru = mruOrder.containsKey(getId(b));
+        final aIndex = aInMru
+            ? mruOrder[getId(a)]!
+            : (isLowPriority?.call(a) ?? false ? 999999 : 999998);
+        final bIndex = bInMru
+            ? mruOrder[getId(b)]!
+            : (isLowPriority?.call(b) ?? false ? 999999 : 999998);
         return aIndex.compareTo(bIndex);
       });
-  }
-
-  /// Mark that the user has selected to continue using the web platform
-  Future<void> selectWebPlatform() async {
-    final prefs = ProfilePreferences.instance;
-    await prefs.setBool(_kHasSelectedWebPlatformKey, true);
-    emit(state.copyWith(hasSelectedWebPlatform: true));
-  }
-
-  /// Gets the platform selection directly from ProfilePreferences
-  /// This bypasses the Bloc state to avoid race conditions during initialization
-  Future<bool> getHasSelectedWebPlatform() async {
-    final prefs = ProfilePreferences.instance;
-    return prefs.getBool(_kHasSelectedWebPlatformKey) ?? false;
   }
 
   /// Toggle showing all priorities (active + archived) vs active only
@@ -80,14 +76,12 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   Future<void> _loadFromPreferences() async {
     final prefs = ProfilePreferences.instance;
     final idsString = prefs.getString(_kMentionMruKey);
-    final hasSelectedWebPlatform = prefs.getBool(_kHasSelectedWebPlatformKey);
     final showAllPriorities = prefs.getBool(_kShowAllPrioritiesKey) ?? false;
 
     emit(state.copyWith(
       mentionMruIds: idsString != null && idsString.isNotEmpty
           ? idsString.split(',')
           : null,
-      hasSelectedWebPlatform: hasSelectedWebPlatform,
       showAllPriorities: showAllPriorities,
     ));
   }

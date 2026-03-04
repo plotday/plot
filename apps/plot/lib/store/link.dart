@@ -1,237 +1,210 @@
 part of 'store.dart';
 
-enum LinkType { external, auth, callback, conferencing, file }
+typedef LinkId = Uuid;
 
-enum ConferencingProvider { googleMeet, zoom, microsoftTeams, webex, other }
+/// Describes a link type that a source creates.
+class LinkTypeConfig {
+  final String type;
+  final String label;
+  final String? logo;
+  final String? logoDark;
+  final String? logoMono;
+  final List<LinkStatus>? statuses;
 
-abstract class Link extends Equatable {
-  const Link({required this.type});
+  const LinkTypeConfig({
+    required this.type,
+    required this.label,
+    this.logo,
+    this.logoDark,
+    this.logoMono,
+    this.statuses,
+  });
 
-  final LinkType type;
-
-  factory Link.fromJson(Map<String, dynamic> json) {
-    final type = LinkType.values.firstWhere(
-      (t) => t.name == json['type'],
-      orElse: () => LinkType.external,
-    );
-
-    switch (type) {
-      case LinkType.external:
-        return ExternalLink.fromJson(json);
-      case LinkType.auth:
-        return AuthLink.fromJson(json);
-      case LinkType.callback:
-        return CallbackLink.fromJson(json);
-      case LinkType.conferencing:
-        return ConferencingLink.fromJson(json);
-      case LinkType.file:
-        return FileLink.fromJson(json);
-    }
-  }
-
-  Map<String, dynamic> toJson();
-}
-
-class ExternalLink extends Link {
-  const ExternalLink({required this.title, required this.url})
-    : super(type: LinkType.external);
-
-  final String title;
-  final String url;
-
-  factory ExternalLink.fromJson(Map<String, dynamic> json) {
-    return ExternalLink(
-      title: json['title'] as String,
-      url: json['url'] as String,
+  factory LinkTypeConfig.fromJson(Map<String, dynamic> json) {
+    return LinkTypeConfig(
+      type: json['type'] as String,
+      label: json['label'] as String,
+      logo: json['logo'] as String?,
+      logoDark: json['logoDark'] as String? ?? json['logo_dark'] as String?,
+      logoMono: json['logoMono'] as String? ?? json['logo_mono'] as String?,
+      statuses: (json['statuses'] as List<dynamic>?)
+          ?.map((s) => LinkStatus.fromJson(s as Map<String, dynamic>))
+          .toList(),
     );
   }
-
-  @override
-  Map<String, dynamic> toJson() {
-    return {'type': type.name, 'title': title, 'url': url};
-  }
-
-  @override
-  List<Object?> get props => [type, title, url];
 }
 
-class AuthLink extends Link {
-  const AuthLink({
-    required this.title,
-    required this.provider,
-    required this.scopes,
-    required this.callback,
-  }) : super(type: LinkType.auth);
+/// A possible status value within a LinkTypeConfig.
+class LinkStatus {
+  final String status;
+  final String label;
 
-  final String title;
-  final AuthProvider provider;
-  final List<String> scopes;
-  final String callback;
+  const LinkStatus({required this.status, required this.label});
 
-  factory AuthLink.fromJson(Map<String, dynamic> json) {
-    return AuthLink(
-      title: json['title'] as String,
-      provider: AuthProvider.values.firstWhere(
-        (v) => v.name == json['provider'],
-        orElse: () => AuthProvider.other,
-      ),
-      scopes: (json['scopes'] as List).cast<String>(),
-      callback: json['callback'] as String,
+  factory LinkStatus.fromJson(Map<String, dynamic> json) {
+    return LinkStatus(
+      status: json['status'] as String,
+      label: json['label'] as String,
     );
   }
-
-  @override
-  Map<String, dynamic> toJson() {
-    return {
-      'type': type.name,
-      'title': title,
-      'provider': provider.name,
-      'scopes': scopes,
-      'callback': callback,
-    };
-  }
-
-  @override
-  List<Object?> get props => [type, title, provider, scopes, callback];
 }
 
-class CallbackLink extends Link {
-  const CallbackLink({required this.title, required this.callback})
-    : super(type: LinkType.callback);
+@DataClassName('LinkRow')
+class Links extends Table with SyncableTable, UuidTable, CreatedTable {
+  BlobColumn get threadId => blob().nullable().map(const UuidConverter())();
+  BlobColumn get priorityId => blob().nullable().map(const UuidConverter())();
+  TextColumn get source => text().nullable()();
+  DateTimeColumn get sourceCreatedAt =>
+      dateTime().map(const LocalDateTimeConverter())();
+  BlobColumn get authorId =>
+      blob().nullable().map(const ActorIdConverter())();
+  BlobColumn get assigneeId =>
+      blob().nullable().map(const ActorIdConverter())();
+  BlobColumn get createdBy =>
+      blob().nullable().map(const UuidConverter())();
+  TextColumn get title => text().nullable()();
+  TextColumn get preview => text().nullable()();
+  TextColumn get type => text().nullable()();
+  TextColumn get status => text().nullable()();
+  TextColumn get actions => text().nullable().map(const UserActionsConverter())();
+  TextColumn get meta =>
+      text().nullable().map(const JsonConverter())();
+  TextColumn get sourceUrl => text().nullable()();
+  TextColumn get channelId => text().nullable()();
+}
 
-  final String title;
-  final String callback;
+class LinksBase extends BaseTable {
+  LinksBase()
+    : super(
+        table: 'user_link',
+        syncEndpoint: 'links',
+        name: 'links',
+        order: 'updated_at',
+        ascending: false,
+      );
 
-  factory CallbackLink.fromJson(Map<String, dynamic> json) {
-    return CallbackLink(
-      title: json['title'] as String,
-      callback: json['callback'] as String,
+  @override
+  Insertable<LinkRow> fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
+    json.remove('sync_depth');
+    json.remove('user_id');
+    json.remove('twist_id');
+    json.remove('source_priority_root');
+    json.remove('priority_path');
+    // Remove logo from synced data (resolved from LinkTypeConfig now)
+    json.remove('logo');
+
+    return LinkRow.fromJson(json);
+  }
+}
+
+class Link extends Equatable {
+  static Future<void> pull() async {
+    await Store.get.pull(Store.get.links, LinksBase());
+  }
+
+  static Future<bool> push() async {
+    return await Store.get.push(Store.get.links, LinksBase());
+  }
+
+  final LinkRow _link;
+
+  const Link(this._link);
+
+  LinkId get id => _link.id;
+  ThreadId? get threadId => _link.threadId;
+  Uuid? get priorityId => _link.priorityId;
+  String? get source => _link.source;
+  DateTime get sourceCreatedAt => _link.sourceCreatedAt;
+  ActorId? get authorId => _link.authorId;
+  ActorId? get assigneeId => _link.assigneeId;
+  Uuid? get createdBy => _link.createdBy;
+  String? get title => _link.title;
+  String? get preview => _link.preview;
+  String? get type => _link.type;
+  String? get status => _link.status;
+  List<UserAction>? get actions => _link.actions;
+  Map<String, dynamic>? get meta => _link.meta;
+  String? get sourceUrl => _link.sourceUrl;
+  String? get channelId => _link.channelId;
+  DateTime get createdAt => _link.createdAt;
+  DateTime get updatedAt => _link.updatedAt;
+
+  /// Get the LinkTypeConfig for this link from the creating PriorityTwist.
+  LinkTypeConfig? getTypeConfig() {
+    final ptId = createdBy;
+    if (ptId == null) return null;
+    final pt = PriorityTwist._cache[ptId];
+    if (pt == null) return null;
+    final configs = pt.parsedLinkTypes;
+    if (configs == null || type == null) return null;
+    return configs.where((c) => c.type == type).firstOrNull;
+  }
+
+  /// Get the human-readable status label, falling back to the raw status.
+  String? get statusLabel {
+    final config = getTypeConfig();
+    if (config == null || status == null) return status;
+    return config.statuses
+        ?.where((s) => s.status == status)
+        .firstOrNull
+        ?.label ?? status;
+  }
+
+  /// Get the logo URL from the link's type config.
+  String? get logo => getTypeConfig()?.logo;
+
+  /// Get the logo URL appropriate for the given [brightness].
+  String? logoForBrightness(Brightness brightness) {
+    final config = getTypeConfig();
+    if (config == null) return null;
+    if (brightness == Brightness.dark && config.logoDark != null) {
+      return config.logoDark;
+    }
+    return config.logo;
+  }
+
+  /// Optimistically update the link's status and push to the server.
+  static Future<void> updateStatus(Link link, String newStatus) async {
+    final updated = link._link.copyWith(
+      status: Value(newStatus),
+      updatedAt: DateTime.now(),
     );
+    await Store.get.save(Store.get.links, updated, LinksBase());
+  }
+
+  /// Find links by exact source URL match
+  static Future<List<Link>> findBySourceUrl(String url) async {
+    final rows = await (Store.get.select(Store.get.links)
+          ..where((l) => l.sourceUrl.equals(url)))
+        .get();
+    return rows.map((row) => Link(row)).toList();
+  }
+
+  /// Search links by title (case-insensitive substring match)
+  static Future<List<Link>> searchByTitle(String query) async {
+    final rows = await (Store.get.select(Store.get.links)
+          ..where((l) => l.title.like('%$query%')))
+        .get();
+    return rows.map((row) => Link(row)).toList();
+  }
+
+  /// Get links for a given thread
+  static Future<List<Link>> getForThread(ThreadId threadId) async {
+    final rows = await (Store.get.select(Store.get.links)
+          ..where((l) => l.threadId.equals(threadId.toBytes())))
+        .get();
+    return rows.map((row) => Link(row)).toList();
+  }
+
+  /// Watch links for a given thread
+  static Stream<List<Link>> watchForThread(ThreadId threadId) {
+    return (Store.get.select(Store.get.links)
+          ..where((l) => l.threadId.equals(threadId.toBytes())))
+        .watch()
+        .map((rows) => rows.map((row) => Link(row)).toList());
   }
 
   @override
-  Map<String, dynamic> toJson() {
-    return {'type': type.name, 'title': title, 'callback': callback};
-  }
-
-  @override
-  List<Object?> get props => [type, title, callback];
-}
-
-class ConferencingLink extends Link {
-  const ConferencingLink({required this.url, required this.provider})
-    : super(type: LinkType.conferencing);
-
-  final String url;
-  final ConferencingProvider provider;
-
-  factory ConferencingLink.fromJson(Map<String, dynamic> json) {
-    return ConferencingLink(
-      url: json['url'] as String,
-      provider: ConferencingProvider.values.firstWhere(
-        (v) => v.name == json['provider'],
-        orElse: () => ConferencingProvider.other,
-      ),
-    );
-  }
-
-  @override
-  Map<String, dynamic> toJson() {
-    return {'type': type.name, 'url': url, 'provider': provider.name};
-  }
-
-  @override
-  List<Object?> get props => [type, url, provider];
-}
-
-class FileLink extends Link {
-  const FileLink({
-    required this.fileId,
-    required this.fileName,
-    required this.fileSize,
-    required this.mimeType,
-  }) : super(type: LinkType.file);
-
-  final String fileId;
-  final String fileName;
-  final int fileSize;
-  final String mimeType;
-
-  bool get isImage => mimeType.startsWith('image/');
-
-  factory FileLink.fromJson(Map<String, dynamic> json) {
-    return FileLink(
-      fileId: json['fileId'] as String,
-      fileName: json['fileName'] as String,
-      fileSize: json['fileSize'] as int,
-      mimeType: json['mimeType'] as String,
-    );
-  }
-
-  @override
-  Map<String, dynamic> toJson() {
-    return {
-      'type': type.name,
-      'fileId': fileId,
-      'fileName': fileName,
-      'fileSize': fileSize,
-      'mimeType': mimeType,
-    };
-  }
-
-  @override
-  List<Object?> get props => [type, fileId, fileName, fileSize, mimeType];
-}
-
-class LinksConverter extends TypeConverter<List<Link>?, String?>
-    with JsonTypeConverter2<List<Link>?, String?, List<dynamic>?> {
-  const LinksConverter();
-
-  @override
-  List<Link>? fromSql(String? fromDb) {
-    if (fromDb == null || fromDb.isEmpty) {
-      return null;
-    }
-    try {
-      final dynamic jsonData = jsonDecode(fromDb);
-      if (jsonData is List) {
-        return jsonData
-            .map((json) => Link.fromJson(json as Map<String, dynamic>))
-            .toList();
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  @override
-  String? toSql(List<Link>? value) {
-    if (value == null || value.isEmpty) {
-      return null;
-    }
-    return jsonEncode(value.map((link) => link.toJson()).toList());
-  }
-
-  @override
-  List<Link>? fromJson(List<dynamic>? json) {
-    if (json == null) {
-      return null;
-    }
-    try {
-      return json
-          .map((item) => Link.fromJson(item as Map<String, dynamic>))
-          .toList();
-    } catch (e) {
-      return null;
-    }
-  }
-
-  @override
-  List<dynamic>? toJson(List<Link>? value) {
-    if (value == null || value.isEmpty) {
-      return null;
-    }
-    return value.map((link) => link.toJson()).toList();
-  }
+  List<Object?> get props => [_link];
 }

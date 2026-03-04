@@ -5,30 +5,30 @@ typedef NoteId = Uuid;
 @DataClassName('NoteRow')
 class Notes extends Table
     with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
-  BlobColumn get activityId => blob().map(const UuidConverter())();
+  BlobColumn get threadId => blob().map(const UuidConverter())();
   BlobColumn get authorId => blob().map(const ActorIdConverter())();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
 
   TextColumn get content => text().nullable()();
   DateTimeColumn get sourceCreatedAt =>
       dateTime().map(const LocalDateTimeConverter())();
-  TextColumn get links => text().nullable().map(const LinksConverter())();
+  TextColumn get actions => text().nullable().map(const UserActionsConverter())();
   TextColumn get mentions =>
       text().nullable().map(const ActorIdListConverter())();
   BlobColumn get reNoteId => blob().nullable().map(const UuidConverter())();
 }
 
 class NotesBase extends BaseTable {
-  NotesBase({this.activityId})
+  NotesBase({this.threadId})
     : super(
         table: 'user_note',
         syncEndpoint: 'notes',
         name: "notes",
-        filterName: activityId?.toString(),
+        filterName: threadId?.toString(),
         ascending: true, // Order by created_at ascending within an activity
       );
 
-  final ActivityId? activityId;
+  final ThreadId? threadId;
 
   @override
   Map<String, String> buildParams({
@@ -43,8 +43,8 @@ class NotesBase extends BaseTable {
       initial: initial,
       archived: archived,
     );
-    if (activityId != null) {
-      params['activity_id'] = activityId.toString();
+    if (threadId != null) {
+      params['thread_id'] = threadId.toString();
     }
     return params;
   }
@@ -91,12 +91,12 @@ class NotesBase extends BaseTable {
 class Note extends Equatable implements Comparable<Note> {
   factory Note({
     required NoteId id,
-    required ActivityId activityId,
+    required ThreadId threadId,
     required ActorId authorId,
     required bool draft,
     required bool private,
     String? content,
-    List<Link>? links,
+    List<UserAction>? actions,
     List<ActorId>? mentions,
     NoteId? reNoteId,
     required DateTime createdAt,
@@ -111,13 +111,13 @@ class Note extends Equatable implements Comparable<Note> {
 
     return Note._internal(
       id: id,
-      activityId: activityId,
+      threadId: threadId,
       authorId: authorId,
       draft: draft,
       private: private,
       content: content,
       sourceCreatedAt: sourceCreatedAt,
-      links: links,
+      actions: actions,
       mentions: effectiveMentions,
       reNoteId: reNoteId,
       createdAt: createdAt,
@@ -127,13 +127,13 @@ class Note extends Equatable implements Comparable<Note> {
     );
   }
 
-  Note.draft({required this.activityId})
+  Note.draft({required this.threadId})
     : draft = true,
       private = false,
       id = NoteId.generate(),
       authorId = Base.actorId,
       content = null,
-      links = null,
+      actions = null,
       mentions = null,
       reNoteId = null,
       createdAt = DateTime.now(),
@@ -144,12 +144,12 @@ class Note extends Equatable implements Comparable<Note> {
 
   const Note._internal({
     required this.id,
-    required this.activityId,
+    required this.threadId,
     required this.authorId,
     required this.draft,
     required this.private,
     this.content,
-    this.links,
+    this.actions,
     this.mentions,
     this.reNoteId,
     required this.createdAt,
@@ -169,13 +169,13 @@ class Note extends Equatable implements Comparable<Note> {
 
     return Note._internal(
       id: noteRow.id,
-      activityId: noteRow.activityId,
+      threadId: noteRow.threadId,
       authorId: noteRow.authorId,
       draft: noteRow.draft,
       private: noteRow.private,
       content: noteRow.content,
       sourceCreatedAt: noteRow.sourceCreatedAt,
-      links: noteRow.links,
+      actions: noteRow.actions,
       mentions: effectiveMentions,
       reNoteId: noteRow.reNoteId,
       createdAt: noteRow.createdAt,
@@ -186,12 +186,12 @@ class Note extends Equatable implements Comparable<Note> {
   }
 
   final Uuid id;
-  final ActivityId activityId;
+  final ThreadId threadId;
   final ActorId authorId;
   final bool draft;
   final bool private;
   final String? content;
-  final List<Link>? links;
+  final List<UserAction>? actions;
   final List<ActorId>? mentions;
   final NoteId? reNoteId;
   final DateTime createdAt;
@@ -201,20 +201,20 @@ class Note extends Equatable implements Comparable<Note> {
   final NoteTagsRow? _tags;
 
   /// Pull all notes and tags for a specific activity (lazy-loaded on first view).
-  /// Tracked in SyncStates as "notes:{activityId}".
-  static Future<void> pullForActivity(ActivityId activityId) async {
+  /// Tracked in SyncStates as "notes:{threadId}".
+  static Future<void> pullForActivity(ThreadId threadId) async {
     // Pull all notes for this activity (first time only)
     await Store.get.pull(
       Store.get.notes,
-      NotesBase(activityId: activityId),
+      NotesBase(threadId: threadId),
       initial: true,
     );
 
     // Pull all note tags (unfiltered - Drift filters locally based on available notes)
-    // We use the activityId in the BaseTable just for sync state tracking
+    // We use the threadId in the BaseTable just for sync state tracking
     await Store.get.pull(
       Store.get.noteTags,
-      NoteTagsBase(activityId: activityId),
+      NoteTagsBase(threadId: threadId),
       initial: true,
     );
   }
@@ -262,8 +262,8 @@ class Note extends Equatable implements Comparable<Note> {
 
   /// Helper to ensure notes are loaded for an activity before watching.
   /// Triggers pullForActivity if this is the first time viewing the activity.
-  static void _ensureNotesLoadedForActivity(ActivityId activityId) {
-    final entity = "notes:$activityId";
+  static void _ensureNotesLoadedForActivity(ThreadId threadId) {
+    final entity = "notes:$threadId";
 
     // Check if we've already loaded notes for this activity (async, don't block)
     (Store.get.select(Store.get.syncStates)
@@ -272,16 +272,16 @@ class Note extends Equatable implements Comparable<Note> {
         .then((SyncState? syncState) {
           if (syncState == null) {
             // Never loaded notes for this activity - trigger pull in background
-            log.info('First time viewing activity $activityId, pulling notes');
-            pullForActivity(activityId).catchError((Object e) {
-              log.warning('Failed to pull notes for activity $activityId: $e');
+            log.info('First time viewing activity $threadId, pulling notes');
+            pullForActivity(threadId).catchError((Object e) {
+              log.warning('Failed to pull notes for activity $threadId: $e');
             });
           }
         });
   }
 
   static Stream<List<Note>> watch(
-    ActivityId activityId, {
+    ThreadId threadId, {
     bool? archived = false,
     bool? draft = false,
     List<Tag>? filter,
@@ -289,7 +289,7 @@ class Note extends Equatable implements Comparable<Note> {
     NoteId? threadNoteId,
   }) {
     // Check if notes for this activity have been loaded, if not trigger pull
-    _ensureNotesLoadedForActivity(activityId);
+    _ensureNotesLoadedForActivity(threadId);
 
     // Create a copy of filter to avoid mutating the original
     final mutableFilter = filter != null ? List<Tag>.from(filter) : null;
@@ -303,7 +303,7 @@ class Note extends Equatable implements Comparable<Note> {
     if (archived == true || archived == null) {
       Store.get.pullArchived(
         Store.get.notes,
-        NotesBase(activityId: activityId),
+        NotesBase(threadId: threadId),
       );
     }
 
@@ -313,7 +313,7 @@ class Note extends Equatable implements Comparable<Note> {
     // Build query with joins
     var query =
         Store.get.select(n).join([leftOuterJoin(tags, tags.id.equalsExp(n.id))])
-          ..where(n.activityId.equalsValue(activityId))
+          ..where(n.threadId.equalsValue(threadId))
           ..orderBy([OrderingTerm.desc(n.sourceCreatedAt)])
           ..addColumns([tags.tags]);
 
@@ -397,24 +397,24 @@ class Note extends Equatable implements Comparable<Note> {
 
   /// Watch all tags present in an activity and its notes.
   /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
-  static Stream<List<(Tag, int)>> watchTagsForActivity(ActivityId activityId) {
-    final at = Store.get.activityTags;
+  static Stream<List<(Tag, int)>> watchTagsForActivity(ThreadId threadId) {
+    final at = Store.get.threadTags;
     final nt = Store.get.noteTags;
     final n = Store.get.notes;
 
     // Query for activity tags
-    final activityTagsQuery = Store.get.select(at)
-      ..where((t) => t.id.equalsValue(activityId));
+    final threadTagsQuery = Store.get.select(at)
+      ..where((t) => t.id.equalsValue(threadId));
 
     // Query for note tags belonging to this activity
     final noteTagsQuery = Store.get.select(nt).join([
       innerJoin(n, n.id.equalsExp(nt.id) & n.archivedAt.isNull()),
-    ])..where(n.activityId.equalsValue(activityId));
+    ])..where(n.threadId.equalsValue(threadId));
 
     // COUNT query for stored Tag.archived on notes (notes with archived tag, not archivedAt)
     final noteArchivedQuery = Store.get.selectOnly(n)
       ..addColumns([n.id.count()])
-      ..where(n.activityId.equalsValue(activityId) & n.archivedAt.isNull());
+      ..where(n.threadId.equalsValue(threadId) & n.archivedAt.isNull());
 
     final noteArchivedCountStream = noteArchivedQuery
         // Map the single result row to the count value.
@@ -423,11 +423,11 @@ class Note extends Equatable implements Comparable<Note> {
         .watchSingle();
 
     return Rx.combineLatest3(
-      activityTagsQuery.watch(),
+      threadTagsQuery.watch(),
       noteTagsQuery.watch(),
       noteArchivedCountStream,
       (
-        List<ActivityTagsRow> activityTagRows,
+        List<ThreadTagsRow> threadTagRows,
         List<TypedResult> noteTagResults,
         int? noteArchivedCount,
       ) {
@@ -435,13 +435,13 @@ class Note extends Equatable implements Comparable<Note> {
         final Map<Tag, Set<Uuid>> storedTagCounts = {};
 
         // Count tags from the activity itself
-        for (final activityTagsRow in activityTagRows) {
+        for (final activityTagsRow in threadTagRows) {
           final tags = activityTagsRow.tags;
           if (tags != null) {
             for (final tag in tags.keys) {
               // Skip computed tags here - we'll add them separately below
               if (tag != Tag.archived) {
-                storedTagCounts.putIfAbsent(tag, () => {}).add(activityId);
+                storedTagCounts.putIfAbsent(tag, () => {}).add(threadId);
               }
             }
           }
@@ -485,10 +485,10 @@ class Note extends Equatable implements Comparable<Note> {
 
   /// Get the most recent draft note for a specific activity
   /// Returns the draft with the most recent updatedAt timestamp
-  static Future<Note?> getDraftByActivity(ActivityId activityId) async {
+  static Future<Note?> getDraftByActivity(ThreadId threadId) async {
     final n = Store.get.notes;
     final query = Store.get.select(n)
-      ..where((tbl) => tbl.activityId.equalsValue(activityId))
+      ..where((tbl) => tbl.threadId.equalsValue(threadId))
       ..where((tbl) => tbl.draft.equals(true))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)])
       ..limit(1);
@@ -502,13 +502,13 @@ class Note extends Equatable implements Comparable<Note> {
   NoteRow toRow() {
     return NoteRow(
       id: id,
-      activityId: activityId,
+      threadId: threadId,
       authorId: authorId,
       draft: draft,
       private: private,
       content: content,
       sourceCreatedAt: sourceCreatedAt,
-      links: links,
+      actions: actions,
       mentions: mentions,
       reNoteId: reNoteId,
       createdAt: createdAt,
@@ -517,7 +517,7 @@ class Note extends Equatable implements Comparable<Note> {
     );
   }
 
-  Future<void> save() async {
+  Future<void> save({bool pushToRemote = true}) async {
     // Save note row to local DB
     await Store.get.add(Store.get.notes, toRow().toCompanion(false));
 
@@ -526,15 +526,56 @@ class Note extends Equatable implements Comparable<Note> {
       await Store.get.add(Store.get.noteTags, _tags.toCompanion(false));
     }
 
-    // Update activity's lastNoteCreatedAt to this note's createdAt (only for non-draft notes)
+    // Note todo → thread todo propagation:
+    // When Tag.todo is added to a note for the current user, ensure a per-user
+    // schedule exists on the thread (makes the thread appear on the user's todo list).
+    if (hasTag(Tag.todo, Base.actorId)) {
+      await _ensureTodoForUser(threadId, Base.userId);
+    }
+
+    // Update thread's lastNoteCreatedAt to this note's createdAt (only for non-draft notes)
     if (!draft && archivedAt == null) {
-      await (Store.get.update(Store.get.activities)
-            ..where((a) => a.id.equalsValue(activityId)))
-          .write(ActivitiesCompanion(lastNoteCreatedAt: Value(createdAt)));
+      await (Store.get.update(Store.get.threads)
+            ..where((a) => a.id.equalsValue(threadId)))
+          .write(ThreadsCompanion(lastNoteCreatedAt: Value(createdAt)));
     }
 
     // Push to remote (fire-and-forget, like Store.save)
-    unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
+    if (pushToRemote) {
+      unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
+    }
+  }
+
+  /// Ensures a per-user schedule exists on the thread for the given user.
+  /// Creates one if it doesn't exist, unarchives if it was archived.
+  static Future<void> _ensureTodoForUser(ThreadId threadId, Uuid userId) async {
+    final existing = await (Store.get.select(Store.get.schedules)
+      ..where((s) => s.threadId.equalsValue(threadId) &
+                     s.userId.equalsValue(userId) &
+                     s.occurrence.isNull()))
+        .getSingleOrNull();
+    if (existing == null) {
+      // Create per-user schedule (no at/on = current and ongoing todo)
+      final newSchedule = ScheduleRow(
+        id: Uuid.generate(),
+        updatedAt: DateTime.now(),
+        threadId: threadId,
+        userId: userId,
+        order: Order.first(),
+      );
+      await Store.get.save(
+        Store.get.schedules,
+        newSchedule.toCompanion(false),
+        SchedulesBase(),
+      );
+    } else if (existing.archivedAt != null) {
+      // Unarchive existing schedule (re-add to todo)
+      await Store.get.save(
+        Store.get.schedules,
+        existing.copyWith(archivedAt: const Value(null), updatedAt: DateTime.now()).toCompanion(false),
+        SchedulesBase(),
+      );
+    }
   }
 
   Future<void> delete() async {
@@ -551,16 +592,16 @@ class Note extends Equatable implements Comparable<Note> {
     ...(_tags?.tags ?? const {}),
   };
 
-  /// Get all actors who have Tag.now or Tag.done on this note (i.e., assignees)
+  /// Get all actors who have Tag.todo or Tag.done on this note (i.e., assignees)
   List<ActorId> get assignees {
     final actors = <ActorId>{};
-    if (tags[Tag.now] != null) actors.addAll(tags[Tag.now]!);
+    if (tags[Tag.todo] != null) actors.addAll(tags[Tag.todo]!);
     if (tags[Tag.done] != null) actors.addAll(tags[Tag.done]!);
     return actors.toList();
   }
 
-  /// Get actors currently working on this note (have Tag.now)
-  List<ActorId> get activeAssignees => tags[Tag.now] ?? const [];
+  /// Get actors currently working on this note (have Tag.todo)
+  List<ActorId> get activeAssignees => tags[Tag.todo] ?? const [];
 
   /// Get actors who have completed this note (have Tag.done)
   List<ActorId> get completedAssignees => tags[Tag.done] ?? const [];
@@ -587,9 +628,9 @@ class Note extends Equatable implements Comparable<Note> {
     return actors?.contains(actorId!) ?? false;
   }
 
-  /// Check if a specific actor is assigned to this note (has Tag.now)
-  bool isAssignedTo(ActorId actorId) => hasTag(Tag.now, actorId);
-  bool isAssigned() => hasTag(Tag.now);
+  /// Check if a specific actor is assigned to this note (has Tag.todo)
+  bool isAssignedTo(ActorId actorId) => hasTag(Tag.todo, actorId);
+  bool isAssigned() => hasTag(Tag.todo);
 
   /// Check if a specific actor has completed this note (has Tag.done)
   bool isCompletedBy(ActorId actorId) => hasTag(Tag.done, actorId);
@@ -648,25 +689,25 @@ class Note extends Equatable implements Comparable<Note> {
 
   // Tag manipulation methods
 
-  /// Assign this note to an actor by adding Tag.now
+  /// Assign this note to an actor by adding Tag.todo
   /// Returns a new Note instance with the tag added - caller must call save()
   Note assignTo(ActorId actorId) {
-    // Only add Tag.now if the actor doesn't already have it
-    if (!hasTag(Tag.now, actorId)) {
-      return toggleTag(Tag.now, actorId);
+    // Only add Tag.todo if the actor doesn't already have it
+    if (!hasTag(Tag.todo, actorId)) {
+      return toggleTag(Tag.todo, actorId);
     }
     return this;
   }
 
-  /// Mark this note as complete for an actor by replacing Tag.now with Tag.done
+  /// Mark this note as complete for an actor by replacing Tag.todo with Tag.done
   /// Returns a new Note instance with tags updated - caller must call save()
   Note completeFor(ActorId actorId) {
     // Start with current note
     Note updated = this;
 
-    // Remove Tag.now if the actor has it
-    if (hasTag(Tag.now, actorId)) {
-      updated = updated.toggleTag(Tag.now, actorId);
+    // Remove Tag.todo if the actor has it
+    if (hasTag(Tag.todo, actorId)) {
+      updated = updated.toggleTag(Tag.todo, actorId);
     }
 
     // Add Tag.done if the actor doesn't have it
@@ -692,21 +733,6 @@ class Note extends Equatable implements Comparable<Note> {
       );
       // Return unchanged note - don't allow modifying other users' count tags
       return this;
-    }
-
-    // RSVP tags are mutually exclusive - handle before modification
-    if (tag.type == TagType.count && tag.isRsvp && value) {
-      // Remove current user from other RSVP tags before adding new one
-      Note updated = this;
-      for (final rsvpTag in Tag.rsvpTags) {
-        if (rsvpTag != tag && hasTag(rsvpTag, actorId)) {
-          updated = updated.setTag(rsvpTag, actorId, false);
-        }
-      }
-      // Continue with adding the requested RSVP tag on the updated note
-      if (updated != this) {
-        return updated.setTag(tag, actorId, value);
-      }
     }
 
     // Get current tags or create empty map
@@ -793,12 +819,13 @@ class Note extends Equatable implements Comparable<Note> {
   }
 
   Note copyWith({
-    ActivityId? activityId,
+    ThreadId? threadId,
     bool? draft,
     bool? private,
     String? content,
-    List<Link>? links,
+    List<UserAction>? actions,
     List<ActorId>? mentions,
+    List<ActorId>? addMentions,
     NoteId? reNoteId,
     bool clearReNoteId = false,
     NoteTagsRow? tags,
@@ -807,11 +834,17 @@ class Note extends Equatable implements Comparable<Note> {
     final now = DateTime.now();
 
     // Auto-extract mentions from content if content is provided but mentions are not
-    final effectiveMentions =
+    var effectiveMentions =
         mentions ??
         (content != null
             ? _extractMentionsFromMarkdown(content)
             : this.mentions);
+
+    // Merge additional mentions (e.g. thread twist mentions) with deduplication
+    if (addMentions != null && addMentions.isNotEmpty) {
+      final merged = <ActorId>{...?effectiveMentions, ...addMentions};
+      effectiveMentions = merged.toList();
+    }
 
     // Detect publishing (draft → non-draft) and add Twisting tag for twist mentions
     NoteTagsRow? effectiveTags = tags ?? _tags;
@@ -857,13 +890,13 @@ class Note extends Equatable implements Comparable<Note> {
     return Note._fromStore(
       noteRow: NoteRow(
         id: id,
-        activityId: activityId ?? this.activityId,
+        threadId: threadId ?? this.threadId,
         authorId: authorId,
         draft: draft ?? this.draft,
         private: private ?? this.private,
         content: content ?? this.content,
         sourceCreatedAt: isPublishing ? now : sourceCreatedAt,
-        links: links ?? this.links,
+        actions: actions ?? this.actions,
         mentions: effectiveMentions,
         reNoteId: clearReNoteId ? null : (reNoteId ?? this.reNoteId),
         createdAt: isPublishing ? now : createdAt,
@@ -877,12 +910,12 @@ class Note extends Equatable implements Comparable<Note> {
   @override
   List<Object?> get props => [
     id,
-    activityId,
+    threadId,
     authorId,
     draft,
     private,
     content,
-    links,
+    actions,
     mentions,
     reNoteId,
     createdAt,

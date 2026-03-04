@@ -24,7 +24,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Subscribe to route changes to rebuild bottom nav when navigating to/from NewActivityPage
+    // Subscribe to route changes to rebuild bottom nav when navigating to/from NewThreadPage
     _observer = RouterScope.of(
       context,
     ).firstObserverOfType<AutoRouteObserver>();
@@ -75,11 +75,11 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                 // Determine the correct tab index based on current route
                 int getCurrentIndex() {
                   final currentPath = context.router.currentPath;
-                  // If on NewActivityPage (/priorityId/new), highlight New tab (index 3)
+                  // If on NewThreadPage (/priorityId/new), highlight New tab (index 3)
                   if (currentPath.endsWith('/new')) {
                     return 3;
                   }
-                  // If on ActivityPage (/priorityId/activityId), no tab highlighted
+                  // If on ThreadPage (/priorityId/threadId), no tab highlighted
                   final pathSegments = currentPath
                       .split('/')
                       .where((s) => s.isNotEmpty)
@@ -87,15 +87,15 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                   if (pathSegments.length >= 2) {
                     return -1;
                   }
-                  // On the Activities tab, highlight Now + Next or Activity based on tab notifier
+                  // On the Threads tab, highlight Agenda or Activity Feed based on tab notifier
                   if (tabsRouter.activeIndex == 1) {
-                    return _tabNotifier.value == PriorityTab.upNext ? 1 : 2;
+                    return _tabNotifier.value == PriorityTab.agenda ? 1 : 2;
                   }
                   // Otherwise use the tab router's active index
                   return tabsRouter.activeIndex;
                 }
 
-                // Hide bottom nav on full-screen routes (activity detail, new activity)
+                // Hide bottom nav on full-screen routes (thread detail, new thread)
                 bool isFullScreenRoute() {
                   final currentPath = context.router.currentPath;
                   if (currentPath.endsWith('/new')) return true;
@@ -115,14 +115,14 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                             final currentPath = context.router.currentPath;
 
                             if (index == 1 || index == 2) {
-                              // Now + Next (1) or Activity (2) — switch to tab 1 and set tab notifier
+                              // Agenda (1) or Activity Feed (2) — switch to tab 1 and set tab notifier
                               final tab = index == 1
-                                  ? PriorityTab.upNext
-                                  : PriorityTab.activity;
+                                  ? PriorityTab.agenda
+                                  : PriorityTab.activityFeed;
                               _tabNotifier.value = tab;
 
                               if (currentPath.endsWith('/new')) {
-                                // On NewActivityPage - pop back
+                                // On NewThreadPage - pop back
                                 context.router.back();
                               } else {
                                 final pathSegments = currentPath
@@ -131,7 +131,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                     .toList();
                                 if (pathSegments.length >= 2 &&
                                     tabsRouter.activeIndex == 1) {
-                                  // On ActivityPage - pop back to PriorityPage
+                                  // On ThreadPage - pop back to PriorityPage
                                   context.router.back();
                                 } else {
                                   tabsRouter.setActiveIndex(1);
@@ -139,7 +139,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               }
                               setState(() {});
                             } else if (index == 3) {
-                              // Navigate to New Activity for current priority
+                              // Navigate to New Thread for current priority
                               final pathSegments = currentPath.split('/');
 
                               // Check if we're on the Priorities tab
@@ -158,7 +158,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
 
                                 if (innerRouter != null) {
                                   // Navigate immediately without waiting for frame
-                                  innerRouter.push(NewActivityRoute());
+                                  innerRouter.push(NewThreadRoute());
                                 } else {
                                   // Fallback: wait one frame if inner router not ready
                                   WidgetsBinding.instance.addPostFrameCallback((
@@ -170,26 +170,26 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                           PriorityRoute.name,
                                         );
                                     if (innerRouter2 != null) {
-                                      innerRouter2.push(NewActivityRoute());
+                                      innerRouter2.push(NewThreadRoute());
                                     }
                                   });
                                 }
                               } else if (pathSegments.length > 1 &&
                                   pathSegments[1].isNotEmpty) {
-                                // Already on a priority route - push NewActivityRoute directly
+                                // Already on a priority route - push NewThreadRoute directly
                                 final innerRouter = context.router
                                     .innerRouterOf<StackRouter>(
                                       PriorityRoute.name,
                                     );
                                 if (innerRouter != null) {
-                                  innerRouter.push(NewActivityRoute());
+                                  innerRouter.push(NewThreadRoute());
                                 } else {
                                   // Fallback: navigate with full route
                                   final priorityIdString = pathSegments[1];
                                   context.router.push(
                                     PriorityRoute(
                                       priorityIdString: priorityIdString,
-                                      children: [NewActivityRoute()],
+                                      children: [NewThreadRoute()],
                                     ),
                                   );
                                 }
@@ -203,7 +203,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                             } else {
                               // Index 0: Priorities tab
                               if (currentPath.endsWith('/new')) {
-                                // On NewActivityPage - pop first then switch tabs
+                                // On NewThreadPage - pop first then switch tabs
                                 context.router.back();
                                 WidgetsBinding.instance.addPostFrameCallback((
                                   _,
@@ -227,11 +227,11 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               ),
                             ),
                             FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.now),
+                              icon: Icon(PlotIcon.todo),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
                                   style: context.theme.typography.base,
-                                  child: const Text('Now + Next'),
+                                  child: const Text('Agenda'),
                                 ),
                               ),
                             ),
@@ -240,7 +240,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
                                   style: context.theme.typography.base,
-                                  child: const Text('Activity'),
+                                  child: const Text('Activity Feed'),
                                 ),
                               ),
                             ),

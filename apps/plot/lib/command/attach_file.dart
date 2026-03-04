@@ -23,11 +23,11 @@ class AttachFile extends Command {
         );
 
   final String priorityId;
-  final List<Link> currentLinks;
-  final void Function(List<Link> links) onLinksChanged;
+  final List<UserAction> currentLinks;
+  final void Function(List<UserAction> links) onLinksChanged;
 
   bool get hasFileAttachments =>
-      currentLinks.whereType<FileLink>().isNotEmpty;
+      currentLinks.whereType<FileUserAction>().isNotEmpty;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -46,7 +46,7 @@ class AttachFile extends Command {
     return _pickAndUpload(currentLinks);
   }
 
-  Future<CommandReturn> _pickAndUpload(List<Link> links) async {
+  Future<CommandReturn> _pickAndUpload(List<UserAction> links) async {
     final result = await FilePicker.platform.pickFiles();
     if (result == null || result.files.isEmpty) {
       return const CommandSkipped();
@@ -95,7 +95,7 @@ class AttachFile extends Command {
         );
       }
 
-      final fileLink = FileLink(
+      final fileLink = FileUserAction(
         fileId: response['fileId'] as String,
         fileName: response['fileName'] as String,
         fileSize: response['fileSize'] as int,
@@ -122,19 +122,19 @@ class _AttachmentsModal extends StatefulWidget {
   });
 
   final String priorityId;
-  final List<Link> initialLinks;
-  final void Function(List<Link> links) onLinksChanged;
+  final List<UserAction> initialLinks;
+  final void Function(List<UserAction> links) onLinksChanged;
 
   @override
   State<_AttachmentsModal> createState() => _AttachmentsModalState();
 }
 
 class _AttachmentsModalState extends State<_AttachmentsModal> {
-  late List<Link> _links;
+  late List<UserAction> _links;
   bool _isUploading = false;
 
-  List<FileLink> get _fileLinks =>
-      _links.whereType<FileLink>().toList();
+  List<FileUserAction> get _fileLinks =>
+      _links.whereType<FileUserAction>().toList();
 
   @override
   void initState() {
@@ -142,10 +142,10 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
     _links = List.of(widget.initialLinks);
   }
 
-  void _removeFile(FileLink fileLink) {
+  void _removeFile(FileUserAction fileLink) {
     setState(() {
       _links.removeWhere(
-          (l) => l is FileLink && l.fileId == fileLink.fileId);
+          (l) => l is FileUserAction && l.fileId == fileLink.fileId);
     });
     widget.onLinksChanged(_links);
   }
@@ -190,7 +190,7 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
         );
       }
 
-      final fileLink = FileLink(
+      final fileLink = FileUserAction(
         fileId: response['fileId'] as String,
         fileName: response['fileName'] as String,
         fileSize: response['fileSize'] as int,

@@ -28,11 +28,11 @@ FTypography buildTypography(BuildContext context, FColors colorScheme) {
     xs: FTypography.inherit(
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: sizes.xs),
+    ).base.copyWith(fontSize: sizes.xs, letterSpacing: 0.2),
     sm: FTypography.inherit(
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: sizes.sm),
+    ).base.copyWith(fontSize: sizes.sm, letterSpacing: 0.1),
     base: FTypography.inherit(
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
@@ -40,11 +40,19 @@ FTypography buildTypography(BuildContext context, FColors colorScheme) {
     lg: FTypography.inherit(
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: sizes.lg),
+    ).base.copyWith(
+      fontSize: sizes.lg,
+      fontWeight: FontWeight.w500,
+      letterSpacing: -0.15,
+    ),
     xl: FTypography.inherit(
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: sizes.xl),
+    ).base.copyWith(
+      fontSize: sizes.xl,
+      fontWeight: FontWeight.w500,
+      letterSpacing: -0.3,
+    ),
   );
 }
 

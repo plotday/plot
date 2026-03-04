@@ -1,7 +1,8 @@
-name: Deploy Twists
+name: Deploy Twists & Sources
 
 env:
-  TWISTS: "plot,calendar-sync,chat,project-sync,document-actions"
+  TWISTS: "plot,chat"
+  SOURCES: "github,gmail,google-calendar,google-contacts,google-drive,linear"
 
 on:
   push:
@@ -19,6 +20,11 @@ on:
         required: false
         default: "all"
         type: string
+      sources:
+        description: 'Sources to deploy (comma-separated, or "all" for all sources)'
+        required: false
+        default: "all"
+        type: string
 
 concurrency:
   group: deploy-twists-${{ github.ref }}
@@ -29,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       twists: ${{ steps.filter.outputs.twists }}
+      sources: ${{ steps.filter.outputs.sources }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,28 +87,26 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check for affected twists
+      - name: Check for affected twists and sources
         id: filter
         run: |
           TWIST_LIST=(${TWISTS//,/ })
+          SOURCE_LIST=(${SOURCES//,/ })
           TWISTS_TO_DEPLOY=()
+          SOURCES_TO_DEPLOY=()
 
-          # Check if this is a manual dispatch with specific twists
+          # Check if this is a manual dispatch
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            MANUAL_INPUT="${{ github.event.inputs.twists }}"
-
-            if [ -z "$MANUAL_INPUT" ] || [ "$MANUAL_INPUT" = "all" ]; then
-              # Deploy all twists
+            # Handle twists
+            MANUAL_TWISTS="${{ github.event.inputs.twists }}"
+            if [ -z "$MANUAL_TWISTS" ] || [ "$MANUAL_TWISTS" = "all" ]; then
               echo "Manual trigger: deploying all twists"
               TWISTS_TO_DEPLOY=("${TWIST_LIST[@]}")
             else
-              # Deploy specific twists from comma-separated input
               echo "Manual trigger: deploying specified twists"
-              IFS=',' read -ra INPUT_LIST <<< "$MANUAL_INPUT"
+              IFS=',' read -ra INPUT_LIST <<< "$MANUAL_TWISTS"
               for twist in "${INPUT_LIST[@]}"; do
-                # Trim whitespace
                 twist=$(echo "$twist" | xargs)
-                # Check both private and public twist locations
                 if [ -d "twists/$twist" ] || [ -d "public/twists/$twist" ]; then
                   TWISTS_TO_DEPLOY+=("$twist")
                 else
@@ -110,6 +115,25 @@ jobs:
               done
             fi
 
+            # Handle sources
+            MANUAL_SOURCES="${{ github.event.inputs.sources }}"
+            if [ -z "$MANUAL_SOURCES" ] || [ "$MANUAL_SOURCES" = "all" ]; then
+              echo "Manual trigger: deploying all sources"
+              SOURCES_TO_DEPLOY=("${SOURCE_LIST[@]}")
+            else
+              echo "Manual trigger: deploying specified sources"
+              IFS=',' read -ra INPUT_LIST <<< "$MANUAL_SOURCES"
+              for source in "${INPUT_LIST[@]}"; do
+                source=$(echo "$source" | xargs)
+                if [ -d "public/sources/$source" ]; then
+                  SOURCES_TO_DEPLOY+=("$source")
+                else
+                  echo "Warning: source '$source' not found in public/sources/"
+                fi
+              done
+            fi
+
+            # Output twists
             if [ ${#TWISTS_TO_DEPLOY[@]} -eq 0 ]; then
               echo "twists=[]" >> $GITHUB_OUTPUT
               echo "No valid twists to deploy"
@@ -118,31 +142,49 @@ jobs:
               echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
               echo "Twists to deploy: ${TWISTS_TO_DEPLOY[*]}"
             fi
+
+            # Output sources
+            if [ ${#SOURCES_TO_DEPLOY[@]} -eq 0 ]; then
+              echo "sources=[]" >> $GITHUB_OUTPUT
+              echo "No valid sources to deploy"
+            else
+              SOURCES_JSON=$(printf '%s\n' "${SOURCES_TO_DEPLOY[@]}" | jq -R -s -c 'split("\n")[:-1]')
+              echo "sources=$SOURCES_JSON" >> $GITHUB_OUTPUT
+              echo "Sources to deploy: ${SOURCES_TO_DEPLOY[*]}"
+            fi
             exit 0
           fi
 
-          # If workflow file changed, deploy all twists
-          if [ "${{ steps.workflow_changed.outputs.changed }}" = "true" ]; then
+          # If workflow file changed or submodule changed, deploy everything
+          if [ "${{ steps.workflow_changed.outputs.changed }}" = "true" ] || [ "${{ steps.submodule_check.outputs.changed }}" = "true" ]; then
+            REASON="Workflow file changed"
+            if [ "${{ steps.submodule_check.outputs.changed }}" = "true" ]; then
+              REASON="Submodule changed"
+            fi
+
             TWISTS_JSON=$(printf '%s\n' "${TWIST_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
             echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
-            echo "Workflow file changed, deploying all twists: $TWISTS_JSON"
+            echo "$REASON, deploying all twists: $TWISTS_JSON"
+
+            SOURCES_JSON=$(printf '%s\n' "${SOURCE_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
+            echo "sources=$SOURCES_JSON" >> $GITHUB_OUTPUT
+            echo "$REASON, deploying all sources: $SOURCES_JSON"
             exit 0
           fi
 
-          # If submodule changed, deploy all twists (public twists or shared deps may have changed)
-          if [ "${{ steps.submodule_check.outputs.changed }}" = "true" ]; then
-            TWISTS_JSON=$(printf '%s\n' "${TWIST_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
-            echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
-            echo "Submodule changed, deploying all twists: $TWISTS_JSON"
-            exit 0
-          fi
-
-          # Automatic deployment: only deploy changed twists
-          echo "Automatic trigger: checking for affected twists"
+          # Automatic deployment: only deploy changed packages
+          echo "Automatic trigger: checking for affected twists and sources"
           AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=${{ github.event.before }} --head=HEAD --json 2>/dev/null || echo "[]")
+
           for twist in "${TWIST_LIST[@]}"; do
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/twist-$twist$"; then
               TWISTS_TO_DEPLOY+=("\"$twist\"")
+            fi
+          done
+
+          for source in "${SOURCE_LIST[@]}"; do
+            if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/source-$source$"; then
+              SOURCES_TO_DEPLOY+=("\"$source\"")
             fi
           done
 
@@ -153,6 +195,15 @@ jobs:
             TWISTS_JSON=$(printf '%s\n' "${TWISTS_TO_DEPLOY[@]}" | jq -s . | tr -d '\n')
             echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
             echo "Changed twists: ${TWISTS_TO_DEPLOY[*]}"
+          fi
+
+          if [ ${#SOURCES_TO_DEPLOY[@]} -eq 0 ]; then
+            echo "sources=[]" >> $GITHUB_OUTPUT
+            echo "No sources have changes"
+          else
+            SOURCES_JSON=$(printf '%s\n' "${SOURCES_TO_DEPLOY[@]}" | jq -s . | tr -d '\n')
+            echo "sources=$SOURCES_JSON" >> $GITHUB_OUTPUT
+            echo "Changed sources: ${SOURCES_TO_DEPLOY[*]}"
           fi
 
   deploy:
@@ -209,4 +260,46 @@ jobs:
       - name: Deploy ${{ matrix.twist }} twist
         run: |
           cd ${{ steps.locate.outputs.dir }}
+          pnpm plot deploy -e review
+
+  deploy-sources:
+    needs: check-changes
+    runs-on: ubuntu-latest
+    if: needs.check-changes.outputs.sources != '[]'
+    strategy:
+      matrix:
+        source: ${{ fromJson(needs.check-changes.outputs.sources) }}
+
+    env:
+      PLOT_DEPLOY_TOKEN: ${{ secrets.PLOT_DEPLOY_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Build Twister
+        run: |
+          cd public/twister
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install dependencies for ${{ matrix.source }}
+        run: |
+          cd public/sources/${{ matrix.source }}
+          pnpm install --frozen-lockfile --filter="."
+
+      - name: Deploy ${{ matrix.source }} source
+        run: |
+          cd public/sources/${{ matrix.source }}
           pnpm plot deploy -e review

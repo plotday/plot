@@ -27,6 +27,7 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
   final plotColors = PlotColors(
     barrier: colourScheme.barrier,
     muted: colourScheme.muted,
+    veryMuted: colourScheme.veryMuted,
     highlight: colourScheme.highlight,
     editableBackground: colourScheme.editableBackground,
   );
@@ -35,6 +36,15 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
     colors: colorScheme,
     typography: typography,
     extensions: [plotColors, iconSizes, spacing],
+  );
+
+  // Override global style for warmer, softer appearance
+  theme = theme.copyWith(
+    style: (style) => style.copyWith(
+      borderRadius: BorderRadius.circular(10),
+      borderWidth: 0.5,
+      tappableStyle: (t) => t.copyWith(motion: (_) => FTappableMotion.none),
+    ),
   );
 
   final customTextFieldStyle = buildTextFieldStyle(
@@ -124,7 +134,7 @@ FThemeData darkenTheme(
   ColourSchemeData colourScheme, {
   int steps = 1,
 }) {
-  final factor = colourScheme.brightness == Brightness.light ? 1.03 : 1.1;
+  final factor = colourScheme.brightness == Brightness.light ? 1.015 : 1.05;
   return buildTheme(
     context,
     colourScheme.copyWith(darken: pow(factor, steps).toDouble()),

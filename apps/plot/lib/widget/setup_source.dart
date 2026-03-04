@@ -1,0 +1,782 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:forui/forui.dart';
+
+import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/twist_api.dart';
+import 'package:plot/command/base.dart';
+import 'package:plot/store/store.dart' show Priority, PriorityOrder;
+import 'package:plot/util/uuid.dart';
+import 'package:plot/store/types.dart' show AuthProvider;
+import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
+import 'package:plot/widget/form_modal.dart';
+import 'package:plot/widget/priority.dart';
+import 'package:plot/widget/spinner.dart';
+import 'package:plot/widget/toast.dart';
+import 'logging.dart';
+
+/// Selected channel for the setup flow.
+class SelectedChannel {
+  final String provider;
+  final String channelId;
+
+  const SelectedChannel({required this.provider, required this.channelId});
+}
+
+/// Tracks local integration changes (channel toggles + account removals)
+/// that are deferred until Save/Add.
+class IntegrationChanges {
+  final Set<String> selectedChannels; // "provider:channelId" keys
+  final Set<String> removedAccounts; // "provider:actorId" keys
+  final Map<String, String>
+  channelPriorities; // "provider:channelId" → priorityId
+  final Map<String, bool>
+  channelCreateThreads; // "provider:channelId" → createThreads
+
+  const IntegrationChanges({
+    this.selectedChannels = const {},
+    this.removedAccounts = const {},
+    this.channelPriorities = const {},
+    this.channelCreateThreads = const {},
+  });
+}
+
+/// Displays integration accounts and channel resources for a source.
+/// Used in both the setup and edit twist modals.
+class SetupSourceWidget extends StatefulWidget {
+  const SetupSourceWidget({
+    required this.priorityTwistId,
+    this.setupMode = false,
+    this.isAccountBased = false,
+    this.initialData,
+    this.refreshNotifier,
+    this.onChanged,
+    super.key,
+  });
+
+  final String priorityTwistId;
+
+  /// When true, account removal calls the API immediately (for drafts).
+  /// When false (edit mode), account removal is deferred until Save.
+  final bool setupMode;
+
+  /// When true, channels require per-channel priority selection (account-based sources).
+  final bool isAccountBased;
+
+  /// Pre-loaded integrations data to avoid a loading spinner on open.
+  final TwistIntegrations? initialData;
+
+  /// When notified, triggers a reload of integrations data.
+  final ValueNotifier<int>? refreshNotifier;
+
+  /// Called when local integration state changes (channels or accounts).
+  final ValueChanged<IntegrationChanges>? onChanged;
+
+  @override
+  State<SetupSourceWidget> createState() => _SetupSourceWidgetState();
+}
+
+class _SetupSourceWidgetState extends State<SetupSourceWidget> {
+  TwistIntegrations? _data;
+  bool _isLoading = true;
+  String? _error;
+
+  /// Locally tracked selected channel keys ("provider:channelId").
+  final Set<String> _localSelectedChannels = {};
+
+  /// Soft-removed account keys ("provider:actorId") — edit mode only.
+  final Set<String> _removedAccounts = {};
+
+  /// Tracks expanded state for nested channels in the tree view.
+  final Set<String> _expandedChannels = {};
+
+  /// Locally tracked priority assignments per channel key ("provider:channelId" → priorityId).
+  final Map<String, String> _channelPriorities = {};
+
+  /// Locally tracked createThreads per channel key ("provider:channelId" → bool).
+  final Map<String, bool> _channelCreateThreads = {};
+
+  /// Cached priority names for display (priorityId → title).
+  final Map<String, String> _priorityNames = {};
+
+  /// Whether we've seeded _localSelectedChannels from server state (edit mode).
+  bool _initializedFromServer = false;
+
+  /// Providers currently being refreshed — keeps existing data visible.
+  final Set<AuthProvider> _refreshingProviders = {};
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialData != null) {
+      _data = widget.initialData;
+      _isLoading = false;
+      _seedLocalState(widget.initialData!);
+    } else {
+      _loadIntegrations();
+    }
+    widget.refreshNotifier?.addListener(_loadIntegrations);
+  }
+
+  @override
+  void dispose() {
+    widget.refreshNotifier?.removeListener(_loadIntegrations);
+    super.dispose();
+  }
+
+  /// Seed local selected channels from server enabled state (edit mode only).
+  void _seedLocalState(TwistIntegrations data) {
+    if (!widget.setupMode && !_initializedFromServer) {
+      _collectEnabledChannels(data.channels);
+      _initializedFromServer = true;
+      // Resolve priority names for existing channel assignments
+      if (widget.isAccountBased) {
+        _resolvePriorityNames();
+      }
+    }
+  }
+
+  /// Resolve priority names for all channel priority assignments.
+  Future<void> _resolvePriorityNames() async {
+    final priorityIds = _channelPriorities.values.toSet();
+    for (final id in priorityIds) {
+      if (_priorityNames.containsKey(id)) continue;
+      try {
+        final priority = await Priority.getOne(Uuid.fromString(id));
+        if (mounted) {
+          setState(() {
+            _priorityNames[id] = priority.title;
+          });
+        }
+      } catch (_) {
+        // Priority may have been deleted
+      }
+    }
+  }
+
+  void _collectEnabledChannels(List<TwistChannel> channels) {
+    for (final channel in channels) {
+      final key = '${channel.provider.name}:${channel.id}';
+      if (channel.enabled) {
+        _localSelectedChannels.add(key);
+      }
+      if (channel.priorityId != null) {
+        _channelPriorities[key] = channel.priorityId!;
+      }
+      _channelCreateThreads[key] = channel.createThreads;
+      _collectEnabledChannels(channel.children);
+    }
+  }
+
+  /// Flatten all channel keys from a tree for set operations.
+  Set<String> _flattenChannelKeys(List<TwistChannel> channels) {
+    final keys = <String>{};
+    for (final s in channels) {
+      keys.add('${s.provider.name}:${s.id}');
+      keys.addAll(_flattenChannelKeys(s.children));
+    }
+    return keys;
+  }
+
+  Future<void> _loadIntegrations() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final data = await TwistApi.getIntegrations(widget.priorityTwistId);
+      if (mounted) {
+        _seedLocalState(data);
+        setState(() {
+          _data = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e, t) {
+      log.warning('Failed to load integrations', e, t);
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to load integrations';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Re-fetch the channel list from the external service for a provider,
+  /// then reload integration data to pick up the updated list.
+  Future<void> _refreshChannels(AuthProvider provider) async {
+    setState(() => _refreshingProviders.add(provider));
+
+    try {
+      // Ask the server to re-run getChannels() on the tool
+      await TwistApi.refreshChannels(
+        priorityTwistId: widget.priorityTwistId,
+        provider: provider.name,
+      );
+      if (!mounted) return;
+
+      // Now re-fetch integration data which includes the updated channels
+      final data = await TwistApi.getIntegrations(widget.priorityTwistId);
+      if (!mounted) return;
+
+      // Compute set of available channel keys from new data (including nested)
+      final availableKeys = _flattenChannelKeys(data.channels);
+
+      // Remove stale entries that no longer exist in the new data
+      _localSelectedChannels.removeWhere((key) => !availableKeys.contains(key));
+
+      setState(() {
+        _data = data;
+        _refreshingProviders.remove(provider);
+      });
+    } catch (e, t) {
+      log.warning('Failed to refresh channels', e, t);
+      if (mounted) {
+        context.showToast(
+          message: 'Failed to refresh. Please try again.',
+          isError: true,
+        );
+        setState(() => _refreshingProviders.remove(provider));
+      }
+    }
+  }
+
+  void _handleChannelTap(TwistChannel channel) async {
+    final key = '${channel.provider.name}:${channel.id}';
+    final isEnabled = _localSelectedChannels.contains(key);
+
+    if (widget.isAccountBased) {
+      // Resolve current priority for initial value
+      final currentPriorityId = _channelPriorities[key];
+      final currentCreateThreads = _channelCreateThreads[key] ?? true;
+
+      Priority? currentPriority;
+      if (currentPriorityId != null) {
+        try {
+          currentPriority =
+              await Priority.getOne(Uuid.fromString(currentPriorityId));
+        } catch (_) {}
+      }
+      currentPriority ??= await Priority.getDefault();
+      if (!mounted) return;
+
+      final items = <FormItem>[
+        FormSelect<Priority>(
+          key: 'priority',
+          label: 'Sync to',
+          required: true,
+          items: (search) async => Priority.excludePlot(
+            await Priority.get(order: PriorityOrder.nested, search: search),
+          ),
+          labelBuilder: (p) => PriorityLabel(priority: p),
+          titleBuilder: (p) => p.ancestorsLabel() != null
+              ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
+              : p.title,
+          initialValue: currentPriority,
+          placeholder: 'Select a priority',
+        ),
+        FormToggle(
+          key: 'createThreads',
+          label: 'Create threads',
+          details:
+              'When off, items sync as searchable links without creating threads.',
+          initialValue: currentCreateThreads,
+        ),
+        FormButton(
+          key: 'save',
+          buildCommand: (values) => _CallbackCommand(
+            title: 'Save',
+            icon: FontAwesomeIcons.check,
+            onRun: () async {
+              final priority = values['priority'] as Priority?;
+              final createThreads = values['createThreads'] as bool? ?? true;
+              if (priority != null) {
+                setState(() {
+                  _localSelectedChannels.add(key);
+                  _channelPriorities[key] = priority.id.toString();
+                  _channelCreateThreads[key] = createThreads;
+                  _priorityNames[priority.id.toString()] = priority.title;
+                });
+                _notifyChanged();
+              }
+              return const CommandDone();
+            },
+          ),
+        ),
+      ];
+
+      if (isEnabled) {
+        items.add(FormDivider(key: 'divider'));
+        items.add(
+          FormButton(
+            key: 'disable',
+            buildCommand: (_) => _CallbackCommand(
+              title: 'Disable Sync',
+              onRun: () async {
+                setState(() {
+                  _localSelectedChannels.remove(key);
+                  _channelPriorities.remove(key);
+                  _channelCreateThreads.remove(key);
+                });
+                _notifyChanged();
+                return const CommandDone();
+              },
+            ),
+          ),
+        );
+      }
+
+      final formData = FormData(
+        title: channel.title,
+        groups: [StaticFormGroup(items: items)],
+      );
+
+      final groups = await formData.list();
+      if (!mounted) return;
+
+      await FormModal(formData, groups: groups, rootContext: context)
+          .run(context);
+    } else {
+      // Non-account-based: simple toggle
+      setState(() {
+        if (isEnabled) {
+          _localSelectedChannels.remove(key);
+          _channelPriorities.remove(key);
+        } else {
+          _localSelectedChannels.add(key);
+        }
+      });
+      _notifyChanged();
+    }
+  }
+
+  void _notifyChanged() {
+    if (widget.onChanged == null) return;
+    widget.onChanged!(
+      IntegrationChanges(
+        selectedChannels: Set.of(_localSelectedChannels),
+        removedAccounts: Set.of(_removedAccounts),
+        channelPriorities: Map.of(_channelPriorities),
+        channelCreateThreads: Map.of(_channelCreateThreads),
+      ),
+    );
+  }
+
+  List<Widget> _buildChannelTree(
+    List<TwistChannel> channels, {
+    int depth = 0,
+    bool ancestorEnabled = false,
+  }) {
+    final widgets = <Widget>[];
+    for (final channel in channels) {
+      final key = '${channel.provider.name}:${channel.id}';
+      final isExplicitlyEnabled = _localSelectedChannels.contains(key);
+      final isForceEnabled = ancestorEnabled;
+      final isOn = isExplicitlyEnabled || isForceEnabled;
+      final canToggle =
+          !isForceEnabled && (widget.setupMode || channel.currentUserHasAccess);
+      final isExpanded = _expandedChannels.contains(key);
+
+      // Resolve priority name for display
+      final priorityId = _channelPriorities[key];
+      String? priorityName;
+      if (priorityId != null) {
+        priorityName = _priorityNames[priorityId];
+      }
+
+      widgets.add(
+        _ChannelRow(
+          channel: channel,
+          isChecked: isOn,
+          canToggle: canToggle,
+          onToggle: () => _handleChannelTap(channel),
+          depth: depth,
+          hasChildren: channel.hasChildren,
+          isExpanded: isExpanded,
+          onExpandToggle: channel.hasChildren
+              ? () {
+                  setState(() {
+                    if (isExpanded) {
+                      _expandedChannels.remove(key);
+                    } else {
+                      _expandedChannels.add(key);
+                    }
+                  });
+                }
+              : null,
+          isForceEnabled: isForceEnabled,
+          priorityName: widget.isAccountBased ? priorityName : null,
+        ),
+      );
+
+      if (channel.hasChildren && isExpanded) {
+        widgets.addAll(
+          _buildChannelTree(
+            channel.children,
+            depth: depth + 1,
+            ancestorEnabled: isOn,
+          ),
+        );
+      }
+    }
+    return widgets;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Padding(
+        padding: context.theme.spacing.padding,
+        child: const Center(child: Spinner()),
+      );
+    }
+
+    if (_error != null) {
+      return Padding(
+        padding: context.theme.spacing.padding,
+        child: Text(
+          _error!,
+          style: TextStyle(color: context.theme.colors.mutedForeground),
+        ),
+      );
+    }
+
+    final data = _data;
+    if (data == null || data.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Compute providers where ALL accounts are soft-removed
+    final accountsByProvider = <AuthProvider, List<TwistAccount>>{};
+    for (final account in data.accounts) {
+      accountsByProvider.putIfAbsent(account.provider, () => []).add(account);
+    }
+    final fullyRemovedProviders = <AuthProvider>{};
+    for (final entry in accountsByProvider.entries) {
+      final allRemoved = entry.value.every(
+        (a) => _removedAccounts.contains('${a.provider.name}:${a.actorId}'),
+      );
+      if (allRemoved) fullyRemovedProviders.add(entry.key);
+    }
+
+    // Group channels by provider
+    final channelsByProvider = <AuthProvider, List<TwistChannel>>{};
+    for (final channel in data.channels) {
+      channelsByProvider.putIfAbsent(channel.provider, () => []).add(channel);
+    }
+
+    // Build account rows
+    final accountRows = <Widget>[];
+    for (final account in data.accounts) {
+      final accountKey = '${account.provider.name}:${account.actorId}';
+      final isRemoved = _removedAccounts.contains(accountKey);
+      accountRows.add(
+        _AccountRow(
+          account: account,
+          isRemoved: isRemoved,
+          onRefresh: () => _refreshChannels(account.provider),
+          isRefreshing: _refreshingProviders.contains(account.provider),
+        ),
+      );
+    }
+
+    // Build channel rows for all visible providers
+    final channelRows = <Widget>[];
+    for (final provider in channelsByProvider.keys) {
+      if (!fullyRemovedProviders.contains(provider)) {
+        channelRows.addAll(_buildChannelTree(channelsByProvider[provider]!));
+      }
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...accountRows,
+        ...channelRows,
+        if (channelRows.isNotEmpty || accountRows.isNotEmpty)
+          SizedBox(height: context.theme.spacing.md),
+      ],
+    );
+  }
+}
+
+class _AccountRow extends StatelessWidget {
+  const _AccountRow({
+    required this.account,
+    this.isRemoved = false,
+    this.onRefresh,
+    this.isRefreshing = false,
+  });
+
+  final TwistAccount account;
+  final bool isRemoved;
+  final VoidCallback? onRefresh;
+  final bool isRefreshing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final showEmail =
+        account.email != null && account.email != account.displayName;
+
+    final iconSize = theme.iconSizes.base;
+
+    return Opacity(
+      opacity: isRemoved ? 0.4 : 1.0,
+      child: Padding(
+        padding: context.theme.spacing.paddingSm,
+        child: Row(
+          children: [
+            ProviderIcon(provider: account.provider, size: iconSize),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      account.displayName,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: theme.typography.base.fontSize,
+                        color: theme.colors.foreground,
+                      ),
+                    ),
+                  ),
+                  if (showEmail) ...[
+                    SizedBox(width: theme.spacing.md),
+                    Flexible(
+                      child: Text(
+                        account.email!,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: theme.typography.base.fontSize,
+                          color: theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (!isRemoved && onRefresh != null)
+              FButton.icon(
+                onPress: isRefreshing ? null : onRefresh,
+                style: FButtonStyle.ghost(),
+                child: isRefreshing
+                    ? SizedBox(width: 14, height: 14, child: Spinner(size: 14))
+                    : Icon(
+                        FontAwesomeIcons.arrowsRotate,
+                        size: 14,
+                        color: theme.colors.mutedForeground,
+                      ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChannelRow extends StatefulWidget {
+  const _ChannelRow({
+    required this.channel,
+    required this.isChecked,
+    required this.canToggle,
+    required this.onToggle,
+    this.depth = 0,
+    this.hasChildren = false,
+    this.isExpanded = false,
+    this.onExpandToggle,
+    this.isForceEnabled = false,
+    this.priorityName,
+  });
+
+  final TwistChannel channel;
+  final bool isChecked;
+  final bool canToggle;
+  final VoidCallback onToggle;
+  final int depth;
+  final bool hasChildren;
+  final bool isExpanded;
+  final VoidCallback? onExpandToggle;
+  final bool isForceEnabled;
+  final String? priorityName;
+
+  @override
+  State<_ChannelRow> createState() => _ChannelRowState();
+}
+
+class _ChannelRowState extends State<_ChannelRow> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final isTappable = widget.canToggle || widget.hasChildren;
+
+    return MouseRegion(
+      cursor: isTappable ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.hasChildren
+            ? widget.onExpandToggle
+            : widget.canToggle
+            ? widget.onToggle
+            : null,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: _isHovered && isTappable
+                ? theme.colors.foreground.withValues(alpha: 0.05)
+                : null,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 12.0 + theme.iconSizes.base + 12.0 + (widget.depth * 24.0),
+              right: theme.spacing.sm,
+              bottom: theme.spacing.sm,
+            ),
+            child: Row(
+              children: [
+                if (widget.hasChildren)
+                  Padding(
+                    padding: EdgeInsets.only(right: theme.spacing.sm),
+                    child: Icon(
+                      widget.isExpanded
+                          ? FontAwesomeIcons.chevronDown
+                          : FontAwesomeIcons.chevronRight,
+                      size: 10,
+                      color: theme.colors.mutedForeground,
+                    ),
+                  ),
+                Opacity(
+                  opacity: widget.isForceEnabled ? 0.5 : 1.0,
+                  child: IgnorePointer(
+                    child: SizedBox(
+                      width: 32,
+                      height: 20,
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: FSwitch(
+                          value: widget.isChecked,
+                          onChange: (_) {},
+                          enabled: widget.canToggle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: theme.spacing.md),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          widget.channel.title,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: theme.typography.sm.fontSize,
+                            color: widget.canToggle
+                                ? theme.colors.foreground
+                                : theme.colors.mutedForeground,
+                          ),
+                        ),
+                      ),
+                      if (widget.priorityName != null && widget.isChecked) ...[
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: theme.spacing.sm,
+                          ),
+                          child: Icon(
+                            FontAwesomeIcons.arrowRight,
+                            size: 10,
+                            color: theme.colors.mutedForeground,
+                          ),
+                        ),
+                        Flexible(
+                          child: Text(
+                            widget.priorityName!,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: theme.typography.sm.fontSize,
+                              color: theme.colors.mutedForeground,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Simple command that runs a callback. Used for inline FormButton actions.
+class _CallbackCommand extends Command {
+  _CallbackCommand({
+    required super.title,
+    super.icon,
+    required this.onRun,
+  }) : super(
+         eventObject: EventObject.modal,
+         eventAction: EventAction.updated,
+       );
+
+  final Future<CommandReturn> Function() onRun;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) => onRun();
+}
+
+class ProviderIcon extends StatelessWidget {
+  final AuthProvider provider;
+  final double size;
+
+  const ProviderIcon({required this.provider, required this.size, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = _getIcon();
+    if (icon == null) return SizedBox(width: size, height: size);
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Center(
+        child: SvgPicture.asset(icon, width: size, height: size),
+      ),
+    );
+  }
+
+  String? _getIcon() {
+    switch (provider) {
+      case AuthProvider.google:
+        return 'assets/google.svg';
+      case AuthProvider.microsoft:
+        return 'assets/microsoft.svg';
+      case AuthProvider.slack:
+        return 'assets/slack.svg';
+      case AuthProvider.atlassian:
+        return 'assets/atlassian.svg';
+      case AuthProvider.linear:
+        return 'assets/linear.svg';
+      case AuthProvider.asana:
+        return 'assets/asana.svg';
+      default:
+        return null;
+    }
+  }
+}

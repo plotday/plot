@@ -14,12 +14,12 @@ BEGIN
     IF p_note_id IS NULL THEN
         RAISE EXCEPTION 'p_note_id must be provided';
     END IF;
-    -- Validate access to the note's activity priority
+    -- Validate access to the note's thread priority
     SELECT
         a.priority_id INTO v_priority_id
     FROM
         note n
-        JOIN activity a ON a.id = n.activity_id
+        JOIN thread a ON a.id = n.thread_id
     WHERE
         n.id = p_note_id;
     IF v_priority_id IS NULL THEN
@@ -48,17 +48,17 @@ BEGIN
             -- Get tag type using the get_tag_type function
             current_tag_type := get_tag_type (tag_id_int);
             -- Validate computed tags for notes
-            -- Notes can have 'now' (1), 'done' (3), and 'someday' (7) tags for per-user assignment/completion
-            -- But not 'later' (2), 'archived' (4), 'attachment' (5), 'link' (6) - those are computed
-            IF current_tag_type = 'compute' AND tag_id_int NOT IN (1, 3, 7) THEN
+            -- Notes can have 'todo' (1) and 'done' (3) tags for per-user assignment/completion
+            -- But not 'archived' (4), 'attachment' (5), 'link' (6) - those are computed
+            IF current_tag_type = 'compute' AND tag_id_int NOT IN (1, 3) THEN
                 RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - this tag is calculated from note state', tag_id_int;
             END IF;
-            -- Validate cross-user targeting: only allow for compute tags 1, 3, 7 (now, done, someday)
-            IF target_actor_id != p_actor_id AND (current_tag_type != 'compute' OR tag_id_int NOT IN (1, 3, 7)) THEN
+            -- Validate cross-user targeting: only allow for compute tags 1, 3 (todo, done)
+            IF target_actor_id != p_actor_id AND (current_tag_type != 'compute' OR tag_id_int NOT IN (1, 3)) THEN
                 RAISE EXCEPTION 'Cannot modify this tag for other users (tag_id: %)', tag_id_int;
             END IF;
             IF is_adding THEN
-                -- When adding 'done' tag (3), automatically remove 'now' tag (1) for this actor
+                -- When adding 'done' tag (3), automatically remove 'todo' tag (1) for this actor
                 -- This is how individual completion works for multi-assignee notes
                 IF tag_id_int = 3 THEN
                     UPDATE

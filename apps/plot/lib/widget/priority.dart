@@ -117,11 +117,15 @@ class PriorityWidget extends StatelessWidget {
 
     if (hasPhysicalKeyboard()) {
       return ContextMenu(
-        items: () => priorityCommands(priority).map((cmd) => FItem(
-          title: Text(cmd.title),
-          prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
-          onPress: () => buildContext.run(cmd),
-        )).toList(),
+        items: () => priorityCommands(priority)
+            .map(
+              (cmd) => FItem(
+                title: Text(cmd.title),
+                prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+                onPress: () => buildContext.run(cmd),
+              ),
+            )
+            .toList(),
         child: listTile,
       );
     }
@@ -139,6 +143,7 @@ class PriorityLabel extends StatelessWidget {
     this.fontSize,
     this.height,
     this.muted = false,
+    this.color,
     super.key,
   }) : ancestors = (() {
          final computed =
@@ -152,6 +157,7 @@ class PriorityLabel extends StatelessWidget {
   final double? fontSize;
   final double? height;
   final bool muted;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -175,7 +181,7 @@ class PriorityLabel extends StatelessWidget {
           final i = entry.$1;
           final ancestor = entry.$2;
           final isLast = i == ancestors.length - 1;
-          final ancestorColor = context.colour.colours.fromTheme(
+          final ancestorColor = color ?? context.colour.colours.fromTheme(
             displayColors[i],
             muted: muted,
           );
@@ -210,9 +216,9 @@ class PriorityLabel extends StatelessWidget {
               DefaultTextStyle(
                 key: ValueKey('separator_${ancestor.id}'),
                 style: DefaultTextStyle.of(context).style.copyWith(
-                  color: context.theme.colors.mutedForeground,
+                  color: color ?? context.theme.colors.mutedForeground,
                   fontSize: fontSize ?? context.theme.typography.base.fontSize,
-                  height: height,
+                  height: height ?? 1,
                 ),
                 child: Text(Priority.separator),
               ),
@@ -222,7 +228,7 @@ class PriorityLabel extends StatelessWidget {
           Flexible(
             child: DefaultTextStyle(
               style: DefaultTextStyle.of(context).style.copyWith(
-                color: context.colour.colours.fromTheme(
+                color: color ?? context.colour.colours.fromTheme(
                   currentColor,
                   muted: muted,
                 ),

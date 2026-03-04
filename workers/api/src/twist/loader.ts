@@ -116,6 +116,7 @@ export async function getTwist({
       getEntrypoint: () => ({
         // Return mock entrypoint with all required methods
         init: async () => {},
+        getSourceMetadata: async () => null,
         activate: async () => {},
         deactivate: async () => {},
         upgrade: async () => {},

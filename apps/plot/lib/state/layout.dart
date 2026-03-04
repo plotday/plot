@@ -2,8 +2,10 @@ import 'dart:math';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/util/profile_preferences.dart';
+import 'package:plot/style/spacing.dart';
 
 part 'layout_state.dart';
 
@@ -136,5 +138,11 @@ extension LayoutHelpers on BuildContext {
   /// Check if current screen width supports multi-panel layout
   bool get isMultiPanel {
     return LayoutState.isMultiPanel(MediaQuery.of(this).size.width);
+  }
+
+  /// Horizontal content padding — wider on desktop for breathing room.
+  double get contentPaddingH {
+    final spacing = FTheme.of(this).spacing;
+    return isMultiPanel ? spacing.xxl : spacing.xl;
   }
 }

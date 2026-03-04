@@ -22,24 +22,27 @@ export async function assertPriorityAccess(
 }
 
 /**
- * Assert that a user has access to an activity's priority.
- * Looks up the activity's priority_id and checks access.
+ * Assert that a user has access to a thread's priority.
+ * Looks up the thread's priority_id and checks access.
  * Throws a 403 error if access is denied.
  */
-export async function assertActivityAccess(
+export async function assertThreadAccess(
   trx: Kysely<DB>,
   userId: string,
-  activityId: string
+  threadId: string
 ) {
-  const activity = await trx
-    .selectFrom("activity")
+  const thread = await trx
+    .selectFrom("thread")
     .select("priority_id")
-    .where("id", "=", activityId)
+    .where("id", "=", threadId)
     .executeTakeFirst();
 
-  if (!activity) {
-    throw Object.assign(new Error("Activity not found"), { status: 404 });
+  if (!thread) {
+    throw Object.assign(new Error("Thread not found"), { status: 404 });
   }
 
-  await assertPriorityAccess(trx, userId, activity.priority_id);
+  await assertPriorityAccess(trx, userId, thread.priority_id);
 }
+
+/** @deprecated Use assertThreadAccess */
+export const assertActivityAccess = assertThreadAccess;

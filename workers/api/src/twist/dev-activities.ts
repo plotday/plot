@@ -30,9 +30,9 @@ async function ensureReleasesActivity(
 ): Promise<string> {
   const source = `@plot:releases:${twistPackageId}`;
 
-  const data = await rpcUser(db, "upsert_activity", {
+  const data = await rpcUser(db, "upsert_thread", {
     user_id: createdBy,
-    p_activity: {
+    p_thread: {
       source,
       type: "note",
       title: "Releases",
@@ -120,7 +120,7 @@ export async function addReleaseNote(
       .join("\n");
 
     await db.insertInto("note").values({
-      activity_id: activityId,
+      thread_id: activityId,
       author_id: authorId,
       created_by: info.userId || createdBy,
       content,
@@ -147,9 +147,9 @@ async function ensureLogsActivity(
 ): Promise<string> {
   const source = `@plot:logs:${twistPackageId}:${environment}`;
 
-  const data = await rpcUser(db, "upsert_activity", {
+  const data = await rpcUser(db, "upsert_thread", {
     user_id: userId,
-    p_activity: {
+    p_thread: {
       source,
       type: "note",
       title: `Logs (${environment})`,
@@ -239,7 +239,7 @@ export async function addLogsNote(
       const content = ["```", formattedLogs, "```"].join("\n");
 
       await db.insertInto("note").values({
-        activity_id: activityId,
+        thread_id: activityId,
         author_id: authorId,
         created_by: createdBy,
         content,

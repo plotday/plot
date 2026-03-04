@@ -1,182 +1,143 @@
 import type { Database, Json } from "@plotday/db";
 import {
-  type Activity,
-  type ActivityMeta,
-  ActivityType,
-  type ActivityKind,
+  type Thread,
+  type Link,
+  type ThreadMeta,
   type Actor,
   type ActorId,
   ActorType,
-  type Link,
+  type Action,
   type Priority,
   type Tags,
   type Uuid,
 } from "@plotday/twister/plot";
 
-import {
-  calculateRecurrenceUntil,
-  parseInterval,
-  parseRangeEnd,
-  parseRangeStart,
-} from "./datetime";
-
-export function fromDbActivity(
-  dbActivity: Database["public"]["Tables"]["activity"]["Row"] & {
-    author: {
-      id: string | null;
-      name: string | null;
-      type: string | null;
-      email?: string | null;
-    };
-    assignee?: {
-      id: string | null;
-      name: string | null;
-      type: string | null;
-      email?: string | null;
-    } | null;
+export function fromDbThread(
+  dbThread: Database["public"]["Tables"]["thread"]["Row"] & {
     tags?: Json | null;
     mentions?: string[] | null;
-    source?: string | null;
-    source_created_at?: string | null;
-  },
-  includeAuthorEmail: boolean = false
-): Activity {
-  // Map database activity_type to ActivityType enum
-  let activityType: number;
-  switch (dbActivity.type) {
-    case "action":
-      activityType = ActivityType.Action;
-      break;
-    case "event":
-      activityType = ActivityType.Event;
-      break;
-    default:
-    case "note":
-      activityType = ActivityType.Note;
-      break;
   }
-
-  // Map actor type to ActorType enum
-  let authorType: number = ActorType.User; // Default to User
-  if (dbActivity.author.type) {
-    switch (dbActivity.author.type) {
-      case "user":
-        authorType = ActorType.User;
-        break;
-      case "contact":
-        authorType = ActorType.Contact;
-        break;
-      case "priority_twist":
-        authorType = ActorType.Twist;
-        break;
-    }
-  }
-
-  const start = parseRangeStart(dbActivity.on, dbActivity.at);
-  const dbEnd = parseRangeEnd(dbActivity.on, dbActivity.at);
-
-  // Calculate recurrenceUntil from database end and duration
-  const recurrenceUntil = calculateRecurrenceUntil(
-    start,
-    dbEnd,
-    dbActivity.duration,
-    dbActivity.recurrence_rule
-  );
-
-  // For SDK, end is always the end of the first occurrence
-  // If this is recurring, we need to calculate the first occurrence end from start and duration
-  let sdkEnd = dbEnd;
-  if (dbActivity.recurrence_rule && start && dbActivity.duration) {
-    const durationSeconds = parseInterval(dbActivity.duration);
-    if (durationSeconds !== undefined) {
-      if (typeof start === "string") {
-        // Date-based: add duration in days
-        const startDate = new Date(start);
-        const durationDays = Math.floor(durationSeconds / (24 * 60 * 60));
-        const endDate = new Date(
-          startDate.getTime() + durationDays * 24 * 60 * 60 * 1000
-        );
-        sdkEnd = endDate.toISOString().split("T")[0];
-      } else if (start instanceof Date) {
-        // DateTime-based: add duration in seconds
-        sdkEnd = new Date(start.getTime() + durationSeconds * 1000);
-      }
-    }
-  }
-
-  // Build author object with conditional email inclusion
-  const author: Actor = {
-    id: (dbActivity.author.id || dbActivity.author_id) as ActorId,
-    name: dbActivity.author.name || null,
-    type: authorType,
-    ...(includeAuthorEmail && dbActivity.author.email
-      ? { email: dbActivity.author.email }
-      : {}),
-  };
-
-  // Build assignee object if available
-  let assignee: Actor | null = null;
-  if (dbActivity.assignee) {
-    // Map assignee type to ActorType enum
-    let assigneeType: number = ActorType.User; // Default to User
-    if (dbActivity.assignee.type) {
-      switch (dbActivity.assignee.type) {
-        case "user":
-          assigneeType = ActorType.User;
-          break;
-        case "contact":
-          assigneeType = ActorType.Contact;
-          break;
-        case "priority_twist":
-          assigneeType = ActorType.Twist;
-          break;
-      }
-    }
-
-    assignee = {
-      id: (dbActivity.assignee.id || dbActivity.assignee_id) as ActorId,
-      name: dbActivity.assignee.name || null,
-      type: assigneeType,
-      ...(includeAuthorEmail && dbActivity.assignee.email
-        ? { email: dbActivity.assignee.email }
-        : {}),
-    };
-  }
-
+): Thread {
   return {
-    // @ts-ignore - dbActivity.id is a string from DB, but Uuid is a branded type
-    id: dbActivity.id as any,
-    type: activityType,
-    kind: dbActivity.kind as ActivityKind | null,
-    created: dbActivity.source_created_at
-      ? new Date(dbActivity.source_created_at)
-      : new Date(dbActivity.created_at),
-    author,
-    start,
-    end: sdkEnd,
-    recurrenceUntil,
-    recurrenceCount: null, // Not stored separately in database
-    done: dbActivity.done_at ? new Date(dbActivity.done_at) : null,
-    title: dbActivity.title || "",
-    assignee,
-    private: dbActivity.private ?? false,
-    archived: dbActivity.archived_at !== null,
+    // @ts-ignore - dbThread.id is a string from DB, but Uuid is a branded type
+    id: dbThread.id as any,
+    created: new Date(dbThread.created_at),
+    title: dbThread.title || "",
+    private: dbThread.private ?? false,
+    archived: dbThread.archived_at !== null,
     priority: {
-      id: dbActivity.priority_id as Uuid,
-      title: dbActivity.title ?? "Untitled",
+      id: dbThread.priority_id as Uuid,
+      title: dbThread.title ?? "Untitled",
       archived: false,
       key: null,
       color: null,
     },
-    recurrenceRule: dbActivity.recurrence_rule || null,
-    recurrenceExdates:
-      dbActivity.recurrence_exdates?.map((d: string) => new Date(d)) || null,
-    meta: dbActivity.meta as ActivityMeta | null,
-    order: dbActivity.order ?? 0,
-    links: (dbActivity as any).links as Link[] | null ?? null,
-    tags: (dbActivity.tags as Tags) || {},
-    mentions: (dbActivity.mentions as ActorId[]) || [],
-    source: dbActivity.source || null,
+    tags: (dbThread.tags as Tags) || {},
+    mentions: (dbThread.mentions as ActorId[]) || [],
+  };
+}
+
+/** @deprecated Use fromDbThread */
+export const fromDbActivity = fromDbThread;
+
+/**
+ * Maps a database actor type string to an ActorType enum value.
+ */
+function mapActorType(type: string | null): number {
+  switch (type) {
+    case "user":
+      return ActorType.User;
+    case "contact":
+      return ActorType.Contact;
+    case "priority_twist":
+      return ActorType.Twist;
+    default:
+      return ActorType.User;
+  }
+}
+
+/**
+ * Converts a database link row (with joined author/assignee) to the SDK Link type.
+ */
+export function fromDbLink(
+  dbLink: {
+    id: string;
+    thread_id: string;
+    source: string | null;
+    source_created_at: string | Date;
+    created_at: string | Date;
+    title: string | null;
+    preview: string | null;
+    type: string | null;
+    status: string | null;
+    actions: Json | null;
+    meta: Json | null;
+    source_url: string | null;
+    channel_id?: string | null;
+    author_id: string | null;
+    assignee_id: string | null;
+  } & {
+    author?: {
+      id: string | null;
+      name: string | null;
+      type: string | null;
+    } | null;
+    assignee?: {
+      id: string | null;
+      name: string | null;
+      type: string | null;
+    } | null;
+  }
+): Link {
+  // Build author
+  let author: Actor | null = null;
+  if (dbLink.author && dbLink.author.id) {
+    author = {
+      id: dbLink.author.id as ActorId,
+      name: dbLink.author.name || null,
+      type: mapActorType(dbLink.author.type),
+    };
+  } else if (dbLink.author_id) {
+    author = {
+      id: dbLink.author_id as ActorId,
+      name: null,
+      type: ActorType.User,
+    };
+  }
+
+  // Build assignee
+  let assignee: Actor | null = null;
+  if (dbLink.assignee && dbLink.assignee.id) {
+    assignee = {
+      id: dbLink.assignee.id as ActorId,
+      name: dbLink.assignee.name || null,
+      type: mapActorType(dbLink.assignee.type),
+    };
+  } else if (dbLink.assignee_id) {
+    assignee = {
+      id: dbLink.assignee_id as ActorId,
+      name: null,
+      type: ActorType.User,
+    };
+  }
+
+  return {
+    id: dbLink.id as Uuid,
+    threadId: dbLink.thread_id as Uuid,
+    source: dbLink.source,
+    created: dbLink.source_created_at
+      ? new Date(dbLink.source_created_at)
+      : new Date(dbLink.created_at),
+    author,
+    title: dbLink.title || "",
+    preview: dbLink.preview,
+    assignee,
+    type: dbLink.type,
+    status: dbLink.status,
+    actions: dbLink.actions as Action[] | null,
+    meta: dbLink.meta as ThreadMeta | null,
+    sourceUrl: dbLink.source_url,
+    channelId: dbLink.channel_id ?? null,
   };
 }
 

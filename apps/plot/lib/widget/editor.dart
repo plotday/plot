@@ -185,6 +185,7 @@ class MentionItem {
     required this.id,
     required this.name,
     this.isTwist = false,
+    this.isContact = false,
   });
 
   /// Create from a PriorityTwist
@@ -192,12 +193,16 @@ class MentionItem {
       MentionItem(id: twist.id.toString(), name: twist.name, isTwist: true);
 
   /// Create from an Actor
-  factory MentionItem.fromActor(Actor actor) =>
-      MentionItem(id: actor.id.toString(), name: actor.nameOrEmail);
+  factory MentionItem.fromActor(Actor actor) => MentionItem(
+        id: actor.id.toString(),
+        name: actor.nameOrEmail,
+        isContact: actor.type == ActorType.contact,
+      );
 
   final String id;
   final String name;
   final bool isTwist;
+  final bool isContact;
 }
 
 class Editor extends StatefulWidget {
@@ -361,7 +366,7 @@ class EditorState extends State<Editor> {
 
   void _onDocumentChanged(DocumentChangeLog _) {
     _debouncer.debounce(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 2000),
       onDebounce: notify,
     );
   }
@@ -878,6 +883,7 @@ class EditorState extends State<Editor> {
     final sortedItems = localPrefs.sortByMentionMru(
       mentionItems,
       (item) => item.id,
+      isLowPriority: (item) => item.isContact,
     );
 
     return EditorMentionPopover(

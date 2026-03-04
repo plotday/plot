@@ -40,7 +40,7 @@ export async function processUpdates(
  */
 function buildTagChanges(
   activityId: string,
-  tagChanges: TwistBatchMessage["activityTagChanges"]
+  tagChanges: TwistBatchMessage["threadTagChanges"]
 ): {
   tagsAdded: Record<number, string[]>;
   tagsRemoved: Record<number, string[]>;
@@ -61,7 +61,7 @@ function buildTagChanges(
   >();
 
   for (const change of tagChanges) {
-    if (change.activityId !== activityId) continue;
+    if (change.threadId !== activityId) continue;
 
     if (change.occurrence === null) {
       // Series-level change
@@ -123,9 +123,12 @@ async function processTwistBatch(
     version,
     newNotes,
     updatedNotes,
-    newActivities,
-    updatedActivities,
-    activityTagChanges,
+    updatedThreads: updatedActivities,
+    threadTagChanges: activityTagChanges,
+    channelNewLinks,
+    channelUpdatedLinks,
+    channelNewNotes,
+    threadReads,
     priorityTwist,
   } = batchData;
 
@@ -159,32 +162,21 @@ async function processTwistBatch(
       db,
     });
 
-    // Get priority_id from the first item or fetch it
-    let priorityId: string | undefined;
-    if (newActivities.length > 0) {
-      priorityId = String(newActivities[0].priority_id);
-    } else if (updatedActivities.length > 0) {
-      priorityId = String(updatedActivities[0].priority_id);
-    } else if (newNotes.length > 0) {
-      priorityId = String(newNotes[0].priority_id);
-    } else if (updatedNotes.length > 0) {
-      priorityId = String(updatedNotes[0].priority_id);
-    } else {
-      // Fallback: fetch priority_id from priority_twist table
-      const pt = await db
-        .selectFrom("priority_twist")
-        .select("priority_id")
-        .where("id", "=", priorityTwistId)
-        .executeTakeFirst();
-      if (pt) {
-        priorityId = String(pt.priority_id);
-      }
-    }
+    // Always fetch the twist's actual priority_id from priority_twist table.
+    // Using item priority_ids is incorrect because items may be in child
+    // subpriorities (e.g. Twist Development), narrowing the twist's scope.
+    const pt = await db
+      .selectFrom("priority_twist")
+      .select("priority_id")
+      .where("id", "=", priorityTwistId)
+      .executeTakeFirst();
 
-    if (!priorityId) {
+    if (!pt) {
       logger.warn("Could not determine priority_id for twist batch");
       return;
     }
+
+    const priorityId = String(pt.priority_id);
 
     const twistWrapper = await factory({
       version,
@@ -207,7 +199,7 @@ async function processTwistBatch(
           logger.warn("Sync cascade depth limit reached for note", {
             sync_depth: syncDepth,
             note_id: noteId,
-            activity_id: note.activity_id ?? undefined,
+            thread_id: note.thread_id ?? undefined,
           });
 
           postHog.captureException(
@@ -219,33 +211,36 @@ async function processTwistBatch(
               priority_twist_id: priorityTwistId,
               item_type: "note",
               item_id: noteId,
-              activity_id: note.activity_id,
+              thread_id: note.thread_id,
             }
           );
           continue;
         }
 
-        // Dispatch to Plot tool - this is a new note (created callback)
-        await twistWrapper.dispatch("Plot", {
-          itemType: "note",
+        // Dispatch to Plot tool (Twists) and Integrations tool (Sources)
+        // Both dispatches run; whichever has no matching tool paths is a no-op.
+        const noteDispatchArgs = {
+          itemType: "note" as const,
           item: note,
           isCreate: true, // New notes
           syncDepth,
-        });
+        };
+        await twistWrapper.dispatch("Plot", noteDispatchArgs);
+        await twistWrapper.dispatch("Integrations", noteDispatchArgs);
       } catch (error) {
         logger.error(
           "Error processing new note in twist batch",
           error as Error,
           {
             note_id: noteId,
-            activity_id: note.activity_id ?? undefined,
+            thread_id: note.thread_id ?? undefined,
           }
         );
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
           priority_twist_id: priorityTwistId,
           note_id: noteId,
-          activity_id: note.activity_id,
+          thread_id: note.thread_id,
           queue,
         });
       }
@@ -264,116 +259,34 @@ async function processTwistBatch(
           logger.warn("Sync cascade depth limit reached for updated note", {
             sync_depth: syncDepth,
             note_id: noteId,
-            activity_id: note.activity_id ?? undefined,
+            thread_id: note.thread_id ?? undefined,
           });
           continue;
         }
 
-        // Dispatch to Plot tool - this is an update to a note the twist created
-        await twistWrapper.dispatch("Plot", {
-          itemType: "note",
+        // Dispatch to Plot tool (Twists) and Integrations tool (Sources)
+        const updatedNoteDispatchArgs = {
+          itemType: "note" as const,
           item: note,
           isCreate: false, // Updated notes
           syncDepth,
-        });
+        };
+        await twistWrapper.dispatch("Plot", updatedNoteDispatchArgs);
+        await twistWrapper.dispatch("Integrations", updatedNoteDispatchArgs);
       } catch (error) {
         logger.error(
           "Error processing updated note in twist batch",
           error as Error,
           {
             note_id: noteId,
-            activity_id: note.activity_id ?? undefined,
+            thread_id: note.thread_id ?? undefined,
           }
         );
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
           priority_twist_id: priorityTwistId,
           note_id: noteId,
-          activity_id: note.activity_id,
-          queue,
-        });
-      }
-    }
-
-    // Process new activities (for activity.created callback)
-    for (const activity of newActivities) {
-      // Skip if activity.id is null (shouldn't happen, but view types are nullable)
-      if (!activity.id) continue;
-      const activityId = activity.id;
-
-      try {
-        // Read sync_depth from the entity
-        const syncDepth = activity.sync_depth ?? 1;
-
-        // Check cascade depth limit
-        if (syncDepth > 4) {
-          logger.warn("Sync cascade depth limit reached for new activity", {
-            sync_depth: syncDepth,
-            activity_id: activityId,
-            priority_id: activity.priority_id ?? undefined,
-          });
-
-          postHog.captureException(
-            new Error("Sync cascade depth limit reached"),
-            undefined,
-            {
-              sync_depth: syncDepth,
-              twist_id: String(twistId),
-              priority_twist_id: priorityTwistId,
-              item_type: "activity",
-              item_id: activityId,
-              priority_id: activity.priority_id,
-            }
-          );
-          continue;
-        }
-
-        // Build tag changes for this activity
-        const { tagsAdded, tagsRemoved, occurrenceChanges } = buildTagChanges(
-          activityId,
-          activityTagChanges
-        );
-
-        // Dispatch to Plot tool - this is a new activity (created callback)
-        await twistWrapper.dispatch("Plot", {
-          itemType: "activity",
-          item: activity,
-          isCreate: true, // New activities
-          syncDepth,
-          changes: {
-            tagsAdded,
-            tagsRemoved,
-          },
-        });
-
-        // Dispatch separate callbacks for occurrence-level tag changes
-        for (const occChange of occurrenceChanges) {
-          await twistWrapper.dispatch("Plot", {
-            itemType: "activity",
-            item: activity,
-            isCreate: true,
-            syncDepth,
-            changes: {
-              tagsAdded: occChange.tagsAdded,
-              tagsRemoved: occChange.tagsRemoved,
-              occurrence: { occurrence: occChange.occurrence },
-            },
-          });
-        }
-      } catch (error) {
-        logger.error(
-          "Error processing new activity in twist batch",
-          error as Error,
-          {
-            activity_id: activityId,
-            priority_id: activity.priority_id ?? undefined,
-          }
-        );
-        postHog.captureException(error as Error, undefined, {
-          twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
-          activity_id: activityId,
-          priority_id: activity.priority_id,
+          thread_id: note.thread_id,
           queue,
         });
       }
@@ -393,7 +306,7 @@ async function processTwistBatch(
         if (syncDepth > 4) {
           logger.warn("Sync cascade depth limit reached for activity", {
             sync_depth: syncDepth,
-            activity_id: activityId,
+            thread_id: activityId,
             priority_id: activity.priority_id ?? undefined,
           });
 
@@ -404,7 +317,7 @@ async function processTwistBatch(
               sync_depth: syncDepth,
               twist_id: String(twistId),
               priority_twist_id: priorityTwistId,
-              item_type: "activity",
+              item_type: "thread",
               item_id: activityId,
               priority_id: activity.priority_id,
             }
@@ -418,9 +331,9 @@ async function processTwistBatch(
           activityTagChanges
         );
 
-        // Dispatch to Plot tool with tag changes - this is an update
-        await twistWrapper.dispatch("Plot", {
-          itemType: "activity",
+        // Dispatch to Plot tool (Twists) and Integrations tool (Sources)
+        const updatedThreadDispatchArgs = {
+          itemType: "thread" as const,
           item: activity,
           isCreate: false, // Updated activities
           syncDepth,
@@ -428,12 +341,14 @@ async function processTwistBatch(
             tagsAdded,
             tagsRemoved,
           },
-        });
+        };
+        await twistWrapper.dispatch("Plot", updatedThreadDispatchArgs);
+        await twistWrapper.dispatch("Integrations", updatedThreadDispatchArgs);
 
         // Dispatch separate callbacks for occurrence-level tag changes
         for (const occChange of occurrenceChanges) {
-          await twistWrapper.dispatch("Plot", {
-            itemType: "activity",
+          const occUpdateDispatchArgs = {
+            itemType: "thread" as const,
             item: activity,
             isCreate: false,
             syncDepth,
@@ -442,22 +357,154 @@ async function processTwistBatch(
               tagsRemoved: occChange.tagsRemoved,
               occurrence: { occurrence: occChange.occurrence },
             },
-          });
+          };
+          await twistWrapper.dispatch("Plot", occUpdateDispatchArgs);
+          await twistWrapper.dispatch("Integrations", occUpdateDispatchArgs);
         }
       } catch (error) {
         logger.error(
           "Error processing activity in twist batch",
           error as Error,
           {
-            activity_id: activityId,
+            thread_id: activityId,
             priority_id: activity.priority_id ?? undefined,
           }
         );
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
           priority_twist_id: priorityTwistId,
-          activity_id: activityId,
+          thread_id: activityId,
           priority_id: activity.priority_id,
+          queue,
+        });
+      }
+    }
+
+    // Process new links from connected source channels (for onLinkCreated callback)
+    for (const link of channelNewLinks) {
+      if (!link.id) continue;
+
+      try {
+        const syncDepth = link.sync_depth ?? 1;
+        if (syncDepth > 4) {
+          logger.warn("Sync cascade depth limit reached for channel link", {
+            sync_depth: syncDepth,
+            link_id: link.id,
+          });
+          continue;
+        }
+
+        await twistWrapper.dispatch("Plot", {
+          itemType: "channel_link" as const,
+          item: link,
+          isCreate: true,
+          syncDepth,
+        });
+      } catch (error) {
+        logger.error("Error processing channel link create", error as Error, {
+          link_id: link.id,
+        });
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          link_id: link.id,
+          queue,
+        });
+      }
+    }
+
+    // Process updated links from connected source channels (for onLinkUpdated callback)
+    for (const link of channelUpdatedLinks) {
+      if (!link.id) continue;
+
+      try {
+        const syncDepth = link.sync_depth ?? 1;
+        if (syncDepth > 4) {
+          logger.warn("Sync cascade depth limit reached for channel link update", {
+            sync_depth: syncDepth,
+            link_id: link.id,
+          });
+          continue;
+        }
+
+        await twistWrapper.dispatch("Plot", {
+          itemType: "channel_link" as const,
+          item: link,
+          isCreate: false,
+          syncDepth,
+        });
+      } catch (error) {
+        logger.error("Error processing channel link update", error as Error, {
+          link_id: link.id,
+        });
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          link_id: link.id,
+          queue,
+        });
+      }
+    }
+
+    // Process new notes on threads with links from connected channels (for onLinkNoteCreated)
+    for (const note of channelNewNotes) {
+      if (!note.id) continue;
+
+      try {
+        const syncDepth = note.sync_depth ?? 1;
+        if (syncDepth > 4) {
+          logger.warn("Sync cascade depth limit reached for channel note", {
+            sync_depth: syncDepth,
+            note_id: note.id,
+          });
+          continue;
+        }
+
+        await twistWrapper.dispatch("Plot", {
+          itemType: "channel_note" as const,
+          item: note,
+          isCreate: true,
+          syncDepth,
+        });
+
+        // Also dispatch to Integrations so sources can handle onNoteCreated
+        await twistWrapper.dispatch("Integrations", {
+          itemType: "channel_note" as const,
+          item: note,
+          isCreate: true,
+          syncDepth,
+        });
+      } catch (error) {
+        logger.error("Error processing channel note create", error as Error, {
+          note_id: note.id,
+        });
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          note_id: note.id,
+          queue,
+        });
+      }
+    }
+
+    // Process thread read status changes (for onThreadRead callback)
+    for (const threadRead of threadReads) {
+      if (!threadRead.thread_id) continue;
+
+      try {
+        await twistWrapper.dispatch("Plot", {
+          itemType: "thread_read" as const,
+          item: threadRead,
+        });
+      } catch (error) {
+        logger.error("Error processing thread read", error as Error, {
+          thread_id: threadRead.thread_id,
+          user_id: threadRead.user_id ?? undefined,
+        });
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          thread_id: threadRead.thread_id,
           queue,
         });
       }
@@ -466,12 +513,14 @@ async function processTwistBatch(
     // Process priority_twist config changes (no sync_depth for config)
     if (priorityTwist) {
       try {
-        // Dispatch priority_twist config change to the twist
-        await twistWrapper.dispatch("Plot", {
-          itemType: "priority_twist",
+        // Dispatch priority_twist config change to the twist (Plot and Integrations)
+        const configDispatchArgs = {
+          itemType: "priority_twist" as const,
           item: priorityTwist,
           syncDepth: undefined, // Config changes don't cascade
-        });
+        };
+        await twistWrapper.dispatch("Plot", configDispatchArgs);
+        await twistWrapper.dispatch("Integrations", configDispatchArgs);
 
         logger.info("Priority twist config processed", {
           priority_twist_id: priorityTwistId,
@@ -495,9 +544,12 @@ async function processTwistBatch(
     logger.info("Twist batch processed successfully", {
       new_note_count: newNotes.length,
       updated_note_count: updatedNotes.length,
-      new_activity_count: newActivities.length,
       updated_activity_count: updatedActivities.length,
       tag_change_count: activityTagChanges.length,
+      channel_new_link_count: channelNewLinks.length,
+      channel_updated_link_count: channelUpdatedLinks.length,
+      channel_new_note_count: channelNewNotes.length,
+      thread_read_count: threadReads.length,
       has_priority_twist_update: !!priorityTwist,
     });
   } catch (error) {

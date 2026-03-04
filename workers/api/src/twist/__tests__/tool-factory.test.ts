@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createTool, collectToolPermissions } from "../tools/factory";
 import { createMockEnv } from "./utils/mocks";
-import { ActivityAccess, PriorityAccess, ContactAccess } from "@plotday/twister/tools/plot";
+import { ThreadAccess, PriorityAccess, ContactAccess } from "@plotday/twister/tools/plot";
 
 describe("Tool Factory", () => {
   let context: any;
@@ -117,7 +117,7 @@ describe("Tool Factory", () => {
 
     it("should collect Plot permissions", () => {
       const options = {
-        activity: { access: ActivityAccess.Respond },
+        activity: { access: ThreadAccess.Respond },
         priority: { access: PriorityAccess.Full },
         contact: { access: ContactAccess.Read },
       };

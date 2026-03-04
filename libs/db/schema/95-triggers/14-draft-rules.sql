@@ -18,8 +18,8 @@ BEGIN
 END;
 $function$;
 
-CREATE TRIGGER enforce_activity_draft_rules_trigger
-    BEFORE UPDATE ON public.activity
+CREATE TRIGGER enforce_thread_draft_rules_trigger
+    BEFORE UPDATE ON public.thread
     FOR EACH ROW
     WHEN (OLD.draft IS DISTINCT FROM NEW.draft)
     EXECUTE FUNCTION public.enforce_draft_rules ();

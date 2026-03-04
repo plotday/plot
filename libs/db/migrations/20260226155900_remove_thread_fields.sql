@@ -1,0 +1,635 @@
+-- Drop "ensure_assignee_priority_contact_trigger" trigger
+DROP TRIGGER "ensure_assignee_priority_contact_trigger" ON "public"."thread";
+-- Drop "set_thread_source_priority_root_trigger" trigger
+DROP TRIGGER "set_thread_source_priority_root_trigger" ON "public"."thread";
+-- Drop "note_tags" view
+DROP VIEW "user"."note_tags";
+-- Drop "thread_tags" view
+DROP VIEW "user"."thread_tags";
+-- Drop "thread" view
+DROP VIEW "user"."thread";
+-- Drop "thread_x" view
+DROP VIEW "public"."thread_x";
+-- Drop "priority_twist_thread_create" view
+DROP VIEW "public"."priority_twist_thread_create";
+-- Drop "priority_twist_thread_update" view
+DROP VIEW "public"."priority_twist_thread_update";
+-- Drop note views that depend on thread.meta via a.* or a.meta
+DROP VIEW IF EXISTS "public"."priority_twist_note_create";
+DROP VIEW IF EXISTS "public"."priority_twist_note_update";
+-- Modify "thread" table
+ALTER TABLE "public"."thread" DROP CONSTRAINT "thread_done_requires_action", DROP COLUMN "author_id", DROP COLUMN "assignee_id", DROP COLUMN "type", DROP COLUMN "order", DROP COLUMN "done_at", DROP COLUMN "meta", DROP COLUMN "source", DROP COLUMN "created_by_twist_id", DROP COLUMN "embedding", DROP COLUMN "pick_priority", DROP COLUMN "source_created_at", DROP COLUMN "source_priority_root", DROP COLUMN "kind", DROP COLUMN "actions";
+-- Drop "set_thread_author_and_created_by" trigger
+DROP TRIGGER "set_thread_author_and_created_by" ON "public"."thread";
+-- Modify "protect_thread_created_by" function
+CREATE OR REPLACE FUNCTION "public"."protect_thread_created_by" () RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    -- Un-archiving: allow created_by update
+    IF OLD.archived_at IS NOT NULL AND NEW.archived_at IS NULL THEN
+        RETURN NEW;
+    END IF;
+    -- Not archived: prevent created_by changes
+    IF OLD.archived_at IS NULL THEN
+        NEW.created_by := OLD.created_by;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
+DECLARE
+    v_result thread;
+    v_id uuid;
+    -- Variables for derived values
+    v_priority_id uuid;
+    v_created_by uuid;
+    -- Archived status check
+    v_is_archived boolean;
+BEGIN
+    -- Extract required fields from JSONB, with fallback to p_defaults for INSERT
+    v_id := COALESCE((p_thread ->> 'id')::uuid, (p_defaults ->> 'id')::uuid);
+    v_priority_id := COALESCE((p_thread ->> 'priority_id')::uuid, (p_defaults ->> 'priority_id')::uuid);
+    v_created_by := COALESCE((p_thread ->> 'created_by')::uuid, (p_defaults ->> 'created_by')::uuid, user_id);
+    -- Generate id if not provided
+    IF v_id IS NULL THEN
+        v_id := uuidv7 ();
+    END IF;
+    -- Resolve priority_id from existing thread if missing
+    IF v_priority_id IS NULL THEN
+        SELECT
+            priority_id INTO v_priority_id
+        FROM
+            thread
+        WHERE
+            id = v_id;
+    END IF;
+    IF v_priority_id IS NULL THEN
+        RAISE EXCEPTION 'priority_id must be provided';
+    END IF;
+    -- Validate access to the priority
+    IF NOT EXISTS (
+        SELECT
+            1
+        FROM
+            priority_user pu
+            JOIN priority pp ON pu.priority_id = pp.id
+            JOIN priority p ON p.path <@ pp.path
+        WHERE
+            pu.user_id = upsert_thread.user_id
+            AND pu.archived_at IS NULL
+            AND p.id = v_priority_id) THEN
+        RAISE EXCEPTION 'User does not have access to this priority';
+    END IF;
+    -- Validate created_by when it differs from user_id
+    IF v_created_by IS DISTINCT FROM user_id THEN
+        IF NOT EXISTS (
+            SELECT
+                1
+            FROM
+                priority_twist pt
+            WHERE
+                pt.id = v_created_by
+                AND pt.owner_id = upsert_thread.user_id) THEN
+            RAISE EXCEPTION 'created_by must be user or owned priority_twist';
+        END IF;
+    END IF;
+    -- Check if existing thread is archived (either directly or via priority)
+    -- Only relevant for UPDATE path; INSERT path will have NULL and be coalesced to false
+    SELECT
+        (thread.archived_at IS NOT NULL
+            OR NOT EXISTS (
+                SELECT
+                    1
+                FROM
+                    "user".priority_expanded upe
+                WHERE
+                    upe.priority_id = thread.priority_id
+                    AND upe.user_id = upsert_thread.user_id
+                    AND upe.archived_at IS NULL)) INTO v_is_archived
+    FROM
+        thread
+    WHERE
+        id = v_id;
+    -- If no existing thread, v_is_archived will be NULL (INSERT path)
+    v_is_archived := COALESCE(v_is_archived, FALSE);
+    -- Perform the upsert and return the full row
+    -- On INSERT: Use COALESCE to fall back to p_defaults for fields not in p_thread
+    INSERT INTO thread (id, created_by, priority_id, title, preview, updated_by, sync_depth, private, draft)
+        VALUES (v_id, v_created_by, v_priority_id, COALESCE(p_thread ->> 'title', p_defaults ->> 'title'), COALESCE(p_thread ->> 'preview', p_defaults ->> 'preview'), COALESCE((p_thread ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, 0), COALESCE((p_thread ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint), COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, FALSE), COALESCE((p_thread ->> 'draft')::boolean, (p_defaults ->> 'draft')::boolean, FALSE))
+    ON CONFLICT (id)
+        DO UPDATE SET
+            -- Update fields only if key is present in p_thread
+            -- Key absent: keep existing value (unless archived, then use p_defaults)
+            -- Key present (even with null): use provided value (allows clearing)
+            -- If archived: treat as INSERT and apply p_defaults
+            title = CASE WHEN v_is_archived THEN
+                COALESCE(p_thread ->> 'title', p_defaults ->> 'title', thread.title)
+            ELSE
+                CASE WHEN p_thread ? 'title' THEN
+                    p_thread ->> 'title'
+                ELSE
+                    thread.title
+                END
+            END,
+            preview = CASE WHEN v_is_archived THEN
+                COALESCE(p_thread ->> 'preview', p_defaults ->> 'preview', thread.preview)
+            ELSE
+                CASE WHEN p_thread ? 'preview' THEN
+                    p_thread ->> 'preview'
+                ELSE
+                    thread.preview
+                END
+            END,
+            updated_by = CASE WHEN v_is_archived THEN
+                COALESCE((p_thread ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, thread.updated_by)
+            ELSE
+                CASE WHEN p_thread ? 'updated_by' THEN
+                    (p_thread ->> 'updated_by')::integer
+                ELSE
+                    thread.updated_by
+                END
+            END,
+            sync_depth = CASE WHEN v_is_archived THEN
+                COALESCE((p_thread ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint, thread.sync_depth)
+            ELSE
+                CASE WHEN p_thread ? 'sync_depth' THEN
+                    (p_thread ->> 'sync_depth')::smallint
+                ELSE
+                    thread.sync_depth
+                END
+            END,
+            priority_id = CASE WHEN v_is_archived THEN
+                v_priority_id
+            ELSE
+                CASE WHEN p_thread ? 'priority_id' THEN
+                    (p_thread ->> 'priority_id')::uuid
+                ELSE
+                    thread.priority_id
+                END
+            END,
+            private = CASE WHEN v_is_archived THEN
+                COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, thread.private)
+            ELSE
+                CASE WHEN p_thread ? 'private' THEN
+                    (p_thread ->> 'private')::boolean
+                ELSE
+                    thread.private
+                END
+            END,
+            draft = CASE WHEN v_is_archived THEN
+                COALESCE((p_thread ->> 'draft')::boolean, (p_defaults ->> 'draft')::boolean, thread.draft)
+            ELSE
+                CASE WHEN p_thread ? 'draft' THEN
+                    (p_thread ->> 'draft')::boolean
+                ELSE
+                    thread.draft
+                END
+            END,
+            archived_at = CASE WHEN v_is_archived THEN
+                CASE WHEN p_thread ? 'archived_at' THEN
+                    (p_thread ->> 'archived_at')::timestamptz
+                WHEN p_defaults ? 'archived_at' THEN
+                    (p_defaults ->> 'archived_at')::timestamptz
+                ELSE
+                    thread.archived_at
+                END
+            ELSE
+                CASE WHEN p_thread ? 'archived_at' THEN
+                    (p_thread ->> 'archived_at')::timestamptz
+                ELSE
+                    thread.archived_at
+                END
+            END,
+            created_by = v_created_by
+        RETURNING
+            * INTO v_result;
+    RETURN v_result;
+END;
+$$;
+-- Create "thread_x" view
+CREATE VIEW "public"."thread_x" (
+  "id",
+  "created_at",
+  "updated_at",
+  "created_by",
+  "updated_by",
+  "sync_depth",
+  "archived_at",
+  "priority_id",
+  "draft",
+  "private",
+  "title",
+  "preview",
+  "last_note_created_at",
+  "last_note_source_created_at",
+  "priority_path",
+  "mentions"
+) AS SELECT a.id,
+    a.created_at,
+    a.updated_at,
+    a.created_by,
+    a.updated_by,
+    a.sync_depth,
+    a.archived_at,
+    a.priority_id,
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    p.path AS priority_path,
+    public.get_thread_mentions(a.id) AS mentions
+   FROM public.thread a
+     JOIN public.priority p ON p.id = a.priority_id;
+-- Create "thread" view
+CREATE VIEW "user"."thread" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "updated_by",
+  "archived_at",
+  "priority_id",
+  "priority_path",
+  "draft",
+  "private",
+  "title",
+  "preview",
+  "last_note_created_at",
+  "last_note_source_created_at",
+  "mentions",
+  "unread"
+) AS SELECT upe.user_id,
+    a.id,
+    a.created_at,
+    GREATEST(a.updated_at, COALESCE(a.last_note_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone),
+        CASE
+            WHEN a.archived_at IS NULL AND (a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at OR (a.created_by IS NULL OR a.created_by <> upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at) THEN GREATEST(COALESCE(
+            CASE
+                WHEN ar.read_at >=
+                CASE
+                    WHEN a.created_by = upe.user_id THEN a.last_note_source_created_at
+                    ELSE COALESCE(a.last_note_source_created_at, a.created_at)
+                END THEN ar.updated_at
+                ELSE NULL::timestamp with time zone
+            END, '1970-01-01 00:00:00+00'::timestamp with time zone),
+            CASE
+                WHEN a.created_by = upe.user_id THEN COALESCE(a.last_note_source_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone)
+                ELSE COALESCE(a.last_note_source_created_at, a.created_at)
+            END)
+            ELSE '1970-01-01 00:00:00+00'::timestamp with time zone
+        END) AS updated_at,
+    a.updated_by,
+    COALESCE(a.archived_at, upe.archived_at) AS archived_at,
+    a.priority_id,
+    a.priority_path,
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    a.mentions,
+    COALESCE(
+        CASE
+            WHEN a.archived_at IS NULL AND (a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at OR (a.created_by IS NULL OR a.created_by <> upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at) THEN ar.read_at IS NULL OR ar.read_at <
+            CASE
+                WHEN a.created_by = upe.user_id THEN a.last_note_source_created_at
+                ELSE COALESCE(a.last_note_source_created_at, a.created_at)
+            END
+            ELSE false
+        END, false) AS unread
+   FROM public.thread_x a
+     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
+     LEFT JOIN public.thread_read ar ON ar.user_id = upe.user_id AND ar.thread_id = a.id
+  WHERE (a.draft = false OR a.created_by = upe.user_id) AND
+        CASE
+            WHEN a.private = false THEN true
+            WHEN a.created_by = upe.user_id THEN true
+            ELSE "user".mentioned_in_thread(upe.user_id, a.id)
+        END
+UNION ALL
+ SELECT upe.user_id,
+    a.id,
+    a.created_at,
+    a.updated_at,
+    a.updated_by,
+    COALESCE(a.archived_at, upe.archived_at, a.updated_at) AS archived_at,
+    a.priority_id,
+    a.priority_path,
+    a.draft,
+    a.private,
+    NULL::text AS title,
+    NULL::text AS preview,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    NULL::uuid[] AS mentions,
+    false AS unread
+   FROM public.thread_x a
+     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
+  WHERE (a.draft = false OR a.created_by = upe.user_id) AND a.private = true AND a.created_by <> upe.user_id AND NOT "user".mentioned_in_thread(upe.user_id, a.id);
+-- Create "note_tags" view
+CREATE VIEW "user"."note_tags" (
+  "user_id",
+  "id",
+  "updated_at",
+  "archived_at",
+  "priority_path",
+  "tags"
+) AS SELECT ua.user_id,
+    n.id,
+    nt.updated_at,
+    ua.archived_at,
+    ua.priority_path,
+    nt.tags
+   FROM public.note_tags nt
+     JOIN public.note n ON n.id = nt.note_id
+     JOIN "user".thread ua ON ua.id = n.thread_id
+  WHERE (n.draft = false OR n.created_by = ua.user_id) AND (n.private = false OR n.created_by = ua.user_id OR (ua.user_id = ANY (n.mentions)));
+-- Create "thread_tags" view
+CREATE VIEW "user"."thread_tags" (
+  "user_id",
+  "id",
+  "archived_at",
+  "occurrence",
+  "updated_at",
+  "priority_path",
+  "tags"
+) AS SELECT ua.user_id,
+    ua.id,
+    ua.archived_at,
+    at.occurrence,
+    at.updated_at,
+    ua.priority_path,
+    at.tags
+   FROM public.thread_tags at
+     JOIN "user".thread ua ON ua.id = at.thread_id;
+-- Create "priority_twist_thread_create" view
+CREATE VIEW "public"."priority_twist_thread_create" (
+  "priority_twist_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "created_by",
+  "updated_by",
+  "sync_depth",
+  "archived_at",
+  "priority_id",
+  "draft",
+  "private",
+  "title",
+  "preview",
+  "mentions",
+  "priority_title",
+  "tags"
+) AS SELECT pt.id AS priority_twist_id,
+    a.id,
+    a.created_at,
+    a.updated_at,
+    a.created_by,
+    a.updated_by,
+    a.sync_depth,
+    a.archived_at,
+    a.priority_id,
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    public.get_thread_mentions(a.id) AS mentions,
+    pc.title AS priority_title,
+    at.tags
+   FROM public.priority_twist pt
+     JOIN public.priority pp ON pp.id = pt.priority_id
+     JOIN public.priority pc ON pc.path OPERATOR(public.<@) pp.path
+     JOIN public.thread a ON a.priority_id = pc.id
+     LEFT JOIN public.thread_tags at ON at.thread_id = a.id AND at.occurrence IS NULL
+  WHERE a.draft = false AND pt.id <> a.created_by AND a.archived_at IS NULL AND pt.archived_at IS NULL AND a.created_at > pt.created_at
+  ORDER BY a.created_at;
+-- Create "priority_twist_thread_update" view
+CREATE VIEW "public"."priority_twist_thread_update" (
+  "priority_twist_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "created_by",
+  "updated_by",
+  "sync_depth",
+  "archived_at",
+  "priority_id",
+  "draft",
+  "private",
+  "title",
+  "preview",
+  "mentions",
+  "priority_title",
+  "tags"
+) AS SELECT a.created_by AS priority_twist_id,
+    a.id,
+    a.created_at,
+    GREATEST(a.updated_at, COALESCE(at.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
+    a.created_by,
+    a.updated_by,
+    a.sync_depth,
+    a.archived_at,
+    a.priority_id,
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    public.get_thread_mentions(a.id) AS mentions,
+    pc.title AS priority_title,
+    at.tags
+   FROM public.priority_twist pt
+     JOIN public.priority pp ON pp.id = pt.priority_id
+     JOIN public.priority pc ON pc.path OPERATOR(public.<@) pp.path
+     JOIN public.thread a ON a.priority_id = pc.id
+     LEFT JOIN public.thread_tags at ON at.thread_id = a.id AND at.occurrence IS NULL
+  WHERE a.draft = false AND pt.id = a.created_by AND GREATEST(a.updated_at, COALESCE(at.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) > a.created_at AND public.updated_by_uuid(pt.id) <> a.updated_by::numeric AND pt.archived_at IS NULL AND GREATEST(a.updated_at, COALESCE(at.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) > pt.created_at
+  ORDER BY (GREATEST(a.updated_at, COALESCE(at.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)));
+-- Modify "priority_twist_note_create" view
+CREATE OR REPLACE VIEW "public"."priority_twist_note_create" (
+  "priority_twist_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "source_created_at",
+  "author_id",
+  "created_by",
+  "updated_by",
+  "sync_depth",
+  "archived_at",
+  "thread_id",
+  "draft",
+  "private",
+  "content",
+  "actions",
+  "key",
+  "mentions",
+  "re_note_id",
+  "priority_id",
+  "thread_title",
+  "thread_created_by",
+  "thread_meta",
+  "author_name",
+  "author_type",
+  "tags"
+) AS SELECT base.priority_twist_id,
+    base.id,
+    base.created_at,
+    base.updated_at,
+    base.source_created_at,
+    base.author_id,
+    base.created_by,
+    base.updated_by,
+    base.sync_depth,
+    base.archived_at,
+    base.thread_id,
+    base.draft,
+    base.private,
+    base.content,
+    base.actions,
+    base.key,
+    base.mentions,
+    base.re_note_id,
+    base.priority_id,
+    base.thread_title,
+    base.thread_created_by,
+    base.thread_meta,
+    author.name AS author_name,
+    author.type AS author_type,
+    nt.tags
+   FROM ( SELECT pt.id AS priority_twist_id,
+            n.id,
+            n.created_at,
+            n.updated_at,
+            n.source_created_at,
+            n.author_id,
+            n.created_by,
+            n.updated_by,
+            n.sync_depth,
+            n.archived_at,
+            n.thread_id,
+            n.draft,
+            n.private,
+            n.content,
+            n.actions,
+            n.key,
+            n.mentions,
+            n.re_note_id,
+            a.priority_id,
+            a.title AS thread_title,
+            a.created_by AS thread_created_by,
+            NULL::jsonb AS thread_meta
+           FROM public.priority_twist pt
+             JOIN public.priority pp ON pp.id = pt.priority_id
+             JOIN public.priority pc ON pc.path OPERATOR(public.<@) pp.path
+             JOIN public.thread a ON a.priority_id = pc.id AND a.created_by = pt.id AND a.archived_at IS NULL
+             JOIN public.note n ON n.thread_id = a.id
+          WHERE n.draft = false AND n.created_by <> pt.id AND public.updated_by_uuid(pt.id) <> n.updated_by::numeric AND pt.archived_at IS NULL AND n.created_at > pt.created_at
+        UNION ALL
+         SELECT pt.id AS priority_twist_id,
+            n.id,
+            n.created_at,
+            n.updated_at,
+            n.source_created_at,
+            n.author_id,
+            n.created_by,
+            n.updated_by,
+            n.sync_depth,
+            n.archived_at,
+            n.thread_id,
+            n.draft,
+            n.private,
+            n.content,
+            n.actions,
+            n.key,
+            n.mentions,
+            n.re_note_id,
+            a.priority_id,
+            a.title AS thread_title,
+            a.created_by AS thread_created_by,
+            NULL::jsonb AS thread_meta
+           FROM public.priority_twist pt
+             JOIN public.priority pp ON pp.id = pt.priority_id
+             JOIN LATERAL ( SELECT m.thread_id,
+                    min(m.created_at) AS first_mention_at
+                   FROM public.note m
+                  WHERE m.mentions @> ARRAY[pt.id] AND m.archived_at IS NULL
+                  GROUP BY m.thread_id) fm ON true
+             JOIN public.thread a ON a.id = fm.thread_id AND a.created_by <> pt.id AND a.archived_at IS NULL
+             JOIN public.priority pc ON pc.id = a.priority_id AND pc.path OPERATOR(public.<@) pp.path
+             JOIN public.note n ON n.thread_id = fm.thread_id AND n.created_at >= fm.first_mention_at
+          WHERE n.draft = false AND n.created_by <> pt.id AND public.updated_by_uuid(pt.id) <> n.updated_by::numeric AND pt.archived_at IS NULL AND n.created_at > pt.created_at) base
+     LEFT JOIN public.actor author ON author.id = base.author_id
+     LEFT JOIN public.note_tags nt ON nt.note_id = base.id
+  ORDER BY base.created_at;
+-- Modify "priority_twist_note_update" view
+CREATE OR REPLACE VIEW "public"."priority_twist_note_update" (
+  "priority_twist_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "source_created_at",
+  "author_id",
+  "created_by",
+  "updated_by",
+  "sync_depth",
+  "archived_at",
+  "thread_id",
+  "draft",
+  "private",
+  "content",
+  "actions",
+  "key",
+  "mentions",
+  "re_note_id",
+  "priority_id",
+  "thread_title",
+  "thread_created_by",
+  "thread_meta",
+  "author_name",
+  "author_type",
+  "tags"
+) AS SELECT n.created_by AS priority_twist_id,
+    n.id,
+    n.created_at,
+    GREATEST(n.updated_at, COALESCE(nt.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
+    n.source_created_at,
+    n.author_id,
+    n.created_by,
+    n.updated_by,
+    n.sync_depth,
+    n.archived_at,
+    n.thread_id,
+    n.draft,
+    n.private,
+    n.content,
+    n.actions,
+    n.key,
+    n.mentions,
+    n.re_note_id,
+    a.priority_id,
+    a.title AS thread_title,
+    a.created_by AS thread_created_by,
+    NULL::jsonb AS thread_meta,
+    author.name AS author_name,
+    author.type AS author_type,
+    nt.tags
+   FROM public.priority_twist pt
+     JOIN public.priority pp ON pp.id = pt.priority_id
+     JOIN public.priority pc ON pc.path OPERATOR(public.<@) pp.path
+     JOIN public.thread a ON a.priority_id = pc.id
+     JOIN public.note n ON a.id = n.thread_id
+     LEFT JOIN public.actor author ON author.id = n.author_id
+     LEFT JOIN public.note_tags nt ON nt.note_id = n.id
+  WHERE n.draft = false AND n.updated_at > n.created_at AND public.updated_by_uuid(pt.id) <> n.updated_by::numeric AND a.archived_at IS NULL AND pt.archived_at IS NULL AND n.updated_at > pt.created_at
+  ORDER BY n.updated_at;
+-- Drop enum type "thread_kind"
+DROP TYPE "public"."thread_kind";
+-- Drop enum type "thread_type"
+DROP TYPE "public"."thread_type";
+-- Drop "ensure_assignee_priority_contact" function
+DROP FUNCTION "public"."ensure_assignee_priority_contact";
+-- Drop "set_thread_source_priority_root" function
+DROP FUNCTION "public"."set_thread_source_priority_root";

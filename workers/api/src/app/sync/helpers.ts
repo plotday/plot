@@ -1,11 +1,33 @@
 import type { Context } from "hono";
+import { sql } from "kysely";
 
 import type { Bindings } from "../../env";
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
 
-const ALLOWED_SORT_COLUMNS = new Set(["created_at", "updated_at"]);
+const ALLOWED_SORT_COLUMNS = new Set(["created_at", "updated_at", "activity_at", "agenda_at"]);
+
+/**
+ * Build a WHERE clause for cursor-based pagination on updated_at.
+ *
+ * Uses date_trunc('milliseconds', ...) because JavaScript Date (used by the
+ * pg driver) has only millisecond precision. Without truncation, Postgres's
+ * microsecond-precision `updated_at > cursor` always matches the same rows
+ * (e.g. .220123 > .220000 = true), causing infinite sync loops.
+ *
+ * @param cursorIdColumn - The secondary cursor column name (e.g. 'id', 'priority_id')
+ */
+export function updatedSinceCursor(
+  updatedSince: string,
+  cursorId: string | null,
+  cursorIdColumn: string = "id"
+) {
+  if (cursorId) {
+    return sql<boolean>`(date_trunc('milliseconds', updated_at) > ${updatedSince}::timestamptz OR (date_trunc('milliseconds', updated_at) = ${updatedSince}::timestamptz AND ${sql.ref(cursorIdColumn)} > ${cursorId}))`;
+  }
+  return sql<boolean>`date_trunc('milliseconds', updated_at) > ${updatedSince}::timestamptz`;
+}
 
 export interface ReadParams {
   updatedSince: string | null;
@@ -13,7 +35,7 @@ export interface ReadParams {
   archived: boolean | undefined;
   limit: number;
   priorityPath: string | null;
-  activityId: string | null;
+  threadId: string | null;
   rangeStart: string | null;
   rangeEnd: string | null;
   initial: boolean;
@@ -43,7 +65,7 @@ export function parseReadParams(c: Context<{ Bindings: Bindings }>): ReadParams 
     archived,
     limit,
     priorityPath: c.req.query("priority_path") || null,
-    activityId: c.req.query("activity_id") || null,
+    threadId: c.req.query("thread_id") || null,
     rangeStart: c.req.query("range_start") || null,
     rangeEnd: c.req.query("range_end") || null,
     initial: c.req.query("initial") === "true",

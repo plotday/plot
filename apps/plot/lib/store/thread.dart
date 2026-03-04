@@ -1,0 +1,2735 @@
+part of 'store.dart';
+
+typedef ThreadId = Uuid;
+typedef ThreadWatchResult = ({List<Thread> threads, int rawRowCount});
+
+@DataClassName('ThreadRow')
+class Threads extends Table
+    with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
+  BlobColumn get priorityId => blob().map(const UuidConverter())();
+  BoolColumn get private => boolean().withDefault(const Constant(false))();
+
+  TextColumn get title => text().nullable()();
+  TextColumn get preview => text().nullable()();
+
+  DateTimeColumn get lastNoteCreatedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get lastNoteSourceCreatedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+
+  TextColumn get mentions => text().nullable().map(const UuidListConverter())();
+  BoolColumn get unread => boolean().withDefault(const Constant(false))();
+  BoolColumn get unreadUpdated => boolean().nullable()();
+}
+
+@DataClassName('ScheduleRow')
+class Schedules extends Table with SyncableTable, UuidTable {
+  static String formatOccurrence(DateTime dateTime, {bool dateOnly = false}) {
+    if (dateOnly) {
+      return '${dateTime.year.toString().padLeft(4, '0')}-'
+          '${dateTime.month.toString().padLeft(2, '0')}-'
+          '${dateTime.day.toString().padLeft(2, '0')}';
+    } else {
+      return '${dateTime.year.toString().padLeft(4, '0')}-'
+          '${dateTime.month.toString().padLeft(2, '0')}-'
+          '${dateTime.day.toString().padLeft(2, '0')}T'
+          '${dateTime.hour.toString().padLeft(2, '0')}:'
+          '${dateTime.minute.toString().padLeft(2, '0')}';
+    }
+  }
+
+  BlobColumn get userId => blob().nullable().map(const UuidConverter())();
+  RealColumn get order => real().nullable().map(const OrderConverter())();
+  DateTimeColumn get startAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get endAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+  TextColumn get startOn => text().nullable().map(const DateConverter())();
+  TextColumn get endOn => text().nullable().map(const DateConverter())();
+  TextColumn get recurrenceRule =>
+      text().nullable().map(const RecurrenceRuleConverter())();
+  IntColumn get duration =>
+      integer().nullable().map(const IntervalConverter())();
+  TextColumn get recurrenceExdates =>
+      text().nullable().map(const DateTimeListConverter())();
+  TextColumn get occurrence => text().nullable()();
+  DateTimeColumn get doneAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get archivedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+  BlobColumn get threadId => blob().nullable().map(const UuidConverter())();
+  BlobColumn get linkId => blob().nullable().map(const UuidConverter())();
+  TextColumn get contacts => text().nullable()();
+  TextColumn get currentUserStatus => text().nullable()();
+}
+
+class RecurrenceRuleConverter extends TypeConverter<RecurrenceRule?, String?>
+    with JsonTypeConverter2<RecurrenceRule?, String?, String?> {
+  const RecurrenceRuleConverter();
+
+  @override
+  RecurrenceRule? fromSql(String? fromDb) {
+    if (fromDb == null || fromDb.isEmpty) {
+      return null;
+    }
+    try {
+      return RecurrenceRule.fromString(fromDb);
+    } catch (e) {
+      // Return null for invalid RRULE strings
+      return null;
+    }
+  }
+
+  @override
+  String? toSql(RecurrenceRule? value) => value?.toString();
+
+  @override
+  RecurrenceRule? fromJson(String? json) {
+    if (json == null || json.isEmpty) {
+      return null;
+    }
+    try {
+      // If the JSON doesn't start with "RRULE:", add it
+      final ruleString = json.startsWith('RRULE:') ? json : 'RRULE:$json';
+      return RecurrenceRule.fromString(ruleString);
+    } catch (e) {
+      // Return null for invalid RRULE strings
+      return null;
+    }
+  }
+
+  @override
+  String? toJson(RecurrenceRule? value) {
+    if (value == null) return null;
+    final ruleString = value.toString();
+    // Remove "RRULE:" prefix for JSON serialization if present
+    return ruleString.startsWith('RRULE:')
+        ? ruleString.substring(6)
+        : ruleString;
+  }
+}
+
+class ThreadsBase extends BaseTable {
+  ThreadsBase({
+    this.priorityPath,
+    this.initial = false,
+    String? syncName,
+    String? sortBy,
+    super.ascending = false,
+  }) : super(
+        table: 'user_thread',
+        syncEndpoint: 'threads',
+        name: syncName ?? "threads",
+        filterName: priorityPath,
+        order: sortBy ?? 'activity_at',
+        limit: initial
+            ? null
+            : 200, // No limit for initial pull (active OR unread)
+      );
+
+  final String? priorityPath;
+  final bool initial;
+
+  @override
+  Map<String, String> buildParams({
+    DateTime? updatedSince,
+    String? lastId,
+    bool initial = false,
+    bool archived = false,
+  }) {
+    final params = super.buildParams(
+      updatedSince: updatedSince,
+      lastId: lastId,
+      initial: initial,
+      archived: archived,
+    );
+    if (priorityPath != null) {
+      params['priority_path'] = priorityPath!;
+    }
+    return params;
+  }
+
+  @override
+  Insertable<ThreadRow> fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
+    json.remove('sync_depth');
+    json.remove('user_id');
+    json.remove('activity_at');
+    json.remove('agenda_at');
+
+    return ThreadRow.fromJson(json);
+  }
+
+  @override
+  Map<String, String> buildRangeParams(DateTimeRange range) {
+    final params = <String, String>{};
+    if (range.start != null) {
+      params['range_start'] = range.start!.toIso8601String();
+    }
+    if (range.end != null) {
+      params['range_end'] = range.end!.toIso8601String();
+    }
+    return params;
+  }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final activityRow = row as ThreadRow;
+      // Check if local has a pending unread change
+      final local = await (store.select(
+        store.threads,
+      )..where((t) => t.id.equals(activityRow.id.toBytes()))).getSingleOrNull();
+      var merged = activityRow;
+
+      // Handle pending unread changes
+      if (local != null && local.unreadUpdated == true) {
+        if (activityRow.unread == local.unread) {
+          // Server confirms our local unread state - clear the pending flag
+          merged = merged.copyWith(unreadUpdated: const Value(null));
+        } else {
+          // Server still has stale data - preserve local unread state
+          merged = merged.copyWith(
+            unread: local.unread,
+            unreadUpdated: const Value(true),
+          );
+        }
+      }
+
+      result.add(merged);
+    }
+    return result;
+  }
+
+  @override
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = super.toBase(row);
+
+    // Convert author_id from ActorId bytes to UUID string for the API
+    // The client sets this correctly to Base.actorId (contact ID)
+    // Do NOT remove - the sync API needs it to set the correct author
+
+    // Remove unread fields - they are managed separately
+    json.remove('unread');
+    json.remove('unread_updated');
+
+    // Remove mentions - it's a calculated field from notes
+    json.remove('mentions');
+
+    // Remove last_note_created_at and last_note_source_created_at - they are calculated fields from notes
+    json.remove('last_note_created_at');
+    json.remove('last_note_source_created_at');
+
+    return json;
+  }
+}
+
+class SchedulesBase extends BaseTable {
+  SchedulesBase({this.priorityPath})
+    : super(
+        table: 'user_schedule',
+        syncEndpoint: 'schedules',
+        name: "schedules",
+        filterName: priorityPath,
+        order: 'updated_at',
+        ascending: false,
+      );
+
+  final String? priorityPath;
+
+  @override
+  Map<String, String> buildParams({
+    DateTime? updatedSince,
+    String? lastId,
+    bool initial = false,
+    bool archived = false,
+  }) {
+    final params = super.buildParams(
+      updatedSince: updatedSince,
+      lastId: lastId,
+      initial: initial,
+      archived: archived,
+    );
+    if (priorityPath != null) {
+      params['priority_path'] = priorityPath!;
+    }
+    return params;
+  }
+
+  @override
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = super.toBase(row);
+
+    // Convert start_at/end_at back to 'at' (tstzrange)
+    final startAt = json.remove('start_at') as String?;
+    final endAt = json.remove('end_at') as String?;
+    if (startAt != null || endAt != null) {
+      json['at'] = '[${startAt ?? ''},${endAt ?? ''})';
+    }
+
+    // Convert start_on/end_on back to 'on' (daterange)
+    final startOn = json.remove('start_on') as String?;
+    final endOn = json.remove('end_on') as String?;
+    if (startOn != null || endOn != null) {
+      json['on'] = '[${startOn ?? ''},${endOn ?? ''})';
+    }
+
+    // Add user_id for per-user schedules
+    if (json['user_id'] != null) {
+      json['user_id'] = json['user_id'].toString();
+    }
+
+    // Remove local-only fields
+    json.remove('contacts');
+    json.remove('current_user_status');
+
+    // Per-user schedules: always include at/on explicitly (even if null)
+    // to ensure the server's upsert_schedule clears these fields.
+    // Without this, absent keys are treated as "keep existing" and stale
+    // dates (e.g. from a previous todo toggle) persist on the server,
+    // causing the thread to flip back to "To Do" on next pull.
+    if (json['user_id'] != null &&
+        !json.containsKey('at') &&
+        !json.containsKey('on')) {
+      json['at'] = null;
+      json['on'] = null;
+    }
+
+    // Safety: DB constraint requires exactly one of at/on to be set,
+    // unless it's a per-user schedule (user_id IS NOT NULL) which can be undated.
+    // If neither is present and it's a shared schedule, default to today.
+    if (!json.containsKey('at') &&
+        !json.containsKey('on') &&
+        json['user_id'] == null) {
+      final today = DateTime.now();
+      final dateStr =
+          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      json['on'] = '[$dateStr,)';
+    }
+
+    return json;
+  }
+
+  @override
+  Insertable<ScheduleRow> fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
+    // Map schedule_user_id → user_id (view returns user_id as authenticated user,
+    // schedule_user_id as the actual schedule's user_id)
+    json['user_id'] = json.remove('schedule_user_id');
+    json.remove('priority_path');
+    json.remove('range_at');
+    json.remove('range_on');
+
+    // Store contacts as JSON string and extract current user's RSVP status
+    final contacts = json.remove('contacts');
+    if (contacts is List && contacts.isNotEmpty) {
+      json['contacts'] = jsonEncode(contacts);
+      final userId = Base.userId.toString();
+      for (final contact in contacts) {
+        if (contact is Map && contact['contact_user_id'] == userId) {
+          json['current_user_status'] = contact['status'];
+          break;
+        }
+      }
+    }
+
+    // Handle the 'at' field
+    final at = json['at'] != null && json['at'] != 'empty'
+        ? DateTimeRange.fromString(json['at'] as String)
+        : null;
+    json['start_at'] = at?.start?.toDb();
+    json['end_at'] = at?.end?.toDb();
+    json.remove('at');
+
+    // Handle the 'on' field
+    final on = json['on'] != null && json['on'] != 'empty'
+        ? DateRange.fromString(json['on'] as String)
+        : null;
+    json['start_on'] = on?.start?.toString();
+    json['end_on'] = on?.end?.toString();
+    json.remove('on');
+
+    return ScheduleRow.fromJson(json);
+  }
+}
+
+enum ThreadOrder { sorted, reverse }
+
+class Thread extends Equatable implements Comparable<Thread> {
+  /// Sentinel date meaning "to do now" (no specific schedule date).
+  static final todoNowDate = Date(1970, 1, 1);
+
+  static Future<void> pullInitial() async {
+    // Pull unread activities (no limit)
+    // We do this to ensure we can reflect which priorities have unread activities.
+    await Store.get.pull(
+      Store.get.threads,
+      ThreadsBase(initial: true),
+      initial: true,
+    );
+
+    // We don't pull exceptions or tags mostly because we don't have a good way of pulling the related
+    // ones, but also because those should come with pullTo.
+  }
+
+  static Future<void> pull() async {
+    await Store.get.pull(Store.get.threads, ThreadsBase());
+    await Store.get.pull(Store.get.links, LinksBase());
+    await Store.get.pull(Store.get.schedules, SchedulesBase());
+    await Store.get.pull(Store.get.threadTags, ThreadTagsBase());
+  }
+
+  /// Pull one page of activity feed (backward from now).
+  /// Uses SyncState entity "activity-feed:{priorityPath}" to track position.
+  static Future<void> pullActivityFeed(
+    Path? priorityPath, {
+    bool archived = false,
+  }) async {
+    final path = priorityPath?.value ?? '';
+    final pulledTo = await Store.get.pullTo(
+      Store.get.threads,
+      ThreadsBase(
+        priorityPath: path,
+        syncName: 'activity-feed',
+        sortBy: 'activity_at',
+        ascending: false,
+      ),
+      ascending: false,
+      archived: archived,
+    );
+
+    if (pulledTo == null) return;
+
+    await Store.get.pullTo(
+      Store.get.schedules,
+      SchedulesBase(priorityPath: path),
+      pullTo: pulledTo,
+      ascending: false,
+      archived: archived,
+    );
+    await Store.get.pullTo(
+      Store.get.threadTags,
+      ThreadTagsBase(priorityPath: path),
+      pullTo: pulledTo,
+      ascending: false,
+      archived: archived,
+    );
+  }
+
+  /// Pull one page of agenda (forward from today).
+  /// Uses SyncState entity "agenda:{priorityPath}" to track position.
+  static Future<void> pullAgenda(
+    Path? priorityPath, {
+    bool archived = false,
+  }) async {
+    final path = priorityPath?.value ?? '';
+    final pulledTo = await Store.get.pullTo(
+      Store.get.threads,
+      ThreadsBase(
+        priorityPath: path,
+        syncName: 'agenda',
+        sortBy: 'agenda_at',
+        ascending: true,
+      ),
+      ascending: true,
+      archived: archived,
+    );
+
+    if (pulledTo == null) return;
+
+    await Store.get.pullTo(
+      Store.get.schedules,
+      SchedulesBase(priorityPath: path),
+      pullTo: pulledTo,
+      ascending: true,
+      archived: archived,
+    );
+    await Store.get.pullTo(
+      Store.get.threadTags,
+      ThreadTagsBase(priorityPath: path),
+      pullTo: pulledTo,
+      ascending: true,
+      archived: archived,
+    );
+  }
+
+  static Future<bool> push() async {
+    final success =
+        await Store.get.push(Store.get.threads, ThreadsBase()) &&
+        await Store.get.push(Store.get.links, LinksBase()) &&
+        await Store.get.push(Store.get.schedules, SchedulesBase()) &&
+        await Store.get.push(Store.get.threadTags, ThreadTagsBase());
+
+    // Batch push unread changes
+    final unreadActivities = await (Store.get.select(
+      Store.get.threads,
+    )..where((t) => t.unreadUpdated.equals(true))).get();
+
+    if (unreadActivities.isEmpty) {
+      return success;
+    }
+
+    // Get the max pulledAt from activities and notes for read_at timestamp
+    final syncStates = await (Store.get.select(
+      Store.get.syncStates,
+    )..where((row) => row.entity.isIn(['threads', 'notes']))).get();
+
+    final maxPulledAtMicros = syncStates
+        .map((s) => s.pulledAt)
+        .whereType<int>()
+        .fold<int?>(
+          null,
+          (max, value) => max == null || value > max ? value : max,
+        );
+
+    // We use the latest pulledAt since the user hasn't read anything since that point, even if it exists remotely
+    final readAt = maxPulledAtMicros != null
+        ? DateTime.fromMicrosecondsSinceEpoch(maxPulledAtMicros, isUtc: true)
+        : DateTime.now().toUtc();
+
+    // Separate activities into read and unread lists
+    final toMarkRead = <ThreadRow>[];
+    final toMarkUnread = <ThreadRow>[];
+
+    for (final activity in unreadActivities) {
+      if (activity.unread) {
+        toMarkUnread.add(activity);
+      } else {
+        toMarkRead.add(activity);
+      }
+    }
+
+    try {
+      // Batch upsert for marking as read
+      if (toMarkRead.isNotEmpty) {
+        final readRecords = toMarkRead
+            .map(
+              (activity) => {
+                'user_id': Base.userId.toString(),
+                'thread_id': activity.id.toString(),
+                'read_at': readAt.toIso8601String(),
+              },
+            )
+            .toList();
+
+        for (final record in readRecords) {
+          await api.post<dynamic>('/sync/thread-read', body: record);
+        }
+      }
+
+      // Batch delete for marking as unread
+      if (toMarkUnread.isNotEmpty) {
+        for (final activity in toMarkUnread) {
+          await api.delete<dynamic>(
+            '/sync/thread-read?user_id=${Uri.encodeQueryComponent(Base.userId.toString())}&thread_id=${Uri.encodeQueryComponent(activity.id.toString())}',
+          );
+        }
+      }
+
+      // Don't clear unreadUpdated here - let processPulledRows clear it
+      // when the server confirms the unread state matches.
+      // Clearing eagerly creates a race: a concurrent pull with stale data
+      // (started before the activity_read push) can overwrite unread with
+      // the stale server value because unreadUpdated was already null.
+    } catch (e) {
+      log.severe('Failed to push activity_read changes: $e');
+      // unreadUpdated stays true, will be retried on next push
+      rethrow;
+    }
+
+    return success;
+  }
+
+  static Future<List<Thread>> get({
+    DateRange? range,
+    ThreadId? id,
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool? draft = false,
+    String? search,
+    bool self = true,
+    ThreadOrder order = ThreadOrder.sorted,
+    List<Tag>? filter,
+    bool includeAllFutureEvents = false,
+  }) async {
+    return await _get(
+      range: range,
+      id: id,
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      order: order,
+      search: search,
+      self: self,
+      filter: filter,
+      includeAllFutureEvents: includeAllFutureEvents,
+    );
+  }
+
+  static Stream<ThreadWatchResult> watch({
+    DateRange? range,
+    DateRange? occurrenceRange,
+    ThreadId? id,
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool? draft = false,
+    String? search,
+    bool self = true,
+    ThreadOrder order = ThreadOrder.sorted,
+    List<Tag>? filter,
+    bool includeAllFutureEvents = false,
+    bool includeUnscheduled = true,
+    int? limit,
+    int? offset,
+  }) {
+    return _getQuery(
+      range: range,
+      id: id,
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      order: order,
+      search: search,
+      self: self,
+      filter: filter,
+      includeAllFutureEvents: includeAllFutureEvents,
+      includeUnscheduled: includeUnscheduled,
+      limit: limit,
+      offset: offset,
+    ).watch().asyncMap(
+      (results) async {
+        final threads = await _mapResultsToThreads(results, archived: archived, range: occurrenceRange ?? range);
+        return (threads: threads, rawRowCount: results.length);
+      },
+    );
+  }
+
+  static Future<Thread> getOne(ThreadId id) async {
+    final threads = await _get(
+      id: id,
+      archived: null,
+      draft: null,
+      order: ThreadOrder.sorted,
+    );
+    if (threads.isEmpty) {
+      log.warning("Thread not found: $id");
+      throw Exception('Thread not found');
+    }
+    return threads.first;
+  }
+
+  static Stream<Thread> watchOne(ThreadId id) {
+    return _getQuery(
+      id: id,
+      archived: null,
+      draft: null,
+      order: ThreadOrder.sorted,
+    ).watch().asyncMap((results) async {
+      final threads = await _mapResultsToThreads(results, range: null);
+      if (threads.isEmpty) {
+        throw Exception('Thread not found');
+      }
+      return threads.first;
+    });
+  }
+
+  /// Get the most recent draft thread for a specific priority
+  /// Returns the draft with the most recent updatedAt timestamp
+  static Future<Thread?> getDraftByPriority(PriorityId priorityId) async {
+    final drafts = await _get(
+      priorityId: priorityId,
+      draft: true,
+      archived: null,
+      order: ThreadOrder.sorted,
+    );
+    if (drafts.isEmpty) return null;
+    // Sort by updatedAt descending to get the most recent
+    drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return drafts.first;
+  }
+
+  /// Watch all tags present in threads within a priority and its descendants.
+  /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
+  static Stream<List<(Tag, int)>> watchTagsForPriority(Path priorityPath) {
+    final at = Store.get.threadTags;
+    final a = Store.get.threads;
+    final p = Store.get.priorities;
+
+    final now = DateTime.now();
+    final today = Date.today().toString();
+    final priorityPathLike = '$priorityPath.%';
+
+    // Query for stored tags from activity_tags table
+    final tagsQuery = Store.get.select(at).join([
+      innerJoin(a, a.id.equalsExp(at.id)),
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+
+    tagsQuery.where(a.archivedAt.isNull());
+
+    // COUNT query for Tag.done
+    final doneQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    doneQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    // Done count is always 0 — done state removed from thread
+    doneQuery.where(Constant(false));
+    final doneCountStream = doneQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
+
+    // COUNT query for Tag.todo
+    final s = Store.get.schedules;
+    final us = Store.get.alias(Store.get.schedules, 'us');
+    final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    nowQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+      leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.userId.isNull()),
+      leftOuterJoin(
+        us,
+        us.threadId.equalsExp(a.id) &
+            us.userId.equalsValue(Base.userId) &
+            us.occurrence.isNull(),
+      ),
+    ]);
+    nowQuery.where(
+      a.archivedAt.isNull() &
+          (
+          // Date-based scheduling: startOn <= today
+          (s.startOn.isSmallerOrEqualValue(today) & s.startAt.isNull()) |
+              // DateTime-based scheduling: startAt <= now AND endAt >= now
+              (s.startAt.isSmallerOrEqualValue(now) &
+                  (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now))) |
+              // Per-user todo: non-archived per-user schedule exists
+              (us.id.isNotNull() & us.archivedAt.isNull())),
+    );
+    final nowCountStream = nowQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
+
+    // COUNT query for Tag.archived
+    final archivedQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    archivedQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    archivedQuery.where(a.archivedAt.isNotNull());
+    final archivedCountStream = archivedQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
+
+    // COUNT query for archived priorities
+    final archivedPriorityQuery = Store.get.selectOnly(p)..addColumns([p.id]);
+    archivedPriorityQuery.where(
+      (p.path.equalsValue(priorityPath) |
+              p.path.likeExp(Constant(priorityPathLike))) &
+          p.archivedAt.isNotNull(),
+    );
+    final archivedPriorityCountStream = archivedPriorityQuery.watch().map(
+      (rows) => rows.length,
+    );
+
+    // COUNT query for Tag.unread
+    final unreadQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    unreadQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    unreadQuery.where(
+      a.archivedAt.isNull() &
+          a.draft.equals(false) &
+          a.unread.equals(true) &
+          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+    );
+    final unreadCountStream = unreadQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
+
+    return Rx.combineLatest6(
+      tagsQuery.watch(),
+      doneCountStream,
+      nowCountStream,
+      archivedCountStream,
+      unreadCountStream,
+      archivedPriorityCountStream,
+      (
+        rows,
+        doneCount,
+        nowCount,
+        archivedCount,
+        unreadCount,
+        archivedPriorityCount,
+      ) {
+        final Map<Tag, int> tagCounts = {};
+
+        // Count stored tags
+        final Map<Tag, Set<ThreadId>> storedTagCounts = {};
+        for (final row in rows) {
+          final activityTagsRow = row.readTable(at);
+          final activityId = activityTagsRow.id;
+          final tags = activityTagsRow.tags;
+
+          if (tags != null) {
+            for (final tag in tags.keys) {
+              storedTagCounts.putIfAbsent(tag, () => {}).add(activityId);
+            }
+          }
+        }
+
+        // Add stored tag counts
+        for (final entry in storedTagCounts.entries) {
+          tagCounts[entry.key] = entry.value.length;
+        }
+
+        // Add computed tag counts
+        if (doneCount > 0) tagCounts[Tag.done] = doneCount;
+        if (nowCount > 0) tagCounts[Tag.todo] = nowCount;
+        final totalArchived = archivedCount + archivedPriorityCount;
+        if (totalArchived > 0) tagCounts[Tag.archived] = totalArchived;
+        if (unreadCount > 0) tagCounts[Tag.unread] = unreadCount;
+
+        // Convert to list of (Tag, count) and sort by count descending
+        final result = tagCounts.entries.map((e) => (e.key, e.value)).toList()
+          ..sort((a, b) => b.$2.compareTo(a.$2));
+
+        return result;
+      },
+    );
+  }
+
+  static Future<List<Thread>> _get({
+    DateRange? range,
+    bool strictRange = false,
+
+    /* Selectors */
+    ThreadId? id,
+    PriorityId? priorityId,
+    Path? priorityPath,
+
+    /* Filters */
+    bool self = true,
+    bool? archived = false,
+    bool? draft = false,
+    bool includeAllFutureEvents = false,
+    String? search,
+    List<Tag>? filter,
+
+    /* Sorting */
+    ThreadOrder order = ThreadOrder.sorted,
+
+    /* Pagination */
+    int? limit,
+    int? offset,
+
+    /* Augmentation */
+    bool getParent = true,
+  }) async {
+    final query = _getQuery(
+      range: range,
+      strictRange: strictRange,
+      id: id,
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      self: self,
+      archived: archived,
+      draft: draft,
+      includeAllFutureEvents: includeAllFutureEvents,
+      search: search,
+      filter: filter,
+      order: order,
+      limit: limit,
+      offset: offset,
+      getParent: getParent,
+    );
+
+    final results = await query.get();
+    return _mapResultsToThreads(results, archived: archived, range: range);
+  }
+
+  static JoinedSelectStatement<HasResultSet, dynamic> _getQuery({
+    DateRange? range,
+    // Only include activities that start within the range
+    bool strictRange = false,
+
+    /* Selectors */
+    ThreadId? id,
+    PriorityId? priorityId,
+    Path? priorityPath,
+
+    /* Filters */
+    bool self = true,
+    bool? archived = false,
+    bool? draft = false,
+    bool includeAllFutureEvents = false,
+    bool includeUnscheduled = true,
+    String? search,
+    List<Tag>? filter,
+
+    /* Sorting */
+    ThreadOrder order = ThreadOrder.sorted,
+
+    /* Pagination */
+    int? limit,
+    int? offset,
+
+    /* Augmentation */
+    bool getParent = true, // Deprecated, kept for compatibility
+  }) {
+    // Create a copy of filter to avoid mutating the original
+    final mutableFilter = filter != null ? List<Tag>.from(filter) : null;
+    if (mutableFilter?.remove(Tag.archived) == true) {
+      archived = true;
+    }
+
+    final doTodo = mutableFilter?.remove(Tag.todo) == true;
+    mutableFilter?.remove(Tag.done); // done state removed from thread
+    final filterUnread = mutableFilter?.remove(Tag.unread) == true;
+
+    final a = Store.get.alias(Store.get.threads, 'a');
+    final sched = Store.get.alias(Store.get.schedules, 'sched');
+    final userSched = Store.get.alias(Store.get.schedules, 'user_sched');
+    final linkTable = Store.get.alias(Store.get.links, 'l');
+    final linkSched = Store.get.alias(Store.get.schedules, 'link_sched');
+    final startingQuery = Store.get.select(a);
+
+    if (id != null) {
+      startingQuery.where((t) => t.id.equalsValue(id));
+    }
+    if (priorityId != null) {
+      startingQuery.where((t) => t.priorityId.equalsValue(priorityId));
+    }
+
+    var query = startingQuery.join([
+      // Shared schedule (event timing, visible to all priority members)
+      leftOuterJoin(
+        sched,
+        sched.threadId.equalsExp(a.id) & sched.userId.isNull(),
+      ),
+      // Per-user schedule (todo state, dates, and order for current user)
+      leftOuterJoin(
+        userSched,
+        userSched.threadId.equalsExp(a.id) &
+            userSched.userId.equalsValue(Base.userId) &
+            userSched.occurrence.isNull(),
+      ),
+      // Links for this thread, then their shared schedules
+      leftOuterJoin(linkTable, linkTable.threadId.equalsExp(a.id)),
+      leftOuterJoin(
+        linkSched,
+        linkSched.linkId.equalsExp(linkTable.id) & linkSched.userId.isNull(),
+      ),
+    ]);
+    final now = DateTime.now();
+
+    // Add priority filtering:
+    // 1. Filter by priorityPath if provided
+    // 2. Exclude activities with archived priorities when archived == false
+    final p = Store.get.alias(Store.get.priorities, 'p');
+    if (priorityPath != null) {
+      // Join conditions for priority path matching
+      Expression<bool> pathCondition =
+          p.path.equalsValue(priorityPath) |
+          p.path.likeExp(Constant('$priorityPath%'));
+
+      if (includeAllFutureEvents) {
+        pathCondition =
+            pathCondition |
+            sched.endAt.isBiggerOrEqualValue(now) |
+            userSched.endAt.isBiggerOrEqualValue(now) |
+            linkSched.endAt.isBiggerOrEqualValue(now);
+      }
+
+      // Also filter by priority archived status when looking at non-archived activities
+      Expression<bool> joinCondition =
+          p.id.equalsExp(a.priorityId) & pathCondition;
+      if (archived == false) {
+        joinCondition = joinCondition & p.archivedAt.isNull();
+      }
+
+      query = query.join([innerJoin(p, joinCondition)]);
+    } else if (archived == false) {
+      // When no priorityPath filter, still need to exclude activities with archived priorities
+      query = query.join([
+        innerJoin(p, p.id.equalsExp(a.priorityId) & p.archivedAt.isNull()),
+      ]);
+    }
+
+    if (doTodo) {
+      query.where(
+        (
+        // Shared date-based scheduling: startOn <= today
+        (sched.startOn.isSmallerOrEqualValue(Date.today().toString()) &
+                sched.startAt.isNull()) |
+            // Shared datetime-based scheduling: startAt <= now AND endAt >= now
+            (sched.startAt.isSmallerOrEqualValue(now) &
+                (sched.endAt.isNull() |
+                    sched.endAt.isBiggerOrEqualValue(now))) |
+            // Per-user todo: non-archived per-user schedule exists
+            (userSched.id.isNotNull() & userSched.archivedAt.isNull()) |
+            // Link schedule date-based: startOn <= today
+            (linkSched.startOn.isSmallerOrEqualValue(Date.today().toString()) &
+                linkSched.startAt.isNull()) |
+            // Link schedule datetime-based: startAt <= now AND endAt >= now
+            (linkSched.startAt.isSmallerOrEqualValue(now) &
+                (linkSched.endAt.isNull() |
+                    linkSched.endAt.isBiggerOrEqualValue(now)))),
+      );
+    }
+    if (filterUnread) {
+      query.where(
+        a.unread.equals(true) &
+            (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+      );
+    }
+    if (archived != null) {
+      query.where(archived ? a.archivedAt.isNotNull() : a.archivedAt.isNull());
+    }
+    if (draft != null) {
+      query.where(a.draft.equals(draft));
+    }
+    if (search?.isNotEmpty == true) {
+      // Split and sanitize search words once for both FTS5 and LIKE matching
+      final sanitizedWords = search!
+          .split(RegExp(r'\s+'))
+          .where((word) => word.isNotEmpty)
+          .map(
+            (word) => word
+                .replaceAll("'", "''")
+                .replaceAll('"', '""')
+                .replaceAll('*', '')
+                .replaceAll('(', '')
+                .replaceAll(')', ''),
+          )
+          .where((word) => word.isNotEmpty)
+          .toList();
+
+      final ftsWords = sanitizedWords.map((word) => '$word*').join(' ');
+
+      if (ftsWords.isNotEmpty) {
+        // Each word must appear in either link title or source_url
+        final linkConditions = sanitizedWords
+            .map((word) =>
+                "(ll.title LIKE '%$word%' OR ll.source_url LIKE '%$word%')")
+            .join(' AND ');
+
+        query.where(
+          CustomExpression<bool>('''
+            EXISTS (SELECT 1 FROM thread_fts WHERE thread_id = a.id AND thread_fts MATCH '$ftsWords')
+            OR
+            EXISTS (SELECT 1 FROM note_fts WHERE thread_id = a.id AND note_fts MATCH '$ftsWords')
+            OR
+            EXISTS (SELECT 1 FROM links ll WHERE ll.thread_id = a.id AND $linkConditions)
+          '''),
+        );
+      }
+    }
+    if (self == false) {
+      if (id != null) {
+        query.where(a.id.equalsValue(id).not());
+      }
+    }
+
+    if (range != null) {
+      final rangeStart = range.start?.toDateTime();
+      final rangeEnd = range.end?.toDateTime();
+      Expression<bool> condition = Constant(false);
+
+      // Unscheduled activities - included regardless of date range when requested.
+      // Must check both shared and per-user schedules have no dates.
+      // Excluded for agenda queries where unscheduled non-todo items would
+      // consume the LIMIT and then be filtered out as past dates.
+      if (includeUnscheduled) {
+        Expression<bool> unscheduled =
+            sched.startOn.isNull() &
+            sched.startAt.isNull() &
+            userSched.startOn.isNull() &
+            userSched.startAt.isNull();
+        condition = condition | unscheduled;
+      }
+
+      // Active todo: always include threads with an active user schedule (has dates)
+      Expression<bool> activeTodo =
+          userSched.id.isNotNull() &
+          userSched.startOn.isNotNull();
+      condition = condition | activeTodo;
+
+      // Activity is scheduled within the range (Date-based)
+      if (range.start != null || range.end != null) {
+        // Shared schedule date-based
+        Expression<bool> dateScheduled = sched.startOn.isNotNull();
+        if (range.start != null) {
+          if (strictRange) {
+            dateScheduled =
+                dateScheduled &
+                sched.startOn.isBiggerOrEqualValue(range.start!.toString());
+          } else {
+            dateScheduled =
+                dateScheduled &
+                (sched.endOn.isNull() |
+                    sched.endOn.isBiggerOrEqualValue(range.start!.toString()));
+          }
+        }
+        if (range.end != null) {
+          dateScheduled =
+              dateScheduled &
+              sched.startOn.isSmallerThanValue(range.end!.toString());
+        }
+        condition = condition | dateScheduled;
+
+        // Per-user schedule date-based
+        Expression<bool> userDateScheduled = userSched.startOn.isNotNull();
+        if (range.start != null) {
+          if (strictRange) {
+            userDateScheduled =
+                userDateScheduled &
+                userSched.startOn.isBiggerOrEqualValue(range.start!.toString());
+          } else {
+            userDateScheduled =
+                userDateScheduled &
+                (userSched.endOn.isNull() |
+                    userSched.endOn.isBiggerOrEqualValue(
+                      range.start!.toString(),
+                    ));
+          }
+        }
+        if (range.end != null) {
+          userDateScheduled =
+              userDateScheduled &
+              userSched.startOn.isSmallerThanValue(range.end!.toString());
+        }
+        condition = condition | userDateScheduled;
+      }
+
+      // Activity is scheduled within the range (DateTime-based)
+      // Shared schedule
+      Expression<bool> dateTimeScheduled = sched.startAt.isNotNull();
+      if (rangeStart != null) {
+        if (strictRange) {
+          dateTimeScheduled =
+              dateTimeScheduled &
+              sched.startAt.isBiggerOrEqualValue(rangeStart);
+        } else {
+          dateTimeScheduled =
+              dateTimeScheduled &
+              (sched.endAt.isNull() |
+                  sched.endAt.isBiggerOrEqualValue(rangeStart));
+        }
+      }
+      if (rangeEnd != null) {
+        dateTimeScheduled =
+            dateTimeScheduled & sched.startAt.isSmallerThanValue(rangeEnd);
+      }
+      condition = condition | dateTimeScheduled;
+
+      // Per-user schedule datetime-based
+      Expression<bool> userDateTimeScheduled = userSched.startAt.isNotNull();
+      if (rangeStart != null) {
+        if (strictRange) {
+          userDateTimeScheduled =
+              userDateTimeScheduled &
+              userSched.startAt.isBiggerOrEqualValue(rangeStart);
+        } else {
+          userDateTimeScheduled =
+              userDateTimeScheduled &
+              (userSched.endAt.isNull() |
+                  userSched.endAt.isBiggerOrEqualValue(rangeStart));
+        }
+      }
+      if (rangeEnd != null) {
+        userDateTimeScheduled =
+            userDateTimeScheduled &
+            userSched.startAt.isSmallerThanValue(rangeEnd);
+      }
+      condition = condition | userDateTimeScheduled;
+
+      // Link schedule date-based
+      if (range.start != null || range.end != null) {
+        Expression<bool> linkDateScheduled = linkSched.startOn.isNotNull();
+        if (range.start != null) {
+          if (strictRange) {
+            linkDateScheduled =
+                linkDateScheduled &
+                linkSched.startOn.isBiggerOrEqualValue(range.start!.toString());
+          } else {
+            linkDateScheduled =
+                linkDateScheduled &
+                (linkSched.endOn.isNull() |
+                    linkSched.endOn.isBiggerOrEqualValue(
+                      range.start!.toString(),
+                    ));
+          }
+        }
+        if (range.end != null) {
+          linkDateScheduled =
+              linkDateScheduled &
+              linkSched.startOn.isSmallerThanValue(range.end!.toString());
+        }
+        condition = condition | linkDateScheduled;
+      }
+
+      // Link schedule datetime-based
+      Expression<bool> linkDateTimeScheduled = linkSched.startAt.isNotNull();
+      if (rangeStart != null) {
+        if (strictRange) {
+          linkDateTimeScheduled =
+              linkDateTimeScheduled &
+              linkSched.startAt.isBiggerOrEqualValue(rangeStart);
+        } else {
+          linkDateTimeScheduled =
+              linkDateTimeScheduled &
+              (linkSched.endAt.isNull() |
+                  linkSched.endAt.isBiggerOrEqualValue(rangeStart));
+        }
+      }
+      if (rangeEnd != null) {
+        linkDateTimeScheduled =
+            linkDateTimeScheduled &
+            linkSched.startAt.isSmallerThanValue(rangeEnd);
+      }
+      condition = condition | linkDateTimeScheduled;
+
+      // Exclude truly done threads (doneAt set AND no dates).
+      // Re-todoed threads keep doneAt for activity feed ordering but have
+      // dates set, so they should still appear.
+      condition = condition &
+          (userSched.id.isNull() |
+              userSched.doneAt.isNull() |
+              userSched.startOn.isNotNull() |
+              userSched.startAt.isNotNull() |
+              linkSched.id.isNotNull());
+
+      query.where(condition);
+    }
+
+    if (limit != null) {
+      query.limit(limit, offset: offset);
+    }
+
+    switch (order) {
+      case ThreadOrder.sorted:
+        // Todo list: schedule-based sorting (check shared then per-user then link)
+        final todoSort = CaseWhenExpression(
+          cases: [
+            CaseWhen(sched.startAt.isNotNull(), then: sched.startAt),
+            CaseWhen(sched.startOn.isNotNull(), then: sched.startOn),
+            CaseWhen(userSched.startAt.isNotNull(), then: userSched.startAt),
+            CaseWhen(userSched.startOn.isNotNull(), then: userSched.startOn),
+            CaseWhen(linkSched.startAt.isNotNull(), then: linkSched.startAt),
+            CaseWhen(linkSched.startOn.isNotNull(), then: linkSched.startOn),
+          ],
+          orElse: Constant(DateTime(0)),
+        );
+        query.orderBy([
+          OrderingTerm.asc(todoSort),
+          OrderingTerm.asc(userSched.order),
+        ]);
+        break;
+      case ThreadOrder.reverse:
+        // Activity feed: GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, doneAt)
+        // Falls back to createdAt only when all three are null.
+        final epoch = Constant(DateTime.fromMillisecondsSinceEpoch(0));
+        final feedSort = FunctionCallExpression('MAX', [
+          coalesce([a.lastNoteSourceCreatedAt, linkTable.sourceCreatedAt, a.createdAt]),
+          coalesce([userSched.doneAt, epoch]),
+        ]);
+        query.orderBy([OrderingTerm.desc(feedSort)]);
+        break;
+    }
+
+    // Add join for tags (sched already joined above)
+    final tags = Store.get.alias(Store.get.threadTags, 'tags');
+
+    query = query.join([
+      leftOuterJoin(
+        tags,
+        (tags.id.equalsExp(a.id) | (tags.id.isNull() & a.id.isNull())) &
+            (tags.occurrence.equalsExp(sched.occurrence) |
+                (tags.occurrence.equals('') & sched.occurrence.isNull())),
+      ),
+    ]);
+
+    // Add tag filtering if filter list is provided
+    // This must happen AFTER the tags table is joined
+    if (mutableFilter != null && mutableFilter.isNotEmpty) {
+      for (final tag in mutableFilter) {
+        query.where(
+          CustomExpression<bool>(
+            'JSON_EXTRACT(tags.tags, \'\$.${tag.id}\') IS NOT NULL',
+          ),
+        );
+      }
+    }
+
+    return query;
+  }
+
+  /// Efficiently gets which activity IDs from the given list are active.
+  /// An activity is active if it's an action assigned to current user,
+  /// not done, not archived, and scheduled for now/past or unscheduled.
+  static Future<Set<ThreadId>> _getActiveThreadIds(List<ThreadId> ids) async {
+    if (ids.isEmpty) return {};
+
+    final now = DateTime.now();
+    final today = Date.today().toString();
+
+    // Get all user contact IDs from Actor cache
+    final userActorIds = Actor._cache.values
+        .where((actor) => actor.self)
+        .map((actor) => actor.id.toBytes())
+        .toList();
+
+    // Fallback to primary contact if cache is empty
+    if (userActorIds.isEmpty) {
+      userActorIds.add(Base.actorId.toBytes());
+    }
+
+    final a = Store.get.threads;
+    final s = Store.get.schedules;
+    final query = Store.get.selectOnly(a)..addColumns([a.id]);
+
+    query.join([leftOuterJoin(s, s.threadId.equalsExp(a.id))]);
+
+    // Convert ThreadId (Uuid) to Uint8List for isIn query
+    final idBytes = ids.map((id) => id.toBytes()).toList();
+
+    query.where(
+      a.id.isIn(idBytes) &
+          a.archivedAt.isNull() &
+          (
+          // DateTime scheduled
+          (s.startAt.isSmallerOrEqualValue(now) & s.startOn.isNull()) |
+              // Date scheduled
+              (s.startOn.isSmallerOrEqualValue(today) & s.startAt.isNull()) |
+              // Unscheduled (no schedule row at all)
+              (s.startAt.isNull() & s.startOn.isNull())),
+    );
+
+    final results = await query.get();
+    return results.map((row) => Uuid.fromBytes(row.read(a.id)!)).toSet();
+  }
+
+  /// Efficiently gets which activity IDs from the given list are unread.
+  /// An activity is unread if server says unread and we haven't overridden it locally.
+  static Future<Set<ThreadId>> _getUnreadThreadIds(List<ThreadId> ids) async {
+    if (ids.isEmpty) return {};
+
+    final a = Store.get.threads;
+    final query = Store.get.selectOnly(a)..addColumns([a.id]);
+
+    // Convert ThreadId (Uuid) to Uint8List for isIn query
+    final idBytes = ids.map((id) => id.toBytes()).toList();
+
+    query.where(
+      a.id.isIn(idBytes) &
+          a.unread.equals(true) &
+          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+    );
+
+    final results = await query.get();
+    return results.map((row) => Uuid.fromBytes(row.read(a.id)!)).toSet();
+  }
+
+  /// Maps database query results to Activity objects.
+  ///
+  /// This function handles both regular and recurring activities:
+  /// - For non-recurring activities: Returns them directly
+  /// - For recurring activities with a range: Generates occurrences within the range
+  /// - For recurring activities without a range: Returns the base recurring activity template
+  ///
+  /// Recurring activities can have exceptions (modified/archived occurrences) stored in
+  /// the activity_exceptions table, which override generated occurrences.
+  static Future<List<Thread>> _mapResultsToThreads(
+    List<TypedResult> results, {
+    bool? archived = false,
+    DateRange? range,
+  }) async {
+    if (results.isEmpty) return [];
+
+    // Get the table aliases (we need to recreate these for reading)
+    final a = Store.get.alias(Store.get.threads, 'a');
+    final tags = Store.get.alias(Store.get.threadTags, 'tags');
+    final sched = Store.get.alias(Store.get.schedules, 'sched');
+    final userSched = Store.get.alias(Store.get.schedules, 'user_sched');
+    final linkTable = Store.get.alias(Store.get.links, 'l');
+    final linkSched = Store.get.alias(Store.get.schedules, 'link_sched');
+
+    // Get all priorities needed for the activities
+    final priorities = await Priority.get(
+      archived: archived == false ? false : null,
+    );
+    final priorityMap = Priority.asMap(priorities);
+
+    // Group results by activity ID to handle schedule occurrences
+    final activityGroups = <Uuid, List<TypedResult>>{};
+    for (final result in results) {
+      final activityId = result.readTable(a).id;
+      activityGroups.putIfAbsent(activityId, () => []).add(result);
+    }
+
+    // Compute which activities are active and unread (efficient bulk queries)
+    final activityIds = activityGroups.keys.toList();
+    final activeIds = await _getActiveThreadIds(activityIds);
+    final unreadIds = await _getUnreadThreadIds(activityIds);
+
+    // Separate recurring activities from non-recurring and collect schedule occurrences
+    final threadList = <Thread>[];
+    for (final group in activityGroups.values) {
+      final activityRow = group.first.readTable(a);
+      final priority = priorityMap[activityRow.priorityId];
+      if (priority == null) {
+        // Skip activities with missing priority (e.g., priority was deleted or archived)
+        continue;
+      }
+
+      // Read the base schedule (first row without an occurrence, or just the first)
+      final baseScheduleRow = group.first.readTableOrNull(sched);
+      final userScheduleRow = group.first.readTableOrNull(userSched);
+
+      // Extract max link source_created_at for activity_at computation
+      DateTime? linkSourceCreatedAt;
+      for (final result in group) {
+        final linkRow = result.readTableOrNull(linkTable);
+        if (linkRow != null) {
+          final lsc = linkRow.sourceCreatedAt;
+          if (linkSourceCreatedAt == null || lsc.isAfter(linkSourceCreatedAt)) {
+            linkSourceCreatedAt = lsc;
+          }
+        }
+      }
+
+      // When the thread has no own schedule, pick the closest upcoming link
+      // schedule so that Thread.at is populated for display purposes.
+      // This runs for the activity feed (range == null) and for todo threads
+      // in the agenda (range != null) so they show the event date/time.
+      ScheduleRow? effectiveScheduleRow = baseScheduleRow;
+      final isTodo = userScheduleRow != null &&
+          (userScheduleRow.startOn != null || userScheduleRow.startAt != null);
+      if (baseScheduleRow == null && (range == null || isTodo)) {
+        final now = DateTime.now();
+        ScheduleRow? bestFuture;
+        DateTime? bestFutureStart;
+        ScheduleRow? bestPast;
+        DateTime? bestPastStart;
+        for (final result in group) {
+          final ls = result.readTableOrNull(linkSched);
+          if (ls == null) continue;
+          final start = ls.startAt ?? ls.startOn?.toDateTime();
+          if (start == null) continue;
+          if (start.isAfter(now)) {
+            if (bestFutureStart == null || start.isBefore(bestFutureStart)) {
+              bestFuture = ls;
+              bestFutureStart = start;
+            }
+          } else {
+            if (bestPastStart == null || start.isAfter(bestPastStart)) {
+              bestPast = ls;
+              bestPastStart = start;
+            }
+          }
+        }
+        effectiveScheduleRow = bestFuture ?? bestPast;
+      }
+
+      // Determine if this is recurring from the schedule
+      final isRecurring =
+          baseScheduleRow?.recurrenceRule != null &&
+          baseScheduleRow?.occurrence == null;
+
+      // Create base activity
+      final tagsRow = !isRecurring ? group.first.readTableOrNull(tags) : null;
+      final baseActivity = Thread._fromStore(
+        activity: activityRow,
+        priority: priority,
+        schedule: effectiveScheduleRow,
+        userSchedule: userScheduleRow,
+        tags: tagsRow,
+        active: activeIds.contains(activityRow.id),
+        unreadComputed: unreadIds.contains(activityRow.id),
+        linkSourceCreatedAt: linkSourceCreatedAt,
+      );
+
+      // Collect link schedules upfront so we can decide whether to include
+      // the base thread (avoids duplicating it alongside its link instances).
+      final linkSchedules = <String, ScheduleRow>{};
+      if (range != null) {
+        for (final result in group) {
+          final linkScheduleRow = result.readTableOrNull(linkSched);
+          if (linkScheduleRow != null) {
+            // Key by linkId + occurrence to deduplicate base schedules per link
+            final key =
+                '${linkScheduleRow.linkId}:${linkScheduleRow.occurrence ?? ''}';
+            final existing = linkSchedules[key];
+            if (existing == null ||
+                linkScheduleRow.updatedAt.isAfter(existing.updatedAt)) {
+              linkSchedules[key] = linkScheduleRow;
+            }
+          }
+        }
+      }
+
+      if (!baseActivity.recurring) {
+        // Skip the base thread when link schedule instances fully represent it:
+        // - link schedules exist (the instances will appear at their own dates)
+        // - thread is not a todo (todos need to appear under today)
+        // - thread has no own shared schedule (no event time of its own)
+        final hasOwnSchedule = baseScheduleRow?.startOn != null ||
+            baseScheduleRow?.startAt != null;
+        if (linkSchedules.isEmpty || baseActivity.todo || hasOwnSchedule) {
+          threadList.add(baseActivity);
+        }
+      } else {
+        // Generate occurrences for recurring activities and override with stored schedule occurrences
+        final occurrences = <String, Thread>{};
+        if (range?.bounded == true) {
+          try {
+            for (final occurrence in baseActivity.generateOccurrences(
+              range!.toBounded(),
+            )) {
+              occurrences[occurrence._schedule!.occurrence!] = occurrence;
+            }
+            // Overwrite occurrences with stored schedule occurrences
+            for (final result in group) {
+              final scheduleRow = result.readTableOrNull(sched);
+              if (scheduleRow == null || scheduleRow.occurrence == null) continue;
+              final activity = Thread._fromStore(
+                activity: activityRow,
+                priority: priority,
+                tags: result.readTableOrNull(tags),
+                schedule: scheduleRow,
+                userSchedule: userScheduleRow,
+                active: activeIds.contains(activityRow.id),
+                unreadComputed: unreadIds.contains(activityRow.id),
+                linkSourceCreatedAt: linkSourceCreatedAt,
+              );
+              occurrences[scheduleRow.occurrence!] = activity;
+            }
+          } catch (e, t) {
+            log.warning(
+              "Error generating occurrences for activity ${baseActivity.id}: $e\n$t",
+            );
+          }
+          // Add generated occurrences to the activities list
+          threadList.addAll(occurrences.values);
+        } else {
+          // No range provided - return the base recurring activity itself
+          // This allows viewing/editing the recurrence template
+          threadList.add(baseActivity);
+        }
+      }
+
+      // Only create link schedule instances when a range is provided (agenda view).
+      // Without a range (activity feed), the base thread already represents the activity.
+      if (range != null && linkSchedules.isNotEmpty) {
+        for (final linkScheduleRow in linkSchedules.values) {
+          final linkThread = Thread._fromStore(
+            activity: activityRow,
+            priority: priority,
+            schedule: linkScheduleRow,
+            userSchedule: userScheduleRow,
+            tags: tagsRow,
+            active: activeIds.contains(activityRow.id),
+            unreadComputed: unreadIds.contains(activityRow.id),
+            isLinkScheduleInstance: true,
+            linkSourceCreatedAt: linkSourceCreatedAt,
+          );
+
+          if (linkThread.recurring && range.bounded == true) {
+            // Recurring link schedule: generate occurrences within range
+            try {
+              threadList.addAll(linkThread.generateOccurrences(range.toBounded()));
+            } catch (e, t) {
+              log.warning(
+                "Error generating link schedule occurrences for activity ${baseActivity.id}: $e\n$t",
+              );
+            }
+          } else if (!linkThread.recurring) {
+            if (range.bounded == true) {
+              final r = range.toBounded();
+              final linkStart = linkScheduleRow.startAt ??
+                  linkScheduleRow.startOn?.toDateTime();
+              final linkEnd = linkScheduleRow.endAt ??
+                  linkScheduleRow.endOn?.toDateTime() ??
+                  linkStart;
+              if (linkStart != null) {
+                if (linkEnd != null && linkEnd.isBefore(r.start.toDateTime())) {
+                  continue;
+                }
+                if (linkStart.isAfter(r.end.toDateTime())) continue;
+              }
+            }
+            threadList.add(linkThread);
+          }
+        }
+      }
+    }
+    return threadList;
+  }
+
+  static Map<Priority, List<Thread>> prioritize(
+    List<Thread> threads, {
+    Priority? context,
+  }) {
+    final Map<Priority, List<Thread>> threadsByPriority = {};
+    for (final thread in threads) {
+      threadsByPriority.putIfAbsent(thread.priority, () => []).add(thread);
+    }
+
+    final Map<Priority, List<Thread>> sortedThreadsByPriority = {};
+    final priorities = threadsByPriority.keys.toList()
+      ..sort((a, b) {
+        if (context != null && a == context && b != context) return 1;
+        if (context != null && a != context && b == context) return -1;
+        return a.compareTo(b);
+      });
+
+    for (final priority in priorities) {
+      final priorityThreads = threadsByPriority[priority]!;
+      priorityThreads.sort();
+      sortedThreadsByPriority[priority] = priorityThreads;
+    }
+
+    return sortedThreadsByPriority;
+  }
+
+  Thread({
+    required this.priority,
+    String? title,
+    String? preview,
+    bool draft = false,
+    bool private = false,
+    DateTimeRange? at,
+    DateRange? on,
+    List<Note>? notes,
+  }) : _thread = ThreadRow(
+         id: Uuid.generate(),
+         createdAt: DateTime.now(),
+         updatedAt: DateTime.now(),
+         priorityId: priority.id,
+         draft: draft,
+         private: private,
+         title: title,
+         preview: preview,
+         unread: false,
+         unreadUpdated: null,
+       ),
+       _schedule = null,
+       _userSchedule = null,
+       _tags = null,
+       _notes = notes,
+       _active = null,
+       _unreadComputed = null,
+       _linkSourceCreatedAt = null,
+       isLinkScheduleInstance = false;
+
+  Thread._fromStore({
+    required ThreadRow activity,
+    required this.priority,
+    ScheduleRow? schedule,
+    ScheduleRow? userSchedule,
+    ThreadTagsRow? tags,
+    List<Note>? notes,
+    bool? active,
+    bool? unreadComputed,
+    this.isLinkScheduleInstance = false,
+    DateTime? linkSourceCreatedAt,
+  }) : _thread = activity,
+       _schedule = schedule,
+       _userSchedule = userSchedule,
+       _tags = tags,
+       _notes = notes,
+       _active = active,
+       _unreadComputed = unreadComputed,
+       _linkSourceCreatedAt = linkSourceCreatedAt {
+    assert(
+      priority.id == activity.priorityId,
+      "Priority does not match activity",
+    );
+  }
+
+  final ThreadRow _thread;
+  final ScheduleRow? _schedule;
+  final ScheduleRow? _userSchedule;
+  final ThreadTagsRow? _tags;
+  final List<Note>? _notes;
+  final bool? _active;
+  final bool? _unreadComputed;
+  final DateTime? _linkSourceCreatedAt;
+
+  /// Whether this instance represents a link schedule (event from a linked item).
+  /// Link schedule instances appear at their event time and are not reorderable.
+  final bool isLinkScheduleInstance;
+
+  final Priority priority;
+
+  Uuid get id => _thread.id;
+  bool get recurring =>
+      (_schedule?.recurrenceRule ?? _userSchedule?.recurrenceRule) != null &&
+      (_schedule?.occurrence ?? _userSchedule?.occurrence) == null;
+  Order get order => _userSchedule?.order ?? Order.first();
+  DateTime get createdAt => _thread.createdAt;
+  DateTime get updatedAt => _thread.updatedAt;
+  DateTime? get archivedAt => _thread.archivedAt;
+  bool get draft => _thread.draft;
+  bool get private => _thread.private;
+  DateTime? get lastNoteCreatedAt => _thread.lastNoteCreatedAt;
+  DateTime? get lastNoteSourceCreatedAt => _thread.lastNoteSourceCreatedAt;
+  RecurrenceRule? get recurrenceRule =>
+      _schedule?.recurrenceRule ?? _userSchedule?.recurrenceRule;
+  List<DateTime>? get recurrenceExdates =>
+      _schedule?.recurrenceExdates ?? _userSchedule?.recurrenceExdates;
+  Map<Tag, List<ActorId>> get tags => {
+    ...Map.fromEntries(
+      [
+        Tag.todo,
+        Tag.done,
+        Tag.archived,
+        Tag.private,
+      ].where((tag) => hasTag(tag)).map((tag) => MapEntry(tag, [Base.actorId])),
+    ),
+    ...(_tags?.tags ?? const {}),
+  };
+
+  /// Returns true if this activity is active (computed from query or false if not computed)
+  bool get active => _active ?? false;
+
+  /// Returns true if this activity is unread (considering local overrides)
+  bool get unread {
+    final computed = _unreadComputed;
+    final stored = _thread.unread;
+    final result = computed ?? stored;
+
+    return result;
+  }
+
+  bool? get unreadUpdated => _thread.unreadUpdated;
+
+  String? get title => _thread.title;
+  String? get preview => _thread.preview;
+  List<Uuid>? get mentions => _thread.mentions;
+  List<Note>? get notes => _notes;
+
+  /// Returns the first note if notes are loaded
+  Note? get firstNote => notes?.firstOrNull;
+
+  /// Returns true if this activity has any notes
+  bool get hasNotes => notes != null && notes!.isNotEmpty;
+
+  String get displayTitle {
+    if (title != null) return title!;
+    if (preview != null) return preview!;
+    return draft ? '🤷' : 'Untitled';
+  }
+
+  DateTimeRange? get at {
+    if (isLinkScheduleInstance) {
+      if (_schedule?.startAt != null) {
+        final start = _schedule!.startAt!;
+        final endAt = _schedule.endAt ??
+            (_schedule.duration != null
+                ? start.add(_schedule.duration!)
+                : start);
+        return DateTimeRange(start, endAt);
+      }
+      return on?.toDateTimeRange();
+    }
+    return (_schedule?.startAt != null
+            ? DateTimeRange(_schedule!.startAt!, _schedule.endAt)
+            : null) ??
+        (_userSchedule?.startAt != null
+            ? DateTimeRange(_userSchedule!.startAt!, _userSchedule.endAt)
+            : null) ??
+        on?.toDateTimeRange();
+  }
+  DateRange? get on {
+    if (isLinkScheduleInstance) {
+      return _schedule?.startOn != null
+          ? CustomDateRange(_schedule!.startOn!, _schedule.endOn)
+          : null;
+    }
+    return (_schedule?.startOn != null
+            ? CustomDateRange(_schedule!.startOn!, _schedule.endOn)
+            : null) ??
+        (_userSchedule?.startOn != null &&
+                _userSchedule!.startOn != Thread.todoNowDate
+            ? CustomDateRange(_userSchedule.startOn!, _userSchedule.endOn)
+            : null);
+  }
+  Duration? get duration {
+    if (isLinkScheduleInstance) {
+      return _schedule?.duration ?? on?.duration ?? at?.duration;
+    }
+    return _schedule?.duration ??
+        _userSchedule?.duration ??
+        on?.duration ??
+        at?.duration;
+  }
+
+  DateTime get agendaAt {
+    if (isLinkScheduleInstance) {
+      // Link schedule instances always appear at their schedule time
+      return at?.start ?? on?.start?.toDateTime() ?? createdAt;
+    }
+    if (todo) {
+      // User schedule date takes priority (explicit user override via reorder).
+      final schedDate =
+          _userSchedule?.startOn?.toDateTime() ??
+          at?.start ??
+          on?.start?.toDateTime();
+      if (schedDate == null || schedDate.toDate().isBefore(Date.today())) {
+        return Date.today().toDateTime();
+      }
+      return schedDate;
+    }
+    return at?.start ??
+        on?.start?.toDateTime() ??
+        _thread.lastNoteSourceCreatedAt ??
+        createdAt;
+  }
+
+  /// Timestamp for activity feed ordering and bucket headers.
+  /// GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, doneAt),
+  /// falling back to createdAt when all are null.
+  DateTime get activityAt {
+    DateTime? best = _thread.lastNoteSourceCreatedAt;
+    if (_linkSourceCreatedAt != null &&
+        (best == null || _linkSourceCreatedAt.isAfter(best))) {
+      best = _linkSourceCreatedAt;
+    }
+    if (doneAt != null && (best == null || doneAt!.isAfter(best))) {
+      best = doneAt;
+    }
+    return best ?? createdAt;
+  }
+
+  bool get todo =>
+      _userSchedule != null &&
+      (_userSchedule.startOn != null || _userSchedule.startAt != null);
+
+  /// Returns the pinned-after time for a todo that was dragged after an event.
+  /// A todo is "pinned" when it has a userSchedule.startAt but no real startOn
+  /// (null or epoch sentinel). Returns null for regular todos/events.
+  DateTime? get pinnedAfterTime {
+    if (_userSchedule == null) return null;
+    final startAt = _userSchedule.startAt;
+    if (startAt == null) return null;
+    final startOn = _userSchedule.startOn;
+    if (startOn == null || startOn == Thread.todoNowDate) return startAt;
+    return null;
+  }
+
+  /// Whether this todo is pinned after a specific event.
+  bool get isPinnedTodo => pinnedAfterTime != null;
+
+  bool get done =>
+      _userSchedule?.doneAt != null &&
+      _userSchedule!.startOn == null &&
+      _userSchedule.startAt == null;
+  DateTime? get doneAt => _userSchedule?.doneAt;
+  bool get hasUserSchedule => _userSchedule != null;
+  bool get isPast =>
+      at?.end?.isBefore(Time.now()) == true ||
+      on?.end?.isBefore(Date.today()) == true;
+  bool get isFuture {
+    if (isLinkScheduleInstance) {
+      // Icon based on user schedule state only, not the link schedule's date
+      if (_userSchedule?.startOn != null) {
+        return _userSchedule!.startOn!.isAfter(Date.today());
+      }
+      return false; // No user date = not future = shows todo icon
+    }
+    // For todos, check the user schedule date first (matches agendaAt logic)
+    // so the icon is consistent with the date the thread appears under.
+    if (todo && _userSchedule?.startOn != null) {
+      return _userSchedule!.startOn!.isAfter(Date.today());
+    }
+    return on?.start?.isAfter(Date.today()) == true ||
+        (on == null && at?.start?.toDate().isAfter(Date.today()) == true);
+  }
+
+  bool get assignedToOther => false;
+
+  /// Whether this thread has a link-based schedule (event from a linked item)
+  /// attached as its effective schedule. True when the base `_schedule` came
+  /// from a link rather than the thread itself.
+  bool get hasLinkSchedule => _schedule?.linkId != null;
+
+  String? get occurrence => _schedule?.occurrence;
+
+  static const separator = ' › ';
+
+  /// Returns a new Thread with the given user schedule, preserving all other fields.
+  Thread _withUserSchedule(ScheduleRow userSchedule) {
+    return Thread._fromStore(
+      activity: _thread,
+      schedule: _schedule,
+      userSchedule: userSchedule,
+      tags: _tags,
+      priority: priority,
+      notes: _notes,
+      isLinkScheduleInstance: isLinkScheduleInstance,
+    );
+  }
+
+  /// Reorder this thread. Updates the per-user schedule order.
+  /// Shared schedules cannot have order (DB constraint: schedule_order_user).
+  Thread reorder(Order order) {
+    if (_userSchedule != null) {
+      final result = _withUserSchedule(
+        _userSchedule.copyWith(order: Value(order), updatedAt: DateTime.now()),
+      );
+      log.info(
+        '[reorder] "$title" order: ${_userSchedule.order?.value} -> $order '
+        '(schedId=${_userSchedule.id.toShortString()})',
+      );
+      return result;
+    }
+    log.warning('[reorder] "$title" has no userSchedule — cannot reorder');
+    return this;
+  }
+
+  /// Reorder this thread to a different day. Updates order AND schedule date.
+  /// [date] null → sets epoch sentinel (Now/current todo).
+  /// [date] someDate → schedules for that date, clears time fields.
+  Thread reorderTo(Order order, {required Date? date}) {
+    if (_userSchedule != null) {
+      final result = _withUserSchedule(
+        _userSchedule.copyWith(
+          order: Value(order),
+          startOn: Value(date ?? Thread.todoNowDate),
+          endOn: const Value(null),
+          startAt: const Value(null),
+          endAt: const Value(null),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      log.info(
+        '[reorderTo] "$title" order: ${_userSchedule.order?.value} -> $order '
+        'date: ${_userSchedule.startOn} -> $date '
+        '(schedId=${_userSchedule.id.toShortString()})',
+      );
+      return result;
+    }
+    log.warning('[reorderTo] "$title" has no userSchedule — cannot reorder');
+    return this;
+  }
+
+  /// Pin this todo after a specific event. Sets startAt = event end time,
+  /// clears startOn/endOn/endAt so the todo appears after that event on today.
+  Thread reorderToAfterEvent(Order order, {required DateTime eventEndTime}) {
+    if (_userSchedule != null) {
+      final result = _withUserSchedule(
+        _userSchedule.copyWith(
+          order: Value(order),
+          startAt: Value(eventEndTime),
+          startOn: const Value(null),
+          endOn: const Value(null),
+          endAt: const Value(null),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      log.info(
+        '[reorderToAfterEvent] "$title" order: ${_userSchedule.order?.value} -> $order '
+        'pinned after: $eventEndTime '
+        '(schedId=${_userSchedule.id.toShortString()})',
+      );
+      return result;
+    }
+    log.warning(
+      '[reorderToAfterEvent] "$title" has no userSchedule — cannot reorder',
+    );
+    return this;
+  }
+
+  Thread copyWith({
+    // These fields always update the root activity
+    Priority? priority,
+    Order? order,
+    bool? draft,
+    bool? private,
+    bool? unread,
+    Value<List<Uuid>?> mentions = const Value.absent(),
+    Value<String?> preview = const Value.absent(),
+    Value<List<Note>?> notes = const Value.absent(),
+
+    // These fields update the exception if this is a recurrence, or the root activity otherwise
+    Value<DateTimeRange?> at = const Value.absent(),
+    Value<DateRange?> on = const Value.absent(),
+    Value<String?> title = const Value.absent(),
+    Value<Duration?> duration = const Value.absent(),
+    Value<DateTime?> archivedAt = const Value.absent(),
+
+    // These fields update the root activity
+    Value<DateTimeRange?> recurrenceAt = const Value.absent(),
+    Value<DateRange?> recurrenceOn = const Value.absent(),
+    Value<DateTime?> recurrenceDeletedAt = const Value.absent(),
+    Value<RecurrenceRule?> recurrenceRule = const Value.absent(),
+    Value<List<DateTime>?> recurrenceExdates = const Value.absent(),
+    Value<String?> recurrenceTitle = const Value.absent(),
+    Value<Duration?> recurrenceDuration = const Value.absent(),
+  }) {
+    final now = DateTime.now();
+
+    // on and at are mutually exclusive
+    if (at.notNull) {
+      on = Value(null);
+    } else if (on.notNull && this.at != null) {
+      at = Value(null);
+    }
+
+    // Update root activity if any thread-specific fields are changing
+    var activity = _thread;
+    if (priority != null ||
+        draft != null ||
+        private != null ||
+        unread != null ||
+        mentions.present ||
+        preview.present ||
+        archivedAt.present ||
+        title.present) {
+      activity = _thread.copyWith(
+        priorityId: priority?.id,
+        draft: draft,
+        private: private,
+        mentions: mentions,
+        preview: preview,
+        createdAt: draft == false && _thread.draft ? now : null,
+        updatedAt: now,
+        archivedAt: archivedAt,
+        title: !recurring ? title : const Value.absent(),
+        unread: unread,
+        unreadUpdated: unread != null ? Value(true) : const Value.absent(),
+      );
+    }
+
+    // Update schedule if scheduling fields are changing
+    var schedule = _schedule;
+    var userSchedule = _userSchedule;
+    if (at.present ||
+        on.present ||
+        duration.present ||
+        recurrenceRule.present ||
+        recurrenceExdates.present ||
+        recurrenceAt.present ||
+        recurrenceOn.present ||
+        recurrenceDuration.present ||
+        order != null) {
+      if (schedule != null) {
+        // Update existing schedule
+        Value<DateTime?> schedStartAt = const Value.absent();
+        Value<DateTime?> schedEndAt = const Value.absent();
+        Value<Date?> schedStartOn = const Value.absent();
+        Value<Date?> schedEndOn = const Value.absent();
+        Value<Duration?> schedDuration = const Value.absent();
+        Value<Order?> schedOrder = const Value.absent();
+
+        if (recurring) {
+          // Recurrence fields update the base schedule
+          if (recurrenceAt.present) {
+            schedStartAt = Value(recurrenceAt.value?.start);
+            schedEndAt = Value(recurrenceAt.value?.end);
+          }
+          if (recurrenceOn.present) {
+            schedStartOn = Value(recurrenceOn.value?.start);
+            schedEndOn = Value(recurrenceOn.value?.end);
+          }
+          if (recurrenceDuration.present) schedDuration = recurrenceDuration;
+          // Occurrence-level overrides
+          if (at.present) {
+            schedStartAt = Value(at.value?.start);
+            schedEndAt = Value(at.value?.end);
+          }
+          if (on.present) {
+            schedStartOn = Value(on.value?.start);
+            schedEndOn = Value(on.value?.end);
+          }
+        } else {
+          if (at.present) {
+            schedStartAt = Value(at.value?.start);
+            schedEndAt = Value(at.value?.end);
+          }
+          if (on.present) {
+            schedStartOn = Value(on.value?.start);
+            schedEndOn = Value(on.value?.end);
+          }
+          if (duration.present) schedDuration = duration;
+        }
+        // Only set order on per-user schedules (DB constraint: schedule_order_user)
+        if (order != null && schedule.userId != null) schedOrder = Value(order);
+
+        schedule = schedule.copyWith(
+          startAt: schedStartAt,
+          endAt: schedEndAt,
+          startOn: schedStartOn,
+          endOn: schedEndOn,
+          duration: schedDuration,
+          recurrenceRule: recurrenceRule,
+          recurrenceExdates: recurrenceExdates,
+          order: schedOrder,
+          updatedAt: now,
+        );
+
+        // Safety: schedule must have time data (at or on) per DB constraint.
+        // If all time data was cleared, check intent:
+        if (schedule.startAt == null &&
+            schedule.startOn == null &&
+            schedule.recurrenceRule == null &&
+            schedule.occurrence == null) {
+          if (at.present &&
+              at.value == null &&
+              on.present &&
+              on.value == null) {
+            // Both explicitly cleared — intentional unschedule, remove schedule
+            schedule = null;
+          } else {
+            // Accidental clear — revert to original time data
+            schedule = schedule.copyWith(
+              startAt: Value(_schedule?.startAt),
+              endAt: Value(_schedule?.endAt),
+              startOn: Value(_schedule?.startOn),
+              endOn: Value(_schedule?.endOn),
+            );
+          }
+        }
+      } else if (at.present || on.present) {
+        // Create or update per-user schedule with date data (for to-dos)
+        if (userSchedule != null) {
+          // Update existing per-user schedule with new dates
+          userSchedule = userSchedule.copyWith(
+            startAt: at.present ? Value(at.value?.start) : const Value.absent(),
+            endAt: at.present ? Value(at.value?.end) : const Value.absent(),
+            startOn: on.present ? Value(on.value?.start) : const Value.absent(),
+            endOn: on.present ? Value(on.value?.end) : const Value.absent(),
+            duration: duration,
+            recurrenceRule: recurrenceRule,
+            recurrenceExdates: recurrenceExdates,
+            order: order != null ? Value(order) : const Value.absent(),
+            updatedAt: now,
+          );
+        } else {
+          // Create new per-user schedule with date data
+          userSchedule = ScheduleRow(
+            id: Uuid.generate(),
+            updatedAt: now,
+            threadId: _thread.id,
+            userId: Base.userId,
+            startAt: at.present ? at.value?.start : null,
+            endAt: at.present ? at.value?.end : null,
+            startOn: on.present ? on.value?.start : null,
+            endOn: on.present ? on.value?.end : null,
+            duration: duration.present ? duration.value : null,
+            recurrenceRule: recurrenceRule.present
+                ? recurrenceRule.value
+                : null,
+            recurrenceExdates: recurrenceExdates.present
+                ? recurrenceExdates.value
+                : null,
+            order: order ?? Order.first(),
+          );
+        }
+      }
+    }
+
+    // Clear dates on per-user schedule when shared schedule is intentionally removed
+    if (schedule == null && _schedule != null && userSchedule != null) {
+      userSchedule = userSchedule.copyWith(
+        startOn: const Value(null),
+        endOn: const Value(null),
+        startAt: const Value(null),
+        endAt: const Value(null),
+      );
+    }
+
+    return Thread._fromStore(
+      activity: activity,
+      schedule: schedule,
+      userSchedule: userSchedule,
+      tags: _tags,
+      priority: priority ?? this.priority,
+      notes: notes.present ? notes.value : _notes,
+    );
+  }
+
+  Thread toggleTag(Tag tag, {bool setDoneAt = true}) {
+    // Handle computed tags
+    switch (tag) {
+      case Tag.archived:
+        return copyWith(
+          archivedAt: Value(archivedAt == null ? DateTime.now() : null),
+        );
+      case Tag.private:
+        return copyWith(private: !private);
+      case Tag.todo:
+        // Toggle per-user todo (star/unstar)
+        if (todo) {
+          // Remove from todo: clear dates
+          return _withUserSchedule(
+            _userSchedule!.copyWith(
+              startOn: const Value(null),
+              startAt: const Value(null),
+              endOn: const Value(null),
+              endAt: const Value(null),
+            ),
+          );
+        } else if (_userSchedule != null) {
+          // Re-add to todo: set epoch sentinel (keep doneAt for activity feed ordering)
+          return _withUserSchedule(
+            _userSchedule.copyWith(
+              startOn: Value(Thread.todoNowDate),
+              order: Value(Order.first()),
+            ),
+          );
+        } else {
+          // Create new per-user schedule with epoch sentinel for "to do now"
+          return _withUserSchedule(
+            ScheduleRow(
+              id: Uuid.generate(),
+              updatedAt: DateTime.now(),
+              threadId: id,
+              userId: Base.userId,
+              startOn: Thread.todoNowDate,
+              order: Order.first(),
+            ),
+          );
+        }
+      case Tag.done:
+        // Clear dates on per-user schedule, optionally set doneAt.
+        // setDoneAt is false in the activity feed to avoid bumping the thread
+        // to the top (doneAt is part of the feed sort expression).
+        if (_userSchedule != null) {
+          return _withUserSchedule(
+            _userSchedule.copyWith(
+              doneAt: setDoneAt ? Value(DateTime.now()) : const Value(null),
+              startOn: const Value(null),
+              startAt: const Value(null),
+              endOn: const Value(null),
+              endAt: const Value(null),
+            ),
+          );
+        } else if (setDoneAt) {
+          // Create per-user schedule with doneAt only
+          return _withUserSchedule(
+            ScheduleRow(
+              id: Uuid.generate(),
+              updatedAt: DateTime.now(),
+              threadId: id,
+              userId: Base.userId,
+              order: Order.first(),
+              doneAt: DateTime.now(),
+            ),
+          );
+        }
+      default:
+        break;
+    }
+
+    final currentTags = Map<Tag, List<ActorId>>.from(tags);
+    final currentUser = Base.actorId;
+
+    // Get current users for this tag
+    final List<ActorId> currentUsers = List<ActorId>.from(
+      currentTags[tag] ?? <ActorId>[],
+    );
+
+    bool isAdding = false;
+
+    // Initialize tag updates map early since we need it for RSVP exclusivity
+    final currentTagUpdates = Map<String, bool>.from(_tags?.tagsUpdated ?? {});
+
+    if (tag.type == TagType.toggle) {
+      // Toggle behavior: add if not present, remove if present
+      if (currentUsers.isEmpty) {
+        // Add user to tag
+        currentUsers.add(currentUser);
+        currentTags[tag] = currentUsers;
+        isAdding = true; // Adding the tag
+      } else {
+        // Remove tag
+        currentTags.remove(tag);
+        isAdding = false; // Removing the tag
+      }
+    } else if (tag.type == TagType.count) {
+      // Count behavior: add/remove current user while preserving other users
+      if (currentUsers.contains(currentUser)) {
+        // Remove current user from tag
+        currentUsers.remove(currentUser);
+        if (currentUsers.isEmpty) {
+          currentTags.remove(tag);
+        } else {
+          currentTags[tag] = currentUsers;
+        }
+        isAdding = false; // Removing the user's count
+      } else {
+        // Add current user to tag (increment count)
+        currentUsers.add(currentUser);
+        currentTags[tag] = currentUsers;
+        isAdding = true; // Adding the user's count
+      }
+    }
+
+    // Update the tag updates map
+    currentTagUpdates[tag.id.toString()] = isAdding;
+    log.info(
+      "Toggling tag ${tag.name} (${tag.type}) to $isAdding ($currentTags, $currentTagUpdates)",
+    );
+
+    final newActivity = Thread._fromStore(
+      activity: _thread,
+      schedule: _schedule,
+      userSchedule: _userSchedule,
+      tags:
+          _tags?.copyWith(
+            updatedAt: DateTime.now(),
+            tags: Value(currentTags),
+            tagsUpdated: Value(currentTagUpdates),
+          ) ??
+          ThreadTagsRow(
+            id: id,
+            occurrence:
+                _schedule?.occurrence ?? '', // Empty string for base activity
+            updatedAt: DateTime.now(),
+            tags: currentTags,
+            tagsUpdated: currentTagUpdates.isEmpty ? null : currentTagUpdates,
+          ),
+      priority: priority,
+    );
+    return newActivity;
+  }
+
+  /// Save only the schedule that was changed by [reorder].
+  /// Avoids unnecessary re-emissions from unchanged rows.
+  Future<void> saveOrder() async {
+    if (_userSchedule != null) {
+      log.info(
+        '[saveOrder] "$title" saving userSchedule '
+        '(schedId=${_userSchedule.id.toShortString()}, '
+        'order=${_userSchedule.order?.value})',
+      );
+      await Store.get.save(
+        Store.get.schedules,
+        _userSchedule.toCompanion(false),
+        SchedulesBase(),
+      );
+    } else {
+      log.warning('[saveOrder] "$title" has no userSchedule — nothing to save');
+    }
+    Thread.push();
+  }
+
+  Future<void> save() async {
+    await Store.get.save(
+      Store.get.threads,
+      _thread.toCompanion(false),
+      ThreadsBase(),
+    );
+    if (_schedule != null) {
+      await Store.get.save(
+        Store.get.schedules,
+        _schedule.toCompanion(false),
+        SchedulesBase(),
+      );
+    }
+    if (_userSchedule != null) {
+      await Store.get.save(
+        Store.get.schedules,
+        _userSchedule.toCompanion(false),
+        SchedulesBase(),
+      );
+    }
+    if (_tags != null) {
+      await Store.get.save(
+        Store.get.threadTags,
+        _tags.toCompanion(false),
+        ThreadTagsBase(),
+      );
+    }
+
+    // Trigger full push including activity_read changes (fire and forget)
+    // This ensures activity_read is synced immediately, not just during sync cycles
+    Thread.push();
+
+    // Generate a title on the first non-draft save
+    if (title == null && !draft) {
+      final generatedTitle = await generateTitle();
+      log.info("Generated title: $generatedTitle");
+      await copyWith(title: Value(generatedTitle)).save();
+    }
+  }
+
+  Future<String> generateTitle([String noteContent = '']) async {
+    // If no note content provided, return displayTitle as fallback
+    if (noteContent.isEmpty) {
+      return displayTitle;
+    }
+
+    try {
+      final response = await api.post<Map<String, dynamic>>(
+        '/summary',
+        body: {'body': noteContent},
+      );
+      final generatedTitle = response['title'] as String?;
+
+      if (generatedTitle != null && generatedTitle.isNotEmpty) {
+        log.info("Generated title for activity $id: $generatedTitle");
+        return generatedTitle;
+      } else {
+        log.info("API returned empty title for activity $id, using fallback");
+        return displayTitle;
+      }
+    } catch (e, t) {
+      log.warning("Error generating title for activity $id: $e\n$t");
+      return displayTitle;
+    }
+  }
+
+  Future<void> delete() => copyWith(archivedAt: Value(DateTime.now())).save();
+
+  bool hasTag(Tag tag) {
+    switch (tag) {
+      case Tag.todo:
+        return todo;
+      case Tag.done:
+        return done;
+      case Tag.archived:
+        return archivedAt != null;
+      case Tag.private:
+        return private;
+      default:
+        final currentTags = tags;
+        final users = currentTags[tag];
+        return users != null && users.isNotEmpty;
+    }
+  }
+
+  /// Get actor names for a tag, formatted for display in tooltips
+  /// Returns a formatted string like "You, Alice, Bob" or "You, Alice, Bob + 2 more"
+  Future<String> getTagActorNames(Tag tag) async {
+    // Default behavior for all tags
+    final actorIds = tags[tag];
+    if (actorIds == null || actorIds.isEmpty) {
+      return '';
+    }
+
+    return Thread._formatActorNames(actorIds);
+  }
+
+  /// Helper to format a list of actorIds into a display string
+  /// - Replaces current user with "You"
+  /// - Shows first 3 names + count if more exist
+  static Future<String> _formatActorNames(List<ActorId> actorIds) async {
+    if (actorIds.isEmpty) return '';
+
+    // Fetch actor names from the database
+    final actorRows =
+        await (Store.get.select(Store.get.actors)..where(
+              (a) => a.id.isIn(actorIds.map((id) => id.toBytes()).toList()),
+            ))
+            .get();
+
+    // Convert to Actor objects and create a map of actorId to nameOrEmail
+    final actors = actorRows.map((row) => Actor.fromStore(row)).toList();
+    final actorMap = {for (var actor in actors) actor.id: actor.nameOrEmail};
+
+    // Build the display names list
+    final displayNames = <String>[];
+    final currentContactId = Base.actorId;
+
+    for (final actorId in actorIds) {
+      if (actorId == currentContactId) {
+        displayNames.insert(0, 'You'); // Put "You" first
+      } else {
+        final name = actorMap[actorId] ?? 'Unknown';
+        displayNames.add(name);
+      }
+    }
+
+    // Format the output
+    if (displayNames.length <= 3) {
+      return displayNames.join(', ');
+    } else {
+      final first3 = displayNames.take(3).join(', ');
+      final remaining = displayNames.length - 3;
+      return '$first3 + $remaining more';
+    }
+  }
+
+  List<Thread> generateOccurrences(BoundedDateRange range) {
+    // For non-recurring activities, return just this activity
+    if (!recurring) {
+      return [this];
+    }
+
+    // For recurring activities, generate occurrences using the RecurrenceRule
+    List<Thread> occurrences = [];
+
+    // Convert BoundedDateRange to DateTime range for rrule package
+    final dateTimeRange = BoundedDateTimeRange(
+      range.start.toDateTime(),
+      range.end.toDateTime(),
+    );
+
+    // Get the event start time
+    final start = (at?.start ?? on?.start?.toDateTime())!;
+
+    // If the range ends before the event starts, there are no occurrences
+    if (dateTimeRange.end.isBefore(start)) {
+      return [];
+    }
+
+    // Generate instances within the range using the rrule package
+    final instances = recurrenceRule!.getInstances(
+      start: start.copyWith(isUtc: true),
+      after: (start.isAfter(dateTimeRange.start) ? start : dateTimeRange.start)
+          .copyWith(isUtc: true),
+      includeAfter: true,
+      before: dateTimeRange.end.copyWith(isUtc: true),
+    );
+
+    // Convert instances to a set for efficient exclusion checking
+    final instanceSet = Set<DateTime>.from(
+      instances.map((dt) => dt.copyWith(isUtc: false)),
+    );
+
+    // Apply recurrenceExdates (dates to exclude)
+    if (recurrenceExdates?.isNotEmpty == true) {
+      instanceSet.removeAll(
+        recurrenceExdates!.where((dt) => range.includes(dt.toDate())),
+      );
+    }
+
+    // Convert back to sorted list
+    final finalInstances = instanceSet.toList()..sort();
+
+    for (final instance in finalInstances) {
+      // Create a new occurrence for each instance
+      final occurrenceAt = at != null
+          ? DateTimeRange(instance, instance.add(duration!))
+          : null;
+      final occurrenceOn = on != null
+          ? CustomDateRange(
+              instance.toDate(),
+              instance.toDate().addDays(duration!.inDays),
+            )
+          : null;
+
+      // Format occurrence string based on whether this is date or datetime based
+      final occurrence = Thread._fromStore(
+        activity: _thread,
+        schedule: ScheduleRow(
+          id: Uuid.generate(),
+          updatedAt: DateTime.now(),
+          threadId: id,
+          occurrence: Schedules.formatOccurrence(
+            instance,
+            dateOnly: at == null,
+          ),
+          startAt: occurrenceAt?.start,
+          endAt: occurrenceAt?.end,
+          startOn: occurrenceOn?.start,
+          endOn: occurrenceOn?.end,
+          recurrenceRule: _schedule?.recurrenceRule,
+          recurrenceExdates: _schedule?.recurrenceExdates,
+        ),
+        priority: priority,
+        tags: _tags,
+        isLinkScheduleInstance: isLinkScheduleInstance,
+      );
+
+      occurrences.add(occurrence);
+    }
+
+    return occurrences;
+  }
+
+  Date? nextOccurrence(BoundedDateRange range, {bool reverse = false}) {
+    if (recurrenceRule == null) {
+      return null;
+    }
+
+    // Convert BoundedDateRange to DateTime range for rrule package
+    final dateTimeRange = BoundedDateTimeRange(
+      range.start.toDateTime(),
+      range.end.toDateTime(),
+    );
+
+    // Get the event start time
+    final start = (at?.start ?? on?.start?.toDateTime())!;
+
+    // If the range ends before the event starts, there are no occurrences
+    if (dateTimeRange.end.isBefore(start)) {
+      return null;
+    }
+
+    // Generate instances within the range using the rrule package
+    final instances = recurrenceRule!.getInstances(
+      start: start.copyWith(isUtc: true),
+      after: (start.isAfter(dateTimeRange.start) ? start : dateTimeRange.start)
+          .copyWith(isUtc: true),
+      includeAfter: true,
+      before: dateTimeRange.end.copyWith(isUtc: true),
+    );
+
+    // Convert instances to check for overlaps
+    final instanceSet = Set<DateTime>.from(
+      instances.map((dt) => dt.copyWith(isUtc: false)),
+    );
+
+    // Apply recurrenceExdates (dates to exclude)
+    if (recurrenceExdates?.isNotEmpty == true) {
+      instanceSet.removeAll(
+        recurrenceExdates!.where((dt) => range.includes(dt.toDate())),
+      );
+    }
+
+    if (instanceSet.isEmpty) {
+      return null;
+    }
+
+    // Sort instances and return the first or last based on reverse parameter
+    final sortedInstances = instanceSet.toList()..sort();
+    final targetInstance = reverse
+        ? sortedInstances.last
+        : sortedInstances.first;
+
+    // Convert to Date and verify it's within the intended range
+    // This ensures occurrences at range boundaries are properly excluded
+    final targetDate = targetInstance.toDate();
+    if (!range.includes(targetDate)) {
+      return null;
+    }
+
+    return targetDate;
+  }
+
+  /// Activity are sorted by schedule time, then creation time.
+  /// Ties are broken using the order property.
+  @override
+  int compareTo(Thread other) {
+    final thisTime = _getSortTime();
+    final otherTime = other._getSortTime();
+
+    final timeComparison = thisTime.compareTo(otherTime);
+    if (timeComparison != 0) {
+      return timeComparison;
+    }
+
+    return order.compareTo(other.order);
+  }
+
+  DateTime _getSortTime() {
+    return at?.start ??
+        on?.start?.toDateTime() ??
+        _thread.lastNoteSourceCreatedAt ??
+        createdAt;
+  }
+
+  @override
+  List<Object?> get props => [
+    _thread,
+    _schedule,
+    _userSchedule,
+    _tags,
+    _notes,
+    priority,
+    isLinkScheduleInstance,
+    _linkSourceCreatedAt,
+  ];
+
+  @override
+  String toString() {
+    final buffer = StringBuffer('Thread(');
+
+    // ID
+    buffer.write('id: ${id.toString().substring(0, 8)}..., ');
+
+    // Title (truncated)
+    final titleStr = title;
+    if (titleStr != null) {
+      final truncatedTitle = titleStr.length > 50
+          ? '${titleStr.substring(0, 47)}...'
+          : titleStr;
+      buffer.write('title: "$truncatedTitle", ');
+    }
+
+    // Preview (truncated)
+    final previewStr = preview;
+    if (previewStr != null && previewStr.isNotEmpty) {
+      final truncatedPreview = previewStr.length > 50
+          ? '${previewStr.substring(0, 47)}...'
+          : previewStr;
+      buffer.write('preview: "$truncatedPreview", ');
+    }
+
+    // Priority
+    buffer.write('priority: ${priority.title}, ');
+
+    // Scheduling info
+    if (at != null) {
+      buffer.write('at: ${at!.start}, ');
+    } else if (on != null) {
+      buffer.write('on: ${on!.start}, ');
+    }
+
+    if (archivedAt != null) {
+      buffer.write('archived: $archivedAt, ');
+    }
+
+    if (draft) {
+      buffer.write('draft: true, ');
+    }
+
+    // Remove trailing comma and space
+    final result = buffer.toString();
+    if (result.endsWith(', ')) {
+      return '${result.substring(0, result.length - 2)})';
+    }
+    return '$result)';
+  }
+}
+
+/// Pending sync flags for different entity types.
+/// Bit 1 is reserved for sync-in-progress flag.
+/// Entity-specific flags start from bit 2 (value 2).
+enum ThreadPendingSync {
+  /// Full activity data changed
+  full(2),
+
+  /// Only tags changed
+  tags(4),
+
+  /// Only schedules changed
+  schedules(8);
+
+  const ThreadPendingSync(this.value);
+  final int value;
+}

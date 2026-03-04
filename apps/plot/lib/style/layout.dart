@@ -1,13 +1,8 @@
 import 'package:flutter/widgets.dart';
 
-// Legacy padding constants for backwards compatibility.
-// New code should use context.theme.spacing instead.
-const widgetPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
-const widgetPaddingSm = EdgeInsets.symmetric(horizontal: 12, vertical: 6);
-
 // Border radius
-const borderRadiusSm = 4.0;
-const borderRadiusMd = 8.0;
+const borderRadiusSm = 6.0;
+const borderRadiusMd = 10.0;
 const tileBorderRadius = BorderRadius.all(Radius.circular(borderRadiusSm));
 const editorBorderRadius = BorderRadius.all(Radius.circular(borderRadiusMd));
 

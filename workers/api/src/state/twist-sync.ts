@@ -4,7 +4,7 @@ import { PostHog } from "posthog-node";
 import { sql } from "kysely";
 
 import { withDb } from "../db";
-import type { ActivityTagChange, Bindings, TwistBatchMessage } from "../env";
+import type { ThreadTagChange, Bindings, TwistBatchMessage } from "../env";
 import { createLogger } from "@plotday/worker-util";
 
 // Debouncing configuration (compile-time constants)
@@ -21,7 +21,7 @@ interface TwistSyncState {
 }
 
 interface TagChangeRow {
-  activity_id: string | null;
+  thread_id: string | null;
   occurrence: string | null;
   tag_id: number | null;
   actor_id: string | null;
@@ -215,42 +215,32 @@ export class TwistSync extends DurableObject<Bindings> {
       };
 
       const viewNames = [
-        "priority_twist_activity_create",
-        "priority_twist_activity_update",
+        "priority_twist_thread_update",
         "priority_twist_note_create",
         "priority_twist_note_update",
+        "priority_twist_channel_link_create",
+        "priority_twist_channel_link_update",
+        "priority_twist_channel_note_create",
+        "priority_twist_thread_read",
       ] as const;
 
       const results = await Promise.allSettled([
-        // Query new activities (for activity.created callback)
-        // Uses priority_twist_activity_create view which filters by created_by = twist_id
-        db
-          .selectFrom("priority_twist_activity_create")
-          .selectAll()
-          .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
-          .where("created_at", ">", getSyncAtExpr("activity", "create"))
-          .orderBy("created_at", "asc")
-          .limit(100)
-          .execute(),
-
         // Query updated activities (for activity.updated callback)
         // Uses priority_twist_activity_update view which filters by created_by = twist_id
         // Note: No created_at filter needed - twists get updates for activities they created,
         // even if they haven't been through a "create" sync (they don't get create callbacks for their own activities)
         db
-          .selectFrom("priority_twist_activity_update")
+          .selectFrom("priority_twist_thread_update")
           .selectAll()
           .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("priority_twist_id", "=", priorityTwistId)
-          .where("updated_at", ">", getSyncAtExpr("activity", "update"))
+          .where("updated_at", ">", getSyncAtExpr("thread", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
           .execute(),
 
         // Query new notes (for note.created callback and mention handling)
         // Uses priority_twist_note_create view which filters by:
-        // - twist created the activity, OR
         // - twist is mentioned AND note was created on/after first mention
         db
           .selectFrom("priority_twist_note_create")
@@ -273,6 +263,50 @@ export class TwistSync extends DurableObject<Bindings> {
           .orderBy("updated_at", "asc")
           .limit(100)
           .execute(),
+
+        // Query new links from connected source channels (for onLinkCreated callback)
+        db
+          .selectFrom("priority_twist_channel_link_create")
+          .selectAll()
+          .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
+          .where("priority_twist_id", "=", priorityTwistId)
+          .where("created_at", ">", getSyncAtExpr("channel_link", "create"))
+          .orderBy("created_at", "asc")
+          .limit(100)
+          .execute(),
+
+        // Query updated links from connected source channels (for onLinkUpdated callback)
+        db
+          .selectFrom("priority_twist_channel_link_update")
+          .selectAll()
+          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
+          .where("priority_twist_id", "=", priorityTwistId)
+          .where("updated_at", ">", getSyncAtExpr("channel_link", "update"))
+          .orderBy("updated_at", "asc")
+          .limit(100)
+          .execute(),
+
+        // Query new notes on threads with links from connected channels (for onLinkNoteCreated callback)
+        db
+          .selectFrom("priority_twist_channel_note_create")
+          .selectAll()
+          .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
+          .where("priority_twist_id", "=", priorityTwistId)
+          .where("created_at", ">", getSyncAtExpr("channel_note", "create"))
+          .orderBy("created_at", "asc")
+          .limit(100)
+          .execute(),
+
+        // Query thread read status changes (for onThreadRead callback)
+        db
+          .selectFrom("priority_twist_thread_read")
+          .selectAll()
+          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
+          .where("priority_twist_id", "=", priorityTwistId)
+          .where("updated_at", ">", getSyncAtExpr("thread_read", "update"))
+          .orderBy("updated_at", "asc")
+          .limit(100)
+          .execute(),
       ]);
 
       // Extract successful results, defaulting to [] for failures
@@ -291,21 +325,30 @@ export class TwistSync extends DurableObject<Bindings> {
         return [];
       };
 
-      const newActivities = extractResult(results[0], 0);
-      const updatedActivities = extractResult(results[1], 1);
-      const newNotes = extractResult(results[2], 2);
-      const updatedNotes = extractResult(results[3], 3);
+      const updatedActivities = extractResult(results[0], 0);
+      const newNotes = extractResult(results[1], 1);
+      const updatedNotes = extractResult(results[2], 2);
+      const channelNewLinks = extractResult(results[3], 3);
+      const channelUpdatedLinks = extractResult(results[4], 4);
+      const channelNewNotes = extractResult(results[5], 5);
+      const threadReads = extractResult(results[6], 6);
 
       // Extract max timestamps as PG-precision text strings from window functions
       // null if no items were returned for that query
-      const activityCreateMaxTs: string | null =
-        newActivities.length > 0 ? (newActivities[0] as any)._max_ts : null;
       const activityUpdateMaxTs: string | null =
         updatedActivities.length > 0 ? (updatedActivities[0] as any)._max_ts : null;
       const noteCreateMaxTs: string | null =
         newNotes.length > 0 ? (newNotes[0] as any)._max_ts : null;
       const noteUpdateMaxTs: string | null =
         updatedNotes.length > 0 ? (updatedNotes[0] as any)._max_ts : null;
+      const channelLinkCreateMaxTs: string | null =
+        channelNewLinks.length > 0 ? (channelNewLinks[0] as any)._max_ts : null;
+      const channelLinkUpdateMaxTs: string | null =
+        channelUpdatedLinks.length > 0 ? (channelUpdatedLinks[0] as any)._max_ts : null;
+      const channelNoteCreateMaxTs: string | null =
+        channelNewNotes.length > 0 ? (channelNewNotes[0] as any)._max_ts : null;
+      const threadReadUpdateMaxTs: string | null =
+        threadReads.length > 0 ? (threadReads[0] as any)._max_ts : null;
 
       // Get the latest update timestamp from sync info as text for tag change upper bound
       // PG text representation (YYYY-MM-DD HH:MI:SS.ffffff+TZ) is lexicographically sortable
@@ -319,13 +362,13 @@ export class TwistSync extends DurableObject<Bindings> {
       // This provides tagsAdded/tagsRemoved data for the activity.updated callback
       // Use currentSyncTimestamp as upper bound to capture tag changes that occurred
       // after activity updates (since tag changes update activity_tag.updated_at, not activity.updated_at)
-      let activityTagChanges: ActivityTagChange[] = [];
+      let activityTagChanges: ThreadTagChange[] = [];
       try {
         const tagChanges: TagChangeRow[] = await db
-          .selectFrom("priority_twist_activity_tag_change")
-          .select(["activity_id", "occurrence", "tag_id", "actor_id", "change_type"])
+          .selectFrom("priority_twist_thread_tag_change")
+          .select(["thread_id", "occurrence", "tag_id", "actor_id", "change_type"])
           .where("priority_twist_id", "=", priorityTwistId)
-          .where("updated_at", ">", getSyncAtExpr("activity", "update"))
+          .where("updated_at", ">", getSyncAtExpr("thread", "update"))
           .where("updated_at", "<=", currentSyncTimestampText
             ? sql<Date>`${currentSyncTimestampText}::timestamptz`
             : sql<Date>`now()`)
@@ -335,13 +378,13 @@ export class TwistSync extends DurableObject<Bindings> {
         activityTagChanges = tagChanges
           .filter(
             (tc) =>
-              tc.activity_id !== null &&
+              tc.thread_id !== null &&
               tc.tag_id !== null &&
               tc.actor_id !== null &&
               tc.change_type !== null
           )
           .map((tc) => ({
-            activityId: tc.activity_id!,
+            threadId: tc.thread_id!,
             occurrence: tc.occurrence,
             tagId: tc.tag_id!,
             actorId: tc.actor_id!,
@@ -350,10 +393,10 @@ export class TwistSync extends DurableObject<Bindings> {
       } catch (error) {
         logger.error("Failed to query priority_twist_activity_tag_change", error as Error, {
           priority_twist_id: priorityTwistId,
-          view: "priority_twist_activity_tag_change",
+          view: "priority_twist_thread_tag_change",
         });
         this.captureException(error as Error, {
-          view: "priority_twist_activity_tag_change",
+          view: "priority_twist_thread_tag_change",
         });
       }
 
@@ -363,8 +406,11 @@ export class TwistSync extends DurableObject<Bindings> {
 
       const cleanNewNotes = stripMaxTs(newNotes);
       const cleanUpdatedNotes = stripMaxTs(updatedNotes);
-      const cleanNewActivities = stripMaxTs(newActivities);
       const cleanUpdatedActivities = stripMaxTs(updatedActivities);
+      const cleanChannelNewLinks = stripMaxTs(channelNewLinks);
+      const cleanChannelUpdatedLinks = stripMaxTs(channelUpdatedLinks);
+      const cleanChannelNewNotes = stripMaxTs(channelNewNotes);
+      const cleanThreadReads = stripMaxTs(threadReads);
 
       // Build size-aware batches to stay under Cloudflare's 128KB queue message limit.
       // Items are added sequentially (all newNotes, then updatedNotes, then newActivities,
@@ -373,14 +419,20 @@ export class TwistSync extends DurableObject<Bindings> {
       type TaggedItem =
         | { array: "newNotes"; item: (typeof cleanNewNotes)[number]; size: number }
         | { array: "updatedNotes"; item: (typeof cleanUpdatedNotes)[number]; size: number }
-        | { array: "newActivities"; item: (typeof cleanNewActivities)[number]; size: number }
-        | { array: "updatedActivities"; item: (typeof cleanUpdatedActivities)[number]; size: number };
+        | { array: "updatedActivities"; item: (typeof cleanUpdatedActivities)[number]; size: number }
+        | { array: "channelNewLinks"; item: (typeof cleanChannelNewLinks)[number]; size: number }
+        | { array: "channelUpdatedLinks"; item: (typeof cleanChannelUpdatedLinks)[number]; size: number }
+        | { array: "channelNewNotes"; item: (typeof cleanChannelNewNotes)[number]; size: number }
+        | { array: "threadReads"; item: (typeof cleanThreadReads)[number]; size: number };
 
       const taggedItems: TaggedItem[] = [
         ...cleanNewNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
         ...cleanUpdatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: JSON.stringify(item).length })),
-        ...cleanNewActivities.map((item) => ({ array: "newActivities" as const, item, size: JSON.stringify(item).length })),
         ...cleanUpdatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: JSON.stringify(item).length })),
+        ...cleanChannelNewLinks.map((item) => ({ array: "channelNewLinks" as const, item, size: JSON.stringify(item).length })),
+        ...cleanChannelUpdatedLinks.map((item) => ({ array: "channelUpdatedLinks" as const, item, size: JSON.stringify(item).length })),
+        ...cleanChannelNewNotes.map((item) => ({ array: "channelNewNotes" as const, item, size: JSON.stringify(item).length })),
+        ...cleanThreadReads.map((item) => ({ array: "threadReads" as const, item, size: JSON.stringify(item).length })),
       ];
 
       const batches: TaggedItem[][] = [];
@@ -411,17 +463,18 @@ export class TwistSync extends DurableObject<Bindings> {
       for (const batch of batches) {
         const batchNewNotes = batch.filter((t) => t.array === "newNotes").map((t) => t.item);
         const batchUpdatedNotes = batch.filter((t) => t.array === "updatedNotes").map((t) => t.item);
-        const batchNewActivities = batch.filter((t) => t.array === "newActivities").map((t) => t.item);
         const batchUpdatedActivities = batch.filter((t) => t.array === "updatedActivities").map((t) => t.item);
+        const batchChannelNewLinks = batch.filter((t) => t.array === "channelNewLinks").map((t) => t.item);
+        const batchChannelUpdatedLinks = batch.filter((t) => t.array === "channelUpdatedLinks").map((t) => t.item);
+        const batchChannelNewNotes = batch.filter((t) => t.array === "channelNewNotes").map((t) => t.item);
+        const batchThreadReads = batch.filter((t) => t.array === "threadReads").map((t) => t.item);
 
         // Filter tag changes to only include those relevant to activities in this batch
-        // Include both new and updated activities for tag changes
         const batchActivityIds = new Set([
-          ...batchNewActivities.map((a) => a.id),
           ...batchUpdatedActivities.map((a) => a.id),
         ]);
         const batchTagChanges = activityTagChanges.filter((tc) =>
-          batchActivityIds.has(tc.activityId)
+          batchActivityIds.has(tc.threadId)
         );
 
         // Note: Kysely returns Date objects for timestamps, but TwistBatchMessage uses
@@ -435,9 +488,12 @@ export class TwistSync extends DurableObject<Bindings> {
           version: twist.version,
           newNotes: batchNewNotes,
           updatedNotes: batchUpdatedNotes,
-          newActivities: batchNewActivities,
-          updatedActivities: batchUpdatedActivities,
-          activityTagChanges: batchTagChanges,
+          updatedThreads: batchUpdatedActivities,
+          threadTagChanges: batchTagChanges,
+          channelNewLinks: batchChannelNewLinks,
+          channelUpdatedLinks: batchChannelUpdatedLinks,
+          channelNewNotes: batchChannelNewNotes,
+          threadReads: batchThreadReads,
           priorityTwist: null, // TODO: Handle priority_twist config updates
         } as TwistBatchMessage;
 
@@ -467,26 +523,6 @@ export class TwistSync extends DurableObject<Bindings> {
       // twist that created the activity, but the create view returns items for other twists.
       // Text-based timestamps fix Bug 2: no JS Date round-trip means no μs precision loss.
       const syncUpdates: Array<{ name: string; promise: Promise<any> }> = [];
-
-      if (activityCreateMaxTs) {
-        syncUpdates.push({
-          name: "activity create sync",
-          promise: db.insertInto("priority_twist_sync")
-            .values({
-              priority_twist_id: priorityTwistId,
-              entity: sql`'activity'`,
-              operation: sql`'create'`,
-              last_sync_at: sql`${activityCreateMaxTs}::timestamptz`,
-              last_update_at: sql`${activityCreateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${activityCreateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
 
       if (activityUpdateMaxTs) {
         syncUpdates.push({
@@ -548,6 +584,86 @@ export class TwistSync extends DurableObject<Bindings> {
         });
       }
 
+      if (channelLinkCreateMaxTs) {
+        syncUpdates.push({
+          name: "channel_link create sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'channel_link'`,
+              operation: sql`'create'`,
+              last_sync_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
+              last_update_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
+      if (channelLinkUpdateMaxTs) {
+        syncUpdates.push({
+          name: "channel_link update sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'channel_link'`,
+              operation: sql`'update'`,
+              last_sync_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
+              last_update_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
+      if (channelNoteCreateMaxTs) {
+        syncUpdates.push({
+          name: "channel_note create sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'channel_note'`,
+              operation: sql`'create'`,
+              last_sync_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
+              last_update_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
+      if (threadReadUpdateMaxTs) {
+        syncUpdates.push({
+          name: "thread_read update sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'thread_read'`,
+              operation: sql`'update'`,
+              last_sync_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
+              last_update_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
       const syncUpdateResults = await Promise.allSettled(
         syncUpdates.map((u) => u.promise)
       );
@@ -572,9 +688,12 @@ export class TwistSync extends DurableObject<Bindings> {
           twist_id: String(priorityTwist.twist_id),
           new_note_count: newNotes.length,
           updated_note_count: updatedNotes.length,
-          new_activity_count: newActivities.length,
           updated_activity_count: updatedActivities.length,
           tag_change_count: activityTagChanges.length,
+          channel_new_link_count: channelNewLinks.length,
+          channel_updated_link_count: channelUpdatedLinks.length,
+          channel_new_note_count: channelNewNotes.length,
+          thread_read_count: threadReads.length,
           batch_count: batches.length,
         });
       }

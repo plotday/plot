@@ -6,8 +6,8 @@ SELECT
     COUNT(*) AS count,
     MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at
 FROM
-    "public"."activity_tag" at
-    JOIN "public"."activity" a ON at.activity_id = a.id
+    "public"."thread_tag" at
+    JOIN "public"."thread" a ON at.thread_id = a.id
 WHERE
     at.archived_at IS NULL
     AND a.archived_at IS NULL

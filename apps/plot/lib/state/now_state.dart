@@ -26,10 +26,10 @@ final class NowLoaded extends NowState {
   final Priority defaultPriority;
   final Priority? context;
 
-  List<Activity> get scheduled =>
+  List<Thread> get scheduled =>
       _day.scheduled.where((event) => event.at!.includes(now)).toList();
 
-  List<Activity> get next {
+  List<Thread> get next {
     final events = _day.scheduled;
     int first = -1;
     int last = events.length;
@@ -55,7 +55,7 @@ final class NowLoaded extends NowState {
     return events.sublist(first, last);
   }
 
-  List<Activity> get previous {
+  List<Thread> get previous {
     final events = _day.scheduled;
     int last = -1;
     int first = -1;
@@ -110,9 +110,9 @@ final class NowLoaded extends NowState {
       session?.priority ??
       scheduled.firstOrNull?.priority ??
       defaultPriority;
-  Activity get current =>
+  Thread get current =>
       scheduled.firstOrNull ??
-      Activity(
+      Thread(
         at: DateTimeRange(
           previous.firstOrNull?.at?.end ?? now.round(),
           next.firstOrNull?.at?.start ?? now.round(down: false),

@@ -1,12 +1,15 @@
 import type { Kysely } from "kysely";
 
 import {
-  type Activity,
-  type ActivityUpdate,
+  type Thread,
+  type ThreadUpdate,
   type Actor,
   type ActorId,
-  type NewActivity,
-  type NewActivityWithNotes,
+  ActorType,
+  type Link,
+  type NewThread,
+  type NewThreadWithNotes,
+  type NewLinkWithNotes,
   type NewContact,
   type NewNote,
   type NewPriority,
@@ -16,28 +19,45 @@ import {
   type PriorityUpdate,
   type Uuid,
 } from "@plotday/twister/plot";
+import type {
+  Schedule,
+  NewSchedule,
+} from "@plotday/twister/schedule";
 import { Tag } from "@plotday/twister/tag";
 import {
-  ActivityAccess,
+  ThreadAccess,
   ContactAccess,
   type Plot as IPlot,
+  type LinkFilter,
   PriorityAccess,
 } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 
+import type { Json } from "@plotday/db";
 import type { DB } from "../../../db-types";
 import type { Bindings } from "../../../env";
 import { rpc, rpcUser } from "../../../rpc";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
-import type { EnrichedActivity, EnrichedNote } from "../../view-types";
+import type {
+  EnrichedThread,
+  EnrichedNote,
+  ChannelLinkCreate,
+  ChannelLinkUpdate,
+  ChannelNoteCreate,
+  ThreadReadChange,
+} from "../../view-types";
 import { AI } from "../ai";
 import { Tool } from "../tool";
-import * as activityOps from "./activity";
+import * as threadOps from "./thread";
+import * as linkOps from "./link";
 import * as contactsOps from "./contacts";
-import { buildActivityFromDbRecord, buildNoteFromDbRecord } from "./db";
+import { fromDbLink } from "./converters";
+import { buildThreadFromDbRecord, buildNoteFromDbRecord } from "./db";
 import * as intentOps from "./intent";
 import * as priorityOps from "./priority";
+import { convertScheduleToDb, convertDbToSchedule } from "./schedule";
+import { processScheduleContacts } from "./schedule-contacts";
 
 export type PlotOptions = typeof IPlot.Options;
 
@@ -73,8 +93,8 @@ function cleanupExpiredTwistIdCache(): void {
 
 export type DispatchItem =
   | {
-      itemType: "activity";
-      item: EnrichedActivity;
+      itemType: "thread";
+      item: EnrichedThread;
       isCreate?: boolean;
       syncDepth?: number;
       changes?: {
@@ -87,6 +107,23 @@ export type DispatchItem =
       itemType: "note";
       item: EnrichedNote;
       isCreate?: boolean;
+      syncDepth?: number;
+    }
+  | {
+      itemType: "channel_link";
+      item: ChannelLinkCreate | ChannelLinkUpdate;
+      isCreate?: boolean;
+      syncDepth?: number;
+    }
+  | {
+      itemType: "channel_note";
+      item: ChannelNoteCreate;
+      isCreate?: boolean;
+      syncDepth?: number;
+    }
+  | {
+      itemType: "thread_read";
+      item: ThreadReadChange;
       syncDepth?: number;
     };
 
@@ -111,9 +148,9 @@ export class Plot extends Tool implements IPlot {
   static Permissions(options?: PlotOptions): ToolPermission[] {
     const perms: ToolPermission[] = [];
 
-    if (options?.activity) {
+    if (options?.thread) {
       // Can create new activities
-      if (options.activity.access === ActivityAccess.Create) {
+      if (options.thread.access === ThreadAccess.Create) {
         perms.push({
           domain: "plot",
           entity: "activity:new",
@@ -142,6 +179,14 @@ export class Plot extends Tool implements IPlot {
         domain: "plot",
         entity: "priority",
         flags,
+      });
+    }
+
+    if (options?.link) {
+      perms.push({
+        domain: "plot",
+        entity: "link",
+        flags: ["read"],
       });
     }
 
@@ -347,14 +392,14 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Dispatches activity and note events to configured callbacks.
+   * Dispatches activity, note, and channel link events to configured callbacks.
    *
-   * @param dispatchItem - Discriminated union containing either activity or note data
+   * @param dispatchItem - Discriminated union containing entity data
    * @returns Array of callbacks to invoke in twist worker (empty array if none)
    */
   async dispatch(
     dispatchItem: DispatchItem
-  ): Promise<Array<{ optionPath: string[]; args: any[] }>> {
+  ): Promise<Array<{ sourceMethod?: string; optionPath?: string[]; args: any[] }>> {
     const logger = createLogger({ priority_twist_id: this.priorityTwistId });
 
     if (!this.plotOptions) {
@@ -365,7 +410,8 @@ export class Plot extends Tool implements IPlot {
     this.syncDepth = dispatchItem.syncDepth ?? 1;
 
     const callbacks: Array<{
-      optionPath: string[];
+      sourceMethod?: string;
+      optionPath?: string[];
       args: any[];
       deferredTagRemoval?: { noteId: string; actorId: string };
     }> = [];
@@ -420,22 +466,16 @@ export class Plot extends Tool implements IPlot {
         }
       }
 
-      // Dispatch note.created callback for new notes on activities created by this twist
+      // Dispatch onNoteCreated for new notes on threads created by this twist
       if (isCreate) {
-        // Check if parent activity was created by this twist (from payload metadata)
         const activityCreatedByThisTwist =
-          item.activity_created_by === this.priorityTwistId;
-
-        // Check if note was created by this twist
+          item.thread_created_by === this.priorityTwistId;
         const noteCreatedByThisTwist = item.created_by === this.priorityTwistId;
 
-        // Only dispatch if activity owned by twist AND note NOT created by twist
-        // This prevents infinite loops when twist creates notes on its own activities
         if (activityCreatedByThisTwist && !noteCreatedByThisTwist) {
-          const callback = this.plotOptions?.note?.created;
-          if (typeof callback === "function") {
+          if (this.plotOptions?.thread?.access) {
             callbacks.push({
-              optionPath: ["note", "created"],
+              sourceMethod: "onNoteCreated",
               args: [currentNote],
             });
           }
@@ -443,36 +483,86 @@ export class Plot extends Tool implements IPlot {
       }
     }
 
-    // Handle activity items
-    if (dispatchItem.itemType === "activity") {
+    // Handle thread items
+    if (dispatchItem.itemType === "thread") {
       const { item, isCreate = false, changes } = dispatchItem;
 
-      // Build the current activity
-      const currentActivity = buildActivityFromDbRecord(item);
+      const currentActivity = buildThreadFromDbRecord(item);
 
-      // Check if activity was created by this twist
       const createdByThisTwist =
-        (item.created_by ?? item.author_id) === this.priorityTwistId;
+        item.created_by === this.priorityTwistId;
 
-      if (createdByThisTwist) {
+      if (createdByThisTwist && !isCreate) {
+        if (this.plotOptions?.thread?.access) {
+          callbacks.push({
+            sourceMethod: "onThreadUpdated",
+            args: [
+              currentActivity,
+              changes ?? { tagsAdded: {}, tagsRemoved: {} },
+            ],
+          });
+        }
+      }
+    }
+
+    // Handle channel link items (from connected source channels)
+    if (dispatchItem.itemType === "channel_link") {
+      if (this.plotOptions?.link) {
+        const { item, isCreate = true } = dispatchItem;
+        const link = this.buildLinkFromChannelView(item);
+        const notes = await this.fetchNotesForThread(item.thread_id!);
+
         if (isCreate) {
-          // Future: call activity.created callback when added to twister
-          // For now, log for debugging
-          logger.info("Activity create received (no callback yet)", {
-            activity_id: item.id ?? undefined,
-            title: item.title?.substring(0, 30) ?? undefined,
-            created_by: item.created_by ?? undefined,
+          callbacks.push({
+            sourceMethod: "onLinkCreated",
+            args: [link, notes],
           });
         } else {
-          // Check if activity.updated callback exists
-          const callback = this.plotOptions?.activity?.updated;
-          if (typeof callback === "function") {
+          callbacks.push({
+            sourceMethod: "onLinkUpdated",
+            args: [link, notes],
+          });
+        }
+      }
+    }
+
+    // Handle channel note items (notes on threads with links from connected channels)
+    if (dispatchItem.itemType === "channel_note") {
+      if (this.plotOptions?.link) {
+        const { item } = dispatchItem;
+        const note = this.buildNoteFromChannelView(item);
+        const link = this.buildLinkFromChannelNoteView(item);
+
+        callbacks.push({
+          sourceMethod: "onLinkNoteCreated",
+          args: [note, link],
+        });
+      }
+    }
+
+    // Handle thread read status changes (for onThreadRead callback)
+    if (dispatchItem.itemType === "thread_read") {
+      const { item } = dispatchItem;
+      if (this.plotOptions?.thread?.access) {
+        const thread = await this.getThread({ id: item.thread_id as Uuid });
+        if (thread) {
+          const actors = await contactsOps.getActors(this, [item.user_id as ActorId]);
+          if (actors.length > 0) {
+            // Fetch link meta for the thread (contains channelId, threadId, etc.)
+            const link = await this.db
+              .selectFrom("link")
+              .select(["meta", "channel_id", "source"])
+              .where("thread_id", "=", item.thread_id!)
+              .where("created_by", "=", this.priorityTwistId)
+              .executeTakeFirst();
+            const meta: Record<string, unknown> = {
+              ...(link?.meta as Record<string, unknown> ?? {}),
+              channelId: link?.channel_id,
+              linkSource: link?.source,
+            };
             callbacks.push({
-              optionPath: ["activity", "updated"],
-              args: [
-                currentActivity,
-                changes ?? { tagsAdded: {}, tagsRemoved: {} },
-              ],
+              sourceMethod: "onThreadRead",
+              args: [thread, actors[0], false, meta], // false = read (not unread)
             });
           }
         }
@@ -480,6 +570,149 @@ export class Plot extends Tool implements IPlot {
     }
 
     return callbacks;
+  }
+
+  /**
+   * Converts a channel link view row into an SDK Link object.
+   */
+  private buildLinkFromChannelView(item: ChannelLinkCreate | ChannelLinkUpdate): Link {
+    return fromDbLink({
+      id: item.id!,
+      thread_id: item.thread_id!,
+      source: item.source,
+      source_created_at: item.source_created_at ?? item.created_at!,
+      created_at: item.created_at!,
+      title: item.title,
+      preview: item.preview,
+      type: item.type,
+      status: item.status,
+      actions: item.actions,
+      meta: item.meta,
+      source_url: item.source_url,
+      channel_id: item.channel_id,
+      author_id: item.author_id,
+      assignee_id: item.assignee_id,
+      author: item.author_id ? {
+        id: item.author_id,
+        name: item.author_name,
+        type: item.author_type,
+      } : null,
+    });
+  }
+
+  /**
+   * Converts a channel note view row into an SDK Note object.
+   */
+  private buildNoteFromChannelView(item: ChannelNoteCreate): Note {
+    return {
+      id: item.id as Uuid,
+      created: item.created_at ? new Date(item.created_at) : new Date(),
+      // @ts-ignore - Partial Thread data
+      thread: {
+        id: item.thread_id,
+        title: item.thread_title,
+        priority: { id: item.priority_id },
+      } as unknown as Thread,
+      author: {
+        id: (item.author_id ?? item.created_by) as ActorId,
+        name: item.author_name,
+        type:
+          item.author_type === "user"
+            ? ActorType.User
+            : item.author_type === "priority_twist"
+            ? ActorType.Twist
+            : ActorType.Contact,
+      },
+      content: item.content,
+      key: item.key || null,
+      reNote: item.re_note_id ? { id: item.re_note_id as Uuid } : null,
+      mentions: (item.mentions as ActorId[]) || [],
+      tags: (item.tags as Partial<Record<number, ActorId[]>>) || {},
+      private: item.private ?? false,
+      archived: item.archived_at !== null,
+      actions: item.actions as any,
+    };
+  }
+
+  /**
+   * Builds a minimal Link from channel note view link_ fields.
+   */
+  private buildLinkFromChannelNoteView(item: ChannelNoteCreate): Link {
+    return {
+      id: item.link_id as Uuid,
+      threadId: item.thread_id as Uuid,
+      source: item.link_source,
+      created: new Date(),
+      author: null,
+      title: item.link_title || "",
+      preview: null,
+      assignee: null,
+      type: item.link_type,
+      status: null,
+      actions: null,
+      meta: item.link_meta as any,
+      sourceUrl: item.link_source_url,
+      channelId: item.link_channel_id ?? null,
+    };
+  }
+
+  /**
+   * Fetches notes for a thread (for link callbacks that include notes).
+   */
+  private async fetchNotesForThread(threadId: string): Promise<Note[]> {
+    try {
+      const rows = await this.db
+        .selectFrom("note")
+        .leftJoin("actor", "actor.id", "note.author_id")
+        .select([
+          "note.id",
+          "note.created_at",
+          "note.thread_id",
+          "note.author_id",
+          "note.created_by",
+          "note.content",
+          "note.key",
+          "note.re_note_id",
+          "note.mentions",
+          "note.private",
+          "note.archived_at",
+          "note.actions",
+          "actor.name as author_name",
+          "actor.type as author_type",
+        ])
+        .where("note.thread_id", "=", threadId)
+        .where("note.draft", "=", false)
+        .where("note.archived_at", "is", null)
+        .orderBy("note.created_at", "asc")
+        .execute();
+
+      return rows.map((row) => ({
+        id: row.id as Uuid,
+        created: row.created_at ? new Date(row.created_at) : new Date(),
+        // @ts-ignore - Partial Thread data
+        thread: { id: row.thread_id } as unknown as Thread,
+        author: {
+          id: (row.author_id ?? row.created_by) as ActorId,
+          name: row.author_name ?? null,
+          type:
+            row.author_type === "user"
+              ? ActorType.User
+              : row.author_type === "priority_twist"
+              ? ActorType.Twist
+              : ActorType.Contact,
+        },
+        content: row.content,
+        key: row.key || null,
+        reNote: row.re_note_id ? { id: row.re_note_id as Uuid } : null,
+        mentions: (row.mentions as ActorId[]) || [],
+        tags: {},
+        private: row.private ?? false,
+        archived: row.archived_at !== null,
+        actions: row.actions as any,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -610,31 +843,31 @@ export class Plot extends Tool implements IPlot {
    * Checks if the twist has the required activity access permission.
    * @throws Error if permission is not granted
    */
-  requireActivityAccess(required: ActivityAccess): void {
-    const granted = this.plotOptions?.activity?.access;
+  requireThreadAccess(required: ThreadAccess): void {
+    const granted = this.plotOptions?.thread?.access;
     if (granted === undefined) {
       throw new Error(
-        `Activity access not requested. Required: ${ActivityAccess[required]}`
+        `Activity access not requested. Required: ${ThreadAccess[required]}`
       );
     }
 
     // Check if granted permission is sufficient
     // Create includes Respond permissions
     if (
-      required === ActivityAccess.Respond &&
-      granted >= ActivityAccess.Respond
+      required === ThreadAccess.Respond &&
+      granted >= ThreadAccess.Respond
     ) {
       return;
     }
     if (
-      required === ActivityAccess.Create &&
-      granted >= ActivityAccess.Create
+      required === ThreadAccess.Create &&
+      granted >= ThreadAccess.Create
     ) {
       return;
     }
 
     throw new Error(
-      `Insufficient activity access. Required: ${ActivityAccess[required]}, Granted: ${ActivityAccess[granted]}`
+      `Insufficient activity access. Required: ${ThreadAccess[required]}, Granted: ${ThreadAccess[granted]}`
     );
   }
 
@@ -699,8 +932,8 @@ export class Plot extends Tool implements IPlot {
    * - Activities in a thread where the twist was mentioned require Respond permission
    * - Activities in a thread created by the twist require Create permission
    */
-  async validateActivityCreateAccess(_activity: NewActivity): Promise<void> {
-    this.requireActivityAccess(ActivityAccess.Create);
+  async validateActivityCreateAccess(_activity: NewThread): Promise<void> {
+    this.requireThreadAccess(ThreadAccess.Create);
   }
 
   /**
@@ -725,8 +958,8 @@ export class Plot extends Tool implements IPlot {
       // Fetch the parent activity to check permissions (fallback for calls from twist code)
       try {
         const activity = await this.db
-          .selectFrom("activity_x")
-          .select(["id", "author_id", "created_by", "mentions"])
+          .selectFrom("thread_x")
+          .select(["id", "created_by", "mentions"])
           .where("id", "=", activityId)
           .executeTakeFirstOrThrow();
 
@@ -745,7 +978,7 @@ export class Plot extends Tool implements IPlot {
     // Check if the activity mentions the twist
     if (Array.isArray(mentions) && mentions.includes(this.priorityTwistId)) {
       // Twist was mentioned in the activity - requires Respond
-      this.requireActivityAccess(ActivityAccess.Respond);
+      this.requireThreadAccess(ThreadAccess.Respond);
       return;
     }
 
@@ -784,8 +1017,8 @@ export class Plot extends Tool implements IPlot {
       // Fetch the activity to check author and mentions (fallback for calls from twist code)
       try {
         const activity = await this.db
-          .selectFrom("activity_x")
-          .select(["id", "author_id", "created_by", "mentions"])
+          .selectFrom("thread_x")
+          .select(["id", "created_by", "mentions"])
           .where("id", "=", activityId)
           .executeTakeFirstOrThrow();
 
@@ -798,7 +1031,7 @@ export class Plot extends Tool implements IPlot {
 
     // Check if the activity was created by this twist
     if (created_by === this.priorityTwistId) {
-      this.requireActivityAccess(ActivityAccess.Create);
+      this.requireThreadAccess(ThreadAccess.Create);
       return;
     }
 
@@ -808,7 +1041,7 @@ export class Plot extends Tool implements IPlot {
       Array.isArray(mentions) &&
       mentions.includes(this.priorityTwistId)
     ) {
-      this.requireActivityAccess(ActivityAccess.Respond);
+      this.requireThreadAccess(ThreadAccess.Respond);
       return;
     }
 
@@ -820,7 +1053,7 @@ export class Plot extends Tool implements IPlot {
       Array.isArray(triggering_note_mentions) &&
       triggering_note_mentions.includes(this.priorityTwistId)
     ) {
-      this.requireActivityAccess(ActivityAccess.Respond);
+      this.requireThreadAccess(ThreadAccess.Respond);
       return;
     }
 
@@ -829,7 +1062,7 @@ export class Plot extends Tool implements IPlot {
     // which is useful when activities are moved between priorities or when multiple
     // instances of the same twist are installed in different priorities
     if (created_by && (await this.isSameTwistDefinition(created_by))) {
-      this.requireActivityAccess(ActivityAccess.Create);
+      this.requireThreadAccess(ThreadAccess.Create);
       // Skip priority validation - twist can access activities it created regardless of priority
       return;
     }
@@ -839,27 +1072,66 @@ export class Plot extends Tool implements IPlot {
     );
   }
 
-  // Activity operations
-  async createActivity(
-    activity: NewActivity | NewActivityWithNotes
+  // Thread operations
+  async createThread(
+    thread: NewThread | NewThreadWithNotes
   ): Promise<Uuid> {
-    return activityOps.createActivity(this, activity);
+    return threadOps.createThread(this, thread);
   }
 
-  async updateActivity(activity: ActivityUpdate): Promise<void> {
-    return activityOps.updateActivity(this, activity);
+  // Link operations
+  async createLink(
+    link: NewLinkWithNotes
+  ): Promise<Uuid> {
+    return linkOps.createLink(this, link);
   }
 
+  async createLinkOnly(
+    link: NewLinkWithNotes
+  ): Promise<Uuid> {
+    return linkOps.createLinkOnly(this, link);
+  }
+
+  async updateThread(thread: ThreadUpdate): Promise<void> {
+    return threadOps.updateThread(this, thread);
+  }
+
+  async getThread(
+    thread: { id: Uuid } | { source: string }
+  ): Promise<Thread | null> {
+    return threadOps.getThread(this, thread);
+  }
+
+  async createThreads(
+    threads: (NewThread | NewThreadWithNotes)[]
+  ): Promise<Uuid[]> {
+    return threadOps.createThreads(this, threads);
+  }
+
+  /** @deprecated Use createThread */
+  async createActivity(
+    activity: NewThread | NewThreadWithNotes
+  ): Promise<Uuid> {
+    return this.createThread(activity);
+  }
+
+  /** @deprecated Use updateThread */
+  async updateActivity(activity: ThreadUpdate): Promise<void> {
+    return this.updateThread(activity);
+  }
+
+  /** @deprecated Use getThread */
   async getActivity(
     activity: { id: Uuid } | { source: string }
-  ): Promise<Activity | null> {
-    return activityOps.getActivity(this, activity);
+  ): Promise<Thread | null> {
+    return this.getThread(activity);
   }
 
+  /** @deprecated Use createThreads */
   async createActivities(
-    activities: (NewActivity | NewActivityWithNotes)[]
+    activities: (NewThread | NewThreadWithNotes)[]
   ): Promise<Uuid[]> {
-    return activityOps.createActivities(this, activities);
+    return this.createThreads(activities);
   }
 
   // Priority operations
@@ -887,23 +1159,62 @@ export class Plot extends Tool implements IPlot {
   }
 
   // Note operations
-  async getNotes(activity: Activity): Promise<Note[]> {
-    return activityOps.getNotes(this, activity);
+  async getNotes(activity: Thread): Promise<Note[]> {
+    return threadOps.getNotes(this, activity);
   }
 
   async getNote(note: { id: Uuid } | { key: string }): Promise<Note | null> {
-    return activityOps.getNote(this, note);
+    return threadOps.getNote(this, note);
   }
 
   async createNote(note: NewNote, skipActivityRead = false): Promise<Uuid> {
-    return activityOps.createNote(this, note, skipActivityRead);
+    return threadOps.createNote(this, note, skipActivityRead);
   }
 
   async createNotes(notes: NewNote[]): Promise<Uuid[]> {
-    return activityOps.createNotes(this, notes);
+    return threadOps.createNotes(this, notes);
   }
 
   async updateNote(note: NoteUpdate): Promise<void> {
-    return activityOps.updateNote(this, note);
+    return threadOps.updateNote(this, note);
+  }
+
+  // Schedule operations
+  async createSchedule(schedule: NewSchedule): Promise<Schedule> {
+    const dbSchedule = convertScheduleToDb(schedule, {
+      thread_id: schedule.threadId,
+    });
+    const userId = await this.getUserId();
+    const result = await rpcUser(this.db, "upsert_schedule", {
+      user_id: userId,
+      p_schedule: dbSchedule as Json,
+    });
+
+    // Process contacts if present
+    if (schedule.contacts?.length && result?.id) {
+      const thread = await this.db
+        .selectFrom("thread")
+        .select("priority_id")
+        .where("id", "=", schedule.threadId)
+        .executeTakeFirstOrThrow();
+
+      await processScheduleContacts(
+        this,
+        result.id,
+        schedule.contacts,
+        thread.priority_id
+      );
+    }
+
+    return convertDbToSchedule(result as Record<string, unknown>);
+  }
+
+
+  async getSchedules(_threadId: Uuid): Promise<Schedule[]> {
+    throw new Error("Schedule operations not yet implemented");
+  }
+
+  async getLinks(_filter?: LinkFilter): Promise<Array<{ link: Link; notes: Note[] }>> {
+    return linkOps.getLinks(this, _filter);
   }
 }

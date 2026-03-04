@@ -25,13 +25,15 @@ export class Tool extends RpcTarget {
    * Dispatches an event to callbacks configured via tool options.
    * Built-in tools override this to implement event routing.
    *
-   * @param _optionPath - Path to navigate in options to find callback
-   * @param _args - Arguments to pass to the callback
+   * Returns an array of dispatch entries. Each entry uses one of:
+   * - `optionPath`: navigates the options object to find a callback (legacy Twist pattern)
+   * - `sourceMethod`: calls a method directly on the Source instance (new Source pattern)
+   *
    * @returns Array of callbacks to invoke in twist worker (empty array if none)
    */
   async dispatch(
     ..._args: any[]
-  ): Promise<Array<{ optionPath: string[]; args: any[] }>> {
+  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[] }>> {
     // Default no-op - built-in tools override as needed
     return [];
   }

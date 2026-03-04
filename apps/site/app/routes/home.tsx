@@ -101,8 +101,8 @@ export default function Home() {
               <Button
                 variant="gradient"
                 size="lg"
-                component="a"
-                href="https://app.plot.day"
+                component={Link}
+                to="/start"
               >
                 Get started free
               </Button>
@@ -423,8 +423,8 @@ export default function Home() {
             <Button
               variant="white"
               size="xl"
-              component="a"
-              href="https://app.plot.day"
+              component={Link}
+              to="/start"
             >
               Get started free
             </Button>

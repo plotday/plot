@@ -1,16 +1,25 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/state/local_preferences.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/util/platform.dart';
 import 'command.dart';
+import 'page_link.dart';
 
 class GlobalShortcuts extends StatelessWidget {
   const GlobalShortcuts({required this.child, super.key});
 
   final Widget child;
 
-  List<StaticCommandGroup> _getCommands(bool signedIn) {
+  List<StaticCommandGroup> _getCommands({
+    required bool signedIn,
+    PrioritiesState? prioritiesState,
+    bool showAllPriorities = false,
+  }) {
     // When signed out, only show settings commands (and debug commands in debug mode)
     if (!signedIn) {
       final commands = [signedOutSettingsCommands];
@@ -20,13 +29,50 @@ class GlobalShortcuts extends StatelessWidget {
       return commands;
     }
 
+    // Extract @plot priority commands
+    Command? gettingStartedCmd;
+    Command? helpFeedbackCmd;
+    if (prioritiesState != null) {
+      final plotPriority = prioritiesState.root?.children
+          .firstWhereOrNull((p) => p.key == '@plot');
+      if (plotPriority != null) {
+        for (final child in plotPriority.children) {
+          final isArchived = child.archivedAt != null;
+          if (isArchived && !showAllPriorities) continue;
+
+          if (child.key == '@plot.getting-started') {
+            gettingStartedCmd = OpenGettingStarted(child);
+          } else if (child.key?.startsWith('@help-feedback') == true) {
+            helpFeedbackCmd = OpenHelpFeedback(child);
+          }
+        }
+      }
+    }
+
     // When signed in, show all commands
     final commands = [
       StaticCommandGroup(
         title: 'Priorities',
-        commands: [PickCurrentPriority(), NewPriority()],
+        commands: [
+          PickCurrentPriority(),
+          NewPriority(),
+          if (gettingStartedCmd != null) gettingStartedCmd,
+        ],
       ),
-      settingsCommands,
+      StaticCommandGroup(
+        title: 'App',
+        shortcut: settingsCommands.shortcut,
+        commands: [
+          ManageConnections(),
+          ManageTwists(),
+          CopyPageLink(), OpenCopiedPageLink(),
+          ChangeAppearance(),
+          if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
+          if (helpFeedbackCmd != null) helpFeedbackCmd,
+          CopyVersion(),
+          SignOut(),
+        ],
+      ),
     ];
 
     // Add debug commands in debug mode
@@ -40,11 +86,32 @@ class GlobalShortcuts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<UserBloc, UserState>(
-      builder: (context, state) {
-        // Determine if signed in based on UserState
-        final signedIn = state is UserReady;
+      builder: (context, userState) {
+        final signedIn = userState is UserReady;
 
-        return CommandScope(commands: _getCommands(signedIn), child: child);
+        if (!signedIn) {
+          return CommandScope(
+            commands: _getCommands(signedIn: false),
+            child: child,
+          );
+        }
+
+        return BlocBuilder<PrioritiesBloc, PrioritiesState>(
+          builder: (context, prioritiesState) {
+            return BlocBuilder<LocalPreferencesBloc, LocalPreferencesState>(
+              builder: (context, localPrefsState) {
+                return CommandScope(
+                  commandsBuilder: () => _getCommands(
+                    signedIn: true,
+                    prioritiesState: prioritiesState,
+                    showAllPriorities: localPrefsState.showAllPriorities,
+                  ),
+                  child: child,
+                );
+              },
+            );
+          },
+        );
       },
     );
   }

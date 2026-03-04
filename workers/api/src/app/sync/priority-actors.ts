@@ -2,7 +2,7 @@ import { Hono } from "hono";
 
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
-import { parseReadParams } from "./helpers";
+import { parseReadParams, updatedSinceCursor } from "./helpers";
 
 const priorityActors = new Hono<{ Bindings: Bindings }>();
 
@@ -20,20 +20,14 @@ priorityActors.get("/sync/priority-actors", async (c) => {
 
     // Apply sort
     if (updatedSince) {
-      query = query.orderBy("updated_at", "asc").orderBy("actor_id", "asc");
+      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("actor_id", "asc");
     } else {
       query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("actor_id", sortDir);
     }
 
     // Composite cursor on (updated_at, actor_id)
     if (updatedSince) {
-      if (cursorId) {
-        query = query.where(
-          sql<boolean>`(updated_at > ${updatedSince}::timestamptz OR (updated_at = ${updatedSince}::timestamptz AND actor_id > ${cursorId}))`
-        );
-      } else {
-        query = query.where(sql<boolean>`updated_at > ${updatedSince}::timestamptz`);
-      }
+      query = query.where(updatedSinceCursor(updatedSince, cursorId, "actor_id"));
     }
 
     if (archived === true) {

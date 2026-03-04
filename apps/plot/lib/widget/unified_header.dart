@@ -7,12 +7,16 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/page/priority.dart'
+    show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/style/colors.dart';
-import 'package:plot/widget/activity_header_notifier.dart';
+import 'package:plot/style/plot_colors.dart';
+import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/priority_selector.dart';
 import 'button.dart';
 import 'icon.dart';
@@ -31,11 +35,19 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
+  PriorityShortcutsProviderState? _panelController;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _panelController = ActivityPanelControllerProvider.maybeOf(context);
+    _panelController?.registerSearchToggle(_toggleSearch);
   }
 
   void _onSearchChanged() {
@@ -47,10 +59,23 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       priorityBloc.updateSearch(search);
       // Dispatch to PrioritiesBloc to filter sidebar
       context.read<PrioritiesBloc>().updateSearch(search);
-      // Dispatch to ActivityHeaderNotifier if activity is visible
-      final notifier = ActivityHeaderNotifierProvider.of(context);
+      // Dispatch to ThreadHeaderNotifier if activity is visible
+      final notifier = ThreadHeaderNotifierProvider.of(context);
       notifier?.onSearchChanged?.call(search);
     });
+  }
+
+  void _toggleSearch() {
+    if (_searchExpanded) {
+      _closeSearch();
+    } else {
+      setState(() {
+        _searchExpanded = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _searchFocusNode.requestFocus();
+        });
+      });
+    }
   }
 
   void _closeSearch() {
@@ -64,13 +89,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     // Clear PrioritiesBloc search
     context.read<PrioritiesBloc>().updateSearch('');
     // Clear activity search
-    final notifier = ActivityHeaderNotifierProvider.of(context);
+    final notifier = ThreadHeaderNotifierProvider.of(context);
     notifier?.onSearchChanged?.call('');
     notifier?.onSearchClosed?.call();
   }
 
   @override
   void dispose() {
+    _panelController?.unregisterSearchToggle();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -84,7 +110,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       builder: (context, layoutState) {
         return BlocBuilder<PriorityBloc, PriorityState>(
           builder: (context, state) {
-            final notifier = ActivityHeaderNotifierProvider.of(context);
+            final notifier = ThreadHeaderNotifierProvider.of(context);
 
             return ListenableBuilder(
               listenable: notifier ?? ChangeNotifier(),
@@ -102,14 +128,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     BuildContext context,
     LayoutState layoutState,
     PriorityState state,
-    ActivityHeaderNotifier? notifier,
+    ThreadHeaderNotifier? notifier,
   ) {
     final resolvedToolbarPadding = Window.toolbarPadding.resolve(
       TextDirection.ltr,
     );
 
-    final isActivityVisible = notifier?.isActivityVisible ?? false;
-    final hasActivity = state.activity != null || isActivityVisible;
+    final isThreadVisible = notifier?.isThreadVisible ?? false;
+    final hasActivity = state.thread != null || isThreadVisible;
 
     // --- Build title children ---
     final titleChildren = <Widget>[
@@ -121,7 +147,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (!layoutState.multiPanel && hasActivity)
         Button.icon(
           CommandWrapper(
-            ChangeCurrentActivity(null),
+            ChangeCurrentThread(null),
             icon: Value(PlotIcon.back),
           ),
         )
@@ -144,9 +170,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     ];
 
     // --- Build suffixes ---
+    final thread = state.thread;
     final suffixes = <Widget>[
-      // New Activity button (multiPanel only, since bottom nav has it otherwise)
-      if (layoutState.multiPanel) Button.icon(NewActivity()),
+      // Active tag toggles (when thread is visible)
+      if (thread != null)
+        ..._buildActiveTagToggles(context, thread, notifier),
+
+      // Todo toggle (when thread is visible)
+      if (thread != null) _buildTodoToggle(context, thread),
+
+      // New Thread button (multiPanel only, since bottom nav has it otherwise)
+      if (layoutState.multiPanel) Button.icon(NewThread()),
 
       // Menu button
       Button.icon(_buildMenuCommand(state, layoutState, notifier)),
@@ -166,7 +200,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
               border: Border(
                 bottom: BorderSide(
                   color: context.theme.colors.border,
-                  width: 0.5,
+                  width: 1,
                 ),
               ),
             ),
@@ -204,14 +238,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     return Button.icon(
       ToggleSearchCommand(
         searchExpanded: _searchExpanded,
-        onToggle: () {
-          setState(() {
-            _searchExpanded = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _searchFocusNode.requestFocus();
-            });
-          });
-        },
+        onToggle: _toggleSearch,
       ),
     );
   }
@@ -224,15 +251,15 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   ) {
     final search = _searchButton();
 
-    // When only ActivityPage is visible in single-panel mode, show activity title
-    if (!layoutState.multiPanel && hasActivity && state.activity != null) {
+    // In single panel with a thread visible, show activity title
+    if (!layoutState.multiPanel && hasActivity && state.thread != null) {
       return Expanded(
         child: Row(
           spacing: 8,
           children: [
-            Expanded(
+            Flexible(
               child: Text(
-                state.activity!.displayTitle,
+                state.thread!.displayTitle,
                 overflow: TextOverflow.ellipsis,
                 style: context.theme.typography.base,
               ),
@@ -243,53 +270,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       );
     }
 
-    // When middle panel is hidden in multi-panel and activity is visible, show activity title
-    if (layoutState.multiPanel &&
-        !layoutState.middlePanelVisible &&
-        state.activity != null) {
-      return Expanded(
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 8,
-            children: [
-              Flexible(
-                child: Text(
-                  state.activity!.displayTitle,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.theme.typography.base,
-                ),
-              ),
-              search,
-            ],
-          ),
-        ),
-      );
-    }
-
     // Default: show PrioritySelector with search button
     final selector = PrioritySelector(
       selected: state.context,
       onSelect: (p) => context.run(ChangeCurrentPriority(p)),
     );
 
-    if (layoutState.multiPanel) {
-      return Expanded(
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 8,
-            children: [selector, search],
-          ),
-        ),
-      );
-    }
-
     return Expanded(
       child: Row(
         spacing: 8,
         children: [
-          Expanded(child: selector),
+          Flexible(child: selector),
           search,
         ],
       ),
@@ -300,7 +291,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     BuildContext context,
     LayoutState layoutState,
     PriorityState state,
-    ActivityHeaderNotifier? notifier,
+    ThreadHeaderNotifier? notifier,
   ) {
     // Build filter commands based on visibility
     final filterCommands = <Command>[
@@ -313,7 +304,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           .where((tag) => !state.tags.any((t) => t.$1 == tag))
           .map((tag) => ToggleActivityFilter(tag, context: context)),
       // Activity note filters (when activity is visible)
-      if (notifier?.isActivityVisible == true)
+      if (notifier?.isThreadVisible == true)
         ...notifier!.tags.map(
           (tagData) => ToggleNoteFilter(tagData.$1, context: context),
         ),
@@ -321,7 +312,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     return Expanded(
       child: Align(
-        alignment: Alignment.center,
+        alignment: Alignment.centerLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
           child: Padding(
@@ -378,17 +369,64 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     );
   }
 
+  /// Builds the todo toggle button matching ThreadWidget's leading icon behavior.
+  Widget _buildTodoToggle(BuildContext context, Thread thread) {
+    final threadColor = context.colour.colours.fromTheme(
+      thread.priority.displayColor,
+    );
+    final isTodo = thread.todo;
+
+    final Command command;
+    if (!isTodo) {
+      command = CommandWrapper(
+        ThreadToDo(thread),
+        icon: Value(PlotIcon.addTodo),
+      );
+    } else if (thread.isFuture) {
+      command = CommandWrapper(
+        ThreadDone(thread),
+        icon: Value(PlotIcon.schedule),
+      );
+    } else {
+      command = CommandWrapper(
+        ThreadDone(thread),
+        icon: Value(PlotIcon.todo),
+      );
+    }
+
+    return Button.icon(
+      command,
+      selected: isTodo,
+      selectedColor: threadColor,
+      color: isTodo ? null : context.theme.plotColors.veryMuted,
+    );
+  }
+
+  /// Builds active tag toggle buttons for the current thread.
+  List<Widget> _buildActiveTagToggles(
+    BuildContext context,
+    Thread thread,
+    ThreadHeaderNotifier? notifier,
+  ) {
+    final tags = notifier?.tags ?? const [];
+    return tags
+        .where((tagData) => thread.hasTag(tagData.$1))
+        .take(3)
+        .map((tagData) => Button.icon(ToggleThreadTag(thread, tagData.$1)))
+        .toList();
+  }
+
   Command _buildMenuCommand(
     PriorityState state,
     LayoutState layoutState,
-    ActivityHeaderNotifier? notifier,
+    ThreadHeaderNotifier? notifier,
   ) {
     // Build combined command groups
     final groups = <CommandGroup>[
-      if (state.activity != null)
+      if (state.thread != null)
         StaticCommandGroup(
-          title: 'Topic: ${state.activity!.displayTitle}',
-          commands: activityCommands(state.activity!),
+          title: 'Thread: ${state.thread!.displayTitle}',
+          commands: threadCommands(state.thread!),
         ),
       ...currentPriorityCommandGroups(state.context),
     ];

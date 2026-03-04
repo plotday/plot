@@ -161,6 +161,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                             context,
                             context.theme,
                             context.colour,
+                            steps: 2,
                           ),
                           child: widget.left,
                         ),
@@ -389,8 +390,7 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                 // calls markNeedsPaint; Positioned only marks layout).
                 // Skip when controller regions are stale (count mismatch)
                 // to avoid rendering dividers at wrong positions.
-                if (_controller.regions.length ==
-                        widget.regions.length &&
+                if (_controller.regions.length == widget.regions.length &&
                     _controller.regions.isNotEmpty)
                   for (var i = 0; i < _controller.regions.length - 1; i++)
                     Transform.translate(
@@ -418,12 +418,14 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
                                 curve: Curves.easeInOut,
-                                width: (_hoveredDividerIndex == i ||
+                                width:
+                                    (_hoveredDividerIndex == i ||
                                         _draggingDividerIndex == i)
                                     ? 2.0
-                                    : 0.5,
+                                    : 1,
                                 height: overlayHeight,
-                                color: (_hoveredDividerIndex == i ||
+                                color:
+                                    (_hoveredDividerIndex == i ||
                                         _draggingDividerIndex == i)
                                     ? colorScheme.accent
                                     : context.theme.colors.border,

@@ -298,7 +298,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // Get all priority IDs
     final priorityIds = priorities.map((p) => p.id).toList();
 
-    // Compute which priorities have active/unread activities
+    // Compute which priorities have active/unread threads
     final activeIds = await _getActivePriorityIds(priorityIds);
     final unreadIds = await _getUnreadPriorityIds(priorityIds);
 
@@ -318,7 +318,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     }).toList();
   }
 
-  /// Efficiently gets which priority IDs from the given list have active activities.
+  /// Efficiently gets which priority IDs from the given list have active threads.
   static Future<Set<PriorityId>> _getActivePriorityIds(
     List<PriorityId> ids,
   ) async {
@@ -338,25 +338,24 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       userActorIds.add(Base.actorId.toBytes());
     }
 
-    final a = Store.get.activities;
+    final a = Store.get.threads;
+    final s = Store.get.schedules;
     final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
+    query.join([leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.occurrence.isNull() & s.userId.isNull())]);
 
     // Convert PriorityId (Uuid) to Uint8List for isIn query
     final idBytes = ids.map((id) => id.toBytes()).toList();
 
     query.where(
       a.priorityId.isIn(idBytes) &
-          a.type.equalsValue(ActivityType.action) &
-          a.assigneeId.isIn(userActorIds) &
-          a.doneAt.isNull() &
           a.archivedAt.isNull() &
           (
           // DateTime scheduled
-          (a.startAt.isSmallerOrEqualValue(now) & a.startOn.isNull()) |
+          (s.startAt.isSmallerOrEqualValue(now) & s.startOn.isNull()) |
               // Date scheduled
-              (a.startOn.isSmallerOrEqualValue(today) & a.startAt.isNull()) |
+              (s.startOn.isSmallerOrEqualValue(today) & s.startAt.isNull()) |
               // Unscheduled
-              (a.startAt.isNull() & a.startOn.isNull())),
+              (s.startAt.isNull() & s.startOn.isNull())),
     );
 
     final results = await query.get();
@@ -365,13 +364,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .toSet();
   }
 
-  /// Efficiently gets which priority IDs from the given list have unread activities.
+  /// Efficiently gets which priority IDs from the given list have unread threads.
   static Future<Set<PriorityId>> _getUnreadPriorityIds(
     List<PriorityId> ids,
   ) async {
     if (ids.isEmpty) return {};
 
-    final a = Store.get.activities;
+    final a = Store.get.threads;
     final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
 
     // Convert PriorityId (Uuid) to Uint8List for isIn query
@@ -391,10 +390,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .toSet();
   }
 
-  /// Watches which priorities have unread activities.
+  /// Watches which priorities have unread threads.
   /// Returns a stream of priority IDs that have unread items.
   static Stream<Set<PriorityId>> _watchUnreadPriorityIds() {
-    final a = Store.get.activities;
+    final a = Store.get.threads;
     final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
 
     query.where(
@@ -414,7 +413,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .distinct();
   }
 
-  /// Watches which priorities have active activities.
+  /// Watches which priorities have active threads.
   /// Returns a stream of priority IDs that have active tasks.
   /// Time-based filtering is done in-memory to allow reactive updates.
   static Stream<Set<PriorityId>> _watchActivePriorityIds() {
@@ -429,18 +428,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       userActorIds.add(Base.actorId.toBytes());
     }
 
-    final a = Store.get.activities;
+    final a = Store.get.threads;
+    final s = Store.get.schedules;
 
-    // Query for activities that could be active (without time filtering)
+    // Query for threads that could be active (without time filtering)
     // We'll filter by time in the map to allow reactive updates
     final query = Store.get.selectOnly(a)
-      ..addColumns([a.priorityId, a.startAt, a.startOn]);
+      ..addColumns([a.priorityId, s.startAt, s.startOn]);
+    query.join([leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.occurrence.isNull() & s.userId.isNull())]);
 
     query.where(
-      a.type.equalsValue(ActivityType.action) &
-          a.assigneeId.isIn(userActorIds) &
-          a.doneAt.isNull() &
-          a.archivedAt.isNull(),
+      a.archivedAt.isNull(),
     );
 
     return query.watch().map((results) {
@@ -449,8 +447,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
       return results
           .where((row) {
-            final startAt = row.read(a.startAt);
-            final startOn = row.read(a.startOn);
+            final startAt = row.read(s.startAt);
+            final startOn = row.read(s.startOn);
 
             // DateTime scheduled and active
             if (startAt != null && startOn == null) {
@@ -852,7 +850,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// This is an in-memory property only, not persisted to the database.
   final bool draft;
 
-  /// Computed active status from query (true if priority has active activities).
+  /// Computed active status from query (true if priority has active threads).
   /// Falls back to false if not computed.
   final bool? _activeComputed;
 
@@ -860,10 +858,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Falls back to row's unread value if not computed.
   final bool? _unreadComputed;
 
-  /// Returns true if this priority has active activities.
+  /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
 
-  /// Returns true if this priority has unread activities (considering local overrides).
+  /// Returns true if this priority has unread threads (considering local overrides).
   /// Falls back to the row's unread value if not computed.
   @override
   bool get unread => _unreadComputed ?? super.unread;

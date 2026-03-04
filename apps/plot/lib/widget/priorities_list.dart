@@ -4,18 +4,21 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/widget.dart';
 
 class PrioritiesList extends StatefulWidget {
   final List<Priority> topPriorities;
   final Priority root;
   final Priority? selected;
+  final bool showPlotSection;
 
   PrioritiesList({
     super.key,
     required this.root,
     required List<Priority> priorities,
     this.selected,
+    this.showPlotSection = true,
   }) : topPriorities = priorities.where((p) => p.topOrder != null).toList()
          ..sort(
            (a, b) => (a.topOrder?.value ?? 0).compareTo(b.topOrder?.value ?? 0),
@@ -144,6 +147,11 @@ class _PrioritiesListState extends State<PrioritiesList>
     if (!isMultiPanel) return true;
     if (widget.selected == null) return true;
 
+    // Don't expand @plot children when "Everything" (root) is selected
+    if (widget.selected!.id == widget.root.id && _isPlotDescendant(priority)) {
+      return false;
+    }
+
     final selectedAncestors = widget.selected!.ancestors(includeSelf: false);
     if (selectedAncestors.any((a) => a.id == priority.id)) {
       return true;
@@ -157,6 +165,15 @@ class _PrioritiesListState extends State<PrioritiesList>
       return true;
     }
 
+    return false;
+  }
+
+  bool _isPlotDescendant(Priority priority) {
+    Priority? current = priority;
+    while (current != null) {
+      if (current.key == '@plot') return true;
+      current = current.parent;
+    }
     return false;
   }
 
@@ -392,6 +409,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                   style: ListTileStyle.header,
                   textStyle: headerStyle,
                   noHoverHighlight: true,
+                  centered: true,
                 ),
                 ReorderableListView<Priority>(
                   list: widget.topPriorities,
@@ -455,6 +473,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                     style: ListTileStyle.header,
                     textStyle: headerStyle,
                     noHoverHighlight: true,
+                    centered: true,
                   ),
                   ...buildReorderablePriorityItems(
                     context,
@@ -465,6 +484,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                     command: CommandWrapper(
                       NewPriority(parent: widget.root),
                       icon: Value(null),
+                      title: '➕ Add a Priority',
                     ),
                     textStyle: itemStyle.copyWith(
                       color: context.theme.colors.mutedForeground,
@@ -472,7 +492,8 @@ class _PrioritiesListState extends State<PrioritiesList>
                   ),
 
                   // Fourth group: Plot section (children of @plot priority)
-                  if (plotPriority != null &&
+                  if (widget.showPlotSection &&
+                      plotPriority != null &&
                       plotPriority.children.isNotEmpty) ...[
                     SizedBox(height: 16),
                     ListTile(
@@ -480,6 +501,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                       style: ListTileStyle.header,
                       textStyle: headerStyle,
                       noHoverHighlight: true,
+                      centered: true,
                     ),
                     ...buildReorderablePriorityItems(
                       context,
@@ -621,7 +643,7 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
               SizedBox(width: 20),
               Expanded(
                 child: Padding(
-                  padding: widgetPaddingSm.copyWith(left: 0, right: 0),
+                  padding: context.theme.spacing.paddingSm.copyWith(left: 0, right: 0),
                   child: Text(
                     'More\u2026',
                     style: (widget.textStyle ?? context.theme.typography.sm)

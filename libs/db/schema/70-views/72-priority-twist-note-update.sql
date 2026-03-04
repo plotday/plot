@@ -14,19 +14,19 @@ SELECT
     n.updated_by,
     n.sync_depth,
     n.archived_at,
-    n.activity_id,
+    n.thread_id,
     n.draft,
     n.private,
     n.content,
-    n.links,
+    n.actions,
     n.key,
     n.mentions,
     n.re_note_id,
     -- Enriched fields
     a.priority_id,
-    a.title AS activity_title,
-    a.created_by AS activity_created_by,
-    a.meta AS activity_meta,
+    a.title AS thread_title,
+    a.created_by AS thread_created_by,
+    NULL::jsonb AS thread_meta,
     author.name AS author_name,
     author.type AS author_type,
     nt.tags
@@ -34,8 +34,8 @@ FROM
     priority_twist pt
     JOIN priority pp ON pp.id = pt.priority_id
     JOIN priority pc ON pc.path <@ pp.path
-    JOIN activity a ON a.priority_id = pc.id
-    JOIN note n ON a.id = n.activity_id
+    JOIN thread a ON a.priority_id = pc.id
+    JOIN note n ON a.id = n.thread_id
     LEFT JOIN actor author ON author.id = n.author_id
     LEFT JOIN note_tags nt ON nt.note_id = n.id
 WHERE

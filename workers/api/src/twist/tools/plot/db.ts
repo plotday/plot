@@ -1,80 +1,13 @@
 import {
-  type Activity,
-  type Link,
-  type ActivityMeta,
-  ActivityType,
-  type ActivityKind,
+  type Thread,
+  type Action,
   type ActorId,
   ActorType,
   type Note,
   type Uuid,
 } from "@plotday/twister/plot";
 
-import type { EnrichedActivity, EnrichedNote } from "../../view-types";
-
-/**
- * Parses the start date/time from range fields in database records.
- */
-export function parseRangeStart(
-  rangeOn: string | null,
-  rangeAt: string | null
-): Date | string | null {
-  // Priority: if there's a timestamp range (rangeAt), use it
-  if (rangeAt) {
-    const rangeStr = rangeAt.toString();
-    const match = rangeStr.match(/^\[([^,\]]+)/);
-    if (match) {
-      return new Date(match[1]);
-    }
-  }
-
-  // Otherwise, try date range (rangeOn)
-  if (rangeOn) {
-    const rangeStr = rangeOn.toString();
-    const match = rangeStr.match(/^\[([^,\]]+)/);
-    if (match) {
-      return match[1]; // Return as date string in YYYY-MM-DD format
-    }
-  }
-
-  return null;
-}
-
-/**
- * Parses the end date/time from range fields in database records.
- */
-export function parseRangeEnd(
-  rangeOn: string | null,
-  rangeAt: string | null
-): Date | string | null {
-  // Priority: if there's a timestamp range (rangeAt), use it
-  if (rangeAt) {
-    const rangeStr = rangeAt.toString();
-    const match = rangeStr.match(/,([^)\]]+)[)\]]/);
-    if (match) {
-      return new Date(match[1]);
-    }
-    // Check for unbounded end (ends with comma and closing bracket/paren)
-    if (rangeStr.match(/,[)\]]$/)) {
-      return null;
-    }
-  }
-
-  // Otherwise, try date range (rangeOn)
-  if (rangeOn) {
-    const rangeStr = rangeOn.toString();
-    const match = rangeStr.match(/,([^)\]]+)[)\]]/);
-    if (match) {
-      return match[1]; // Return as date string in YYYY-MM-DD format
-    }
-    // Check for unbounded end (ends with comma and closing bracket/paren)
-    if (rangeStr.match(/,[)\]]$/)) {
-      return null;
-    }
-  }
-
-  return null;
-}
+import type { EnrichedThread, EnrichedNote } from "../../view-types";
 
 /**
  * Calculates which tags were added between two tag states.
@@ -123,78 +56,36 @@ export function calculateTagsRemoved(
 }
 
 /**
- * Converts a database activity record into an Activity object.
+ * Converts a database thread record into a Thread object.
  */
-export function buildActivityFromDbRecord(
-  activityRecord: EnrichedActivity
-): Activity {
-  // Convert string activity type to ActivityType enum
-  let activityType: ActivityType;
-  switch (activityRecord.type) {
-    case "action":
-      activityType = ActivityType.Action;
-      break;
-    case "event":
-      activityType = ActivityType.Event;
-      break;
-    default:
-      activityType = ActivityType.Note;
-  }
-
+export function buildThreadFromDbRecord(
+  threadRecord: EnrichedThread
+): Thread {
   return {
-    // @ts-ignore - activityRecord.id is a string from DB, but Uuid is a branded type
-    id: activityRecord.id as any,
-    type: activityType,
-    kind: (activityRecord as any).kind as ActivityKind | null ?? null,
-    created: activityRecord.created_at ? new Date(activityRecord.created_at) : new Date(),
-    author: {
-      id: (activityRecord.author_id ?? activityRecord.created_by) as ActorId,
-      name: activityRecord.author_name,
-      type:
-        activityRecord.author_type === "user"
-          ? ActorType.User
-          : activityRecord.author_type === "priority_twist"
-          ? ActorType.Twist
-          : ActorType.Contact,
-    },
+    // @ts-ignore - threadRecord.id is a string from DB, but Uuid is a branded type
+    id: threadRecord.id as any,
+    created: threadRecord.created_at ? new Date(threadRecord.created_at) : new Date(),
     priority: {
-      id: activityRecord.priority_id as Uuid,
-      title: activityRecord.priority_title ?? "",
+      id: threadRecord.priority_id as Uuid,
+      title: threadRecord.priority_title ?? "",
       archived: false,
       key: null,
       color: null,
     },
-    start: parseRangeStart(activityRecord.on as string | null, activityRecord.at as string | null),
-    end: parseRangeEnd(activityRecord.on as string | null, activityRecord.at as string | null),
-    recurrenceUntil: null,
-    recurrenceCount: null,
-    done: activityRecord.done_at ? new Date(activityRecord.done_at) : null,
-    title: activityRecord.title || "",
-    assignee: activityRecord.assignee_id
-      ? {
-          id: activityRecord.assignee_id as ActorId,
-          name: null, // Not enriched in database view
-          type: ActorType.User, // Default type, not enriched in database view
-        }
-      : null,
-    private: activityRecord.private ?? false,
-    archived: activityRecord.archived_at !== null,
-    recurrenceRule: activityRecord.recurrence_rule,
-    recurrenceExdates: activityRecord.recurrence_exdates
-      ? activityRecord.recurrence_exdates.map((date: string) => new Date(date))
-      : null,
-    meta: activityRecord.meta as ActivityMeta | null,
-    order: (activityRecord as any).order ?? 0,
-    links: (activityRecord as any).links as Link[] | null ?? null,
-    source: activityRecord.source || null,
-    tags: (activityRecord.tags as Partial<Record<number, ActorId[]>>) || {},
-    mentions: (activityRecord.mentions as ActorId[]) || [],
+    title: threadRecord.title || "",
+    private: threadRecord.private ?? false,
+    archived: threadRecord.archived_at !== null,
+    tags: (threadRecord.tags as Partial<Record<number, ActorId[]>>) || {},
+    mentions: (threadRecord.mentions as ActorId[]) || [],
   };
 }
 
+/** @deprecated Use buildThreadFromDbRecord */
+export const buildActivityFromDbRecord = buildThreadFromDbRecord;
+
 /**
  * Converts a database note record into a Note object.
- * Note: The activity field only contains minimal data (id and priority) since the full activity
+ * Note: The thread field only contains minimal data (id and priority) since the full thread
  * is not included in enriched note views. This is sufficient for intent handlers.
  */
 export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
@@ -202,15 +93,15 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     // @ts-ignore - noteRecord.id is a string from DB, but Uuid is a branded type
     id: noteRecord.id as any,
     created: noteRecord.created_at ? new Date(noteRecord.created_at) : new Date(),
-    // @ts-ignore - Partial Activity data from NoteItem payload
-    activity: {
-      id: noteRecord.activity_id,
+    // @ts-ignore - Partial Thread data from NoteItem payload
+    thread: {
+      id: noteRecord.thread_id,
       priority: {
         id: noteRecord.priority_id,
       },
       // Include meta if available in payload (for note.created callbacks)
-      ...(noteRecord.activity_meta && { meta: noteRecord.activity_meta }),
-    } as unknown as Activity,
+      ...(noteRecord.thread_meta && { meta: noteRecord.thread_meta }),
+    } as unknown as Thread,
     author: {
       id: (noteRecord.author_id ?? noteRecord.created_by) as ActorId,
       name: noteRecord.author_name,
@@ -228,6 +119,6 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     tags: (noteRecord.tags as Partial<Record<number, ActorId[]>>) || {},
     private: noteRecord.private ?? false,
     archived: noteRecord.archived_at !== null,
-    links: noteRecord.links as Array<Link> | null,
+    actions: noteRecord.actions as Array<Action> | null,
   };
 }

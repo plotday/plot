@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 import 'package:prism_flutter/prism_flutter.dart';
 
 import 'package:plot/style/colors.dart';
+import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 
 FAlertStyles buildAlertStyles(
@@ -24,7 +25,7 @@ FAlertStyles buildAlertStyles(
     primary: baseStyles.primary.copyWith(
       decoration: BoxDecoration(
         color: colourScheme.accentBackground.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(borderRadiusMd),
         border: Border.all(color: colourScheme.accent.withValues(alpha: 0.2)),
       ),
       iconStyle: IconThemeData(color: colourScheme.accent, size: iconSizes.lg),
@@ -38,7 +39,7 @@ FAlertStyles buildAlertStyles(
     destructive: baseStyles.destructive.copyWith(
       decoration: BoxDecoration(
         color: destructiveColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(borderRadiusMd),
         border: Border.all(color: destructiveColor.withValues(alpha: 0.3)),
       ),
       iconStyle: IconThemeData(color: destructiveColor, size: iconSizes.lg),

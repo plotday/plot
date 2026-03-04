@@ -9,7 +9,7 @@ class PlotIcon {
   static const verticalExpand = FontAwesomeIcons.anglesUpDown;
   static const addActivity = FontAwesomeIcons.arrowUp;
   static const pipe = FontAwesomeIcons.pipe;
-  static const today = FontAwesomeIcons.calendar;
+  static const schedule = FontAwesomeIcons.calendar;
   static const add = FontAwesomeIcons.plusLarge;
   static const addNote = FontAwesomeIcons.penToSquare;
   static const remove = FontAwesomeIcons.minus;
@@ -24,6 +24,7 @@ class PlotIcon {
   static const close = FontAwesomeIcons.xmark;
   static const back = FontAwesomeIcons.arrowLeft;
   static const settings = FontAwesomeIcons.gear;
+  static const account = FontAwesomeIcons.bars;
   static const event = FontAwesomeIcons.calendar;
   static const signOut = FontAwesomeIcons.rightFromBracket;
   static const sync = FontAwesomeIcons.arrowsRotate;
@@ -36,7 +37,7 @@ class PlotIcon {
   static const unpin = FontAwesomeIcons.thumbtackAngleSlash;
   static const next = FontAwesomeIcons.arrowDownToLine;
   static const previous = FontAwesomeIcons.arrowUpToLine;
-  static const note = FontAwesomeIcons.notes;
+  static const note = FontAwesomeIcons.note;
   static const reschedule = FontAwesomeIcons.calendarPen;
   static const calendarPlus = FontAwesomeIcons.calendarPlus;
   static const calendarXmark = FontAwesomeIcons.calendarXmark;
@@ -46,26 +47,25 @@ class PlotIcon {
   static const private = FontAwesomeIcons.lock;
   static const offline = FontAwesomeIcons.wifiSlash;
 
-  // Activity kind icons
-  static const document = FontAwesomeIcons.fileLines;
-  static const messages = FontAwesomeIcons.messages;
-  static const meeting = FontAwesomeIcons.users;
-  static const videoconference = FontAwesomeIcons.video;
-  static const phone = FontAwesomeIcons.phone;
-  static const focus = FontAwesomeIcons.bullseye;
-  static const meal = FontAwesomeIcons.utensils;
-  static const exercise = FontAwesomeIcons.dumbbell;
-  static const family = FontAwesomeIcons.peopleGroup;
-  static const travel = FontAwesomeIcons.plane;
-  static const social = FontAwesomeIcons.userGroup;
-  static const entertainment = FontAwesomeIcons.film;
+  // Task icons
+  static const selfTask = FontAwesomeIcons.circlePlus;
+  static const selfTaskTodo = FontAwesomeIcons.circle;
+  static const selfTaskDone = FontAwesomeIcons.check;
+  static const selfTaskHover = FontAwesomeIcons.circleCheck;
+  static const selfTaskDoneHover = FontAwesomeIcons.circlePlus;
+  static const othersTask = FontAwesomeIcons.circleUser;
+  static const othersTaskDone = FontAwesomeIcons.circleUserCircleCheck;
+  static const assignAdd = FontAwesomeIcons.circleUserCirclePlus;
+  static const assignRemove = FontAwesomeIcons.circleUserCircleXmark;
 
   // Tags
   static const now = FontAwesomeIcons.circlePlay;
   static const inbox = FontAwesomeIcons.inbox;
-  static const todo = FontAwesomeIcons.inbox;
+  static const todo = FontAwesomeIcons.inboxFull;
+  static const addTodo = FontAwesomeIcons.inboxIn;
   static const someday = FontAwesomeIcons.circleMoon;
   static const later = FontAwesomeIcons.clock;
+  static const alarmClock = FontAwesomeIcons.alarmClock;
   static const done = FontAwesomeIcons.check;
   static const other = FontAwesomeIcons.circleUser;
   static const otherDone = FontAwesomeIcons.check;
@@ -82,6 +82,7 @@ class PlotIcon {
   static const blocked = FontAwesomeIcons.octagonXmark;
   static const warning = FontAwesomeIcons.triangleExclamation;
   static const twist = FontAwesomeIcons.wavesSine;
+  static const connection = FontAwesomeIcons.plug;
   static const star = FontAwesomeIcons.star;
   static const idea = FontAwesomeIcons.lightbulb;
   static const unread = FontAwesomeIcons.messageDot;
@@ -91,6 +92,9 @@ class PlotIcon {
   static const totally = FontAwesomeIcons.hundredPoints;
   static const looking = FontAwesomeIcons.eyes;
   static const heart = FontAwesomeIcons.heart;
+  static const gettingStarted = FontAwesomeIcons.play;
+  static const code = FontAwesomeIcons.hammer;
+  static const help = FontAwesomeIcons.commentsQuestion;
   static const rocket = FontAwesomeIcons.rocket;
   static const sparkles = FontAwesomeIcons.sparkles;
   static const thanks = FontAwesomeIcons.handsPraying;
