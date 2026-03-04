@@ -551,10 +551,12 @@ class ThreadDone extends _UpdateThreadCommand {
     // Optimistic removal for instant UI feedback
     context.read<PriorityBloc?>()?.optimisticallyRemoveThread(thread.id);
     HapticFeedback.mediumImpact();
-    await onUpdate(thread.copyWith(
-      todo: false,
-      doneAt: setDoneAt ? const Value.absent() : const Value(null),
-    ));
+    await onUpdate(
+      thread.copyWith(
+        todo: false,
+        doneAt: setDoneAt ? const Value.absent() : const Value(null),
+      ),
+    );
     return const CommandDone();
   }
 }
@@ -863,6 +865,7 @@ class MergeThreadInto extends ShowCommands {
       priorityPath: thread.priority.path,
       archived: false,
       draft: false,
+      order: ThreadOrder.reverse,
     );
     final filtered = threads.where((t) => t.id != thread.id).toList();
     return Commands(
@@ -1080,8 +1083,9 @@ class SplitThread extends Command {
       if (threads.isNotEmpty) sourceThreads.add(threads.first);
     }
 
-    if (sourceThreads.isEmpty || !context.mounted)
+    if (sourceThreads.isEmpty || !context.mounted) {
       return const CommandSkipped();
+    }
 
     // Show picker
     final commands = Commands(

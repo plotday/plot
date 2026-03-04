@@ -72,6 +72,7 @@ notes.post("/sync/notes", async (c) => {
       p_re_note_id: body.re_note_id || null,
       p_source_created_at: body.source_created_at || null,
       p_key: body.key || null,
+      p_merged_from_thread_id: body.merged_from_thread_id || null,
     });
   });
 

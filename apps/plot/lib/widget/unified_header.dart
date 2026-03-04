@@ -421,20 +421,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     LayoutState layoutState,
     ThreadHeaderNotifier? notifier,
   ) {
-    // Build combined command groups
-    final groups = <CommandGroup>[
-      if (state.thread != null)
-        StaticCommandGroup(
-          title: 'Thread: ${state.thread!.displayTitle}',
-          commands: threadCommands(state.thread!),
-        ),
-      ...currentPriorityCommandGroups(state.context),
-    ];
-
     return ShowCommands(
       title: 'Menu',
       icon: PlotIcon.menu,
-      commands: Commands(groups: groups),
+      commandsBuilder: (context) async {
+        final thread = state.thread;
+        final threadGroups = thread != null
+            ? await threadCommandGroups(thread)
+            : <StaticCommandGroup>[];
+        return Commands(
+          groups: [
+            ...threadGroups,
+            ...currentPriorityCommandGroups(state.context),
+          ],
+        );
+      },
     );
   }
 }
