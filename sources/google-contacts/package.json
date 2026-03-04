@@ -2,7 +2,7 @@
   "name": "@plotday/source-google-contacts",
   "plotTwistId": "748bb590-5da3-4782-aa6f-6a98fc2d3555",
   "displayName": "Google Contacts",
-  "description": "",
+  "description": "Contacts from Google",
   "logoUrl": "https://api.iconify.design/logos/google-contacts.svg",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
@@ -17,11 +17,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "private": true,
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
@@ -49,8 +45,5 @@
     "tool",
     "google-contacts",
     "contacts"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

@@ -67,11 +67,8 @@ jobs:
             # Determine package directory
             if [[ "$name" == "@plotday/twister" ]]; then
               pkg_dir="twister"
-            elif [[ "$name" == @plotday/tool-* ]]; then
-              tool_name="${name#@plotday/tool-}"
-              pkg_dir="tools/$tool_name"
             else
-              echo "Unknown package: $name"
+              echo "Skipping unknown package: $name"
               continue
             fi
 

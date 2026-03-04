@@ -2,7 +2,7 @@
   "name": "@plotday/source-jira",
   "plotTwistId": "07f11ed7-9555-431d-b01a-99aff550d778",
   "displayName": "Jira",
-  "description": "",
+  "description": "Issues from Jira",
   "logoUrl": "https://api.iconify.design/logos/jira.svg",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
@@ -17,11 +17,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "private": true,
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
@@ -50,8 +46,5 @@
     "jira",
     "atlassian",
     "project-management"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

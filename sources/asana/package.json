@@ -2,7 +2,7 @@
   "name": "@plotday/source-asana",
   "plotTwistId": "d8f4e839-c152-41a2-926c-700e23d4fc77",
   "displayName": "Asana",
-  "description": "",
+  "description": "Tasks from Asana",
   "logoUrl": "https://api.iconify.design/logos/asana.svg",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
@@ -17,11 +17,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "private": true,
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
@@ -51,8 +47,5 @@
     "tool",
     "asana",
     "project-management"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

@@ -2,7 +2,7 @@
   "name": "@plotday/source-gmail",
   "plotTwistId": "7176b853-4495-4bba-82ee-645ae5d398d7",
   "displayName": "Gmail",
-  "description": "Emails that need your attention",
+  "description": "Email threads from Gmail",
   "logoUrl": "https://api.iconify.design/logos/google-gmail.svg",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
@@ -17,11 +17,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "private": true,
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
@@ -50,8 +46,5 @@
     "gmail",
     "messaging",
     "email"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

@@ -2,7 +2,7 @@
   "name": "@plotday/source-google-calendar",
   "plotTwistId": "2ed4fcf8-6524-410f-b318-f9316e71c8b0",
   "displayName": "Google Calendar",
-  "description": "",
+  "description": "Events from Google Calendar",
   "logoUrl": "https://api.iconify.design/logos/google-calendar.svg",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
@@ -17,11 +17,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "private": true,
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
@@ -50,8 +46,5 @@
     "tool",
     "google-calendar",
     "calendar"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

@@ -17,11 +17,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "private": true,
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
@@ -49,8 +45,5 @@
     "tool",
     "slack",
     "messaging"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

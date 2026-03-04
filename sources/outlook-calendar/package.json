@@ -2,7 +2,7 @@
   "name": "@plotday/source-outlook-calendar",
   "plotTwistId": "cf518010-30c1-4594-b3df-295a19d65459",
   "displayName": "Outlook Calendar",
-  "description": "",
+  "description": "Events from Outlook Calendar",
   "logoUrl": "https://api.iconify.design/simple-icons/microsoftoutlook.svg",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
@@ -17,11 +17,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "private": true,
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
@@ -51,8 +47,5 @@
     "outlook",
     "microsoft",
     "calendar"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }
