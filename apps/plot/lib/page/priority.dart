@@ -755,15 +755,16 @@ class _PriorityPageState extends State<PriorityPage>
                                         context.run(
                                           OpenFocusedItemActions(
                                             resolvedController,
-                                            (index) {
+                                            (index) async {
                                               final item =
                                                   index >= 0 &&
                                                       index <
                                                           resolvedItems.length
                                                   ? resolvedItems[index]
                                                   : null;
-                                              return item?.when<
-                                                    List<StaticCommandGroup>
+                                              if (item == null) return <StaticCommandGroup>[];
+                                              return await item.when<
+                                                    Future<List<StaticCommandGroup>>
                                                   >(
                                                     activity:
                                                         (agendaActivity) =>
@@ -771,7 +772,7 @@ class _PriorityPageState extends State<PriorityPage>
                                                               agendaActivity
                                                                   .thread,
                                                             ),
-                                                    header: (header) {
+                                                    header: (header) async {
                                                       if (header.priority ==
                                                               null ||
                                                           header.priority!.id ==
@@ -786,8 +787,7 @@ class _PriorityPageState extends State<PriorityPage>
                                                         header.priority!,
                                                       );
                                                     },
-                                                  ) ??
-                                                  <StaticCommandGroup>[];
+                                                  );
                                             },
                                           ),
                                         );
@@ -827,7 +827,7 @@ class _PriorityPageState extends State<PriorityPage>
                                     : null;
                                 return item?.when<List<StaticCommandGroup>>(
                                       activity: (agendaActivity) =>
-                                          threadCommandGroups(
+                                          threadCommandGroupsSync(
                                             agendaActivity.thread,
                                           ),
                                       header: (header) {

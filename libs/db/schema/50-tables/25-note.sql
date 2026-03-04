@@ -15,7 +15,8 @@ CREATE TABLE "public"."note" (
     "actions" jsonb,
     "key" text,
     "mentions" uuid[],
-    "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL
+    "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL,
+    "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL
 );
 
 COMMENT ON COLUMN "public"."note"."source_created_at" IS 'When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot''s database.';

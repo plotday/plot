@@ -535,8 +535,7 @@ class ThreadCommands extends HookWidget {
     final threadTags = useMemoized(
       () => Tag.getAll(onlyAddable: true)
           .where(
-            (tag) =>
-                activity.hasTag(tag) && ![Tag.todo, Tag.done].contains(tag),
+            (tag) => activity.hasTag(tag) && tag != Tag.todo,
           )
           .toList(),
       [activity.tags, activity.todo, activity.done],

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -170,9 +172,7 @@ class OpenNextThread extends Command {
         title: 'Next Thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
-        shortcut: platformSingleActivator(
-          LogicalKeyboardKey.arrowDown,
-        ),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.arrowDown),
         icon: PlotIcon.next,
       );
 
@@ -217,9 +217,7 @@ class OpenPreviousThread extends Command {
         title: 'Previous Thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
-        shortcut: platformSingleActivator(
-          LogicalKeyboardKey.arrowUp,
-        ),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.arrowUp),
         icon: PlotIcon.previous,
       );
 
@@ -418,6 +416,55 @@ class ArchiveThread extends Command {
   }
 }
 
+class RenameThread extends ShowForm {
+  RenameThread(Thread thread)
+    : super(
+        title: 'Rename',
+        icon: FontAwesomeIcons.pen,
+        form: (context) async {
+          return FormData(
+            title: 'Rename',
+            groups: [
+              StaticFormGroup(
+                items: [
+                  FormTextInput(
+                    key: 'title',
+                    label: 'Title',
+                    initialValue: thread.title,
+                    required: true,
+                  ),
+                  FormButton(
+                    key: 'save',
+                    buildCommand: (values) {
+                      final title = values['title'] as String;
+                      return _SaveThreadTitle(thread, title);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      );
+}
+
+class _SaveThreadTitle extends _UpdateThreadCommand {
+  _SaveThreadTitle(super.thread, this.newTitle)
+    : super(
+        title: 'Save',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final String newTitle;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await saveOptimistically(context, thread.copyWith(title: Value(newTitle)));
+    return const CommandDone();
+  }
+}
+
 abstract class _UpdateThreadCommand extends Command {
   _UpdateThreadCommand(
     this.thread, {
@@ -457,7 +504,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(context, thread.toggleTag(Tag.todo));
+    await saveOptimistically(context, thread.copyWith(todo: !thread.todo));
     return const CommandDone();
   }
 }
@@ -474,7 +521,7 @@ class ThreadToDo extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(context, thread.toggleTag(Tag.todo));
+    await saveOptimistically(context, thread.copyWith(todo: true));
     return const CommandDone();
   }
 }
@@ -504,8 +551,10 @@ class ThreadDone extends _UpdateThreadCommand {
     // Optimistic removal for instant UI feedback
     context.read<PriorityBloc?>()?.optimisticallyRemoveThread(thread.id);
     HapticFeedback.mediumImpact();
-    // Clear dates to mark as done; setDoneAt controls whether doneAt is set
-    await onUpdate(thread.toggleTag(Tag.done, setDoneAt: setDoneAt));
+    await onUpdate(thread.copyWith(
+      todo: false,
+      doneAt: setDoneAt ? const Value.absent() : const Value(null),
+    ));
     return const CommandDone();
   }
 }
@@ -689,7 +738,11 @@ class ToggleThreadTag extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final updatedThread = thread.toggleTag(tag);
+    var updatedThread = thread.toggleTag(tag);
+    // When adding Tag.done and the user has the thread as to-do, also mark personal to-do as done
+    if (tag == Tag.done && !thread.hasTag(tag) && thread.todo) {
+      updatedThread = updatedThread.copyWith(todo: false);
+    }
     await saveOptimistically(context, updatedThread);
     return const CommandDone();
   }
@@ -795,13 +848,318 @@ class MoveThreadToPriority extends ShowCommands {
   }
 }
 
+class MergeThreadInto extends ShowCommands {
+  MergeThreadInto(this.thread)
+    : super(
+        title: 'Merge into...',
+        icon: FontAwesomeIcons.codeMerge,
+        commandsBuilder: (context) => _getMergeTargets(thread),
+      );
+
+  final Thread thread;
+
+  static Future<Commands> _getMergeTargets(Thread thread) async {
+    final threads = await Thread.get(
+      priorityPath: thread.priority.path,
+      archived: false,
+      draft: false,
+    );
+    final filtered = threads.where((t) => t.id != thread.id).toList();
+    return Commands(
+      prompt: 'Merge into',
+      groups: [
+        StaticCommandGroup(
+          title: 'Threads',
+          commands: filtered.map((t) => _ExecuteMerge(thread, t)).toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _ExecuteMerge extends ThreadCommand {
+  _ExecuteMerge(this.source, Thread target)
+    : super(
+        target,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Thread source;
+  Thread get target => thread!;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // 1. Move all non-draft notes from source to target
+    final noteRows =
+        await (Store.get.select(Store.get.notes)
+              ..where((n) => n.threadId.equalsValue(source.id))
+              ..where((n) => n.draft.equals(false)))
+            .get();
+
+    for (final noteRow in noteRows) {
+      final note = await Note.get(noteRow.id);
+      if (note == null) continue;
+      await note
+          .copyWith(threadId: target.id, mergedFromThreadId: Value(source.id))
+          .save(pushToRemote: false);
+    }
+
+    // 2. Move links from source to target
+    final linkRows = await (Store.get.select(
+      Store.get.links,
+    )..where((l) => l.threadId.equals(source.id.toBytes()))).get();
+
+    for (final linkRow in linkRows) {
+      final updated = linkRow.copyWith(
+        threadId: Value(target.id),
+        mergedFromThreadId: Value(source.id),
+        updatedAt: DateTime.now(),
+      );
+      await Store.get.add(Store.get.links, updated.toCompanion(false));
+    }
+
+    // 3. Union tags: merge source thread tags into target (per occurrence)
+    final sourceTagRows = await (Store.get.select(
+      Store.get.threadTags,
+    )..where((t) => t.id.equalsValue(source.id))).get();
+    final targetTagRows = await (Store.get.select(
+      Store.get.threadTags,
+    )..where((t) => t.id.equalsValue(target.id))).get();
+
+    // Build a map of occurrence -> tags for target
+    final targetByOccurrence = <String, ThreadTagsRow>{};
+    for (final row in targetTagRows) {
+      targetByOccurrence[row.occurrence] = row;
+    }
+
+    for (final sourceRow in sourceTagRows) {
+      final sourceTags = sourceRow.tags ?? {};
+      if (sourceTags.isEmpty) continue;
+
+      final targetRow = targetByOccurrence[sourceRow.occurrence];
+      final targetTags = targetRow?.tags ?? <Tag, List<ActorId>>{};
+
+      // Merge: for each source tag, add actors not already in target
+      bool changed = false;
+      final merged = Map<Tag, List<ActorId>>.from(targetTags);
+      for (final entry in sourceTags.entries) {
+        final existing = merged[entry.key] ?? [];
+        final newActors = entry.value
+            .where((a) => !existing.contains(a))
+            .toList();
+        if (newActors.isNotEmpty) {
+          merged[entry.key] = [...existing, ...newActors];
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        final updatedTags = targetRow != null
+            ? targetRow.copyWith(
+                tags: Value(merged.isEmpty ? null : merged),
+                updatedAt: DateTime.now(),
+              )
+            : ThreadTagsRow(
+                id: target.id,
+                occurrence: sourceRow.occurrence,
+                updatedAt: DateTime.now(),
+                tags: merged.isEmpty ? null : merged,
+              );
+        await Store.get.add(
+          Store.get.threadTags,
+          updatedTags.toCompanion(false),
+        );
+      }
+    }
+
+    // 4. Merge schedules: fill gaps (source schedule moves to target if user has none)
+    final sourceSchedules = await (Store.get.select(
+      Store.get.schedules,
+    )..where((s) => s.threadId.equalsValue(source.id))).get();
+    final targetSchedules = await (Store.get.select(
+      Store.get.schedules,
+    )..where((s) => s.threadId.equalsValue(target.id))).get();
+
+    // Build a set of (userId, occurrence) keys for target schedules
+    final targetKeys = <String>{};
+    for (final s in targetSchedules) {
+      final key = '${s.userId ?? ''}_${s.occurrence ?? ''}';
+      targetKeys.add(key);
+    }
+
+    for (final s in sourceSchedules) {
+      final key = '${s.userId ?? ''}_${s.occurrence ?? ''}';
+      if (!targetKeys.contains(key)) {
+        // Move this schedule to target
+        final moved = s.copyWith(
+          threadId: Value(target.id),
+          updatedAt: DateTime.now(),
+        );
+        await Store.get.add(Store.get.schedules, moved.toCompanion(false));
+      }
+    }
+
+    // 5. Archive source thread
+    await source.delete();
+
+    // 6. Push all changes
+    unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
+    unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.thread));
+
+    // 7. Navigate to target thread
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: target.priority.id.toShortString(),
+        children: [ThreadRoute(threadIdString: target.id.toShortString())],
+      ),
+    );
+  }
+}
+
+class SplitThread extends Command {
+  SplitThread(this.thread)
+    : super(
+        title: 'Split Thread',
+        icon: FontAwesomeIcons.codeBranch,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Thread thread;
+
+  /// Check if this thread has any merged content (used to hide the command).
+  static Future<bool> hasMergedContent(ThreadId threadId) async {
+    final db = Store.get;
+    final notes =
+        await (db.select(db.notes)
+              ..where((n) => n.threadId.equalsValue(threadId))
+              ..where((n) => n.mergedFromThreadId.isNotNull())
+              ..limit(1))
+            .get();
+    if (notes.isNotEmpty) return true;
+
+    final links =
+        await (db.select(db.links)
+              ..where((l) => l.threadId.equals(threadId.toBytes()))
+              ..where((l) => l.mergedFromThreadId.isNotNull())
+              ..limit(1))
+            .get();
+    return links.isNotEmpty;
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Find distinct merged source threads
+    final noteRows =
+        await (Store.get.select(Store.get.notes)
+              ..where((n) => n.threadId.equalsValue(thread.id))
+              ..where((n) => n.mergedFromThreadId.isNotNull()))
+            .get();
+
+    final linkRows =
+        await (Store.get.select(Store.get.links)
+              ..where((l) => l.threadId.equals(thread.id.toBytes()))
+              ..where((l) => l.mergedFromThreadId.isNotNull()))
+            .get();
+
+    final sourceIds = <ThreadId>{};
+    for (final n in noteRows) {
+      if (n.mergedFromThreadId != null) sourceIds.add(n.mergedFromThreadId!);
+    }
+    for (final l in linkRows) {
+      if (l.mergedFromThreadId != null) sourceIds.add(l.mergedFromThreadId!);
+    }
+
+    if (sourceIds.isEmpty || !context.mounted) return const CommandSkipped();
+
+    // Load source threads
+    final sourceThreads = <Thread>[];
+    for (final id in sourceIds) {
+      final threads = await Thread.get(id: id, archived: null);
+      if (threads.isNotEmpty) sourceThreads.add(threads.first);
+    }
+
+    if (sourceThreads.isEmpty || !context.mounted)
+      return const CommandSkipped();
+
+    // Show picker
+    final commands = Commands(
+      prompt: 'Split from',
+      groups: [
+        StaticCommandGroup(
+          title: 'Source Threads',
+          commands: sourceThreads.map((t) => _ExecuteSplit(thread, t)).toList(),
+        ),
+      ],
+    );
+
+    return await CommandModal(commands, rootContext: context).run(context);
+  }
+}
+
+class _ExecuteSplit extends ThreadCommand {
+  _ExecuteSplit(this.current, Thread source)
+    : super(
+        source,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Thread current;
+  Thread get source => thread!;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // 1. Move notes back to source
+    final noteRows =
+        await (Store.get.select(Store.get.notes)
+              ..where((n) => n.threadId.equalsValue(current.id))
+              ..where((n) => n.mergedFromThreadId.equalsValue(source.id)))
+            .get();
+
+    for (final noteRow in noteRows) {
+      final note = await Note.get(noteRow.id);
+      if (note == null) continue;
+      await note
+          .copyWith(threadId: source.id, mergedFromThreadId: const Value(null))
+          .save(pushToRemote: false);
+    }
+
+    // 2. Move links back to source
+    final linkRows =
+        await (Store.get.select(Store.get.links)
+              ..where((l) => l.threadId.equals(current.id.toBytes()))
+              ..where((l) => l.mergedFromThreadId.equals(source.id.toBytes())))
+            .get();
+
+    for (final linkRow in linkRows) {
+      final updated = linkRow.copyWith(
+        threadId: Value(source.id),
+        mergedFromThreadId: const Value(null),
+        updatedAt: DateTime.now(),
+      );
+      await Store.get.add(Store.get.links, updated.toCompanion(false));
+    }
+
+    // 3. Unarchive source thread
+    await source.copyWith(archivedAt: const Value(null)).save();
+
+    // 4. Push changes
+    unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
+    unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.thread));
+
+    return const CommandDone();
+  }
+}
+
 class ShowThreadCommands extends ShowCommands {
   ShowThreadCommands(Thread thread, {bool open = true})
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
-        commands: Commands(
-          groups: threadCommandGroups(thread, open: open),
+        commandsBuilder: (context) async => Commands(
+          groups: await threadCommandGroups(thread, open: open),
           prompt: thread.title ?? 'Thread',
         ),
       );
@@ -896,7 +1254,7 @@ class ClearItemFocus extends Command {
 class OpenFocusedItemActions extends ShowCommands {
   OpenFocusedItemActions(
     InfiniteListController controller,
-    List<StaticCommandGroup> Function(int index) actionBuilder,
+    FutureOr<List<StaticCommandGroup>> Function(int index) actionBuilder,
   ) : _controller = controller,
       super(
         title: 'Open Actions for Focused Item',
@@ -905,7 +1263,7 @@ class OpenFocusedItemActions extends ShowCommands {
           if (focusedIndex == null) {
             return Commands(groups: []);
           }
-          return Commands(groups: actionBuilder(focusedIndex));
+          return Commands(groups: await actionBuilder(focusedIndex));
         },
       );
 
@@ -935,12 +1293,31 @@ class OpenFocusedItemActions extends ShowCommands {
   }
 }
 
-List<StaticCommandGroup> threadCommandGroups(
+Future<List<StaticCommandGroup>> threadCommandGroups(
   Thread thread, {
   bool open = true,
+}) async {
+  final hasMerged = await SplitThread.hasMergedContent(thread.id);
+  return threadCommandGroupsSync(
+    thread,
+    open: open,
+    showSplitThread: hasMerged,
+  );
+}
+
+/// Sync variant for callers that cannot await (e.g. CommandScope).
+/// Does not include SplitThread unless [showSplitThread] is explicitly true.
+List<StaticCommandGroup> threadCommandGroupsSync(
+  Thread thread, {
+  bool open = true,
+  bool showSplitThread = false,
 }) {
   final tags = Tag.getAll().map((tag) => ToggleThreadTag(thread, tag)).toList();
-  final commands = threadCommands(thread, open: open);
+  final commands = threadCommands(
+    thread,
+    open: open,
+    showSplitThread: showSplitThread,
+  );
   final remove = tags
       .where((cmd) => cmd.tag.type != TagType.compute && thread.hasTag(cmd.tag))
       .toList();
@@ -966,6 +1343,7 @@ List<Command> threadCommands(
   bool open = false,
   bool skipInfrequent = false,
   bool skipPrimary = false,
+  bool showSplitThread = false,
 }) {
   final primary = skipPrimary
       ? null
@@ -976,7 +1354,10 @@ List<Command> threadCommands(
     if (open) ChangeCurrentThread(thread),
     ?primary,
     if (actualPrimary is! PickScheduleThread) PickScheduleThread(thread),
+    RenameThread(thread),
     MoveThreadToPriority(thread),
+    MergeThreadInto(thread),
+    if (showSplitThread) SplitThread(thread),
     if (!skipInfrequent && !thread.priority.personal)
       ToggleThreadPrivate(thread),
     ArchiveThread(thread),
@@ -996,12 +1377,20 @@ List<Command> topThreadTags(Thread thread, List<Tag> tagSuggestions) {
   final maxToShow = 3 - activeNonHardcodedCount;
   if (maxToShow <= 0) return [];
 
-  // Filter out tags already on thread and take maxToShow
-  return tagSuggestions
-      .where((tag) => !thread.hasTag(tag))
-      .take(maxToShow)
-      .map((tag) => ToggleThreadTag(thread, tag))
-      .toList();
+  // Always lead with done tag if not already on thread
+  final commands = <Command>[];
+  if (!thread.hasTag(Tag.done)) {
+    commands.add(ToggleThreadTag(thread, Tag.done));
+  }
+
+  commands.addAll(
+    tagSuggestions
+        .where((tag) => !thread.hasTag(tag) && tag != Tag.done)
+        .take(maxToShow - commands.length)
+        .map((tag) => ToggleThreadTag(thread, tag)),
+  );
+
+  return commands.take(maxToShow).toList();
 }
 
 /// Returns the primary command for a thread based on its current schedule state.

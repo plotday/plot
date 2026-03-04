@@ -18,7 +18,8 @@ SELECT
     n.content,
     n.actions,
     n.mentions,
-    n.re_note_id
+    n.re_note_id,
+    n.merged_from_thread_id
 FROM
     note n
     JOIN thread a ON a.id = n.thread_id
@@ -53,7 +54,8 @@ SELECT
     NULL::text AS content,
     NULL::jsonb AS actions,
     CAST(NULL AS uuid[]) AS mentions,
-    n.re_note_id
+    n.re_note_id,
+    n.merged_from_thread_id
 FROM
     note n
     JOIN thread a ON a.id = n.thread_id

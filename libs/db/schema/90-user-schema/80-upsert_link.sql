@@ -143,7 +143,7 @@ BEGIN
     -- Perform the upsert and return the full row
     INSERT INTO link (id, thread_id, source, source_created_at, author_id, twist_id,
         created_by, updated_by, sync_depth, title, preview, assignee_id, type, status,
-        actions, meta, source_url, embedding, match)
+        actions, meta, source_url, embedding, match, merged_from_thread_id)
         VALUES (v_id, v_thread_id, v_source,
             COALESCE((p_link ->> 'source_created_at')::timestamptz, (p_defaults ->> 'source_created_at')::timestamptz, now()),
             v_author_id, v_twist_id, v_created_by,
@@ -158,7 +158,8 @@ BEGIN
             COALESCE(p_link -> 'meta', p_defaults -> 'meta'),
             COALESCE(p_link ->> 'source_url', p_defaults ->> 'source_url'),
             COALESCE((p_link ->> 'embedding')::halfvec, (p_defaults ->> 'embedding')::halfvec),
-            COALESCE(p_link -> 'match', p_defaults -> 'match'))
+            COALESCE(p_link -> 'match', p_defaults -> 'match'),
+            COALESCE((p_link ->> 'merged_from_thread_id')::uuid, (p_defaults ->> 'merged_from_thread_id')::uuid))
     ON CONFLICT (id)
         DO UPDATE SET
             title = CASE WHEN p_link ? 'title' THEN
@@ -215,7 +216,12 @@ BEGIN
             source_priority_root = COALESCE(v_source_priority_root, link.source_priority_root),
             created_by = v_created_by,
             twist_id = v_twist_id,
-            thread_id = v_thread_id
+            thread_id = v_thread_id,
+            merged_from_thread_id = CASE WHEN p_link ? 'merged_from_thread_id' THEN
+                (p_link ->> 'merged_from_thread_id')::uuid
+            ELSE
+                link.merged_from_thread_id
+            END
         RETURNING
             * INTO v_result;
     RETURN v_result;

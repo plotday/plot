@@ -1673,7 +1673,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 261;
+  int get schemaVersion => 262;
 
   @override
   MigrationStrategy get migration {
@@ -1906,6 +1906,10 @@ class Store extends _$Store {
       // thread_id nullable change requires table rebuild
       // ignore: experimental_member_use
       await m.alterTable(TableMigration(links));
+    }
+    if (from < 262) {
+      await _safeAddColumn(m, notes, notes.mergedFromThreadId);
+      await _safeAddColumn(m, links, links.mergedFromThreadId);
     }
   }
 

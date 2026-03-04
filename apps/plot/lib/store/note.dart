@@ -16,6 +16,7 @@ class Notes extends Table
   TextColumn get mentions =>
       text().nullable().map(const ActorIdListConverter())();
   BlobColumn get reNoteId => blob().nullable().map(const UuidConverter())();
+  BlobColumn get mergedFromThreadId => blob().nullable().map(const UuidConverter())();
 }
 
 class NotesBase extends BaseTable {
@@ -103,6 +104,7 @@ class Note extends Equatable implements Comparable<Note> {
     required DateTime sourceCreatedAt,
     required DateTime updatedAt,
     DateTime? archivedAt,
+    ThreadId? mergedFromThreadId,
   }) {
     // Auto-extract mentions from content if content is provided but mentions are not
     final effectiveMentions =
@@ -123,6 +125,7 @@ class Note extends Equatable implements Comparable<Note> {
       createdAt: createdAt,
       updatedAt: updatedAt,
       archivedAt: archivedAt,
+      mergedFromThreadId: mergedFromThreadId,
       tags: null,
     );
   }
@@ -140,6 +143,7 @@ class Note extends Equatable implements Comparable<Note> {
       sourceCreatedAt = DateTime.now(),
       updatedAt = DateTime.now(),
       archivedAt = null,
+      mergedFromThreadId = null,
       _tags = null;
 
   const Note._internal({
@@ -156,6 +160,7 @@ class Note extends Equatable implements Comparable<Note> {
     required this.sourceCreatedAt,
     required this.updatedAt,
     this.archivedAt,
+    this.mergedFromThreadId,
     NoteTagsRow? tags,
   }) : _tags = tags;
 
@@ -181,6 +186,7 @@ class Note extends Equatable implements Comparable<Note> {
       createdAt: noteRow.createdAt,
       updatedAt: noteRow.updatedAt,
       archivedAt: noteRow.archivedAt,
+      mergedFromThreadId: noteRow.mergedFromThreadId,
       tags: tags,
     );
   }
@@ -198,6 +204,7 @@ class Note extends Equatable implements Comparable<Note> {
   final DateTime sourceCreatedAt;
   final DateTime updatedAt;
   final DateTime? archivedAt;
+  final ThreadId? mergedFromThreadId;
   final NoteTagsRow? _tags;
 
   /// Pull all notes and tags for a specific activity (lazy-loaded on first view).
@@ -514,6 +521,7 @@ class Note extends Equatable implements Comparable<Note> {
       createdAt: createdAt,
       updatedAt: updatedAt,
       archivedAt: archivedAt,
+      mergedFromThreadId: mergedFromThreadId,
     );
   }
 
@@ -830,6 +838,7 @@ class Note extends Equatable implements Comparable<Note> {
     bool clearReNoteId = false,
     NoteTagsRow? tags,
     bool clearArchivedAt = false,
+    Value<ThreadId?> mergedFromThreadId = const Value.absent(),
   }) {
     final now = DateTime.now();
 
@@ -902,6 +911,7 @@ class Note extends Equatable implements Comparable<Note> {
         createdAt: isPublishing ? now : createdAt,
         updatedAt: DateTime.now(),
         archivedAt: clearArchivedAt ? null : archivedAt,
+        mergedFromThreadId: mergedFromThreadId.present ? mergedFromThreadId.value : this.mergedFromThreadId,
       ),
       tags: effectiveTags,
     );
@@ -921,6 +931,7 @@ class Note extends Equatable implements Comparable<Note> {
     createdAt,
     updatedAt,
     archivedAt,
+    mergedFromThreadId,
     _tags,
   ];
 

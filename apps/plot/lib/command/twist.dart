@@ -24,6 +24,16 @@ import 'package:plot/widget/setup_link_channels.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
 
+/// Compare environments in order: public, review, private, personal
+int _compareEnvironment(String a, String b) {
+  const envOrder = ['public', 'review', 'private', 'personal'];
+  final aIndex = envOrder.indexOf(a);
+  final bIndex = envOrder.indexOf(b);
+  final aVal = aIndex == -1 ? envOrder.length : aIndex;
+  final bVal = bIndex == -1 ? envOrder.length : bIndex;
+  return aVal.compareTo(bVal);
+}
+
 // ============================================================================
 // Entry point: Manage Connections and Twists
 // ============================================================================
@@ -246,14 +256,17 @@ class ManageConnections extends Command {
         .map((t) => _AvailableSource(t))
         .toList();
 
-    // Sort
+    // Sort by name, then environment (public first)
     activeItems.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
     );
-    availableItems.sort(
-      (a, b) =>
-          a.twist.name.toLowerCase().compareTo(b.twist.name.toLowerCase()),
-    );
+    availableItems.sort((a, b) {
+      final nameComparison = a.twist.name.toLowerCase().compareTo(
+        b.twist.name.toLowerCase(),
+      );
+      if (nameComparison != 0) return nameComparison;
+      return _compareEnvironment(a.twist.environment, b.twist.environment);
+    });
 
     // Filter by search
     List<_ConnectionItem> filteredActive = activeItems;
@@ -403,6 +416,10 @@ class _AvailableSourceRow extends StatelessWidget {
                     color: theme.colors.foreground,
                   ),
                 ),
+                if (item.twist.environment != 'public') ...[
+                  const SizedBox(width: 6),
+                  _EnvironmentBadge(environment: item.twist.environment),
+                ],
                 if (item.twist.description != null) ...[
                   const SizedBox(width: 8),
                   Flexible(
@@ -420,6 +437,32 @@ class _AvailableSourceRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Badge showing the environment name for non-public twists/sources.
+class _EnvironmentBadge extends StatelessWidget {
+  const _EnvironmentBadge({required this.environment});
+  final String environment;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final label = environment[0].toUpperCase() + environment.substring(1);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colors.secondary,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: theme.typography.xs.fontSize,
+          color: theme.colors.mutedForeground,
+        ),
       ),
     );
   }
@@ -906,18 +949,6 @@ class ManageTwists extends ShowCommands {
     );
   }
 
-  /// Compare environments in order: public, review, private, personal
-  static int _compareEnvironment(String a, String b) {
-    const envOrder = ['public', 'review', 'private', 'personal'];
-    final aIndex = envOrder.indexOf(a);
-    final bIndex = envOrder.indexOf(b);
-
-    // If an environment is not in the list, put it at the end
-    final aVal = aIndex == -1 ? envOrder.length : aIndex;
-    final bVal = bIndex == -1 ? envOrder.length : bIndex;
-
-    return aVal.compareTo(bVal);
-  }
 }
 
 // ============================================================================
@@ -1112,13 +1143,44 @@ class ShowTwistDetails extends ShowForm {
 class ShowTwistInfo extends ShowForm {
   ShowTwistInfo(this.twist)
     : super(
-        title: _formatTwistName(twist.name, twist.environment),
+        title: twist.name,
         subtitle: twist.description,
         icon: PlotIcon.twist,
         form: (context) => _buildForm(context, twist),
       );
 
   final Twist twist;
+
+  @override
+  Widget? buildBody(BuildContext context) {
+    if (twist.environment == 'public') return null;
+    final theme = context.theme;
+    return Row(
+      children: [
+        Text(
+          twist.name,
+          overflow: TextOverflow.ellipsis,
+          style: theme.typography.base.copyWith(
+            color: theme.colors.foreground,
+          ),
+        ),
+        const SizedBox(width: 6),
+        _EnvironmentBadge(environment: twist.environment),
+        if (twist.description != null) ...[
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              twist.description!,
+              overflow: TextOverflow.ellipsis,
+              style: theme.typography.base.copyWith(
+                color: theme.colors.mutedForeground,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 
   static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
     return FormData(
@@ -1136,15 +1198,6 @@ class ShowTwistInfo extends ShowForm {
         ),
       ],
     );
-  }
-
-  /// Formats twist name with environment label if not public
-  static String _formatTwistName(String name, String environment) {
-    if (environment == 'public') {
-      return name;
-    }
-    final envLabel = environment[0].toUpperCase() + environment.substring(1);
-    return '$name ($envLabel)';
   }
 }
 

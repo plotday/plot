@@ -25,6 +25,7 @@ SELECT
     l.channel_id,
     l.embedding,
     l.match,
+    l.merged_from_thread_id,
     COALESCE(l.priority_id, t.priority_id) AS priority_id,
     COALESCE(pp.path, tp.path) AS priority_path
 FROM

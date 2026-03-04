@@ -687,22 +687,6 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     tagsQuery.where(a.archivedAt.isNull());
 
-    // COUNT query for Tag.done
-    final doneQuery = Store.get.selectOnly(a)..addColumns([a.id]);
-    doneQuery.join([
-      innerJoin(
-        p,
-        p.id.equalsExp(a.priorityId) &
-            (p.path.equalsValue(priorityPath) |
-                p.path.likeExp(Constant(priorityPathLike))),
-      ),
-    ]);
-    // Done count is always 0 — done state removed from thread
-    doneQuery.where(Constant(false));
-    final doneCountStream = doneQuery.watch().map(
-      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
-    );
-
     // COUNT query for Tag.todo
     final s = Store.get.schedules;
     final us = Store.get.alias(Store.get.schedules, 'us');
@@ -783,16 +767,14 @@ class Thread extends Equatable implements Comparable<Thread> {
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
     );
 
-    return Rx.combineLatest6(
+    return Rx.combineLatest5(
       tagsQuery.watch(),
-      doneCountStream,
       nowCountStream,
       archivedCountStream,
       unreadCountStream,
       archivedPriorityCountStream,
       (
         rows,
-        doneCount,
         nowCount,
         archivedCount,
         unreadCount,
@@ -820,7 +802,6 @@ class Thread extends Equatable implements Comparable<Thread> {
         }
 
         // Add computed tag counts
-        if (doneCount > 0) tagCounts[Tag.done] = doneCount;
         if (nowCount > 0) tagCounts[Tag.todo] = nowCount;
         final totalArchived = archivedCount + archivedPriorityCount;
         if (totalArchived > 0) tagCounts[Tag.archived] = totalArchived;
@@ -920,7 +901,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     final doTodo = mutableFilter?.remove(Tag.todo) == true;
-    mutableFilter?.remove(Tag.done); // done state removed from thread
     final filterUnread = mutableFilter?.remove(Tag.unread) == true;
 
     final a = Store.get.alias(Store.get.threads, 'a');
@@ -1719,7 +1699,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     ...Map.fromEntries(
       [
         Tag.todo,
-        Tag.done,
         Tag.archived,
         Tag.private,
       ].where((tag) => hasTag(tag)).map((tag) => MapEntry(tag, [Base.actorId])),
@@ -2004,6 +1983,10 @@ class Thread extends Equatable implements Comparable<Thread> {
     Value<List<DateTime>?> recurrenceExdates = const Value.absent(),
     Value<String?> recurrenceTitle = const Value.absent(),
     Value<Duration?> recurrenceDuration = const Value.absent(),
+
+    // Personal to-do state
+    bool? todo,
+    Value<DateTime?> doneAt = const Value.absent(),
   }) {
     final now = DateTime.now();
 
@@ -2177,6 +2160,44 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
     }
 
+    // Handle personal to-do state
+    if (todo == true) {
+      if (userSchedule != null) {
+        userSchedule = userSchedule.copyWith(
+          startOn: Value(Thread.todoNowDate),
+          order: Value(Order.first()),
+        );
+      } else {
+        userSchedule = ScheduleRow(
+          id: Uuid.generate(),
+          updatedAt: now,
+          threadId: _thread.id,
+          userId: Base.userId,
+          startOn: Thread.todoNowDate,
+          order: Order.first(),
+        );
+      }
+    } else if (todo == false) {
+      if (userSchedule != null) {
+        userSchedule = userSchedule.copyWith(
+          doneAt: doneAt.present ? doneAt : Value(DateTime.now()),
+          startOn: const Value(null),
+          startAt: const Value(null),
+          endOn: const Value(null),
+          endAt: const Value(null),
+        );
+      } else {
+        userSchedule = ScheduleRow(
+          id: Uuid.generate(),
+          updatedAt: now,
+          threadId: _thread.id,
+          userId: Base.userId,
+          order: Order.first(),
+          doneAt: doneAt.present ? doneAt.value : DateTime.now(),
+        );
+      }
+    }
+
     return Thread._fromStore(
       activity: activity,
       schedule: schedule,
@@ -2187,7 +2208,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
-  Thread toggleTag(Tag tag, {bool setDoneAt = true}) {
+  Thread toggleTag(Tag tag) {
     // Handle computed tags
     switch (tag) {
       case Tag.archived:
@@ -2226,33 +2247,6 @@ class Thread extends Equatable implements Comparable<Thread> {
               userId: Base.userId,
               startOn: Thread.todoNowDate,
               order: Order.first(),
-            ),
-          );
-        }
-      case Tag.done:
-        // Clear dates on per-user schedule, optionally set doneAt.
-        // setDoneAt is false in the activity feed to avoid bumping the thread
-        // to the top (doneAt is part of the feed sort expression).
-        if (_userSchedule != null) {
-          return _withUserSchedule(
-            _userSchedule.copyWith(
-              doneAt: setDoneAt ? Value(DateTime.now()) : const Value(null),
-              startOn: const Value(null),
-              startAt: const Value(null),
-              endOn: const Value(null),
-              endAt: const Value(null),
-            ),
-          );
-        } else if (setDoneAt) {
-          // Create per-user schedule with doneAt only
-          return _withUserSchedule(
-            ScheduleRow(
-              id: Uuid.generate(),
-              updatedAt: DateTime.now(),
-              threadId: id,
-              userId: Base.userId,
-              order: Order.first(),
-              doneAt: DateTime.now(),
             ),
           );
         }
@@ -2425,8 +2419,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     switch (tag) {
       case Tag.todo:
         return todo;
-      case Tag.done:
-        return done;
       case Tag.archived:
         return archivedAt != null;
       case Tag.private:

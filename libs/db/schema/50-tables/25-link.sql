@@ -38,7 +38,8 @@ CREATE TABLE "public"."link" (
     -- Similarity matching
     "embedding" halfvec (384),
     -- Was pick_priority on thread
-    "match" jsonb
+    "match" jsonb,
+    "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL
 );
 
 CREATE INDEX ON link USING hnsw (embedding halfvec_cosine_ops);

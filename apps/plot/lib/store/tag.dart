@@ -15,13 +15,7 @@ enum Tag {
     type: TagType.compute,
     shortcodes: ['todo', 'do'],
   ),
-  done(
-    3,
-    PlotIcon.done,
-    'Done',
-    type: TagType.compute,
-    shortcodes: ['done', 'white_check_mark'],
-  ),
+  done(3, PlotIcon.done, 'Done', shortcodes: ['done', 'white_check_mark']),
   archived(
     4,
     PlotIcon.archived,

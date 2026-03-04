@@ -143,7 +143,6 @@ class ThreadBloc extends Cubit<ThreadState> {
       // Calculate tag suggestions: common tags first, then all other tags
       const actionTags = [
         Tag.todo,
-        Tag.done,
       ];
 
       // Common tags (excluding action tags)

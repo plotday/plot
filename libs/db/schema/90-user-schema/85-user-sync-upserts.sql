@@ -139,7 +139,8 @@ CREATE OR REPLACE FUNCTION "user".upsert_note (
     p_mentions uuid[],
     p_re_note_id uuid,
     p_source_created_at timestamptz,
-    p_key text
+    p_key text,
+    p_merged_from_thread_id uuid DEFAULT NULL::uuid
 )
     RETURNS note
     LANGUAGE plpgsql
@@ -186,8 +187,8 @@ BEGIN
     END IF;
 
     IF p_id IS NULL THEN
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key)
-            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
         ON CONFLICT (thread_id, key)
             DO UPDATE SET
                 author_id = note.author_id,
@@ -202,17 +203,19 @@ BEGIN
                 re_note_id = EXCLUDED.re_note_id,
                 source_created_at = EXCLUDED.source_created_at,
                 key = EXCLUDED.key,
+                merged_from_thread_id = EXCLUDED.merged_from_thread_id,
                 updated_at = now()
         RETURNING * INTO v_row;
     ELSE
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key)
-            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
         ON CONFLICT (id)
             DO UPDATE SET
                 author_id = note.author_id,
                 created_by = note.created_by,
                 updated_by = EXCLUDED.updated_by,
                 archived_at = EXCLUDED.archived_at,
+                thread_id = EXCLUDED.thread_id,
                 draft = EXCLUDED.draft,
                 private = EXCLUDED.private,
                 content = EXCLUDED.content,
@@ -221,6 +224,7 @@ BEGIN
                 re_note_id = EXCLUDED.re_note_id,
                 source_created_at = EXCLUDED.source_created_at,
                 key = EXCLUDED.key,
+                merged_from_thread_id = EXCLUDED.merged_from_thread_id,
                 updated_at = now()
         RETURNING * INTO v_row;
     END IF;

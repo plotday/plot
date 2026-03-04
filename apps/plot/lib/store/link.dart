@@ -71,6 +71,7 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
       text().nullable().map(const JsonConverter())();
   TextColumn get sourceUrl => text().nullable()();
   TextColumn get channelId => text().nullable()();
+  BlobColumn get mergedFromThreadId => blob().nullable().map(const UuidConverter())();
 }
 
 class LinksBase extends BaseTable {
@@ -127,6 +128,7 @@ class Link extends Equatable {
   Map<String, dynamic>? get meta => _link.meta;
   String? get sourceUrl => _link.sourceUrl;
   String? get channelId => _link.channelId;
+  ThreadId? get mergedFromThreadId => _link.mergedFromThreadId;
   DateTime get createdAt => _link.createdAt;
   DateTime get updatedAt => _link.updatedAt;
 

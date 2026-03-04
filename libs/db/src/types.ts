@@ -229,6 +229,7 @@ export type Database = {
           embedding: unknown
           id: string
           match: Json | null
+          merged_from_thread_id: string | null
           meta: Json | null
           preview: string | null
           priority_id: string | null
@@ -255,6 +256,7 @@ export type Database = {
           embedding?: unknown
           id?: string
           match?: Json | null
+          merged_from_thread_id?: string | null
           meta?: Json | null
           preview?: string | null
           priority_id?: string | null
@@ -281,6 +283,7 @@ export type Database = {
           embedding?: unknown
           id?: string
           match?: Json | null
+          merged_from_thread_id?: string | null
           meta?: Json | null
           preview?: string | null
           priority_id?: string | null
@@ -298,6 +301,24 @@ export type Database = {
           updated_by?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "link_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "priority_twist_thread_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "link_priority_id_fkey"
             columns: ["priority_id"]
@@ -354,6 +375,7 @@ export type Database = {
           id: string
           key: string | null
           mentions: string[] | null
+          merged_from_thread_id: string | null
           private: boolean
           re_note_id: string | null
           source_created_at: string
@@ -373,6 +395,7 @@ export type Database = {
           id?: string
           key?: string | null
           mentions?: string[] | null
+          merged_from_thread_id?: string | null
           private?: boolean
           re_note_id?: string | null
           source_created_at?: string
@@ -392,6 +415,7 @@ export type Database = {
           id?: string
           key?: string | null
           mentions?: string[] | null
+          merged_from_thread_id?: string | null
           private?: boolean
           re_note_id?: string | null
           source_created_at?: string
@@ -401,6 +425,24 @@ export type Database = {
           updated_by?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "priority_twist_thread_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
@@ -1919,6 +1961,7 @@ export type Database = {
           embedding: unknown
           id: string | null
           match: Json | null
+          merged_from_thread_id: string | null
           meta: Json | null
           preview: string | null
           priority_id: string | null
@@ -1937,6 +1980,24 @@ export type Database = {
           updated_by: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "link_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "priority_twist_thread_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "link_thread_id_fkey"
             columns: ["thread_id"]
@@ -3163,6 +3224,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           id: string | null
+          merged_from_thread_id: string | null
           meta: Json | null
           preview: string | null
           priority_id: string | null
@@ -3193,6 +3255,7 @@ export type Database = {
           draft: boolean | null
           id: string | null
           mentions: string[] | null
+          merged_from_thread_id: string | null
           private: boolean | null
           re_note_id: string | null
           source_created_at: string | null
@@ -3457,6 +3520,7 @@ export type Database = {
           p_id: string
           p_key: string
           p_mentions: string[]
+          p_merged_from_thread_id?: string
           p_private: boolean
           p_re_note_id: string
           p_source_created_at: string

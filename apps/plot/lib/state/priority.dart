@@ -288,6 +288,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     }).toList();
 
     emit(state.copyWith(
+      thread: state.thread?.id == updatedThread.id
+          ? Value(updatedThread)
+          : const Value.absent(),
       agendaItems: updatedAgendaItems,
       activityFeedItems: updatedFeedItems,
     ));
