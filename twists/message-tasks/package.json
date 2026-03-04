@@ -15,8 +15,6 @@
   },
   "dependencies": {
     "@plotday/twister": "workspace:^",
-    "@plotday/source-slack": "workspace:^",
-    "@plotday/source-gmail": "workspace:^",
     "typebox": "^1.0.35"
   },
   "devDependencies": {
