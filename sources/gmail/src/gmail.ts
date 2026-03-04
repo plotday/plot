@@ -1,15 +1,24 @@
-import {
-  Source,
-  type ToolBuilder,
-} from "@plotday/twister";
+import { Source, type ToolBuilder } from "@plotday/twister";
+import type { Actor, Note, Thread, ThreadMeta } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
   type Authorization,
-  Integrations,
   type Channel,
+  Integrations,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+
+import {
+  GmailApi,
+  type GmailThread,
+  type SyncState,
+  buildReplyMessage,
+  getHeader,
+  parseEmailAddresses,
+  syncGmailChannel,
+  transformGmailThread,
+} from "./gmail-api";
 
 type MessageChannel = {
   id: string;
@@ -21,14 +30,6 @@ type MessageChannel = {
 type MessageSyncOptions = {
   timeMin?: Date;
 };
-
-import {
-  GmailApi,
-  type GmailThread,
-  type SyncState,
-  syncGmailChannel,
-  transformGmailThread,
-} from "./gmail-api";
 
 /**
  * Gmail integration source implementing the MessagingSource interface.
@@ -46,11 +47,19 @@ export class Gmail extends Source<Gmail> {
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.send",
   ];
 
   readonly provider = AuthProvider.Google;
   readonly scopes = Gmail.SCOPES;
-  readonly linkTypes = [{ type: "email", label: "Email", logo: "https://api.iconify.design/logos/google-gmail.svg", logoMono: "https://api.iconify.design/simple-icons/gmail.svg" }];
+  readonly linkTypes = [
+    {
+      type: "email",
+      label: "Email",
+      logo: "https://api.iconify.design/logos/google-gmail.svg",
+      logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
+    },
+  ];
 
   build(build: ToolBuilder) {
     return {
@@ -92,7 +101,8 @@ export class Gmail extends Source<Gmail> {
       this.syncBatch,
       1,
       "full",
-      channel.id
+      channel.id,
+      true
     );
     await this.run(syncCallback);
   }
@@ -150,7 +160,7 @@ export class Gmail extends Source<Gmail> {
   async startSync(
     options: {
       channelId: string;
-    } & MessageSyncOptions,
+    } & MessageSyncOptions
   ): Promise<void> {
     const { channelId, timeMin } = options;
 
@@ -173,7 +183,8 @@ export class Gmail extends Source<Gmail> {
       this.syncBatch,
       1,
       "full",
-      channelId
+      channelId,
+      true
     );
     await this.run(syncCallback);
   }
@@ -226,8 +237,10 @@ export class Gmail extends Source<Gmail> {
   async syncBatch(
     batchNumber: number,
     mode: "full" | "incremental",
-    channelId: string
+    channelId: string,
+    initialSync?: boolean
   ): Promise<void> {
+    const isInitial = initialSync ?? mode === "full";
     try {
       const state = await this.get<SyncState>(`sync_state_${channelId}`);
       if (!state) {
@@ -240,7 +253,7 @@ export class Gmail extends Source<Gmail> {
       const result = await syncGmailChannel(api, state, 20);
 
       if (result.threads.length > 0) {
-        await this.processEmailThreads(result.threads, channelId);
+        await this.processEmailThreads(result.threads, channelId, isInitial);
       }
 
       await this.set(`sync_state_${channelId}`, result.state);
@@ -250,7 +263,8 @@ export class Gmail extends Source<Gmail> {
           this.syncBatch,
           batchNumber + 1,
           mode,
-          channelId
+          channelId,
+          isInitial
         );
         await this.run(syncCallback);
       } else {
@@ -270,29 +284,169 @@ export class Gmail extends Source<Gmail> {
 
   private async processEmailThreads(
     threads: GmailThread[],
-    channelId: string
+    channelId: string,
+    initialSync: boolean
   ): Promise<void> {
     for (const thread of threads) {
       try {
         // Transform Gmail thread to NewLinkWithNotes
-        const activityThread = transformGmailThread(thread);
+        const plotThread = transformGmailThread(thread);
 
-        if (!activityThread.notes || activityThread.notes.length === 0) continue;
+        if (!plotThread.notes || plotThread.notes.length === 0) continue;
+
+        // Filter out notes for messages we sent (dedup)
+        const filtered = [];
+        for (const note of plotThread.notes) {
+          const noteKey = "key" in note ? (note as { key: string }).key : null;
+          if (noteKey) {
+            const wasSent = await this.get<boolean>(`sent:${noteKey}`);
+            if (wasSent) {
+              await this.clear(`sent:${noteKey}`);
+              continue;
+            }
+          }
+          filtered.push(note);
+        }
+        plotThread.notes = filtered;
+
+        if (plotThread.notes.length === 0) continue;
+
+        if (initialSync) {
+          plotThread.unread = false;
+          plotThread.archived = false;
+        }
 
         // Inject channel ID for priority routing and sync metadata
-        activityThread.channelId = channelId;
-        activityThread.meta = {
-          ...activityThread.meta,
+        plotThread.channelId = channelId;
+        plotThread.meta = {
+          ...plotThread.meta,
           syncProvider: "google",
           syncableId: channelId,
         };
 
         // Save link directly via integrations
-        await this.tools.integrations.saveLink(activityThread);
+        await this.tools.integrations.saveLink(plotThread);
       } catch (error) {
         console.error(`Failed to process Gmail thread ${thread.id}:`, error);
         // Continue processing other threads
       }
+    }
+  }
+
+  async onNoteCreated(note: Note, meta: ThreadMeta): Promise<void> {
+    const channelId = (meta.channelId ?? meta.syncableId) as string;
+    if (!channelId) {
+      console.error("No channelId in meta for Gmail reply");
+      return;
+    }
+
+    const threadId = meta.threadId as string;
+    if (!threadId) {
+      console.error("No threadId in meta for Gmail reply");
+      return;
+    }
+
+    const api = await this.getApi(channelId);
+
+    // Fetch the full Gmail thread to get message headers
+    const gmailThread = await api.getThread(threadId);
+    if (!gmailThread.messages || gmailThread.messages.length === 0) {
+      console.error("Gmail thread has no messages");
+      return;
+    }
+
+    // Determine target message: specific replied-to note or last message in thread
+    let targetMessage = gmailThread.messages[gmailThread.messages.length - 1];
+    if (meta.reNoteKey) {
+      const found = gmailThread.messages.find(
+        (m) => m.id === meta.reNoteKey
+      );
+      if (found) {
+        targetMessage = found;
+      }
+    }
+
+    // Extract headers from target message
+    const messageId = getHeader(targetMessage, "Message-ID");
+    const references = getHeader(targetMessage, "References");
+    const subject = getHeader(targetMessage, "Subject") ?? "Email";
+    const fromHeader = getHeader(targetMessage, "From");
+    const toHeader = getHeader(targetMessage, "To");
+    const ccHeader = getHeader(targetMessage, "Cc");
+
+    if (!messageId) {
+      console.error("Target message has no Message-ID header");
+      return;
+    }
+
+    // Get sender's email to exclude from reply-all recipients
+    const profile = await api.getProfile();
+    const senderEmail = profile.emailAddress.toLowerCase();
+
+    // Build reply-all recipients: all From + To + Cc minus sender, deduplicated
+    const allRecipients = new Set<string>();
+    for (const email of parseEmailAddresses(fromHeader)) {
+      allRecipients.add(email.toLowerCase());
+    }
+    for (const email of parseEmailAddresses(toHeader)) {
+      allRecipients.add(email.toLowerCase());
+    }
+
+    const ccRecipients = new Set<string>();
+    for (const email of parseEmailAddresses(ccHeader)) {
+      ccRecipients.add(email.toLowerCase());
+    }
+
+    // Remove sender from all sets
+    allRecipients.delete(senderEmail);
+    ccRecipients.delete(senderEmail);
+
+    // To = all direct recipients (From + To minus sender), Cc = remaining Cc
+    const to = Array.from(allRecipients).filter(
+      (email) => !ccRecipients.has(email)
+    );
+    const cc = Array.from(ccRecipients);
+
+    if (to.length === 0 && cc.length === 0) {
+      console.error("No recipients for Gmail reply");
+      return;
+    }
+
+    // Build and send the reply
+    const raw = buildReplyMessage({
+      to,
+      cc,
+      from: senderEmail,
+      subject,
+      body: note.content ?? "",
+      messageId,
+      references: references ?? "",
+    });
+
+    const result = await api.sendMessage(raw, threadId);
+
+    // Store sent message ID for dedup when synced back
+    await this.set(`sent:${result.id}`, true);
+  }
+
+  async onThreadRead(
+    _thread: Thread,
+    _actor: Actor,
+    unread: boolean,
+    meta: ThreadMeta
+  ): Promise<void> {
+    const channelId = (meta.channelId ?? meta.syncableId) as string;
+    if (!channelId) return;
+
+    const threadId = meta.threadId as string;
+    if (!threadId) return;
+
+    const api = await this.getApi(channelId);
+
+    if (unread) {
+      await api.modifyThread(threadId, ["UNREAD"]);
+    } else {
+      await api.modifyThread(threadId, undefined, ["UNREAD"]);
     }
   }
 
@@ -353,7 +507,8 @@ export class Gmail extends Source<Gmail> {
       this.syncBatch,
       1,
       "incremental",
-      channelId
+      channelId,
+      false
     );
     await this.run(syncCallback);
   }

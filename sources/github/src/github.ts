@@ -1,12 +1,13 @@
 import {
-  type Action,
-  ActionType,
-  type ThreadMeta,
+  type Link,
   type NewLinkWithNotes,
+  type Note,
   Source,
+  type ThreadMeta,
   type ToolBuilder,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
+import { Options } from "@plotday/twister/options";
 import {
   AuthProvider,
   type AuthToken,
@@ -16,29 +17,27 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+import {
+  startPRBatchSync,
+  syncPRBatch,
+  handlePRWebhook,
+  handleReviewWebhook,
+  handlePRCommentWebhook,
+  addPRComment,
+  updatePRStatus,
+} from "./pr-sync";
+import {
+  startIssueBatchSync,
+  syncIssueBatch,
+  handleIssueWebhook,
+  handleIssueCommentWebhook,
+  updateIssue,
+  addIssueComment,
+} from "./issue-sync";
 
-type Repository = {
-  id: string;
-  name: string;
-  description: string | null;
-  url: string | null;
-  owner: string | null;
-  defaultBranch: string | null;
-  private: boolean;
-};
+// ---------- Exported types (used by pr-sync.ts and issue-sync.ts) ----------
 
-type SourceControlSyncOptions = {
-  timeMin?: Date;
-};
-
-type SyncState = {
-  page: number;
-  batchNumber: number;
-  prsProcessed: number;
-  initialSync: boolean;
-};
-
-type GitHubUser = {
+export type GitHubUser = {
   id: number;
   login: string;
   avatar_url?: string;
@@ -46,7 +45,7 @@ type GitHubUser = {
   email?: string;
 };
 
-type GitHubPullRequest = {
+export type GitHubPullRequest = {
   id: number;
   number: number;
   title: string;
@@ -63,7 +62,7 @@ type GitHubPullRequest = {
   base: { repo: { full_name: string; owner: { login: string }; name: string } };
 };
 
-type GitHubIssueComment = {
+export type GitHubIssueComment = {
   id: number;
   body: string;
   created_at: string;
@@ -72,7 +71,7 @@ type GitHubIssueComment = {
   html_url: string;
 };
 
-type GitHubReview = {
+export type GitHubReview = {
   id: number;
   body: string;
   state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
@@ -93,19 +92,15 @@ type GitHubRepo = {
 };
 
 /**
- * GitHub source control source
+ * GitHub source — syncs pull requests and issues from GitHub repositories.
  *
- * Implements the SourceControlSource interface for syncing GitHub repositories
- * and pull requests with Plot threads.
+ * Options:
+ * - syncPullRequests: boolean (default: true) — sync PRs, reviews, and PR comments
+ * - syncIssues: boolean (default: true) — sync issues and issue comments
  */
 export class GitHub extends Source<GitHub> {
   static readonly PROVIDER = AuthProvider.GitHub;
   static readonly SCOPES = ["repo"];
-
-  /** Days of recently closed/merged PRs to include in sync */
-  private static readonly RECENT_DAYS = 30;
-  /** PRs per page for batch sync */
-  private static readonly PAGE_SIZE = 50;
 
   readonly provider = AuthProvider.GitHub;
   readonly scopes = GitHub.SCOPES;
@@ -122,20 +117,47 @@ export class GitHub extends Source<GitHub> {
         { status: "merged", label: "Merged" },
       ],
     },
+    {
+      type: "issue",
+      label: "Issue",
+      logo: "https://api.iconify.design/logos/github-icon.svg",
+      logoDark: "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
+      logoMono: "https://api.iconify.design/simple-icons/github.svg",
+      statuses: [
+        { status: "open", label: "Open" },
+        { status: "closed", label: "Closed" },
+      ],
+    },
   ];
 
   build(build: ToolBuilder) {
     return {
+      options: build(Options, {
+        syncPullRequests: {
+          type: "boolean" as const,
+          label: "Sync Pull Requests",
+          description: "Sync pull requests, reviews, and PR comments",
+          default: true,
+        },
+        syncIssues: {
+          type: "boolean" as const,
+          label: "Sync Issues",
+          description: "Sync issues and issue comments",
+          default: true,
+        },
+      }),
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.github.com/*"] }),
       tasks: build(Tasks),
     };
   }
 
+  // ---------- Public helpers (used by pr-sync.ts / issue-sync.ts) ----------
+
   /**
    * Make an authenticated GitHub API request
    */
-  private async githubFetch(
+  async githubFetch(
     token: string,
     path: string,
     options?: RequestInit,
@@ -154,13 +176,71 @@ export class GitHub extends Source<GitHub> {
   /**
    * Get an authenticated token for a channel repository
    */
-  private async getToken(channelId: string): Promise<string> {
+  async getToken(channelId: string): Promise<string> {
     const authToken = await this.tools.integrations.get(channelId);
     if (!authToken) {
       throw new Error("No GitHub authentication token available");
     }
     return authToken.token;
   }
+
+  /**
+   * Convert a GitHub user to a NewContact using noreply email
+   */
+  userToContact(user: GitHubUser): NewContact {
+    return {
+      email: `${user.id}+${user.login}@users.noreply.github.com`,
+      name: user.login,
+      avatar: user.avatar_url ?? undefined,
+    };
+  }
+
+  /**
+   * Save a link via integrations
+   */
+  async saveLink(link: NewLinkWithNotes): Promise<void> {
+    await this.tools.integrations.saveLink(link);
+  }
+
+  /**
+   * Create a persistent callback (public wrapper for this.callback)
+   */
+  // @ts-ignore - simplified signature for public access
+  async createCallback(fn: any, ...extraArgs: any[]): Promise<any> {
+    return this.callback(fn, ...extraArgs);
+  }
+
+  // Public wrappers for protected Twist methods (used by helper files)
+  override async get<T extends import("@plotday/twister").Serializable>(key: string): Promise<T | null> {
+    return super.get(key);
+  }
+  override async set<T extends import("@plotday/twister").Serializable>(key: string, value: T): Promise<void> {
+    return super.set(key, value);
+  }
+  override async clear(key: string): Promise<void> {
+    return super.clear(key);
+  }
+  override async runTask(callback: any, options?: { runAt?: Date }): Promise<string | void> {
+    return super.runTask(callback, options);
+  }
+
+  // ---------- Public batch sync entry points (called by helper files via callback) ----------
+
+  /**
+   * Callback entry point for PR batch sync
+   */
+  async syncPRBatch(repositoryId: string): Promise<void> {
+    await syncPRBatch(this, repositoryId);
+  }
+
+  /**
+   * Callback entry point for issue batch sync
+   */
+  async syncIssueBatch(repositoryId: string): Promise<void> {
+    await syncIssueBatch(this, repositoryId);
+  }
+
+  // ---------- Channel lifecycle ----------
 
   /**
    * Returns available GitHub repositories as channel resources.
@@ -172,7 +252,6 @@ export class GitHub extends Source<GitHub> {
     const repos: GitHubRepo[] = [];
     let page = 1;
 
-    // Paginate through all repos
     while (true) {
       const response = await fetch(
         `https://api.github.com/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100&page=${page}`,
@@ -207,9 +286,17 @@ export class GitHub extends Source<GitHub> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Setup webhook and start initial sync
+    // Setup webhook subscribing to all event types
     await this.setupWebhook(channel.id);
-    await this.startBatchSync(channel.id);
+
+    // Start initial sync for enabled types
+    const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
+    if (options.syncPullRequests) {
+      await startPRBatchSync(this, channel.id, true);
+    }
+    if (options.syncIssues) {
+      await startIssueBatchSync(this, channel.id, true);
+    }
   }
 
   /**
@@ -221,94 +308,65 @@ export class GitHub extends Source<GitHub> {
   }
 
   /**
-   * Get list of repositories
+   * Called when options are changed (e.g. toggling PR or issue sync).
+   * Starts sync for newly enabled types on all active channels.
+   * Disabled types simply stop receiving webhook events — existing items remain.
    */
-  async getRepositories(repositoryId: string): Promise<Repository[]> {
-    const token = await this.getToken(repositoryId);
-
-    const repos: GitHubRepo[] = [];
-    let page = 1;
-
-    while (true) {
-      const response = await this.githubFetch(
-        token,
-        `/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100&page=${page}`,
-      );
-
-      if (!response.ok) break;
-
-      const batch: GitHubRepo[] = await response.json();
-      if (batch.length === 0) break;
-
-      repos.push(...batch);
-      if (batch.length < 100) break;
-      page++;
-    }
-
-    return repos.map((repo) => ({
-      id: repo.full_name,
-      name: repo.name,
-      description: repo.description,
-      url: repo.html_url,
-      owner: repo.owner.login,
-      defaultBranch: repo.default_branch,
-      private: repo.private,
-    }));
-  }
-
-  /**
-   * Start syncing pull requests from a repository
-   */
-  async startSync(
-    options: {
-      repositoryId: string;
-    } & SourceControlSyncOptions,
+  async onOptionsChanged(
+    oldOptions: Record<string, any>,
+    newOptions: Record<string, any>,
   ): Promise<void> {
-    const { repositoryId } = options;
+    // Find all enabled channels
+    const channelKeys = await this.tools.store.list("sync_enabled_");
 
-    // Setup webhook for real-time updates
-    await this.setupWebhook(repositoryId);
+    for (const key of channelKeys) {
+      const channelId = key.replace("sync_enabled_", "");
 
-    // Start initial batch sync
-    await this.startBatchSync(repositoryId);
-  }
-
-  /**
-   * Stop syncing a repository
-   */
-  async stopSync(repositoryId: string): Promise<void> {
-    // Remove webhook
-    const webhookId = await this.get<string>(`webhook_id_${repositoryId}`);
-    if (webhookId) {
-      try {
-        const token = await this.getToken(repositoryId);
-        const [owner, repo] = repositoryId.split("/");
-        await this.githubFetch(
-          token,
-          `/repos/${owner}/${repo}/hooks/${webhookId}`,
-          { method: "DELETE" },
-        );
-      } catch (error) {
-        console.warn("Failed to delete GitHub webhook:", error);
+      // PRs toggled on → start PR sync
+      if (!oldOptions.syncPullRequests && newOptions.syncPullRequests) {
+        await startPRBatchSync(this, channelId, true);
       }
-      await this.clear(`webhook_id_${repositoryId}`);
+
+      // Issues toggled on → start issue sync
+      if (!oldOptions.syncIssues && newOptions.syncIssues) {
+        await startIssueBatchSync(this, channelId, true);
+      }
     }
-
-    // Cleanup webhook secret
-    await this.clear(`webhook_secret_${repositoryId}`);
-
-    // Cleanup sync state
-    await this.clear(`sync_state_${repositoryId}`);
   }
 
-  // ---------- Webhook setup ----------
+  // ---------- Write-back hooks ----------
 
   /**
-   * Setup GitHub webhook for real-time PR updates
+   * Called when a link created by this source is updated by the user.
+   */
+  async onLinkUpdated(link: Link): Promise<void> {
+    if (link.type === "pull_request") {
+      await updatePRStatus(this, link);
+    } else if (link.type === "issue") {
+      await updateIssue(this, link);
+    }
+  }
+
+  /**
+   * Called when a note is created on a thread owned by this source.
+   */
+  async onNoteCreated(note: Note, meta: ThreadMeta): Promise<void> {
+    if (meta.prNumber) {
+      await addPRComment(this, meta, note.content ?? "");
+    } else if (meta.issueNumber) {
+      await addIssueComment(this, meta, note.content ?? "");
+    }
+  }
+
+  // ---------- Webhook ----------
+
+  /**
+   * Setup GitHub webhook for real-time updates.
+   * Subscribes to all event types regardless of options,
+   * so toggling on later works without re-creating the webhook.
    */
   private async setupWebhook(repositoryId: string): Promise<void> {
     try {
-      // Generate a webhook secret for signature verification
       const secret = crypto.randomUUID();
 
       const webhookUrl = await this.tools.network.createWebhook(
@@ -317,7 +375,6 @@ export class GitHub extends Source<GitHub> {
         repositoryId,
       );
 
-      // Skip webhook setup for localhost (development mode)
       if (
         webhookUrl.includes("localhost") ||
         webhookUrl.includes("127.0.0.1")
@@ -342,6 +399,7 @@ export class GitHub extends Source<GitHub> {
             events: [
               "pull_request",
               "pull_request_review",
+              "issues",
               "issue_comment",
             ],
             config: {
@@ -403,7 +461,6 @@ export class GitHub extends Source<GitHub> {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
-    // Constant-time comparison
     if (expected.length !== signature.length) return false;
     let result = 0;
     for (let i = 0; i < expected.length; i++) {
@@ -413,13 +470,13 @@ export class GitHub extends Source<GitHub> {
   }
 
   /**
-   * Handle incoming webhook events from GitHub
+   * Handle incoming webhook events from GitHub.
+   * Routes to PR or issue handlers based on event type and current options.
    */
   private async onWebhook(
     request: WebhookRequest,
     repositoryId: string,
   ): Promise<void> {
-    // Verify webhook signature
     const secret = await this.get<string>(`webhook_secret_${repositoryId}`);
     if (!secret) {
       console.warn("GitHub webhook secret not found, skipping verification");
@@ -453,525 +510,59 @@ export class GitHub extends Source<GitHub> {
         ? JSON.parse(request.body)
         : request.body;
 
+    const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
+
     if (event === "pull_request") {
-      await this.handlePRWebhook(payload, repositoryId);
+      if (options.syncPullRequests) {
+        await handlePRWebhook(this, payload, repositoryId);
+      }
     } else if (event === "pull_request_review") {
-      await this.handleReviewWebhook(payload, repositoryId);
+      if (options.syncPullRequests) {
+        await handleReviewWebhook(this, payload, repositoryId);
+      }
+    } else if (event === "issues") {
+      if (options.syncIssues) {
+        await handleIssueWebhook(this, payload, repositoryId);
+      }
     } else if (event === "issue_comment") {
-      // Only handle comments on PRs (issue_comment fires for both issues and PRs)
+      // issue_comment fires for both issues and PRs
       if (payload.issue?.pull_request) {
-        await this.handleCommentWebhook(payload, repositoryId);
-      }
-    }
-  }
-
-  /**
-   * Handle pull_request webhook event
-   */
-  private async handlePRWebhook(
-    payload: any,
-    repositoryId: string,
-  ): Promise<void> {
-    const pr: GitHubPullRequest = payload.pull_request;
-    if (!pr) return;
-
-    const [owner, repo] = repositoryId.split("/");
-
-    const authorContact = this.userToContact(pr.user);
-    const assigneeContact = pr.assignee
-      ? this.userToContact(pr.assignee)
-      : null;
-
-    const thread: NewLinkWithNotes = {
-      source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: "pull_request",
-      title: pr.title,
-      created: new Date(pr.created_at),
-      author: authorContact,
-      assignee: assigneeContact,
-      status: pr.merged_at
-        ? "merged"
-        : pr.state === "closed"
-          ? "closed"
-          : "open",
-      ...(pr.state === "closed" && !pr.merged_at ? { archived: true } : {}),
-      channelId: repositoryId,
-      meta: {
-        provider: "github",
-        owner,
-        repo,
-        prNumber: pr.number,
-        prNodeId: pr.id,
-        syncProvider: "github",
-        syncableId: repositoryId,
-      },
-      preview: pr.body || null,
-      notes: [],
-    };
-
-    await this.tools.integrations.saveLink(thread);
-  }
-
-  /**
-   * Handle pull_request_review webhook event
-   */
-  private async handleReviewWebhook(
-    payload: any,
-    repositoryId: string,
-  ): Promise<void> {
-    const review: GitHubReview = payload.review;
-    const pr: GitHubPullRequest = payload.pull_request;
-    if (!review || !pr) return;
-
-    // Skip empty COMMENTED reviews (just inline comments with no summary)
-    if (review.state === "COMMENTED" && !review.body) return;
-
-    const [owner, repo] = repositoryId.split("/");
-    const reviewAuthor = this.userToContact(review.user);
-
-    const prefix = this.reviewStatePrefix(review.state);
-    const content = prefix
-      ? `${prefix}${review.body ? `\n\n${review.body}` : ""}`
-      : review.body || null;
-
-    const thread: NewLinkWithNotes = {
-      source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: "pull_request",
-      title: pr.title,
-      notes: [
-        {
-          key: `review-${review.id}`,
-          content,
-          created: new Date(review.submitted_at),
-          author: reviewAuthor,
-        } as any,
-      ],
-      channelId: repositoryId,
-      meta: {
-        provider: "github",
-        owner,
-        repo,
-        prNumber: pr.number,
-        prNodeId: pr.id,
-        syncProvider: "github",
-        syncableId: repositoryId,
-      },
-    };
-
-    await this.tools.integrations.saveLink(thread);
-  }
-
-  /**
-   * Handle issue_comment webhook event (for PR comments)
-   */
-  private async handleCommentWebhook(
-    payload: any,
-    repositoryId: string,
-  ): Promise<void> {
-    const comment: GitHubIssueComment = payload.comment;
-    const issue = payload.issue;
-    if (!comment || !issue) return;
-
-    const [owner, repo] = repositoryId.split("/");
-    const prNumber = issue.number;
-    const commentAuthor = this.userToContact(comment.user);
-
-    const thread: NewLinkWithNotes = {
-      source: `github:pr:${owner}/${repo}/${prNumber}`,
-      type: "pull_request",
-      title: issue.title,
-      notes: [
-        {
-          key: `comment-${comment.id}`,
-          content: comment.body,
-          created: new Date(comment.created_at),
-          author: commentAuthor,
-        } as any,
-      ],
-      channelId: repositoryId,
-      meta: {
-        provider: "github",
-        owner,
-        repo,
-        prNumber,
-        syncProvider: "github",
-        syncableId: repositoryId,
-      },
-    };
-
-    await this.tools.integrations.saveLink(thread);
-  }
-
-  // ---------- Batch sync ----------
-
-  /**
-   * Initialize batch sync process
-   */
-  private async startBatchSync(repositoryId: string): Promise<void> {
-    await this.set(`sync_state_${repositoryId}`, {
-      page: 1,
-      batchNumber: 1,
-      prsProcessed: 0,
-      initialSync: true,
-    });
-
-    const batchCallback = await this.callback(this.syncBatch, repositoryId);
-    await this.runTask(batchCallback);
-  }
-
-  /**
-   * Process a batch of pull requests
-   */
-  private async syncBatch(repositoryId: string): Promise<void> {
-    const state = await this.get<SyncState>(`sync_state_${repositoryId}`);
-    if (!state) {
-      throw new Error(`Sync state not found for repository ${repositoryId}`);
-    }
-
-    const token = await this.getToken(repositoryId);
-    const [owner, repo] = repositoryId.split("/");
-
-    // Fetch batch of PRs (all states, sorted by updated)
-    const response = await this.githubFetch(
-      token,
-      `/repos/${owner}/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=${GitHub.PAGE_SIZE}&page=${state.page}`,
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch PRs: ${response.status} ${await response.text()}`,
-      );
-    }
-
-    const prs: GitHubPullRequest[] = await response.json();
-
-    // Filter: open PRs + recently closed/merged (within RECENT_DAYS)
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - GitHub.RECENT_DAYS);
-
-    const relevantPRs = prs.filter((pr) => {
-      if (pr.state === "open") return true;
-      // Closed/merged: include if recently updated
-      const closedDate = pr.merged_at || pr.closed_at;
-      if (closedDate && new Date(closedDate) >= cutoff) return true;
-      return false;
-    });
-
-    // If all PRs in this page are beyond the cutoff, stop syncing
-    const allBeyondCutoff =
-      prs.length > 0 &&
-      prs.every((pr) => {
-        if (pr.state === "open") return false;
-        const closedDate = pr.merged_at || pr.closed_at;
-        return closedDate && new Date(closedDate) < cutoff;
-      });
-
-    // Process each relevant PR
-    for (const pr of relevantPRs) {
-      const thread = await this.convertPRToThread(
-        token,
-        owner,
-        repo,
-        pr,
-        repositoryId,
-        state.initialSync,
-      );
-
-      if (thread) {
-        thread.channelId = repositoryId;
-        thread.meta = {
-          ...thread.meta,
-          syncProvider: "github",
-          syncableId: repositoryId,
-        };
-        await this.tools.integrations.saveLink(thread);
-      }
-    }
-
-    // Continue to next page if there are more PRs and not all beyond cutoff
-    if (prs.length === GitHub.PAGE_SIZE && !allBeyondCutoff) {
-      await this.set(`sync_state_${repositoryId}`, {
-        page: state.page + 1,
-        batchNumber: state.batchNumber + 1,
-        prsProcessed: state.prsProcessed + relevantPRs.length,
-        initialSync: state.initialSync,
-      });
-
-      const nextBatch = await this.callback(this.syncBatch, repositoryId);
-      await this.runTask(nextBatch);
-    } else {
-      // Sync complete
-      await this.clear(`sync_state_${repositoryId}`);
-    }
-  }
-
-  /**
-   * Convert a GitHub PR to a NewLinkWithNotes
-   */
-  private async convertPRToThread(
-    token: string,
-    owner: string,
-    repo: string,
-    pr: GitHubPullRequest,
-    repositoryId: string,
-    initialSync: boolean,
-  ): Promise<NewLinkWithNotes | null> {
-    const authorContact = this.userToContact(pr.user);
-    const assigneeContact = pr.assignee
-      ? this.userToContact(pr.assignee)
-      : null;
-
-    // Build thread-level actions
-    const threadActions: Action[] = [
-      {
-        type: ActionType.external,
-        title: `Open in GitHub`,
-        url: pr.html_url,
-      },
-    ];
-
-    const notes: any[] = [];
-
-    const hasDescription = pr.body && pr.body.trim().length > 0;
-    notes.push({
-      key: "description",
-      content: hasDescription ? pr.body : null,
-      created: new Date(pr.created_at),
-      author: authorContact,
-    });
-
-    // Fetch general comments (issue comments API)
-    try {
-      const commentsResponse = await this.githubFetch(
-        token,
-        `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100`,
-      );
-      if (commentsResponse.ok) {
-        const comments: GitHubIssueComment[] = await commentsResponse.json();
-        for (const comment of comments) {
-          const commentAuthor = this.userToContact(comment.user);
-          notes.push({
-            key: `comment-${comment.id}`,
-            content: comment.body,
-            created: new Date(comment.created_at),
-            author: commentAuthor,
-          });
+        if (options.syncPullRequests) {
+          await handlePRCommentWebhook(this, payload, repositoryId);
+        }
+      } else {
+        if (options.syncIssues) {
+          await handleIssueCommentWebhook(this, payload, repositoryId);
         }
       }
-    } catch (error) {
-      console.error("Error fetching PR comments:", error);
-    }
-
-    // Fetch review summaries
-    try {
-      const reviewsResponse = await this.githubFetch(
-        token,
-        `/repos/${owner}/${repo}/pulls/${pr.number}/reviews?per_page=100`,
-      );
-      if (reviewsResponse.ok) {
-        const reviews: GitHubReview[] = await reviewsResponse.json();
-        for (const review of reviews) {
-          // Skip empty COMMENTED reviews (just inline comments with no summary)
-          if (review.state === "COMMENTED" && !review.body) continue;
-
-          const reviewAuthor = this.userToContact(review.user);
-          const prefix = this.reviewStatePrefix(review.state);
-          const content = prefix
-            ? `${prefix}${review.body ? `\n\n${review.body}` : ""}`
-            : review.body || null;
-
-          if (content) {
-            notes.push({
-              key: `review-${review.id}`,
-              content,
-              created: new Date(review.submitted_at),
-              author: reviewAuthor,
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching PR reviews:", error);
-    }
-
-    const thread: NewLinkWithNotes = {
-      source: `github:pr:${owner}/${repo}/${pr.number}`,
-      type: "pull_request",
-      title: pr.title,
-      created: new Date(pr.created_at),
-      author: authorContact,
-      assignee: assigneeContact,
-      status: pr.merged_at
-        ? "merged"
-        : pr.state === "closed"
-          ? "closed"
-          : "open",
-      meta: {
-        provider: "github",
-        owner,
-        repo,
-        prNumber: pr.number,
-        prNodeId: pr.id,
-      },
-      actions: threadActions,
-      sourceUrl: pr.html_url,
-      notes,
-      preview: hasDescription ? pr.body : null,
-      ...(initialSync ? { unread: false } : {}),
-      ...(initialSync ? { archived: false } : {}),
-      // Archive closed-without-merge PRs on incremental sync only
-      ...(!initialSync && pr.state === "closed" && !pr.merged_at
-        ? { archived: true }
-        : {}),
-    };
-
-    return thread;
-  }
-
-  // ---------- Bidirectional methods ----------
-
-  /**
-   * Add a general comment to a pull request
-   */
-  async addPRComment(
-    meta: ThreadMeta,
-    body: string,
-    noteId?: string,
-  ): Promise<string | void> {
-    const owner = meta.owner as string;
-    const repo = meta.repo as string;
-    const prNumber = meta.prNumber as number;
-    const syncableId = `${owner}/${repo}`;
-
-    if (!owner || !repo || !prNumber) {
-      throw new Error("Owner, repo, and prNumber required in thread meta");
-    }
-
-    const token = await this.getToken(syncableId);
-
-    const response = await this.githubFetch(
-      token,
-      `/repos/${owner}/${repo}/issues/${prNumber}/comments`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body }),
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to add PR comment: ${response.status} ${await response.text()}`,
-      );
-    }
-
-    const comment = await response.json();
-    if (comment?.id) {
-      return `comment-${comment.id}`;
     }
   }
 
+  // ---------- Sync management ----------
+
   /**
-   * Update a PR's review status (approve or request changes)
+   * Stop syncing a repository (cleanup webhooks and state)
    */
-  async updatePRStatus(link: import("@plotday/twister").Link): Promise<void> {
-    if (!link.meta) return;
-
-    const owner = link.meta.owner as string;
-    const repo = link.meta.repo as string;
-    const prNumber = link.meta.prNumber as number;
-    const syncableId = `${owner}/${repo}`;
-
-    if (!owner || !repo || !prNumber) {
-      throw new Error("Owner, repo, and prNumber required in link meta");
-    }
-
-    const token = await this.getToken(syncableId);
-
-    // Map link status to PR review event
-    const isDone = link.status === "done" || link.status === "closed" || link.status === "approved";
-    if (isDone) {
-      const response = await this.githubFetch(
-        token,
-        `/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event: "APPROVE",
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to update PR status: ${response.status}`,
+  async stopSync(repositoryId: string): Promise<void> {
+    const webhookId = await this.get<string>(`webhook_id_${repositoryId}`);
+    if (webhookId) {
+      try {
+        const token = await this.getToken(repositoryId);
+        const [owner, repo] = repositoryId.split("/");
+        await this.githubFetch(
+          token,
+          `/repos/${owner}/${repo}/hooks/${webhookId}`,
+          { method: "DELETE" },
         );
+      } catch (error) {
+        console.warn("Failed to delete GitHub webhook:", error);
       }
-    }
-  }
-
-  /**
-   * Close a pull request without merging
-   */
-  async closePR(meta: ThreadMeta): Promise<void> {
-    const owner = meta.owner as string;
-    const repo = meta.repo as string;
-    const prNumber = meta.prNumber as number;
-    const syncableId = `${owner}/${repo}`;
-
-    if (!owner || !repo || !prNumber) {
-      throw new Error("Owner, repo, and prNumber required in thread meta");
+      await this.clear(`webhook_id_${repositoryId}`);
     }
 
-    const token = await this.getToken(syncableId);
-
-    const response = await this.githubFetch(
-      token,
-      `/repos/${owner}/${repo}/pulls/${prNumber}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state: "closed" }),
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to close PR: ${response.status} ${await response.text()}`,
-      );
-    }
-  }
-
-  // ---------- Helpers ----------
-
-  /**
-   * Convert a GitHub user to a NewContact using noreply email
-   */
-  private userToContact(user: GitHubUser): NewContact {
-    return {
-      email: `${user.id}+${user.login}@users.noreply.github.com`,
-      name: user.login,
-      avatar: user.avatar_url ?? undefined,
-    };
-  }
-
-  /**
-   * Get a prefix for review state
-   */
-  private reviewStatePrefix(
-    state: GitHubReview["state"],
-  ): string | null {
-    switch (state) {
-      case "APPROVED":
-        return "**Approved**";
-      case "CHANGES_REQUESTED":
-        return "**Changes Requested**";
-      case "DISMISSED":
-        return "**Dismissed**";
-      default:
-        return null;
-    }
+    await this.clear(`webhook_secret_${repositoryId}`);
+    await this.clear(`pr_sync_state_${repositoryId}`);
+    await this.clear(`issue_sync_state_${repositoryId}`);
   }
 }
 

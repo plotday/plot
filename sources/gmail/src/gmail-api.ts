@@ -176,6 +176,34 @@ export class GmailApi {
     await this.call("/stop", { method: "POST" });
   }
 
+  public async sendMessage(
+    raw: string,
+    threadId: string
+  ): Promise<{ id: string; threadId: string }> {
+    return await this.call("/messages/send", {
+      method: "POST",
+      body: { raw, threadId },
+    });
+  }
+
+  public async getProfile(): Promise<{ emailAddress: string }> {
+    return await this.call("/profile");
+  }
+
+  public async modifyThread(
+    threadId: string,
+    addLabelIds?: string[],
+    removeLabelIds?: string[]
+  ): Promise<void> {
+    const body: Record<string, string[]> = {};
+    if (addLabelIds?.length) body.addLabelIds = addLabelIds;
+    if (removeLabelIds?.length) body.removeLabelIds = removeLabelIds;
+    await this.call(`/threads/${threadId}/modify`, {
+      method: "POST",
+      body,
+    });
+  }
+
   public async getHistory(
     startHistoryId: string,
     labelId?: string,
@@ -238,6 +266,20 @@ export function parseEmailAddress(headerValue: string): EmailAddress {
 
 
 /**
+ * Parses a comma-separated email header value into an array of email address strings.
+ */
+export function parseEmailAddresses(headerValue: string | null): string[] {
+  if (!headerValue) return [];
+  return headerValue
+    .split(",")
+    .map((addr) => {
+      const parsed = parseEmailAddress(addr.trim());
+      return parsed.email;
+    })
+    .filter((email) => email.length > 0);
+}
+
+/**
  * Parses email addresses and returns NewActor[] for mentions.
  */
 function parseEmailAddressesToNewActors(headerValue: string | null): NewActor[] {
@@ -259,7 +301,7 @@ function parseEmailAddressesToNewActors(headerValue: string | null): NewActor[] 
 /**
  * Gets a specific header value from a message
  */
-function getHeader(message: GmailMessage, name: string): string | null {
+export function getHeader(message: GmailMessage, name: string): string | null {
   const header = message.payload.headers.find(
     (h) => h.name.toLowerCase() === name.toLowerCase()
   );
@@ -267,29 +309,29 @@ function getHeader(message: GmailMessage, name: string): string | null {
 }
 
 /**
- * Extracts the body from a Gmail message (handles multipart messages)
+ * Extracts the body from a Gmail message (handles multipart messages).
+ * Returns raw content with its type so HTML can be converted server-side.
  */
-function extractBody(part: GmailMessagePart): string {
+function extractBody(part: GmailMessagePart): { content: string; contentType: "text" | "html" } {
   // If this part has a body with data, return it
   if (part.body?.data) {
     // Gmail API returns base64url-encoded data
     const decoded = atob(part.body.data.replace(/-/g, "+").replace(/_/g, "/"));
-    return decoded;
+    const contentType = part.mimeType === "text/html" ? "html" as const : "text" as const;
+    return { content: decoded, contentType };
   }
 
   // If multipart, recursively search parts
   if (part.parts) {
-    // Prefer plain text over HTML
+    // Prefer HTML over plain text — server-side conversion produces cleaner output
+    const htmlPart = part.parts.find((p) => p.mimeType === "text/html");
+    if (htmlPart) {
+      return extractBody(htmlPart);
+    }
+
     const textPart = part.parts.find((p) => p.mimeType === "text/plain");
     if (textPart) {
       return extractBody(textPart);
-    }
-
-    const htmlPart = part.parts.find((p) => p.mimeType === "text/html");
-    if (htmlPart) {
-      // For HTML, strip tags for plain text representation
-      const html = extractBody(htmlPart);
-      return stripHtmlTags(html);
     }
 
     // Try first part as fallback
@@ -298,20 +340,7 @@ function extractBody(part: GmailMessagePart): string {
     }
   }
 
-  return "";
-}
-
-/**
- * Strips HTML tags for plain text representation
- * This is a simple implementation - could be enhanced with a proper HTML parser
- */
-function stripHtmlTags(html: string): string {
-  return html
-    .replace(/<style[^>]*>.*?<\/style>/gi, "")
-    .replace(/<script[^>]*>.*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return { content: "", contentType: "text" };
 }
 
 /**
@@ -361,9 +390,8 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
   // Canonical URL for the thread
   const canonicalUrl = `https://mail.google.com/mail/u/0/#inbox/${thread.id}`;
 
-  // Extract preview from first message
-  const firstMessageBody = extractBody(parentMessage.payload);
-  const preview = firstMessageBody || parentMessage.snippet || null;
+  // Use Gmail's plain-text snippet for preview (avoids HTML in previews)
+  const preview = parentMessage.snippet || null;
 
   // Create link
   const plotThread: NewLinkWithNotes = {
@@ -389,7 +417,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const sender = from ? parseEmailAddress(from) : null;
     if (!sender) continue; // Skip messages without sender
 
-    const body = extractBody(message.payload);
+    const { content: body, contentType } = extractBody(message.payload);
 
     // Combine to and cc for mentions - convert to NewActor[]
     const mentions: NewActor[] = [
@@ -405,7 +433,9 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
         name: sender.name || undefined,
       } as NewActor,
       content: body || message.snippet,
+      contentType,
       mentions: mentions.length > 0 ? mentions : undefined,
+      created: new Date(parseInt(message.internalDate)),
     };
 
     plotThread.notes!.push(note);
@@ -471,4 +501,58 @@ export async function syncGmailChannel(
     state: newState,
     hasMore: !!nextPageToken,
   };
+}
+
+/**
+ * Builds an RFC 2822 email message for replying to a Gmail thread.
+ * Returns the base64url-encoded raw message string for the Gmail API.
+ */
+export function buildReplyMessage(options: {
+  to: string[];
+  cc: string[];
+  from: string;
+  subject: string;
+  body: string;
+  messageId: string;
+  references: string;
+}): string {
+  const { to, cc, from, subject, body, messageId, references } = options;
+
+  // Ensure subject has "Re:" prefix
+  const reSubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
+
+  // Build RFC 2822 headers
+  const lines: string[] = [
+    `From: ${from}`,
+    `To: ${to.join(", ")}`,
+  ];
+
+  if (cc.length > 0) {
+    lines.push(`Cc: ${cc.join(", ")}`);
+  }
+
+  lines.push(`Subject: ${reSubject}`);
+  lines.push(`In-Reply-To: ${messageId}`);
+
+  // Build References chain
+  const refChain = references
+    ? `${references} ${messageId}`
+    : messageId;
+  lines.push(`References: ${refChain}`);
+
+  lines.push(`Content-Type: text/plain; charset="UTF-8"`);
+  lines.push(""); // Empty line separates headers from body
+  lines.push(body);
+
+  const rawMessage = lines.join("\r\n");
+
+  // Base64url encode
+  const encoded = btoa(
+    String.fromCharCode(...new TextEncoder().encode(rawMessage))
+  )
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  return encoded;
 }
