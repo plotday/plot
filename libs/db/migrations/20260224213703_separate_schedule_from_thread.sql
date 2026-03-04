@@ -32,7 +32,7 @@ CREATE TABLE "public"."schedule" (
   CONSTRAINT "schedule_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."user" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "schedule_at_xor_on" CHECK (((at IS NOT NULL) AND ("on" IS NULL)) OR ((at IS NULL) AND ("on" IS NOT NULL))),
   CONSTRAINT "schedule_order_user" CHECK (((user_id IS NULL) AND ("order" IS NULL)) OR ((user_id IS NOT NULL) AND ("order" IS NOT NULL))),
-  CONSTRAINT "schedule_recurrence_duration" CHECK (((recurrence_rule IS NULL) AND (duration IS NULL)) OR ((recurrence_rule IS NOT NULL) AND (duration IS NOT NULL))),
+  CONSTRAINT "schedule_recurrence_duration" CHECK ((occurrence IS NOT NULL) OR ((recurrence_rule IS NULL) AND (duration IS NULL)) OR ((recurrence_rule IS NOT NULL) AND (duration IS NOT NULL))),
   CONSTRAINT "schedule_recurrence_xor_occurrence" CHECK (NOT ((recurrence_rule IS NOT NULL) AND (occurrence IS NOT NULL)))
 );
 -- Create index "idx_schedule_at" to table: "schedule"
