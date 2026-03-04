@@ -1,4 +1,4 @@
-import { type Actor, type Link, type Note, type ThreadMeta } from "./plot";
+import { type Actor, type Link, type Note, type Thread, type ThreadMeta } from "./plot";
 import {
   type AuthProvider,
   type AuthToken,
@@ -131,6 +131,21 @@ export abstract class Source<TSelf> extends Twist<TSelf> {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onNoteCreated(note: Note, meta: ThreadMeta): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a user reads or unreads a thread owned by this source.
+   * Override to write back read status to the external service
+   * (e.g., marking an email as read in Gmail).
+   *
+   * @param thread - The thread that was read/unread
+   * @param actor - The user who performed the action
+   * @param unread - false when marked as read, true when marked as unread
+   * @param meta - Metadata from the thread's link (contains channelId, threadId, etc.)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onThreadRead(thread: Thread, actor: Actor, unread: boolean, meta: ThreadMeta): Promise<void> {
     return Promise.resolve();
   }
 

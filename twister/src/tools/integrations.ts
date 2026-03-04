@@ -1,14 +1,12 @@
 import {
   type Actor,
   type ActorId,
-  type Link,
   type NewContact,
   type NewLinkWithNotes,
-  type Note,
-  type ThreadMeta,
   ITool,
   Serializable,
 } from "..";
+import type { JSONValue } from "../utils/types";
 import type { Uuid } from "../utils/uuid";
 
 /**
@@ -48,47 +46,6 @@ export type LinkTypeConfig = {
     /** Human-readable label (e.g., "Open", "Done") */
     label: string;
   }>;
-};
-
-/**
- * Configuration for an OAuth provider.
- *
- * @deprecated Sources should declare `provider`, `scopes`, and `linkTypes` as class
- * properties, and implement channel lifecycle methods directly on the Source class.
- * This type is retained for backward compatibility.
- */
-export type IntegrationProviderConfig = {
-  /** The OAuth provider */
-  provider: AuthProvider;
-  /** OAuth scopes to request */
-  scopes: string[];
-  /** Registry of link types this source creates */
-  linkTypes?: LinkTypeConfig[];
-  /** Returns available channels for the authorized actor. Must not use Plot tool. */
-  getChannels: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
-  /** Called when a channel resource is enabled for syncing */
-  onChannelEnabled: (channel: Channel) => Promise<void>;
-  /** Called when a channel resource is disabled */
-  onChannelDisabled: (channel: Channel) => Promise<void>;
-  /**
-   * Called when a link created by this source is updated by the user.
-   * Used for write-back to external services (e.g., changing issue status).
-   */
-  onLinkUpdated?: (link: Link) => Promise<void>;
-  /**
-   * Called when a note is created on a thread owned by this source.
-   * Used for write-back to external services (e.g., adding a comment to an issue).
-   */
-  onNoteCreated?: (note: Note, meta: ThreadMeta) => Promise<void>;
-
-};
-
-/**
- * Options passed to Integrations in the build() method.
- */
-export type IntegrationOptions = {
-  /** Provider configurations with lifecycle callbacks */
-  providers: IntegrationProviderConfig[];
 };
 
 /**
@@ -211,7 +168,34 @@ export abstract class Integrations extends ITool {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract saveContacts(contacts: NewContact[]): Promise<Actor[]>;
 
+  /**
+   * Archives links matching the given filter that were created by this source.
+   *
+   * For each archived link's thread, if no other non-archived links remain,
+   * the thread is also archived.
+   *
+   * @param filter - Filter criteria for which links to archive
+   * @returns Promise that resolves when archiving is complete
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract archiveLinks(filter: ArchiveLinkFilter): Promise<void>;
+
 }
+
+/**
+ * Filter criteria for archiving links.
+ * All fields are optional; only provided fields are used for matching.
+ */
+export type ArchiveLinkFilter = {
+  /** Filter by channel ID */
+  channelId?: string;
+  /** Filter by link type (e.g., "issue", "pull_request") */
+  type?: string;
+  /** Filter by link status (e.g., "open", "closed") */
+  status?: string;
+  /** Filter by metadata fields (uses containment matching) */
+  meta?: Record<string, JSONValue>;
+};
 
 /**
  * Enumeration of supported OAuth providers.

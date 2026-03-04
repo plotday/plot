@@ -1,4 +1,5 @@
-import { type Action, type Actor, type Priority, Uuid } from "./plot";
+import { type Action, type Actor, type ActorId, type Link, type Note, type Priority, type Thread, Uuid } from "./plot";
+import type { Tag } from "./tag";
 import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
 import type { Serializable } from "./utils/serializable";
@@ -287,6 +288,24 @@ export abstract class Twist<TSelf> {
   }
 
   /**
+   * Called when the twist's options configuration changes.
+   *
+   * Override to react to option changes, e.g. archiving items when a sync
+   * type is toggled off, or starting sync when a type is toggled on.
+   *
+   * @param oldOptions - The previously resolved options
+   * @param newOptions - The newly resolved options
+   * @returns Promise that resolves when the change is handled
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onOptionsChanged(
+    oldOptions: Record<string, any>,
+    newOptions: Record<string, any>
+  ): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
    * Called when the twist is removed from a priority.
    *
    * This method should contain cleanup logic such as removing webhooks,
@@ -295,6 +314,73 @@ export abstract class Twist<TSelf> {
    * @returns Promise that resolves when deactivation is complete
    */
   deactivate(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a thread created by this twist is updated.
+   * Override to implement two-way sync with an external system.
+   *
+   * @param thread - The updated thread
+   * @param changes - Tag additions and removals on the thread
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onThreadUpdated(
+    thread: Thread,
+    changes: {
+      tagsAdded: Record<Tag, ActorId[]>;
+      tagsRemoved: Record<Tag, ActorId[]>;
+    }
+  ): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a note is created on a thread created by this twist.
+   * Override to implement two-way sync (e.g. syncing notes as comments).
+   *
+   * Notes created by the twist itself are filtered out to prevent loops.
+   *
+   * @param note - The newly created note
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onNoteCreated(note: Note, ...args: any[]): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a link is created in a connected source channel.
+   * Requires `link: true` in Plot options.
+   *
+   * @param link - The newly created link
+   * @param notes - Notes on the link's thread
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onLinkCreated(link: Link, notes: Note[]): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a link in a connected source channel is updated.
+   * Requires `link: true` in Plot options.
+   *
+   * @param link - The updated link
+   * @param notes - Notes on the link's thread (optional)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onLinkUpdated(link: Link, notes?: Note[]): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a note is created on a thread with a link from a connected channel.
+   * Requires `link: true` in Plot options.
+   *
+   * @param note - The newly created note
+   * @param link - The link associated with the thread
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onLinkNoteCreated(note: Note, link: Link): Promise<void> {
     return Promise.resolve();
   }
 

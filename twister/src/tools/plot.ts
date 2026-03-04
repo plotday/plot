@@ -4,6 +4,7 @@ import {
   type Actor,
   type ActorId,
   ITool,
+  type Link,
   type NewThread,
   type NewThreadWithNotes,
   type NewContact,
@@ -13,7 +14,6 @@ import {
   type NoteUpdate,
   type Priority,
   type PriorityUpdate,
-  type Tag,
   Uuid,
 } from "..";
 import {
@@ -67,6 +67,20 @@ export type NoteIntentHandler = {
   examples: string[];
   /** The function to call when this intent is matched */
   handler: (note: Note) => Promise<void>;
+};
+
+/**
+ * Filter for querying links from connected source channels.
+ */
+export type LinkFilter = {
+  /** Only return links from these channel IDs. */
+  channelIds?: string[];
+  /** Only return links created/updated after this date. */
+  since?: Date;
+  /** Only return links of this type. */
+  type?: string;
+  /** Maximum number of links to return. */
+  limit?: number;
 };
 
 /**
@@ -125,7 +139,6 @@ export abstract class Plot extends ITool {
    *     plot: build(Plot, {
    *       thread: {
    *         access: ThreadAccess.Create,
-   *         updated: this.onThreadUpdated
    *       },
    *       note: {
    *         intents: [{
@@ -133,8 +146,8 @@ export abstract class Plot extends ITool {
    *           examples: ["Schedule a meeting tomorrow"],
    *           handler: this.onSchedulingIntent
    *         }],
-   *         created: this.onNoteCreated
    *       },
+   *       link: true,
    *       priority: {
    *         access: PriorityAccess.Full
    *       },
@@ -153,20 +166,6 @@ export abstract class Plot extends ITool {
        * Must be explicitly set to grant permissions.
        */
       access?: ThreadAccess;
-      /**
-       * Called when a thread created by this twist is updated.
-       * This is often used to implement two-way sync with an external system.
-       *
-       * @param thread - The updated thread
-       * @param changes - Changes to the thread and the previous version
-       */
-      updated?: (
-        thread: Thread,
-        changes: {
-          tagsAdded: Record<Tag, ActorId[]>;
-          tagsRemoved: Record<Tag, ActorId[]>;
-        }
-      ) => Promise<void>;
     };
     note?: {
       /**
@@ -189,18 +188,9 @@ export abstract class Plot extends ITool {
        * ```
        */
       intents?: NoteIntentHandler[];
-      /**
-       * Called when a note is created on a thread created by this twist.
-       * This is often used to implement two-way sync with an external system,
-       * such as syncing notes as comments back to the source system.
-       *
-       * Notes created by the twist itself are automatically filtered out to prevent loops.
-       * The parent thread is available via note.thread.
-       *
-       * @param note - The newly created note
-       */
-      created?: (note: Note) => Promise<void>;
     };
+    /** Enable link processing from connected source channels. */
+    link?: true;
     priority?: {
       access?: PriorityAccess;
     };
@@ -517,4 +507,15 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract getSchedules(threadId: Uuid): Promise<Schedule[]>;
+
+  /**
+   * Retrieves links from connected source channels.
+   *
+   * Requires `link: true` in Plot options.
+   *
+   * @param filter - Optional filter criteria for links
+   * @returns Promise resolving to array of links with their notes
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getLinks(filter?: LinkFilter): Promise<Array<{ link: Link; notes: Note[] }>>;
 }

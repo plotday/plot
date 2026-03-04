@@ -345,7 +345,11 @@ export type ThreadCommon = {
   /** Unique identifier for the thread */
   id: Uuid;
   /**
-   * When this thread was created.
+   * When this item was created.
+   *
+   * **For sources:** Set this to the external system's timestamp (e.g., email
+   * sent date, comment creation date), NOT the sync time. If omitted, defaults
+   * to the current time, which is almost never correct for synced data.
    */
   created: Date;
   /** Whether this thread is private (only visible to creator) */
@@ -506,31 +510,31 @@ type ThreadBulkUpdateFields = Partial<
  * Includes all bulk fields plus tags and preview.
  */
 type ThreadSingleUpdateFields = ThreadBulkUpdateFields & {
-    /**
-     * Tags to change on the thread. Use an empty array of NewActor to remove a tag.
-     * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
-     */
-    tags?: NewTags;
+  /**
+   * Tags to change on the thread. Use an empty array of NewActor to remove a tag.
+   * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
+   */
+  tags?: NewTags;
 
-    /**
-     * Add or remove the twist's tags.
-     * Maps tag ID to boolean: true = add tag, false = remove tag.
-     * This is allowed on all threads the twist has access to.
-     */
-    twistTags?: Partial<Record<Tag, boolean>>;
+  /**
+   * Add or remove the twist's tags.
+   * Maps tag ID to boolean: true = add tag, false = remove tag.
+   * This is allowed on all threads the twist has access to.
+   */
+  twistTags?: Partial<Record<Tag, boolean>>;
 
-    /**
-     * Optional preview content for the thread. Can be Markdown formatted.
-     * The preview will be automatically generated from this content (truncated to 100 chars).
-     *
-     * - string: Use this content for preview generation
-     * - null: Explicitly disable preview (no preview will be shown)
-     * - undefined (omitted): Preserve current preview value
-     *
-     * This field is write-only and won't be returned when reading threads.
-     */
-    preview?: string | null;
-  };
+  /**
+   * Optional preview content for the thread. Can be Markdown formatted.
+   * The preview will be automatically generated from this content (truncated to 100 chars).
+   *
+   * - string: Use this content for preview generation
+   * - null: Explicitly disable preview (no preview will be shown)
+   * - undefined (omitted): Preserve current preview value
+   *
+   * This field is write-only and won't be returned when reading threads.
+   */
+  preview?: string | null;
+};
 
 export type ThreadUpdate =
   | (({ id: Uuid } | { source: string }) & ThreadSingleUpdateFields)
@@ -852,9 +856,7 @@ export type NewLink = (
     }
   | {}
 ) &
-  Partial<
-    Omit<Link, "id" | "source" | "author" | "assignee" | "threadId">
-  > & {
+  Partial<Omit<Link, "id" | "source" | "author" | "assignee" | "threadId">> & {
     /** The person that created the item. By default, it will be the twist itself. */
     author?: NewActor;
     /** The person assigned to the item. */
@@ -899,4 +901,3 @@ export type NewLinkWithNotes = NewLink & {
   /** Schedule occurrence overrides */
   scheduleOccurrences?: NewScheduleOccurrence[];
 };
-
