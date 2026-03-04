@@ -31,7 +31,65 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  wait-for-workers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Deploy Workers to complete
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.sha }}"
+          echo "Checking for Deploy Workers run at commit $SHA"
+
+          # Initial delay to let GitHub queue both workflows
+          sleep 15
+
+          # Poll for the deploy-workers run
+          TIMEOUT=1800  # 30 minutes
+          INTERVAL=30
+          ELAPSED=0
+
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Find a deploy-workers run for this commit
+            RUN_JSON=$(gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow=deploy-workers.yml \
+              --commit="$SHA" \
+              --json status,conclusion,databaseId \
+              --limit 1 2>/dev/null || echo "[]")
+
+            RUN_COUNT=$(echo "$RUN_JSON" | jq length)
+
+            if [ "$RUN_COUNT" -eq 0 ]; then
+              echo "No Deploy Workers run found for this commit. Proceeding."
+              exit 0
+            fi
+
+            STATUS=$(echo "$RUN_JSON" | jq -r '.[0].status')
+            CONCLUSION=$(echo "$RUN_JSON" | jq -r '.[0].conclusion')
+            RUN_ID=$(echo "$RUN_JSON" | jq -r '.[0].databaseId')
+
+            echo "Deploy Workers run $RUN_ID: status=$STATUS conclusion=$CONCLUSION (${ELAPSED}s elapsed)"
+
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$CONCLUSION" = "success" ]; then
+                echo "Deploy Workers completed successfully. Proceeding."
+                exit 0
+              else
+                echo "Deploy Workers failed with conclusion: $CONCLUSION. Aborting."
+                exit 1
+              fi
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "Timed out waiting for Deploy Workers after ${TIMEOUT}s. Aborting."
+          exit 1
+
   check-changes:
+    needs: wait-for-workers
     runs-on: ubuntu-latest
     outputs:
       twists: ${{ steps.filter.outputs.twists }}
