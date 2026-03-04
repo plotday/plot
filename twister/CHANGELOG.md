@@ -1,5 +1,30 @@
 # @plotday/twister
 
+## 0.37.0
+
+### Added
+
+- Schedule type with ScheduleContact for event scheduling, recurring events, and per-user schedules ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+- Source.onThreadRead() hook for writing back read/unread status to external services ([#101](https://github.com/plotday/plot/pull/101) [`6e9dcf5`](https://github.com/plotday/plot/commit/6e9dcf5317a713747ccced73021e6c14e27aab3b))
+- Source base class for building service integrations with provider, scopes, and lifecycle management ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+- LinkType config for sources and channelId on Link for account-based priority routing ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+- Package exports for ./source and ./schedule modules ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+
+### Changed
+
+- BREAKING — Refactor Source base class to own provider identity and channel lifecycle ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+- BREAKING — Rename Activity to Thread and Link to Action throughout the SDK (types, methods, filters) ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+- BREAKING — Twist lifecycle hooks onThreadUpdated, onNoteCreated moved from Plot options to Twist base class methods; added onLinkCreated, onLinkUpdated, onLinkNoteCreated, onOptionsChanged ([#101](https://github.com/plotday/plot/pull/101) [`6e9dcf5`](https://github.com/plotday/plot/commit/6e9dcf5317a713747ccced73021e6c14e27aab3b))
+- BREAKING — Removed deprecated IntegrationProviderConfig and IntegrationOptions types; added archiveLinks(filter) for bulk-archiving links ([#101](https://github.com/plotday/plot/pull/101) [`6e9dcf5`](https://github.com/plotday/plot/commit/6e9dcf5317a713747ccced73021e6c14e27aab3b))
+- BREAKING — Removed thread.updated and note.created callbacks from Plot options (use Twist.onThreadUpdated/onNoteCreated instead); added `link: true` option and `getLinks(filter?)` method for link processing ([#101](https://github.com/plotday/plot/pull/101) [`6e9dcf5`](https://github.com/plotday/plot/commit/6e9dcf5317a713747ccced73021e6c14e27aab3b))
+- BREAKING — Rename Syncable to Channel in Integrations tool, add saveLink() and saveContacts() methods ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+
+### Removed
+
+- BREAKING — Deprecated twister functions and types ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+- BREAKING — Common interfaces (calendar, documents, messaging, projects, source-control) replaced by individual source implementations ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+- BREAKING — RSVP tags (Attend, Skip, Undecided) from Tag enum, replaced by ScheduleContact ([#101](https://github.com/plotday/plot/pull/101) [`46fe8f1`](https://github.com/plotday/plot/commit/46fe8f1a3c86b73d71bac3b4b6119d43fd3481e1))
+
 ## 0.36.0
 
 ### Added
