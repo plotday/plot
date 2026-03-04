@@ -1248,7 +1248,7 @@ class Thread extends Equatable implements Comparable<Thread> {
             CaseWhen(linkSched.startAt.isNotNull(), then: linkSched.startAt),
             CaseWhen(linkSched.startOn.isNotNull(), then: linkSched.startOn),
           ],
-          orElse: Constant(DateTime(0)),
+          orElse: Constant(DateTime.utc(0)),
         );
         query.orderBy([
           OrderingTerm.asc(todoSort),
