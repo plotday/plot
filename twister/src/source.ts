@@ -1,4 +1,4 @@
-import { type Actor, type Link, type Note, type Thread, type ThreadMeta } from "./plot";
+import { type Actor, type Link, type Note, type Thread } from "./plot";
 import {
   type AuthProvider,
   type AuthToken,
@@ -127,10 +127,10 @@ export abstract class Source<TSelf> extends Twist<TSelf> {
    * (e.g., adding a comment to a Linear issue).
    *
    * @param note - The created note
-   * @param meta - Metadata from the thread's link
+   * @param thread - The thread the note belongs to (includes thread.meta with source-specific data)
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onNoteCreated(note: Note, meta: ThreadMeta): Promise<void> {
+  onNoteCreated(note: Note, thread: Thread): Promise<void> {
     return Promise.resolve();
   }
 
@@ -139,13 +139,28 @@ export abstract class Source<TSelf> extends Twist<TSelf> {
    * Override to write back read status to the external service
    * (e.g., marking an email as read in Gmail).
    *
-   * @param thread - The thread that was read/unread
+   * @param thread - The thread that was read/unread (includes thread.meta with source-specific data)
    * @param actor - The user who performed the action
    * @param unread - false when marked as read, true when marked as unread
-   * @param meta - Metadata from the thread's link (contains channelId, threadId, etc.)
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onThreadRead(thread: Thread, actor: Actor, unread: boolean, meta: ThreadMeta): Promise<void> {
+  onThreadRead(thread: Thread, actor: Actor, unread: boolean): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a user marks or unmarks a thread as todo.
+   * Override to sync todo status to the external service
+   * (e.g., starring an email in Gmail when marked as todo).
+   *
+   * @param thread - The thread (includes thread.meta with source-specific data)
+   * @param actor - The user who changed the todo status
+   * @param todo - true when marked as todo, false when done or removed
+   * @param options - Additional context
+   * @param options.date - The todo date (when todo=true)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onThreadToDo(thread: Thread, actor: Actor, todo: boolean, options: { date?: Date }): Promise<void> {
     return Promise.resolve();
   }
 

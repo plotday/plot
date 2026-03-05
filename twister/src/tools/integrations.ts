@@ -180,6 +180,23 @@ export abstract class Integrations extends ITool {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract archiveLinks(filter: ArchiveLinkFilter): Promise<void>;
 
+  /**
+   * Sets or clears todo status on a thread owned by this source.
+   *
+   * @param source - The link source URL identifying the thread
+   * @param actorId - The user to set the todo for
+   * @param todo - true to mark as todo, false to clear/complete
+   * @param options - Additional options
+   * @param options.date - The todo date (when todo=true). Defaults to today.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract setThreadToDo(
+    source: string,
+    actorId: ActorId,
+    todo: boolean,
+    options?: { date?: Date | string }
+  ): Promise<void>;
+
 }
 
 /**

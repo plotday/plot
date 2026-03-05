@@ -373,6 +373,8 @@ type ThreadFields = ThreadCommon & {
   priority: Priority;
   /** The schedule associated with this thread, if any */
   schedule?: Schedule;
+  /** Source-specific metadata from the thread's link, populated on callbacks */
+  meta?: ThreadMeta;
 };
 
 export type Thread = ThreadFields;
