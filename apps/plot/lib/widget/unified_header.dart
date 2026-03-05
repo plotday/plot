@@ -176,7 +176,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final suffixes = <Widget>[
       // Active tag toggles (when thread is visible)
       if (thread != null)
-        ..._buildActiveTagToggles(context, thread, notifier),
+        ..._buildActiveTagToggles(context, thread),
 
       // Todo toggle (when thread is visible)
       if (thread != null) _buildTodoToggle(context, thread),
@@ -405,16 +405,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   }
 
   /// Builds active tag toggle buttons for the current thread.
-  List<Widget> _buildActiveTagToggles(
-    BuildContext context,
-    Thread thread,
-    ThreadHeaderNotifier? notifier,
-  ) {
-    final tags = notifier?.tags ?? const [];
-    return tags
-        .where((tagData) => thread.hasTag(tagData.$1))
+  List<Widget> _buildActiveTagToggles(BuildContext context, Thread thread) {
+    return thread.tags.keys
+        .where((tag) => tag != Tag.todo && tag.addable)
         .take(3)
-        .map((tagData) => Button.icon(ToggleThreadTag(thread, tagData.$1)))
+        .map((tag) => Button.icon(ToggleThreadTag(thread, tag)))
         .toList();
   }
 
