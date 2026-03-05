@@ -299,19 +299,57 @@ class NoteCommands extends StatelessWidget {
     final actorId = Base.actorId;
     // Capture accent color before async gap to avoid use_build_context_synchronously
     final accentColor = context.colour.accent;
+
+    // Compute todo/done state
+    final selfTodo = note.isAssignedTo(actorId);
+    final selfDone = note.isCompletedBy(actorId);
+    final todoActors = note.tags[Tag.todo] ?? [];
+    final doneActors = note.tags[Tag.done] ?? [];
+    final othersTodo = todoActors.where((id) => id != actorId).toList();
+    final anyDone = doneActors.isNotEmpty;
+
+    // Build custom todo/done tag widgets
+    final taskTagWidgets = <Widget>[
+      // Self has todo: show circle icon, clicking marks done
+      if (selfTodo)
+        Button.icon(
+          SelfTaskAction(note),
+          key: ValueKey(Object.hash(note.id, Tag.todo.id, 'self')),
+          selected: true,
+        ),
+      // Others have todo (not self): show circleUser with count
+      if (!selfTodo && othersTodo.isNotEmpty)
+        CountBadge(
+          count: othersTodo.length,
+          child: Button.icon(
+            PickNoteAssignee(note),
+            key: ValueKey(Object.hash(note.id, Tag.todo.id, 'others')),
+            selected: true,
+          ),
+        ),
+      // Anyone has done: show check with count
+      if (anyDone)
+        CountBadge(
+          count: doneActors.length,
+          child: Button.icon(
+            ToggleNoteTag(note, Tag.done, actorId),
+            key: ValueKey(Object.hash(note.id, Tag.done.id)),
+            selected: true,
+          ),
+        ),
+    ];
+
+    // Build generic tag widgets (excluding todo/done which are handled above)
     final tagFutures = Tag.getAll()
         .where((tag) {
-          // Show tags if ANY actor has them (not just current user)
+          if (tag == Tag.todo || tag == Tag.done) return false;
           final actors = note.tags[tag];
           return actors != null && actors.isNotEmpty;
         })
         .map((tag) async {
           final key = ValueKey(Object.hash(note.id, tag.id));
 
-          // Use SelfTaskAction when clicking Tag.todo (matching ThreadWidget behavior)
-          final command = tag == Tag.todo
-              ? SelfTaskAction(note)
-              : ToggleNoteTag(note, tag, actorId);
+          final command = ToggleNoteTag(note, tag, actorId);
 
           // Get actor names for tooltip
           final actorNames = await note.getTagActorNames(tag);
@@ -347,16 +385,19 @@ class NoteCommands extends StatelessWidget {
     final activityState = activityBloc.state;
 
     // Get commands (only if showCommands is true)
-    final pickAssignee = PickNoteAssignee(note);
-    // Hide the self slot when the tag bar already shows a todo/done tag for the note
-    final hasSelfTaskTag =
-        note.isAssignedTo(actorId) || note.isCompletedBy(actorId);
+    // State-based logic:
+    // - No todo/done: show SelfTaskAction + PickNoteAssignee
+    // - Self todo: show PickNoteAssignee only
+    // - Self done: show PickNoteAssignee only
+    // - Others todo only (no self todo/done): no task/assign buttons
+    // - Any done: show PickNoteAssignee only
+    final noTodoDone = todoActors.isEmpty && doneActors.isEmpty;
+    final othersTodoOnly = othersTodo.isNotEmpty && !selfTodo && !selfDone && !anyDone;
     final commandButtons = showCommands
         ? [
-            // Self slot: shown when not already visible as a tag
-            if (!hasSelfTaskTag) Button.icon(SelfTaskAction(note)),
-            // Others slot: only when others are assigned
-            if (pickAssignee.hasOtherAssignees) Button.icon(pickAssignee),
+            if (noTodoDone) Button.icon(SelfTaskAction(note)),
+            if (!othersTodoOnly && (noTodoDone || selfTodo || selfDone || anyDone))
+              Button.icon(PickNoteAssignee(note)),
             // Add top tag buttons
             ...topNoteTags(
               note,
@@ -377,19 +418,18 @@ class NoteCommands extends StatelessWidget {
       future: Future.wait(tagFutures),
       builder: (context, snapshot) {
         // While loading or on error, show buttons without subtitles
-        final loadedTagButtons =
+        final genericTagButtons =
             snapshot.hasData && snapshot.connectionState == ConnectionState.done
             ? snapshot.data!
             : Tag.getAll()
                   .where((tag) {
+                    if (tag == Tag.todo || tag == Tag.done) return false;
                     final actors = note.tags[tag];
                     return actors != null && actors.isNotEmpty;
                   })
                   .map((tag) {
                     final key = ValueKey(Object.hash(note.id, tag.id));
-                    final command = tag == Tag.todo
-                        ? SelfTaskAction(note)
-                        : ToggleNoteTag(note, tag, actorId);
+                    final command = ToggleNoteTag(note, tag, actorId);
                     final count = note.tags[tag]?.length ?? 0;
                     // Use pulsing animation for twist tags
                     if (tag == Tag.twist) {
@@ -409,8 +449,8 @@ class NoteCommands extends StatelessWidget {
                   })
                   .toList();
 
-        // Combine tags and commands
-        final allButtons = [...loadedTagButtons, ...commandButtons];
+        // Combine task tags, generic tags, and commands
+        final allButtons = [...taskTagWidgets, ...genericTagButtons, ...commandButtons];
 
         // Use LayoutBuilder to dynamically truncate buttons based on available width
         return LayoutBuilder(

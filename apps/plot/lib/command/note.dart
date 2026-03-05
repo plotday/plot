@@ -139,7 +139,7 @@ class SelfTaskAction extends NoteCommand {
   static IconData? _hoverIconForState(_SelfTaskState state) => switch (state) {
     _SelfTaskState.unassigned => null,
     _SelfTaskState.todo => PlotIcon.selfTaskHover,
-    _SelfTaskState.done => PlotIcon.selfTaskDoneHover,
+    _SelfTaskState.done => null,
   };
 
   @override
@@ -409,15 +409,7 @@ class PickNoteAssignee extends ShowCommands {
   bool get hasOtherAssignees =>
       note.assignees.any((id) => id != Base.actorId);
 
-  static IconData _computeIcon(Note note) {
-    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
-    if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
-    // Check if all other assignees are done
-    final allOthersDone = otherAssignees.every(
-      (id) => note.isCompletedBy(id),
-    );
-    return allOthersDone ? PlotIcon.othersTaskDone : PlotIcon.othersTask;
-  }
+  static IconData _computeIcon(Note note) => PlotIcon.assignAdd;
 
   static Future<Commands> _getAssigneeCommands(Note note) async {
     final activity = await Thread.getOne(note.threadId);
