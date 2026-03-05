@@ -897,22 +897,29 @@ class _PriorityPageState extends State<PriorityPage>
                                         state,
                                         listController,
                                       )
-                                    : ThreadListSourceProvider(
-                                        source: isUpNext
-                                            ? ThreadListSource.agenda
-                                            : ThreadListSource.activityFeed,
-                                        child: _buildList(
-                                          context,
-                                          state,
-                                          items,
-                                          listController,
-                                          ScrollControllerContext.of(context),
-                                          enableReorder: isUpNext,
-                                          doneEnd: isUpNext
-                                              ? state.doneEnd
-                                              : state.doneStart,
-                                        ),
-                                      ),
+                                    : isUpNext
+                                        ? ThreadListSourceProvider(
+                                            source: ThreadListSource.agenda,
+                                            child: _buildList(
+                                              context,
+                                              state,
+                                              items,
+                                              listController,
+                                              ScrollControllerContext.of(context),
+                                              enableReorder: true,
+                                              doneEnd: state.doneEnd,
+                                            ),
+                                          )
+                                        : ThreadListSourceProvider(
+                                            source: ThreadListSource.activityFeed,
+                                            child: _buildActivityFeed(
+                                              context,
+                                              state,
+                                              items,
+                                              listController,
+                                              ScrollControllerContext.of(context),
+                                            ),
+                                          ),
                               ),
                             ),
                           ),

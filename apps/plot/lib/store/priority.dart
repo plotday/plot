@@ -178,22 +178,25 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       self: self,
     ).watch();
 
-    // Watch active and unread priority IDs
+    // Watch active, unread, and shared priority IDs
     final activePriorityIdsStream = _watchActivePriorityIds();
     final unreadPriorityIdsStream = _watchUnreadPriorityIds();
+    final sharedPriorityIdsStream = _watchSharedPriorityIds();
 
-    // Combine all three streams
-    return Rx.combineLatest3(
+    // Combine all four streams
+    return Rx.combineLatest4(
           prioritiesStream,
           activePriorityIdsStream,
           unreadPriorityIdsStream,
-          (priorities, activeIds, unreadIds) =>
-              (priorities, activeIds, unreadIds),
+          sharedPriorityIdsStream,
+          (priorities, activeIds, unreadIds, sharingIds) =>
+              (priorities, activeIds, unreadIds, sharingIds),
         )
         .map((tuple) {
           final priorities = tuple.$1;
           final activeIds = tuple.$2;
           final unreadIds = tuple.$3;
+          final sharingIds = tuple.$4;
 
           // Map priorities with computed status
           return priorities.map((p) {
@@ -206,6 +209,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
               minAncestorTopOrder: p.minAncestorTopOrder,
               active: activeIds.contains(p.id),
               unreadComputed: unreadIds.contains(p.id),
+              sharing: sharingIds.contains(p.id),
               displayColor: p.displayColor,
             );
           }).toList();
@@ -298,9 +302,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // Get all priority IDs
     final priorityIds = priorities.map((p) => p.id).toList();
 
-    // Compute which priorities have active/unread threads
+    // Compute which priorities have active/unread/shared status
     final activeIds = await _getActivePriorityIds(priorityIds);
     final unreadIds = await _getUnreadPriorityIds(priorityIds);
+    final sharedIds = await _getSharedPriorityIds(priorityIds);
 
     // Create new Priority objects with computed status
     return priorities.map((p) {
@@ -313,6 +318,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         minAncestorTopOrder: p.minAncestorTopOrder,
         active: activeIds.contains(p.id),
         unreadComputed: unreadIds.contains(p.id),
+        sharing: sharedIds.contains(p.id),
         displayColor: p.displayColor,
       );
     }).toList();
@@ -467,6 +473,45 @@ class Priority extends PriorityRow implements Comparable<Priority> {
           .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
           .toSet();
     }).distinct();
+  }
+
+  /// Gets which priority IDs from the given list are shared (have any members).
+  static Future<Set<PriorityId>> _getSharedPriorityIds(
+    List<PriorityId> ids,
+  ) async {
+    if (ids.isEmpty) return {};
+
+    final db = Store.get;
+    final pm = db.priorityMembers;
+    final idBytes = ids.map((id) => id.toBytes()).toList();
+
+    final query = db.selectOnly(pm, distinct: true)
+      ..addColumns([pm.priorityId])
+      ..where(pm.priorityId.isIn(idBytes) & pm.archivedAt.isNull());
+
+    final results = await query.get();
+    return results
+        .map((row) => Uuid.fromBytes(row.read(pm.priorityId)!))
+        .toSet();
+  }
+
+  /// Watches which priorities are shared (have any members).
+  static Stream<Set<PriorityId>> _watchSharedPriorityIds() {
+    final db = Store.get;
+    final pm = db.priorityMembers;
+
+    final query = db.selectOnly(pm, distinct: true)
+      ..addColumns([pm.priorityId])
+      ..where(pm.archivedAt.isNull());
+
+    return query
+        .watch()
+        .map(
+          (results) => results
+              .map((row) => Uuid.fromBytes(row.read(pm.priorityId)!))
+              .toSet(),
+        )
+        .distinct();
   }
 
   static MultiSelectable<Priority> _get({
@@ -681,6 +726,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
        _originalPath = null,
        _activeComputed = null,
        _unreadComputed = null,
+       _sharingComputed = null,
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
@@ -708,6 +754,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Path? originalPath,
     bool? active,
     bool? unreadComputed,
+    bool? sharing,
     ThemeColor? displayColor,
   }) : children = children ?? [],
        _ancestors =
@@ -737,6 +784,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
            ),
        _activeComputed = active,
        _unreadComputed = unreadComputed,
+       _sharingComputed = sharing,
        super(
          id: row.id,
          createdAt: row.createdAt,
@@ -858,6 +906,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Falls back to row's unread value if not computed.
   final bool? _unreadComputed;
 
+  /// Computed sharing status (true if priority has more than one user).
+  final bool? _sharingComputed;
+
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
 
@@ -865,6 +916,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Falls back to the row's unread value if not computed.
   @override
   bool get unread => _unreadComputed ?? super.unread;
+
+  /// Returns true if this priority is shared with more than one user.
+  bool get sharing => _sharingComputed ?? false;
 
   List<Priority> descendants() {
     List<Priority> result = [];
@@ -944,6 +998,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       ancestors: _ancestors,
       minAncestorTopOrder: minAncestorTopOrder,
       originalPath: _originalPath,
+      active: _activeComputed,
+      unreadComputed: _unreadComputed,
+      sharing: _sharingComputed,
     );
   }
 

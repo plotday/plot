@@ -601,8 +601,8 @@ class SharePriority extends PriorityCommand {
 class ManagePrioritySharing extends ShowCommands {
   ManagePrioritySharing(this.priority)
     : super(
-        title: 'Share Priority',
-        icon: PlotIcon.share,
+        title: priority.sharing ? 'Manage Sharing' : 'Share Priority',
+        icon: priority.sharing ? PlotIcon.shared : PlotIcon.share,
         commandsBuilder: (context) => _getSharingCommands(priority),
       );
 
@@ -764,10 +764,14 @@ class InvitedMembersGroup extends CommandGroup {
       }
 
       // Look up inviter name for subtitle
-      String inviterName = 'Unknown';
+      String? inviterName;
       if (member.invitedBy != null) {
-        final inviter = await Actor.getByUserId(member.invitedBy!);
-        inviterName = inviter?.nameOrEmail ?? 'Unknown';
+        if (member.invitedBy == Base.userId) {
+          inviterName = 'you';
+        } else {
+          final inviter = await Actor.getByUserId(member.invitedBy!);
+          inviterName = inviter?.nameOrEmail;
+        }
       }
       commands.add(EditInvitationCommand(priority, actor, inviterName));
     }
@@ -782,7 +786,7 @@ class EditSharingCommand extends ShowForm {
     : super(
         title: actor.nameOrEmail,
         subtitle: actor.name != null ? actor.email : null,
-        icon: PlotIcon.users,
+        icon: PlotIcon.user,
         form: (context) => _buildForm(priority, actor),
       );
 
@@ -846,7 +850,7 @@ class CurrentUserMemberCommand extends Command {
     : super(
         title: 'You',
         subtitle: actor.email ?? actor.name,
-        icon: PlotIcon.users,
+        icon: PlotIcon.user,
         eventObject: EventObject.priority,
         eventAction: EventAction.viewed,
       );
@@ -859,7 +863,7 @@ class CurrentUserMemberCommand extends Command {
     // Show details with Leave Priority option
     return ShowCommands(
       title: 'You',
-      icon: PlotIcon.users,
+      icon: PlotIcon.user,
       commands: Commands(
         groups: [
           StaticCommandGroup(commands: [LeavePriorityCommand(priority)]),
@@ -918,13 +922,21 @@ class LeavePriorityCommand extends Command {
 
 /// View/manage a pending invitation - opens a form with cancel option.
 class EditInvitationCommand extends ShowForm {
-  EditInvitationCommand(this.priority, this.actor, String inviterName)
+  EditInvitationCommand(this.priority, this.actor, String? inviterName)
     : super(
         title: actor.nameOrEmail,
-        subtitle: '${actor.email} (invited by $inviterName)',
+        subtitle: _buildSubtitle(actor, inviterName),
         icon: PlotIcon.waiting,
         form: (context) => _buildForm(priority, actor),
       );
+
+  static String? _buildSubtitle(Actor actor, String? inviterName) {
+    final parts = <String>[];
+    // Only show email in subtitle if name is available (to avoid repeating email)
+    if (actor.name != null) parts.add(actor.email ?? '');
+    if (inviterName != null) parts.add('invited by $inviterName');
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
 
   final Priority priority;
   final Actor actor;

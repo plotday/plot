@@ -2,6 +2,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
@@ -60,16 +61,30 @@ class PriorityWidget extends StatelessWidget {
       longPressCommand: !hasPhysicalKeyboard()
           ? ShowPriorityCommands(priority)
           : null,
-      trailingBuilder: (isHovered, hasFocus) => (isHovered || hasFocus)
-          ? Row(
-              children: [
+      trailingBuilder: (isHovered, hasFocus) {
+        final hovered = isHovered || hasFocus;
+        final sharing = priority.sharing;
+
+        if (!hovered && !sharing) return null;
+
+        return Padding(
+          padding: EdgeInsets.only(right: buildContext.theme.spacing.lg),
+          child: Row(
+            children: [
+              // Hover commands appear to the left
+              if (hovered) ...[
+                if (!sharing) Button.icon(ManagePrioritySharing(priority)),
                 Button.icon(
                   SetTopPriority(priority, priority.topOrder == null),
                 ),
                 Button.icon(ShowPriorityCommands(priority)),
               ],
-            )
-          : null,
+              // Persistent sharing icon (rightmost)
+              if (sharing) Button.icon(ManagePrioritySharing(priority)),
+            ],
+          ),
+        );
+      },
       title: showAncestry ? null : priority.title,
       body: showAncestry
           ? PriorityLabel(
@@ -181,10 +196,9 @@ class PriorityLabel extends StatelessWidget {
           final i = entry.$1;
           final ancestor = entry.$2;
           final isLast = i == ancestors.length - 1;
-          final ancestorColor = color ?? context.colour.colours.fromTheme(
-            displayColors[i],
-            muted: muted,
-          );
+          final ancestorColor =
+              color ??
+              context.colour.colours.fromTheme(displayColors[i], muted: muted);
           return [
             Flexible(
               key: ValueKey('ancestor_${ancestor.id}'),
@@ -228,10 +242,12 @@ class PriorityLabel extends StatelessWidget {
           Flexible(
             child: DefaultTextStyle(
               style: DefaultTextStyle.of(context).style.copyWith(
-                color: color ?? context.colour.colours.fromTheme(
-                  currentColor,
-                  muted: muted,
-                ),
+                color:
+                    color ??
+                    context.colour.colours.fromTheme(
+                      currentColor,
+                      muted: muted,
+                    ),
                 fontSize: fontSize ?? context.theme.typography.base.fontSize,
                 height: height,
               ),
