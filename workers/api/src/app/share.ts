@@ -181,67 +181,52 @@ share.post("/priority/:id/share", async (c) => {
     }
   }
 
-  // Send invitation emails to non-user contacts (fire-and-forget with waitUntil)
+  // Send invitation emails to non-user contacts
   if (finalNonUserContactIds.length > 0) {
-    // Use waitUntil to ensure emails complete even after response is sent
-    c.executionCtx.waitUntil(
-      Promise.allSettled(
-        finalNonUserContactIds.map((contactId) =>
-          sendInvitation(c.var.db, {
-            contactId,
-            priorityId,
-            inviterUserId: user.id,
-            mailQueue: c.env.MAIL_QUEUE,
-            appRoot: c.env.APP_ROOT,
-          })
-        )
+    const results = await Promise.allSettled(
+      finalNonUserContactIds.map((contactId) =>
+        sendInvitation(c.var.db, {
+          contactId,
+          priorityId,
+          inviterUserId: user.id,
+          mailQueue: c.env.MAIL_QUEUE,
+          appRoot: c.env.APP_ROOT,
+        })
       )
-        .then((results) => {
-          // Log all results and capture failures in PostHog
-          results.forEach((result, index) => {
-            const contactId = finalNonUserContactIds[index];
-            if (result.status === "rejected") {
-              const error =
-                result.reason instanceof Error
-                  ? result.reason
-                  : new Error(String(result.reason));
-              logger.error("Email send rejected", error, {
-                contact_id: contactId,
-              });
-              c.var.tracker.captureException(error, {
-                contact_id: contactId,
-                priority_id: priorityId,
-                inviter_user_id: user.id,
-                error_context: "invitation_email_queue_failed",
-              });
-            } else if (result.status === "fulfilled" && !result.value.success) {
-              // sendInvitation returned success: false
-              const error = new Error(result.value.error || "Unknown error");
-              logger.error("Email send failed", error, {
-                contact_id: contactId,
-                error_message: result.value.error,
-              });
-              c.var.tracker.captureException(error, {
-                contact_id: contactId,
-                priority_id: priorityId,
-                inviter_user_id: user.id,
-                error_context: "invitation_email_send_failed",
-                skipped: result.value.skipped,
-              });
-            }
-          });
-        })
-        .catch((error) => {
-          const logger = createLogger({ component: "share" });
-          const err = error instanceof Error ? error : new Error(String(error));
-          logger.error("Unexpected error sending invitation emails", err);
-          c.var.tracker.captureException(err, {
-            priority_id: priorityId,
-            inviter_user_id: user.id,
-            error_context: "invitation_email_unexpected_error",
-          });
-        })
     );
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const contactId = finalNonUserContactIds[i];
+      if (result.status === "rejected") {
+        const error =
+          result.reason instanceof Error
+            ? result.reason
+            : new Error(String(result.reason));
+        logger.error("Email send rejected", error, {
+          contact_id: contactId,
+        });
+        c.var.tracker.captureException(error, {
+          contact_id: contactId,
+          priority_id: priorityId,
+          inviter_user_id: user.id,
+          error_context: "invitation_email_queue_failed",
+        });
+      } else if (result.status === "fulfilled" && !result.value.success) {
+        const error = new Error(result.value.error || "Unknown error");
+        logger.error("Email send failed", error, {
+          contact_id: contactId,
+          error_message: result.value.error,
+        });
+        c.var.tracker.captureException(error, {
+          contact_id: contactId,
+          priority_id: priorityId,
+          inviter_user_id: user.id,
+          error_context: "invitation_email_send_failed",
+          skipped: result.value.skipped,
+        });
+      }
+    }
   }
 
   // Fetch updated priority info

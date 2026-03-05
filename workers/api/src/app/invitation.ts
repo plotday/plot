@@ -3,7 +3,11 @@ import type { Kysely } from "kysely";
 import * as crypto from "crypto";
 import { Hono } from "hono";
 
+import { render } from "@plotday/email";
 import { createLogger } from "@plotday/worker-util";
+
+// ENV is defined as a global string literal in wrangler.jsonc
+declare const ENV: string;
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
@@ -130,37 +134,66 @@ export async function sendInvitation(
     "Someone";
   const priorityName = priorityResult?.title || "a priority";
 
-  // 5. Queue invitation email to mail worker
+  // 5. Send invitation email
   const inviteUrl = `${appRoot}/invite/${token}`;
+  const emailSubject = `${inviterName} is inviting you to Plot`;
+  const emailProps = {
+    inviterName,
+    priorityName,
+    inviteUrl,
+    recipientName: contact.name || undefined,
+  };
 
-  logger.info("Queuing invitation email", {
+  logger.info("Sending invitation email", {
     contact_email: contact.email,
     priority_name: priorityName,
     inviter_name: inviterName,
   });
 
+  // In development, bypass the queue and send directly to Mailpit.
+  // Cloudflare Queues in wrangler dev don't reliably deliver messages.
+  const isDevelopment = typeof ENV !== "undefined" && ENV === "development";
+
   try {
-    await mailQueue.send({
-      to: [contact.email],
-      subject: `${inviterName} is inviting you to Plot`,
-      email: "priority-invitation",
-      props: {
-        inviterName,
-        priorityName,
-        inviteUrl,
-        recipientName: contact.name || undefined,
-      },
-    });
-    logger.info("Successfully queued invitation email", {
-      contact_email: contact.email,
-    });
+    if (isDevelopment) {
+      const { html, text } = await render("priority-invitation", emailProps);
+      const response = await fetch("http://127.0.0.1:54324/api/v1/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          From: { Name: "Plot", Email: "info@updates.plot.day" },
+          To: [{ Email: contact.email }],
+          Subject: emailSubject,
+          HTML: html,
+          Text: text,
+          ReplyTo: [{ Name: "Plot", Email: "team@plot.day" }],
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Mailpit send failed: ${errorText}`);
+      }
+      logger.info("Sent invitation email via Mailpit", {
+        contact_email: contact.email,
+      });
+    } else {
+      await mailQueue.send({
+        to: [contact.email],
+        subject: emailSubject,
+        email: "priority-invitation",
+        props: emailProps,
+      });
+      logger.info("Queued invitation email", {
+        contact_email: contact.email,
+      });
+    }
   } catch (error) {
-    logger.error("Failed to queue invitation email", error as Error, {
+    logger.error("Failed to send invitation email", error as Error, {
       contact_email: contact.email,
     });
     return {
       success: false,
-      error: error instanceof Error ? error.message : "email_queue_failed",
+      error: error instanceof Error ? error.message : "email_send_failed",
     };
   }
 
