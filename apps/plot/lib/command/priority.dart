@@ -8,7 +8,6 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/analytics/tracker.dart';
-import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/color_dot.dart';
 import 'package:plot/store/store.dart';
@@ -37,43 +36,12 @@ abstract class PriorityCommand extends Command {
   final Priority? priority;
 
   @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
-    if (priority == null) return null;
-    return ColorDot(color: priority!.displayColor);
-  }
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) => null;
 
   @override
-  Widget buildBody(BuildContext context) {
-    return Row(
-      children: [
-        if (priority?.ancestorsLabel() != null) ...[
-          Flexible(
-            child: Text(
-              priority!.ancestorsLabel()!,
-              overflow: TextOverflow.ellipsis,
-              style: context.theme.typography.base.copyWith(
-                color: context.theme.plotColors.muted,
-              ),
-            ),
-          ),
-          Text(
-            Priority.separator,
-            style: context.theme.typography.base.copyWith(
-              color: context.theme.plotColors.muted,
-            ),
-          ),
-        ],
-        Flexible(
-          child: Text(
-            priority?.title ?? 'None',
-            overflow: TextOverflow.ellipsis,
-            style: context.theme.typography.base.copyWith(
-              color: context.theme.colors.foreground,
-            ),
-          ),
-        ),
-      ],
-    );
+  Widget? buildBody(BuildContext context) {
+    if (priority == null) return null;
+    return PriorityLabel(priority: priority!);
   }
 }
 
@@ -396,8 +364,10 @@ class EditPriorityCommand extends ShowForm {
                         return true;
                       }).toList();
                     },
-                    titleBuilder: (p) => p.title,
-                    subtitleBuilder: (p) => p.root ? null : p.ancestorsLabel(),
+                    labelBuilder: (p) => PriorityLabel(priority: p),
+                    titleBuilder: (p) => p.ancestorsLabel() != null
+                        ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
+                        : p.title,
                   ),
                   FormSelect<ThemeColor?>(
                     key: 'color',

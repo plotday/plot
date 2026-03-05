@@ -149,6 +149,12 @@ class PriorityWidget extends StatelessWidget {
   }
 }
 
+/// Standard widget for displaying a priority with its colored hierarchy.
+///
+/// Use this in all priority selection UIs:
+/// - In SelectModal: `itemBuilder: (p) => ListTile(body: PriorityLabel(priority: p))`
+/// - In FormSelect: `labelBuilder: (p) => PriorityLabel(priority: p)`
+/// - For display: `PriorityLabel(priority: priority, muted: true)` for subdued appearance
 class PriorityLabel extends StatelessWidget {
   PriorityLabel({
     List<PriorityAncestor>? ancestors,

@@ -1,7 +1,6 @@
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/scheduler.dart';
-import 'package:plot/widget/color_dot.dart';
 import 'package:plot/store/store.dart';
 
 /// A modal for rescheduling an event, optionally allowing priority changes.
@@ -74,35 +73,8 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
         );
         return [SelectGroup(title: null, items: priorities)];
       },
-      itemBuilder: (priority) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              ColorDot(color: priority.displayColor),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(priority.title, overflow: TextOverflow.ellipsis),
-                    if (priority.ancestorsLabel() != null)
-                      Text(
-                        priority.ancestorsLabel()!,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0x80FFFFFF),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      itemBuilder: (priority) =>
+          ListTile(body: PriorityLabel(priority: priority)),
       selectedValue: _selectedPriority,
       prompt: 'Priority',
     );
