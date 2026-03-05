@@ -119,7 +119,7 @@ abstract class BaseTable {
     this.supportsArchiving = true,
     String? name,
     this.filterName,
-    this.limit,
+    this.limit = 200,
     this.cursorColumn = 'id',
   }) : name = name ?? "${table}s";
 
@@ -172,7 +172,7 @@ abstract class BaseTable {
     }
     if (lastId != null) params['cursor_id'] = lastId;
     if (initial) params['initial'] = 'true';
-    if (supportsArchiving && updatedSince == null) {
+    if (supportsArchiving && (updatedSince == null || initial || archived)) {
       params['archived'] = archived.toString();
     }
     if (limit != null) params['limit'] = limit.toString();
@@ -209,10 +209,17 @@ abstract class BaseTable {
       archived: archived,
     );
 
-    // For non-update pulls, add sort params so server sorts by entity's order column
+    // For non-update pulls, add sort params so server sorts consistently
     if (updatedSince == null) {
-      params['sort_by'] = order;
-      params['sort_dir'] = ascending ? 'asc' : 'desc';
+      if (initial || archived) {
+        // Initial and archived pulls must sort by updated_at ASC to match
+        // the cursor sort used on page 2+ (when updatedSince is set)
+        params['sort_by'] = 'updated_at';
+        params['sort_dir'] = 'asc';
+      } else {
+        params['sort_by'] = order;
+        params['sort_dir'] = ascending ? 'asc' : 'desc';
+      }
     }
 
     // Add range params
@@ -976,7 +983,7 @@ class Store extends _$Store {
       });
 
       totalRows += baseRows.length;
-    } while (!initial && more);
+    } while (more);
 
     if (totalRows > 0) {
       log.fine("Synced ${baseTable.name}: $totalRows rows");
@@ -1068,36 +1075,43 @@ class Store extends _$Store {
       return;
     }
 
-    // Fetch all archived items (no range, no updatedSince, archived=true)
-    var (baseRows, lastUpdated, _, _, _) = await baseTable.get(archived: true);
+    // Fetch all archived items with pagination
+    DateTime? lastUpdated;
+    String? lastId;
+    var totalRows = 0;
+    bool more;
 
-    if (baseRows.isNotEmpty) {
-      log.info(
-        "Pulled ${baseRows.length} archived rows from ${baseTable.table}",
-      );
-    }
-
-    final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
-      try {
-        return [baseTable.fromBase(r)];
-      } catch (e, stackTrace) {
-        log.warning(
-          "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
-          e,
-          stackTrace,
-        );
-        return [];
+    do {
+      var (baseRows, batchLastUpdated, batchLastId, _, batchMore) =
+          await baseTable.get(archived: true, updatedSince: lastUpdated, lastId: lastId);
+      more = batchMore && batchLastUpdated != null;
+      if (batchLastUpdated != null) {
+        lastUpdated = batchLastUpdated;
+        lastId = batchLastId;
       }
-    });
 
-    await batch((batch) {
-      // Use insertOrReplace mode to ensure null values are explicitly set.
-      // - insertAllOnConflictUpdate uses toColumns(true) which treats null as
-      //   "don't update this column" - causing unarchived items to stay archived
-      // - insertOrReplace deletes and re-inserts the row, ensuring all columns
-      //   including nulls are set correctly
-      batch.insertAll(table, storeRows, mode: InsertMode.insertOrReplace);
-    });
+      log.fine(
+        "Pulling ${baseRows.length} archived rows from ${baseTable.table} (more: $more)",
+      );
+
+      final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
+        try {
+          return [baseTable.fromBase(r)];
+        } catch (e, stackTrace) {
+          log.warning(
+            "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
+            e,
+            stackTrace,
+          );
+          return [];
+        }
+      });
+
+      await batch((batch) {
+        batch.insertAll(table, storeRows, mode: InsertMode.insertOrReplace);
+      });
+      totalRows += baseRows.length;
+    } while (more);
 
     // Mark as pulled
     final nowMicros =
@@ -1113,8 +1127,8 @@ class Store extends _$Store {
       ),
     );
 
-    if (baseRows.isNotEmpty) {
-      log.info("Synced archived ${baseTable.name}: ${baseRows.length} rows");
+    if (totalRows > 0) {
+      log.info("Synced archived ${baseTable.name}: $totalRows rows");
     }
   }
 
