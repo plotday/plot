@@ -262,6 +262,7 @@ class InfiniteList extends StatefulWidget {
   /// Minimum number of pages to load before and after the current view.
   final double overflow;
   final ScrollController? scrollController;
+  final PageStorageKey<String>? scrollStorageKey;
   final InfiniteListController controller;
   final bool reverse;
 
@@ -284,6 +285,7 @@ class InfiniteList extends StatefulWidget {
     this.fetcher,
     bool? doneEnd,
     this.scrollController,
+    this.scrollStorageKey,
     this.estimatedItemExtent = 75,
     this.overflow = 2,
     this.reverse = false,
@@ -567,6 +569,7 @@ class InfiniteListState extends State<InfiniteList> {
         builder: (context, child) => ScrollConfiguration(
           behavior: const ScrollBehavior().copyWith(scrollbars: false),
           child: CustomScrollView(
+            key: widget.scrollStorageKey,
             controller: _scrollController,
             reverse: widget.reverse,
             slivers: [

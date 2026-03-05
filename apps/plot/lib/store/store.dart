@@ -268,8 +268,9 @@ abstract class BaseTable {
     // returnRange is only meaningful for pullTo() (range-based sync).
     // For update pulls (updatedSince != null), sort is by updated_at not the
     // primary order column, so created_at range would be meaningless.
-    if (updatedSince != null) {
-      // Skip range computation for update pulls
+    if (updatedSince != null || initial || archived) {
+      // Skip range computation for update/initial/archived pulls where sort
+      // is overridden to updated_at ASC (order column values aren't sorted)
     } else if (range != null) {
       returnRange = range;
     } else if (rows.isNotEmpty) {

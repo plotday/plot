@@ -97,9 +97,9 @@ class PriorityWrapper implements AutoRouteWrapper {
                 final provider =
                     ActivityPanelControllerProvider.maybeOf(context);
                 final searchOpen = provider?._isSearchExpanded ?? false;
-                if (!layoutState.multiPanel && searchOpen) {
+                if (!layoutState.multiPanel) {
                   body = PopScope(
-                    canPop: false,
+                    canPop: !searchOpen,
                     onPopInvokedWithResult: (didPop, result) {
                       if (!didPop) {
                         provider?.tryCloseSearch();
@@ -908,6 +908,7 @@ class _PriorityPageState extends State<PriorityPage>
                                               ScrollControllerContext.of(context),
                                               enableReorder: true,
                                               doneEnd: state.doneEnd,
+                                              scrollStorageKey: PageStorageKey('priority_agenda_${widget.priorityId}'),
                                             ),
                                           )
                                         : ThreadListSourceProvider(
@@ -918,6 +919,7 @@ class _PriorityPageState extends State<PriorityPage>
                                               items,
                                               listController,
                                               ScrollControllerContext.of(context),
+                                              scrollStorageKey: PageStorageKey('priority_feed_${widget.priorityId}'),
                                             ),
                                           ),
                               ),
@@ -1209,12 +1211,14 @@ class _PriorityPageState extends State<PriorityPage>
     ScrollController? scrollController, {
     required bool enableReorder,
     required bool doneEnd,
+    PageStorageKey<String>? scrollStorageKey,
   }) {
     final listItems = items;
 
     final list = InfiniteList(
       controller: controller,
       scrollController: scrollController,
+      scrollStorageKey: scrollStorageKey,
       count: listItems.length,
       doneEnd: doneEnd,
       nonReorderablePrefixCount: enableReorder &&
@@ -1565,11 +1569,13 @@ class _PriorityPageState extends State<PriorityPage>
     PriorityState state,
     List<AgendaItem> items,
     InfiniteListController controller,
-    ScrollController? scrollController,
-  ) {
+    ScrollController? scrollController, {
+    PageStorageKey<String>? scrollStorageKey,
+  }) {
     return InfiniteList(
       controller: controller,
       scrollController: scrollController,
+      scrollStorageKey: scrollStorageKey,
       count: items.length,
       doneEnd: state.activityFeedDoneEnd,
       fetcher: (first, count) =>

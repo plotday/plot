@@ -131,6 +131,7 @@ class _NoteWidgetState extends State<NoteWidget> {
   Widget build(BuildContext context) {
     final noteContent = widget.note.content ?? '';
     final noteLinks = widget.note.actions ?? [];
+    final activityBloc = context.read<ThreadBloc>();
 
     final listTile = ListTile(
       padding: const EdgeInsets.only(left: 10, right: 16, top: 8),
@@ -249,12 +250,14 @@ class _NoteWidgetState extends State<NoteWidget> {
       focusNode: widget.focusNode,
       onHover: widget.onHover,
       reorderableIndex: widget.reorderableIndex,
+      longPressCommand: !hasPhysicalKeyboard()
+          ? ShowNoteCommands(widget.note, activityBloc: activityBloc)
+          : null,
       noHoverHighlight: true,
     );
 
     Widget result;
     if (hasPhysicalKeyboard()) {
-      final activityBloc = context.read<ThreadBloc>();
       result = ContextMenu(
         items: () => noteCommands(widget.note, activityBloc: activityBloc)
             .map(
