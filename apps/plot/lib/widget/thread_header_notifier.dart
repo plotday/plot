@@ -34,7 +34,11 @@ class ThreadHeaderNotifier extends ChangeNotifier {
     tags = const [];
     filter = const [];
     isThreadVisible = false;
-    notifyListeners();
+    // Defer notification to avoid calling notifyListeners during dispose/unmount
+    // when the widget tree is locked.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
   }
 
   void updateTags(List<(Tag, int)> tags, List<Tag> filter) {
