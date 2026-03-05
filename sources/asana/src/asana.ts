@@ -53,7 +53,7 @@ export class Asana extends Source<Asana> {
     {
       type: "task",
       label: "Task",
-      logo: "https://api.iconify.design/logos/asana.svg",
+      logo: "https://api.iconify.design/logos/asana-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/asana.svg",
       statuses: [
         { status: "open", label: "Open" },
