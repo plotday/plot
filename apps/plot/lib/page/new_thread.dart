@@ -173,6 +173,14 @@ class NewThreadPageState extends State<NewThreadPage> {
       }
     }
 
+    // Apply remembered default priority if no query priority was provided
+    if (queryPriority == null && bloc.newThreadDefaultPriority != null) {
+      final remembered = bloc.newThreadDefaultPriority!;
+      if (remembered.id != currentDraft.priority.id) {
+        queryPriority = remembered;
+      }
+    }
+
     // Apply to draft if any query parameters were provided
     if (queryStartTime != null || queryPriority != null) {
       Thread updatedDraft;
@@ -256,6 +264,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       // Update just the draft's priority without changing the global priority context
       final updatedDraft = state.draft.copyWith(priority: result.value);
       await bloc.updateDraft(updatedDraft);
+      bloc.setNewThreadDefaultPriority(result.value);
 
       // Load twists for the newly selected priority
       await _loadTwistsForPriority(result.value);

@@ -62,6 +62,19 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Prevents _loadDraft from overwriting user-initiated changes.
   bool _draftModified;
 
+  /// Remembered default priority for new threads (session-only).
+  /// Set when the user selects a priority in NewThreadPage; cleared when
+  /// the context priority changes via [setPriority].
+  Priority? _newThreadDefaultPriority;
+
+  /// The remembered default priority for new threads, if any.
+  Priority? get newThreadDefaultPriority => _newThreadDefaultPriority;
+
+  /// Remember a priority as the default for new threads.
+  void setNewThreadDefaultPriority(Priority priority) {
+    _newThreadDefaultPriority = priority;
+  }
+
   /// Timestamp of last reorder operation. Used to suppress agenda rebuilds
   /// briefly after a reorder so the optimistic update isn't overwritten.
   DateTime? _reorderTimestamp;
@@ -298,6 +311,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> setPriority(Priority newPriority) async {
     if (state.context.id == newPriority.id) return;
+    _newThreadDefaultPriority = null;
 
     log.info(
       'Updating priority from ${state.context.title} to ${newPriority.title}',
@@ -775,8 +789,8 @@ class PriorityBloc extends Cubit<PriorityState> {
           });
     }
 
-    // Create fresh draft for the priority
-    final newDraft = Thread(priority: thread.priority, draft: true);
+    // Create fresh draft for the priority (use remembered default if set)
+    final newDraft = Thread(priority: _newThreadDefaultPriority ?? thread.priority, draft: true);
     emit(
       state.copyWith(
         draft: newDraft,
