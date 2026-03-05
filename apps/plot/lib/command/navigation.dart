@@ -74,6 +74,9 @@ class CyclePanelsCommand extends Command {
         icon: _icon(layoutState),
       );
 
+  /// Label for use in platform menu bars.
+  static String menuLabel(LayoutState layoutState) => _title(layoutState);
+
   static String _title(LayoutState layoutState) {
     final visibleCount = 1 +
         (layoutState.leftPanelVisible ? 1 : 0) +
@@ -112,6 +115,49 @@ class CyclePanelsCommand extends Command {
       }
     } else {
       // 2-panel capable: 2 → 1 (hide middle) → 2
+      if (visibleCount >= 2) {
+        layoutBloc.setPanelVisibility(left: false, middle: false);
+      } else {
+        layoutBloc.setPanelVisibility(left: true, middle: true);
+      }
+    }
+    return const CommandDone();
+  }
+}
+
+/// Menu bar version of [CyclePanelsCommand] that uses [LayoutBloc.instance]
+/// directly, since the menu bar runs outside the [LayoutBloc] provider scope.
+class ToggleSidebarCommand extends Command {
+  ToggleSidebarCommand()
+    : super(
+        title: 'Toggle Sidebar',
+        eventObject: EventObject.navigation,
+        eventAction: EventAction.clicked,
+        icon: PlotIcon.sidebarOpen,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final layoutBloc = LayoutBloc.instance;
+    if (layoutBloc == null) return const CommandDone();
+
+    final state = layoutBloc.state;
+    final visibleCount = 1 +
+        (state.leftPanelVisible ? 1 : 0) +
+        (state.middlePanelVisible ? 1 : 0);
+
+    final canShowThree =
+        layoutBloc.width >= LayoutState.threePanelMinWidth;
+
+    if (canShowThree) {
+      if (visibleCount >= 3) {
+        layoutBloc.setPanelVisibility(left: false);
+      } else if (visibleCount == 2) {
+        layoutBloc.setPanelVisibility(middle: false);
+      } else {
+        layoutBloc.setPanelVisibility(left: true, middle: true);
+      }
+    } else {
       if (visibleCount >= 2) {
         layoutBloc.setPanelVisibility(left: false, middle: false);
       } else {

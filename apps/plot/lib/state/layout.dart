@@ -21,8 +21,13 @@ class LayoutBloc extends Cubit<LayoutState> {
           multiPanel: false,
         ),
       ) {
+    instance = this;
     _loadFromPreferences();
   }
+
+  /// The current instance. Used by platform menu bar commands that run
+  /// outside the LayoutBloc provider scope.
+  static LayoutBloc? instance;
 
   double width = 0.0;
   // User has requested left panel visibility.

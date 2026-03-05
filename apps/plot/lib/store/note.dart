@@ -685,6 +685,9 @@ class Note extends Equatable implements Comparable<Note> {
         displayNames.insert(0, 'You'); // Put "You" first
       } else {
         final name = actorMap[actorId] ?? 'Unknown';
+        if (!actorMap.containsKey(actorId)) {
+          log.warning('Actor not found in local DB: $actorId');
+        }
         displayNames.add(name);
       }
     }

@@ -236,6 +236,12 @@ class Editor extends StatefulWidget {
 }
 
 class EditorState extends State<Editor> {
+  /// The most recently focused editor instance. Used by the platform menu bar
+  /// to dispatch edit operations (cut/copy/paste/undo/redo/selectAll).
+  /// Kept on blur so menu item clicks (which steal focus first) still work.
+  /// Cleared only on dispose or when a different editor gains focus.
+  static EditorState? activeInstance;
+
   final GlobalKey _docLayoutKey = GlobalKey();
   late FocusNode _editorFocusNode;
   late ScrollController _scrollController;
@@ -415,7 +421,12 @@ class EditorState extends State<Editor> {
   }
 
   void _onFocusChange() {
-    if (!_editorFocusNode.hasFocus) {
+    if (_editorFocusNode.hasFocus) {
+      activeInstance = this;
+    } else {
+      // Don't clear activeInstance on blur — the menu bar steals focus before
+      // onSelected fires. The reference is cleared on dispose or when another
+      // editor gains focus.
       notify();
     }
   }
@@ -522,6 +533,7 @@ class EditorState extends State<Editor> {
 
   @override
   void dispose() {
+    if (activeInstance == this) activeInstance = null;
     _editor.removeListener(_documentChangeListener);
     _editorFocusNode.removeListener(_onFocusChange);
     _mentionDetector.removeListener(_updateMentionOverlay);
@@ -749,6 +761,36 @@ class EditorState extends State<Editor> {
   /// Get the current editor content as markdown
   String serialize() {
     return _serializeWithMentions(_document);
+  }
+
+  // -- Edit operations for platform menu bar --
+
+  CommonEditorOperations get _commonOps => CommonEditorOperations(
+    document: _document,
+    editor: _editor,
+    composer: _composer,
+    documentLayoutResolver: () =>
+        _docLayoutKey.currentState as DocumentLayout,
+  );
+
+  void performCut() {
+    _commonOps.cut();
+    _editorFocusNode.requestFocus();
+  }
+
+  void performCopy() {
+    _commonOps.copy();
+    _editorFocusNode.requestFocus();
+  }
+
+  void performPaste() {
+    _commonOps.paste();
+    _editorFocusNode.requestFocus();
+  }
+
+  void performSelectAll() {
+    _commonOps.selectAll();
+    _editorFocusNode.requestFocus();
   }
 
   /// Builds a leader overlay at the caret position for the mention popover to follow
