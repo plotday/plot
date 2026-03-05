@@ -448,12 +448,14 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     emit(state.copyWith(draft: thread));
 
-    if (note?.id == state.draftNote.id) {
-      emit(state.copyWith(draftNote: note));
-    } else {
-      log.warning(
-        "[updateDraft] Note ID does not match draft note ID: ${note?.id} (expected ${state.draftNote.id})",
-      );
+    if (note != null) {
+      if (note.id == state.draftNote.id) {
+        emit(state.copyWith(draftNote: note));
+      } else {
+        log.warning(
+          "[updateDraft] Note ID does not match draft note ID: ${note.id} (expected ${state.draftNote.id})",
+        );
+      }
     }
 
     if (threadChanged) {
