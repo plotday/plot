@@ -30,6 +30,11 @@ Future<AuthService> createAuthServiceImpl({
     config: clerk.AuthConfig(
       publishableKey: publishableKey,
       persistor: persistor,
+      // Disable background polling — we fetch tokens on demand via
+      // getSessionToken(). This prevents network spam when the app is
+      // backgrounded (clerk_auth's timers fire into DNS failures).
+      sessionTokenPolling: false,
+      clientRefreshPeriod: Duration.zero,
     ),
   );
 
@@ -166,6 +171,8 @@ class ClerkDartAuthService implements AuthService {
       config: clerk.AuthConfig(
         publishableKey: _publishableKey,
         persistor: persistor,
+        sessionTokenPolling: false,
+        clientRefreshPeriod: Duration.zero,
       ),
     );
     await _auth.initialize().timeout(const Duration(seconds: 10));
