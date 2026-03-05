@@ -5,28 +5,42 @@ description: Investigate the production database with readonly access. Use when 
 
 # Production Database Investigation
 
-You have readonly access to the production database via the `prod-db` MCP server.
+You have readonly access to the production database via `psql` over a Cloud SQL Proxy.
 
-## Prerequisites
+## Running Queries
 
-Before running any queries, ensure the connection is working:
+Use this command template via Bash:
 
-1. **Cloud SQL Proxy must be running** on port 5433:
-   ```bash
-   pnpm --filter @plotday/db prod-db-connect
-   ```
-   Verify: `nc -z localhost 5433 && echo "OK"`
+```bash
+PGPASSWORD=$(op read --account plotco.1password.com "op://Production/Database/readonly/password") psql -h 127.0.0.1 -p 5433 -U readonly -d plot -c "SELECT ..."
+```
 
-2. **1Password CLI must be authenticated**:
-   ```bash
-   op whoami
-   ```
-   If not authenticated: `eval $(op signin)`
+For multi-line queries, use a heredoc:
 
-3. **The `prod-db` MCP server must be connected.** If it failed to start (because the proxy wasn't running when Claude Code launched), you need to restart Claude Code after starting the proxy. Alternatively, use `psql` directly:
-   ```bash
-   PGPASSWORD=$(op read --account plotco.1password.com "op://Production/Database/readonly/password") psql -h 127.0.0.1 -p 5433 -U readonly -d plot
-   ```
+```bash
+PGPASSWORD=$(op read --account plotco.1password.com "op://Production/Database/readonly/password") psql -h 127.0.0.1 -p 5433 -U readonly -d plot <<'SQL'
+SELECT ...
+FROM ...
+WHERE ...
+LIMIT 100;
+SQL
+```
+
+## Auto-Start Proxy
+
+Before your first query each session, ensure the Cloud SQL Proxy is running:
+
+```bash
+nc -z 127.0.0.1 5433 2>/dev/null || pnpm prod-db-connect
+```
+
+If the proxy isn't running, start it and wait briefly for it to be ready:
+
+```bash
+pnpm prod-db-connect && sleep 2
+```
+
+Each `psql` invocation is a fresh connection, so if the proxy bounces between queries, the next query will just work once it's back up.
 
 ## Schema Reference
 
@@ -38,15 +52,6 @@ Key conventions:
 - **`"user"` schema**: Views used for user sync in the Flutter app (must be quoted as `"user"` in SQL)
 - Schema files are organized in subdirectories: `50-tables/`, `60-functions/`, `70-views/`, `90-user-schema/`, `95-triggers/`, etc.
 
-## Using the MCP Server
-
-Use `mcp__prod-db__*` tools for structured access:
-- `mcp__prod-db__execute_sql` - Run SELECT queries
-- `mcp__prod-db__list_tables` - Browse table schemas
-- `mcp__prod-db__list_indexes` - Check indexes
-- `mcp__prod-db__get_query_plan` - Analyze query plans
-- `mcp__prod-db__list_table_stats` - Table statistics
-
 ## Rules
 
 - **READONLY**: Only run SELECT queries. Never INSERT, UPDATE, DELETE, DROP, ALTER, or TRUNCATE.
@@ -54,18 +59,3 @@ Use `mcp__prod-db__*` tools for structured access:
 - **Limit result sets**: Always use LIMIT (default 100) to avoid pulling large datasets.
 - **No schema changes**: This user cannot modify the schema, but don't even attempt it.
 - **Performance**: Avoid full table scans on large tables. Check the query plan first if unsure.
-
-## Connection Details
-
-- Host: 127.0.0.1
-- Port: 5433
-- User: readonly
-- Database: plot
-- Password: `op://Production/Database/readonly/password` (fetched via 1Password CLI)
-
-## Fallback: Direct psql
-
-If the MCP server isn't available, use psql via Bash:
-```bash
-PGPASSWORD=$(op read --account plotco.1password.com "op://Production/Database/readonly/password") psql -h 127.0.0.1 -p 5433 -U readonly -d plot -c "SELECT ..."
-```

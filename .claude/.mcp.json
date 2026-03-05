@@ -14,18 +14,6 @@
         "POSTGRES_USER": "postgres",
         "POSTGRES_PASSWORD": "postgres"
       }
-    },
-    "prod-db": {
-      "command": "bash",
-      "args": [
-        "scripts/prod-db-mcp"
-      ],
-      "env": {
-        "POSTGRES_HOST": "127.0.0.1",
-        "POSTGRES_PORT": "5433",
-        "POSTGRES_DATABASE": "plot",
-        "POSTGRES_USER": "readonly"
-      }
     }
   }
 }
