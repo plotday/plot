@@ -204,6 +204,13 @@ export class GmailApi {
     });
   }
 
+  /**
+   * Checks if any message in a Gmail thread has the STARRED label.
+   */
+  static isStarred(thread: GmailThread): boolean {
+    return thread.messages?.some(m => m.labelIds?.includes("STARRED")) ?? false;
+  }
+
   public async getHistory(
     startHistoryId: string,
     labelId?: string,

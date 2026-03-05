@@ -1,5 +1,5 @@
 import { Source, type ToolBuilder } from "@plotday/twister";
-import type { Actor, Note, Thread, ThreadMeta } from "@plotday/twister/plot";
+import type { Actor, ActorId, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -68,6 +68,10 @@ export class Gmail extends Source<Gmail> {
         urls: ["https://gmail.googleapis.com/gmail/v1/*"],
       }),
     };
+  }
+
+  override async activate(context: { auth: Authorization; actor: Actor }): Promise<void> {
+    await this.set("auth_actor_id", context.actor.id);
   }
 
   async getChannels(
@@ -326,6 +330,31 @@ export class Gmail extends Source<Gmail> {
 
         // Save link directly via integrations
         await this.tools.integrations.saveLink(plotThread);
+
+        // Star ↔ todo sync: detect star changes and update Plot todo status
+        const isStarred = GmailApi.isStarred(thread);
+        const wasStarred = await this.get<boolean>(`starred:${thread.id}`);
+
+        if (isStarred !== !!wasStarred) {
+          // Skip if this change originated from Plot todo writeback
+          if (await this.get(`skip_star_sync:${thread.id}`)) {
+            await this.clear(`skip_star_sync:${thread.id}`);
+          } else {
+            const actorId = await this.get<ActorId>("auth_actor_id");
+            // Use the canonical Gmail thread URL as the source identifier
+            const sourceUrl = `https://mail.google.com/mail/u/0/#inbox/${thread.id}`;
+            if (actorId) {
+              await this.tools.integrations.setThreadToDo(
+                sourceUrl,
+                actorId,
+                isStarred
+              );
+              // Prevent the onThreadToDo callback from echoing back
+              await this.set(`skip_todo_writeback:${thread.id}`, true);
+            }
+          }
+          await this.set(`starred:${thread.id}`, isStarred);
+        }
       } catch (error) {
         console.error(`Failed to process Gmail thread ${thread.id}:`, error);
         // Continue processing other threads
@@ -333,7 +362,8 @@ export class Gmail extends Source<Gmail> {
     }
   }
 
-  async onNoteCreated(note: Note, meta: ThreadMeta): Promise<void> {
+  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+    const meta = thread.meta ?? {};
     const channelId = (meta.channelId ?? meta.syncableId) as string;
     if (!channelId) {
       console.error("No channelId in meta for Gmail reply");
@@ -430,11 +460,11 @@ export class Gmail extends Source<Gmail> {
   }
 
   async onThreadRead(
-    _thread: Thread,
+    thread: Thread,
     _actor: Actor,
-    unread: boolean,
-    meta: ThreadMeta
+    unread: boolean
   ): Promise<void> {
+    const meta = thread.meta ?? {};
     const channelId = (meta.channelId ?? meta.syncableId) as string;
     if (!channelId) return;
 
@@ -448,6 +478,34 @@ export class Gmail extends Source<Gmail> {
     } else {
       await api.modifyThread(threadId, undefined, ["UNREAD"]);
     }
+  }
+
+  async onThreadToDo(
+    thread: Thread,
+    _actor: Actor,
+    todo: boolean,
+    _options: { date?: Date }
+  ): Promise<void> {
+    const meta = thread.meta ?? {};
+    const threadId = meta.threadId as string;
+    const channelId = (meta.channelId ?? meta.syncableId) as string;
+    if (!threadId || !channelId) return;
+
+    // Loop prevention: skip if this change originated from Gmail star sync
+    if (await this.get(`skip_todo_writeback:${threadId}`)) {
+      await this.clear(`skip_todo_writeback:${threadId}`);
+      return;
+    }
+
+    const api = await this.getApi(channelId);
+    if (todo) {
+      await api.modifyThread(threadId, ["STARRED"]);
+    } else {
+      await api.modifyThread(threadId, undefined, ["STARRED"]);
+    }
+
+    // Prevent the Gmail webhook from echoing this change back
+    await this.set(`skip_star_sync:${threadId}`, true);
   }
 
   async onGmailWebhook(

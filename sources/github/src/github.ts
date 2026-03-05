@@ -3,7 +3,7 @@ import {
   type NewLinkWithNotes,
   type Note,
   Source,
-  type ThreadMeta,
+  type Thread,
   type ToolBuilder,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
@@ -350,7 +350,8 @@ export class GitHub extends Source<GitHub> {
   /**
    * Called when a note is created on a thread owned by this source.
    */
-  async onNoteCreated(note: Note, meta: ThreadMeta): Promise<void> {
+  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+    const meta = thread.meta ?? {};
     if (meta.prNumber) {
       await addPRComment(this, meta, note.content ?? "");
     } else if (meta.issueNumber) {
