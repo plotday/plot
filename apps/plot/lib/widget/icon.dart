@@ -87,6 +87,7 @@ class PlotIcon {
   static const idea = FontAwesomeIcons.lightbulb;
   static const unread = FontAwesomeIcons.messageDot;
   static const attachment = FontAwesomeIcons.paperclip;
+  static const camera = FontAwesomeIcons.camera;
   static const link = FontAwesomeIcons.link;
   static const fire = FontAwesomeIcons.fire;
   static const totally = FontAwesomeIcons.hundredPoints;

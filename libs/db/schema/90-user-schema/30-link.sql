@@ -24,6 +24,7 @@ SELECT
     l.actions,
     l.meta,
     l.source_url,
+    l.logo,
     l.priority_id,
     l.merged_from_thread_id,
     upe.path AS priority_path

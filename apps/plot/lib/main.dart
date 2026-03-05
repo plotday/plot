@@ -121,8 +121,8 @@ Future<void> run(List<String> args) async {
     hierarchicalLoggingEnabled = true;
     recordStackTraceAtLevel = Level.SEVERE;
 
-    // Configure log levels: INFO in production, FINE in debug for detailed logs
-    Logger.root.level = kDebugMode ? Level.FINE : Level.INFO;
+    // INFO in all modes; use FINE temporarily when debugging specific issues
+    Logger.root.level = Level.INFO;
 
     Logger.root.onRecord.listen((record) {
       if ([

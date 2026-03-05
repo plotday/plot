@@ -1,4 +1,5 @@
 export 'attach_file.dart';
+export 'take_photo.dart';
 export 'base.dart';
 export 'filter.dart';
 export 'global.dart';

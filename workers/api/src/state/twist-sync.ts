@@ -222,6 +222,7 @@ export class TwistSync extends DurableObject<Bindings> {
         "priority_twist_channel_link_update",
         "priority_twist_channel_note_create",
         "priority_twist_thread_read",
+        "priority_twist_thread_schedule",
       ] as const;
 
       const results = await Promise.allSettled([
@@ -307,6 +308,17 @@ export class TwistSync extends DurableObject<Bindings> {
           .orderBy("updated_at", "asc")
           .limit(100)
           .execute(),
+
+        // Query thread schedule changes (for onThreadToDo callback)
+        db
+          .selectFrom("priority_twist_thread_schedule")
+          .selectAll()
+          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
+          .where("priority_twist_id", "=", priorityTwistId)
+          .where("updated_at", ">", getSyncAtExpr("thread_schedule", "update"))
+          .orderBy("updated_at", "asc")
+          .limit(100)
+          .execute(),
       ]);
 
       // Extract successful results, defaulting to [] for failures
@@ -332,6 +344,7 @@ export class TwistSync extends DurableObject<Bindings> {
       const channelUpdatedLinks = extractResult(results[4], 4);
       const channelNewNotes = extractResult(results[5], 5);
       const threadReads = extractResult(results[6], 6);
+      const threadSchedules = extractResult(results[7], 7);
 
       // Extract max timestamps as PG-precision text strings from window functions
       // null if no items were returned for that query
@@ -349,6 +362,8 @@ export class TwistSync extends DurableObject<Bindings> {
         channelNewNotes.length > 0 ? (channelNewNotes[0] as any)._max_ts : null;
       const threadReadUpdateMaxTs: string | null =
         threadReads.length > 0 ? (threadReads[0] as any)._max_ts : null;
+      const threadScheduleUpdateMaxTs: string | null =
+        threadSchedules.length > 0 ? (threadSchedules[0] as any)._max_ts : null;
 
       // Get the latest update timestamp from sync info as text for tag change upper bound
       // PG text representation (YYYY-MM-DD HH:MI:SS.ffffff+TZ) is lexicographically sortable
@@ -411,6 +426,7 @@ export class TwistSync extends DurableObject<Bindings> {
       const cleanChannelUpdatedLinks = stripMaxTs(channelUpdatedLinks);
       const cleanChannelNewNotes = stripMaxTs(channelNewNotes);
       const cleanThreadReads = stripMaxTs(threadReads);
+      const cleanThreadSchedules = stripMaxTs(threadSchedules);
 
       // Build size-aware batches to stay under Cloudflare's 128KB queue message limit.
       // Items are added sequentially (all newNotes, then updatedNotes, then newActivities,
@@ -423,7 +439,8 @@ export class TwistSync extends DurableObject<Bindings> {
         | { array: "channelNewLinks"; item: (typeof cleanChannelNewLinks)[number]; size: number }
         | { array: "channelUpdatedLinks"; item: (typeof cleanChannelUpdatedLinks)[number]; size: number }
         | { array: "channelNewNotes"; item: (typeof cleanChannelNewNotes)[number]; size: number }
-        | { array: "threadReads"; item: (typeof cleanThreadReads)[number]; size: number };
+        | { array: "threadReads"; item: (typeof cleanThreadReads)[number]; size: number }
+        | { array: "threadSchedules"; item: (typeof cleanThreadSchedules)[number]; size: number };
 
       const taggedItems: TaggedItem[] = [
         ...cleanNewNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
@@ -433,6 +450,7 @@ export class TwistSync extends DurableObject<Bindings> {
         ...cleanChannelUpdatedLinks.map((item) => ({ array: "channelUpdatedLinks" as const, item, size: JSON.stringify(item).length })),
         ...cleanChannelNewNotes.map((item) => ({ array: "channelNewNotes" as const, item, size: JSON.stringify(item).length })),
         ...cleanThreadReads.map((item) => ({ array: "threadReads" as const, item, size: JSON.stringify(item).length })),
+        ...cleanThreadSchedules.map((item) => ({ array: "threadSchedules" as const, item, size: JSON.stringify(item).length })),
       ];
 
       const batches: TaggedItem[][] = [];
@@ -468,6 +486,7 @@ export class TwistSync extends DurableObject<Bindings> {
         const batchChannelUpdatedLinks = batch.filter((t) => t.array === "channelUpdatedLinks").map((t) => t.item);
         const batchChannelNewNotes = batch.filter((t) => t.array === "channelNewNotes").map((t) => t.item);
         const batchThreadReads = batch.filter((t) => t.array === "threadReads").map((t) => t.item);
+        const batchThreadSchedules = batch.filter((t) => t.array === "threadSchedules").map((t) => t.item);
 
         // Filter tag changes to only include those relevant to activities in this batch
         const batchActivityIds = new Set([
@@ -494,6 +513,7 @@ export class TwistSync extends DurableObject<Bindings> {
           channelUpdatedLinks: batchChannelUpdatedLinks,
           channelNewNotes: batchChannelNewNotes,
           threadReads: batchThreadReads,
+          threadSchedules: batchThreadSchedules,
           priorityTwist: null, // TODO: Handle priority_twist config updates
         } as TwistBatchMessage;
 
@@ -664,6 +684,26 @@ export class TwistSync extends DurableObject<Bindings> {
         });
       }
 
+      if (threadScheduleUpdateMaxTs) {
+        syncUpdates.push({
+          name: "thread_schedule update sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'thread_schedule'`,
+              operation: sql`'update'`,
+              last_sync_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
+              last_update_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
       const syncUpdateResults = await Promise.allSettled(
         syncUpdates.map((u) => u.promise)
       );
@@ -694,6 +734,7 @@ export class TwistSync extends DurableObject<Bindings> {
           channel_updated_link_count: channelUpdatedLinks.length,
           channel_new_note_count: channelNewNotes.length,
           thread_read_count: threadReads.length,
+          thread_schedule_count: threadSchedules.length,
           batch_count: batches.length,
         });
       }

@@ -95,15 +95,58 @@ priorities:
           - ref: personal_time
             title: Personal time
 
-activities:
+sources:
+  - ref: state_dept
+    name: State Department
+    priority_ref: everything
+    logo: "https://api.iconify.design/twemoji/classical-building.svg"
+    link_types:
+      - type: cable
+        label: Cable
+        logo: "https://api.iconify.design/twemoji/classical-building.svg"
+      - type: email
+        label: Email
+        logo: "https://api.iconify.design/twemoji/classical-building.svg"
+  - ref: signal
+    name: Signal
+    priority_ref: everything
+    logo: "https://api.iconify.design/cib/signal.svg"
+    link_types:
+      - type: secure_message
+        label: Secure Message
+        logo: "https://api.iconify.design/cib/signal.svg"
+      - type: call
+        label: Call
+        logo: "https://api.iconify.design/cib/signal.svg"
+  - ref: outlook
+    name: Outlook
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/microsoft-icon.svg"
+    link_types:
+      - type: email
+        label: Email
+        logo: "https://api.iconify.design/logos/microsoft-icon.svg"
+  - ref: zoom
+    name: Zoom
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/zoom-icon.svg"
+    link_types:
+      - type: video_call
+        label: Video Call
+        logo: "https://api.iconify.design/logos/zoom-icon.svg"
+
+threads:
   # Day -2: Early groundwork
-  - type: note
-    kind: document
-    priority_ref: climate_proposal
+  - priority_ref: climate_proposal
     title: "Climate financing proposal - initial review"
     created: "-2d"
     tags:
       pinned: [user]
+    links:
+      - source_ref: state_dept
+        type: cable
+        title: "Climate Finance Draft"
+        source_url: "mailto:climate@state.gov"
     notes:
       - created: "-2d 09:00"
         content: |
@@ -127,16 +170,11 @@ activities:
           Thoughts?
 
           - Regional Climate Office
-        source:
-          type: diplomatic_cable
-          title: Climate Finance Draft
-          href: mailto:climate@state.gov
 
-  - type: action
-    priority_ref: climate_policy
+  - priority_ref: climate_policy
     title: "Reframe climate proposal language - make it safe"
-    assignee_ref: user
-    on: "-2d"
+    schedule:
+      on: "-2d"
     tags:
       urgent: [user]
     notes:
@@ -154,55 +192,47 @@ activities:
 
           Same outcome. Different story. That's the work.
 
-  - type: event
-    kind: phone
-    priority_ref: uk_coord
+  - priority_ref: uk_coord
     title: "Stuart - pre-meeting alignment call"
-    at: "-2d 14:00 / -2d 14:25"
+    schedule:
+      at: "-2d 14:00 / -2d 14:25"
+    links:
+      - source_ref: signal
+        type: call
+        title: "Stuart Hayford - Signal"
+    tags:
+      pinned: [user]
     notes:
       - author_ref: stuart
         created: "-2d 14:05"
         content: |
           Kate - on board with the climate proposal but Treasury will want guarantees on ROI. Climate adaptation doesn't have an ROI column.
-        source:
-          type: signal_call
-          title: "Stuart Hayford - Signal"
       - author_ref: user
         created: "-2d 14:10"
         content: |
           Then we give them a different spreadsheet. Infrastructure development. Trade relationships. Strategic positioning in developing markets.
-        source:
-          type: signal_call
-          title: "Stuart Hayford - Signal"
       - author_ref: stuart
         created: "-2d 14:12"
         content: |
           So we lie?
-        source:
-          type: signal_call
-          title: "Stuart Hayford - Signal"
       - author_ref: user
         created: "-2d 14:13"
         content: |
           We emphasize different truths.
-        source:
-          type: signal_call
-          title: "Stuart Hayford - Signal"
       - author_ref: stuart
         created: "-2d 14:25"
         content: |
           Fair enough. I'll help sell it to Treasury using the economic angle. Meeting next week with EU partners - I'll pre-position the economic framing with UK delegation.
-        source:
-          type: signal_call
-          title: "Stuart Hayford - Signal"
-    tags:
-      pinned: [user]
 
-  - type: note
-    kind: messages
-    priority_ref: hal_coord
+  - priority_ref: hal_coord
     title: "Hal - scheduling conflict"
     created: "-2d"
+    links:
+      - source_ref: signal
+        type: secure_message
+        title: "Signal - Hal"
+    tags:
+      pinned: [user]
     notes:
       - created: "-2d 16:00"
         content: |
@@ -227,20 +257,14 @@ activities:
           **Me:** "Perfect. 7am my time."
 
           Married to someone with an equally impossible schedule. We make it work. Barely.
-        source:
-          type: secure_message
-          title: Signal - Hal
         mentions:
           - hal
           - eidra
-    tags:
-      pinned: [user]
 
-  - type: action
-    priority_ref: eu_engagement
+  - priority_ref: eu_engagement
     title: "Prep Veronica (EU) for climate proposal"
-    assignee_ref: user
-    on: "-2d"
+    schedule:
+      on: "-2d"
     notes:
       - created: "-2d 17:00"
         content: |
@@ -256,11 +280,12 @@ activities:
           - ronnie
 
   # Day -1: Shaping the narrative
-  - type: event
-    kind: videoconference
-    priority_ref: eu_engagement
+  - priority_ref: eu_engagement
     title: "Veronica Penn - exploratory call"
-    at: "-1d 10:00 / -1d 10:45"
+    schedule:
+      at: "-1d 10:00 / -1d 10:45"
+    tags:
+      star: [user]
     notes:
       - created: "-1d 11:00"
         content: |
@@ -282,14 +307,17 @@ activities:
           Perfect. Let them think it's their idea.
         mentions:
           - ronnie
-    tags:
-      star: [user]
 
-  - type: note
-    kind: messages
-    priority_ref: white_house
+  - priority_ref: white_house
     title: "Dennison update - White House concerns"
     created: "-1d"
+    links:
+      - source_ref: state_dept
+        type: email
+        title: "White House Concerns"
+        source_url: "mailto:william.dennison@state.gov"
+    tags:
+      warning: [user]
     notes:
       - created: "-1d 13:00"
         content: |
@@ -305,20 +333,13 @@ activities:
           I know you'll figure it out. You always do.
 
           - Dennison
-        source:
-          type: email
-          title: White House Concerns
-          href: mailto:william.dennison@state.gov
         mentions:
           - dennison
-    tags:
-      warning: [user]
 
-  - type: action
-    priority_ref: climate_policy
+  - priority_ref: climate_policy
     title: "Add revenue angle to climate proposal"
-    assignee_ref: user
-    on: "-1d"
+    schedule:
+      on: "-1d"
     tags:
       urgent: [user]
     notes:
@@ -350,11 +371,12 @@ activities:
 
           Different story. Same outcome.
 
-  - type: event
-    kind: videoconference
-    priority_ref: hal_coord
+  - priority_ref: hal_coord
     title: "Video call with Hal"
-    at: "-1d 19:00 / -1d 19:35"
+    schedule:
+      at: "-1d 19:00 / -1d 19:35"
+    tags:
+      star: [user]
     notes:
       - created: "-1d 19:45"
         content: |
@@ -383,14 +405,16 @@ activities:
           Me too.
         mentions:
           - hal
-    tags:
-      star: [user]
 
-  - type: note
-    kind: messages
-    priority_ref: bilateral_contacts
+  - priority_ref: bilateral_contacts
     title: "Billie - ground-level intelligence"
     created: "-1d"
+    links:
+      - source_ref: signal
+        type: secure_message
+        title: "Signal - Billie"
+    tags:
+      pinned: [user]
     notes:
       - created: "-1d 15:00"
         content: |
@@ -405,17 +429,13 @@ activities:
           Of course France has their own proposal. They always do.
 
           Need to know if it's competitive or complementary. If competitive, need to neutralize it. If complementary, need to merge them and let France think they won.
-        source:
-          type: secure_message
-          title: Signal - Billie
         mentions:
           - billie
 
-  - type: event
-    kind: phone
-    priority_ref: congressional_strategy
+  - priority_ref: congressional_strategy
     title: "Austin Ganon - congressional liaison update"
-    at: "-1d 16:00 / -1d 16:20"
+    schedule:
+      at: "-1d 16:00 / -1d 16:20"
     notes:
       - created: "-1d 16:30"
         content: |
@@ -443,9 +463,7 @@ activities:
       decision: [user]
 
   # Day 0 (Base date): The pivot and the proposal
-  - type: note
-    kind: document
-    priority_ref: climate_proposal
+  - priority_ref: climate_proposal
     title: "CLIMATE FINANCE PROPOSAL - Final draft (version 4.0)"
     created: "-1d"
     tags:
@@ -579,11 +597,10 @@ activities:
 
           It'll work. It has to work. I've made it as safe as possible without gutting it.
 
-  - type: event
-    kind: meeting
-    priority_ref: us_partnerships
+  - priority_ref: us_partnerships
     title: "Eidra - proposal review and feedback"
-    at: "-1d 09:00 / -1d 09:45"
+    schedule:
+      at: "-1d 09:00 / -1d 09:45"
     notes:
       - author_ref: eidra
         created: "-1d 09:50"
@@ -598,11 +615,9 @@ activities:
 
           She's better at the optimistic pitch. I'm better at the defensive maneuvering. Good division of labor.
 
-  - type: action
-    author_ref: ganon
+  - author_ref: ganon
     priority_ref: congressional_strategy
     title: "Prepare congressional briefing materials"
-    assignee_ref: ganon
     created: "-1d"
     tags:
       urgent: [user, ganon]
@@ -619,11 +634,13 @@ activities:
 
           Making it easy to say yes, hard to say no.
 
-  - type: note
-    kind: messages
-    priority_ref: bilateral_contacts
+  - priority_ref: bilateral_contacts
     title: "Billie intel - French proposal details"
     created: "-1d"
+    links:
+      - source_ref: signal
+        type: secure_message
+        title: "Signal - Billie"
     tags:
       warning: [user]
     notes:
@@ -648,18 +665,14 @@ activities:
           They'll join. And they'll claim they shaped it.
 
           That's fine. I don't need credit. I need the fund to exist.
-        source:
-          type: secure_message
-          title: Signal - Billie
         mentions:
           - billie
           - alouette
 
-  - type: event
-    kind: meal
-    priority_ref: personal_time
+  - priority_ref: personal_time
     title: "Lunch - actually taking a break"
-    at: "-1d 12:30 / -1d 13:15"
+    schedule:
+      at: "-1d 12:30 / -1d 13:15"
     notes:
       - created: "-1d 13:20"
         content: |
@@ -672,11 +685,10 @@ activities:
           I'm trying.
 
   # Day +1: Congressional briefing and alliance building
-  - type: event
-    kind: meeting
-    priority_ref: congressional_strategy
+  - priority_ref: congressional_strategy
     title: "Congressional briefing - moderate caucus"
-    at: "+1d 10:00 / +1d 11:30"
+    schedule:
+      at: "+1d 10:00 / +1d 11:30"
     tags:
       urgent: [user]
       pinned: [user]
@@ -710,10 +722,8 @@ activities:
         mentions:
           - ganon
 
-  - type: action
-    priority_ref: uk_coord
+  - priority_ref: uk_coord
     title: "Brief Stuart on congressional response"
-    assignee_ref: user
     created: "-1d"
     notes:
       - created: "-2d 12:30"
@@ -726,11 +736,14 @@ activities:
         mentions:
           - stuart
 
-  - type: note
-    kind: messages
-    priority_ref: white_house
+  - priority_ref: white_house
     title: "White House preliminary feedback"
     created: "-1d"
+    links:
+      - source_ref: state_dept
+        type: email
+        title: "White House Feedback"
+        source_url: "mailto:mara.tierney@state.gov"
     tags:
       star: [user]
     notes:
@@ -749,18 +762,15 @@ activities:
           Well done.
 
           - Mara
-        source:
-          type: email
-          title: White House Feedback
-          href: mailto:mara.tierney@state.gov
         mentions:
           - chief_staff
 
-  - type: event
-    kind: videoconference
-    priority_ref: hal_coord
+  - priority_ref: hal_coord
     title: "Evening call with Hal - actual good news"
-    at: "+1d 19:30 / +1d 20:00"
+    schedule:
+      at: "+1d 19:30 / +1d 20:00"
+    tags:
+      star: [user]
     notes:
       - created: "-2d 20:10"
         content: |
@@ -787,15 +797,12 @@ activities:
           Finally. Same city. Same time zone. Same dinner table.
         mentions:
           - hal
-    tags:
-      star: [user]
 
   # Day +2: Alliance management
-  - type: event
-    kind: videoconference
-    priority_ref: uk_coord
+  - priority_ref: uk_coord
     title: "Stuart Hayford - update call"
-    at: "+2d 09:00 / +2d 09:30"
+    schedule:
+      at: "+2d 09:00 / +2d 09:30"
     notes:
       - created: "-2d 09:40"
         content: |
@@ -817,11 +824,12 @@ activities:
         mentions:
           - stuart
 
-  - type: event
-    kind: videoconference
-    priority_ref: partner_alignment
+  - priority_ref: partner_alignment
     title: "EU partner coordination - video conference"
-    at: "+2d 14:00 / +2d 15:15"
+    schedule:
+      at: "+2d 14:00 / +2d 15:15"
+    tags:
+      star: [user]
     notes:
       - author_ref: user
         created: "-2d 13:00"
@@ -832,12 +840,8 @@ activities:
         mentions:
           - ronnie
           - alouette
-    tags:
-      star: [user]
 
-  - type: note
-    kind: document
-    priority_ref: climate_proposal
+  - priority_ref: climate_proposal
     title: "Updated timeline - proposal advancement"
     created: "-1d"
     tags:
@@ -871,10 +875,8 @@ activities:
 
           Now it's just... happening.
 
-  - type: action
-    priority_ref: climate_policy
+  - priority_ref: climate_policy
     title: "Draft joint announcement statement"
-    assignee_ref: user
     created: "-1d"
     tags:
       todo: [user]
@@ -908,11 +910,13 @@ activities:
 
           Everyone needs to feel like they're leading. That's the key to multilateral success.
 
-  - type: note
-    kind: messages
-    priority_ref: hal_coord
+  - priority_ref: hal_coord
     title: "Hal arrives Wednesday - dinner plans"
     created: "-1d"
+    links:
+      - source_ref: signal
+        type: secure_message
+        title: "Signal - Hal"
     tags:
       pinned: [user]
       star: [user]
@@ -934,18 +938,14 @@ activities:
           **Me:** "Deal."
 
           Looking forward to this. Actual time together. No time zones. No video lag. Just... us.
-        source:
-          type: secure_message
-          title: Signal - Hal
         mentions:
           - hal
 
-  - type: event
-    kind: meeting
-    priority_ref: us_partnerships
+  - priority_ref: us_partnerships
     title: "Weekly staff meeting"
-    at: "+3d 10:00 / +3d 11:00"
-    recurrence_rule: "FREQ=WEEKLY;BYDAY=TU"
+    schedule:
+      at: "+3d 10:00 / +3d 11:00"
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=TU"
     notes:
       - created: "-2d 11:15"
         content: |
@@ -953,11 +953,10 @@ activities:
 
           This week's focus: Climate partnership advancement, upcoming EU meetings, congressional coordination.
 
-  - type: event
-    kind: meal
-    priority_ref: hal_coord
+  - priority_ref: hal_coord
     title: "Dinner with Hal - finally same city"
-    at: "+3d 19:00 / +3d 21:30"
+    schedule:
+      at: "+3d 19:00 / +3d 21:30"
     tags:
       pinned: [user]
       star: [user]
@@ -992,9 +991,7 @@ activities:
         mentions:
           - hal
 
-  - type: note
-    kind: document
-    priority_ref: climate_policy
+  - priority_ref: climate_policy
     title: "Reflection - how this works"
     created: "-2d"
     notes:

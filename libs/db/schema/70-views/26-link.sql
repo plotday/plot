@@ -22,6 +22,7 @@ SELECT
     l.actions,
     l.meta,
     l.source_url,
+    l.logo,
     l.channel_id,
     l.embedding,
     l.match,

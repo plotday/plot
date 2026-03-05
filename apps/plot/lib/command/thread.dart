@@ -17,10 +17,14 @@ import 'logging.dart';
 
 /// Holds data for creating a new Thread with its first Note
 class ThreadWithNote {
-  ThreadWithNote({required this.thread, this.note});
+  ThreadWithNote({required this.thread, this.note, this.assignNote = true});
 
   final Thread thread;
   final Note? note;
+
+  /// Whether to assign the note to the current user (adding Tag.todo).
+  /// True for task-type threads, false for note-type threads with todo.
+  final bool assignNote;
 }
 
 abstract class ThreadCommand extends Command {
@@ -312,7 +316,11 @@ class AddThreadWithNote extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     // Add the thread (handles saving, note creation, title generation, and draft reset)
     final priorityBloc = context.read<PriorityBloc>();
-    final savedThread = await priorityBloc.add(_data.thread, note: _data.note);
+    final savedThread = await priorityBloc.add(
+      _data.thread,
+      note: _data.note,
+      assignNote: _data.assignNote,
+    );
 
     // Only navigate if requested
     if (!navigate) {
@@ -331,7 +339,7 @@ class AddThreadWithNote extends Command {
 }
 
 class AddThreadWithLink extends Command {
-  AddThreadWithLink({required this.linkUrl, required this.linkTitle})
+  AddThreadWithLink({required this.linkUrl, required this.linkTitle, this.linkFavicon})
     : super(
         title: 'Add Link',
         eventObject: EventObject.activity,
@@ -341,6 +349,7 @@ class AddThreadWithLink extends Command {
 
   final String linkUrl;
   final String? linkTitle;
+  final String? linkFavicon;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -364,6 +373,7 @@ class AddThreadWithLink extends Command {
       sourceCreatedAt: now,
       sourceUrl: linkUrl,
       title: linkTitle,
+      logo: linkFavicon,
     );
     await Store.get.save(Store.get.links, linkRow, LinksBase());
 
@@ -1358,10 +1368,10 @@ List<Command> threadCommands(
     if (open) ChangeCurrentThread(thread),
     ?primary,
     if (actualPrimary is! PickScheduleThread) PickScheduleThread(thread),
-    RenameThread(thread),
+    if (!skipInfrequent) RenameThread(thread),
     MoveThreadToPriority(thread),
-    MergeThreadInto(thread),
-    if (showSplitThread) SplitThread(thread),
+    if (!skipInfrequent) MergeThreadInto(thread),
+    if (!skipInfrequent && showSplitThread) SplitThread(thread),
     if (!skipInfrequent && !thread.priority.personal)
       ToggleThreadPrivate(thread),
     ArchiveThread(thread),

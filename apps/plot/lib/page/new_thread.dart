@@ -643,8 +643,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       onNavigateToThread: (thread) {
         context.run(ChangeCurrentThread(thread));
       },
-      onCreateLink: (url, title) {
-        context.run(AddThreadWithLink(linkUrl: url, linkTitle: title));
+      onCreateLink: (url, title, favicon) {
+        context.run(AddThreadWithLink(linkUrl: url, linkTitle: title, linkFavicon: favicon));
       },
     );
   }
@@ -667,6 +667,9 @@ class NewThreadPageState extends State<NewThreadPage> {
                 onPopInvokedWithResult: (didPop, result) {
                   if (!didPop) {
                     if (ModalProvider.tryDismissTopModal(context)) return;
+                    final provider =
+                        ActivityPanelControllerProvider.maybeOf(context);
+                    if (provider != null && provider.tryCloseSearch()) return;
                     if (!context.isMultiPanel) {
                       context.run(ChangeCurrentThread(null));
                     }
@@ -723,6 +726,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 hint: _editorHint,
                                 additionalMentions: _chatMentions,
                                 onSubmitted: _onChatSubmitted,
+                                assignNote: _selectedType == NewThreadType.task,
                               ),
                           ],
                         );
@@ -771,6 +775,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         hint: _editorHint,
                                         additionalMentions: _chatMentions,
                                         onSubmitted: _onChatSubmitted,
+                                        assignNote: _selectedType == NewThreadType.task,
                                       ),
                               ),
                             ),

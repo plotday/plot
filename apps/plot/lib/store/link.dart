@@ -71,6 +71,7 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
       text().nullable().map(const JsonConverter())();
   TextColumn get sourceUrl => text().nullable()();
   TextColumn get channelId => text().nullable()();
+  TextColumn get logo => text().nullable()();
   BlobColumn get mergedFromThreadId => blob().nullable().map(const UuidConverter())();
 }
 
@@ -92,8 +93,6 @@ class LinksBase extends BaseTable {
     json.remove('twist_id');
     json.remove('source_priority_root');
     json.remove('priority_path');
-    // Remove logo from synced data (resolved from LinkTypeConfig now)
-    json.remove('logo');
 
     return LinkRow.fromJson(json);
   }
@@ -153,17 +152,20 @@ class Link extends Equatable {
         ?.label ?? status;
   }
 
-  /// Get the logo URL from the link's type config.
-  String? get logo => getTypeConfig()?.logo;
+  /// Get the logo URL from the link's type config, falling back to per-link logo.
+  String? get logo => getTypeConfig()?.logo ?? _link.logo;
 
   /// Get the logo URL appropriate for the given [brightness].
+  /// Falls back to per-link logo (e.g. favicon) when no type config exists.
   String? logoForBrightness(Brightness brightness) {
     final config = getTypeConfig();
-    if (config == null) return null;
-    if (brightness == Brightness.dark && config.logoDark != null) {
-      return config.logoDark;
+    if (config != null) {
+      if (brightness == Brightness.dark && config.logoDark != null) {
+        return config.logoDark;
+      }
+      return config.logo ?? _link.logo;
     }
-    return config.logo;
+    return _link.logo;
   }
 
   /// Optimistically update the link's status and push to the server.

@@ -228,6 +228,7 @@ export type Database = {
           created_by: string | null
           embedding: unknown
           id: string
+          logo: string | null
           match: Json | null
           merged_from_thread_id: string | null
           meta: Json | null
@@ -255,6 +256,7 @@ export type Database = {
           created_by?: string | null
           embedding?: unknown
           id?: string
+          logo?: string | null
           match?: Json | null
           merged_from_thread_id?: string | null
           meta?: Json | null
@@ -282,6 +284,7 @@ export type Database = {
           created_by?: string | null
           embedding?: unknown
           id?: string
+          logo?: string | null
           match?: Json | null
           merged_from_thread_id?: string | null
           meta?: Json | null
@@ -1176,6 +1179,12 @@ export type Database = {
           {
             foreignKeyName: "schedule_contact_schedule_id_fkey"
             columns: ["schedule_id"]
+            referencedRelation: "priority_twist_thread_schedule"
+            referencedColumns: ["schedule_id"]
+          },
+          {
+            foreignKeyName: "schedule_contact_schedule_id_fkey"
+            columns: ["schedule_id"]
             referencedRelation: "schedule"
             referencedColumns: ["id"]
           },
@@ -1960,6 +1969,7 @@ export type Database = {
           created_by: string | null
           embedding: unknown
           id: string | null
+          logo: string | null
           match: Json | null
           merged_from_thread_id: string | null
           meta: Json | null
@@ -2844,6 +2854,69 @@ export type Database = {
           },
         ]
       }
+      priority_twist_thread_schedule: {
+        Row: {
+          at: unknown
+          done_at: string | null
+          on: unknown
+          priority_id: string | null
+          priority_twist_id: string | null
+          schedule_id: string | null
+          thread_id: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "priority_twist_thread_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+        ]
+      }
       priority_twist_thread_tag_change: {
         Row: {
           actor_id: string | null
@@ -3224,6 +3297,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           id: string | null
+          logo: string | null
           merged_from_thread_id: string | null
           meta: Json | null
           preview: string | null

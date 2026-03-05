@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/util/url_title.dart';
+import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
 import 'package:plot/widget/widget.dart' hide Link;
 
 /// A search/URL input for creating or finding links.
@@ -19,7 +19,7 @@ class LinkInput extends StatefulWidget {
 
   final Priority priority;
   final void Function(Thread thread) onNavigateToThread;
-  final void Function(String url, String? title) onCreateLink;
+  final void Function(String url, String? title, String? favicon) onCreateLink;
   final bool flushToBottom;
 
   @override
@@ -34,6 +34,7 @@ class _LinkInputState extends State<LinkInput> {
   List<_LinkResult> _results = [];
   bool _inputIsUrl = false;
   String? _fetchedTitle;
+  String? _fetchedFavicon;
   bool _isLoading = false;
   int _highlightedIndex = 0;
   String _lastSearchText = '';
@@ -72,6 +73,7 @@ class _LinkInputState extends State<LinkInput> {
         _results = [];
         _inputIsUrl = false;
         _fetchedTitle = null;
+        _fetchedFavicon = null;
         _isLoading = false;
         _highlightedIndex = 0;
       });
@@ -97,13 +99,16 @@ class _LinkInputState extends State<LinkInput> {
 
     List<_LinkResult> results;
     String? title;
+    String? favicon;
 
     if (isUrl) {
       final links = await Link.findBySourceUrl(text);
       results = await _loadThreadsForLinks(links);
 
       if (results.isEmpty) {
-        title = await fetchUrlTitle(text);
+        final metadata = await fetchUrlMetadata(text);
+        title = metadata.title;
+        favicon = metadata.favicon;
       }
     } else {
       final links = await Link.searchByTitle(text);
@@ -117,6 +122,7 @@ class _LinkInputState extends State<LinkInput> {
       _results = results;
       _inputIsUrl = isUrl;
       _fetchedTitle = title;
+      _fetchedFavicon = favicon;
       _isLoading = false;
       _highlightedIndex = 0;
     });
@@ -160,11 +166,11 @@ class _LinkInputState extends State<LinkInput> {
         widget.onNavigateToThread(result.thread!);
       } else if (result.link.sourceUrl != null) {
         // Threadless link — treat as a create with existing link data
-        widget.onCreateLink(result.link.sourceUrl!, result.link.title);
+        widget.onCreateLink(result.link.sourceUrl!, result.link.title, result.link.logo ?? _fetchedFavicon);
       }
     } else {
       // "Create new link" row
-      widget.onCreateLink(_controller.text.trim(), _fetchedTitle);
+      widget.onCreateLink(_controller.text.trim(), _fetchedTitle, _fetchedFavicon);
     }
   }
 
@@ -335,7 +341,7 @@ class _LinkInputState extends State<LinkInput> {
           if (result.thread != null) {
             widget.onNavigateToThread(result.thread!);
           } else if (result.link.sourceUrl != null) {
-            widget.onCreateLink(result.link.sourceUrl!, result.link.title);
+            widget.onCreateLink(result.link.sourceUrl!, result.link.title, result.link.logo);
           }
         },
         child: Container(
@@ -363,7 +369,7 @@ class _LinkInputState extends State<LinkInput> {
     return MouseRegion(
       onEnter: (_) => setState(() => _highlightedIndex = index),
       child: GestureDetector(
-        onTap: () => widget.onCreateLink(url, _fetchedTitle),
+        onTap: () => widget.onCreateLink(url, _fetchedTitle, _fetchedFavicon),
         child: Container(
           decoration: BoxDecoration(
             color: index == _highlightedIndex
@@ -371,7 +377,17 @@ class _LinkInputState extends State<LinkInput> {
                 : null,
           ),
           child: ListTile(
-            icon: PlotIcon.add,
+            leadingBuilder: _fetchedFavicon != null
+                ? (_, _) => Padding(
+                    padding: const EdgeInsets.only(left: 20, right: 8),
+                    child: LogoImage(
+                      url: _fetchedFavicon!,
+                      size: 16,
+                      fallback: const Icon(PlotIcon.add, size: 16),
+                    ),
+                  )
+                : null,
+            icon: _fetchedFavicon == null ? PlotIcon.add : null,
             title: _fetchedTitle ?? url,
             subtitle: _fetchedTitle != null ? url : null,
             noHoverHighlight: true,

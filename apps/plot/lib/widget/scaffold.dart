@@ -58,10 +58,20 @@ class Scaffold extends StatelessWidget {
       return null;
     }
 
-    return FBottomNavigationBar(
-      index: config.currentIndex,
-      onChange: config.onChange,
-      children: config.items,
+    return FAnimatedTheme(
+      data: darkenTheme(context, context.theme, context.colour, steps: 2),
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.theme.colors.background,
+          ),
+          child: FBottomNavigationBar(
+            index: config.currentIndex,
+            onChange: config.onChange,
+            children: config.items,
+          ),
+        ),
+      ),
     );
   }
 

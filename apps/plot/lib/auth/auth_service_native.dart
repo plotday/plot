@@ -6,10 +6,13 @@
 /// DO NOT import this file directly — import `auth_service.dart` instead.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:path_provider/path_provider.dart';
+
+import 'package:plot/logging.dart';
 
 import 'auth_service_interface.dart';
 
@@ -29,9 +32,30 @@ Future<AuthService> createAuthServiceImpl({
       persistor: persistor,
     ),
   );
-  await clerkAuth.initialize().timeout(const Duration(seconds: 10));
 
-  return ClerkDartAuthService._(clerkAuth, publishableKey, profile);
+  final service = ClerkDartAuthService._(clerkAuth, publishableKey, profile);
+
+  // Run initialize() inside a guarded zone so that uncaught async errors from
+  // clerk_auth's internal polling timer (e.g. DNS failures during network
+  // transitions) are caught here instead of crashing the isolate.
+  final completer = Completer<void>();
+  runZonedGuarded(
+    () {
+      service._clerkZone = Zone.current;
+      clerkAuth
+          .initialize()
+          .timeout(const Duration(seconds: 10))
+          .then((_) => completer.complete())
+          .catchError((Object e, StackTrace s) => completer.completeError(e, s));
+    },
+    (error, stack) {
+      log.warning('clerk_auth polling error, scheduling recovery', error);
+      service._schedulePollingRecovery();
+    },
+  );
+
+  await completer.future;
+  return service;
 }
 
 Future<Directory> _getClerkCacheDirectory(String? profile) async {
@@ -95,6 +119,29 @@ class ClerkDartAuthService implements AuthService {
   clerk.Auth _auth;
   final String _publishableKey;
   final String? _profile;
+
+  /// The zone in which clerk_auth was initialized. Used to run recovery calls
+  /// so that restarted polling timers inherit the same error-guarded zone.
+  Zone? _clerkZone;
+  Timer? _pollingRecoveryTimer;
+
+  /// Schedule a delayed call to [clerk.Auth.sessionToken] inside [_clerkZone]
+  /// to restart clerk_auth's internal polling timer after a transient failure.
+  void _schedulePollingRecovery() {
+    _pollingRecoveryTimer?.cancel();
+    _pollingRecoveryTimer = Timer(const Duration(seconds: 30), () {
+      final zone = _clerkZone;
+      if (zone == null) return;
+      zone.run(() async {
+        try {
+          await _auth.sessionToken();
+        } catch (_) {
+          // Silently ignore — if this fails the zone error handler will
+          // schedule another recovery attempt.
+        }
+      });
+    });
+  }
 
   /// Create a fresh Clerk [Auth] instance, discarding any stale state.
   ///

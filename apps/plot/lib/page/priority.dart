@@ -72,21 +72,45 @@ class PriorityWrapper implements AutoRouteWrapper {
         child: _PriorityShortcutsProvider(
           priorityId: priorityId,
           child: ThreadHeaderNotifierProvider(
-            child: Column(
-              children: [
-                const UnifiedHeader(),
-                Expanded(
-                  child: ResizablePanelLayout(
-                    left: PrioritiesPage(),
-                    middle: PriorityPage(priorityId: priorityId),
-                    child: AutoRouter(
-                      key: _routerKey,
-                      placeholder: (context) => const LoadingPage(),
-                      clipBehavior: Clip.none,
+            child: BlocBuilder<LayoutBloc, LayoutState>(
+              builder: (context, layoutState) {
+                Widget body = Column(
+                  children: [
+                    const UnifiedHeader(),
+                    Expanded(
+                      child: ResizablePanelLayout(
+                        left: PrioritiesPage(),
+                        middle: PriorityPage(priorityId: priorityId),
+                        child: AutoRouter(
+                          key: _routerKey,
+                          placeholder: (context) => const LoadingPage(),
+                          clipBehavior: Clip.none,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+
+                // On mobile, wrap with PopScope to close search on back gesture.
+                // canPop is false only when search is expanded, so normal
+                // back navigation is unaffected when search is closed.
+                final provider =
+                    ActivityPanelControllerProvider.maybeOf(context);
+                final searchOpen = provider?._isSearchExpanded ?? false;
+                if (!layoutState.multiPanel && searchOpen) {
+                  body = PopScope(
+                    canPop: false,
+                    onPopInvokedWithResult: (didPop, result) {
+                      if (!didPop) {
+                        provider?.tryCloseSearch();
+                      }
+                    },
+                    child: body,
+                  );
+                }
+
+                return body;
+              },
             ),
           ),
         ),
@@ -134,6 +158,24 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
   InfiniteListController? _activityListController;
   VoidCallback? _activityEditorFocusCallback;
   VoidCallback? _searchToggleCallback;
+  bool _isSearchExpanded = false;
+
+  void updateSearchExpanded(bool expanded) {
+    if (_isSearchExpanded != expanded) {
+      setState(() {
+        _isSearchExpanded = expanded;
+      });
+    }
+  }
+
+  /// Closes search if it's open. Returns true if search was closed.
+  bool tryCloseSearch() {
+    if (_isSearchExpanded && _searchToggleCallback != null) {
+      _searchToggleCallback!();
+      return true;
+    }
+    return false;
+  }
 
   void registerController(
     InfiniteListController controller, {
@@ -594,11 +636,11 @@ class _PriorityPageState extends State<PriorityPage>
                       ? state.agendaViewItems
                       : state.activityFeedItems;
 
-                  // On desktop, the "Now" header is stripped from the rendered
-                  // agenda list (replaced by a fixed panel header).  Strip it
-                  // here too so controller indices stay in sync with `items`.
+                  // Strip the leading "Now" header so reorder indices from
+                  // InfiniteList align with moveAgendaItem's nowOffset logic.
+                  // On desktop the header is replaced by a fixed panel header;
+                  // on mobile it's redundant with the tab label.
                   if (isUpNext &&
-                      layoutState.multiPanel &&
                       items.isNotEmpty &&
                       items.first is AgendaHeaderItem &&
                       (items.first as AgendaHeaderItem).now) {

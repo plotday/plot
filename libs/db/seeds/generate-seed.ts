@@ -4,7 +4,7 @@
  * Plot Seed Data Generator
  *
  * Generates SQL INSERT statements from YAML seed data definition.
- * See YAML_SPEC.md for format documentation.
+ * See spec.md for format documentation.
  */
 import pg from "pg";
 
@@ -16,21 +16,25 @@ import { parseArgs } from "node:util";
 import { parse as parseYAML } from "yaml";
 
 import type {
-  Activity,
   Contact,
-  GeneratedActivity,
-  GeneratedActivityTag,
   GeneratedContact,
+  GeneratedLink,
   GeneratedNote,
   GeneratedNoteTag,
   GeneratedPriority,
   GeneratedPriorityContact,
   GeneratedPrioritySettings,
   GeneratedPriorityUser,
+  GeneratedSchedule,
+  GeneratedThread,
+  GeneratedThreadTag,
   Note,
   Priority,
   RefMap,
   SeedData,
+  SeedLink,
+  SeedSource,
+  Thread,
   ValidationError,
 } from "./types.js";
 import { ALL_TAGS, TAG_IDS } from "./types.js";
@@ -236,6 +240,7 @@ async function applySQL(
   console.error("");
 
   return new Promise((resolve, reject) => {
+    // spawn is used here (not exec) — arguments are passed as array, no shell injection risk
     const psql = spawn("psql", [dbUrl], {
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -265,7 +270,6 @@ async function applySQL(
 
     psql.on("close", (code) => {
       if (code === 0) {
-        // Show stderr even on success - it may contain important warnings or errors
         if (stderr.trim()) {
           console.error("⚠️  psql output (warnings/errors):");
           console.error(stderr);
@@ -276,11 +280,12 @@ async function applySQL(
         console.error("");
         console.error("Summary:");
 
-        // Count entities from data
         const contactCount = data.contacts?.length || 0;
         const priorityCount = countPriorities(data.priorities || []);
-        const activityCount = data.activities?.length || 0;
-        const noteCount = countNotes(data.activities || []);
+        const threadCount = data.threads?.length || 0;
+        const sourceCount = data.sources?.length || 0;
+        const noteCount = countNotes(data.threads || []);
+        const linkCount = countLinks(data.threads || []);
 
         if (contactCount > 0) {
           console.error(`  ${contactCount} contact(s)`);
@@ -290,10 +295,14 @@ async function applySQL(
             `  ${priorityCount} priorit${priorityCount === 1 ? "y" : "ies"}`
           );
         }
-        if (activityCount > 0) {
-          console.error(
-            `  ${activityCount} activit${activityCount === 1 ? "y" : "ies"}`
-          );
+        if (sourceCount > 0) {
+          console.error(`  ${sourceCount} source(s)`);
+        }
+        if (threadCount > 0) {
+          console.error(`  ${threadCount} thread(s)`);
+        }
+        if (linkCount > 0) {
+          console.error(`  ${linkCount} link(s)`);
         }
         if (noteCount > 0) {
           console.error(`  ${noteCount} note(s)`);
@@ -311,7 +320,6 @@ async function applySQL(
       }
     });
 
-    // Write SQL to stdin
     psql.stdin.write(sql);
     psql.stdin.end();
   });
@@ -328,11 +336,21 @@ function countPriorities(priorities: Priority[]): number {
   return count;
 }
 
-function countNotes(activities: Activity[]): number {
+function countNotes(threads: Thread[]): number {
   let count = 0;
-  for (const activity of activities) {
-    if (activity.notes) {
-      count += activity.notes.length;
+  for (const thread of threads) {
+    if (thread.notes) {
+      count += thread.notes.length;
+    }
+  }
+  return count;
+}
+
+function countLinks(threads: Thread[]): number {
+  let count = 0;
+  for (const thread of threads) {
+    if (thread.links) {
+      count += thread.links.length;
     }
   }
   return count;
@@ -344,13 +362,10 @@ function countNotes(activities: Activity[]): number {
 
 /**
  * Find the line number for a given path in the YAML content
- * Example paths: "activities[12].created", "contacts[0].email"
  */
 function findLineNumber(yamlContent: string, path: string): number | undefined {
   const lines = yamlContent.split("\n");
 
-  // Parse the path to extract indices and keys
-  // e.g., "activities[12].created" -> ["activities", "12", "created"]
   const pathParts: (string | number)[] = [];
   const regex = /([a-zA-Z_]+)|\[(\d+)\]/g;
   let match;
@@ -367,14 +382,11 @@ function findLineNumber(yamlContent: string, path: string): number | undefined {
     return undefined;
   }
 
-  // Track current indentation level and array index
-  let currentIndent = 0;
   let currentSection: string | null = null;
   let arrayIndex = -1;
   let targetArrayIndex: number | null = null;
   let searchingForKey: string | null = null;
 
-  // Determine what we're searching for
   if (pathParts.length >= 2 && typeof pathParts[1] === "number") {
     currentSection = pathParts[0] as string;
     targetArrayIndex = pathParts[1] as number;
@@ -396,49 +408,43 @@ function findLineNumber(yamlContent: string, path: string): number | undefined {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Skip empty lines and comments
     if (!trimmed || trimmed.startsWith("#")) {
       continue;
     }
 
-    // Check if we're entering the target section
     if (trimmed.startsWith(`${currentSection}:`)) {
       inTargetSection = true;
       arrayIndex = -1;
       continue;
     }
 
-    // If we're in the target section
     if (inTargetSection) {
-      // Check for array items (lines starting with -)
       if (trimmed.startsWith("- ")) {
         arrayIndex++;
 
         if (targetArrayIndex !== null && arrayIndex === targetArrayIndex) {
           inTargetItem = true;
-          targetItemLine = i + 1; // 1-indexed
+          targetItemLine = i + 1;
 
-          // If we're not searching for a specific key, return this line
           if (!searchingForKey) {
             return targetItemLine;
           }
-        } else if (targetArrayIndex !== null && arrayIndex > targetArrayIndex) {
-          // We've passed the target index
+        } else if (
+          targetArrayIndex !== null &&
+          arrayIndex > targetArrayIndex
+        ) {
           break;
         } else if (inTargetItem && arrayIndex > targetArrayIndex!) {
-          // We've moved to the next array item
           break;
         }
       }
 
-      // If we're in the target item and searching for a key
       if (inTargetItem && searchingForKey) {
         if (trimmed.startsWith(`${searchingForKey}:`)) {
-          return i + 1; // 1-indexed
+          return i + 1;
         }
       }
 
-      // Check if we've left the section (dedent)
       if (
         line.match(/^[a-zA-Z]/) &&
         !trimmed.startsWith(`${currentSection}:`)
@@ -448,7 +454,7 @@ function findLineNumber(yamlContent: string, path: string): number | undefined {
     }
   }
 
-  return targetItemLine; // Return the item line if we found it but not the specific key
+  return targetItemLine;
 }
 
 function validate(
@@ -491,10 +497,11 @@ function validate(
     addError("config.userName", "Missing userName");
   }
 
-  // Collect all refs to check for duplicates and build reference maps
+  // Collect all refs
   const contactRefs = new Set<string>();
   const priorityRefs = new Set<string>();
-  const activityRefs = new Set<string>();
+  const sourceRefs = new Set<string>();
+  const threadRefs = new Set<string>();
 
   // Validate contacts
   if (data.contacts) {
@@ -507,7 +514,7 @@ function validate(
       } else if (contact.ref === "user") {
         addError(
           `${path}.ref`,
-          'The ref "user" is reserved and cannot be used for contacts. Remove this contact from the YAML - the user contact is created automatically from config.email.'
+          'The ref "user" is reserved and cannot be used for contacts.'
         );
       } else if (contactRefs.has(contact.ref)) {
         addError(`${path}.ref`, `Duplicate ref: ${contact.ref}`);
@@ -535,15 +542,49 @@ function validate(
     }
   }
 
-  // Validate activities (recursive)
-  if (data.activities) {
-    for (let i = 0; i < data.activities.length; i++) {
-      validateActivity(
-        data.activities[i],
-        `activities[${i}]`,
-        activityRefs,
+  // Validate sources
+  if (data.sources) {
+    for (let i = 0; i < data.sources.length; i++) {
+      const source = data.sources[i];
+      const path = `sources[${i}]`;
+
+      if (!source.ref) {
+        addError(`${path}.ref`, "Missing ref");
+      } else if (sourceRefs.has(source.ref)) {
+        addError(`${path}.ref`, `Duplicate ref: ${source.ref}`);
+      } else {
+        sourceRefs.add(source.ref);
+      }
+
+      if (!source.name) {
+        addError(`${path}.name`, "Missing name");
+      }
+
+      if (!source.priority_ref) {
+        addError(`${path}.priority_ref`, "Missing priority_ref");
+      } else if (!priorityRefs.has(source.priority_ref)) {
+        addError(
+          `${path}.priority_ref`,
+          `Unknown priority_ref: ${source.priority_ref}`
+        );
+      }
+
+      if (!source.link_types || source.link_types.length === 0) {
+        addError(`${path}.link_types`, "Missing or empty link_types");
+      }
+    }
+  }
+
+  // Validate threads
+  if (data.threads) {
+    for (let i = 0; i < data.threads.length; i++) {
+      validateThread(
+        data.threads[i],
+        `threads[${i}]`,
+        threadRefs,
         priorityRefs,
         contactRefs,
+        sourceRefs,
         addError
       );
     }
@@ -570,7 +611,6 @@ function validatePriority(
     addError(`${path}.title`, "Missing title");
   }
 
-  // Validate children recursively
   if (priority.children) {
     for (let i = 0; i < priority.children.length; i++) {
       validatePriority(
@@ -583,156 +623,80 @@ function validatePriority(
   }
 }
 
-function validateActivity(
-  activity: Activity,
+function validateThread(
+  thread: Thread,
   path: string,
-  activityRefs: Set<string>,
+  threadRefs: Set<string>,
   priorityRefs: Set<string>,
   contactRefs: Set<string>,
-  addError: (path: string, message: string) => void,
-  isChild = false
+  sourceRefs: Set<string>,
+  addError: (path: string, message: string) => void
 ) {
-  if (activity.ref) {
-    if (activityRefs.has(activity.ref)) {
-      addError(`${path}.ref`, `Duplicate ref: ${activity.ref}`);
+  if (thread.ref) {
+    if (threadRefs.has(thread.ref)) {
+      addError(`${path}.ref`, `Duplicate ref: ${thread.ref}`);
     } else {
-      activityRefs.add(activity.ref);
+      threadRefs.add(thread.ref);
     }
   }
 
-  if (!activity.type) {
-    addError(`${path}.type`, "Missing type");
-  } else if (!["action", "event", "note"].includes(activity.type)) {
-    addError(`${path}.type`, "Invalid type");
-  }
-
-  // Validate activity type 'note' requirements
-  if (activity.type === "note") {
-    // 'created' field is required for notes
-    if (!activity.created) {
-      addError(
-        `${path}.created`,
-        "Activity type 'note' must have 'created' field (date offset, e.g., '-2d', '+1w 14:30')"
-      );
-    }
-
-    // For notes, 'on' and 'at' are only for future reminders (positive offsets)
-    if (activity.on) {
-      const match = activity.on.match(/^([+-]?\d+)[dwMy]/);
-      if (match && match[1].startsWith("-")) {
-        addError(
-          `${path}.on`,
-          "For activity type 'note', 'on' field must use positive offsets (future dates only). Use 'created' field for when the note was created."
-        );
-      }
-    }
-
-    if (activity.at) {
-      const match = activity.at.match(/^([+-]?\d+)[dwMy]/);
-      if (match && match[1].startsWith("-")) {
-        addError(
-          `${path}.at`,
-          "For activity type 'note', 'at' field must use positive offsets (future dates only). Use 'created' field for when the note was created."
-        );
-      }
-    }
-  }
-
-  // priority_ref is required for top-level activities, optional for children (inherited)
-  if (!isChild && !activity.priority_ref) {
+  if (!thread.priority_ref) {
     addError(`${path}.priority_ref`, "Missing priority_ref");
-  } else if (
-    activity.priority_ref &&
-    !priorityRefs.has(activity.priority_ref)
-  ) {
+  } else if (!priorityRefs.has(thread.priority_ref)) {
     addError(
       `${path}.priority_ref`,
-      `Unknown priority_ref: ${activity.priority_ref}`
+      `Unknown priority_ref: ${thread.priority_ref}`
     );
   }
 
-  // Validate at XOR on
-  if (activity.at && activity.on) {
-    addError(path, "Activity cannot have both 'at' and 'on' fields");
-  }
-
-  // Validate recurring activities have schedule
-  if (activity.recurrence_rule && !activity.at && !activity.on) {
-    addError(path, "Recurring activities must have 'at' or 'on' field");
-  }
-
-  // Validate events have schedule (database constraint: activity_scheduled)
-  // Actions without schedule will auto-default to base date
-  if (
-    activity.type === "event" &&
-    !activity.recurrence_rule &&
-    !activity.at &&
-    !activity.on
-  ) {
-    addError(
-      path,
-      "Events must have a schedule: use 'on' for all-day (e.g., 'on: \"+0d\"') or 'at' for timed events (e.g., 'at: \"+0d 09:00 / +0d 10:00\"')"
-    );
-  }
-
-  // Validate recurring activities cannot be marked done (database constraint: activity_no_complete_recurrence)
-  if (activity.recurrence_rule && activity.done_at) {
-    addError(
-      path,
-      "Recurring activities cannot be marked as done (done_at must be null). Remove either 'recurrence_rule' or 'done_at'."
-    );
+  // Validate schedule
+  if (thread.schedule) {
+    const sched = thread.schedule;
+    if (sched.at && sched.on) {
+      addError(`${path}.schedule`, "Schedule cannot have both 'at' and 'on'");
+    }
+    if (sched.recurrence_rule && !sched.at && !sched.on) {
+      addError(
+        `${path}.schedule`,
+        "Recurring schedules must have 'at' or 'on'"
+      );
+    }
+    if (sched.recurrence_rule && sched.done_at) {
+      addError(
+        `${path}.schedule`,
+        "Recurring schedules cannot have done_at"
+      );
+    }
   }
 
   // Validate author_ref
   if (
-    activity.author_ref &&
-    activity.author_ref !== "user" &&
-    !contactRefs.has(activity.author_ref)
+    thread.author_ref &&
+    thread.author_ref !== "user" &&
+    !contactRefs.has(thread.author_ref)
   ) {
     addError(
       `${path}.author_ref`,
-      `Unknown author_ref: ${activity.author_ref}`
-    );
-  }
-
-  // Validate assignee_ref
-  if (
-    activity.assignee_ref &&
-    activity.assignee_ref !== "user" &&
-    !contactRefs.has(activity.assignee_ref)
-  ) {
-    addError(
-      `${path}.assignee_ref`,
-      `Unknown assignee_ref: ${activity.assignee_ref}`
-    );
-  }
-
-  // Validate action activities have assignee (database constraint: activity_action_assignee)
-  if (activity.type === "action" && !activity.assignee_ref) {
-    addError(
-      `${path}.assignee_ref`,
-      "Action activities must have an assignee_ref (use 'user' for self-assigned tasks)"
+      `Unknown author_ref: ${thread.author_ref}`
     );
   }
 
   // Validate tags
-  if (activity.tags) {
-    for (const tagName of Object.keys(activity.tags)) {
+  if (thread.tags) {
+    for (const tagName of Object.keys(thread.tags)) {
       if (!ALL_TAGS.includes(tagName as any)) {
         addError(`${path}.tags.${tagName}`, `Unknown tag: ${tagName}`);
       }
 
-      // Warn about computed tags for activities - they will be filtered out during seed generation
-      // Activities compute all tags < 100 from their state properties
       const tagId = TAG_IDS[tagName];
       if (tagId && tagId < 100) {
         addError(
           `${path}.tags.${tagName}`,
-          `Computed tag "${tagName}" will be ignored - activity tags are calculated from activity state (doNow, doLater, done, archivedAt) and should not be in seed data`
+          `Computed tag "${tagName}" will be ignored`
         );
       }
 
-      const actors = activity.tags[tagName];
+      const actors = thread.tags[tagName];
       for (const actor of actors) {
         if (actor !== "user" && !contactRefs.has(actor)) {
           addError(`${path}.tags.${tagName}`, `Unknown actor: ${actor}`);
@@ -741,11 +705,48 @@ function validateActivity(
     }
   }
 
+  // Validate links
+  if (thread.links) {
+    for (let i = 0; i < thread.links.length; i++) {
+      const link = thread.links[i];
+      const linkPath = `${path}.links[${i}]`;
+
+      if (link.source_ref && !sourceRefs.has(link.source_ref)) {
+        addError(
+          `${linkPath}.source_ref`,
+          `Unknown source_ref: ${link.source_ref}`
+        );
+      }
+
+      if (
+        link.assignee_ref &&
+        link.assignee_ref !== "user" &&
+        !contactRefs.has(link.assignee_ref)
+      ) {
+        addError(
+          `${linkPath}.assignee_ref`,
+          `Unknown assignee_ref: ${link.assignee_ref}`
+        );
+      }
+
+      if (
+        link.author_ref &&
+        link.author_ref !== "user" &&
+        !contactRefs.has(link.author_ref)
+      ) {
+        addError(
+          `${linkPath}.author_ref`,
+          `Unknown author_ref: ${link.author_ref}`
+        );
+      }
+    }
+  }
+
   // Validate notes
-  if (activity.notes) {
-    for (let i = 0; i < activity.notes.length; i++) {
+  if (thread.notes) {
+    for (let i = 0; i < thread.notes.length; i++) {
       validateNote(
-        activity.notes[i],
+        thread.notes[i],
         `${path}.notes[${i}]`,
         contactRefs,
         addError
@@ -760,15 +761,13 @@ function validateNote(
   contactRefs: Set<string>,
   addError: (path: string, message: string) => void
 ) {
-  // Validate created field (required)
   if (!note.created) {
     addError(
       `${path}.created`,
-      "Missing required 'created' field (date offset, e.g., '-2d', '+1w 14:30')"
+      "Missing required 'created' field"
     );
   }
 
-  // Validate author_ref
   if (
     note.author_ref &&
     note.author_ref !== "user" &&
@@ -777,7 +776,6 @@ function validateNote(
     addError(`${path}.author_ref`, `Unknown author_ref: ${note.author_ref}`);
   }
 
-  // Validate mentions
   if (note.mentions) {
     for (const mention of note.mentions) {
       if (mention !== "user" && !contactRefs.has(mention)) {
@@ -786,21 +784,17 @@ function validateNote(
     }
   }
 
-  // Validate tags
   if (note.tags) {
     for (const tagName of Object.keys(note.tags)) {
       if (!ALL_TAGS.includes(tagName as any)) {
         addError(`${path}.tags.${tagName}`, `Unknown tag: ${tagName}`);
       }
 
-      // Warn about computed tags for notes - they will be filtered out during seed generation
-      // Notes can have 'now' (1) and 'done' (3) for per-user assignment/completion
-      // But not 'later' (2), 'archived' (4), 'attachment' (5), 'link' (6)
       const tagId = TAG_IDS[tagName];
       if (tagId && tagId < 100 && tagId !== 1 && tagId !== 3) {
         addError(
           `${path}.tags.${tagName}`,
-          `Computed tag "${tagName}" will be ignored - this tag is calculated from note state and should not be in seed data. Notes can only have 'now' and 'done' tags.`
+          `Computed tag "${tagName}" will be ignored`
         );
       }
 
@@ -835,38 +829,43 @@ function generateSQL(
   lines.push("BEGIN;");
   lines.push("");
   lines.push("-- Cleanup existing data for this user");
-  lines.push(`DELETE FROM activity WHERE created_by = ${sqlString(userId)};`);
+  lines.push(`DELETE FROM thread WHERE created_by = ${sqlString(userId)};`);
   lines.push(
     `DELETE FROM priority_settings WHERE user_id = ${sqlString(userId)};`
   );
   lines.push(`DELETE FROM priority_user WHERE user_id = ${sqlString(userId)};`);
   lines.push(`DELETE FROM priority WHERE created_by = ${sqlString(userId)};`);
+  lines.push(
+    `DELETE FROM twist_admin WHERE user_id = ${sqlString(userId)};`
+  );
   lines.push("");
 
   // Build reference maps
   const contactIdMap: RefMap<string> = { user: contactId };
   const priorityIdMap: RefMap<string> = {};
-  const activityIdMap: RefMap<string> = {};
+  const sourceIdMap: RefMap<string> = {}; // source ref -> priority_twist_id
+  const threadIdMap: RefMap<string> = {};
 
-  // Generate entities
+  // Generated entity arrays
   const contacts: GeneratedContact[] = [];
   const priorities: GeneratedPriority[] = [];
   const prioritySettings: GeneratedPrioritySettings[] = [];
   const priorityUsers: GeneratedPriorityUser[] = [];
   const priorityContacts: GeneratedPriorityContact[] = [];
-  const activities: GeneratedActivity[] = [];
-  const activityTags: GeneratedActivityTag[] = [];
+  const threads: GeneratedThread[] = [];
+  const threadTags: GeneratedThreadTag[] = [];
+  const generatedLinks: GeneratedLink[] = [];
+  const schedules: GeneratedSchedule[] = [];
   const notes: GeneratedNote[] = [];
   const noteTags: GeneratedNoteTag[] = [];
+
+  // Source SQL is generated inline (due to bigint IDENTITY sequencing)
+  const sourceSQLLines: string[] = [];
 
   // Process contacts
   if (data.contacts) {
     for (const contact of data.contacts) {
-      // Skip "user" ref - it's reserved for the user's own contact_id from app_metadata
       if (contact.ref === "user") {
-        console.error(
-          `⚠️  Skipping contact with reserved ref "user" (validation should have caught this)`
-        );
         continue;
       }
 
@@ -899,7 +898,6 @@ function generateSQL(
   }
 
   // Link all contacts to the user's root priority for visibility
-  // Root priorities have paths with no dots (single level path)
   const rootPriority = priorities.find((p) => !p.path.includes("."));
   if (rootPriority && contacts.length > 0) {
     for (const contact of contacts) {
@@ -910,30 +908,39 @@ function generateSQL(
     }
   }
 
-  // Process activities (with notes)
-  let activityOrder = Date.now();
-  if (data.activities) {
-    for (const activity of data.activities) {
-      activityOrder = processActivity(
-        activity,
+  // Process sources
+  if (data.sources) {
+    for (const source of data.sources) {
+      processSource(
+        source,
         userId,
-        baseDate,
-        activityOrder,
-        contactIdMap,
         priorityIdMap,
-        activityIdMap,
-        activities,
-        activityTags,
-        notes,
-        noteTags
+        sourceIdMap,
+        sourceSQLLines
       );
     }
   }
 
-  // Auto-set 'on' for actions without scheduling
-  for (const activity of activities) {
-    if (activity.type === "action" && !activity.on && !activity.at) {
-      activity.on = `[${baseDate},)`;
+  // Process threads
+  let threadOrder = Date.now();
+  if (data.threads) {
+    for (const thread of data.threads) {
+      threadOrder = processThread(
+        thread,
+        userId,
+        baseDate,
+        threadOrder,
+        contactIdMap,
+        priorityIdMap,
+        sourceIdMap,
+        threadIdMap,
+        threads,
+        threadTags,
+        generatedLinks,
+        schedules,
+        notes,
+        noteTags
+      );
     }
   }
 
@@ -941,7 +948,6 @@ function generateSQL(
 
   // Contacts
   if (contacts.length > 0) {
-    // Delete existing contacts with these emails first
     const contactEmails = contacts.map((c) => sqlString(c.email)).join(", ");
     lines.push("-- Cleanup existing contacts");
     lines.push(`DELETE FROM contact WHERE email IN (${contactEmails});`);
@@ -1048,53 +1054,81 @@ function generateSQL(
     lines.push("");
   }
 
-  // Activities
-  if (activities.length > 0) {
-    lines.push("-- Activities");
+  // Sources (twist_admin + twist + priority_twist)
+  if (sourceSQLLines.length > 0) {
+    lines.push("-- Sources (twist_admin + twist + priority_twist)");
+    lines.push(...sourceSQLLines);
+    lines.push("");
+  }
+
+  // Threads
+  if (threads.length > 0) {
+    lines.push("-- Threads");
     lines.push(
-      'INSERT INTO activity (id, author_id, created_by, assignee_id, priority_id, type, kind, "order", draft, private, title, preview, at, "on", duration, done_at, recurrence_rule, archived_at, source_created_at, updated_at)'
+      "INSERT INTO thread (id, created_by, priority_id, draft, private, title, preview, archived_at, created_at, updated_at)"
     );
     lines.push("VALUES");
-    for (let i = 0; i < activities.length; i++) {
-      const a = activities[i];
-      const comma = i < activities.length - 1 ? "," : ";";
+    for (let i = 0; i < threads.length; i++) {
+      const t = threads[i];
+      const comma = i < threads.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(a.id)}, ${sqlString(a.author_id)}, ${sqlString(
-          a.created_by
-        )}, ${sqlString(a.assignee_id)}, ${sqlString(
-          a.priority_id
-        )}, ${sqlString(a.type)}, ${a.kind ? sqlString(a.kind) : "NULL"}, ${
-          a.order
-        }, ${a.draft}, ${a.private}, ${sqlString(a.title)}, ${sqlString(
-          a.preview
-        )}, ${a.at ? sqlString(a.at) : "NULL"}, ${
-          a.on ? sqlString(a.on) : "NULL"
-        }, ${a.duration ? sqlString(a.duration) : "NULL"}, ${sqlString(
-          a.done_at
-        )}, ${sqlString(a.recurrence_rule)}, ${sqlString(
-          a.archived_at
-        )}, ${sqlString(a.source_created_at)}, ${sqlString(
-          a.updated_at
-        )})${comma}`
+        `  (${sqlString(t.id)}, ${sqlString(t.created_by)}, ${sqlString(
+          t.priority_id
+        )}, ${t.draft}, ${t.private}, ${sqlString(t.title)}, ${sqlString(
+          t.preview
+        )}, ${sqlString(t.archived_at)}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
   }
 
-  // Activity tags
-  if (activityTags.length > 0) {
-    lines.push("-- Activity tags");
+  // Links
+  if (generatedLinks.length > 0) {
+    lines.push("-- Links");
     lines.push(
-      "INSERT INTO activity_tag (actor_id, activity_id, tag_id, occurrence, updated_at)"
+      "INSERT INTO link (id, thread_id, priority_id, type, status, title, source_url, assignee_id, author_id, created_by, source_created_at, meta, created_at, updated_at)"
     );
     lines.push("VALUES");
-    for (let i = 0; i < activityTags.length; i++) {
-      const at = activityTags[i];
-      const comma = i < activityTags.length - 1 ? "," : ";";
+    for (let i = 0; i < generatedLinks.length; i++) {
+      const l = generatedLinks[i];
+      const comma = i < generatedLinks.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(at.actor_id)}, ${sqlString(at.activity_id)}, ${
-          at.tag_id
-        }, ${sqlString(at.occurrence)}, NOW())${comma}`
+        `  (${sqlString(l.id)}, ${sqlString(l.thread_id)}, ${sqlString(
+          l.priority_id
+        )}, ${sqlString(l.type)}, ${sqlString(l.status)}, ${sqlString(
+          l.title
+        )}, ${sqlString(l.source_url)}, ${sqlString(
+          l.assignee_id
+        )}, ${sqlString(l.author_id)}, ${sqlString(
+          l.created_by
+        )}, ${sqlString(l.source_created_at)}, ${
+          l.meta ? sqlString(l.meta) : "NULL"
+        }, NOW(), NOW())${comma}`
+      );
+    }
+    lines.push("");
+  }
+
+  // Schedules
+  if (schedules.length > 0) {
+    lines.push("-- Schedules");
+    lines.push(
+      'INSERT INTO schedule (id, thread_id, link_id, user_id, "order", at, "on", duration, recurrence_rule, done_at, created_at, updated_at)'
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < schedules.length; i++) {
+      const s = schedules[i];
+      const comma = i < schedules.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(s.id)}, ${sqlString(s.thread_id)}, ${sqlString(
+          s.link_id
+        )}, ${sqlString(s.user_id)}, ${
+          s.order !== null ? s.order : "NULL"
+        }, ${s.at ? sqlString(s.at) : "NULL"}, ${
+          s.on ? sqlString(s.on) : "NULL"
+        }, ${s.duration ? sqlString(s.duration) : "NULL"}, ${sqlString(
+          s.recurrence_rule
+        )}, ${sqlString(s.done_at)}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
@@ -1104,22 +1138,41 @@ function generateSQL(
   if (notes.length > 0) {
     lines.push("-- Notes");
     lines.push(
-      "INSERT INTO note (id, activity_id, author_id, created_by, draft, private, content, links, mentions, source_created_at, updated_at)"
+      "INSERT INTO note (id, thread_id, author_id, created_by, draft, private, content, mentions, source_created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < notes.length; i++) {
       const n = notes[i];
       const comma = i < notes.length - 1 ? "," : ";";
       lines.push(
-        `  (${sqlString(n.id)}, ${sqlString(n.activity_id)}, ${sqlString(
+        `  (${sqlString(n.id)}, ${sqlString(n.thread_id)}, ${sqlString(
           n.author_id
         )}, ${sqlString(n.created_by)}, ${n.draft}, ${n.private}, ${sqlString(
           n.content
-        )}, ${n.links ? sqlString(n.links) : "NULL"}, ${
+        )}, ${
           n.mentions ? sqlString(n.mentions) : "NULL"
         }, ${sqlString(n.source_created_at)}, ${sqlString(
           n.updated_at
         )})${comma}`
+      );
+    }
+    lines.push("");
+  }
+
+  // Thread tags
+  if (threadTags.length > 0) {
+    lines.push("-- Thread tags");
+    lines.push(
+      "INSERT INTO thread_tag (actor_id, thread_id, tag_id, occurrence, updated_at)"
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < threadTags.length; i++) {
+      const tt = threadTags[i];
+      const comma = i < threadTags.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(tt.actor_id)}, ${sqlString(tt.thread_id)}, ${
+          tt.tag_id
+        }, ${sqlString(tt.occurrence)}, NOW())${comma}`
       );
     }
     lines.push("");
@@ -1164,7 +1217,6 @@ function processPriority(
   const id = generateUUID();
   idMap[priority.ref] = id;
 
-  // Generate path
   const path = parentPath
     ? `${parentPath}.${generateRandomPath(4)}`
     : generateRandomPath(12);
@@ -1179,13 +1231,11 @@ function processPriority(
       : null,
   });
 
-  // Add priority_user entry for creator
   outUsers.push({
     priority_id: id,
     user_id: userId,
   });
 
-  // Add settings if present
   if (priority.settings) {
     outSettings.push({
       priority_id: id,
@@ -1196,7 +1246,6 @@ function processPriority(
     });
   }
 
-  // Process children
   if (priority.children) {
     for (const child of priority.children) {
       processPriority(
@@ -1213,75 +1262,138 @@ function processPriority(
   }
 }
 
-function processActivity(
-  activity: Activity,
+function processSource(
+  source: SeedSource,
+  userId: string,
+  priorityIdMap: RefMap<string>,
+  sourceIdMap: RefMap<string>,
+  outLines: string[]
+) {
+  const priorityId = priorityIdMap[source.priority_ref];
+  const priorityTwistId = generateUUID();
+
+  sourceIdMap[source.ref] = priorityTwistId;
+
+  // Build permissions JSONB
+  const permissions = JSON.stringify({
+    _providers: [
+      {
+        linkTypes: source.link_types.map((lt) => ({
+          type: lt.type,
+          label: lt.label,
+          logo: lt.logo,
+          ...(lt.logo_dark ? { logoDark: lt.logo_dark } : {}),
+        })),
+      },
+    ],
+  });
+
+  // Use DO block to chain bigint IDENTITY inserts
+  outLines.push(`DO $$`);
+  outLines.push(`DECLARE`);
+  outLines.push(`  v_twist_admin_id bigint;`);
+  outLines.push(`  v_twist_id bigint;`);
+  outLines.push(`BEGIN`);
+  outLines.push(
+    `  INSERT INTO twist_admin (user_id) VALUES (${sqlString(userId)}) RETURNING id INTO v_twist_admin_id;`
+  );
+  outLines.push(
+    `  INSERT INTO twist (twist_admin_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
+  );
+  outLines.push(
+    `  VALUES (v_twist_admin_id, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)})`
+  );
+  outLines.push(`  RETURNING id INTO v_twist_id;`);
+  outLines.push(
+    `  INSERT INTO priority_twist (id, twist_id, owner_id, priority_id, name, config)`
+  );
+  outLines.push(
+    `  VALUES (${sqlString(priorityTwistId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(source.name)}, '{}'::jsonb);`
+  );
+  outLines.push(`END $$;`);
+}
+
+function processThread(
+  thread: Thread,
   userId: string,
   baseDate: string,
   order: number,
   contactIdMap: RefMap<string>,
   priorityIdMap: RefMap<string>,
-  activityIdMap: RefMap<string>,
-  outActivities: GeneratedActivity[],
-  outTags: GeneratedActivityTag[],
+  sourceIdMap: RefMap<string>,
+  threadIdMap: RefMap<string>,
+  outThreads: GeneratedThread[],
+  outTags: GeneratedThreadTag[],
+  outLinks: GeneratedLink[],
+  outSchedules: GeneratedSchedule[],
   outNotes: GeneratedNote[],
   outNoteTags: GeneratedNoteTag[]
 ): number {
   const id = generateUUID();
-  if (activity.ref) {
-    activityIdMap[activity.ref] = id;
+  if (thread.ref) {
+    threadIdMap[thread.ref] = id;
   }
 
-  // Resolve refs
-  const authorId = activity.author_ref
-    ? contactIdMap[activity.author_ref]
-    : contactIdMap["user"]; // Default to user's contact ID
-  const assigneeId = activity.assignee_ref
-    ? contactIdMap[activity.assignee_ref]
-    : null;
-  const priorityId = priorityIdMap[activity.priority_ref];
+  const priorityId = priorityIdMap[thread.priority_ref];
 
-  // Parse schedule
-  const at = activity.at ? parseTimestampRange(baseDate, activity.at) : null;
-  const on = activity.on ? parseDateRange(baseDate, activity.on) : null;
-
-  // Parse created timestamp
-  const createdAt = activity.created
-    ? parseDateOffset(baseDate, activity.created).toISOString()
-    : new Date().toISOString();
-
-  outActivities.push({
+  outThreads.push({
     id,
-    author_id: authorId,
     created_by: userId,
-    assignee_id: assigneeId,
     priority_id: priorityId,
-    type: activity.type,
-    kind: activity.kind ?? null,
-    order: order++,
-    draft: activity.draft ?? false,
-    private: activity.private ?? false,
-    title: activity.title ?? null,
-    preview: null, // Preview can be set to null for now
-    at,
-    on,
-    duration: activity.duration ?? null,
-    done_at: activity.done_at
-      ? parseDateOffset(baseDate, activity.done_at).toISOString()
+    draft: thread.draft ?? false,
+    private: thread.private ?? false,
+    title: thread.title ?? null,
+    preview: null,
+    archived_at: thread.archived_at
+      ? parseDateOffset(baseDate, thread.archived_at).toISOString()
       : null,
-    recurrence_rule: activity.recurrence_rule ?? null,
-    archived_at: activity.archived_at
-      ? parseDateOffset(baseDate, activity.archived_at).toISOString()
-      : null,
-    source_created_at: createdAt,
-    updated_at: createdAt,
   });
 
+  // Process schedule
+  if (thread.schedule) {
+    const sched = thread.schedule;
+    const at = sched.at ? parseTimestampRange(baseDate, sched.at) : null;
+    const on = sched.on ? parseDateRange(baseDate, sched.on) : null;
+
+    outSchedules.push({
+      id: generateUUID(),
+      thread_id: id,
+      link_id: null,
+      user_id: userId,
+      order: order++,
+      at,
+      on,
+      duration: sched.duration ?? null,
+      recurrence_rule: sched.recurrence_rule ?? null,
+      done_at: sched.done_at
+        ? parseDateOffset(baseDate, sched.done_at).toISOString()
+        : null,
+    });
+  }
+
+  // Process links
+  if (thread.links) {
+    const createdAt = thread.created
+      ? parseDateOffset(baseDate, thread.created).toISOString()
+      : new Date().toISOString();
+
+    for (const link of thread.links) {
+      processLink(
+        link,
+        id,
+        priorityId,
+        createdAt,
+        contactIdMap,
+        sourceIdMap,
+        outLinks
+      );
+    }
+  }
+
   // Process tags
-  if (activity.tags) {
-    for (const [tagName, actors] of Object.entries(activity.tags)) {
+  if (thread.tags) {
+    for (const [tagName, actors] of Object.entries(thread.tags)) {
       const tagId = TAG_IDS[tagName];
-      // Skip all computed tags (tag_id 1-99) for activities
-      // Activities compute now, later, done, archived from their state properties
       if (tagId < 100) {
         continue;
       }
@@ -1289,7 +1401,7 @@ function processActivity(
         const actorId = contactIdMap[actorRef];
         outTags.push({
           actor_id: actorId,
-          activity_id: id,
+          thread_id: id,
           tag_id: tagId,
           occurrence: null,
         });
@@ -1298,8 +1410,8 @@ function processActivity(
   }
 
   // Process notes
-  if (activity.notes) {
-    for (const note of activity.notes) {
+  if (thread.notes) {
+    for (const note of thread.notes) {
       processNote(
         note,
         id,
@@ -1315,9 +1427,42 @@ function processActivity(
   return order;
 }
 
+function processLink(
+  link: SeedLink,
+  threadId: string,
+  priorityId: string,
+  sourceCreatedAt: string,
+  contactIdMap: RefMap<string>,
+  sourceIdMap: RefMap<string>,
+  outLinks: GeneratedLink[]
+) {
+  const id = generateUUID();
+
+  const assigneeId = link.assignee_ref
+    ? contactIdMap[link.assignee_ref]
+    : null;
+  const authorId = link.author_ref ? contactIdMap[link.author_ref] : null;
+  const createdBy = link.source_ref ? sourceIdMap[link.source_ref] : null;
+
+  outLinks.push({
+    id,
+    thread_id: threadId,
+    priority_id: priorityId,
+    type: link.type ?? null,
+    status: link.status ?? null,
+    title: link.title ?? null,
+    source_url: link.source_url ?? null,
+    assignee_id: assigneeId,
+    author_id: authorId,
+    created_by: createdBy,
+    source_created_at: sourceCreatedAt,
+    meta: link.meta ? JSON.stringify(link.meta) : null,
+  });
+}
+
 function processNote(
   note: Note,
-  activityId: string,
+  threadId: string,
   userId: string,
   baseDate: string,
   contactIdMap: RefMap<string>,
@@ -1326,43 +1471,32 @@ function processNote(
 ) {
   const id = generateUUID();
 
-  // Resolve refs
   const authorId = note.author_ref
     ? contactIdMap[note.author_ref]
-    : contactIdMap["user"]; // Default to user's contact ID
+    : contactIdMap["user"];
 
-  // Parse created timestamp
   const createdAt = parseDateOffset(baseDate, note.created).toISOString();
 
-  // Parse links
-  const links = note.links ? JSON.stringify(note.links) : null;
-
-  // Parse mentions
   const mentions = note.mentions
     ? `{${note.mentions.map((ref) => contactIdMap[ref]).join(",")}}`
     : null;
 
   outNotes.push({
     id,
-    activity_id: activityId,
+    thread_id: threadId,
     author_id: authorId,
     created_by: userId,
     draft: note.draft ?? false,
     private: note.private ?? false,
     content: note.content ?? note.note ?? null,
-    links,
     mentions,
     source_created_at: createdAt,
     updated_at: createdAt,
   });
 
-  // Process tags
   if (note.tags) {
     for (const [tagName, actors] of Object.entries(note.tags)) {
       const tagId = TAG_IDS[tagName];
-      // Skip most computed tags for notes, but allow 'now' (1) and 'done' (3)
-      // Notes use now/done tags for per-user assignment/completion tracking
-      // Block: later (2), archived (4), attachment (5), link (6)
       if (tagId < 100 && tagId !== 1 && tagId !== 3) {
         continue;
       }
@@ -1382,9 +1516,6 @@ function processNote(
 // Date parsing
 // ============================================================================
 
-/**
- * Parse date offset like "+7d 14:00" or "-2w 09:30"
- */
 function parseDateOffset(baseDate: string, offset: string): Date {
   if (!offset) {
     throw new Error(`Date offset is undefined or null`);
@@ -1397,7 +1528,6 @@ function parseDateOffset(baseDate: string, offset: string): Date {
 
   const base = new Date(baseDate + "T00:00:00");
 
-  // Parse offset
   const match = offset.match(/^([+-]?\d+)([dwMy])(?:\s+(\d{2}):(\d{2}))?$/);
   if (!match) {
     throw new Error(`Invalid date offset: ${offset}`);
@@ -1423,7 +1553,6 @@ function parseDateOffset(baseDate: string, offset: string): Date {
       break;
   }
 
-  // Set time if provided
   if (hoursStr && minutesStr) {
     result.setHours(parseInt(hoursStr, 10));
     result.setMinutes(parseInt(minutesStr, 10));
@@ -1432,23 +1561,15 @@ function parseDateOffset(baseDate: string, offset: string): Date {
   return result;
 }
 
-/**
- * Parse timestamp range like "+0d 10:00 / +0d 11:00"
- * Returns PostgreSQL tstzrange format
- */
 function parseTimestampRange(baseDate: string, range: string): string {
   const parts = range.split("/").map((s) => s.trim());
   const start = parts[0];
-  const end = parts[1] || start; // If no end, use start
+  const end = parts[1] || start;
   const startDate = parseDateOffset(baseDate, start);
   const endDate = parseDateOffset(baseDate, end);
   return `[${startDate.toISOString()},${endDate.toISOString()})`;
 }
 
-/**
- * Parse date range like "+3d / +5d" or "+3d" (single day)
- * Returns PostgreSQL daterange format
- */
 function parseDateRange(baseDate: string, range: string): string {
   const parts = range.split("/").map((s) => s.trim());
   const start = parts[0];
@@ -1456,7 +1577,6 @@ function parseDateRange(baseDate: string, range: string): string {
 
   const startStr = startDate.toISOString().split("T")[0];
 
-  // If no end date, create an open-ended range
   if (parts[1]) {
     const endDate = parseDateOffset(baseDate, parts[1]);
     const endStr = endDate.toISOString().split("T")[0];
@@ -1471,7 +1591,6 @@ function parseDateRange(baseDate: string, range: string): string {
 // ============================================================================
 
 function generateUUID(): string {
-  // Simple UUID v4 generation
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === "x" ? r : (r & 0x3) | 0x8;
@@ -1497,12 +1616,6 @@ function sqlString(value: string | number | null): string {
     return value.toString();
   }
   return `'${value.replace(/'/g, "''")}'`;
-}
-
-function isValidUUID(uuid: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    uuid
-  );
 }
 
 function isValidEmail(email: string): boolean {

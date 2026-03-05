@@ -274,7 +274,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                 key: ValueKey('all-${priority.id}'),
                 priority: priority,
                 selected: widget.selected?.id == priority.id,
-                selectedBorder: priority.topOrder == null,
+                selectedBorder: true,
                 indentLevel: indentLevel,
                 textStyle: textStyle.copyWith(
                   color: priority.archivedAt != null
@@ -327,7 +327,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                     PriorityWidget(
                       priority: priority,
                       selected: widget.selected?.id == priority.id,
-                      selectedBorder: priority.topOrder == null,
+                      selectedBorder: true,
                       indentLevel: indentLevel,
                       textStyle: textStyle.copyWith(
                         color: priority.archivedAt != null

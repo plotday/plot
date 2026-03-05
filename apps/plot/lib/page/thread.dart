@@ -177,6 +177,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
           onPopInvokedWithResult: (didPop, result) {
             if (!didPop) {
               if (ModalProvider.tryDismissTopModal(context)) return;
+              final provider =
+                  ActivityPanelControllerProvider.maybeOf(context);
+              if (provider != null && provider.tryCloseSearch()) return;
               if (!layoutStateForPanels.multiPanel) {
                 context.run(ChangeCurrentThread(null));
               }

@@ -46,6 +46,7 @@ import type {
   ChannelLinkUpdate,
   ChannelNoteCreate,
   ThreadReadChange,
+  ThreadScheduleChange,
 } from "../../view-types";
 import { AI } from "../ai";
 import { Tool } from "../tool";
@@ -124,6 +125,11 @@ export type DispatchItem =
   | {
       itemType: "thread_read";
       item: ThreadReadChange;
+      syncDepth?: number;
+    }
+  | {
+      itemType: "thread_schedule";
+      item: ThreadScheduleChange;
       syncDepth?: number;
     };
 
@@ -474,10 +480,25 @@ export class Plot extends Tool implements IPlot {
 
         if (activityCreatedByThisTwist && !noteCreatedByThisTwist) {
           if (this.plotOptions?.thread?.access) {
-            callbacks.push({
-              sourceMethod: "onNoteCreated",
-              args: [currentNote],
-            });
+            // Fetch thread with meta populated for the onNoteCreated callback
+            const thread = await this.getThread({ id: item.thread_id as Uuid });
+            if (thread) {
+              const link = await this.db
+                .selectFrom("link")
+                .select(["meta", "channel_id", "source"])
+                .where("thread_id", "=", item.thread_id!)
+                .where("created_by", "=", this.priorityTwistId)
+                .executeTakeFirst();
+              thread.meta = {
+                ...(link?.meta as Record<string, unknown> ?? {}),
+                channelId: link?.channel_id ?? null,
+                linkSource: link?.source ?? null,
+              };
+              callbacks.push({
+                sourceMethod: "onNoteCreated",
+                args: [currentNote, thread],
+              });
+            }
           }
         }
       }
@@ -548,21 +569,66 @@ export class Plot extends Tool implements IPlot {
         if (thread) {
           const actors = await contactsOps.getActors(this, [item.user_id as ActorId]);
           if (actors.length > 0) {
-            // Fetch link meta for the thread (contains channelId, threadId, etc.)
+            // Populate thread.meta from link row
             const link = await this.db
               .selectFrom("link")
               .select(["meta", "channel_id", "source"])
               .where("thread_id", "=", item.thread_id!)
               .where("created_by", "=", this.priorityTwistId)
               .executeTakeFirst();
-            const meta: Record<string, unknown> = {
+            thread.meta = {
               ...(link?.meta as Record<string, unknown> ?? {}),
-              channelId: link?.channel_id,
-              linkSource: link?.source,
+              channelId: link?.channel_id ?? null,
+              linkSource: link?.source ?? null,
             };
             callbacks.push({
               sourceMethod: "onThreadRead",
-              args: [thread, actors[0], false, meta], // false = read (not unread)
+              args: [thread, actors[0], !item.read_at],
+            });
+          }
+        }
+      }
+    }
+
+    // Handle thread schedule changes (for onThreadToDo callback)
+    if (dispatchItem.itemType === "thread_schedule") {
+      const { item } = dispatchItem;
+      if (this.plotOptions?.thread?.access) {
+        const thread = await this.getThread({ id: item.thread_id as Uuid });
+        if (thread) {
+          const actors = await contactsOps.getActors(this, [item.user_id as ActorId]);
+          if (actors.length > 0) {
+            // Populate thread.meta from link row
+            const link = await this.db
+              .selectFrom("link")
+              .select(["meta", "channel_id", "source"])
+              .where("thread_id", "=", item.thread_id!)
+              .where("created_by", "=", this.priorityTwistId)
+              .executeTakeFirst();
+            thread.meta = {
+              ...(link?.meta as Record<string, unknown> ?? {}),
+              channelId: link?.channel_id ?? null,
+              linkSource: link?.source ?? null,
+            };
+
+            // todo=true if schedule is active (on/at set, not done); false otherwise
+            const todo = (item.on != null || item.at != null) && item.done_at == null;
+
+            // Extract date from schedule's on (daterange) or at (tstzrange)
+            let date: Date | undefined;
+            if (item.on != null) {
+              // daterange format: [start,end) — extract start date
+              const match = String(item.on).match(/[\[(](\d{4}-\d{2}-\d{2})/);
+              if (match) date = new Date(match[1]);
+            } else if (item.at != null) {
+              // tstzrange format: ["start","end") — extract start timestamp
+              const match = String(item.at).match(/[\[("]([\d\-T:.+Z]+)/);
+              if (match) date = new Date(match[1]);
+            }
+
+            callbacks.push({
+              sourceMethod: "onThreadToDo",
+              args: [thread, actors[0], todo, { date }],
             });
           }
         }

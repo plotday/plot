@@ -224,6 +224,7 @@ class _ListTileState extends State<ListTile> {
   FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
 
   void _runLongPress() {
+    HapticFeedback.lightImpact();
     try {
       context.run(widget.longPressCommand!);
     } catch (e, t) {

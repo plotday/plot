@@ -17,6 +17,7 @@ import type {
   NoteUpdate,
   ThreadUpdate,
   ThreadReadChange,
+  ThreadScheduleChange,
   ChannelLinkCreate,
   ChannelLinkUpdate,
   ChannelNoteCreate,
@@ -84,6 +85,8 @@ export type TwistBatchMessage = {
   channelNewNotes: ChannelNoteCreate[];
   // Thread read status changes for threads this twist created
   threadReads: ThreadReadChange[];
+  // Thread schedule changes for threads this twist created (for onThreadToDo callback)
+  threadSchedules: ThreadScheduleChange[];
   // Priority twist config changes
   priorityTwist: any | null;
 };

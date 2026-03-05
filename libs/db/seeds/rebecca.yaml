@@ -109,15 +109,68 @@ priorities:
           - ref: personal_dev
             title: Personal development
 
-activities:
+sources:
+  - ref: slack
+    name: Slack
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/slack-icon.svg"
+    link_types:
+      - type: message
+        label: Message
+        logo: "https://api.iconify.design/logos/slack-icon.svg"
+  - ref: gmail
+    name: Gmail
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/google-gmail.svg"
+    link_types:
+      - type: email
+        label: Email
+        logo: "https://api.iconify.design/logos/google-gmail.svg"
+  - ref: gcal
+    name: Google Calendar
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/google-calendar.svg"
+    link_types:
+      - type: event
+        label: Event
+        logo: "https://api.iconify.design/logos/google-calendar.svg"
+  - ref: notion
+    name: Notion
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/notion-icon.svg"
+    link_types:
+      - type: document
+        label: Document
+        logo: "https://api.iconify.design/logos/notion-icon.svg"
+  - ref: whatsapp
+    name: WhatsApp
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/whatsapp-icon.svg"
+    link_types:
+      - type: message
+        label: Message
+        logo: "https://api.iconify.design/logos/whatsapp-icon.svg"
+  - ref: sheets
+    name: Google Sheets
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/google-sheets.svg"
+    link_types:
+      - type: spreadsheet
+        label: Spreadsheet
+        logo: "https://api.iconify.design/logos/google-sheets.svg"
+
+threads:
   # Day -2: Quiet observation
-  - type: note
-    kind: document
-    priority_ref: player_performance
+  - priority_ref: player_performance
     title: "Match review - Bournemouth loss (1-2)"
     created: "-2d"
     tags:
       warning: [user]
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Post-Match Analysis"
+        source_url: "mailto:analytics@afcrichmond.com"
     notes:
       - created: "-2d 09:00"
         content: |
@@ -138,18 +191,14 @@ activities:
           **Concerning trend:** Last 6 matches: 2 wins, 1 draw, 3 losses. Slipping toward mid-table.
 
           Not collapsing. Just... not winning when we should.
-        source:
-          type: email
-          title: Post-Match Analysis
-          href: mailto:analytics@afcrichmond.com
         mentions:
           - analytics
 
-  - type: action
-    priority_ref: coaching_staff
+  - priority_ref: coaching_staff
     title: "Review coaching strategy with Roy and Beard"
-    assignee_ref: user
-    on: "-2d"
+    created: "-2d"
+    schedule:
+      on: "-2d"
     notes:
       - created: "-2d 10:00"
         content: |
@@ -161,12 +210,17 @@ activities:
 
           I don't do rescue anymore. I do support.
 
-  - type: note
-    kind: messages
-    author_ref: keeley
+  - author_ref: keeley
     priority_ref: media_pr
     title: "Supporter sentiment - social media summary"
     created: "-2d"
+    tags:
+      pinned: [user]
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Fan Sentiment Update"
+        source_url: "mailto:keeley.jones@afcrichmond.com"
     notes:
       - author_ref: keeley
         created: "-2d 11:00"
@@ -186,18 +240,14 @@ activities:
           **Concern:** If this continues another month, frustration could shift to anger.
 
           Recommend: Visible club engagement. Show we're aware, we're working on it, we believe.
-        source:
-          type: email
-          title: Fan Sentiment Update
-          href: mailto:keeley.jones@afcrichmond.com
-    tags:
-      pinned: [user]
 
-  - type: event
-    kind: social
-    priority_ref: social_life
+  - priority_ref: social_life
     title: "Coffee with Barbara - weekly catchup"
-    at: "-2d 10:00 / -2d 11:00"
+    created: "-2d"
+    schedule:
+      at: "-2d 10:00 / -2d 11:00"
+    tags:
+      star: [user]
     notes:
       - created: "-2d 11:15"
         content: |
@@ -222,15 +272,13 @@ activities:
           She always knows when to ask about the team and when to ask about me. That's friendship.
         mentions:
           - barbara
-    tags:
-      star: [user]
 
   # Day -1: Individual conversations
-  - type: event
-    kind: meeting
-    priority_ref: coaching_staff
+  - priority_ref: coaching_staff
     title: "Roy 1:1"
-    at: "0d 10:30 / 0d 11:00"
+    created: "-1d"
+    schedule:
+      at: "0d 10:30 / 0d 11:00"
     tags:
       pinned: [user]
     notes:
@@ -251,11 +299,13 @@ activities:
 
           That's the relationship we've built.
 
-  - type: event
-    kind: meeting
-    priority_ref: coaching_staff
+  - priority_ref: coaching_staff
     title: "Nate 1:1"
-    at: "0d 10:00 / 0d 10:30"
+    created: "-1d"
+    schedule:
+      at: "0d 10:00 / 0d 10:30"
+    tags:
+      star: [user]
     notes:
       - created: "-1d 16:30"
         content: |
@@ -288,12 +338,8 @@ activities:
           - nate
           - roy
           - rupert
-    tags:
-      star: [user]
 
-  - type: note
-    kind: document
-    priority_ref: business_case
+  - priority_ref: business_case
     title: "Women's team exploration - initial research"
     created: "-1d"
     tags:
@@ -316,9 +362,7 @@ activities:
           But it needs to be more than vision. It needs to be sustainable.
 
   # Day 0 (Base date): Building the future
-  - type: note
-    kind: document
-    priority_ref: business_case
+  - priority_ref: business_case
     title: "WOMEN'S TEAM PROPOSAL - Vision and viability"
     created: "-1d"
     tags:
@@ -518,10 +562,11 @@ activities:
 
           Both can be true.
 
-  - type: event
-    priority_ref: business_ops
+  - priority_ref: business_ops
     title: "The important stuff"
-    at: "+0d 08:00 / +0d 09:30"
+    created: "-1d"
+    schedule:
+      at: "+0d 08:00 / +0d 09:30"
     notes:
       - created: "-1d 09:45"
         content: |
@@ -533,11 +578,11 @@ activities:
 
           The question is "can we afford not to be who we say we are?"
 
-  - type: action
-    priority_ref: board_process
+  - priority_ref: board_process
     title: "Schedule board presentation for women's team proposal"
-    assignee_ref: user
     created: "-1d"
+    schedule:
+      on: "-1d"
     tags:
       todo: [user]
     notes:
@@ -549,17 +594,16 @@ activities:
         mentions:
           - higgins
 
-  - type: event
-    kind: meal
-    priority_ref: social_life
+  - priority_ref: social_life
     title: "Drinks with Keeley"
-    at: "-1d 21:30 / -1d 23:00"
+    created: "-1d"
+    schedule:
+      at: "-1d 21:30 / -1d 23:00"
     tags:
       star: [user]
 
   # Day 0: Early morning messages
-  - type: note
-    kind: messages
+  - author_ref: beard
     priority_ref: match_prep
     title: "Pre-match travel logistics - Chelsea"
     created: "+0d"
@@ -583,8 +627,7 @@ activities:
 
           — Beard
 
-  - type: note
-    kind: messages
+  - author_ref: keeley
     priority_ref: media_pr
     title: "Sky Sports interview request - Friday"
     created: "+0d"
@@ -601,13 +644,12 @@ activities:
           Let me know and I'll confirm with their producer. 💛
 
   # Day 0: Completed morning actions
-  - type: action
-    created: "+0d"
-    priority_ref: training_ground
+  - priority_ref: training_ground
     title: "Training ground spring maintenance plan"
-    assignee_ref: user
-    on: "+0d"
-    done_at: "+0d 08:10"
+    created: "+0d"
+    schedule:
+      on: "+0d"
+      done_at: "+0d 08:10"
     notes:
       - created: "+0d 08:10"
         content: |
@@ -620,13 +662,12 @@ activities:
 
           Signed off and sent to facilities. Work starts March 24th.
 
-  - type: action
-    created: "+0d"
-    priority_ref: community_programs
+  - priority_ref: community_programs
     title: "Community outreach budget for Q2"
-    assignee_ref: user
-    on: "+0d"
-    done_at: "+0d 08:20"
+    created: "+0d"
+    schedule:
+      on: "+0d"
+      done_at: "+0d 08:20"
     notes:
       - created: "+0d 08:20"
         content: |
@@ -636,13 +677,12 @@ activities:
 
           This is the part of the job that never feels like work.
 
-  - type: action
-    created: "+0d"
-    priority_ref: media_pr
+  - priority_ref: media_pr
     title: "Media narrative around current form"
-    assignee_ref: user
-    on: "+0d"
-    done_at: "+0d 08:30"
+    created: "+0d"
+    schedule:
+      on: "+0d"
+      done_at: "+0d 08:30"
     notes:
       - created: "+0d 08:30"
         content: |
@@ -661,12 +701,11 @@ activities:
           - trent
 
   # Day 0: Remaining actions and events
-  - type: action
-    created: "+0d"
-    priority_ref: fan_comm
+  - priority_ref: fan_comm
     title: "Supporter communication strategy"
-    assignee_ref: user
-    on: "+0d"
+    created: "+0d"
+    schedule:
+      on: "+0d"
     tags:
       todo: [user]
     notes:
@@ -682,12 +721,11 @@ activities:
 
           Find the middle. Say something real.
 
-  - type: event
-    created: "+0d"
-    kind: meal
-    priority_ref: commercial
+  - priority_ref: commercial
     title: "Lunch with Aegon sponsorship rep"
-    at: "+0d 12:30 / +0d 13:30"
+    created: "+0d"
+    schedule:
+      at: "+0d 12:30 / +0d 13:30"
     notes:
       - created: "+0d 09:20"
         content: |
@@ -697,12 +735,11 @@ activities:
 
           Also need to reassure them the men's team form is temporary. Sponsors get nervous when results dip.
 
-  - type: event
-    created: "+0d"
-    kind: phone
-    priority_ref: board_process
+  - priority_ref: board_process
     title: "Call with FA Women's Championship liaison"
-    at: "+0d 14:00 / +0d 14:30"
+    created: "+0d"
+    schedule:
+      at: "+0d 14:00 / +0d 14:30"
     notes:
       - created: "+0d 09:25"
         content: |
@@ -716,12 +753,11 @@ activities:
 
           This is just intelligence-gathering. Not committing to anything yet. But need to understand the process before the board presentation.
 
-  - type: action
-    created: "+0d"
-    priority_ref: match_prep
+  - priority_ref: match_prep
     title: "Chelsea away-day preparation"
-    assignee_ref: user
-    on: "+0d"
+    created: "+0d"
+    schedule:
+      on: "+0d"
     tags:
       todo: [user]
     notes:
@@ -737,12 +773,11 @@ activities:
 
           Not rescuing. Not fixing. Just... present.
 
-  - type: event
-    created: "+0d"
-    kind: focus
-    priority_ref: match_prep
+  - priority_ref: match_prep
     title: "Match-day prep review"
-    at: "+0d 19:00 / +0d 20:00"
+    created: "+0d"
+    schedule:
+      at: "+0d 19:00 / +0d 20:00"
     notes:
       - created: "+0d 09:35"
         content: |
@@ -755,11 +790,13 @@ activities:
           The result matters. But how we handle it — win, lose, or draw — matters more right now.
 
   # Day +1: Building support
-  - type: event
-    kind: meeting
-    priority_ref: board_process
+  - priority_ref: board_process
     title: "Higgins - women's team preliminary discussion"
-    at: "+1d 10:00 / +1d 10:45"
+    created: "-2d"
+    schedule:
+      at: "+1d 10:00 / +1d 10:45"
+    tags:
+      pinned: [user]
     notes:
       - created: "-2d 11:00"
         content: |
@@ -786,14 +823,15 @@ activities:
           He'll help me prepare the presentation. He's better at the board politics than I am.
         mentions:
           - higgins
-    tags:
-      pinned: [user]
 
-  - type: note
-    kind: messages
-    priority_ref: match_prep
+  - priority_ref: match_prep
     title: "Upcoming fixture - Chelsea (away)"
     created: "-1d"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Match Preview"
+        source_url: "mailto:analytics@afcrichmond.com"
     notes:
       - created: "-2d 12:00"
         content: |
@@ -812,17 +850,13 @@ activities:
           This could be the match that turns things. Or it could be another frustrating loss.
 
           Either way, it's not the end of the world. Just football.
-        source:
-          type: email
-          title: Match Preview
-          href: mailto:analytics@afcrichmond.com
 
-  - type: event
-    kind: meeting
-    priority_ref: business_ops
+  - priority_ref: business_ops
     title: "Weekly operations meeting"
-    at: "+1d 14:00 / +1d 15:00"
-    recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
+    created: "-2d"
+    schedule:
+      at: "+1d 14:00 / +1d 15:00"
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     notes:
       - created: "-2d 15:15"
         content: |
@@ -835,10 +869,8 @@ activities:
           - Financial report
           - New business (will mention women's team exploration)
 
-  - type: action
-    priority_ref: supporter_relations
+  - priority_ref: supporter_relations
     title: "Review supporter engagement initiatives"
-    assignee_ref: user
     created: "-1d"
     notes:
       - created: "-2d 16:00"
@@ -881,11 +913,14 @@ activities:
           Women's team could be that. Not a distraction from men's team struggles. A demonstration that Richmond is building something bigger.
 
   # Day +2: Confidence building
-  - type: note
-    kind: messages
-    priority_ref: coaching_staff
+  - priority_ref: coaching_staff
     title: "Training report - confidence exercises"
     created: "-1d"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Training Update"
+        source_url: "mailto:roy.kent@afcrichmond.com"
     notes:
       - created: "-2d 10:00"
         content: |
@@ -901,18 +936,15 @@ activities:
           Saturday will tell us where we are.
 
           - Roy
-        source:
-          type: email
-          title: Training Update
-          href: mailto:roy.kent@afcrichmond.com
         mentions:
           - roy
           - nate
 
-  - type: event
-    priority_ref: personal_dev
+  - priority_ref: personal_dev
     title: "Evening walk - think time"
-    at: "+2d 18:00 / +2d 19:00"
+    created: "-2d"
+    schedule:
+      at: "+2d 18:00 / +2d 19:00"
     notes:
       - created: "-2d 19:15"
         content: |
@@ -930,9 +962,7 @@ activities:
 
           And when they do, wouldn't it be better if Richmond was already building something bigger?
 
-  - type: note
-    kind: document
-    priority_ref: business_case
+  - priority_ref: business_case
     title: "Potential coaching candidates - preliminary research"
     created: "-1d"
     tags:
@@ -958,11 +988,11 @@ activities:
 
           That's what Ted taught us.
 
-  - type: event
-    kind: meal
-    priority_ref: board_process
+  - priority_ref: board_process
     title: "Board dinner - informal"
-    at: "+3d 19:00 / +3d 21:30"
+    created: "-2d"
+    schedule:
+      at: "+3d 19:00 / +3d 21:30"
     notes:
       - created: "-2d 21:45"
         content: |
@@ -985,13 +1015,18 @@ activities:
         mentions:
           - higgins
 
-  - type: action
-    priority_ref: financial_mgmt
+  - priority_ref: financial_mgmt
     title: "Finalize women's team financial model"
-    assignee_ref: user
     created: "-2d"
+    schedule:
+      on: "-2d"
     tags:
       todo: [user]
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Women's Team Benchmarking - Championship Clubs 2022-2024"
+        source_url: "https://docs.google.com/spreadsheets/d/1a2b3c4d5e/edit"
     notes:
       - created: "-2d 10:00"
         content: |
@@ -1030,9 +1065,6 @@ activities:
           Full spreadsheet attached with detailed breakdowns.
         mentions:
           - higgins
-        links:
-          - url: "https://docs.google.com/spreadsheets/d/1a2b3c4d5e/edit"
-            title: "Women's Team Benchmarking - Championship Clubs 2022-2024"
       - created: "+0d 09:10"
         content: |
           This is exactly what I needed. The numbers support our projections — and Club A breaking even in Year 2 is better than our conservative model assumes.
@@ -1043,11 +1075,16 @@ activities:
         mentions:
           - higgins
 
-  - type: note
-    kind: messages
-    priority_ref: media_pr
+  - priority_ref: media_pr
     title: "Trent Crimm - potential feature story"
     created: "-2d"
+    tags:
+      idea: [user]
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Women's Team Feature Inquiry"
+        source_url: "mailto:trent.crimm@independent.co.uk"
     notes:
       - created: "-2d 11:30"
         content: |
@@ -1062,18 +1099,10 @@ activities:
           No pressure. Just wanted you to know I'm interested when/if you're ready to talk.
 
           - Trent
-        source:
-          type: email
-          title: Women's Team Feature Inquiry
-          href: mailto:trent.crimm@independent.co.uk
         mentions:
           - trent
-    tags:
-      idea: [user]
 
-  - type: note
-    kind: document
-    priority_ref: business_ops
+  - priority_ref: business_ops
     title: "Looking ahead - Feb-March priorities"
     created: "-2d"
     tags:
@@ -1098,9 +1127,7 @@ activities:
 
           That's the job now.
 
-  - type: note
-    kind: document
-    priority_ref: personal_dev
+  - priority_ref: personal_dev
     title: "Reflection - what Ted built here"
     created: "-2d"
     notes:
@@ -1134,10 +1161,11 @@ activities:
 
           Believe.
 
-  - type: event
-    priority_ref: match_prep
+  - priority_ref: match_prep
     title: "Match day - Chelsea (A)"
-    at: "+6d 12:30 / +6d 14:30"
+    created: "+6d"
+    schedule:
+      at: "+6d 12:30 / +6d 14:30"
     notes:
       - created: "+6d 14:45"
         content: |
@@ -1146,48 +1174,3 @@ activities:
           Will be there. In the owner's box. Watching. Supporting.
 
           Not rescuing. Not fixing. Just... believing.
-
-          That's all I can do.
-    tags:
-      pinned: [user]
-
-  - type: note
-    kind: document
-    priority_ref: board_process
-    title: "March board presentation - draft outline"
-    created: "+4d"
-    tags:
-      todo: [user]
-    notes:
-      - created: "+4d 10:00"
-        content: |
-          **Board Presentation Outline - Women's Team Proposal**
-
-          1. **Context**: Women's football landscape, Richmond's culture, community demand
-          2. **Vision**: Not addition, but completion of what Richmond is
-          3. **Financial model**: 5-year projections, sustainability path
-          4. **Facility plan**: Integration with 2026 expansion
-          5. **Timeline**: 2025 planning, 2025-26 season launch
-          6. **Risk mitigation**: Clear strategies for common challenges
-          7. **Strategic value**: Community, commercial, cultural
-          8. **Ask**: Board approval to proceed with league application and planning
-
-          **Close:** "This isn't about whether we can afford it. It's about whether we can afford not to be who we say we are."
-
-          Need to practice this. Make it confident, not defensive. Vision, not plea.
-
-  - type: action
-    priority_ref: richmond_trust
-    title: "Schedule supporter trust meeting - women's team feedback"
-    assignee_ref: user
-    on: "+4d"
-    notes:
-      - created: "+4d 11:00"
-        content: |
-          Before going to the board, should meet with supporters trust. Get their detailed feedback, their concerns, their ideas.
-
-          They're the ones who'll fill the stands. Their buy-in matters more than the board's, honestly.
-
-          Will schedule for late February, before March board meeting.
-        mentions:
-          - supporters_trust

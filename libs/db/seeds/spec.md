@@ -9,9 +9,12 @@ The seed data format allows you to define:
 - **Contacts**: People and their details. Use personal names, not titles.
 - **Priorities**: Hierarchical project/folder structure. All users have a single, root priority called Everything.
   Below it are major areas of their life, like Work, Personal, Social. Add 1-3 levels below each of these.
-- **Activities**: Tasks, events, notes, messages, and documents
-- **Notes**: Updates and messages related to an activity (can contain links and mentions)
-- **Tags**: Either categorize activities (e.g. Urgent, Decision; use sparingly), or reactions (e.g. Yes, No, Volunteer)
+- **Sources**: External services (Slack, Gmail, GitHub, etc.) that provide link logos
+- **Threads**: Discussions, tasks, events — the primary content items
+- **Notes**: Updates and messages related to a thread (can contain mentions)
+- **Links**: External references attached to threads (emails, messages, issues, etc.)
+- **Schedules**: Time-based scheduling for threads (events, due dates, recurrence)
+- **Tags**: Either categorize threads (e.g. Urgent, Decision; use sparingly), or reactions (e.g. Yes, No, Volunteer)
 - **Settings**: User-specific priority settings, like colors
 
 All dates are specified as offsets from a base date, allowing identical data to be generated at different points in time.
@@ -30,8 +33,11 @@ contacts:
 priorities:
   -  # Priority definitions
 
-activities:
-  -  # Activity definitions
+sources:
+  -  # Source definitions (for link logos)
+
+threads:
+  -  # Thread definitions
 ```
 
 ## Config Section
@@ -125,132 +131,217 @@ priorities:
       color: 2
 ```
 
-## Activities
+## Sources
 
-Activities can be tasks (actions), calendar events, or notes. They can have associated notes.
+Sources define external services that provide link logos. Each source creates the twist/priority_twist records needed for logo resolution.
 
-**Activity Types:**
+**Fields:**
 
-- `action`: A task assigned to someone. Always requires an `assignee_ref`. Use `on` in the future to indicate something scheduled, and `done_at` to indicate completion.
-- `event`: A calendar event. Requires a scheduled time in `at`.
-- `note`: Everything else -- general notes, discussions, messages, and external documents. The content is in the notes.
+- `ref` (required): Unique reference string (used by links via `source_ref`)
+- `name` (required): Display name (e.g., "Slack", "Gmail")
+- `priority_ref` (required): Priority to attach the source to
+- `logo` (optional): Logo URL for the source itself
+- `logo_dark` (optional): Dark mode logo URL for the source
+- `link_types` (required): Array of link type definitions
+
+**Link type fields:**
+
+- `type` (required): Link type identifier (e.g., "message", "email", "issue")
+- `label` (required): Display label (e.g., "Message", "Email", "Issue")
+- `logo` (required): Logo URL for this link type
+- `logo_dark` (optional): Dark mode logo URL
+
+```yaml
+sources:
+  - ref: slack
+    name: Slack
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/slack-icon.svg"
+    logo_dark: "https://api.iconify.design/simple-icons/slack.svg?color=%23E01E5A"
+    link_types:
+      - type: message
+        label: Message
+        logo: "https://api.iconify.design/logos/slack-icon.svg"
+        logo_dark: "https://api.iconify.design/simple-icons/slack.svg?color=%23E01E5A"
+
+  - ref: gmail
+    name: Gmail
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/google-gmail.svg"
+    link_types:
+      - type: email
+        label: Email
+        logo: "https://api.iconify.design/logos/google-gmail.svg"
+
+  - ref: github
+    name: GitHub
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/github-icon.svg"
+    logo_dark: "https://api.iconify.design/simple-icons/github.svg?color=%23FFFFFF"
+    link_types:
+      - type: issue
+        label: Issue
+        logo: "https://api.iconify.design/logos/github-icon.svg"
+        logo_dark: "https://api.iconify.design/simple-icons/github.svg?color=%23FFFFFF"
+      - type: pull_request
+        label: Pull Request
+        logo: "https://api.iconify.design/logos/github-icon.svg"
+        logo_dark: "https://api.iconify.design/simple-icons/github.svg?color=%23FFFFFF"
+```
+
+## Threads
+
+Threads are the primary content items — discussions, tasks, events, or documents. What a thread represents is inferred from its schedule and links, not from a `type` field.
 
 **Fields:**
 
 - `ref` (optional): Unique reference string (only needed if referenced elsewhere)
 - `title` (optional): Display title
-- `type` (required): One of `action`, `event`, `note`
 - `priority_ref` (required): Reference to a priority
-- `created` (**required for type: note**, optional for other types): Date offset when this activity was created (e.g., "-2d", "+1w 14:30")
-  - For `type: note`: **REQUIRED** - indicates when the note was created
-  - For `type: action` or `type: event`: Optional - defaults to current time if not specified
-  - Use negative offsets for past dates (e.g., "-2d" = 2 days before base date)
-  - Use positive offsets for future dates (rarely used)
-- `author_ref` (optional, default: "user"): Reference to contact or "user"
-- `assignee_ref` (**required for actions**, optional for events/notes): Reference to contact or "user"
-  - For `type: action`: **REQUIRED** - every action must have an assignee
-  - For `type: event` or `type: note`: Optional
-  - Use `assignee_ref: user` for self-assigned tasks
-- `done_at` (optional): Date offset when marked done
-- `at` (optional): Timestamp range for events and future reminders (see Date Offsets)
-  - For `type: event`: Can be past, present, or future timestamps
-  - For `type: note`: **FUTURE ONLY** (positive offsets) - use for reminders like birthdays
-  - For `type: action`: Not typically used (use `on` instead)
-- `on` (optional): Date range for scheduled dates (see Date Offsets)
-  - For `type: action`: Can be past, present, or future dates indicating when to start the task
-  - For `type: event`: Use `at` instead for timed events, or `on` for all-day events
-  - For `type: note`: **FUTURE ONLY** (positive offsets) - use for reminders
-- `recurrence_rule` (optional): iCalendar RRULE string
+- `created` (optional): Date offset when this thread was created
+- `author_ref` (optional, default: "user"): Reference to contact or "user" — only used to resolve note author defaults
+- `draft` (optional, default: false): Whether this is a draft
+- `private` (optional, default: false): Whether this is private
+- `archived_at` (optional): Date offset when archived
 - `tags` (optional): Object mapping tag names to actor arrays
-- `notes` (optional but typically at least one): Array of note objects (see Notes section)
-
-**Note:** Activities must have EITHER `at` (timestamp) OR `on` (date), not both.
+- `notes` (optional): Array of note objects
+- `schedule` (optional): Schedule block for events and tasks
+- `links` (optional): Array of external link objects
 
 ```yaml
-activities:
-  - ref: standup
-    title: Daily Standup
-    type: event
-    priority_ref: project-alpha
-    at: "+0d 09:00 / +0d 09:30" # Today 9:00-9:30 AM
-    recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
+threads:
+  - title: Spring menu discussion
+    priority_ref: menu
     tags:
       pinned: [user]
     notes:
-      - created: "+0d 09:30"
-        note: "Yesterday: Completed API integration\n\nFinished the REST API integration with the new service"
-        author_ref: alice
+      - created: "-1d"
+        content: "Let's plan the spring menu changes"
 
-      - created: "+0d 09:32"
-        note: "Today: Working on frontend"
-        author_ref: alice
-
-  - title: Write project proposal
-    type: action
-    priority_ref: project-beta
-    on: "+3d / +5d" # 3-5 days from base date (all-day)
-    assignee_ref: bob
-    tags:
-      todo: [user]
-      urgent: [user, alice]
-    notes:
-      - created: "+3d 10:00"
-        note: "Use the proposal template for this"
-        links:
-          - url: https://docs.example.com/proposal-template
-            title: Proposal Template
-            description: Use this template
-
-  - title: Team feedback from last week
-    type: note # Note activity type
+  - title: Team meeting
     priority_ref: project-alpha
-    created: "-5d 16:30" # Created 5 days ago at 4:30 PM
-    tags:
-      star: [user]
+    schedule:
+      at: "+0d 14:00 / +0d 15:00"
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     notes:
-      - created: "-5d 16:30"
-        note: "Great work on the sprint! The team really came together."
-        author_ref: alice
+      - created: "+0d 14:30"
+        content: "Discussed project timeline"
+
+  - title: Order supplies
+    priority_ref: operations
+    schedule:
+      on: "+1d"
+      done_at: "+1d 16:00"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Supply order confirmation"
+        source_url: "mailto:supplier@example.com"
+```
+
+## Schedule
+
+The schedule block defines when a thread is scheduled (events, tasks, reminders).
+
+**Fields:**
+
+- `at` (optional): Timestamp range for timed events (e.g., "+0d 10:00 / +0d 11:00")
+- `on` (optional): Date range for all-day items (e.g., "+3d / +5d")
+- `duration` (optional): Duration string (e.g., "30 minutes", "2 hours")
+- `recurrence_rule` (optional): iCalendar RRULE string
+- `done_at` (optional): Date offset when marked done
+
+**Note:** A schedule should have EITHER `at` (timestamp) OR `on` (date), not both.
+
+```yaml
+# Timed event
+schedule:
+  at: "+0d 09:00 / +0d 09:30"
+  recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
+
+# All-day task
+schedule:
+  on: "+3d / +5d"
+
+# Completed task
+schedule:
+  on: "-1d"
+  done_at: "-1d 16:00"
+
+# Duration-based
+schedule:
+  at: "+0d 14:00"
+  duration: "45 minutes"
+```
+
+## Links
+
+Links are external references attached to threads — emails, messages, issues, pull requests, documents, etc. They display with logos from their source.
+
+**Fields:**
+
+- `source_ref` (optional): Reference to a source (for logo resolution)
+- `type` (optional): Link type (e.g., "message", "email", "issue") — must match a link type in the source
+- `status` (optional): Status string (e.g., "open", "closed")
+- `title` (optional): Display title
+- `source_url` (optional): External URL
+- `assignee_ref` (optional): Contact ref for assignee
+- `author_ref` (optional): Contact ref for author
+- `meta` (optional): Arbitrary metadata object
+
+```yaml
+links:
+  - source_ref: slack
+    type: message
+    title: "#project-discussion"
+    source_url: "https://slack.com/archives/C123/p456"
+
+  - source_ref: github
+    type: issue
+    status: open
+    title: "Fix login timeout #42"
+    source_url: "https://github.com/org/repo/issues/42"
+    assignee_ref: alice
+
+  - source_ref: gmail
+    type: email
+    title: "Re: Project proposal"
+    source_url: "mailto:client@example.com"
+    author_ref: bob
 ```
 
 ## Notes
 
-Notes are content associated with an activity, stored as separate entities that reference their parent activity.
+Notes are content associated with a thread, stored as separate entities.
 
 **Fields:**
 
 - `ref` (optional): Unique reference string (only needed if referenced elsewhere)
 - `created` (required): Date offset when this note was created (e.g., "-2d 14:30", "+1w 09:00")
-  - Use negative offsets for past dates (e.g., "-2d" = 2 days before base date)
-  - Use positive offsets for future dates (e.g., "+1d" = 1 day after base date)
-  - Should match or be close to the activity's schedule for realistic data
 - `author_ref` (optional, default: "user"): Reference to contact or "user"
-- `note` (optional): Markdown content
-- `links` (optional): Array of link objects
+- `content` (optional): Markdown content (preferred field name)
+- `note` (optional): Markdown content (alias for backward compatibility)
 - `mentions` (optional): Array of contact refs mentioned
 - `tags` (optional): Object mapping tag names to actor arrays
-
-**Note:** Notes are always associated with an activity through the `notes` array in the activity definition.
+- `draft` (optional, default: false): Whether this is a draft
+- `private` (optional, default: false): Whether this is private
 
 ```yaml
-activities:
+threads:
   - title: Project kickoff meeting
-    type: event
     priority_ref: project-alpha
-    at: "+0d 14:00 / +0d 15:00"
+    schedule:
+      at: "+0d 14:00 / +0d 15:00"
     notes:
       - created: "+0d 14:30"
-        note: "Great discussion about the architecture"
+        content: "Great discussion about the architecture"
         author_ref: alice
         tags:
           star: [user]
 
       - created: "+0d 15:05"
-        note: "Action items:\n- Set up repository\n- Create project board"
+        content: "Action items:\n- Set up repository\n- Create project board"
         author_ref: user
-        links:
-          - url: https://github.com/org/repo
-            title: Project Repository
 ```
 
 ## Date Offset Syntax
@@ -282,7 +373,7 @@ All dates and times are specified as offsets from `config.baseDate`. Time-of-day
 
 ## Tags
 
-Tags are labels applied to activities. Multiple users can apply the same count tag, while toggle tags can only have one actor.
+Tags are labels applied to threads or notes. Multiple users can apply the same count tag, while toggle tags can only have one actor.
 Use these sparingly and intentionally to reflect meaningful states or reactions.
 
 **Format:** Object with tag names as keys and arrays of actor refs as values.
@@ -298,20 +389,6 @@ tags:
   urgent: [user, alice] # User and Alice marked as urgent
   todo: [user] # User marked as to-do
   yes: [user, alice, bob] # Three people gave thumbs up
-```
-
-## Links
-
-Links are URLs with optional metadata.
-
-```yaml
-links:
-  - url: https://example.com/doc
-    title: Documentation
-    description: Project documentation
-
-  - url: https://github.com/org/repo/pull/123
-    title: "PR #123"
 ```
 
 ## Complete Example
@@ -344,71 +421,81 @@ priorities:
           - ref: sprint-1
             title: Sprint 1
 
-activities:
+sources:
+  - ref: slack
+    name: Slack
+    priority_ref: work
+    logo: "https://api.iconify.design/logos/slack-icon.svg"
+    link_types:
+      - type: message
+        label: Message
+        logo: "https://api.iconify.design/logos/slack-icon.svg"
+
+  - ref: github
+    name: GitHub
+    priority_ref: work
+    logo: "https://api.iconify.design/logos/github-icon.svg"
+    logo_dark: "https://api.iconify.design/simple-icons/github.svg?color=%23FFFFFF"
+    link_types:
+      - type: issue
+        label: Issue
+        logo: "https://api.iconify.design/logos/github-icon.svg"
+        logo_dark: "https://api.iconify.design/simple-icons/github.svg?color=%23FFFFFF"
+
+threads:
   - title: Team Standup
-    type: event
     priority_ref: project-alpha
-    at: "+0d 09:00 / +0d 09:30"
-    recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
+    schedule:
+      at: "+0d 09:00 / +0d 09:30"
+      recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
     tags:
       pinned: [user]
     notes:
       - created: "+0d 09:15"
-        note: "Working on feature X"
+        content: "Working on feature X"
         author_ref: alice
 
   - title: Complete API documentation
-    type: action
     priority_ref: sprint-1
-    on: "+2d"
-    assignee_ref: bob
+    schedule:
+      on: "+2d"
+    links:
+      - source_ref: github
+        type: issue
+        status: open
+        title: "API docs update #15"
+        source_url: "https://github.com/org/repo/issues/15"
+        assignee_ref: bob
     tags:
       todo: [user]
       urgent: [user]
     notes:
       - created: "+2d 10:00"
-        note: "Reference the API documentation template"
-        links:
-          - url: https://docs.example.com/api
-            title: API Docs
+        content: "Reference the API documentation template"
+
+  - title: Slack thread about deployment
+    priority_ref: project-alpha
+    links:
+      - source_ref: slack
+        type: message
+        title: "#deployments"
+        source_url: "https://slack.com/archives/C123/p456"
+    notes:
+      - created: "-1d 14:00"
+        content: "Deployment went smoothly, all services are green"
+        author_ref: bob
 ```
 
 ## Common Mistakes
 
-### Forgetting assignee_ref on actions
+### Forgetting schedule for events
 
-Actions are tasks assigned to someone and **always require an assignee**.
-
-❌ **Wrong:**
-
-```yaml
-- title: Complete documentation
-  type: action
-  on: "+1d"
-  tags:
-    todo: [user]
-```
-
-✓ **Correct:**
-
-```yaml
-- title: Complete documentation
-  type: action
-  on: "+1d"
-  assignee_ref: user # Required for all actions
-  tags:
-    todo: [user]
-```
-
-### Forgetting schedule for actions/events
-
-Actions and events must have a schedule (either `at` or `on`).
+Threads that represent events need a `schedule` block.
 
 ❌ **Wrong:**
 
 ```yaml
 - title: Team meeting
-  type: event
   priority_ref: project
 ```
 
@@ -416,42 +503,65 @@ Actions and events must have a schedule (either `at` or `on`).
 
 ```yaml
 - title: Team meeting
-  type: event
   priority_ref: project
-  at: "+1d 14:00 / +1d 15:00" # Timed event
-  # OR: on: "+1d"  # All-day event
+  schedule:
+    at: "+1d 14:00 / +1d 15:00"
 ```
 
-### Marking recurring activities as done
+### Marking recurring threads as done
 
-Recurring activities cannot be marked as done.
+Recurring threads cannot be marked as done.
 
 ❌ **Wrong:**
 
 ```yaml
 - title: Daily standup
-  type: event
-  at: "+0d 09:00 / +0d 09:30"
-  recurrence_rule: "FREQ=DAILY"
-  done_at: "+0d" # Cannot mark recurring as done
+  priority_ref: project
+  schedule:
+    at: "+0d 09:00 / +0d 09:30"
+    recurrence_rule: "FREQ=DAILY"
+    done_at: "+0d"
 ```
 
 ✓ **Correct:**
 
 ```yaml
 - title: Daily standup
-  type: event
-  at: "+0d 09:00 / +0d 09:30"
-  recurrence_rule: "FREQ=DAILY"
-  # No done_at field
+  priority_ref: project
+  schedule:
+    at: "+0d 09:00 / +0d 09:30"
+    recurrence_rule: "FREQ=DAILY"
+    # No done_at field
+```
+
+### Missing source_ref on links
+
+Links need a `source_ref` to resolve logos.
+
+❌ **Wrong:**
+
+```yaml
+links:
+  - type: message
+    title: "#general"
+```
+
+✓ **Correct:**
+
+```yaml
+links:
+  - source_ref: slack
+    type: message
+    title: "#general"
 ```
 
 # Crafting Good Sample Data
 
-- Create intrigue, action, and/or humor, telling a story through the activities.
+- Create intrigue, action, and/or humor, telling a story through the threads.
 - Populate a wholistic scope for their whole life while focusing on their work.
 - If the scenario lends itself to focus on a particular priority, add extra detail there. The screenshot will be made with that priority focused, which may list all priorities in the sidebar, and all events from all priorities in the timeline, but only notes and actions related to the focused priority.
 - Select a base date reasonable for the scenario, and make that the center of activity. Items before that date will show in the past, items after that date will show upcoming.
-- Add two full days of activities before the base date, current activities on the base date, and two full days after. The first and last day will likely be off screen for the screenshots.
-- Pick one activity to be the current focus and add a detailed set of notes.
+- Add two full days of threads before the base date, current threads on the base date, and two full days after. The first and last day will likely be off screen for the screenshots.
+- Pick one thread to be the current focus and add a detailed set of notes.
+- Add diverse links from various sources (Slack, Gmail, GitHub, etc.) to showcase how Plot brings external context together.
 - The overriding goal is to demonstrate how Plot brings everything together in a way that drives clarity and action.

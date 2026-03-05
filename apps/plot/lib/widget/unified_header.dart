@@ -71,6 +71,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     } else {
       setState(() {
         _searchExpanded = true;
+        _panelController?.updateSearchExpanded(true);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _searchFocusNode.requestFocus();
         });
@@ -81,6 +82,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   void _closeSearch() {
     setState(() {
       _searchExpanded = false;
+      _panelController?.updateSearchExpanded(false);
       _searchController.clear();
     });
     // Clear PriorityBloc search and filters

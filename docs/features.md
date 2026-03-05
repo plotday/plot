@@ -96,7 +96,8 @@ Internal catalog of product features for marketing content generation. Direct an
 - Microsoft: Outlook Calendar
 - Slack integration
 - Linear integration
-- OAuth ready: Notion, Atlassian, Monday.com, GitHub, Asana, HubSpot
+- Notion: Page and comment sync
+- OAuth ready: Atlassian, Monday.com, GitHub, Asana, HubSpot
 
 ### Built-in Tool Capabilities
 - AI: Multiple LLM providers (OpenAI, Anthropic, Google, Workers AI)

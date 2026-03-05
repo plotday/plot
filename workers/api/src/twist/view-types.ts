@@ -88,3 +88,9 @@ export type ChannelNoteCreate = Database["public"]["Views"]["priority_twist_chan
  * Used for dispatching onThreadRead callbacks to sources.
  */
 export type ThreadReadChange = Database["public"]["Views"]["priority_twist_thread_read"]["Row"];
+
+/**
+ * Thread schedule change from priority_twist_thread_schedule view.
+ * Used for dispatching onThreadToDo callbacks to sources.
+ */
+export type ThreadScheduleChange = Database["public"]["Views"]["priority_twist_thread_schedule"]["Row"];

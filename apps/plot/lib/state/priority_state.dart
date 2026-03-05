@@ -278,7 +278,7 @@ class PriorityState extends Equatable {
     required Priority context,
     required int horizonDays,
   }) {
-    log.info('[_makeAgenda] rebuilding agenda (${threads.length} threads)');
+    log.fine('[_makeAgenda] rebuilding agenda (${threads.length} threads)');
     final items = <AgendaItem>[];
     final now = Time.now();
     final today = Date.today();

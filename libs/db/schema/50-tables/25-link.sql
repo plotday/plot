@@ -33,6 +33,8 @@ CREATE TABLE "public"."link" (
     "meta" jsonb,
     -- URL to open the original item in its source application
     "source_url" text,
+    -- Logo/favicon URL for this link
+    "logo" text,
     -- Provider-specific channel ID, matches source_channel.channel_id
     "channel_id" text,
     -- Similarity matching

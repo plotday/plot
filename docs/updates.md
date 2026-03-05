@@ -1,0 +1,2 @@
+- Camera button on mobile: quickly snap a photo and attach it to a note directly from the editor
+- Notion integration: sync your Notion pages and comments into Plot with real-time webhook support

@@ -133,13 +133,19 @@ class FormModalState extends State<_FormModal> {
     // Find initial focus index based on form state
     _highlightedIndex = _findInitialFocusIndex();
 
-    // Add listeners to all text input controllers and select fields to rebuild on changes
+    // Wire up onSubmitted for text inputs, isPrimary for first button,
+    // and add listeners for form state changes
+    bool foundPrimaryButton = false;
     for (var group in _formGroups) {
       for (var item in group.items) {
         if (item is FormTextInput) {
+          item.onSubmitted = _submitForm;
           item.controller.addListener(_onFormChanged);
         } else if (item is FormSelect) {
           item.addListener(_onFormChanged);
+        } else if (item is FormButton && !foundPrimaryButton) {
+          item.isPrimary = true;
+          foundPrimaryButton = true;
         }
       }
     }
@@ -166,7 +172,15 @@ class FormModalState extends State<_FormModal> {
       }
     }
 
-    // If all required fields are filled, find first button
+    // If all required fields are filled, find first text input
+    for (int i = 0; i < totalCount; i++) {
+      final item = _getItemAtIndex(i);
+      if (item is FormTextInput && _isItemEnabled(i)) {
+        return i;
+      }
+    }
+
+    // No text inputs, find first button
     for (int i = 0; i < totalCount; i++) {
       final item = _getItemAtIndex(i);
       if (item is FormButton && _isItemEnabled(i)) {

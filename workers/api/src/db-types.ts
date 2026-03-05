@@ -244,6 +244,7 @@ export interface Link {
    * The PickPriorityConfig used to automatically select this link's priority. Null if priority was explicitly specified. Used when moving links to find similar links to move.
    */
   match: Json | null;
+  merged_from_thread_id: string | null;
   meta: Json | null;
   preview: string | null;
   priority_id: string | null;
@@ -289,6 +290,7 @@ export interface LinkX {
   embedding: string | null;
   id: string | null;
   match: Json | null;
+  merged_from_thread_id: string | null;
   meta: Json | null;
   preview: string | null;
   priority_id: string | null;
@@ -330,6 +332,7 @@ export interface Note {
    * Array of actor IDs (user_id, contact_id, or priority_twist_id) that are mentioned in this note via @-mentions.
    */
   mentions: string[] | null;
+  merged_from_thread_id: string | null;
   private: Generated<boolean>;
   re_note_id: string | null;
   /**
@@ -667,6 +670,18 @@ export interface PriorityTwistThreadRead {
   user_id: string | null;
 }
 
+export interface PriorityTwistThreadSchedule {
+  at: string | null;
+  done_at: Timestamp | null;
+  on: string | null;
+  priority_id: string | null;
+  priority_twist_id: string | null;
+  schedule_id: string | null;
+  thread_id: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface PriorityTwistThreadTagChange {
   actor_id: string | null;
   change_type: string | null;
@@ -942,6 +957,7 @@ export interface UserLink {
   created_at: Timestamp | null;
   created_by: string | null;
   id: string | null;
+  merged_from_thread_id: string | null;
   meta: Json | null;
   preview: string | null;
   priority_id: string | null;
@@ -970,6 +986,7 @@ export interface UserNote {
   draft: boolean | null;
   id: string | null;
   mentions: string[] | null;
+  merged_from_thread_id: string | null;
   private: boolean | null;
   re_note_id: string | null;
   source_created_at: Timestamp | null;
@@ -982,6 +999,7 @@ export interface UserNote {
 export interface UserNoteTags {
   archived_at: Timestamp | null;
   id: string | null;
+  priority_id: string | null;
   priority_path: string | null;
   tags: Json | null;
   updated_at: Timestamp | null;
@@ -1121,6 +1139,7 @@ export interface UserThreadTags {
   archived_at: Timestamp | null;
   id: string | null;
   occurrence: string | null;
+  priority_id: string | null;
   priority_path: string | null;
   tags: Json | null;
   updated_at: Timestamp | null;
@@ -1182,6 +1201,7 @@ export interface DB {
   priority_twist_note_update: PriorityTwistNoteUpdate;
   priority_twist_sync: PriorityTwistSync;
   priority_twist_thread_read: PriorityTwistThreadRead;
+  priority_twist_thread_schedule: PriorityTwistThreadSchedule;
   priority_twist_thread_tag_change: PriorityTwistThreadTagChange;
   priority_twist_thread_update: PriorityTwistThreadUpdate;
   priority_user: PriorityUser;

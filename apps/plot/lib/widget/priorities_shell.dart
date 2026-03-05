@@ -221,16 +221,16 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               icon: Icon(PlotIcon.priorities),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.base,
+                                  style: context.theme.typography.xs,
                                   child: const Text('Priorities'),
                                 ),
                               ),
                             ),
                             FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.todo),
+                              icon: Icon(PlotIcon.inbox),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.base,
+                                  style: context.theme.typography.xs,
                                   child: const Text('Agenda'),
                                 ),
                               ),
@@ -239,8 +239,8 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               icon: Icon(PlotIcon.activity),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.base,
-                                  child: const Text('Activity Feed'),
+                                  style: context.theme.typography.xs,
+                                  child: const Text('Activity'),
                                 ),
                               ),
                             ),
@@ -248,7 +248,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               icon: Icon(PlotIcon.addNote),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.base,
+                                  style: context.theme.typography.xs,
                                   child: const Text('New'),
                                 ),
                               ),
@@ -257,7 +257,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               icon: Icon(PlotIcon.menu),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.base,
+                                  style: context.theme.typography.xs,
                                   child: const Text('More'),
                                 ),
                               ),

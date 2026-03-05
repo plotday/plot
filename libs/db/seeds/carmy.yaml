@@ -96,11 +96,51 @@ priorities:
           - ref: growth
             title: Personal growth
 
-activities:
+sources:
+  - ref: slack
+    name: Slack
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/slack-icon.svg"
+    link_types:
+      - type: message
+        label: Message
+        logo: "https://api.iconify.design/logos/slack-icon.svg"
+  - ref: gmail
+    name: Gmail
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/google-gmail.svg"
+    link_types:
+      - type: email
+        label: Email
+        logo: "https://api.iconify.design/logos/google-gmail.svg"
+  - ref: gcal
+    name: Google Calendar
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/google-calendar.svg"
+    link_types:
+      - type: event
+        label: Event
+        logo: "https://api.iconify.design/logos/google-calendar.svg"
+  - ref: gdrive
+    name: Google Drive
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/google-drive.svg"
+    link_types:
+      - type: document
+        label: Document
+        logo: "https://api.iconify.design/logos/google-drive.svg"
+  - ref: imessage
+    name: iMessage
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/apple.svg"
+    link_types:
+      - type: message
+        label: Message
+        logo: "https://api.iconify.design/logos/apple.svg"
+
+threads:
   # Day -1: Testing and iteration
-  - type: note
-    kind: document
-    priority_ref: menu
+  - priority_ref: menu
     title: "Spring menu - dish lineup draft"
     created: "-1d"
     tags:
@@ -111,18 +151,18 @@ activities:
           ## Spring 2025 Menu - Working Draft
 
           **Appetizers:**
-          - ✅ Pea agnolotti, mint, brown butter (locked)
-          - ✅ Crudo station - daily fish (locked)
-          - 🔄 Morel mushroom toast (testing today)
+          - Pea agnolotti, mint, brown butter (locked)
+          - Crudo station - daily fish (locked)
+          - Morel mushroom toast (testing today)
 
           **Mains:**
-          - ✅ Duck breast, cherry gastrique, farro (locked)
-          - ✅ Halibut, spring vegetables, herb oil (locked)
-          - 🔄 Lamb saddle, pea puree, crispy shallots (needs work - texture issues)
-          - ⚠️ Vegetarian centerpiece - TBD (this is the problem)
+          - Duck breast, cherry gastrique, farro (locked)
+          - Halibut, spring vegetables, herb oil (locked)
+          - Lamb saddle, pea puree, crispy shallots (needs work - texture issues)
+          - Vegetarian centerpiece - TBD (this is the problem)
 
           **Desserts:**
-          - ✅ Marcus has this (don't touch his domain)
+          - Marcus has this (don't touch his domain)
 
           **Status:** 5 dishes locked, 2 in testing, 1 blank space that's keeping me up at night.
 
@@ -130,12 +170,11 @@ activities:
         mentions:
           - marcus
 
-  - type: action
-    author_ref: sydney
+  - author_ref: sydney
     priority_ref: menu
     title: "Test vegetarian centerpiece concepts - v1"
-    assignee_ref: sydney
-    on: "-1d"
+    schedule:
+      on: "-1d"
     tags:
       urgent: [user, sydney]
     notes:
@@ -155,11 +194,10 @@ activities:
 
           Family meal at 3pm for feedback.
 
-  - type: event
-    kind: meal
-    priority_ref: service
+  - priority_ref: service
     title: "Family meal - dish testing"
-    at: "-1d 15:00 / -1d 15:45"
+    schedule:
+      at: "-1d 15:00 / -1d 15:45"
     notes:
       - author_ref: richie
         created: "-1d 16:00"
@@ -198,11 +236,14 @@ activities:
     tags:
       decision: [user, sydney]
 
-  - type: note
-    kind: messages
-    priority_ref: vendor_relations
+  - priority_ref: vendor_relations
     title: "Supplier order - spring ingredients"
     created: "-1d"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Spring Availability"
+        source_url: "mailto:delivery@greencityproduce.com"
     notes:
       - created: "-1d 11:30"
         content: |
@@ -220,19 +261,14 @@ activities:
           Let me know what you need for next week's service. Ramps won't last long.
 
           - Green City
-        source:
-          type: email
-          title: Spring Availability
-          href: mailto:delivery@greencityproduce.com
     tags:
       urgent: [user]
 
-  - type: action
-    author_ref: tina
+  - author_ref: tina
     priority_ref: vendor_relations
     title: "Order ramps and morels for weekend service"
-    assignee_ref: tina
-    on: "-1d"
+    schedule:
+      on: "-1d"
     notes:
       - author_ref: tina
         created: "-1d 12:00"
@@ -246,33 +282,31 @@ activities:
 
           Chef can work these into specials this weekend.
 
-  - type: note
-    kind: messages
-    priority_ref: family
+  - priority_ref: family
     title: "Michelle - Sunday dinner this weekend?"
     created: "-1d"
+    links:
+      - source_ref: imessage
+        type: message
+        title: "Michelle"
     notes:
       - created: "-1d 19:30"
         content: |
           **iMessage from Michelle**
 
-          "Sunday dinner this week? Haven't seen you in a while. I can cook so you don't have to think about food for once 😊"
+          "Sunday dinner this week? Haven't seen you in a while. I can cook so you don't have to think about food for once"
 
           ---
 
           I should go. I want to go. I'll probably bail.
-        source:
-          type: message
-          title: Michelle
         mentions:
           - michelle
 
   # Day 0: Refinement and doubt
-  - type: action
-    priority_ref: menu
+  - priority_ref: menu
     title: "Charred cabbage - refinement round 2"
-    assignee_ref: user
-    on: "0d"
+    schedule:
+      on: "0d"
     tags:
       todo: [user]
     notes:
@@ -312,11 +346,14 @@ activities:
         mentions:
           - tina
 
-  - type: event
-    kind: meeting
-    priority_ref: service
+  - priority_ref: service
     title: "Prep meeting - weekend service"
-    at: "0d 09:30 / 0d 10:15"
+    schedule:
+      at: "0d 09:30 / 0d 10:15"
+    links:
+      - source_ref: slack
+        type: message
+        title: "#prep-meeting"
     notes:
       - author_ref: tina
         created: "0d 10:15"
@@ -327,36 +364,27 @@ activities:
           - Friday/Saturday: Current spring menu + ramp special + morel toast
           - Reservations looking good (87% Friday, 92% Saturday)
           - Prepping stocks today for service
-        source:
-          type: slack_message
-          title: "#prep-meeting"
       - author_ref: marcus
         created: "0d 10:18"
         content: |
           Need oven space 2-4pm today for dessert components. Also thinking ramp pasta for the special - rich, seasonal, people will love it.
-        source:
-          type: slack_message
-          title: "#prep-meeting"
       - author_ref: richie
         created: "0d 10:20"
         content: |
           Are we doing the cabbage or what? Need to know for menu descriptions.
-        source:
-          type: slack_message
-          title: "#prep-meeting"
       - author_ref: user
         created: "0d 10:22"
         content: |
           We're close on the cabbage decision. Final call by Monday.
-        source:
-          type: slack_message
-          title: "#prep-meeting"
 
-  - type: note
-    kind: messages
-    priority_ref: financial_mgmt
+  - priority_ref: financial_mgmt
     title: "Cicero - quarterly check-in"
     created: "0d"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Q1 Check-in"
+        source_url: "mailto:jimmy@cicerogroup.com"
     notes:
       - created: "0d 14:20"
         content: |
@@ -372,21 +400,16 @@ activities:
           Let me know if you need anything.
 
           - Jimmy
-        source:
-          type: email
-          title: Q1 Check-in
-          href: mailto:jimmy@cicerogroup.com
         mentions:
           - cicero
           - nat
     tags:
       star: [user]
 
-  - type: event
-    kind: meeting
-    priority_ref: team
+  - priority_ref: team
     title: "Sydney - menu lockdown conversation"
-    at: "0d 16:00 / 0d 16:28"
+    schedule:
+      at: "0d 16:00 / 0d 16:28"
     notes:
       - author_ref: sydney
         created: "0d 16:30"
@@ -406,11 +429,10 @@ activities:
       decision: [sydney]
       warning: [user]
 
-  - type: action
-    priority_ref: family
+  - priority_ref: family
     title: "Confirm Sunday dinner with Michelle"
-    assignee_ref: user
-    on: "0d"
+    schedule:
+      on: "0d"
     notes:
       - created: "0d 18:00"
         content: |
@@ -420,11 +442,13 @@ activities:
         mentions:
           - michelle
 
-  - type: note
-    kind: messages
-    priority_ref: service
+  - priority_ref: service
     title: "Reservations update - Saturday full"
     created: "0d"
+    links:
+      - source_ref: slack
+        type: message
+        title: "Richie - #general"
     notes:
       - created: "0d 20:15"
         content: |
@@ -435,22 +459,22 @@ activities:
           Spring menu buzz is real. Let's make it worth it.
 
           - Richie
-        source:
-          type: slack_message
-          title: "Richie - #general"
         mentions:
           - richie
 
   # Day 0 (Base date): Decision and execution
-  - type: note
-    kind: document
-    priority_ref: menu
+  - priority_ref: menu
     title: "CHARRED CABBAGE DECISION - Version 1, locked"
     created: "0d"
     tags:
       pinned: [user]
       decision: [user]
       goal: [user]
+    links:
+      - source_ref: gdrive
+        type: document
+        title: "Charred cabbage v1 recipe"
+        source_url: "https://docs.google.com/document/d/charred-cabbage-v1"
     notes:
       - created: "0d 18:00"
         content: |
@@ -490,7 +514,7 @@ activities:
           - Vegetarian that doesn't feel like "the vegetarian option"
           - Technique showcase (char, miso butter, texture play)
           - Spring menu appropriate
-          - Actually fucking delicious
+          - Actually delicious
 
           **Why Version 1:**
           Sydney was right. It's good. It's good enough to launch. We can make it better after we see how it performs on the floor, how guests react, how it holds during a Friday night push.
@@ -526,15 +550,14 @@ activities:
 
           Spring menu updated:
 
-          **Vegetarian main:** ✅ Charred spring cabbage, miso butter, crispy rice, furikake (locked)
+          **Vegetarian main:** Charred spring cabbage, miso butter, crispy rice, furikake (locked)
 
           All menu slots now finalized. Menu lockdown complete. Launch date: March 21, 2025.
 
-  - type: event
-    kind: meeting
-    priority_ref: team
+  - priority_ref: team
     title: "Team meeting - menu lockdown announcement"
-    at: "0d 10:00 / 0d 10:30"
+    schedule:
+      at: "0d 10:00 / 0d 10:30"
     notes:
       - author_ref: user
         created: "0d 10:30"
@@ -573,11 +596,10 @@ activities:
         content: |
           We're doing this. On time. Let's go.
 
-  - type: action
-    priority_ref: menu
+  - priority_ref: menu
     title: "Write final prep sheets for all dishes"
-    assignee_ref: user
-    on: "+1d"
+    schedule:
+      on: "+1d"
     tags:
       todo: [user]
     notes:
@@ -591,34 +613,32 @@ activities:
 
           This is the boring part. This is the necessary part.
 
-  - type: note
-    kind: messages
-    priority_ref: vendor_relations
+  - priority_ref: vendor_relations
     title: "Supplier confirmation - menu ingredients"
     created: "0d"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Multiple supplier threads"
+        source_url: "mailto:orders@locoprovisions.com"
     notes:
       - created: "0d 17:00"
         content: |
           **Email thread with suppliers:**
 
-          ✅ **North Shore Fish** - Halibut and daily crudo fish confirmed (Simon knows the menu)
-          ✅ **Loco Provisions** - Duck, lamb confirmed (ongoing relationship)
-          ✅ **Green City Produce** - Spring vegetables, pea shoots, cabbage locked in
-          ⏳ **Morels** - Waiting on availability confirmation (seasonal, might need backup)
+          **North Shore Fish** - Halibut and daily crudo fish confirmed (Simon knows the menu)
+          **Loco Provisions** - Duck, lamb confirmed (ongoing relationship)
+          **Green City Produce** - Spring vegetables, pea shoots, cabbage locked in
+          **Morels** - Waiting on availability confirmation (seasonal, might need backup)
 
           Should hear back on morels by tomorrow. Might need to adjust to different mushroom if supply doesn't hold.
 
           That's fine. That's how this works. Seasonal means flexible.
-        source:
-          type: email
-          title: Multiple supplier threads
-          href: mailto:orders@locoprovisions.com
 
-  - type: event
-    kind: meal
-    priority_ref: personal
+  - priority_ref: personal
     title: "Lunch break - actually taking one"
-    at: "0d 13:00 / 0d 13:45"
+    schedule:
+      at: "0d 13:00 / 0d 13:45"
     notes:
       - created: "0d 13:50"
         content: |
@@ -630,11 +650,13 @@ activities:
 
           She's right about a lot of things.
 
-  - type: note
-    kind: messages
-    priority_ref: family
+  - priority_ref: family
     title: "Michelle - confirmed for Sunday"
     created: "0d"
+    links:
+      - source_ref: imessage
+        type: message
+        title: "iMessage - Michelle"
     notes:
       - created: "0d 17:30"
         content: |
@@ -642,24 +664,21 @@ activities:
 
           "I'll be there Sunday. 6pm?"
 
-          **Michelle:** "Perfect! See you then ❤️"
+          **Michelle:** "Perfect! See you then"
 
           ---
 
           Marked it in Plot. If it's written down, I'll do it. That's the theory.
-        source:
-          type: message
-          title: iMessage - Michelle
         mentions:
           - michelle
     tags:
       pinned: [user]
 
   # Day +1: Prep and momentum
-  - type: event
-    priority_ref: service
+  - priority_ref: service
     title: "Friday service - full menu + ramp special"
-    at: "+1d 17:00 / +1d 23:30"
+    schedule:
+      at: "+1d 17:00 / +1d 23:30"
     notes:
       - created: "-1d 15:00"
         content: |
@@ -683,12 +702,11 @@ activities:
     tags:
       star: [user]
 
-  - type: action
-    author_ref: sydney
+  - author_ref: sydney
     priority_ref: menu
     title: "Prep schedule - spring menu rollout"
-    assignee_ref: sydney
-    on: "+1d"
+    schedule:
+      on: "+1d"
     notes:
       - author_ref: sydney
         created: "0d 14:00"
@@ -708,12 +726,14 @@ activities:
 
           Tight but doable. We're ready.
 
-  - type: note
-    kind: messages
-    author_ref: richie
+  - author_ref: richie
     priority_ref: service
     title: "Reservation update - launch week"
     created: "0d"
+    links:
+      - source_ref: slack
+        type: message
+        title: "#general"
     notes:
       - author_ref: richie
         created: "0d 14:00"
@@ -724,15 +744,12 @@ activities:
           - Saturday: FULL + waitlist
 
           We're going to be slammed. Good problem to have.
-        source:
-          type: slack_message
-          title: "#general"
 
   # Day +2: Execution focus
-  - type: event
-    priority_ref: service
+  - priority_ref: service
     title: "Saturday service - last night of winter menu"
-    at: "+2d 17:00 / +2d 23:45"
+    schedule:
+      at: "+2d 17:00 / +2d 23:45"
     notes:
       - created: "-1d 14:00"
         content: |
@@ -745,11 +762,10 @@ activities:
           - sydney
           - richie
 
-  - type: event
-    kind: meal
-    priority_ref: personal
+  - priority_ref: personal
     title: "Sunday dinner at Michelle's"
-    at: "+2d 18:00 / +2d 21:00"
+    schedule:
+      at: "+2d 18:00 / +2d 21:00"
     tags:
       star: [user]
     notes:
@@ -761,11 +777,10 @@ activities:
         mentions:
           - michelle
 
-  - type: action
-    priority_ref: menu
+  - priority_ref: menu
     title: "Final recipe documentation for spring menu"
-    assignee_ref: user
-    on: "+3d"
+    schedule:
+      on: "+3d"
     tags:
       todo: [user]
     notes:
@@ -782,11 +797,10 @@ activities:
 
           That's the maturity. That's the restaurant growing up.
 
-  - type: event
-    kind: meeting
-    priority_ref: team
+  - priority_ref: team
     title: "Monday prep - spring menu training"
-    at: "+3d 09:00 / +3d 14:00"
+    schedule:
+      at: "+3d 09:00 / +3d 14:00"
     notes:
       - created: "-1d 16:30"
         content: |
@@ -811,12 +825,14 @@ activities:
 
           **14:00+** - Open questions, prep start
 
-  - type: note
-    kind: messages
-    author_ref: nat
+  - author_ref: nat
     priority_ref: service
     title: "Friends & family service - March 20"
     created: "-1d"
+    links:
+      - source_ref: slack
+        type: message
+        title: "#general"
     notes:
       - author_ref: nat
         created: "-1d 11:00"
@@ -829,19 +845,15 @@ activities:
           - Food writers (2 - selected)
 
           ~35 covers. Full menu. This is the dress rehearsal.
-        source:
-          type: slack_message
-          title: "#general"
         mentions:
           - cicero
           - fak
           - michelle
 
-  - type: action
-    priority_ref: menu
+  - priority_ref: menu
     title: "Charred cabbage - final consistency test"
-    assignee_ref: user
-    on: "+3d"
+    schedule:
+      on: "+3d"
     notes:
       - created: "-1d 17:00"
         content: |
@@ -853,12 +865,15 @@ activities:
         mentions:
           - sydney
 
-  - type: note
-    kind: messages
-    author_ref: nat
+  - author_ref: nat
     priority_ref: business
     title: "Spring menu press release"
     created: "-1d"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Press Release Draft"
+        source_url: "mailto:natalie@thebearchicago.com"
     notes:
       - author_ref: nat
         created: "-1d 12:00"
@@ -870,17 +885,12 @@ activities:
           Highlights the seasonal sourcing, the team, the philosophy. Doesn't oversell.
 
           Sending to food media tomorrow unless you want changes.
-        source:
-          type: email
-          title: Press Release Draft
-          href: mailto:natalie@thebearchicago.com
 
-  - type: event
-    kind: meeting
-    priority_ref: team
+  - priority_ref: team
     title: "Weekly team check-in"
-    at: "+4d 16:00 / +4d 16:30"
-    recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
+    schedule:
+      at: "+4d 16:00 / +4d 16:30"
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     notes:
       - created: "-1d 13:00"
         content: |
@@ -890,9 +900,7 @@ activities:
 
           Richie's annoying but he's right: "The restaurant is only as good as the team."
 
-  - type: note
-    kind: document
-    priority_ref: menu
+  - priority_ref: menu
     title: "Post-launch: feedback and iteration plan"
     created: "-1d"
     tags:

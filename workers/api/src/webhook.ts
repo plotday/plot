@@ -203,6 +203,8 @@ webhook.post("/hook/clerk", async (c) => {
     // Render email - OTP emails need a code, notification emails don't
     let html: string;
     let text: string;
+    let emailType = mapping.emailType;
+    let subject = mapping.subject;
 
     if (mapping.needsCode) {
       const code =
@@ -216,7 +218,22 @@ webhook.post("/hook/clerk", async (c) => {
         return c.json({ ok: true });
       }
 
-      ({ html, text } = await render(mapping.emailType as "email-confirmation", { code }));
+      // For verification_code, distinguish sign-up from sign-in verification.
+      // Clerk uses the same slug for both; we check if the user was created
+      // recently to determine if this is a new sign-up or an existing user
+      // verifying a new device (Client Trust).
+      if (slug === "verification_code") {
+        const userCreatedAt = data?.user?.created_at;
+        const isNewUser =
+          userCreatedAt && Date.now() - userCreatedAt < 5 * 60 * 1000;
+
+        if (!isNewUser) {
+          emailType = "sign-in-verification";
+          subject = "Your Plot sign-in code";
+        }
+      }
+
+      ({ html, text } = await render(emailType as "email-confirmation", { code }));
     } else {
       ({ html, text } = await render(mapping.emailType as "account-locked"));
     }
@@ -225,7 +242,7 @@ webhook.post("/hook/clerk", async (c) => {
       {
         from: "Plot <noreply@updates.plot.day>",
         to: [to_email_address],
-        subject: mapping.subject,
+        subject,
         html,
         text,
       },

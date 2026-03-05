@@ -151,6 +151,10 @@ class FormTextInput extends FormItem {
   final int maxLines;
   final TextEditingController controller;
 
+  /// Callback fired when Enter is pressed in the text field.
+  /// Set by FormModalState to trigger form submission.
+  VoidCallback? onSubmitted;
+
   @override
   String getValue() => controller.text;
 
@@ -183,6 +187,7 @@ class FormTextInput extends FormItem {
       placeholder: placeholder,
       highlighted: highlighted,
       focusNode: focusNode,
+      onSubmitted: onSubmitted != null ? (_) => onSubmitted!() : null,
     );
   }
 
@@ -399,6 +404,9 @@ class FormButton extends FormItem {
 
   final Command Function(Map<String, dynamic> values) buildCommand;
 
+  /// Whether this is the primary (first) button, styled with accent color.
+  bool isPrimary = false;
+
   @override
   dynamic getValue() => null;
 
@@ -424,6 +432,7 @@ class FormButton extends FormItem {
       highlighted: highlighted,
       enabled: enabled,
       focusNode: focusNode,
+      isPrimary: isPrimary,
     );
   }
 }
@@ -435,6 +444,7 @@ class _FormButtonWidget extends StatefulWidget {
     required this.highlighted,
     required this.enabled,
     this.focusNode,
+    this.isPrimary = false,
   });
 
   final Command Function(Map<String, dynamic> values) buildCommand;
@@ -442,6 +452,7 @@ class _FormButtonWidget extends StatefulWidget {
   final bool highlighted;
   final bool enabled;
   final FocusNode? focusNode;
+  final bool isPrimary;
 
   @override
   State<_FormButtonWidget> createState() => _FormButtonWidgetState();
@@ -535,6 +546,12 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
           style: ListTileStyle.button,
           focusNode: widget.focusNode,
           controller: widget.controller?._listTileController,
+          textStyle: widget.isPrimary && widget.enabled
+              ? context.theme.typography.base.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: context.theme.colors.primary,
+                )
+              : null,
         ),
       ),
     );

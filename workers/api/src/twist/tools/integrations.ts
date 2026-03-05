@@ -24,6 +24,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import type { Uuid } from "@plotday/twister/utils/uuid";
 
+import type { Json } from "@plotday/db";
 import type { DB } from "../../db-types";
 import { type Bindings, type TwistEnvironment } from "../../env";
 import {
@@ -36,7 +37,7 @@ import superjson from "superjson";
 
 import type { Storage } from "../../state/storage";
 import { createLogger } from "@plotday/worker-util";
-import { rpc } from "../../rpc";
+import { rpc, rpcUser } from "../../rpc";
 import { getRpcFunctionName } from "../../utils/rpc";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
@@ -413,6 +414,77 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Sets or clears todo status on a thread owned by this source.
+   * Looks up the thread by source URL, then upserts or archives a per-user schedule.
+   */
+  async setThreadToDo(
+    source: string,
+    actorId: ActorId,
+    todo: boolean,
+    options?: { date?: Date | string }
+  ): Promise<void> {
+    const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+
+    // Look up the link+thread by source URL and created_by
+    const link = await this.db
+      .selectFrom("link")
+      .select(["id", "thread_id"])
+      .where("source", "=", source)
+      .where("created_by", "=", this.priorityTwistId)
+      .executeTakeFirst();
+
+    if (!link?.thread_id) {
+      logger.warn(`setThreadToDo: no link found for source=${source}`);
+      return;
+    }
+
+    // Resolve the user_id from the actorId (contact table)
+    const contact = await this.db
+      .selectFrom("contact")
+      .select("user_id")
+      .where("id", "=", actorId)
+      .executeTakeFirst();
+
+    if (!contact?.user_id) {
+      logger.warn(`setThreadToDo: no user_id for actorId=${actorId}`);
+      return;
+    }
+
+    if (todo) {
+      // Upsert a per-user schedule with the given date (default: today)
+      let dateStr: string;
+      if (options?.date) {
+        dateStr = typeof options.date === "string"
+          ? options.date
+          : options.date.toISOString().slice(0, 10);
+      } else {
+        dateStr = new Date().toISOString().slice(0, 10);
+      }
+
+      const dbSchedule: Record<string, unknown> = {
+        thread_id: link.thread_id,
+        user_id: contact.user_id,
+        on: `[${dateStr},)`,
+      };
+
+      await rpcUser(this.db, "upsert_schedule", {
+        user_id: contact.user_id,
+        p_schedule: dbSchedule as Json,
+      });
+    } else {
+      // Archive the per-user schedule for this thread
+      await this.db
+        .updateTable("schedule")
+        .set({ archived_at: new Date() })
+        .where("thread_id", "=", link.thread_id)
+        .where("user_id", "=", contact.user_id)
+        .where("occurrence", "is", null)
+        .where("archived_at", "is", null)
+        .execute();
+    }
+  }
+
+  /**
    * Dispatch method called by the entrypoint when synced data changes.
    * Routes link updates to the appropriate source callback.
    */
@@ -455,7 +527,7 @@ export class Integrations extends Tool implements IAuth {
         actions: item.actions,
       };
 
-      // Build meta from link metadata
+      // Build thread with meta populated from link metadata
       const meta: ThreadMeta = { ...(item.link_meta as any ?? {}) };
       meta.channelId = item.link_channel_id;
       meta.linkSource = item.link_source;
@@ -472,7 +544,15 @@ export class Integrations extends Tool implements IAuth {
         }
       }
 
-      return [{ sourceMethod: "onNoteCreated", args: [note, meta] }];
+      // Build a Thread object with meta populated for the onNoteCreated callback
+      const thread = {
+        id: item.thread_id,
+        title: item.thread_title,
+        priority: { id: item.priority_id },
+        meta,
+      };
+
+      return [{ sourceMethod: "onNoteCreated", args: [note, thread] }];
     }
 
     if (dispatchItem?.itemType !== "link") return [];

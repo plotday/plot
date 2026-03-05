@@ -10,7 +10,8 @@ export interface SeedData {
   config: Config;
   contacts?: Contact[];
   priorities?: Priority[];
-  activities?: Activity[];
+  sources?: SeedSource[];
+  threads?: Thread[];
 }
 
 export interface Config {
@@ -52,44 +53,61 @@ export interface PrioritySettings {
 }
 
 // ============================================================================
-// Activities
+// Sources (creates twist + priority_twist records for link logos)
 // ============================================================================
 
-export type ActivityType = "action" | "event" | "note";
+export interface SeedSource {
+  ref: string; // Unique reference for this source
+  name: string; // Display name (e.g., "Slack")
+  priority_ref: string; // Priority to attach the twist to
+  logo?: string; // Logo URL for the source itself
+  logo_dark?: string; // Dark mode logo URL
+  link_types: SeedLinkType[];
+}
 
-export type ActivityKind =
-  | "document"
-  | "messages"
-  | "meeting"
-  | "videoconference"
-  | "phone"
-  | "focus"
-  | "meal"
-  | "exercise"
-  | "family"
-  | "travel"
-  | "social"
-  | "entertainment";
+export interface SeedLinkType {
+  type: string; // e.g., "message", "email", "issue"
+  label: string; // e.g., "Message", "Email", "Issue"
+  logo: string; // Logo URL for this link type
+  logo_dark?: string; // Dark mode logo URL
+}
 
-export interface Activity {
+// ============================================================================
+// Threads (formerly Activities)
+// ============================================================================
+
+export interface Thread {
   ref?: string; // Optional unique reference
   title?: string;
-  type: ActivityType;
-  kind?: ActivityKind;
   priority_ref: string; // Reference to a priority
-  created?: string; // Date offset (e.g., "-2d", "+1w 14:30") - REQUIRED for type: note
-  author_ref?: string; // Default: "user"
-  assignee_ref?: string;
+  created?: string; // Date offset
+  author_ref?: string; // Default: "user" — only used to resolve note author defaults
   draft?: boolean; // Default: false
   private?: boolean; // Default: false
   archived_at?: string; // Date offset
-  done_at?: string; // Date offset
-  at?: string; // Timestamp range (e.g., "+0d 10:00 / +0d 11:00") - For type: note, future only
-  on?: string; // Date range (e.g., "+3d / +5d") - For type: note, future only
+  tags?: Tags;
+  notes?: Note[]; // Notes associated with this thread
+  schedule?: Schedule; // Schedule block (at/on/done_at/recurrence)
+  links?: SeedLink[]; // External links
+}
+
+export interface Schedule {
+  at?: string; // Timestamp range (e.g., "+0d 10:00 / +0d 11:00")
+  on?: string; // Date range (e.g., "+3d / +5d")
   duration?: string; // e.g., "30 minutes", "2 hours"
   recurrence_rule?: string; // iCalendar RRULE
-  tags?: Tags;
-  notes?: Note[]; // Notes associated with this activity
+  done_at?: string; // Date offset
+}
+
+export interface SeedLink {
+  source_ref?: string; // Reference to a source (for logo resolution)
+  type?: string; // e.g., "message", "email", "issue"
+  status?: string; // e.g., "open", "closed"
+  title?: string; // Display title
+  source_url?: string; // External URL
+  assignee_ref?: string; // Contact ref for assignee
+  author_ref?: string; // Contact ref for author
+  meta?: Record<string, unknown>; // Arbitrary metadata
 }
 
 export interface Note {
@@ -98,17 +116,10 @@ export interface Note {
   created: string; // Date offset (e.g., "-2d", "+1w 14:30") - REQUIRED
   content?: string; // Markdown content (preferred)
   note?: string; // Markdown content (alias for backward compatibility)
-  links?: Link[];
   mentions?: string[]; // Array of contact refs
   tags?: Tags;
   draft?: boolean; // Default: false
   private?: boolean; // Default: false
-}
-
-export interface Link {
-  url: string;
-  title?: string;
-  description?: string;
 }
 
 export interface Tags {
@@ -211,45 +222,84 @@ export interface GeneratedPriorityContact {
   contact_id: string; // UUID
 }
 
-export interface GeneratedActivity {
+export interface GeneratedThread {
   id: string; // UUID
-  author_id: string; // UUID
   created_by: string; // UUID
-  assignee_id: string | null; // UUID
   priority_id: string; // UUID
-  type: ActivityType;
-  kind: ActivityKind | null;
-  order: number; // Timestamp in milliseconds
   draft: boolean;
   private: boolean;
   title: string | null;
   preview: string | null;
+  archived_at: string | null; // ISO timestamp
+}
+
+export interface GeneratedLink {
+  id: string; // UUID
+  thread_id: string; // UUID
+  priority_id: string; // UUID
+  type: string | null;
+  status: string | null;
+  title: string | null;
+  source_url: string | null;
+  assignee_id: string | null; // UUID
+  author_id: string | null; // UUID
+  created_by: string | null; // UUID (priority_twist_id)
+  source_created_at: string; // ISO timestamp
+  meta: string | null; // JSONB
+}
+
+export interface GeneratedSchedule {
+  id: string; // UUID
+  thread_id: string | null; // UUID
+  link_id: string | null; // UUID
+  user_id: string | null; // UUID (for order)
+  order: number | null;
   at: string | null; // tstzrange SQL format
   on: string | null; // daterange SQL format
   duration: string | null; // interval SQL format
-  done_at: string | null; // ISO timestamp
   recurrence_rule: string | null;
-  archived_at: string | null; // ISO timestamp
-  source_created_at: string; // ISO timestamp
-  updated_at: string; // ISO timestamp
+  done_at: string | null; // ISO timestamp
 }
 
-export interface GeneratedActivityTag {
+export interface GeneratedTwistAdmin {
+  id: string; // Will use DEFAULT (bigint identity) — placeholder for ref
+  user_id: string; // UUID
+}
+
+export interface GeneratedTwist {
+  twist_admin_ref: string; // Reference to resolve admin ID
+  environment: string;
+  name: string;
+  version: string;
+  is_source: boolean;
+  permissions: string | null; // JSONB
+  logo_url: string | null;
+  logo_url_dark: string | null;
+}
+
+export interface GeneratedPriorityTwist {
+  priority_id: string; // UUID
+  twist_ref: string; // Reference to resolve twist ID
+  owner_id: string; // UUID
+  name: string;
+  config: string; // JSONB
+}
+
+export interface GeneratedThreadTag {
   actor_id: string; // UUID
-  activity_id: string; // UUID
+  thread_id: string; // UUID
   tag_id: number;
   occurrence: string | null;
 }
 
 export interface GeneratedNote {
   id: string; // UUID
-  activity_id: string; // UUID
+  thread_id: string; // UUID
   author_id: string; // UUID
   created_by: string; // UUID
   draft: boolean;
   private: boolean;
   content: string | null;
-  links: string | null; // JSONB
   mentions: string | null; // Array literal
   source_created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp

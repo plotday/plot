@@ -64,6 +64,7 @@ abstract class Command {
     required this.eventObject,
     required this.eventAction,
     this.subtitle,
+    this.description,
     this.icon,
     this.hoverIcon,
     this.shortcut,
@@ -74,6 +75,9 @@ abstract class Command {
   final EventObject eventObject;
   final EventAction eventAction;
   final String? subtitle;
+
+  /// Longer description displayed below the title in command modals.
+  final String? description;
   final IconData? icon;
   final IconData? hoverIcon;
   final ShortcutActivator? shortcut;
@@ -117,6 +121,7 @@ class CommandWrapper extends Command {
          eventObject: command.eventObject,
          eventAction: command.eventAction,
          subtitle: subtitle.or(command.subtitle),
+         description: command.description,
          icon: icon.or(command.icon),
          hoverIcon: hoverIcon.or(command.hoverIcon),
          shortcut: command.shortcut,
@@ -146,6 +151,7 @@ class CommandWrapper extends Command {
 class ShowCommands extends Command {
   ShowCommands({
     required super.title,
+    super.description,
     super.icon,
     super.hoverIcon,
     super.shortcut,

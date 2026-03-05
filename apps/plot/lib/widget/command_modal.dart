@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/shortcut.dart';
 import 'list_tile.dart';
 import 'modal.dart';
@@ -78,6 +80,16 @@ class CommandModal {
           controller: controller,
           command: wrappedCommand,
           showShortcut: true,
+          details: command.description != null
+              ? Builder(
+                  builder: (context) => Text(
+                    command.description!,
+                    style: context.theme.typography.sm.copyWith(
+                      color: context.theme.plotColors.muted,
+                    ),
+                  ),
+                )
+              : null,
           onRun: (context, result) async {
             // Handle the command result using shared Modal handler
             final shouldClose = await Modal.handleCommandResult(

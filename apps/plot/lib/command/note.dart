@@ -598,7 +598,10 @@ List<Command> topNoteTags(
 
   // Filter out tags already on note (and archived, which is menu-only) and take maxToShow
   return tagSuggestions
-      .where((tag) => tag != Tag.archived && !note.hasTag(tag, actorId))
+      .where((tag) =>
+          tag != Tag.archived &&
+          !note.hasTag(tag, actorId) &&
+          !(tag == Tag.done && note.hasTag(Tag.todo, actorId)))
       .take(maxToShow)
       .map((tag) => ToggleNoteTag(note, tag, actorId))
       .toList();

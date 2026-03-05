@@ -38,65 +38,21 @@ int _compareEnvironment(String a, String b) {
 // Entry point: Manage Connections and Twists
 // ============================================================================
 
-class ManageConnectionsAndTwists extends ShowForm {
+class ManageConnectionsAndTwists extends ShowCommands {
   ManageConnectionsAndTwists()
     : super(
-        title: 'Manage Connections and Twists',
+        title: 'Connections and Twists',
         icon: PlotIcon.connection,
-        form: (context) => _buildForm(),
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      return await super.run(context);
-    } on ApiException catch (e, t) {
-      log.warning('Failed to load twists', e, t);
-      return const CommandMessage(
-        'Could not connect to Plot servers.',
-        isError: true,
-      );
-    } on NetworkException catch (e, t) {
-      log.warning('Failed to load twists', e, t);
-      return const CommandMessage(
-        'Could not connect to Plot servers.',
-        isError: true,
-      );
-    }
-  }
-
-  static Future<FormData> _buildForm() async {
-    return FormData(
-      title: 'Connections and Twists',
-      groups: [
-        StaticFormGroup(
-          items: [
-            FormInfo(
-              key: 'sources_desc',
-              text: 'Connections sync your accounts and data into Plot.',
-            ),
-            FormButton(
-              key: 'manage_sources',
-              buildCommand: (_) => ManageConnections(),
-            ),
-            FormDivider(key: 'divider'),
+        commands: Commands(
+          prompt: 'Connections and Twists',
+          groups: [
+            StaticCommandGroup(commands: [
+              ManageConnections(),
+              ManageTwists(),
+            ]),
           ],
         ),
-        StaticFormGroup(
-          items: [
-            FormInfo(
-              key: 'twists_desc',
-              text: 'Twists add workflows and automations to your priorities.',
-            ),
-            FormButton(
-              key: 'manage_twists',
-              buildCommand: (_) => ManageTwists(),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+      );
 }
 
 // ============================================================================
@@ -146,6 +102,7 @@ class ManageConnections extends Command {
   ManageConnections()
     : super(
         title: 'Manage Connections',
+        description: 'Sync your accounts and data into Plot.',
         icon: PlotIcon.connection,
         eventObject: EventObject.twist,
         eventAction: EventAction.opened,
@@ -848,6 +805,7 @@ class ManageTwists extends ShowCommands {
   ManageTwists([Priority? priority])
     : super(
         title: 'Manage Twists',
+        description: 'Add workflows and automations to your priorities.',
         icon: PlotIcon.twist,
         commandsBuilder: (context) => _getTwistCommands(priority),
       );

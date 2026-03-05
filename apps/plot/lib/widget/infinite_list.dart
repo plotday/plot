@@ -408,10 +408,9 @@ class InfiniteListState extends State<InfiniteList> {
   @override
   void didUpdateWidget(covariant InfiniteList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.onReorder != null) {
+    if (widget.onReorder != null && oldWidget.count != widget.count) {
       log.info(
-        '[InfiniteList.didUpdateWidget] count=${oldWidget.count}->${widget.count} '
-        'builderChanged=${oldWidget.builder != widget.builder}',
+        '[InfiniteList.didUpdateWidget] count=${oldWidget.count}->${widget.count}',
       );
     }
     if (oldWidget.count == widget.count &&

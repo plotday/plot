@@ -266,13 +266,17 @@ abstract class BaseTable {
     } else if (range != null) {
       returnRange = range;
     } else if (rows.isNotEmpty) {
-      final firstTime = DateTime.parse(rows.first[order] as String);
-      final lastTime = DateTime.parse(rows.last[order] as String);
-      // For descending order, first row is newest, last row is oldest
-      // DateTimeRange expects start <= end, so we need to swap for descending
-      final start = ascending ? firstTime : lastTime;
-      final end = ascending ? lastTime : firstTime;
-      returnRange = DateTimeRange(start, end);
+      final firstStr = (rows.first[order] ?? rows.first['created_at']) as String?;
+      final lastStr = (rows.last[order] ?? rows.last['created_at']) as String?;
+      if (firstStr != null && lastStr != null) {
+        final firstTime = DateTime.parse(firstStr);
+        final lastTime = DateTime.parse(lastStr);
+        // For descending order, first row is newest, last row is oldest
+        // DateTimeRange expects start <= end, so we need to swap for descending
+        final start = ascending ? firstTime : lastTime;
+        final end = ascending ? lastTime : firstTime;
+        returnRange = DateTimeRange(start, end);
+      }
     }
     DateTime? lastUpdated;
     String? returnLastId;
@@ -1213,9 +1217,13 @@ class Store extends _$Store {
           .firstOrNull;
 
       // Check if we've already reached the end (noMore flag)
-      if (syncState?.noMore == true) {
+      // Also check ancestors — if a parent priority has synced all data,
+      // the child's data is a subset and is also fully synced.
+      final anyNoMore = syncState?.noMore == true ||
+          ancestorSyncStates.any((s) => s.entity != entityName && s.noMore == true);
+      if (anyNoMore) {
         log.fine(
-          "No more data for entity $entityName (noMore=true), skipping pull",
+          "No more data for entity $entityName (noMore from self or ancestor), skipping pull",
         );
         completer.complete(null);
         return null;
@@ -1370,11 +1378,19 @@ class Store extends _$Store {
         // Use the last row in the batch as the pagination boundary
         // For descending: baseRows.last = oldest item (boundary moving backwards)
         // For ascending: baseRows.last = newest item (boundary moving forwards)
-        final boundaryValue = baseRows.last[baseTable.order] as String?;
+        var boundaryValue = baseRows.last[baseTable.order] as String?;
         if (boundaryValue == null) {
-          log.warning("Boundary value for ${baseTable.order} is null in last row of ${baseTable.table}, skipping sync state update");
-          completer.complete(null);
-          return null;
+          // Fall back to created_at when sort column is null (e.g. infinity
+          // timestamps that serialize to null, or missing computed columns)
+          boundaryValue = baseRows.last['created_at'] as String?;
+          log.warning(
+            "Boundary value for ${baseTable.order} is null in last row of "
+            "${baseTable.table}, falling back to created_at=$boundaryValue",
+          );
+          if (boundaryValue == null) {
+            completer.complete(null);
+            return null;
+          }
         }
         final boundaryRowCreatedAt = DateTime.parse(boundaryValue);
         final createdAtMicros = boundaryRowCreatedAt
@@ -1673,7 +1689,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 262;
+  int get schemaVersion => 263;
 
   @override
   MigrationStrategy get migration {
@@ -1910,6 +1926,9 @@ class Store extends _$Store {
     if (from < 262) {
       await _safeAddColumn(m, notes, notes.mergedFromThreadId);
       await _safeAddColumn(m, links, links.mergedFromThreadId);
+    }
+    if (from < 263) {
+      await _safeAddColumn(m, links, links.logo);
     }
   }
 

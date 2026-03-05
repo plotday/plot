@@ -129,6 +129,7 @@ async function processTwistBatch(
     channelUpdatedLinks,
     channelNewNotes,
     threadReads,
+    threadSchedules,
     priorityTwist,
   } = batchData;
 
@@ -510,6 +511,29 @@ async function processTwistBatch(
       }
     }
 
+    // Process thread schedule changes (for onThreadToDo callback)
+    for (const threadSchedule of threadSchedules ?? []) {
+      if (!threadSchedule.thread_id) continue;
+
+      try {
+        await twistWrapper.dispatch("Plot", {
+          itemType: "thread_schedule" as const,
+          item: threadSchedule,
+        });
+      } catch (error) {
+        logger.error("Error processing thread schedule", error as Error, {
+          thread_id: threadSchedule.thread_id,
+          user_id: threadSchedule.user_id ?? undefined,
+        });
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          thread_id: threadSchedule.thread_id,
+          queue,
+        });
+      }
+    }
+
     // Process priority_twist config changes (no sync_depth for config)
     if (priorityTwist) {
       try {
@@ -550,6 +574,7 @@ async function processTwistBatch(
       channel_updated_link_count: channelUpdatedLinks.length,
       channel_new_note_count: channelNewNotes.length,
       thread_read_count: threadReads.length,
+      thread_schedule_count: threadSchedules?.length ?? 0,
       has_priority_twist_update: !!priorityTwist,
     });
   } catch (error) {

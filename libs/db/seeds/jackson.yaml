@@ -96,13 +96,53 @@ priorities:
           - ref: maintenance
             title: Maintenance
 
-activities:
+sources:
+  - ref: gchq
+    name: GCHQ Briefing
+    priority_ref: everything
+    logo: "https://api.iconify.design/openmoji/locked-with-key.svg"
+    link_types:
+      - type: briefing
+        label: Briefing
+        logo: "https://api.iconify.design/openmoji/locked-with-key.svg"
+  - ref: email
+    name: Government Email
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/microsoft-icon.svg"
+    link_types:
+      - type: email
+        label: Email
+        logo: "https://api.iconify.design/logos/microsoft-icon.svg"
+  - ref: signal
+    name: Signal
+    priority_ref: everything
+    logo: "https://api.iconify.design/cib/signal.svg"
+    link_types:
+      - type: secure_message
+        label: Secure Message
+        logo: "https://api.iconify.design/cib/signal.svg"
+  - ref: phone
+    name: Phone
+    priority_ref: everything
+    logo: "https://api.iconify.design/mdi/phone.svg"
+    link_types:
+      - type: call
+        label: Call
+        logo: "https://api.iconify.design/mdi/phone.svg"
+      - type: voicemail
+        label: Voicemail
+        logo: "https://api.iconify.design/mdi/phone.svg"
+
+threads:
   # Day -2: Setting pieces in motion
-  - type: note
-    kind: messages
-    priority_ref: threat_assess
+  - priority_ref: threat_assess
     title: "Weekly threat digest - mostly harmless"
     created: "-2d"
+    links:
+      - source_ref: email
+        type: email
+        title: Weekly Threat Assessment - Week 3
+        source_url: "mailto:briefing@gchq.gov.uk"
     notes:
       - created: "-2d 09:30"
         content: |
@@ -114,19 +154,14 @@ activities:
           One item worth a second glance: Uptick in comms around old Curtain network. Probably nothing. Dormant since '09.
 
           Filed under: things that will bite someone in the arse if ignored.
-        source:
-          type: email
-          title: Weekly Threat Assessment - Week 3
-          href: mailto:briefing@gchq.gov.uk
     tags:
       pinned: [user]
 
-  - type: action
-    author_ref: user
+  - author_ref: user
     priority_ref: river_research
     title: "River - check old East German networks"
-    assignee_ref: river
-    on: "-2d"
+    schedule:
+      on: "-2d"
     notes:
       - author_ref: user
         created: "-2d 10:00"
@@ -135,11 +170,14 @@ activities:
 
           He'll figure it out or he won't. Either way, I need someone looking at this who doesn't know they're looking at it.
 
-  - type: event
-    kind: phone
-    priority_ref: regents_park
+  - priority_ref: regents_park
     title: "Call: Whelan (Regent's Park)"
-    at: "-2d 11:15 / -2d 11:23"
+    schedule:
+      at: "-2d 11:15 / -2d 11:23"
+    links:
+      - source_ref: phone
+        type: call
+        title: Call with James Whelan
     notes:
       - created: "-2d 11:30"
         content: |
@@ -148,17 +186,16 @@ activities:
           Translation: Regent's Park wants to bury something with us.
 
           Told him we're drowning in paperwork. Which is true. Didn't mention we could handle it anyway. Let him think he's doing us a favour when he sends it over.
-        source:
-          type: call
-          title: Call with James Whelan
     tags:
       question: [user]
 
-  - type: note
-    kind: messages
-    priority_ref: medical
+  - priority_ref: medical
     title: "GP surgery - missed call"
     created: "-2d"
+    links:
+      - source_ref: phone
+        type: voicemail
+        title: NHS Appointments
     notes:
       - created: "-2d 14:30"
         content: |
@@ -167,14 +204,9 @@ activities:
           "Mr Lamb, this is regarding your blood pressure follow-up. We haven't heard from you. Please call to schedule..."
 
           [Deleted]
-        source:
-          type: voicemail
-          title: NHS Appointments
 
   # Day -1: Pieces moving
-  - type: note
-    kind: document
-    author_ref: river
+  - author_ref: river
     priority_ref: river_research
     title: "GDR network files - pulled as requested"
     created: "-1d 09:00"
@@ -192,12 +224,11 @@ activities:
 
           Academic exercise or is there something here?
 
-  - type: action
-    author_ref: user
+  - author_ref: user
     priority_ref: curtain
     title: "Review Curtain network files - something's off"
-    assignee_ref: user
-    on: "-1d"
+    schedule:
+      on: "-1d"
     tags:
       urgent: [user]
     notes:
@@ -215,11 +246,10 @@ activities:
 
           Need to know which without letting anyone know I'm looking.
 
-  - type: event
-    kind: meeting
-    priority_ref: louisa_contacts
+  - priority_ref: louisa_contacts
     title: "Louisa - coffee, downstairs"
-    at: "-1d 14:30 / -1d 14:42"
+    schedule:
+      at: "-1d 14:30 / -1d 14:42"
     notes:
       - created: "-1d 14:50"
         content: |
@@ -233,12 +263,11 @@ activities:
     tags:
       pinned: [user]
 
-  - type: action
-    author_ref: user
+  - author_ref: user
     priority_ref: roddy_technical
     title: "Roddy - trace old signal patterns"
-    assignee_ref: roddy
-    on: "-1d"
+    schedule:
+      on: "-1d"
     notes:
       - author_ref: user
         created: "-1d 15:15"
@@ -247,11 +276,14 @@ activities:
 
           He'll spend three days building an algorithm and emerge thinking he's a genius. Which is fine. I need the data, not the credit.
 
-  - type: note
-    kind: messages
-    priority_ref: budget_expenses
+  - priority_ref: budget_expenses
     title: "Budget report - due next week"
     created: "-1d"
+    links:
+      - source_ref: email
+        type: email
+        title: Budget Report Request
+        source_url: "mailto:finance@sloughhouse.gov.uk"
     notes:
       - created: "-1d 11:00"
         content: |
@@ -261,16 +293,15 @@ activities:
           Please submit your quarterly budget report including itemized expenses and headcount justification.
 
           Thrilling.
-        source:
-          type: email
-          title: Budget Report Request
-          href: mailto:finance@sloughhouse.gov.uk
 
-  - type: event
-    kind: phone
-    priority_ref: taverner_mgmt
+  - priority_ref: taverner_mgmt
     title: "Taverner - 'courtesy call'"
-    at: "-1d 16:45 / -1d 16:52"
+    schedule:
+      at: "-1d 16:45 / -1d 16:52"
+    links:
+      - source_ref: phone
+        type: call
+        title: Call with Diana Taverner
     notes:
       - created: "-1d 17:00"
         content: |
@@ -287,9 +318,7 @@ activities:
       warning: [user]
 
   # Day 0 (Base date): The work gets real
-  - type: note
-    kind: document
-    priority_ref: curtain
+  - priority_ref: curtain
     title: "OPERATION CURTAIN CALL - active situation"
     created: "-1d"
     tags:
@@ -354,11 +383,10 @@ activities:
 
           **Note:** No follow-up confirmation ever filed. Case closed on presumption, not evidence.
 
-  - type: event
-    kind: meeting
-    priority_ref: slough_house
+  - priority_ref: slough_house
     title: "Team meeting - vague instructions"
-    at: "+0d 10:00 / +0d 10:17"
+    schedule:
+      at: "+0d 10:00 / +0d 10:17"
     notes:
       - author_ref: user
         created: "+0d 10:25"
@@ -387,10 +415,8 @@ activities:
 
           I'll do what he asked. And I'll keep my eyes open.
 
-  - type: action
-    priority_ref: cover
+  - priority_ref: cover
     title: "Feed Regent's Park false priority"
-    assignee_ref: user
     created: "-1d"
     notes:
       - created: "-1d 11:00"
@@ -405,12 +431,15 @@ activities:
         mentions:
           - whelan
 
-  - type: note
-    kind: messages
-    author_ref: catherine
+  - author_ref: catherine
     priority_ref: budget_expenses
     title: "Expense report - taxi receipts"
     created: "-1d"
+    links:
+      - source_ref: email
+        type: email
+        title: Expense Report Reminder
+        source_url: "mailto:catherine.standish@sloughhouse.gov.uk"
     notes:
       - author_ref: catherine
         created: "+0d 12:15"
@@ -418,16 +447,11 @@ activities:
           Jackson, you need to submit last month's expenses. I can't process the office budget until you do.
 
           I know you have taxi receipts somewhere. Please find them.
-        source:
-          type: email
-          title: Expense Report Reminder
-          href: mailto:catherine.standish@sloughhouse.gov.uk
 
-  - type: event
-    kind: meal
-    priority_ref: maintenance
+  - priority_ref: maintenance
     title: "Lunch - pub, alone"
-    at: "+0d 13:00 / +0d 14:15"
+    schedule:
+      at: "+0d 13:00 / +0d 14:15"
     notes:
       - created: "-1d 14:30"
         content: |
@@ -436,10 +460,8 @@ activities:
           Thinking time. The work requires long periods of looking like you're doing nothing.
 
   # Day +1: Threads tightening
-  - type: action
-    priority_ref: roddy_technical
+  - priority_ref: roddy_technical
     title: "Analyze Roddy's signal intercepts"
-    assignee_ref: user
     created: "-1d"
     tags:
       urgent: [user]
@@ -462,11 +484,10 @@ activities:
         mentions:
           - roddy
 
-  - type: event
-    kind: meeting
-    priority_ref: slough_house
+  - priority_ref: slough_house
     title: "Shirley - field assignment prep"
-    at: "+1d 11:30 / +1d 11:45"
+    schedule:
+      at: "+1d 11:30 / +1d 11:45"
     notes:
       - created: "-2d 11:50"
         content: |
@@ -480,11 +501,13 @@ activities:
         mentions:
           - shirley
 
-  - type: note
-    kind: messages
-    priority_ref: louisa_contacts
+  - priority_ref: louisa_contacts
     title: "Louisa update - former asset locations"
     created: "-1d"
+    links:
+      - source_ref: signal
+        type: secure_message
+        title: Louisa - Curtain Update
     notes:
       - created: "-2d 13:15"
         content: |
@@ -503,18 +526,13 @@ activities:
           So there IS a London connection. And Wetzel (if it's him) is looking for something or someone here.
 
           This is getting interesting.
-        source:
-          type: secure_message
-          title: Louisa - Curtain Update
         mentions:
           - louisa
     tags:
       warning: [user]
 
-  - type: action
-    priority_ref: river_research
+  - priority_ref: river_research
     title: "River - research London GDR connections"
-    assignee_ref: user
     created: "-1d"
     notes:
       - created: "-2d 14:00"
@@ -527,11 +545,10 @@ activities:
         mentions:
           - river
 
-  - type: event
-    kind: meeting
-    priority_ref: budget_expenses
+  - priority_ref: budget_expenses
     title: "Budget meeting (unavoidable)"
-    at: "+1d 15:00 / +1d 15:47"
+    schedule:
+      at: "+1d 15:00 / +1d 15:47"
     notes:
       - created: "-2d 16:00"
         content: |
@@ -541,11 +558,13 @@ activities:
 
           They weren't amused. Approved the budget anyway. They always do. Slough House is a convenient line item for hiding things.
 
-  - type: note
-    kind: messages
-    priority_ref: medical
+  - priority_ref: medical
     title: "Medical - another missed call"
     created: "-1d"
+    links:
+      - source_ref: phone
+        type: voicemail
+        title: Dr. Mehta - Follow-up
     notes:
       - created: "-2d 17:30"
         content: |
@@ -556,19 +575,19 @@ activities:
           [Deleted]
 
           I'll die on my own schedule, thank you.
-        source:
-          type: voicemail
-          title: Dr. Mehta - Follow-up
 
   # Day +2: Pieces in play
-  - type: note
-    kind: messages
-    priority_ref: river_research
+  - priority_ref: river_research
     title: "River's findings - London connection identified"
     created: "-1d"
     tags:
       urgent: [user]
       pinned: [user]
+    links:
+      - source_ref: email
+        type: email
+        title: "Re: London GDR Research"
+        source_url: "mailto:river.cartwright@sloughhouse.gov.uk"
     notes:
       - created: "-2d 09:15"
         content: |
@@ -589,17 +608,11 @@ activities:
           ---
 
           Definitely not nothing.
-        source:
-          type: email
-          title: "Re: London GDR Research"
-          href: mailto:river.cartwright@sloughhouse.gov.uk
         mentions:
           - river
 
-  - type: action
-    priority_ref: curtain
+  - priority_ref: curtain
     title: "Shirley - observe 47B Kingsland Road"
-    assignee_ref: user
     created: "-1d"
     tags:
       urgent: [user]
@@ -619,11 +632,14 @@ activities:
         mentions:
           - shirley
 
-  - type: event
-    kind: phone
-    priority_ref: taverner_mgmt
+  - priority_ref: taverner_mgmt
     title: "Call: Taverner (escalation attempt)"
-    at: "+2d 14:20 / +2d 14:33"
+    schedule:
+      at: "+2d 14:20 / +2d 14:33"
+    links:
+      - source_ref: phone
+        type: call
+        title: Call with Diana Taverner
     notes:
       - created: "-2d 14:40"
         content: |
@@ -641,10 +657,8 @@ activities:
     tags:
       blocked: [taverner]
 
-  - type: action
-    priority_ref: budget_expenses
+  - priority_ref: budget_expenses
     title: "Submit taxi receipts to Catherine"
-    assignee_ref: user
     created: "-1d"
     notes:
       - created: "-2d 15:30"
@@ -655,11 +669,10 @@ activities:
         mentions:
           - catherine
 
-  - type: event
-    kind: meeting
-    priority_ref: roddy_technical
+  - priority_ref: roddy_technical
     title: "Roddy - signal analysis update"
-    at: "+2d 16:00 / +2d 16:12"
+    schedule:
+      at: "+2d 16:00 / +2d 16:12"
     notes:
       - author_ref: roddy
         created: "+2d 16:05"
@@ -678,9 +691,7 @@ activities:
 
           Everything's coming together. Now we just need to know who's in the safehouse and what they want.
 
-  - type: note
-    kind: document
-    priority_ref: curtain
+  - priority_ref: curtain
     title: "Working theory update - need to move soon"
     created: "-1d"
     tags:
@@ -723,9 +734,7 @@ activities:
 
           Either way: no headlines, no credit, no mess. That's the standard.
 
-  - type: note
-    kind: document
-    priority_ref: maintenance
+  - priority_ref: maintenance
     title: "Reminder: Catherine's birthday next month"
     created: "-1d"
     notes:
@@ -737,12 +746,11 @@ activities:
         mentions:
           - catherine
 
-  - type: action
-    priority_ref: slough_house
+  - priority_ref: slough_house
     title: "Weekly team review meeting"
-    assignee_ref: user
-    on: "+4d"
-    recurrence_rule: "FREQ=WEEKLY;BYDAY=FR"
+    schedule:
+      on: "+4d"
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=FR"
     notes:
       - created: "-2d 10:00"
         content: |
@@ -750,9 +758,7 @@ activities:
 
           They think it's administrative. It is, in the sense that keeping them functional is administrative work.
 
-  - type: note
-    kind: document
-    priority_ref: cover
+  - priority_ref: cover
     title: "Contingency: if Regent's Park moves first"
     created: "-1d"
     tags:

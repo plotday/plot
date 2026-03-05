@@ -28,31 +28,38 @@ class PrioritiesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<LocalPreferencesBloc, LocalPreferencesState>(
       builder: (context, localPrefsState) {
-        return BlocBuilder<PriorityBloc, PriorityState>(
-          buildWhen: (prev, curr) =>
-              prev.search != curr.search || prev.filter != curr.filter,
-          builder: (context, priorityState) {
-            // Sync archived filter: show all if local prefs say so OR if
-            // the search archive filter is active
-            final prioritiesBloc = context.read<PrioritiesBloc>();
-            final showAll =
-                localPrefsState.showAllPriorities ||
-                priorityState.filter.contains(Tag.archived);
-            final expectedFilter = showAll ? null : false;
-            if (prioritiesBloc.state.archivedFilter != expectedFilter) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                prioritiesBloc.setArchivedFilter(showAll);
-              });
-            }
+        // PriorityBloc may not be available when the Priorities tab is
+        // shown without a priority selected in a sibling route.
+        PriorityBloc? priorityBloc;
+        try {
+          priorityBloc = context.read<PriorityBloc>();
+        } on ProviderNotFoundException {
+          // No PriorityBloc in tree — use defaults below.
+        }
+        final priorityState = priorityBloc?.state;
 
-            // Sync search from PriorityBloc to PrioritiesBloc
-            if (prioritiesBloc.state.search != priorityState.search) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                prioritiesBloc.updateSearch(priorityState.search);
-              });
-            }
+        // Sync archived filter: show all if local prefs say so OR if
+        // the search archive filter is active
+        final prioritiesBloc = context.read<PrioritiesBloc>();
+        final showAll =
+            localPrefsState.showAllPriorities ||
+            (priorityState?.filter.contains(Tag.archived) ?? false);
+        final expectedFilter = showAll ? null : false;
+        if (prioritiesBloc.state.archivedFilter != expectedFilter) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            prioritiesBloc.setArchivedFilter(showAll);
+          });
+        }
 
-            return Scaffold(
+        // Sync search from PriorityBloc to PrioritiesBloc
+        final search = priorityState?.search ?? '';
+        if (prioritiesBloc.state.search != search) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            prioritiesBloc.updateSearch(search);
+          });
+        }
+
+        return Scaffold(
               childPad: false,
               scrollable: false,
               body: BlocBuilder<LayoutBloc, LayoutState>(
@@ -69,6 +76,10 @@ class PrioritiesPage extends StatelessWidget {
 
                           return Column(
                             children: [
+                              if (!layoutState.multiPanel)
+                                SizedBox(
+                                    height:
+                                        MediaQuery.of(context).padding.top),
                               Expanded(
                                 child: PrioritiesList(
                                   root: state.root!,
@@ -257,8 +268,6 @@ class PrioritiesPage extends StatelessWidget {
                 },
               ),
             );
-          },
-        );
       },
     );
   }

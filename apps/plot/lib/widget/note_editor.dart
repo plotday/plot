@@ -7,6 +7,7 @@ import 'package:plot/state/thread.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/util/platform.dart';
 import 'logging.dart';
 
 class NoteEditor extends StatefulWidget {
@@ -22,6 +23,7 @@ class NoteEditor extends StatefulWidget {
     this.hint,
     this.additionalMentions,
     this.onSubmitted,
+    this.assignNote = true,
     super.key,
   });
 
@@ -48,6 +50,10 @@ class NoteEditor extends StatefulWidget {
 
   /// Called after the thread is submitted. Only used in new-thread mode.
   final VoidCallback? onSubmitted;
+
+  /// Whether to assign the note to the current user when the thread is a todo.
+  /// True for task-type threads, false for note/link/chat types with todo.
+  final bool assignNote;
 
   bool get isNewThreadMode => thread != null;
 
@@ -622,6 +628,26 @@ class NoteEditorState extends State<NoteEditor> {
                             ) ??
                             false,
                       ),
+                      if (isMobilePlatform())
+                        Button.icon(
+                          TakePhoto(
+                            priorityId: context
+                                .read<ThreadBloc>()
+                                .state
+                                .thread
+                                .priority
+                                .id
+                                .toString(),
+                            currentLinks: widget.draft.actions ?? const [],
+                            onLinksChanged: (actions) {
+                              final updatedDraft =
+                                  widget.draft.copyWith(actions: actions);
+                              context
+                                  .read<ThreadBloc>()
+                                  .updateDraft(updatedDraft);
+                            },
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -726,6 +752,19 @@ class NoteEditorState extends State<NoteEditor> {
                       ) ??
                       false,
                 ),
+                if (isMobilePlatform())
+                  Button.icon(
+                    TakePhoto(
+                      priorityId: thread.priority.id.toString(),
+                      currentLinks: draftNote.actions ?? const [],
+                      onLinksChanged: (actions) {
+                        widget.onDraftChanged!(
+                          thread,
+                          note: draftNote.copyWith(actions: actions),
+                        );
+                      },
+                    ),
+                  ),
               ],
             ),
           ),
@@ -896,6 +935,10 @@ class NoteEditorState extends State<NoteEditor> {
       );
     }
 
-    return ThreadWithNote(thread: thread, note: note);
+    return ThreadWithNote(
+      thread: thread,
+      note: note,
+      assignNote: widget.assignNote,
+    );
   }
 }

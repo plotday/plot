@@ -166,12 +166,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (needed > _agendaLimit) {
       _agendaLimit = needed;
       _agendaHorizonDays += 90;
-      _loadAgenda(triggerSync: false);
+      _loadAgenda(triggerSync: !_agendaSyncNoMore);
     } else if (!state.agendaDoneEnd) {
       // JOIN multiplication: need more raw rows to get enough unique threads
       _agendaLimit += 50;
       _agendaHorizonDays += 90;
-      _loadAgenda(triggerSync: false);
+      _loadAgenda(triggerSync: !_agendaSyncNoMore);
     }
   }
 
@@ -702,9 +702,11 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _agendaLimit = 50;
     _agendaHorizonDays = 90;
+    _agendaSyncNoMore = false;
     _loadAgenda();
 
     _activityFeedLimit = 50;
+    _activityFeedSyncNoMore = false;
     _loadActivityFeed();
   }
 
@@ -735,7 +737,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Creates a fresh draft for the priority afterward.
   /// If note is provided, converts it from draft to published and asynchronously generates a title.
   /// Returns the saved thread.
-  Future<Thread> add(Thread thread, {Note? note}) async {
+  Future<Thread> add(Thread thread, {Note? note, bool assignNote = true}) async {
     // Convert the draft to a non-draft
     final savedThread = thread.copyWith(draft: false);
     await savedThread.save();
@@ -749,8 +751,8 @@ class PriorityBloc extends Cubit<PriorityState> {
         draft: false,
       );
 
-      // If the thread is a task, assign the note to the current user
-      if (savedThread.todo) {
+      // If the thread is a task and note assignment is requested, assign the note to the current user
+      if (savedThread.todo && assignNote) {
         publishedNote = publishedNote.assignTo(Base.actorId);
       }
 
@@ -847,7 +849,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
       final suppressRebuild = suppressReorder || suppressOptimistic;
 
-      log.info(
+      log.fine(
         '[_loadAgenda] stream fired: suppress=$suppressRebuild '
         '(reorder=$suppressReorder optimistic=$suppressOptimistic) '
         'reorderAge=${_reorderTimestamp != null ? now.difference(_reorderTimestamp!).inMilliseconds : "null"}ms '
@@ -864,7 +866,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           // If switching priorities, update context atomically with new agenda
           context: state.targetPriority,
           agendaItems: agendaItems,
-          agendaDoneEnd: false,
+          agendaDoneEnd: rawRowCount < _agendaLimit && _agendaSyncNoMore,
           // Keep reorderViewItems during suppress, clear when real data arrives
           reorderViewItems: suppressRebuild
               ? const Value.absent()
@@ -877,10 +879,24 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     });
 
-    // Trigger sync
     if (triggerSync) {
-      Thread.pullAgenda(priorityToLoad.id, priorityToLoad.path, archived: state.showArchived == true);
+      _triggerAgendaSync(priorityToLoad);
     }
+  }
+
+  Future<void> _triggerAgendaSync(Priority priorityToLoad) async {
+    final archived = state.showArchived == true;
+    await Thread.pullAgenda(
+      priorityToLoad.id, priorityToLoad.path,
+      archived: archived,
+    );
+    final path = priorityToLoad.path.value;
+    final suffix = archived ? '_archived' : '';
+    final entityName = 'agenda:$path$suffix';
+    final syncState = await (Store.get.select(Store.get.syncStates)
+      ..where((row) => row.entity.equals(entityName)))
+      .getSingleOrNull();
+    _agendaSyncNoMore = syncState?.noMore == true;
   }
 
   void _loadActivityFeed({bool triggerSync = true}) {
@@ -911,25 +927,39 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
       emit(state.copyWith(
         activityFeedItems: items,
-        activityFeedDoneEnd: rawRowCount < _activityFeedLimit,
+        activityFeedDoneEnd: rawRowCount < _activityFeedLimit && _activityFeedSyncNoMore,
       ));
     });
 
-    // Trigger sync
     if (triggerSync) {
-      Thread.pullActivityFeed(priorityToLoad.id, priorityToLoad.path, archived: state.showArchived == true);
+      _triggerActivityFeedSync(priorityToLoad);
     }
+  }
+
+  Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
+    final archived = state.showArchived == true;
+    await Thread.pullActivityFeed(
+      priorityToLoad.id, priorityToLoad.path,
+      archived: archived,
+    );
+    final path = priorityToLoad.path.value;
+    final suffix = archived ? '_archived' : '';
+    final entityName = 'activity-feed:$path$suffix';
+    final syncState = await (Store.get.select(Store.get.syncStates)
+      ..where((row) => row.entity.equals(entityName)))
+      .getSingleOrNull();
+    _activityFeedSyncNoMore = syncState?.noMore == true;
   }
 
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
     final needed = first + count;
     if (needed > _activityFeedLimit) {
       _activityFeedLimit = needed;
-      _loadActivityFeed(triggerSync: false);
+      _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore);
     } else if (!state.activityFeedDoneEnd) {
       // JOIN multiplication: need more raw rows to get enough unique threads
       _activityFeedLimit += 50;
-      _loadActivityFeed(triggerSync: false);
+      _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore);
     }
   }
 
@@ -941,6 +971,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   int _agendaLimit = 50;
   int _agendaHorizonDays = 90;
   int _activityFeedLimit = 50;
+  bool _agendaSyncNoMore = false;
+  bool _activityFeedSyncNoMore = false;
 }
 
 /// Provides the [ThreadListSource] to descendant widgets so that
