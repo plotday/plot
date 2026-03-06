@@ -1237,6 +1237,10 @@ class _PriorityPageState extends State<PriorityPage> {
       scrollStorageKey: scrollStorageKey,
       count: listItems.length,
       doneEnd: doneEnd,
+      itemKey: (index) {
+        if (index < 0 || index >= listItems.length) return 'empty_$index';
+        return listItems[index].stableKey;
+      },
       nonReorderablePrefixCount:
           enableReorder &&
               listItems.isNotEmpty &&
@@ -1255,17 +1259,7 @@ class _PriorityPageState extends State<PriorityPage> {
 
         return Column(
           mainAxisSize: MainAxisSize.min,
-          key: ValueKey(
-            current.when(
-              header: (h) => h.date != null
-                  ? 'header_date_${h.date}'
-                  : h.dateTimeRange != null
-                  ? 'header_event_${h.dateTimeRange}'
-                  : 'header_other',
-              activity: (a) =>
-                  'activity_${a.thread.id}${a.thread.occurrence != null ? '_${a.thread.occurrence}' : ''}${a.thread.isLinkScheduleInstance ? '_link' : ''}',
-            ),
-          ),
+          key: ValueKey(current.stableKey),
           children: [
             ...current.when(
               header: (header) {

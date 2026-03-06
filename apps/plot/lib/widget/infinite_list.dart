@@ -279,6 +279,12 @@ class InfiniteList extends StatefulWidget {
   /// Called for index 0..count-1.
   final Widget Function(BuildContext context, int index)? separatorBuilder;
 
+  /// Returns a stable identity key for the item at [index].
+  /// When provided, enables anchor-based scroll correction: if items are
+  /// added/removed above the viewport, the scroll offset is adjusted so the
+  /// first visible item stays in place.
+  final String Function(int index)? itemKey;
+
   InfiniteList({
     required this.builder,
     required this.count,
@@ -292,6 +298,7 @@ class InfiniteList extends StatefulWidget {
     this.onReorder,
     this.nonReorderablePrefixCount = 0,
     this.separatorBuilder,
+    this.itemKey,
     InfiniteListController? controller,
     super.key,
   }) : doneEnd = doneEnd ?? fetcher == null,
@@ -307,6 +314,10 @@ class InfiniteListState extends State<InfiniteList> {
   late final ScrollController _scrollController;
 
   bool _fetching = false;
+
+  /// Snapshot of (index -> key) for visible items, used for anchor correction.
+  Map<int, String> _visibleKeySnapshot = {};
+  int _lastSnapshotCount = 0;
 
   (int, int) estimateVisibleIndexes() {
     if (!_scrollController.hasClients ||
@@ -396,6 +407,7 @@ class InfiniteListState extends State<InfiniteList> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.controller.clamp(0, widget.count - 1);
       _loadIfNecessary();
+      _updateKeySnapshot();
     });
   }
 
@@ -415,6 +427,17 @@ class InfiniteListState extends State<InfiniteList> {
         '[InfiniteList.didUpdateWidget] count=${oldWidget.count}->${widget.count}',
       );
     }
+
+    // Anchor-based scroll correction: if items changed and we have a key
+    // function, find the first visible item in the new list and adjust offset.
+    if (widget.itemKey != null &&
+        oldWidget.count != widget.count &&
+        _scrollController.hasClients &&
+        _scrollController.offset > 0 &&
+        _visibleKeySnapshot.isNotEmpty) {
+      _correctScrollForAnchor();
+    }
+
     if (oldWidget.count == widget.count &&
         oldWidget.doneEnd == widget.doneEnd) {
       return;
@@ -423,7 +446,61 @@ class InfiniteListState extends State<InfiniteList> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.controller.clamp(0, widget.count - 1);
       _loadIfNecessary();
+      _updateKeySnapshot();
     });
+  }
+
+  /// Adjusts scroll offset so the first visible item stays in place after
+  /// items are added/removed above.
+  void _correctScrollForAnchor() {
+    // Find anchor: try each visible item from the snapshot
+    final sortedEntries = _visibleKeySnapshot.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    for (final entry in sortedEntries) {
+      final oldIndex = entry.key;
+      final anchorKey = entry.value;
+
+      // Search for this key in the new item list
+      int? newIndex;
+      for (var i = 0; i < widget.count; i++) {
+        if (widget.itemKey!(i) == anchorKey) {
+          newIndex = i;
+          break;
+        }
+      }
+
+      if (newIndex != null && newIndex != oldIndex) {
+        final indexDelta = newIndex - oldIndex;
+        // Use offset/firstVisibleIndex for the average: this excludes
+        // non-item slivers (e.g. the loading spinner) that inflate extentTotal.
+        final averageItemExtent = oldIndex > 0
+            ? _scrollController.offset / oldIndex
+            : _scrollController.position.extentTotal / _lastSnapshotCount;
+        final correction = indexDelta * averageItemExtent;
+        final newOffset = (_scrollController.offset + correction)
+            .clamp(0.0, _scrollController.position.maxScrollExtent + correction);
+        log.info(
+          '[InfiniteList] anchor correction: key=$anchorKey '
+          'oldIndex=$oldIndex newIndex=$newIndex delta=$indexDelta '
+          'correction=$correction',
+        );
+        _scrollController.jumpTo(newOffset);
+        break;
+      }
+    }
+  }
+
+  /// Updates the visible key snapshot for anchor correction.
+  void _updateKeySnapshot() {
+    if (widget.itemKey == null || !_scrollController.hasClients) return;
+    final (first, last) = estimateVisibleIndexes();
+    final snapshot = <int, String>{};
+    for (var i = first; i <= last && i < widget.count; i++) {
+      snapshot[i] = widget.itemKey!(i);
+    }
+    _visibleKeySnapshot = snapshot;
+    _lastSnapshotCount = widget.count;
   }
 
   /// The number of items at the start rendered in a separate non-reorderable
@@ -561,6 +638,7 @@ class InfiniteListState extends State<InfiniteList> {
       onNotification: (ScrollNotification notification) {
         if (notification is ScrollUpdateNotification) {
           _loadIfNecessary();
+          _updateKeySnapshot();
         }
         return false;
       },

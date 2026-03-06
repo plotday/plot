@@ -1056,6 +1056,18 @@ sealed class AgendaItem {
       AgendaThreadItem a => activity(a),
     };
   }
+
+  /// Stable identity key for this item, used for scroll anchor correction
+  /// and widget keys.
+  String get stableKey => when(
+    header: (h) => h.date != null
+        ? 'header_date_${h.date}'
+        : h.dateTimeRange != null
+        ? 'header_event_${h.dateTimeRange}'
+        : 'header_other',
+    activity: (a) =>
+        'activity_${a.thread.id}${a.thread.occurrence != null ? '_${a.thread.occurrence}' : ''}${a.thread.isLinkScheduleInstance ? '_link' : ''}',
+  );
 }
 
 class AgendaHeaderItem extends AgendaItem {
