@@ -2214,6 +2214,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       tags: _tags,
       priority: priority ?? this.priority,
       notes: notes.present ? notes.value : _notes,
+      isLinkScheduleInstance: isLinkScheduleInstance,
     );
   }
 
