@@ -10,6 +10,7 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/util/hooks.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ThreadWidget extends StatelessWidget {
   const ThreadWidget({
@@ -98,16 +99,16 @@ class ThreadWidget extends StatelessWidget {
     // by the same amount, keeping them vertically centred with the title.
     final labelOffset = hasTopLabel
         ? (TextPainter(
-                text: TextSpan(
-                  text: 'A',
-                  style: TextStyle(
-                    fontSize: buildContext.theme.typography.xs.fontSize,
-                    height: 1,
-                  ),
-                ),
-                maxLines: 1,
-                textDirection: TextDirection.ltr,
-              )..layout()).height
+            text: TextSpan(
+              text: 'A',
+              style: TextStyle(
+                fontSize: buildContext.theme.typography.xs.fontSize,
+                height: 1,
+              ),
+            ),
+            maxLines: 1,
+            textDirection: TextDirection.ltr,
+          )..layout()).height
         : 0.0;
 
     final threadColor = buildContext.colour.colours.fromTheme(
@@ -126,7 +127,6 @@ class ThreadWidget extends StatelessWidget {
       highlightColor: buildContext.colour.editableBackground,
       selectedColor: selectedBg,
       leadingBuilder: (isHovered, hasFocus) {
-
         final Command leadingCommand;
         final bool isTodo = activity.todo;
 
@@ -205,7 +205,8 @@ class ThreadWidget extends StatelessWidget {
               if (hasTopLabel)
                 DefaultTextStyle(
                   style: TextStyle(
-                    color: headerFg ?? buildContext.theme.colors.mutedForeground,
+                    color:
+                        headerFg ?? buildContext.theme.colors.mutedForeground,
                     fontSize: buildContext.theme.typography.xs.fontSize,
                     height: 1,
                   ),
@@ -222,7 +223,9 @@ class ThreadWidget extends StatelessWidget {
                       // For timed events, center time+duration across full tile width
                       if (isTimedEvent) {
                         final leadingIndent =
-                            context.theme.iconSizes.base + 7.5 + context.theme.spacing.sm;
+                            context.theme.iconSizes.base +
+                            7.5 +
+                            context.theme.spacing.sm;
                         final labelHeight = (TextPainter(
                           text: TextSpan(
                             text: 'A',
@@ -250,30 +253,32 @@ class ThreadWidget extends StatelessWidget {
                                         .formatShort(context);
                                     final hasDuration =
                                         activity.at!.duration != null &&
-                                            activity.at!.duration!.inSeconds >
-                                                0;
+                                        activity.at!.duration!.inSeconds > 0;
                                     // [Expanded: digits right] [gap] [Expanded: am/pm left + duration right]
                                     final veryMuted =
                                         context.theme.plotColors.veryMuted;
                                     final spaceWidth = (TextPainter(
                                       text: TextSpan(
                                         text: ' ',
-                                        style: DefaultTextStyle.of(context)
-                                            .style,
+                                        style: DefaultTextStyle.of(
+                                          context,
+                                        ).style,
                                       ),
                                       maxLines: 1,
                                       textDirection: TextDirection.ltr,
                                     )..layout()).width;
-                                    final amPmMatch =
-                                        RegExp(r'[ap]m$').firstMatch(timeStr);
+                                    final amPmMatch = RegExp(
+                                      r'[ap]m$',
+                                    ).firstMatch(timeStr);
                                     final String leftText;
                                     final String? rightText;
                                     if (amPmMatch != null) {
                                       leftText = timeStr
                                           .substring(0, amPmMatch.start)
                                           .trimRight();
-                                      rightText =
-                                          timeStr.substring(amPmMatch.start);
+                                      rightText = timeStr.substring(
+                                        amPmMatch.start,
+                                      );
                                     } else {
                                       leftText = timeStr;
                                       rightText = null;
@@ -297,6 +302,14 @@ class ThreadWidget extends StatelessWidget {
                                                   style: timingColor,
                                                 ),
                                               const Spacer(),
+                                              if (activity.hasOtherAttendees)
+                                                _RsvpSummary(
+                                                  activity: activity,
+                                                  color: veryMuted,
+                                                ),
+                                              if (activity.hasOtherAttendees &&
+                                                  hasDuration)
+                                                const SizedBox(width: 4),
                                               if (hasDuration)
                                                 Text(
                                                   activity.at!.duration!
@@ -321,7 +334,8 @@ class ThreadWidget extends StatelessWidget {
                                     priority: activity.priority,
                                     context: this.context,
                                     color: headerFg,
-                                    fontSize: context.theme.typography.xs.fontSize,
+                                    fontSize:
+                                        context.theme.typography.xs.fontSize,
                                     height: 1,
                                     muted: headerFg == null,
                                   ),
@@ -346,8 +360,7 @@ class ThreadWidget extends StatelessWidget {
                                 muted: headerFg == null,
                               ),
                             ),
-                          if (hasBodyLabel && hasScheduleLabel)
-                            Text(' · '),
+                          if (hasBodyLabel && hasScheduleLabel) Text(' · '),
                           if (scheduleDate != null) ...[
                             Text(formatRelativeSchedule(scheduleDate, context)),
                             if (activity.duration != null &&
@@ -462,6 +475,7 @@ class ThreadWidget extends StatelessWidget {
                                   activity: activity,
                                   tagSuggestions: tagSuggestions,
                                   showCommands: isHighlighted,
+                                  showEventTiming: showEventTiming,
                                   setDoneAt: setDoneAt,
                                 ),
                               ),
@@ -483,7 +497,71 @@ class ThreadWidget extends StatelessWidget {
       reorderableIndex: reorderableIndex,
     );
 
-    return listTile;
+    if (!activity.hasOtherAttendees) return listTile;
+
+    return FTooltip(
+      tipBuilder: (context, controller) {
+        final contacts = activity.scheduleContacts;
+        final attending = contacts.where((c) => c.status == 'attend').toList();
+        final declined = contacts.where((c) => c.status == 'skip').toList();
+        final noResponse = contacts
+            .where((c) => c.status != 'attend' && c.status != 'skip')
+            .toList();
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (attending.isNotEmpty) ...[
+              Text(
+                'Attending',
+                style: context.theme.typography.sm.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              ...attending.map(
+                (c) => Text(
+                  c.contactName ?? c.contactEmail ?? 'Unknown',
+                  style: context.theme.typography.sm,
+                ),
+              ),
+            ],
+            if (declined.isNotEmpty) ...[
+              if (attending.isNotEmpty) const SizedBox(height: 4),
+              Text(
+                'Declined',
+                style: context.theme.typography.sm.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              ...declined.map(
+                (c) => Text(
+                  c.contactName ?? c.contactEmail ?? 'Unknown',
+                  style: context.theme.typography.sm,
+                ),
+              ),
+            ],
+            if (noResponse.isNotEmpty) ...[
+              if (attending.isNotEmpty || declined.isNotEmpty)
+                const SizedBox(height: 4),
+              Text(
+                'No response',
+                style: context.theme.typography.sm.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              ...noResponse.map(
+                (c) => Text(
+                  c.contactName ?? c.contactEmail ?? 'Unknown',
+                  style: context.theme.typography.sm,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+      child: listTile,
+    );
   }
 
   @override
@@ -563,6 +641,7 @@ class ThreadCommands extends HookWidget {
     required this.activity,
     this.tagSuggestions = const [],
     this.showCommands = false,
+    this.showEventTiming = false,
     this.setDoneAt = true,
     super.key,
   });
@@ -570,6 +649,7 @@ class ThreadCommands extends HookWidget {
   final Thread activity;
   final List<Tag> tagSuggestions;
   final bool showCommands;
+  final bool showEventTiming;
   final bool setDoneAt;
 
   @override
@@ -583,11 +663,9 @@ class ThreadCommands extends HookWidget {
     // Exclude Tag.todo since it's shown as leading command
     // Exclude Tag.done for done threads since it's shown as leading icon
     final threadTags = useMemoized(
-      () => Tag.getAll(onlyAddable: true)
-          .where(
-            (tag) => activity.hasTag(tag) && tag != Tag.todo,
-          )
-          .toList(),
+      () => Tag.getAll(
+        onlyAddable: true,
+      ).where((tag) => activity.hasTag(tag) && tag != Tag.todo).toList(),
       [activity.tags, activity.todo, activity.done],
     );
 
@@ -642,8 +720,25 @@ class ThreadCommands extends HookWidget {
             activity,
             skipPrimary: true,
             skipInfrequent: true,
+            showEventTiming: showEventTiming,
           ).map((cmd) => Button.icon(cmd)).toList()
         : <Widget>[];
+
+    // Conferencing buttons (visible when showing event timing)
+    final linksSnapshot = useStream<List<Link>>(
+      useMemoized(() => Link.watchForThread(activity.id), [activity.id]),
+    );
+    final conferencingActions = showEventTiming
+        ? (linksSnapshot.data ?? [])
+              .expand((link) => link.actions ?? <UserAction>[])
+              .whereType<ConferencingUserAction>()
+              .toList()
+        : <ConferencingUserAction>[];
+
+    // RSVP button (always visible for multi-attendee events)
+    final rsvpButton = showEventTiming && activity.hasOtherAttendees
+        ? Button.icon(ToggleRsvp(activity))
+        : null;
 
     final tagSuggestionButtons = showCommands
         ? topThreadTags(
@@ -716,8 +811,72 @@ class ThreadCommands extends HookWidget {
           allButtons = loadedTagButtons;
         }
 
-        return Row(mainAxisSize: MainAxisSize.min, children: allButtons);
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ...allButtons,
+            for (final action in conferencingActions)
+              _ConferencingIconButton(action: action),
+            if (rsvpButton != null) rsvpButton,
+          ],
+        );
       },
+    );
+  }
+}
+
+class _ConferencingIconButton extends StatelessWidget {
+  const _ConferencingIconButton({required this.action});
+
+  final ConferencingUserAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final tooltip = switch (action.provider) {
+      ConferencingProvider.googleMeet => 'Join Google Meet',
+      ConferencingProvider.zoom => 'Join on Zoom',
+      ConferencingProvider.microsoftTeams => 'Join on Teams',
+      ConferencingProvider.webex => 'Join Webex',
+      ConferencingProvider.other => 'Join Meeting',
+    };
+
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(tooltip),
+      child: FButton.icon(
+        style: FButtonStyle.ghost(),
+        onPress: () {
+          try {
+            launchUrl(
+              Uri.parse(action.url),
+              mode: LaunchMode.externalApplication,
+            );
+          } catch (_) {}
+        },
+        child: Icon(PlotIcon.video, size: context.theme.iconSizes.base),
+      ),
+    );
+  }
+}
+
+class _RsvpSummary extends StatelessWidget {
+  const _RsvpSummary({required this.activity, required this.color});
+
+  final Thread activity;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final counts = activity.rsvpCounts;
+    final style = TextStyle(color: color);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      spacing: 4,
+      children: [
+        if (counts.attend > 0) Text('${counts.attend}✓', style: style),
+        if (counts.skip > 0) Text('${counts.skip}✗', style: style),
+        if (counts.undecided > 0) Text('${counts.undecided}?', style: style),
+      ],
     );
   }
 }

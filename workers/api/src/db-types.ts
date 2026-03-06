@@ -240,6 +240,7 @@ export interface Link {
   created_by: string | null;
   embedding: string | null;
   id: Generated<string>;
+  logo: string | null;
   /**
    * The PickPriorityConfig used to automatically select this link's priority. Null if priority was explicitly specified. Used when moving links to find similar links to move.
    */
@@ -289,6 +290,7 @@ export interface LinkX {
   created_by: string | null;
   embedding: string | null;
   id: string | null;
+  logo: string | null;
   match: Json | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
@@ -653,6 +655,20 @@ export interface PriorityTwistNoteUpdate {
   updated_by: number | null;
 }
 
+export interface PriorityTwistScheduleContact {
+  archived_at: Timestamp | null;
+  contact_id: string | null;
+  link_id: string | null;
+  priority_id: string | null;
+  priority_twist_id: string | null;
+  role: string | null;
+  schedule_contact_id: Int8 | null;
+  schedule_id: string | null;
+  status: string | null;
+  thread_id: string | null;
+  updated_at: Timestamp | null;
+}
+
 export interface PriorityTwistSync {
   entity: string;
   last_sync_at: Generated<Timestamp>;
@@ -957,6 +973,7 @@ export interface UserLink {
   created_at: Timestamp | null;
   created_by: string | null;
   id: string | null;
+  logo: string | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
   preview: string | null;
@@ -1199,6 +1216,7 @@ export interface DB {
   priority_twist_link_update: PriorityTwistLinkUpdate;
   priority_twist_note_create: PriorityTwistNoteCreate;
   priority_twist_note_update: PriorityTwistNoteUpdate;
+  priority_twist_schedule_contact: PriorityTwistScheduleContact;
   priority_twist_sync: PriorityTwistSync;
   priority_twist_thread_read: PriorityTwistThreadRead;
   priority_twist_thread_schedule: PriorityTwistThreadSchedule;

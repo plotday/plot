@@ -94,3 +94,9 @@ export type ThreadReadChange = Database["public"]["Views"]["priority_twist_threa
  * Used for dispatching onThreadToDo callbacks to sources.
  */
 export type ThreadScheduleChange = Database["public"]["Views"]["priority_twist_thread_schedule"]["Row"];
+
+/**
+ * Schedule contact change from priority_twist_schedule_contact view.
+ * Used for dispatching onScheduleContactUpdated callbacks to sources.
+ */
+export type ScheduleContactChange = Database["public"]["Views"]["priority_twist_schedule_contact"]["Row"];

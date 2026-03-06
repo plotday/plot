@@ -1,4 +1,4 @@
-h1:kHzfuAefwezlbTHLbV9nF1yEEHAwkVxUIyvsXs73RU8=
+h1:qcbJJrH1xnhsbta6dXT2M/Nn1vN+2h3OzzJIvTZs2Wo=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -61,3 +61,6 @@ h1:kHzfuAefwezlbTHLbV9nF1yEEHAwkVxUIyvsXs73RU8=
 20260305165012_add_link_logo_column.sql h1:AdpGReaoa70TqKlGP5d7JEWrCSLS+oUQ+YiRQM9j2VY=
 20260306010329_verify_sync.sql h1:Bh1QJw0MQ71mmXY6rR7SLo/1AVOhtLJw0Pt973ADdV4=
 20260306193750_verify_sync.sql h1:QjtOAe7TRR8vnLay66V9Bg4efIxGtKGld+aMxehzUGo=
+20260306220623_add_update_schedule_contact_status.sql h1:qdqGgd3qZPgWR8UuTdoW3R4ENZBlzH4YYJ95/vBDGaM=
+20260306221224_add_schedule_contact_view.sql h1:KT/PkX6hAYjt1wMUZnkUyTy1hfw51t8BUhq/MwPM2Rc=
+20260306222556_add_role_archived_to_schedule_contact_view.sql h1:jM/uHi5mewxlSIRFOW4QnTC85Af4+3TbUzdZkjGXXF8=

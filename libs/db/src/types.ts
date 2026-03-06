@@ -2794,6 +2794,119 @@ export type Database = {
           },
         ]
       }
+      priority_twist_schedule_contact: {
+        Row: {
+          archived_at: string | null
+          contact_id: string | null
+          link_id: string | null
+          priority_id: string | null
+          priority_twist_id: string | null
+          role: string | null
+          schedule_contact_id: number | null
+          schedule_id: string | null
+          status: string | null
+          thread_id: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_contact_contact_id_fkey"
+            columns: ["contact_id"]
+            referencedRelation: "contact"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_contact_schedule_id_fkey"
+            columns: ["schedule_id"]
+            referencedRelation: "priority_twist_thread_schedule"
+            referencedColumns: ["schedule_id"]
+          },
+          {
+            foreignKeyName: "schedule_contact_schedule_id_fkey"
+            columns: ["schedule_id"]
+            referencedRelation: "schedule"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "link"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "link_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "priority_twist_channel_link_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "priority_twist_channel_link_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "priority_twist_channel_note_create"
+            referencedColumns: ["link_id"]
+          },
+          {
+            foreignKeyName: "schedule_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "priority_twist_link_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "priority_twist_thread_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+        ]
+      }
       priority_twist_thread_read: {
         Row: {
           priority_id: string | null
@@ -3560,6 +3673,10 @@ export type Database = {
           p_tag_updates: Json
           user_id: string
         }
+        Returns: undefined
+      }
+      update_schedule_contact_status: {
+        Args: { p_schedule_id: string; p_status: string; user_id: string }
         Returns: undefined
       }
       update_thread_tags: {

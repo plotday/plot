@@ -308,7 +308,11 @@ class _AgendaHeaderState extends State<AgendaHeader> {
               padding: EdgeInsets.symmetric(horizontal: spacing),
               child: Text(
                 dateCenterRight!,
-                style: TextStyle(color: textColor, fontSize: dateFontSize),
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: dateFontSize,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             Expanded(

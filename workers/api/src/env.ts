@@ -18,6 +18,7 @@ import type {
   ThreadUpdate,
   ThreadReadChange,
   ThreadScheduleChange,
+  ScheduleContactChange,
   ChannelLinkCreate,
   ChannelLinkUpdate,
   ChannelNoteCreate,
@@ -87,6 +88,8 @@ export type TwistBatchMessage = {
   threadReads: ThreadReadChange[];
   // Thread schedule changes for threads this twist created (for onThreadToDo callback)
   threadSchedules: ThreadScheduleChange[];
+  // Schedule contact changes for link schedules created by this twist (for onScheduleContactUpdated callback)
+  scheduleContacts: ScheduleContactChange[];
   // Priority twist config changes
   priorityTwist: any | null;
 };

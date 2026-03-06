@@ -579,6 +579,12 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
                         const SizedBox(width: 8),
                         _LinkStatusBadge(link: link),
                       ],
+                      if (link.actions != null)
+                        for (final action in link.actions!
+                            .whereType<ConferencingUserAction>()) ...[
+                          const SizedBox(width: 8),
+                          _ConferencingButton(action: action),
+                        ],
                       if (_hasMenuActions) ...[
                         const SizedBox(width: 8),
                         _ThreadLinkMenu(
@@ -600,7 +606,9 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
   /// Show menu button if there are link actions or thread is an event.
   bool get _hasMenuActions {
     if (widget.thread.at != null) return true;
-    final actions = widget.link.actions;
+    final actions = widget.link.actions
+        ?.where((a) => a.type != UserActionType.conferencing)
+        .toList();
     if (actions == null || actions.isEmpty) return false;
     if (actions.length > 1) return true;
     // Single action that is not external
@@ -697,6 +705,49 @@ class _LinkStatusBadge extends StatelessWidget {
   }
 }
 
+/// Icon button that launches a conferencing URL (Google Meet, Zoom, etc.).
+class _ConferencingButton extends StatelessWidget {
+  const _ConferencingButton({required this.action});
+
+  final ConferencingUserAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final tooltip = switch (action.provider) {
+      ConferencingProvider.googleMeet => 'Join Google Meet',
+      ConferencingProvider.zoom => 'Join on Zoom',
+      ConferencingProvider.microsoftTeams => 'Join on Teams',
+      ConferencingProvider.webex => 'Join Webex',
+      ConferencingProvider.other => 'Join Meeting',
+    };
+
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(tooltip),
+      child: GestureDetector(
+        onTap: () {
+          try {
+            launchUrl(
+              Uri.parse(action.url),
+              mode: LaunchMode.externalApplication,
+            );
+          } catch (_) {}
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Icon(
+              PlotIcon.video,
+              size: 14,
+              color: context.theme.colors.foreground.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// "..." menu button for link row actions.
 class _ThreadLinkMenu extends StatefulWidget {
   const _ThreadLinkMenu({required this.link, required this.thread});
@@ -781,7 +832,9 @@ class _ThreadLinkMenuState extends State<_ThreadLinkMenu> {
         },
       ));
     }
-    final actions = widget.link.actions ?? [];
+    final actions = (widget.link.actions ?? [])
+        .where((a) => a.type != UserActionType.conferencing)
+        .toList();
     items.addAll(actions.map((action) {
       switch (action.type) {
         case UserActionType.external:

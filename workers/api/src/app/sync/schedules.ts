@@ -4,6 +4,7 @@ import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
+import { notifySync } from "./notify";
 
 const schedules = new Hono<{ Bindings: Bindings }>();
 
@@ -103,6 +104,56 @@ schedules.post("/sync/schedules", async (c) => {
   });
 
   return c.json(result as any);
+});
+
+// POST /sync/schedule/status - Update current user's RSVP status on a schedule
+schedules.post("/sync/schedule/status", async (c) => {
+  const body = await c.req.json();
+  const { schedule_id, status } = body;
+
+  if (!schedule_id) {
+    return c.json({ error: "schedule_id is required" }, 400);
+  }
+
+  await withUserDb(c.var.db, c.var.user.id, async (trx) => {
+    await rpcUser(trx, "update_schedule_contact_status", {
+      user_id: c.var.user.id,
+      p_schedule_id: schedule_id,
+      p_status: status ?? null,
+    });
+  });
+
+  // Look up the priority_id for the schedule to trigger source notification
+  const schedule = await c.var.db
+    .selectFrom("schedule")
+    .select(["thread_id", "link_id"])
+    .where("id", "=", schedule_id)
+    .executeTakeFirst();
+
+  if (schedule) {
+    let priorityId: string | null = null;
+    if (schedule.thread_id) {
+      const thread = await c.var.db
+        .selectFrom("thread")
+        .select("priority_id")
+        .where("id", "=", schedule.thread_id)
+        .executeTakeFirst();
+      priorityId = thread?.priority_id ?? null;
+    } else if (schedule.link_id) {
+      const link = await c.var.db
+        .selectFrom("link")
+        .innerJoin("thread", "thread.id", "link.thread_id")
+        .select("thread.priority_id")
+        .where("link.id", "=", schedule.link_id)
+        .executeTakeFirst();
+      priorityId = link?.priority_id ?? null;
+    }
+    if (priorityId) {
+      notifySync(c, priorityId);
+    }
+  }
+
+  return c.json({ ok: true });
 });
 
 export default schedules;

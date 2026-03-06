@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
@@ -444,6 +445,43 @@ class ArchiveThread extends Command {
       // Archive: set archivedAt to current time
       await thread.delete();
     }
+    return const CommandDone();
+  }
+}
+
+class ToggleRsvp extends _UpdateThreadCommand {
+  ToggleRsvp(super.thread)
+    : _targetStatus = thread.currentUserRsvp == 'attend' ? 'skip' : 'attend',
+      super(
+        title: thread.currentUserRsvp == 'attend' ? 'Decline' : 'Attend',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: thread.currentUserRsvp == 'attend'
+            ? PlotIcon.calendarCheck
+            : thread.currentUserRsvp == 'skip'
+            ? PlotIcon.calendarXmark
+            : PlotIcon.calendarPlus,
+        hoverIcon: thread.currentUserRsvp == 'attend'
+            ? PlotIcon.calendarXmark
+            : PlotIcon.calendarCheck,
+      );
+
+  final String _targetStatus;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final updated = thread.withRsvpStatus(_targetStatus);
+    await saveOptimistically(context, updated);
+
+    // Fire-and-forget push to server
+    final scheduleId = thread.scheduleId;
+    if (scheduleId != null) {
+      api.post<dynamic>('/sync/schedule/status', body: {
+        'schedule_id': scheduleId.toString(),
+        'status': _targetStatus,
+      }).catchError((_) {});
+    }
+
     return const CommandDone();
   }
 }
@@ -1380,12 +1418,14 @@ List<Command> threadCommands(
   bool skipInfrequent = false,
   bool skipPrimary = false,
   bool showSplitThread = false,
+  bool showEventTiming = false,
 }) {
   final primary = skipPrimary
       ? null
       : primaryThreadCommand(thread, stateIcon: false);
   // For checks, use the actual primary command (not the nullable primary variable)
   final actualPrimary = primaryThreadCommand(thread, stateIcon: false);
+  final hideArchive = showEventTiming && thread.hasOtherAttendees;
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,
@@ -1396,7 +1436,7 @@ List<Command> threadCommands(
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
     if (!skipInfrequent && !thread.priority.personal)
       ToggleThreadPrivate(thread),
-    ArchiveThread(thread),
+    if (!hideArchive) ArchiveThread(thread),
   ];
 }
 

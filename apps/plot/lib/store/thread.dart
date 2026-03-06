@@ -63,6 +63,44 @@ class Schedules extends Table with SyncableTable, UuidTable {
   TextColumn get currentUserStatus => text().nullable()();
 }
 
+class ScheduleContact {
+  final String contactId;
+  final String? contactEmail;
+  final String? contactName;
+  final String? contactUserId;
+  final String? status;
+  final String? role;
+
+  const ScheduleContact({
+    required this.contactId,
+    this.contactEmail,
+    this.contactName,
+    this.contactUserId,
+    this.status,
+    this.role,
+  });
+
+  factory ScheduleContact.fromJson(Map<String, dynamic> json) {
+    return ScheduleContact(
+      contactId: json['contact_id'] as String,
+      contactEmail: json['contact_email'] as String?,
+      contactName: json['contact_name'] as String?,
+      contactUserId: json['contact_user_id'] as String?,
+      status: json['status'] as String?,
+      role: json['role'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'contact_id': contactId,
+    if (contactEmail != null) 'contact_email': contactEmail,
+    if (contactName != null) 'contact_name': contactName,
+    if (contactUserId != null) 'contact_user_id': contactUserId,
+    if (status != null) 'status': status,
+    if (role != null) 'role': role,
+  };
+}
+
 class RecurrenceRuleConverter extends TypeConverter<RecurrenceRule?, String?>
     with JsonTypeConverter2<RecurrenceRule?, String?, String?> {
   const RecurrenceRuleConverter();
@@ -1880,6 +1918,94 @@ class Thread extends Equatable implements Comparable<Thread> {
   bool get hasLinkSchedule => _schedule?.linkId != null;
 
   String? get occurrence => _schedule?.occurrence;
+  Uuid? get scheduleId => _schedule?.id;
+
+  /// The current user's RSVP status on this schedule ('attend', 'skip', or null).
+  String? get currentUserRsvp => _schedule?.currentUserStatus;
+
+  /// Parsed schedule contacts, excluding archived contacts.
+  List<ScheduleContact> get scheduleContacts {
+    final contactsJson = _schedule?.contacts;
+    if (contactsJson == null || contactsJson.isEmpty) return [];
+    try {
+      final List<dynamic> parsed = jsonDecode(contactsJson) as List<dynamic>;
+      return parsed
+          .map((e) => ScheduleContact.fromJson(e as Map<String, dynamic>))
+          .where((c) => c.status != null || c.role != null) // filter out empty/archived
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Whether this event has other attendees besides the current user.
+  bool get hasOtherAttendees => scheduleContacts.length > 1;
+
+  /// RSVP counts from non-archived contacts.
+  ({int attend, int skip, int undecided}) get rsvpCounts {
+    final contacts = scheduleContacts;
+    int attend = 0, skip = 0, undecided = 0;
+    for (final c in contacts) {
+      switch (c.status) {
+        case 'attend':
+          attend++;
+        case 'skip':
+          skip++;
+        default:
+          undecided++;
+      }
+    }
+    return (attend: attend, skip: skip, undecided: undecided);
+  }
+
+  /// Returns a new Thread with the RSVP status updated for the current user.
+  Thread withRsvpStatus(String? newStatus) {
+    final schedule = _schedule;
+    if (schedule == null) return this;
+
+    // Parse existing contacts
+    List<Map<String, dynamic>> contacts;
+    try {
+      contacts = (jsonDecode(schedule.contacts ?? '[]') as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+    } catch (_) {
+      contacts = [];
+    }
+
+    // Find current user's entry and update status
+    final userId = Base.userId.toString();
+    bool found = false;
+    for (int i = 0; i < contacts.length; i++) {
+      if (contacts[i]['contact_user_id'] == userId) {
+        contacts[i] = {...contacts[i], 'status': newStatus};
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      // Add a new entry for the current user
+      contacts.add({
+        'contact_id': Base.actorId.toString(),
+        'contact_user_id': userId,
+        'status': newStatus,
+      });
+    }
+
+    final updatedSchedule = schedule.copyWith(
+      contacts: Value(jsonEncode(contacts)),
+      currentUserStatus: Value(newStatus),
+    );
+
+    return Thread._fromStore(
+      activity: _thread,
+      schedule: updatedSchedule,
+      userSchedule: _userSchedule,
+      tags: _tags,
+      priority: priority,
+      notes: _notes,
+      isLinkScheduleInstance: isLinkScheduleInstance,
+    );
+  }
 
   static const separator = ' › ';
 

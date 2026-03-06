@@ -47,6 +47,7 @@ import type {
   ChannelNoteCreate,
   ThreadReadChange,
   ThreadScheduleChange,
+  ScheduleContactChange,
 } from "../../view-types";
 import { AI } from "../ai";
 import { Tool } from "../tool";
@@ -130,6 +131,11 @@ export type DispatchItem =
   | {
       itemType: "thread_schedule";
       item: ThreadScheduleChange;
+      syncDepth?: number;
+    }
+  | {
+      itemType: "schedule_contact";
+      item: ScheduleContactChange;
       syncDepth?: number;
     };
 
@@ -629,6 +635,37 @@ export class Plot extends Tool implements IPlot {
             callbacks.push({
               sourceMethod: "onThreadToDo",
               args: [thread, actors[0], todo, { date }],
+            });
+          }
+        }
+      }
+    }
+
+    // Handle schedule contact changes (for onScheduleContactUpdated callback)
+    // Only fires for non-archived contacts (status changes).
+    // Future: archived_at changes can drive onScheduleContactRemoved/onScheduleContactAdded callbacks.
+    if (dispatchItem.itemType === "schedule_contact") {
+      const { item } = dispatchItem;
+      if (this.plotOptions?.thread?.access && !item.archived_at) {
+        const thread = await this.getThread({ id: item.thread_id as Uuid });
+        if (thread) {
+          const actors = await contactsOps.getActors(this, [item.contact_id as ActorId]);
+          if (actors.length > 0) {
+            // Populate thread.meta from link row
+            const link = await this.db
+              .selectFrom("link")
+              .select(["meta", "channel_id", "source"])
+              .where("thread_id", "=", item.thread_id!)
+              .where("created_by", "=", this.priorityTwistId)
+              .executeTakeFirst();
+            thread.meta = {
+              ...(link?.meta as Record<string, unknown> ?? {}),
+              channelId: link?.channel_id ?? null,
+              linkSource: link?.source ?? null,
+            };
+            callbacks.push({
+              sourceMethod: "onScheduleContactUpdated",
+              args: [thread, item.schedule_id, item.contact_id as ActorId, item.status ?? null, actors[0]],
             });
           }
         }

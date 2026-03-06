@@ -511,6 +511,29 @@ async function processTwistBatch(
       }
     }
 
+    // Process schedule contact changes (for onScheduleContactUpdated callback)
+    for (const scheduleContact of batchData.scheduleContacts ?? []) {
+      if (!scheduleContact.schedule_id) continue;
+
+      try {
+        await twistWrapper.dispatch("Plot", {
+          itemType: "schedule_contact" as const,
+          item: scheduleContact,
+        });
+      } catch (error) {
+        logger.error("Error processing schedule contact", error as Error, {
+          schedule_id: scheduleContact.schedule_id,
+          contact_id: scheduleContact.contact_id ?? undefined,
+        });
+        postHog.captureException(error as Error, undefined, {
+          twist_id: String(twistId),
+          priority_twist_id: priorityTwistId,
+          schedule_id: scheduleContact.schedule_id,
+          queue,
+        });
+      }
+    }
+
     // Process thread schedule changes (for onThreadToDo callback)
     for (const threadSchedule of threadSchedules ?? []) {
       if (!threadSchedule.thread_id) continue;
@@ -575,6 +598,7 @@ async function processTwistBatch(
       channel_new_note_count: channelNewNotes.length,
       thread_read_count: threadReads.length,
       thread_schedule_count: threadSchedules?.length ?? 0,
+      schedule_contact_count: batchData.scheduleContacts?.length ?? 0,
       has_priority_twist_update: !!priorityTwist,
     });
   } catch (error) {

@@ -116,4 +116,7 @@ class PlotIcon {
   static const attend = FontAwesomeIcons.userCheck;
   static const skip = FontAwesomeIcons.userXmark;
   static const undecided = FontAwesomeIcons.userQuestion;
+
+  // Conferencing
+  static const video = FontAwesomeIcons.video;
 }

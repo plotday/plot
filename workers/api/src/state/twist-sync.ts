@@ -223,6 +223,7 @@ export class TwistSync extends DurableObject<Bindings> {
         "priority_twist_channel_note_create",
         "priority_twist_thread_read",
         "priority_twist_thread_schedule",
+        "priority_twist_schedule_contact",
       ] as const;
 
       const results = await Promise.allSettled([
@@ -319,6 +320,17 @@ export class TwistSync extends DurableObject<Bindings> {
           .orderBy("updated_at", "asc")
           .limit(100)
           .execute(),
+
+        // Query schedule contact changes (for onScheduleContactUpdated callback)
+        db
+          .selectFrom("priority_twist_schedule_contact")
+          .selectAll()
+          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
+          .where("priority_twist_id", "=", priorityTwistId)
+          .where("updated_at", ">", getSyncAtExpr("schedule_contact", "update"))
+          .orderBy("updated_at", "asc")
+          .limit(100)
+          .execute(),
       ]);
 
       // Extract successful results, defaulting to [] for failures
@@ -345,6 +357,7 @@ export class TwistSync extends DurableObject<Bindings> {
       const channelNewNotes = extractResult(results[5], 5);
       const threadReads = extractResult(results[6], 6);
       const threadSchedules = extractResult(results[7], 7);
+      const scheduleContacts = extractResult(results[8], 8);
 
       // Extract max timestamps as PG-precision text strings from window functions
       // null if no items were returned for that query
@@ -364,6 +377,8 @@ export class TwistSync extends DurableObject<Bindings> {
         threadReads.length > 0 ? (threadReads[0] as any)._max_ts : null;
       const threadScheduleUpdateMaxTs: string | null =
         threadSchedules.length > 0 ? (threadSchedules[0] as any)._max_ts : null;
+      const scheduleContactUpdateMaxTs: string | null =
+        scheduleContacts.length > 0 ? (scheduleContacts[0] as any)._max_ts : null;
 
       // Get the latest update timestamp from sync info as text for tag change upper bound
       // PG text representation (YYYY-MM-DD HH:MI:SS.ffffff+TZ) is lexicographically sortable
@@ -427,6 +442,7 @@ export class TwistSync extends DurableObject<Bindings> {
       const cleanChannelNewNotes = stripMaxTs(channelNewNotes);
       const cleanThreadReads = stripMaxTs(threadReads);
       const cleanThreadSchedules = stripMaxTs(threadSchedules);
+      const cleanScheduleContacts = stripMaxTs(scheduleContacts);
 
       // Build size-aware batches to stay under Cloudflare's 128KB queue message limit.
       // Items are added sequentially (all newNotes, then updatedNotes, then newActivities,
@@ -440,7 +456,8 @@ export class TwistSync extends DurableObject<Bindings> {
         | { array: "channelUpdatedLinks"; item: (typeof cleanChannelUpdatedLinks)[number]; size: number }
         | { array: "channelNewNotes"; item: (typeof cleanChannelNewNotes)[number]; size: number }
         | { array: "threadReads"; item: (typeof cleanThreadReads)[number]; size: number }
-        | { array: "threadSchedules"; item: (typeof cleanThreadSchedules)[number]; size: number };
+        | { array: "threadSchedules"; item: (typeof cleanThreadSchedules)[number]; size: number }
+        | { array: "scheduleContacts"; item: (typeof cleanScheduleContacts)[number]; size: number };
 
       const taggedItems: TaggedItem[] = [
         ...cleanNewNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
@@ -451,6 +468,7 @@ export class TwistSync extends DurableObject<Bindings> {
         ...cleanChannelNewNotes.map((item) => ({ array: "channelNewNotes" as const, item, size: JSON.stringify(item).length })),
         ...cleanThreadReads.map((item) => ({ array: "threadReads" as const, item, size: JSON.stringify(item).length })),
         ...cleanThreadSchedules.map((item) => ({ array: "threadSchedules" as const, item, size: JSON.stringify(item).length })),
+        ...cleanScheduleContacts.map((item) => ({ array: "scheduleContacts" as const, item, size: JSON.stringify(item).length })),
       ];
 
       const batches: TaggedItem[][] = [];
@@ -487,6 +505,7 @@ export class TwistSync extends DurableObject<Bindings> {
         const batchChannelNewNotes = batch.filter((t) => t.array === "channelNewNotes").map((t) => t.item);
         const batchThreadReads = batch.filter((t) => t.array === "threadReads").map((t) => t.item);
         const batchThreadSchedules = batch.filter((t) => t.array === "threadSchedules").map((t) => t.item);
+        const batchScheduleContacts = batch.filter((t) => t.array === "scheduleContacts").map((t) => t.item);
 
         // Filter tag changes to only include those relevant to activities in this batch
         const batchActivityIds = new Set([
@@ -514,6 +533,7 @@ export class TwistSync extends DurableObject<Bindings> {
           channelNewNotes: batchChannelNewNotes,
           threadReads: batchThreadReads,
           threadSchedules: batchThreadSchedules,
+          scheduleContacts: batchScheduleContacts,
           priorityTwist: null, // TODO: Handle priority_twist config updates
         } as TwistBatchMessage;
 
@@ -698,6 +718,26 @@ export class TwistSync extends DurableObject<Bindings> {
             .onConflict((oc) =>
               oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
+              })
+            )
+            .execute(),
+        });
+      }
+
+      if (scheduleContactUpdateMaxTs) {
+        syncUpdates.push({
+          name: "schedule_contact update sync",
+          promise: db.insertInto("priority_twist_sync")
+            .values({
+              priority_twist_id: priorityTwistId,
+              entity: sql`'schedule_contact'`,
+              operation: sql`'update'`,
+              last_sync_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
+              last_update_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
+            })
+            .onConflict((oc) =>
+              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
               })
             )
             .execute(),
