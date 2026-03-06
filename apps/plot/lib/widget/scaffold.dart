@@ -87,9 +87,12 @@ class Scaffold extends StatelessWidget {
 
     final footer = _buildFooter(context);
 
-    // On Windows, when no header is provided, add a minimal drag bar with app name
+    // On Windows in single-panel mode, when no header is provided, add a minimal
+    // drag bar with app name. In multi-panel mode, UnifiedHeader handles dragging.
     final effectiveHeader =
-        header ?? (Platform.instance.isWindows ? _WindowsDragBar() : null);
+        header ?? (Platform.instance.isWindows && !context.isMultiPanel
+            ? _WindowsDragBar()
+            : null);
 
     final scaffold = FScaffold(
       header: effectiveHeader,

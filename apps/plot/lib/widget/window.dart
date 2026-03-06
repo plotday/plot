@@ -19,6 +19,9 @@ class Window extends StatefulWidget {
   static late final double toolbarHeight;
   static late final EdgeInsetsGeometry toolbarPadding;
 
+  /// Height of the Windows window controls area, matching the header bar height.
+  static const double windowControlsHeight = 46.0;
+
   static Future<void> init() async {
     // Initialize cross-platform window manager on desktop platforms
     if (Platform.instance.isMacOS || Platform.instance.isWindows) {
@@ -284,26 +287,30 @@ class _WindowControlsState extends State<_WindowControls> with WindowListener {
   @override
   Widget build(BuildContext context) {
     final brightness = context.colour.brightness;
-    return Row(
-      children: [
-        WindowCaptionButton.minimize(
-          brightness: brightness,
-          onPressed: () => windowManager.minimize(),
-        ),
-        _isMaximized
-            ? WindowCaptionButton.unmaximize(
-                brightness: brightness,
-                onPressed: () => windowManager.unmaximize(),
-              )
-            : WindowCaptionButton.maximize(
-                brightness: brightness,
-                onPressed: () => windowManager.maximize(),
-              ),
-        WindowCaptionButton.close(
-          brightness: brightness,
-          onPressed: () => windowManager.close(),
-        ),
-      ],
+    return SizedBox(
+      height: Window.windowControlsHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          WindowCaptionButton.minimize(
+            brightness: brightness,
+            onPressed: () => windowManager.minimize(),
+          ),
+          _isMaximized
+              ? WindowCaptionButton.unmaximize(
+                  brightness: brightness,
+                  onPressed: () => windowManager.unmaximize(),
+                )
+              : WindowCaptionButton.maximize(
+                  brightness: brightness,
+                  onPressed: () => windowManager.maximize(),
+                ),
+          WindowCaptionButton.close(
+            brightness: brightness,
+            onPressed: () => windowManager.close(),
+          ),
+        ],
+      ),
     );
   }
 }
