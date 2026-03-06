@@ -33,8 +33,9 @@ class GlobalShortcuts extends StatelessWidget {
     Command? gettingStartedCmd;
     Command? helpFeedbackCmd;
     if (prioritiesState != null) {
-      final plotPriority = prioritiesState.root?.children
-          .firstWhereOrNull((p) => p.key == '@plot');
+      final plotPriority = prioritiesState.root?.children.firstWhereOrNull(
+        (p) => p.key == '@plot',
+      );
       if (plotPriority != null) {
         for (final child in plotPriority.children) {
           final isArchived = child.archivedAt != null;
@@ -53,19 +54,17 @@ class GlobalShortcuts extends StatelessWidget {
     final commands = [
       StaticCommandGroup(
         title: 'Priorities',
-        commands: [
-          PickCurrentPriority(),
-          NewPriority(),
-          if (gettingStartedCmd != null) gettingStartedCmd,
-        ],
+        commands: [PickCurrentPriority(), NewPriority()],
       ),
       StaticCommandGroup(
         title: 'App',
         shortcut: settingsCommands.shortcut,
         commands: [
+          if (gettingStartedCmd != null) gettingStartedCmd,
           ManageConnections(),
           ManageTwists(),
-          CopyPageLink(), OpenCopiedPageLink(),
+          CopyPageLink(),
+          OpenCopiedPageLink(),
           ChangeAppearance(),
           if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
           if (helpFeedbackCmd != null) helpFeedbackCmd,
