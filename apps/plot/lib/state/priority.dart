@@ -719,10 +719,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaLimit = 50;
     _agendaHorizonDays = 90;
     _agendaSyncNoMore = false;
+    _agendaLastRawRowCount = 0;
     _loadAgenda();
 
     _activityFeedLimit = 50;
     _activityFeedSyncNoMore = false;
+    _activityFeedLastRawRowCount = 0;
     _loadActivityFeed();
   }
 
@@ -833,6 +835,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       }),
     ).debounceTime(const Duration(milliseconds: 100)).listen((result) {
       final (:threads, :rawRowCount) = result;
+      _agendaLastRawRowCount = rawRowCount;
 
       // After a reorder or optimistic update, suppress agenda rebuilds
       // briefly so the optimistic state stays visible until all DB writes
@@ -912,7 +915,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     final syncState = await (Store.get.select(Store.get.syncStates)
       ..where((row) => row.entity.equals(entityName)))
       .getSingleOrNull();
-    _agendaSyncNoMore = syncState?.noMore == true;
+    // If no sync state exists after pulling, the pull was satisfied by an
+    // ancestor's noMore flag — treat this entity as fully synced too.
+    _agendaSyncNoMore = syncState?.noMore ?? true;
+    if (_agendaSyncNoMore && _agendaLastRawRowCount < _agendaLimit) {
+      emit(state.copyWith(agendaDoneEnd: true));
+    }
   }
 
   void _loadActivityFeed({bool triggerSync = true}) {
@@ -927,6 +935,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       limit: _activityFeedLimit,
     ).listen((result) {
       final (:threads, :rawRowCount) = result;
+      _activityFeedLastRawRowCount = rawRowCount;
       final items = <AgendaItem>[];
       String? currentBucket;
       for (final thread in threads) {
@@ -964,7 +973,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     final syncState = await (Store.get.select(Store.get.syncStates)
       ..where((row) => row.entity.equals(entityName)))
       .getSingleOrNull();
-    _activityFeedSyncNoMore = syncState?.noMore == true;
+    // If no sync state exists after pulling, the pull was satisfied by an
+    // ancestor's noMore flag — treat this entity as fully synced too.
+    _activityFeedSyncNoMore = syncState?.noMore ?? true;
+    if (_activityFeedSyncNoMore && _activityFeedLastRawRowCount < _activityFeedLimit) {
+      emit(state.copyWith(activityFeedDoneEnd: true));
+    }
   }
 
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
@@ -989,6 +1003,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   int _activityFeedLimit = 50;
   bool _agendaSyncNoMore = false;
   bool _activityFeedSyncNoMore = false;
+  int _agendaLastRawRowCount = 0;
+  int _activityFeedLastRawRowCount = 0;
 }
 
 /// Provides the [ThreadListSource] to descendant widgets so that
