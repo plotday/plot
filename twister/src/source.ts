@@ -1,4 +1,5 @@
-import { type Actor, type Link, type Note, type Thread } from "./plot";
+import { type Actor, type ActorId, type Link, type Note, type Thread } from "./plot";
+import type { ScheduleContactStatus } from "./schedule";
 import {
   type AuthProvider,
   type AuthToken,
@@ -161,6 +162,21 @@ export abstract class Source<TSelf> extends Twist<TSelf> {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onThreadToDo(thread: Thread, actor: Actor, todo: boolean, options: { date?: Date }): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a schedule contact's RSVP status changes on a thread owned by this source.
+   * Override to sync RSVP changes back to the external calendar.
+   *
+   * @param thread - The thread (includes thread.meta with source-specific data)
+   * @param scheduleId - The schedule ID
+   * @param contactId - The contact whose status changed
+   * @param status - The new RSVP status ('attend', 'skip', or null)
+   * @param actor - The user who changed the status
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onScheduleContactUpdated(thread: Thread, scheduleId: string, contactId: ActorId, status: ScheduleContactStatus | null, actor: Actor): Promise<void> {
     return Promise.resolve();
   }
 

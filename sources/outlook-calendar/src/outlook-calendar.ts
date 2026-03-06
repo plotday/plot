@@ -1,14 +1,17 @@
 import {
   type Action,
   ActionType,
+  type Actor,
   type ActorId,
   ConferencingProvider,
   type ContentType,
   type NewLinkWithNotes,
   type NewContact,
   Source,
+  type Thread,
   type ToolBuilder,
 } from "@plotday/twister";
+import type { ScheduleContactStatus } from "@plotday/twister/schedule";
 import type {
   NewScheduleContact,
   NewScheduleOccurrence,
@@ -724,6 +727,44 @@ export class OutlookCalendar extends Source<OutlookCalendar> {
       1 // batchNumber = 1 for first batch
     );
     await this.runTask(callback);
+  }
+
+  /**
+   * Called when a user changes their RSVP status in Plot.
+   * Syncs the change back to Outlook Calendar via actAs().
+   */
+  async onScheduleContactUpdated(
+    thread: Thread,
+    _scheduleId: string,
+    _contactId: ActorId,
+    status: ScheduleContactStatus | null,
+    actor: Actor
+  ): Promise<void> {
+    const meta = thread.meta as Record<string, unknown> | null;
+    const linkSource = meta?.linkSource as string | null;
+    const calendarId = meta?.syncableId as string | null;
+
+    if (!linkSource || !calendarId) return;
+
+    // Extract event ID from source format "outlook-calendar:<eventId>"
+    const eventId = linkSource.replace(/^outlook-calendar:/, "");
+    if (!eventId || eventId === linkSource) return;
+
+    // Map Plot status to Outlook Calendar status
+    const outlookStatus = status === "attend" ? "accepted" as const
+      : status === "skip" ? "declined" as const
+      : "tentativelyAccepted" as const;
+
+    await this.tools.integrations.actAs(
+      AuthProvider.Microsoft,
+      actor.id,
+      thread.id,
+      this.syncActorRSVP,
+      calendarId,
+      eventId,
+      outlookStatus,
+      actor.id as string
+    );
   }
 
   /**

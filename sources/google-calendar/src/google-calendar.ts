@@ -2,13 +2,16 @@ import GoogleContacts from "@plotday/source-google-contacts";
 import {
   ActionType,
   type Action,
+  type ActorId,
+  type Actor,
   ConferencingProvider,
   type NewLinkWithNotes,
   type NewContact,
-  type NewNote,
   Source,
+  type Thread,
   type ToolBuilder,
 } from "@plotday/twister";
+import type { ScheduleContactStatus } from "@plotday/twister/schedule";
 import type {
   NewScheduleContact,
   NewScheduleOccurrence,
@@ -1094,6 +1097,44 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /**
+   * Called when a user changes their RSVP status in Plot.
+   * Syncs the change back to Google Calendar via actAs().
+   */
+  async onScheduleContactUpdated(
+    thread: Thread,
+    _scheduleId: string,
+    _contactId: ActorId,
+    status: ScheduleContactStatus | null,
+    actor: Actor
+  ): Promise<void> {
+    const meta = thread.meta as Record<string, unknown> | null;
+    const linkSource = meta?.linkSource as string | null;
+    const calendarId = meta?.syncableId as string | null;
+
+    if (!linkSource || !calendarId) return;
+
+    // Extract event ID from source format "google-calendar:<eventId>"
+    const eventId = linkSource.replace(/^google-calendar:/, "");
+    if (!eventId || eventId === linkSource) return;
+
+    // Map Plot status to Google Calendar status
+    const googleStatus = status === "attend" ? "accepted" as const
+      : status === "skip" ? "declined" as const
+      : "needsAction" as const;
+
+    await this.tools.integrations.actAs(
+      AuthProvider.Google,
+      actor.id,
+      thread.id,
+      this.syncActorRSVP,
+      calendarId,
+      eventId,
+      googleStatus,
+      actor.id as string
+    );
   }
 
   /**
