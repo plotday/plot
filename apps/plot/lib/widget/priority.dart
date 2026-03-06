@@ -80,7 +80,10 @@ class PriorityWidget extends StatelessWidget {
                 Button.icon(ShowPriorityCommands(priority)),
               ],
               // Persistent sharing icon (rightmost)
-              if (sharing) Button.icon(ManagePrioritySharing(priority)),
+              if (sharing) Button.icon(
+                ManagePrioritySharing(priority),
+                color: hovered ? buildContext.theme.plotColors.muted : buildContext.theme.plotColors.veryMuted,
+              ),
             ],
           ),
         );
