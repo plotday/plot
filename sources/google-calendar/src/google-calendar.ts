@@ -785,6 +785,7 @@ export class GoogleCalendar extends Source<GoogleCalendar> {
             contentType:
               description && containsHtml(description) ? "html" as const : "text" as const,
             created: event.created ? new Date(event.created) : new Date(),
+            ...(authorContact ? { author: authorContact } : {}),
           } : null;
 
           const link: NewLinkWithNotes = {
