@@ -1,4 +1,6 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'logging.dart';
@@ -28,6 +30,16 @@ extension ToastExtension on BuildContext {
           title: Text(title ?? 'Error'),
           description: Text(message),
           duration: duration ?? const Duration(seconds: 5),
+          suffixBuilder: (context, entry) => GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: message));
+            },
+            child: Icon(
+              FontAwesomeIcons.copy,
+              size: 14,
+              color: colors.destructiveForeground,
+            ),
+          ),
           style: (style) => style.copyWith(
             decoration: style.decoration.copyWith(color: colors.destructive),
             iconStyle: style.iconStyle.copyWith(

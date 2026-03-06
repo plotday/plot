@@ -30,7 +30,6 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
-  String? _errorMessage;
   bool _isLoading = false;
 
   bool _isExternalAccountNotFound(AuthError error) {
@@ -48,8 +47,11 @@ class _SignInPageState extends State<SignInPage> {
   void _showGenericError(Object error, StackTrace? stackTrace) {
     Tracker.captureException(error, stackTrace);
     if (!mounted) return;
+    context.showToast(
+      message: 'Something went wrong. Try again later.',
+      isError: true,
+    );
     setState(() {
-      _errorMessage = 'Something went wrong. Try again later.';
       _isLoading = false;
     });
   }
@@ -85,7 +87,6 @@ class _SignInPageState extends State<SignInPage> {
   }) async {
     if (mounted) {
       setState(() {
-        _errorMessage = null;
         _isLoading = true;
       });
     }
@@ -114,8 +115,11 @@ class _SignInPageState extends State<SignInPage> {
       }).timeout(const Duration(seconds: 15));
     } on TimeoutException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Sign-in is taking too long. Please try again.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Sign-in is taking too long. Please try again.';
         _isLoading = false;
       });
     } on AuthError catch (e, t) {
@@ -130,7 +134,6 @@ class _SignInPageState extends State<SignInPage> {
         }
         if (!mounted) return;
         setState(() {
-          _errorMessage = null;
           _isLoading = false;
         });
         return;
@@ -151,8 +154,11 @@ class _SignInPageState extends State<SignInPage> {
           return;
         } on TimeoutException {
           if (!mounted) return;
+          context.showToast(
+            message: 'Sign-in is taking too long. Please try again.',
+            isError: true,
+          );
           setState(() {
-            _errorMessage = 'Sign-in is taking too long. Please try again.';
             _isLoading = false;
           });
           return;
@@ -183,8 +189,8 @@ class _SignInPageState extends State<SignInPage> {
         _showGenericError(errorToShow, t);
         return;
       }
+      context.showToast(message: message, isError: true);
       setState(() {
-        _errorMessage = message;
         _isLoading = false;
       });
     } catch (e, t) {
@@ -281,7 +287,6 @@ class _SignInPageState extends State<SignInPage> {
                 onRedirectAuth: () async {
                   if (mounted) {
                     setState(() {
-                      _errorMessage = null;
                       _isLoading = true;
                     });
                   }
@@ -294,8 +299,11 @@ class _SignInPageState extends State<SignInPage> {
                     log.warning('Google redirect sign-in failed', e, t);
                     Tracker.captureException(e, t);
                     if (mounted) {
+                      context.showToast(
+                        message: e.toString(),
+                        isError: true,
+                      );
                       setState(() {
-                        _errorMessage = e.toString();
                         _isLoading = false;
                       });
                     }
@@ -306,9 +314,7 @@ class _SignInPageState extends State<SignInPage> {
                 },
                 onError: (error) {
                   if (mounted) {
-                    setState(() {
-                      _errorMessage = error;
-                    });
+                    context.showToast(message: error, isError: true);
                   }
                 },
               ),
@@ -325,9 +331,7 @@ class _SignInPageState extends State<SignInPage> {
                   },
                   onError: (error) {
                     if (mounted) {
-                      setState(() {
-                        _errorMessage = error;
-                      });
+                      context.showToast(message: error, isError: true);
                     }
                   },
                 ),
@@ -353,14 +357,6 @@ class _SignInPageState extends State<SignInPage> {
                   ),
                 ),
               ),
-
-              // Error message
-              if (_errorMessage != null) ...[
-                FAlert(
-                  style: FAlertStyle.destructive(),
-                  title: Text(_errorMessage!),
-                ),
-              ],
 
               const SizedBox(height: 16),
               const TermsAgreement(),

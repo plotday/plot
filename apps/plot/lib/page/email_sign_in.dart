@@ -23,7 +23,6 @@ class EmailSignInPage extends StatefulWidget {
 enum _AuthMode { signIn, signUp, otpSent, secondFactor }
 
 class _EmailSignInPageState extends State<EmailSignInPage> {
-  String? _errorMessage;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _otpController = TextEditingController();
@@ -52,8 +51,11 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
   void _showGenericError(Object error, StackTrace? stackTrace) {
     Tracker.captureException(error, stackTrace);
     if (!mounted) return;
+    context.showToast(
+      message: 'Something went wrong. Please try again.',
+      isError: true,
+    );
     setState(() {
-      _errorMessage = 'Something went wrong. Please try again.';
       _isLoading = false;
     });
   }
@@ -70,22 +72,23 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     final password = _passwordController.text;
 
     if (email.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter your email address';
-      });
+      context.showToast(
+        message: 'Please enter your email address',
+        isError: true,
+      );
       return;
     }
 
     if (password.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter your password';
-      });
+      context.showToast(
+        message: 'Please enter your password',
+        isError: true,
+      );
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
@@ -119,21 +122,27 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       }).timeout(const Duration(seconds: 15));
     } on TimeoutException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Sign-in is taking too long. Please try again.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Sign-in is taking too long. Please try again.';
         _isLoading = false;
       });
     } on AuthError catch (e, t) {
       log.warning('Error signing in with password', e, t);
       if (!mounted) return;
+      context.showToast(message: _authErrorMessage(e), isError: true);
       setState(() {
-        _errorMessage = _authErrorMessage(e);
         _isLoading = false;
       });
     } on NetworkException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Unable to connect. Please check your internet.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Unable to connect. Please check your internet.';
         _isLoading = false;
       });
     } catch (e, t) {
@@ -146,15 +155,15 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     final email = _emailController.text.trim();
 
     if (email.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter your email address';
-      });
+      context.showToast(
+        message: 'Please enter your email address',
+        isError: true,
+      );
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
@@ -169,21 +178,27 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       });
     } on TimeoutException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Sign-up is taking too long. Please try again.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Sign-up is taking too long. Please try again.';
         _isLoading = false;
       });
     } on AuthError catch (e, t) {
       log.warning('Error sending signup OTP', e, t);
       if (!mounted) return;
+      context.showToast(message: _authErrorMessage(e), isError: true);
       setState(() {
-        _errorMessage = _authErrorMessage(e);
         _isLoading = false;
       });
     } on NetworkException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Unable to connect. Please check your internet.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Unable to connect. Please check your internet.';
         _isLoading = false;
       });
     } catch (e, t) {
@@ -203,15 +218,15 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     final token = _otpController.text.trim();
 
     if (token.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter the verification code';
-      });
+      context.showToast(
+        message: 'Please enter the verification code',
+        isError: true,
+      );
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
@@ -236,21 +251,27 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       }).timeout(const Duration(seconds: 15));
     } on TimeoutException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Verification is taking too long. Please try again.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Verification is taking too long. Please try again.';
         _isLoading = false;
       });
     } on AuthError catch (e, t) {
       log.warning('Error verifying OTP', e, t);
       if (!mounted) return;
+      context.showToast(message: _authErrorMessage(e), isError: true);
       setState(() {
-        _errorMessage = _authErrorMessage(e);
         _isLoading = false;
       });
     } on NetworkException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Unable to connect. Please check your internet.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Unable to connect. Please check your internet.';
         _isLoading = false;
       });
     } catch (e, t) {
@@ -265,15 +286,15 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     final code = _otpController.text.trim();
 
     if (code.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter the verification code';
-      });
+      context.showToast(
+        message: 'Please enter the verification code',
+        isError: true,
+      );
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
@@ -286,21 +307,27 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       }).timeout(const Duration(seconds: 15));
     } on TimeoutException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Verification is taking too long. Please try again.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Verification is taking too long. Please try again.';
         _isLoading = false;
       });
     } on AuthError catch (e, t) {
       log.warning('Error verifying second factor', e, t);
       if (!mounted) return;
+      context.showToast(message: _authErrorMessage(e), isError: true);
       setState(() {
-        _errorMessage = _authErrorMessage(e);
         _isLoading = false;
       });
     } on NetworkException {
       if (!mounted) return;
+      context.showToast(
+        message: 'Unable to connect. Please check your internet.',
+        isError: true,
+      );
       setState(() {
-        _errorMessage = 'Unable to connect. Please check your internet.';
         _isLoading = false;
       });
     } catch (e, t) {
@@ -314,7 +341,6 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       _otpResetCounter++;
       _otpController.clear();
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
@@ -324,8 +350,8 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     } on AuthError catch (e, t) {
       log.warning('Error resending second factor code', e, t);
       if (!mounted) return;
+      context.showToast(message: _authErrorMessage(e), isError: true);
       setState(() {
-        _errorMessage = _authErrorMessage(e);
         _isLoading = false;
       });
     } catch (e, t) {
@@ -429,7 +455,6 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                       onPress: () {
                         setState(() {
                           _mode = _AuthMode.signIn;
-                          _errorMessage = null;
                           _otpController.clear();
                         });
                       },
@@ -496,7 +521,6 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                       onPress: () {
                         setState(() {
                           _mode = _AuthMode.signIn;
-                          _errorMessage = null;
                           _otpController.clear();
                         });
                       },
@@ -551,7 +575,6 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                                           ? _AuthMode.signIn
                                           : _AuthMode.signUp;
                                       _passwordController.clear();
-                                      _errorMessage = null;
                                     });
                                     WidgetsBinding.instance
                                         .addPostFrameCallback((_) {
@@ -590,14 +613,6 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                   onPress: () => context.router.maybePop(),
                   style: FButtonStyle.ghost(),
                   child: const Text('Use another sign-in method'),
-                ),
-              ],
-
-              // Error message
-              if (_errorMessage != null) ...[
-                FAlert(
-                  style: FAlertStyle.destructive(),
-                  title: Text(_errorMessage!),
                 ),
               ],
 
