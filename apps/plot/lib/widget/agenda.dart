@@ -378,20 +378,22 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                     // Gap headers use veryMuted for all text
                     final contentColor = isGapHeader ? veryMuted : textColor;
 
-                    // Fixed space width: one space at sm font size, shared
-                    // across date and time headers for alignment.
-                    final smFontSize =
-                        context.theme.typography.sm.fontSize;
-                    final gapWidth = (TextPainter(
+                    final mutedStyle = TextStyle(
+                      color: veryMuted,
+                      fontSize: fontSize,
+                    );
+
+                    // Width of a single space at the current font size
+                    final spaceWidth = (TextPainter(
                       text: TextSpan(
                         text: ' ',
-                        style: TextStyle(fontSize: smFontSize),
+                        style: TextStyle(fontSize: fontSize),
                       ),
                       maxLines: 1,
                       textDirection: TextDirection.ltr,
                     )..layout()).width;
 
-                    // Date headers: [Expanded: day-of-week] [gap] [Expanded: day+month]
+                    // Date: [Expanded: day-of-week] day [Expanded: month]
                     if (widget.date != null) {
                       return Row(
                         children: [
@@ -400,47 +402,43 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                               alignment: Alignment.centerRight,
                               child: Container(
                                 color: backgroundColor,
-                                padding: EdgeInsets.only(left: spacing),
+                                padding: EdgeInsets.only(
+                                  left: spacing,
+                                  right: spacing,
+                                ),
                                 child: Text(
                                   dateCenterLeft!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: textColor,
-                                    fontSize: fontSize,
-                                  ),
+                                  style: mutedStyle,
                                 ),
                               ),
                             ),
                           ),
-                          SizedBox(width: gapWidth),
+                          Container(
+                            color: backgroundColor,
+                            child: Text(
+                              dateCenterRight!,
+                              style: TextStyle(
+                                color: textColor,
+                                fontSize: fontSize,
+                              ),
+                            ),
+                          ),
                           Expanded(
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: Container(
                                 color: backgroundColor,
-                                padding: EdgeInsets.only(right: spacing),
-                                child: Text.rich(
-                                  TextSpan(
-                                    children: [
-                                      TextSpan(
-                                        text: dateCenterRight!,
-                                        style: TextStyle(
-                                          color: textColor,
-                                          fontSize: fontSize,
-                                        ),
-                                      ),
-                                      TextSpan(
-                                        text: dateMonth!,
-                                        style: TextStyle(
-                                          color: veryMuted,
-                                          fontSize: fontSize,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                padding: EdgeInsets.only(
+                                  left: spacing,
+                                  right: spacing,
+                                ),
+                                child: Text(
+                                  dateMonth!.trimLeft(),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
+                                  style: mutedStyle,
                                 ),
                               ),
                             ),
@@ -449,21 +447,27 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                       );
                     }
 
-                    // Time headers: [Expanded: time] [gap] [Expanded: duration]
+                    // Time: [Expanded: digits right] [gap] [Expanded: am/pm left + duration right]
+                    // For 24h format (no am/pm), center the full time.
                     final timeStyle = TextStyle(
                       color: contentColor,
                       fontSize: fontSize,
                     );
 
-                    // Build left content (time text, right-aligned)
-                    final String leftText;
-                    if (timeCenterLeft != null) {
-                      leftText =
-                          '${timeCenterLeft.trimRight()} $timeCenterRight';
-                    } else if (centerText != null) {
-                      leftText = centerText;
-                    } else {
+                    if (timeCenterLeft == null && centerText == null) {
                       return SizedBox(height: textHeight);
+                    }
+
+                    // Left side: time digits (or full time for 24h)
+                    final String leftText;
+                    // Right side: am/pm text (null for 24h)
+                    final String? rightText;
+                    if (timeCenterLeft != null) {
+                      leftText = timeCenterLeft.trimRight();
+                      rightText = timeCenterRight;
+                    } else {
+                      leftText = centerText!;
+                      rightText = null;
                     }
 
                     return Stack(
@@ -491,25 +495,19 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                 ),
                               ),
                             ),
-                            SizedBox(
-                              width: gapWidth,
-                              child: Container(color: backgroundColor),
-                            ),
+                            SizedBox(width: spaceWidth),
                             Expanded(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: hasDuration
-                                    ? Container(
-                                        color: backgroundColor,
-                                        child: Text(
-                                          durationText,
-                                          style: TextStyle(
-                                            color: veryMuted,
-                                            fontSize: fontSize,
-                                          ),
-                                        ),
-                                      )
-                                    : const SizedBox.shrink(),
+                              child: Container(
+                                color: backgroundColor,
+                                child: Row(
+                                  children: [
+                                    if (rightText != null)
+                                      Text(rightText, style: timeStyle),
+                                    const Spacer(),
+                                    if (hasDuration)
+                                      Text(durationText, style: mutedStyle),
+                                  ],
+                                ),
                               ),
                             ),
                           ],

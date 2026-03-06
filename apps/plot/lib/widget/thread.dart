@@ -248,39 +248,35 @@ class ThreadWidget extends StatelessWidget {
                                     final timeStr = activity.at!.start!
                                         .toTimeOfDay()
                                         .formatShort(context);
-                                    final amPmMatch =
-                                        RegExp(r'[ap]m$').firstMatch(timeStr);
                                     final hasDuration =
                                         activity.at!.duration != null &&
                                             activity.at!.duration!.inSeconds >
                                                 0;
-                                    // [Expanded: time] [gap] [Expanded: duration]
-                                    // Fixed gap width at sm font size to match
-                                    // agenda header alignment.
+                                    // [Expanded: digits right] [gap] [Expanded: am/pm left + duration right]
                                     final veryMuted =
                                         context.theme.plotColors.veryMuted;
-                                    final smFontSize =
-                                        context.theme.typography.sm.fontSize;
-                                    final gapWidth = (TextPainter(
+                                    final spaceWidth = (TextPainter(
                                       text: TextSpan(
                                         text: ' ',
-                                        style: TextStyle(
-                                          fontSize: smFontSize,
-                                        ),
+                                        style: DefaultTextStyle.of(context)
+                                            .style,
                                       ),
                                       maxLines: 1,
                                       textDirection: TextDirection.ltr,
                                     )..layout()).width;
+                                    final amPmMatch =
+                                        RegExp(r'[ap]m$').firstMatch(timeStr);
                                     final String leftText;
+                                    final String? rightText;
                                     if (amPmMatch != null) {
-                                      final timePart = timeStr
+                                      leftText = timeStr
                                           .substring(0, amPmMatch.start)
                                           .trimRight();
-                                      final periodPart =
+                                      rightText =
                                           timeStr.substring(amPmMatch.start);
-                                      leftText = '$timePart $periodPart';
                                     } else {
                                       leftText = timeStr;
+                                      rightText = null;
                                     }
                                     return Row(
                                       children: [
@@ -291,19 +287,25 @@ class ThreadWidget extends StatelessWidget {
                                             textAlign: TextAlign.right,
                                           ),
                                         ),
-                                        SizedBox(width: gapWidth),
+                                        SizedBox(width: spaceWidth),
                                         Expanded(
-                                          child: Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: hasDuration
-                                                ? Text(
-                                                    activity.at!.duration!
-                                                        .format(),
-                                                    style: TextStyle(
-                                                      color: veryMuted,
-                                                    ),
-                                                  )
-                                                : const SizedBox.shrink(),
+                                          child: Row(
+                                            children: [
+                                              if (rightText != null)
+                                                Text(
+                                                  rightText,
+                                                  style: timingColor,
+                                                ),
+                                              const Spacer(),
+                                              if (hasDuration)
+                                                Text(
+                                                  activity.at!.duration!
+                                                      .format(),
+                                                  style: TextStyle(
+                                                    color: veryMuted,
+                                                  ),
+                                                ),
+                                            ],
                                           ),
                                         ),
                                       ],
