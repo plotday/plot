@@ -890,12 +890,6 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void _loadActivityFeed({bool triggerSync = true}) {
     final priorityToLoad = state.targetPriority ?? state.context;
-    log.info(
-      '[_loadActivityFeed] start: limit=$_activityFeedLimit '
-      'triggerSync=$triggerSync showArchived=${state.showArchived} '
-      'effectiveShowArchived=$_effectiveShowArchived '
-      'filter=${state.filter} syncNoMore=$_activityFeedSyncNoMore',
-    );
     _activityFeedSubscription?.cancel();
     _activityFeedSubscription = Thread.watch(
       order: ThreadOrder.reverse,
@@ -918,12 +912,6 @@ class PriorityBloc extends Cubit<PriorityState> {
           threads.length < _activityFeedLimit;
       final doneEnd = (rawRowCount < _activityFeedLimit && _activityFeedSyncNoMore) ||
           threadCountStalled;
-      log.info(
-        '[_loadActivityFeed] stream: threads=${threads.length} '
-        'rawRowCount=$rawRowCount limit=$_activityFeedLimit '
-        'syncNoMore=$_activityFeedSyncNoMore '
-        'threadCountStalled=$threadCountStalled → doneEnd=$doneEnd',
-      );
       final items = <AgendaItem>[];
       String? currentBucket;
       for (final thread in threads) {
@@ -951,10 +939,6 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
     final archived = _effectiveShowArchived;
-    log.info(
-      '[_triggerActivityFeedSync] start: archived=$archived '
-      'showArchived=${state.showArchived} filter=${state.filter}',
-    );
     await Thread.pullActivityFeed(
       priorityToLoad.id, priorityToLoad.path,
       archived: archived,
@@ -968,25 +952,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     // If no sync state exists after pulling, the pull was satisfied by an
     // ancestor's noMore flag — treat this entity as fully synced too.
     _activityFeedSyncNoMore = syncState?.noMore ?? true;
-    log.info(
-      '[_triggerActivityFeedSync] done: entityName=$entityName '
-      'syncNoMore=$_activityFeedSyncNoMore '
-      'lastRawRowCount=$_activityFeedLastRawRowCount '
-      'limit=$_activityFeedLimit',
-    );
     if (_activityFeedSyncNoMore && _activityFeedLastRawRowCount < _activityFeedLimit) {
-      log.info('[_triggerActivityFeedSync] emitting doneEnd=true');
       emit(state.copyWith(activityFeedDoneEnd: true));
     }
   }
 
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
     final needed = first + count;
-    log.info(
-      '[fetchMoreActivityFeedItems] first=$first count=$count needed=$needed '
-      'limit=$_activityFeedLimit doneEnd=${state.activityFeedDoneEnd} '
-      'syncNoMore=$_activityFeedSyncNoMore',
-    );
     if (needed > _activityFeedLimit) {
       _activityFeedLimit = needed;
       _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore);

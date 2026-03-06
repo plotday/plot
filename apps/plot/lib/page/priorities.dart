@@ -30,20 +30,27 @@ class PrioritiesPage extends StatelessWidget {
       builder: (context, localPrefsState) {
         // PriorityBloc may not be available when the Priorities tab is
         // shown without a priority selected in a sibling route.
-        PriorityBloc? priorityBloc;
+        // Use context.select (not context.read) so filter/search changes
+        // trigger rebuilds of the priorities list.
+        List<Tag>? priorityFilter;
+        String? prioritySearch;
         try {
-          priorityBloc = context.read<PriorityBloc>();
+          priorityFilter = context.select<PriorityBloc, List<Tag>>(
+            (bloc) => bloc.state.filter,
+          );
+          prioritySearch = context.select<PriorityBloc, String>(
+            (bloc) => bloc.state.search,
+          );
         } on ProviderNotFoundException {
           // No PriorityBloc in tree — use defaults below.
         }
-        final priorityState = priorityBloc?.state;
 
         // Sync archived filter: show all if local prefs say so OR if
         // the search archive filter is active
         final prioritiesBloc = context.read<PrioritiesBloc>();
         final showAll =
             localPrefsState.showAllPriorities ||
-            (priorityState?.filter.contains(Tag.archived) ?? false);
+            (priorityFilter?.contains(Tag.archived) ?? false);
         final expectedFilter = showAll ? null : false;
         if (prioritiesBloc.state.archivedFilter != expectedFilter) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -52,7 +59,7 @@ class PrioritiesPage extends StatelessWidget {
         }
 
         // Sync search from PriorityBloc to PrioritiesBloc
-        final search = priorityState?.search ?? '';
+        final search = prioritySearch ?? '';
         if (prioritiesBloc.state.search != search) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             prioritiesBloc.updateSearch(search);

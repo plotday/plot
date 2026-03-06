@@ -910,7 +910,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     // Create a copy of filter to avoid mutating the original
     final mutableFilter = filter != null ? List<Tag>.from(filter) : null;
     if (mutableFilter?.remove(Tag.archived) == true) {
-      archived = true;
+      archived = null;
     }
 
     final doTodo = mutableFilter?.remove(Tag.todo) == true;

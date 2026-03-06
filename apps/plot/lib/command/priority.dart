@@ -206,12 +206,15 @@ class EditPriority extends Command {
   }
 }
 
-class ArchivePriority extends Command {
-  ArchivePriority(this._priority)
-    : super(
-        title: 'Archive',
+class TogglePriorityArchived extends Command {
+  TogglePriorityArchived(Priority priority)
+    : _priority = Future.value(priority),
+      super(
+        title: priority.archivedAt != null ? 'Un-archive' : 'Archive',
         eventObject: EventObject.priority,
-        eventAction: EventAction.archived,
+        eventAction: priority.archivedAt != null
+            ? EventAction.unarchived
+            : EventAction.archived,
         icon: PlotIcon.archived,
       );
 
@@ -226,7 +229,12 @@ class ArchivePriority extends Command {
         isError: true,
       );
     }
-    await priority.delete();
+    final isArchived = priority.archivedAt != null;
+    await priority
+        .copyWith(
+          archivedAt: Value(isArchived ? null : DateTime.now()),
+        )
+        .save();
     return const CommandDone();
   }
 }
@@ -439,7 +447,7 @@ List<Command> prioritySecondaryCommands(Priority priority) => [
   ManagePrioritySharing(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   NewPriority(parent: priority),
-  if (!priority.root) ArchivePriority(Future.value(priority)),
+  if (!priority.root) TogglePriorityArchived(priority),
 ];
 
 List<Command> priorityCommands(Priority priority) => [
