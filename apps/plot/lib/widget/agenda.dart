@@ -394,7 +394,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                     )..layout()).width;
 
                     // Date: [Expanded: day-of-week] day [Expanded: month]
-                    if (widget.date != null) {
+                    if (dateCenterLeft != null) {
                       return Row(
                         children: [
                           Expanded(
