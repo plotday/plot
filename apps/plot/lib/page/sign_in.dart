@@ -298,7 +298,7 @@ class _SignInPageState extends State<SignInPage> {
                   } on AuthError catch (e, t) {
                     log.warning('Google redirect sign-in failed', e, t);
                     Tracker.captureException(e, t);
-                    if (mounted) {
+                    if (context.mounted) {
                       context.showToast(
                         message: e.toString(),
                         isError: true,

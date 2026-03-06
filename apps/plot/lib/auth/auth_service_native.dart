@@ -30,11 +30,6 @@ Future<AuthService> createAuthServiceImpl({
     config: clerk.AuthConfig(
       publishableKey: publishableKey,
       persistor: persistor,
-      // Disable background polling — we fetch tokens on demand via
-      // getSessionToken(). This prevents network spam when the app is
-      // backgrounded (clerk_auth's timers fire into DNS failures).
-      sessionTokenPolling: false,
-      clientRefreshPeriod: Duration.zero,
     ),
   );
 
@@ -54,7 +49,7 @@ Future<AuthService> createAuthServiceImpl({
           .catchError((Object e, StackTrace s) => completer.completeError(e, s));
     },
     (error, stack) {
-      log.warning('clerk_auth polling error, scheduling recovery', error);
+      log.fine('clerk_auth polling error, scheduling recovery', error);
       service._schedulePollingRecovery();
     },
   );
@@ -171,8 +166,6 @@ class ClerkDartAuthService implements AuthService {
       config: clerk.AuthConfig(
         publishableKey: _publishableKey,
         persistor: persistor,
-        sessionTokenPolling: false,
-        clientRefreshPeriod: Duration.zero,
       ),
     );
     await _auth.initialize().timeout(const Duration(seconds: 10));
@@ -191,11 +184,47 @@ class ClerkDartAuthService implements AuthService {
 
   @override
   Future<String?> getSessionToken() async {
+    final result = await getSessionTokenWithReason();
+    return result.token;
+  }
+
+  @override
+  Future<TokenResult> getSessionTokenWithReason() async {
     try {
       final token = await _auth.sessionToken();
-      return token.jwt;
-    } catch (_) {
-      return null;
+      return (token: token.jwt, failure: null);
+    } on clerk.ClerkError catch (e) {
+      log.warning('Session token request failed (ClerkError): $e');
+
+      // Clerk 5xx = transient server error, not a dead session.
+      if (e.code == clerk.ClerkErrorCode.serverErrorResponse) {
+        return (token: null, failure: TokenFailureReason.networkError);
+      }
+
+      // Clerk returned a definitive error. Try recovery via refreshClient.
+      try {
+        log.info('Attempting session recovery via refreshClient');
+        await _auth.refreshClient();
+        final token = await _auth.sessionToken();
+        log.info('Session recovery succeeded');
+        return (token: token.jwt, failure: null);
+      } on clerk.ClerkError catch (recoveryError) {
+        // Recovery also got a ClerkError — if it's not a server error,
+        // the session is definitively dead.
+        if (recoveryError.code == clerk.ClerkErrorCode.serverErrorResponse) {
+          return (token: null, failure: TokenFailureReason.networkError);
+        }
+        log.warning('Session recovery failed (ClerkError): $recoveryError');
+        return (token: null, failure: TokenFailureReason.sessionInvalid);
+      } catch (recoveryError) {
+        // Network error during recovery — transient.
+        log.warning('Session recovery failed (network): $recoveryError');
+        return (token: null, failure: TokenFailureReason.networkError);
+      }
+    } catch (e) {
+      // SocketException, TimeoutException, DNS failures, etc.
+      log.warning('Session token request failed (network): $e');
+      return (token: null, failure: TokenFailureReason.networkError);
     }
   }
 

@@ -301,8 +301,9 @@ class BroadcastClient with WidgetsBindingObserver {
     return errorString.contains('401') || errorString.contains('unauthorized');
   }
 
-  /// Handle authentication errors by scheduling a reconnect.
-  /// clerk_auth handles token refresh automatically.
+  /// Handle authentication errors by verifying the session with Clerk.
+  /// If the session is definitively invalid, triggers sign-out.
+  /// Otherwise schedules a reconnect with a fresh token.
   Future<void> _handleAuthError() async {
     // Clean up any existing broken channel before attempting reconnection
     if (_channel != null) {
@@ -312,6 +313,13 @@ class BroadcastClient with WidgetsBindingObserver {
     _isConnected = false;
     _updateConnectionNotifier();
 
+    final result = await Base.getSessionTokenWithReason();
+    Base.handleTokenResult(result);
+
+    // If sessionInvalid, Base triggers sign-out — no reconnect needed.
+    if (result.failure == TokenFailureReason.sessionInvalid) return;
+
+    // Network error or stale token — reconnect will use a fresh token.
     log.info("WebSocket auth failed — will retry with fresh token");
     _shouldReconnect = true;
     _scheduleReconnect();

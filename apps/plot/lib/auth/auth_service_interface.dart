@@ -26,6 +26,19 @@ enum AuthErrorCode {
   unknown,
 }
 
+/// Why a token fetch failed — lets callers distinguish transient network
+/// problems (retry) from definitive session rejection (sign out).
+enum TokenFailureReason {
+  /// Network unreachable, DNS failure, Clerk 5xx, timeout, etc.
+  networkError,
+
+  /// Clerk API was reachable and explicitly rejected the session.
+  sessionInvalid,
+}
+
+/// Result of [AuthService.getSessionTokenWithReason].
+typedef TokenResult = ({String? token, TokenFailureReason? failure});
+
 // ---------------------------------------------------------------------------
 // Error
 // ---------------------------------------------------------------------------
@@ -74,6 +87,19 @@ abstract class AuthService {
 
   /// Returns the current session JWT, or `null` if not signed in.
   Future<String?> getSessionToken();
+
+  /// Like [getSessionToken] but also reports *why* the fetch failed so
+  /// callers can distinguish network errors from dead sessions.
+  ///
+  /// Default implementation wraps [getSessionToken] — subclasses should
+  /// override with proper error classification.
+  Future<TokenResult> getSessionTokenWithReason() async {
+    final token = await getSessionToken();
+    return (
+      token: token,
+      failure: token == null ? TokenFailureReason.sessionInvalid : null,
+    );
+  }
 
   // -- Sign-in ---------------------------------------------------------------
 
@@ -164,6 +190,10 @@ class FailedAuthService implements AuthService {
 
   @override
   Future<String?> getSessionToken() async => null;
+
+  @override
+  Future<TokenResult> getSessionTokenWithReason() async =>
+      (token: null, failure: TokenFailureReason.networkError);
 
   @override
   Future<void> signInWithIdToken({

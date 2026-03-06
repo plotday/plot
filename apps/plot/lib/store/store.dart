@@ -244,7 +244,7 @@ abstract class BaseTable {
       rows = result.cast<Map<String, dynamic>>();
     } catch (e) {
       if (Store._isAuthError(e)) {
-        Store._handleAuthError();
+        await Store._handleAuthError();
       } else if (Store._isRlsViolation(e)) {
         // Log RLS violations for debugging without signing out
         log.warning(
@@ -315,7 +315,7 @@ abstract class BaseTable {
       }
     } catch (e) {
       if (Store._isAuthError(e)) {
-        Store._handleAuthError();
+        await Store._handleAuthError();
       } else if (Store._isRlsViolation(e)) {
         // Log RLS violations for debugging without signing out
         log.warning(
@@ -388,7 +388,7 @@ class Store extends _$Store {
   static Future<void> stop() async {
     _authRetryTimer?.cancel();
     _authRetryTimer = null;
-    _authFailureCount = 0;
+    _syncRetryCount = 0;
     if (Injector.appInstance.exists<Store>()) {
       // Get reference before removing from injector
       final store = get;
@@ -593,16 +593,26 @@ class Store extends _$Store {
     }
   }
 
-  static int _authFailureCount = 0;
+  static int _syncRetryCount = 0;
   static Timer? _authRetryTimer;
 
-  /// Auth errors during sync are treated as transient (like being offline).
-  /// Schedule a retry with increasing backoff instead of signing out.
-  static void _handleAuthError() {
-    _authFailureCount++;
-    final delaySec = min(30 * _authFailureCount, 300); // 30s, 60s, ... max 5min
+  /// Verify the session with Clerk and act accordingly. If the session is
+  /// definitively invalid, [Base.handleTokenResult] triggers sign-out. If
+  /// it's a network error, schedule a retry with increasing backoff.
+  static Future<void> _handleAuthError() async {
+    final result = await Base.getSessionTokenWithReason();
+
+    // Let Base decide: sessionInvalid → sign-out, success → clear flag.
+    Base.handleTokenResult(result);
+
+    // If sessionInvalid, Base will sign out — no retry needed.
+    if (result.failure == TokenFailureReason.sessionInvalid) return;
+
+    // Network error or stale-token race — schedule retry with backoff.
+    _syncRetryCount++;
+    final delaySec = min(30 * _syncRetryCount, 300);
     log.warning(
-      "Auth error during sync (attempt $_authFailureCount), retrying in ${delaySec}s",
+      "Auth error during sync (attempt $_syncRetryCount), retrying in ${delaySec}s",
     );
 
     _authRetryTimer?.cancel();
@@ -619,10 +629,10 @@ class Store extends _$Store {
 
   /// Reset auth failure tracking after successful sync.
   static void _resetAuthFailures() {
-    if (_authFailureCount > 0) {
-      log.info("Sync recovered after $_authFailureCount auth failures");
+    if (_syncRetryCount > 0) {
+      log.info("Sync recovered after $_syncRetryCount auth failures");
     }
-    _authFailureCount = 0;
+    _syncRetryCount = 0;
     _authRetryTimer?.cancel();
     _authRetryTimer = null;
   }
@@ -805,7 +815,7 @@ class Store extends _$Store {
                 );
               } catch (e, stackTrace) {
                 if (Store._isAuthError(e)) {
-                  Store._handleAuthError();
+                  await Store._handleAuthError();
                   rethrow;
                 } else if (Store._isPermanentError(e)) {
                   // Permanent error - revert local change to remote version
@@ -1517,7 +1527,7 @@ class Store extends _$Store {
       // Check if this is an auth error - if so, schedule retry
       if (_isAuthError(e)) {
         log.warning("Auth error during sync", e, stackTrace);
-        _handleAuthError();
+        await _handleAuthError();
         rethrow; // Stop sync on auth errors
       } else if (_isRlsViolation(e)) {
         log.warning(

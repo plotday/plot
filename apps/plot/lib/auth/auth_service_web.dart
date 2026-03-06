@@ -14,6 +14,8 @@ import 'dart:js_interop_unsafe';
 
 import 'package:web/web.dart' as web;
 
+import 'package:plot/logging.dart';
+
 import 'auth_service_interface.dart';
 import 'clerk_js_interop.dart';
 
@@ -224,13 +226,35 @@ class ClerkJsAuthService implements AuthService {
 
   @override
   Future<String?> getSessionToken() async {
+    final result = await getSessionTokenWithReason();
+    return result.token;
+  }
+
+  @override
+  Future<TokenResult> getSessionTokenWithReason() async {
     final session = _clerk.session;
-    if (session == null) return null;
+    if (session == null) {
+      return (token: null, failure: TokenFailureReason.sessionInvalid);
+    }
     try {
       final result = await session.getToken().toDart;
-      return (result as JSString?)?.toDart;
-    } catch (_) {
-      return null;
+      final token = (result as JSString?)?.toDart;
+      if (token == null) {
+        return (token: null, failure: TokenFailureReason.sessionInvalid);
+      }
+      return (token: token, failure: null);
+    } catch (e) {
+      log.warning('Failed to get web session token: $e');
+      // "Failed to fetch" / TypeError = network error in browsers.
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('failed to fetch') ||
+          msg.contains('networkerror') ||
+          msg.contains('type error') ||
+          msg.contains('load failed')) {
+        return (token: null, failure: TokenFailureReason.networkError);
+      }
+      // Clerk JS returned a session error — session is invalid.
+      return (token: null, failure: TokenFailureReason.sessionInvalid);
     }
   }
 

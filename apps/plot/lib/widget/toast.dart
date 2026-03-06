@@ -30,15 +30,9 @@ extension ToastExtension on BuildContext {
           title: Text(title ?? 'Error'),
           description: Text(message),
           duration: duration ?? const Duration(seconds: 5),
-          suffixBuilder: (context, entry) => GestureDetector(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: message));
-            },
-            child: Icon(
-              FontAwesomeIcons.copy,
-              size: 14,
-              color: colors.destructiveForeground,
-            ),
+          suffixBuilder: (context, entry) => _CopyButton(
+            text: message,
+            color: colors.destructiveForeground,
           ),
           style: (style) => style.copyWith(
             decoration: style.decoration.copyWith(color: colors.destructive),
@@ -114,5 +108,34 @@ extension ToastExtension on BuildContext {
       // Fallback to regular toast
       showToast(message: message, title: title, duration: duration);
     }
+  }
+}
+
+class _CopyButton extends StatefulWidget {
+  final String text;
+  final Color color;
+
+  const _CopyButton({required this.text, required this.color});
+
+  @override
+  State<_CopyButton> createState() => _CopyButtonState();
+}
+
+class _CopyButtonState extends State<_CopyButton> {
+  bool _copied = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        Clipboard.setData(ClipboardData(text: widget.text));
+        setState(() => _copied = true);
+      },
+      child: Icon(
+        _copied ? FontAwesomeIcons.check : FontAwesomeIcons.copy,
+        size: 14,
+        color: widget.color,
+      ),
+    );
   }
 }

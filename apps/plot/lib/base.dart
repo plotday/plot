@@ -6,6 +6,8 @@ import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/auth/auth_service.dart';
+export 'package:plot/auth/auth_service.dart'
+    show TokenResult, TokenFailureReason;
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -32,6 +34,13 @@ class Base {
   static Stream<User?> get user =>
       Injector.appInstance.get<Base>()._currentUserController.stream;
   static bool get signedIn => Injector.appInstance.get<Base>()._userId != null;
+
+  /// Emits when the session is definitively dead and the user will be
+  /// signed out. Listeners can show a brief toast before the sign-out
+  /// state transition cleans up the UI.
+  static Stream<void> get needsReAuth =>
+      Injector.appInstance.get<Base>()._needsReAuthController.stream;
+
   static Uuid get userId => Injector.appInstance.get<Base>()._userId!;
   static ActorId get actorId => Injector.appInstance.get<Base>()._actorId!;
 
@@ -48,16 +57,60 @@ class Base {
     Injector.appInstance.get<Base>()._actorId = null;
   }
 
+  /// In-flight token fetch completer — serializes concurrent requests so
+  /// only one Clerk call happens at a time.
+  static Completer<TokenResult>? _tokenFetchInFlight;
+
+  /// Get session token with failure reason. Serializes concurrent calls.
+  static Future<TokenResult> getSessionTokenWithReason() async {
+    if (_tokenFetchInFlight != null) {
+      return _tokenFetchInFlight!.future;
+    }
+    _tokenFetchInFlight = Completer<TokenResult>();
+    try {
+      final result = await auth.getSessionTokenWithReason();
+      _tokenFetchInFlight!.complete(result);
+      return result;
+    } catch (e) {
+      final result = (
+        token: null as String?,
+        failure: TokenFailureReason.networkError,
+      );
+      _tokenFetchInFlight!.complete(result);
+      return result;
+    } finally {
+      _tokenFetchInFlight = null;
+    }
+  }
+
   /// Get session token for API calls.
   /// Returns null if not signed in or token cannot be obtained.
-  /// Token refresh is handled automatically by the platform auth service.
   static Future<String?> getSessionToken() async {
-    try {
-      return await auth.getSessionToken();
-    } catch (e) {
-      log.warning('Failed to get session token: $e');
-      return null;
+    final result = await getSessionTokenWithReason();
+    return result.token;
+  }
+
+  /// Act on a token result: sign out immediately on [TokenFailureReason.sessionInvalid],
+  /// clear the re-auth flag on success.
+  static void handleTokenResult(TokenResult result) {
+    if (result.failure == TokenFailureReason.sessionInvalid) {
+      _forceSignOut();
+    } else if (result.token != null) {
+      // Successful token — reset the re-auth guard.
+      Injector.appInstance.get<Base>()._reAuthSignaled = false;
     }
+  }
+
+  /// Emit the re-auth signal (for toast), then sign out. Guarded to
+  /// prevent re-entry from multiple concurrent callers.
+  static void _forceSignOut() {
+    final base = Injector.appInstance.get<Base>();
+    if (base._reAuthSignaled) return;
+    base._reAuthSignaled = true;
+    log.warning('Session invalid — forcing sign-out');
+    base._needsReAuthController.add(null);
+    // Sign out asynchronously — the UI listener will show a toast first.
+    Future.microtask(() => signOut());
   }
 
   static Future<void> init() async {
@@ -253,10 +306,13 @@ class Base {
   ActorId? _actorId;
   DateTime? _signInTime;
   bool _freshSignIn = false;
+  bool _reAuthSignaled = false;
   final _currentUserController = BehaviorSubject<User?>();
+  final _needsReAuthController = StreamController<void>.broadcast();
 
   void dispose() {
     _currentUserController.close();
+    _needsReAuthController.close();
   }
 
   /// Restore user identity from ProfilePreferences after auth init.

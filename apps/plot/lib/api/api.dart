@@ -83,15 +83,14 @@ String _getErrorTitle(int statusCode) {
   }
 }
 
-/// Checks response for auth errors on 401 (Unauthorized).
-/// clerk_auth handles token refresh automatically.
-/// If we got a 401, the token was expired and clerk couldn't refresh it.
+/// On 401, verify the session with Clerk to distinguish stale-token races
+/// from dead sessions. If the session is definitively invalid, triggers
+/// sign-out via [Base.handleTokenResult].
 Future<void> _checkAuthError(http.Response response, String url) async {
   if (response.statusCode == 401) {
-    log.warning("Auth error from API: 401 Unauthorized $url ${response.body}");
-    // clerk_auth handles token refresh automatically.
-    // Don't sign out automatically — let the user stay signed in locally.
-    // The next request will try to get a fresh token from clerk_auth.
+    log.warning("Auth error from API: 401 Unauthorized $url");
+    final result = await Base.getSessionTokenWithReason();
+    Base.handleTokenResult(result);
   }
 }
 

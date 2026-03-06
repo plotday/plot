@@ -40,6 +40,7 @@ class RootProviderState extends State<RootProvider> {
 
   void Function()? _nowBlocListener;
   StreamSubscription<Priority>? _contextPriorityListener;
+  StreamSubscription<void>? _reAuthSubscription;
   bool _hasNavigatedToCliUrl = false;
   bool _routerInitialized = false;
 
@@ -61,6 +62,7 @@ class RootProviderState extends State<RootProvider> {
   void dispose() {
     _nowBlocListener?.call();
     _contextPriorityListener?.cancel();
+    _reAuthSubscription?.cancel();
     super.dispose();
   }
 
@@ -92,6 +94,20 @@ class RootProviderState extends State<RootProvider> {
     _contextPriorityListener = null;
   }
 
+  void _setupReAuthListener(BuildContext listenerContext) {
+    _reAuthSubscription?.cancel();
+    _reAuthSubscription = Base.needsReAuth.listen((_) {
+      if (listenerContext.mounted) {
+        listenerContext.showToast(
+          title: 'Session expired',
+          message: 'Signing out...',
+          isError: true,
+          duration: const Duration(seconds: 3),
+        );
+      }
+    });
+  }
+
   void _navigateToUrl(BuildContext navigateContext, String url) {
     log.info('Navigating to CLI URL: $url');
     // Use the OpenPageLink command for navigation
@@ -118,6 +134,7 @@ class RootProviderState extends State<RootProvider> {
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
                 unawaited(NotificationService.instance.start());
+                if (context.mounted) _setupReAuthListener(context);
 
                 // Navigate to main app after re-sign-in. On first startup
                 // _routerInitialized is still false (router not yet built),
@@ -167,6 +184,8 @@ class RootProviderState extends State<RootProvider> {
             case UserSignedOut _:
               await NotificationService.instance.stop();
               _teardownNowBlocListener();
+              _reAuthSubscription?.cancel();
+              _reAuthSubscription = null;
               prioritiesBloc.stop();
               nowBloc.stop();
               PriorityTwist.stopGlobalWatch();
