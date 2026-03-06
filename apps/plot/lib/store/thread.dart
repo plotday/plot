@@ -375,6 +375,15 @@ class Thread extends Equatable implements Comparable<Thread> {
       initial: true,
     );
 
+    // Pull all links so activity_at and link schedules are available from the start.
+    // Without this, links are never fetched (pull() without initial just sets pulledAt
+    // to now and skips all existing data).
+    await Store.get.pull(
+      Store.get.links,
+      LinksBase(),
+      initial: true,
+    );
+
     // We don't pull exceptions or tags mostly because we don't have a good way of pulling the related
     // ones, but also because those should come with pullTo.
   }
