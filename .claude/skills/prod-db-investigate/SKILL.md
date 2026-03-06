@@ -12,13 +12,13 @@ You have readonly access to the production database via `psql` over a Cloud SQL 
 Use this command template via Bash:
 
 ```bash
-PGPASSWORD=$(op read --account plotco.1password.com "op://Production/Database/readonly/password") psql -h 127.0.0.1 -p 5433 -U readonly -d plot -c "SELECT ..."
+PGPASSWORD=$PROD_DB_PASSWORD psql -h 127.0.0.1 -p 5433 -U readonly -d plot -c "SELECT ..."
 ```
 
 For multi-line queries, use a heredoc:
 
 ```bash
-PGPASSWORD=$(op read --account plotco.1password.com "op://Production/Database/readonly/password") psql -h 127.0.0.1 -p 5433 -U readonly -d plot <<'SQL'
+PGPASSWORD=$PROD_DB_PASSWORD psql -h 127.0.0.1 -p 5433 -U readonly -d plot <<'SQL'
 SELECT ...
 FROM ...
 WHERE ...
