@@ -117,7 +117,7 @@ class OklchColours {
         highlight: neutral(0.94, 0.03, null, 0.9),
         foreground: neutral(0.25, 0.01),
         muted: neutral(0.48, 0.01),
-        veryMuted: neutral(0.68, 0.01),
+        veryMuted: neutral(0.64, 0.01),
         border: neutral(0.0, 0.0, 0.0, 0.18),
         barrier: neutral(0.0, 0.0, 0.0, 0.3),
         baseAccentChroma: baseChroma * saturate,
