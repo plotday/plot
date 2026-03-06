@@ -103,7 +103,7 @@ class PrioritiesPage extends StatelessWidget {
                                         border: Border(
                                           top: BorderSide(
                                             color: context.theme.colors.border,
-                                            width: 0.5,
+                                            width: 1,
                                           ),
                                         ),
                                       ),
