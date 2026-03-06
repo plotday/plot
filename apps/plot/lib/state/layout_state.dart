@@ -17,7 +17,9 @@ class LayoutState extends Equatable {
   /// Whether layout supports multiple panels (based on screen width)
   final bool multiPanel;
 
-  bool get showBackButton => !multiPanel || !middlePanelVisible;
+  /// Whether layout is in 2-panel mode (multi-panel but not all 3 visible)
+  bool get isTwoPanel =>
+      multiPanel && !(leftPanelVisible && middlePanelVisible);
 
   /// Minimum width constraints per spec
   static const double leftPanelMinWidth = 250.0;

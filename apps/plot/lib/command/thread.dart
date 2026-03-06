@@ -11,6 +11,7 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
+import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'logging.dart';
@@ -70,9 +71,11 @@ class ChangeCurrentThread extends ThreadCommand {
     // Read blocs once to avoid multiple lookups
     final priorityBloc = context.read<PriorityBloc>();
     final nowBloc = context.read<NowBloc>();
+    final layoutBloc = context.read<LayoutBloc>();
 
     // Get the currently viewed priority before making any changes
     final currentPriority = priorityBloc.state.context;
+    final hadThread = priorityBloc.state.thread != null;
 
     // Propagate the list source from the widget tree (if available).
     // When tapped from a list, the BuildContext is inside a
@@ -80,6 +83,18 @@ class ChangeCurrentThread extends ThreadCommand {
     // or URL navigation, source will be null (preserving existing source).
     final source = ThreadListSourceProvider.maybeOf(context);
     priorityBloc.setThread(thread, source: source);
+
+    // Auto-slide panels in 2-panel mode
+    final layoutState = layoutBloc.state;
+    if (layoutState.isTwoPanel) {
+      if (thread != null && !hadThread) {
+        // Opening thread from browsing → slide to Middle+Right
+        layoutBloc.setPanelVisibility(left: false, middle: true);
+      } else if (thread == null) {
+        // Closing thread → slide back to Left+Right (browsing)
+        layoutBloc.setPanelVisibility(left: true, middle: false);
+      }
+    }
 
     if (thread == null) {
       // Update NowBloc to match the current priority being viewed
@@ -128,6 +143,13 @@ class NewThread extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
     final priorityId = priorityBloc.state.context.id;
+
+    // Auto-slide panels in 2-panel mode
+    final layoutBloc = context.read<LayoutBloc>();
+    if (layoutBloc.state.isTwoPanel) {
+      layoutBloc.setPanelVisibility(left: false, middle: true);
+    }
+
     return CommandRoute(
       PriorityRoute(
         priorityIdString: priorityId.toShortString(),

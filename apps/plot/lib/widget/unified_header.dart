@@ -145,14 +145,33 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (resolvedToolbarPadding.left != 0)
         SizedBox(width: resolvedToolbarPadding.left),
 
-      // Toggle/Back button
-      if (!layoutState.multiPanel && hasActivity)
+      // Single-panel with thread: back button
+      if (hasActivity && !layoutState.multiPanel)
         Button.icon(
           CommandWrapper(
             ChangeCurrentThread(null),
             icon: Value(PlotIcon.back),
           ),
         )
+      // 2-panel with thread: collapse button + Open Priorities button
+      else if (hasActivity && layoutState.isTwoPanel)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Button.icon(CyclePanelsCommand(layoutState: layoutState)),
+            Button.icon(
+              CommandWrapper(
+                ChangeCurrentThread(null),
+                icon: Value(PlotIcon.priorities),
+                title: 'Open Priorities',
+              ),
+            ),
+          ],
+        )
+      // 2-panel browsing: toggle left panel
+      else if (layoutState.isTwoPanel)
+        Button.icon(CyclePanelsCommand(layoutState: layoutState))
+      // 3-panel: cycle button
       else if (layoutState.multiPanel)
         Button.icon(CyclePanelsCommand(layoutState: layoutState)),
 

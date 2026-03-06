@@ -78,18 +78,16 @@ class CyclePanelsCommand extends Command {
   static String menuLabel(LayoutState layoutState) => _title(layoutState);
 
   static String _title(LayoutState layoutState) {
-    final visibleCount = 1 +
-        (layoutState.leftPanelVisible ? 1 : 0) +
-        (layoutState.middlePanelVisible ? 1 : 0);
-    if (visibleCount > 1) return 'Close Sidebar';
+    if (layoutState.leftPanelVisible || layoutState.middlePanelVisible) {
+      return 'Close Sidebar';
+    }
     return 'Open Sidebar';
   }
 
   static IconData _icon(LayoutState layoutState) {
-    final visibleCount = 1 +
-        (layoutState.leftPanelVisible ? 1 : 0) +
-        (layoutState.middlePanelVisible ? 1 : 0);
-    if (visibleCount > 1) return PlotIcon.sidebarClose;
+    if (layoutState.leftPanelVisible || layoutState.middlePanelVisible) {
+      return PlotIcon.sidebarClose;
+    }
     return PlotIcon.sidebarOpen;
   }
 
@@ -114,11 +112,16 @@ class CyclePanelsCommand extends Command {
         layoutBloc.setPanelVisibility(left: true, middle: true);
       }
     } else {
-      // 2-panel capable: 2 → 1 (hide middle) → 2
-      if (visibleCount >= 2) {
-        layoutBloc.setPanelVisibility(left: false, middle: false);
+      // 2-panel: toggle the active sidebar panel on/off
+      if (state.middlePanelVisible) {
+        // Middle+Right → Right-only
+        layoutBloc.setPanelVisibility(middle: false);
+      } else if (state.leftPanelVisible) {
+        // Left+Right → Right-only
+        layoutBloc.setPanelVisibility(left: false);
       } else {
-        layoutBloc.setPanelVisibility(left: true, middle: true);
+        // Right-only → restore left (browsing default)
+        layoutBloc.setPanelVisibility(left: true);
       }
     }
     return const CommandDone();
@@ -158,10 +161,13 @@ class ToggleSidebarCommand extends Command {
         layoutBloc.setPanelVisibility(left: true, middle: true);
       }
     } else {
-      if (visibleCount >= 2) {
-        layoutBloc.setPanelVisibility(left: false, middle: false);
+      // 2-panel: toggle the active sidebar panel on/off
+      if (state.middlePanelVisible) {
+        layoutBloc.setPanelVisibility(middle: false);
+      } else if (state.leftPanelVisible) {
+        layoutBloc.setPanelVisibility(left: false);
       } else {
-        layoutBloc.setPanelVisibility(left: true, middle: true);
+        layoutBloc.setPanelVisibility(left: true);
       }
     }
     return const CommandDone();
