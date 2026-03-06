@@ -449,6 +449,40 @@ BEGIN
 END;
 $function$;
 
+-- User sync trigger function for link changes
+CREATE OR REPLACE FUNCTION public.sync_user_for_link ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_max_updated_at timestamptz;
+    v_user_id uuid;
+BEGIN
+    SELECT
+        MAX(updated_at) INTO v_max_updated_at
+    FROM
+        new_table;
+    -- Get all users with access to the link's priority (including hierarchical access)
+    FOR v_user_id IN SELECT DISTINCT
+        upe.user_id
+    FROM
+        new_table n
+        JOIN "user".priority_expanded upe ON upe.priority_id = n.priority_id
+    WHERE
+        upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'thread', v_max_updated_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+        END LOOP;
+    RETURN NULL;
+END;
+$function$;
+
 -- User sync trigger function for schedule changes
 CREATE OR REPLACE FUNCTION public.sync_user_for_schedule ()
     RETURNS TRIGGER
@@ -472,6 +506,25 @@ BEGIN
         JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
     WHERE
         upe.archived_at IS NULL
+    ORDER BY
+        upe.user_id LOOP
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'schedule', v_max_updated_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+        END LOOP;
+    -- Handle link schedules (thread_id is NULL, link_id is set)
+    FOR v_user_id IN SELECT DISTINCT
+        upe.user_id
+    FROM
+        new_table n
+        JOIN link l ON l.id = n.link_id
+        JOIN "user".priority_expanded upe ON upe.priority_id = l.priority_id
+    WHERE
+        n.thread_id IS NULL
+        AND n.link_id IS NOT NULL
+        AND upe.archived_at IS NULL
     ORDER BY
         upe.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)

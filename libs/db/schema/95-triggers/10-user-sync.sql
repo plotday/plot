@@ -154,6 +154,19 @@ CREATE TRIGGER user_sync_source_channel_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_source_channel();
 
+-- User sync triggers for link table
+CREATE TRIGGER user_sync_link_insert
+  AFTER INSERT ON link
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_link();
+
+CREATE TRIGGER user_sync_link_update
+  AFTER UPDATE ON link
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_link();
+
 -- User sync triggers for schedule table
 CREATE TRIGGER user_sync_schedule_insert
   AFTER INSERT ON schedule

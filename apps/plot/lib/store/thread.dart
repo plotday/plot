@@ -423,6 +423,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       ascending: false,
       archived: archived,
     );
+    // Pull links so activity_at can be computed correctly from link.sourceCreatedAt
+    await Store.get.pull(Store.get.links, LinksBase());
   }
 
   /// Pull one page of agenda (forward from today).
@@ -462,6 +464,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       ascending: true,
       archived: archived,
     );
+    // Pull links so link schedules and activity_at data are available
+    await Store.get.pull(Store.get.links, LinksBase());
   }
 
   static Future<bool> push() async {
