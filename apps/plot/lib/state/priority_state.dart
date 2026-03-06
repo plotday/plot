@@ -116,13 +116,6 @@ class PriorityState extends Equatable {
           item.date == Date.today()) {
         return false;
       }
-      // Strip sub-priority-only headers (priority set, but no date or dateTimeRange)
-      if (item is AgendaHeaderItem &&
-          item.priority != null &&
-          item.date == null &&
-          item.dateTimeRange == null) {
-        return false;
-      }
       // Strip event headers (timing info now shown inside ThreadWidget).
       // Keep only current event headers (event happening now) since they
       // replace the "Now" text header.
@@ -356,7 +349,7 @@ class PriorityState extends Equatable {
           if (entry.key.id != skipHeaderFor?.id ||
               prioritizedThreads.length > 1) {
             items.add(
-              AgendaHeaderItem(priority: entry.key, scheduleAt: scheduleAt),
+              AgendaHeaderItem(scheduleAt: scheduleAt),
             );
           }
           items.addAll(
@@ -379,7 +372,6 @@ class PriorityState extends Equatable {
         // Add date header
         items.add(
           AgendaHeaderItem(
-            priority: null,
             date: event.at?.start?.toDate(),
             now: current,
           ),
@@ -388,7 +380,6 @@ class PriorityState extends Equatable {
         // Add header for the event (with time and duration)
         items.add(
           AgendaHeaderItem(
-            priority: event.priority,
             dateTimeRange: event.at,
             now: current,
             thread: event,
@@ -498,7 +489,6 @@ class PriorityState extends Equatable {
         final dayScheduleStart = now.isAfter(nineAM) ? now : nineAM;
         items.add(
           AgendaHeaderItem(
-            priority: null,
             date: today,
             now: true,
             scheduleAt: dayScheduleStart,
@@ -586,7 +576,6 @@ class PriorityState extends Equatable {
             if (!createdDateHeader) {
               items.add(
                 AgendaHeaderItem(
-                  priority: null,
                   date: date,
                   now: dateHeaderIsNow,
                   scheduleAt: dayScheduleAt,
@@ -603,7 +592,6 @@ class PriorityState extends Equatable {
 
             items.add(
               AgendaHeaderItem(
-                priority: null,
                 dateTimeRange:
                     afterNowScheduled.firstOrNull?.at?.start != null
                     ? DateTimeRange(
@@ -633,7 +621,6 @@ class PriorityState extends Equatable {
                 beforeNowScheduled.isNotEmpty) {
               items.add(
                 AgendaHeaderItem(
-                  priority: null,
                   date: date,
                   now: dateHeaderIsNow,
                   scheduleAt: dayScheduleAt,
@@ -656,7 +643,6 @@ class PriorityState extends Equatable {
               beforeNowScheduled.isNotEmpty) {
             items.add(
               AgendaHeaderItem(
-                priority: null,
                 date: date,
                 now: dateHeaderIsNow,
                 scheduleAt: dayScheduleAt,
@@ -688,7 +674,6 @@ class PriorityState extends Equatable {
           if (startOfDay && !createdDateHeader) {
             items.add(
               AgendaHeaderItem(
-                priority: null,
                 date: date,
                 now: dateHeaderIsNow,
                 scheduleAt: dayScheduleAt,
@@ -718,7 +703,6 @@ class PriorityState extends Equatable {
           } else if (!startOfDay) {
             items.add(
               AgendaHeaderItem(
-                priority: null,
                 dateTimeRange: gapRange,
                 now: nextIsNow,
                 scheduleAt: gapStart,
@@ -800,7 +784,6 @@ class PriorityState extends Equatable {
         if (startOfDay && !createdDateHeader) {
           items.add(
             AgendaHeaderItem(
-              priority: null,
               date: date,
               now: dateHeaderIsNow,
               scheduleAt: dayScheduleAt,
@@ -814,7 +797,6 @@ class PriorityState extends Equatable {
         } else if (!startOfDay) {
           items.add(
             AgendaHeaderItem(
-              priority: null,
               dateTimeRange: gapRange,
               now: nextIsNow,
               scheduleAt: gapStart,
@@ -897,7 +879,6 @@ class PriorityState extends Equatable {
               if (item is AgendaHeaderItem) {
                 if (item.date != null || item.dateTimeRange != null) {
                   items[i] = AgendaHeaderItem(
-                    priority: item.priority,
                     dateTimeRange: item.dateTimeRange,
                     date: item.date,
                     now: true,
@@ -920,7 +901,6 @@ class PriorityState extends Equatable {
 
       items.add(
         AgendaHeaderItem(
-          priority: null,
           date: today,
           now: true,
           scheduleAt: dayScheduleStart,
@@ -976,31 +956,6 @@ class PriorityState extends Equatable {
       items
         ..clear()
         ..addAll(merged);
-    }
-
-    // Mark consecutive date-only headers as compact
-    for (int i = 1; i < items.length; i++) {
-      final prev = items[i - 1];
-      final curr = items[i];
-      if (prev is AgendaHeaderItem &&
-          prev.date != null &&
-          prev.priority == null &&
-          prev.thread == null &&
-          curr is AgendaHeaderItem &&
-          curr.date != null &&
-          curr.priority == null &&
-          curr.thread == null) {
-        items[i] = AgendaHeaderItem(
-          priority: curr.priority,
-          dateTimeRange: curr.dateTimeRange,
-          date: curr.date,
-          now: curr.now,
-          thread: curr.thread,
-          text: curr.text,
-          scheduleAt: curr.scheduleAt,
-          compact: true,
-        );
-      }
     }
 
     return items;
@@ -1105,28 +1060,24 @@ sealed class AgendaItem {
 
 class AgendaHeaderItem extends AgendaItem {
   const AgendaHeaderItem({
-    this.priority,
     this.dateTimeRange,
     this.date,
     this.now = false,
     this.thread,
     this.text,
     this.scheduleAt,
-    this.compact = false,
   });
 
-  final Priority? priority;
   final DateTimeRange? dateTimeRange;
   final Date? date;
   final bool now;
   final Thread? thread;
   final String? text;
   final DateTime? scheduleAt;
-  final bool compact;
 
   @override
   String toString() =>
-      'AgendaHeaderItem(priority: ${priority?.title}, dateTimeRange: $dateTimeRange, date: $date, now: $now, text: $text, scheduleAt: $scheduleAt, compact: $compact)';
+      'AgendaHeaderItem(dateTimeRange: $dateTimeRange, date: $date, now: $now, text: $text, scheduleAt: $scheduleAt)';
 }
 
 class AgendaThreadItem extends AgendaItem {

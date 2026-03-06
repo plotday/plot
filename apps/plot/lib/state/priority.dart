@@ -113,44 +113,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     final item = viewItems.removeAt(adjOld);
     viewItems.insert(adjNew, updatedItem ?? item);
 
-    // Re-apply compact flags: consecutive date-only headers should be compact
-    for (int i = 1; i < viewItems.length; i++) {
-      final prev = viewItems[i - 1];
-      final curr = viewItems[i];
-      if (prev is AgendaHeaderItem &&
-          prev.date != null &&
-          prev.priority == null &&
-          prev.thread == null &&
-          curr is AgendaHeaderItem &&
-          curr.date != null &&
-          curr.priority == null &&
-          curr.thread == null) {
-        if (!curr.compact) {
-          viewItems[i] = AgendaHeaderItem(
-            priority: curr.priority,
-            dateTimeRange: curr.dateTimeRange,
-            date: curr.date,
-            now: curr.now,
-            thread: curr.thread,
-            text: curr.text,
-            scheduleAt: curr.scheduleAt,
-            compact: true,
-          );
-        }
-      } else if (curr is AgendaHeaderItem && curr.compact) {
-        viewItems[i] = AgendaHeaderItem(
-          priority: curr.priority,
-          dateTimeRange: curr.dateTimeRange,
-          date: curr.date,
-          now: curr.now,
-          thread: curr.thread,
-          text: curr.text,
-          scheduleAt: curr.scheduleAt,
-          compact: false,
-        );
-      }
-    }
-
     // Record the expected order so the stream listener can detect when
     // the DB data has settled and safely transition from the optimistic
     // reorderViewItems to the derived _makeAgenda result.
@@ -903,8 +865,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
+  bool get _effectiveShowArchived =>
+      state.showArchived || state.filter.contains(Tag.archived);
+
   Future<void> _triggerAgendaSync(Priority priorityToLoad) async {
-    final archived = state.showArchived == true;
+    final archived = _effectiveShowArchived;
     await Thread.pullAgenda(
       priorityToLoad.id, priorityToLoad.path,
       archived: archived,
@@ -925,6 +890,12 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void _loadActivityFeed({bool triggerSync = true}) {
     final priorityToLoad = state.targetPriority ?? state.context;
+    log.info(
+      '[_loadActivityFeed] start: limit=$_activityFeedLimit '
+      'triggerSync=$triggerSync showArchived=${state.showArchived} '
+      'effectiveShowArchived=$_effectiveShowArchived '
+      'filter=${state.filter} syncNoMore=$_activityFeedSyncNoMore',
+    );
     _activityFeedSubscription?.cancel();
     _activityFeedSubscription = Thread.watch(
       order: ThreadOrder.reverse,
@@ -936,6 +907,23 @@ class PriorityBloc extends Cubit<PriorityState> {
     ).listen((result) {
       final (:threads, :rawRowCount) = result;
       _activityFeedLastRawRowCount = rawRowCount;
+      // doneEnd when sync is complete AND either:
+      // - raw rows are below limit (no more data), OR
+      // - thread count hasn't grown despite limit increase (JOIN multiplication)
+      final threadCountStalled = _activityFeedSyncNoMore &&
+          rawRowCount >= _activityFeedLimit &&
+          threads.length == state.activityFeedItems
+              .whereType<AgendaThreadItem>()
+              .length &&
+          threads.length < _activityFeedLimit;
+      final doneEnd = (rawRowCount < _activityFeedLimit && _activityFeedSyncNoMore) ||
+          threadCountStalled;
+      log.info(
+        '[_loadActivityFeed] stream: threads=${threads.length} '
+        'rawRowCount=$rawRowCount limit=$_activityFeedLimit '
+        'syncNoMore=$_activityFeedSyncNoMore '
+        'threadCountStalled=$threadCountStalled → doneEnd=$doneEnd',
+      );
       final items = <AgendaItem>[];
       String? currentBucket;
       for (final thread in threads) {
@@ -952,7 +940,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
       emit(state.copyWith(
         activityFeedItems: items,
-        activityFeedDoneEnd: rawRowCount < _activityFeedLimit && _activityFeedSyncNoMore,
+        activityFeedDoneEnd: doneEnd,
       ));
     });
 
@@ -962,7 +950,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
-    final archived = state.showArchived == true;
+    final archived = _effectiveShowArchived;
+    log.info(
+      '[_triggerActivityFeedSync] start: archived=$archived '
+      'showArchived=${state.showArchived} filter=${state.filter}',
+    );
     await Thread.pullActivityFeed(
       priorityToLoad.id, priorityToLoad.path,
       archived: archived,
@@ -976,13 +968,25 @@ class PriorityBloc extends Cubit<PriorityState> {
     // If no sync state exists after pulling, the pull was satisfied by an
     // ancestor's noMore flag — treat this entity as fully synced too.
     _activityFeedSyncNoMore = syncState?.noMore ?? true;
+    log.info(
+      '[_triggerActivityFeedSync] done: entityName=$entityName '
+      'syncNoMore=$_activityFeedSyncNoMore '
+      'lastRawRowCount=$_activityFeedLastRawRowCount '
+      'limit=$_activityFeedLimit',
+    );
     if (_activityFeedSyncNoMore && _activityFeedLastRawRowCount < _activityFeedLimit) {
+      log.info('[_triggerActivityFeedSync] emitting doneEnd=true');
       emit(state.copyWith(activityFeedDoneEnd: true));
     }
   }
 
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
     final needed = first + count;
+    log.info(
+      '[fetchMoreActivityFeedItems] first=$first count=$count needed=$needed '
+      'limit=$_activityFeedLimit doneEnd=${state.activityFeedDoneEnd} '
+      'syncNoMore=$_activityFeedSyncNoMore',
+    );
     if (needed > _activityFeedLimit) {
       _activityFeedLimit = needed;
       _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore);

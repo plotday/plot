@@ -841,18 +841,8 @@ class _PriorityPageState extends State<PriorityPage> {
                                                     threadCommandGroups(
                                                       agendaActivity.thread,
                                                     ),
-                                                header: (header) async {
-                                                  if (header.priority == null ||
-                                                      header.priority!.id ==
-                                                          state.context.id) {
-                                                    return <
-                                                      StaticCommandGroup
-                                                    >[];
-                                                  }
-                                                  return priorityCommandGroups(
-                                                    header.priority!,
-                                                  );
-                                                },
+                                                header: (_) async =>
+                                                    <StaticCommandGroup>[],
                                               );
                                             },
                                           ),
@@ -898,17 +888,8 @@ class _PriorityPageState extends State<PriorityPage> {
                                           threadCommandGroupsSync(
                                             agendaActivity.thread,
                                           ),
-                                      header: (header) {
-                                        // Skip if priority is null or this is the context priority (already added by outer CommandScope)
-                                        if (header.priority == null ||
-                                            header.priority!.id ==
-                                                state.context.id) {
-                                          return <StaticCommandGroup>[];
-                                        }
-                                        return priorityCommandGroups(
-                                          header.priority!,
-                                        );
-                                      },
+                                      header: (_) =>
+                                          <StaticCommandGroup>[],
                                     ) ??
                                     <StaticCommandGroup>[];
                               },
@@ -1121,7 +1102,6 @@ class _PriorityPageState extends State<PriorityPage> {
         for (final item in previewItems)
           item.when(
             header: (header) => AgendaHeader(
-              priority: header.priority,
               priorityContext: state.context,
               dateTimeRange: header.dateTimeRange,
               date: header.date,
@@ -1129,7 +1109,6 @@ class _PriorityPageState extends State<PriorityPage> {
               thread: header.thread,
               text: header.text,
               scheduleAt: header.scheduleAt,
-              compact: header.compact,
             ),
             activity: (agendaActivity) => ThreadWidget(
               activity: agendaActivity.thread,
@@ -1281,8 +1260,8 @@ class _PriorityPageState extends State<PriorityPage> {
               header: (h) => h.date != null
                   ? 'header_date_${h.date}'
                   : h.dateTimeRange != null
-                  ? 'header_event_${h.priority?.id ?? 'null'}_${h.dateTimeRange}'
-                  : 'header_priority_${h.priority?.id ?? 'null'}',
+                  ? 'header_event_${h.dateTimeRange}'
+                  : 'header_other',
               activity: (a) =>
                   'activity_${a.thread.id}${a.thread.occurrence != null ? '_${a.thread.occurrence}' : ''}${a.thread.isLinkScheduleInstance ? '_link' : ''}',
             ),
@@ -1341,10 +1320,9 @@ class _PriorityPageState extends State<PriorityPage> {
                       header.date != null
                           ? 'agendaheader_date_${header.date}'
                           : header.dateTimeRange != null
-                          ? 'agendaheader_event_${header.priority?.id ?? 'null'}_${header.dateTimeRange}'
-                          : 'agendaheader_priority_${header.priority?.id ?? 'null'}',
+                          ? 'agendaheader_event_${header.dateTimeRange}'
+                          : 'agendaheader_other',
                     ),
-                    priority: header.priority,
                     priorityContext: state.context,
                     dateTimeRange: header.dateTimeRange,
                     date: header.date,
@@ -1353,7 +1331,6 @@ class _PriorityPageState extends State<PriorityPage> {
                     focusNode: focusNode,
                     text: header.text,
                     scheduleAt: header.scheduleAt,
-                    compact: header.compact,
                   ),
                 ];
               },
@@ -1702,7 +1679,6 @@ class _PriorityPageState extends State<PriorityPage> {
               header: (header) {
                 return [
                   AgendaHeader(
-                    priority: header.priority,
                     priorityContext: state.context,
                     dateTimeRange: header.dateTimeRange,
                     date: header.date,
@@ -1711,7 +1687,6 @@ class _PriorityPageState extends State<PriorityPage> {
                     focusNode: focusNode,
                     text: header.text,
                     scheduleAt: header.scheduleAt,
-                    compact: header.compact,
                   ),
                 ];
               },

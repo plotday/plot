@@ -10,7 +10,6 @@ import 'package:plot/widget/widget.dart';
 
 class AgendaHeader extends StatefulWidget {
   const AgendaHeader({
-    this.priority,
     this.priorityContext,
     this.dateTimeRange,
     this.date,
@@ -19,11 +18,9 @@ class AgendaHeader extends StatefulWidget {
     this.focusNode,
     this.text,
     this.scheduleAt,
-    this.compact = false,
     super.key,
   });
 
-  final Priority? priority;
   final Priority? priorityContext;
   final DateTimeRange? dateTimeRange;
   final Date? date;
@@ -32,7 +29,6 @@ class AgendaHeader extends StatefulWidget {
   final FocusNode? focusNode;
   final String? text;
   final DateTime? scheduleAt;
-  final bool compact;
 
   @override
   State<AgendaHeader> createState() => _AgendaHeaderState();
@@ -235,14 +231,9 @@ class _AgendaHeaderState extends State<AgendaHeader> {
       }
     }
 
-    // When a scheduled event is in progress, use its priority color;
-    // otherwise fall back to priorityContext color.
-    final nowColor = widget.thread != null && widget.priority != null
-        ? context.colour.colours.fromTheme(widget.priority!.displayColor)
-        : widget.priorityContext != null
+    // Use priorityContext color when available, otherwise muted.
+    final nowColor = widget.priorityContext != null
         ? context.colour.colours.fromTheme(widget.priorityContext!.displayColor)
-        : widget.priority != null
-        ? context.colour.colours.fromTheme(widget.priority!.displayColor)
         : context.theme.colors.mutedForeground;
 
     final textColor = widget.now
@@ -270,13 +261,6 @@ class _AgendaHeaderState extends State<AgendaHeader> {
         widget.dateTimeRange?.end != null &&
             widget.dateTimeRange!.end!.isBefore(Time.now());
 
-    // Calculate duration: use gap duration if <1h, otherwise default to 1h
-    final duration =
-        widget.dateTimeRange?.duration != null &&
-            widget.dateTimeRange!.duration! < const Duration(hours: 1)
-        ? widget.dateTimeRange!.duration!
-        : const Duration(hours: 1);
-
     // For headers with scheduleAt (not in the past)
     if (!isPast && (widget.scheduleAt != null || widget.thread?.at != null)) {
       // If this header has an associated event activity, use RescheduleEvent
@@ -285,39 +269,20 @@ class _AgendaHeaderState extends State<AgendaHeader> {
           RescheduleEvent(widget.thread!, showPrioritySelector: true),
           icon: Value(null),
         );
-      } else if (widget.priority != null) {
-        // Otherwise, create a new event (only if priority is set)
-        command = CommandWrapper(
-          NewEvent(
-            priority: widget.priority!,
-            startTime: widget.scheduleAt!,
-            duration: duration,
-          ),
-          icon: Value(null),
-        );
-      }
-    } else if (widget.priority != null &&
-        widget.priority!.id != widget.priorityContext?.id) {
-      // Priority header: Open the priority
-      command = CommandWrapper(
-        OpenPriority.byId(widget.priority!.id),
-        icon: Value(null),
-      );
+        }
     }
 
     final verticalMargin = isGapHeader
         ? 0.0
         : widget.date != null
         ? context.theme.spacing.xl
-        : (widget.compact
-              ? context.theme.spacing.xs
-              : context.theme.spacing.md);
+        : context.theme.spacing.md;
 
     // Date headers: simple container with darkened background, no ListTile needed
     if (widget.date != null) {
       final headerBg = context.colour.headerBackground;
       final dateFontSize = dateCenterLeft == null
-          ? context.theme.typography.sm.fontSize
+          ? context.theme.typography.xs.fontSize
           : context.theme.typography.base.fontSize;
       final veryMuted = context.theme.plotColors.veryMuted;
       final mutedStyle = TextStyle(color: veryMuted, fontSize: dateFontSize);
