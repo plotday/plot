@@ -243,24 +243,55 @@ class ThreadWidget extends StatelessWidget {
                                 right: 0,
                                 top: 0,
                                 bottom: 0,
-                                child: Center(
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        activity.at!.start!
-                                            .toTimeOfDay()
-                                            .formatShort(context),
-                                        style: timingColor,
-                                      ),
-                                      if (activity.at!.duration != null &&
-                                          activity.at!.duration!.inSeconds > 0)
+                                child: Builder(
+                                  builder: (context) {
+                                    final timeStr = activity.at!.start!
+                                        .toTimeOfDay()
+                                        .formatShort(context);
+                                    final amPmMatch =
+                                        RegExp(r'[AP]M$').firstMatch(timeStr);
+                                    final hasDuration =
+                                        activity.at!.duration != null &&
+                                            activity.at!.duration!.inSeconds >
+                                                0;
+                                    if (amPmMatch == null) {
+                                      return Center(
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(timeStr, style: timingColor),
+                                            if (hasDuration)
+                                              Text(
+                                                ' · ${activity.at!.duration!.format()}',
+                                                style: timingColor,
+                                              ),
+                                          ],
+                                        ),
+                                      );
+                                    }
+                                    final timePart = timeStr.substring(
+                                        0, amPmMatch.start);
+                                    final periodPart =
+                                        timeStr.substring(amPmMatch.start);
+                                    return Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            timePart,
+                                            style: timingColor,
+                                            textAlign: TextAlign.right,
+                                          ),
+                                        ),
                                         Text(
-                                          ' · ${activity.at!.duration!.format()}',
+                                          hasDuration
+                                              ? '$periodPart · ${activity.at!.duration!.format()}'
+                                              : periodPart,
                                           style: timingColor,
                                         ),
-                                    ],
-                                  ),
+                                        const Spacer(),
+                                      ],
+                                    );
+                                  },
                                 ),
                               ),
                               // Priority label on the left

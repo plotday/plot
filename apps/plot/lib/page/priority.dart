@@ -539,6 +539,7 @@ class _PriorityPageState extends State<PriorityPage>
     {
   PriorityTab _currentTab = PriorityTab.agenda;
   PriorityTabNotifier? _tabNotifier;
+  bool _userSelectedAgenda = false;
 
   /// Fraction of usable height (totalHeight - dividerHeight) for the top list.
   /// 0.0 = collapsed minimum. Values are clamped to [_minFraction, 1.0] in layout.
@@ -580,7 +581,18 @@ class _PriorityPageState extends State<PriorityPage>
     if (_tabNotifier != null && _tabNotifier!.value != _currentTab) {
       setState(() {
         _currentTab = _tabNotifier!.value;
+        if (_currentTab == PriorityTab.agenda) {
+          _userSelectedAgenda = true;
+        }
       });
+    }
+  }
+
+  @override
+  void didUpdateWidget(PriorityPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.priorityId != widget.priorityId) {
+      _userSelectedAgenda = false;
     }
   }
 
@@ -625,6 +637,18 @@ class _PriorityPageState extends State<PriorityPage>
             ? const Center(child: Spinner())
             : BlocBuilder<LayoutBloc, LayoutState>(
                 builder: (context, layoutState) {
+                  // Auto-switch to activity tab when agenda is empty
+                  // in single panel mode, unless user explicitly tapped Agenda.
+                  if (!layoutState.multiPanel &&
+                      !_userSelectedAgenda &&
+                      _currentTab == PriorityTab.agenda &&
+                      state.doneStart &&
+                      state.agendaViewItems
+                          .whereType<AgendaThreadItem>()
+                          .isEmpty) {
+                    _currentTab = PriorityTab.activityFeed;
+                  }
+
                   // On desktop, use expansion state; on mobile, use tab state
                   final isUpNext = layoutState.multiPanel
                       ? !_isCollapsed
