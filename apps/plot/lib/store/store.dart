@@ -392,6 +392,15 @@ class Store extends _$Store {
     if (Injector.appInstance.exists<Store>()) {
       // Get reference before removing from injector
       final store = get;
+      // Prevent new sync operations and cancel pending timers BEFORE
+      // removing from injector or closing the database. This avoids a race
+      // where a debouncer timer fires and executes a query against a
+      // closing/closed SQLite connection (use-after-free → SIGSEGV).
+      store._closing = true;
+      store._syncDebouncer.dispose();
+      store._connectivitySubscription?.cancel();
+      store._connectivitySubscription = null;
+      store._unsubscribeFromUpdates();
       // Remove singleton reference BEFORE closing to prevent access during transition
       Injector.appInstance.removeByKey<Store>();
       await store.close();
@@ -623,6 +632,7 @@ class Store extends _$Store {
   bool _isSyncing = false;
   bool _isOnline = false;
   bool _isBufferingBroadcasts = false;
+  bool _closing = false;
   final _bufferedTables = <String>{};
 
   // Adaptive batch debouncer for sync requests per table
@@ -1531,6 +1541,7 @@ class Store extends _$Store {
   }
 
   Future<void> _handleTableSync(String table) async {
+    if (_closing) return;
     log.fine("Syncing $table via broadcast");
     try {
       // Map table name to SyncEntity using orchestrator
@@ -1627,6 +1638,7 @@ class Store extends _$Store {
   }
 
   Future<void> _startSync() async {
+    if (_closing) return;
     // Prevent concurrent sync attempts
     if (_isSyncing) {
       log.fine("Sync already in progress, skipping");
@@ -1815,6 +1827,7 @@ class Store extends _$Store {
 
   @override
   Future<void> close() async {
+    _closing = true;
     _unsubscribeFromUpdates();
     _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
