@@ -1586,6 +1586,14 @@ TextStyle _inlineTextStyler(
     );
   }
 
+  if (attributions.whereType<LinkAttribution>().isNotEmpty) {
+    style = style.copyWith(
+      color: context.theme.colors.primary,
+      fontWeight: FontWeight.w600,
+      decoration: TextDecoration.none,
+    );
+  }
+
   // Apply dark theme base color if no specific attribution styling is applied
   if (isDark &&
       !attributions.contains(editorMentionComposingAttribution) &&
