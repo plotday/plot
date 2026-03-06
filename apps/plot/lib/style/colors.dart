@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -217,6 +219,12 @@ class ColourSchemeData extends Equatable {
       darken: darken != null ? darken * this.darken : this.darken,
       saturate: saturate != null ? saturate * this.saturate : this.saturate,
     );
+  }
+
+  /// Background color darkened by 2 steps, matching the unified header background.
+  Color get headerBackground {
+    final factor = brightness == Brightness.light ? 1.015 : 1.05;
+    return copyWith(darken: pow(factor, 2).toDouble()).background;
   }
 
   Color get barrier => _colours.barrier.toColor();
