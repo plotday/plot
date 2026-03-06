@@ -1766,7 +1766,7 @@ class _SplitViewDividerState extends State<_SplitViewDivider> {
     final borderColor = active ? accentColor : context.theme.colors.border;
     final textColor = active
         ? accentColor
-        : context.theme.colors.mutedForeground;
+        : context.theme.colors.foreground;
 
     return GestureDetector(
       onVerticalDragStart: widget.onDragStart != null
@@ -1801,16 +1801,32 @@ class _SplitViewDividerState extends State<_SplitViewDivider> {
             horizontal: context.contentPaddingH,
             vertical: context.theme.spacing.xs,
           ),
-          child: Center(
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 150),
-              curve: Curves.easeInOut,
-              style: TextStyle(
-                color: textColor,
-                fontSize: context.theme.typography.xs.fontSize,
+          child: Row(
+            children: [
+              const Spacer(),
+              FaIcon(
+                FontAwesomeIcons.gripDots,
+                size: context.theme.typography.xs.fontSize,
+                color: context.theme.plotColors.veryMuted,
               ),
-              child: const Text('Activity'),
-            ),
+              const Spacer(),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeInOut,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: context.theme.typography.xs.fontSize,
+                ),
+                child: const Text('Activity'),
+              ),
+              const Spacer(),
+              FaIcon(
+                FontAwesomeIcons.gripDots,
+                size: context.theme.typography.xs.fontSize,
+                color: context.theme.plotColors.veryMuted,
+              ),
+              const Spacer(),
+            ],
           ),
         ),
       ),
@@ -1838,7 +1854,7 @@ class _PanelHeader extends StatelessWidget {
         child: Text(
           text,
           style: TextStyle(
-            color: context.theme.colors.mutedForeground,
+            color: context.theme.colors.foreground,
             fontSize: context.theme.typography.xs.fontSize,
           ),
         ),

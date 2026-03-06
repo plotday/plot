@@ -365,8 +365,8 @@ class _AgendaHeaderState extends State<AgendaHeader> {
       }
 
       final verticalPad = dateCenterLeft != null
-          ? context.theme.spacing.xl
-          : context.theme.spacing.md;
+          ? context.theme.spacing.lg
+          : context.theme.spacing.sm;
       return Container(
         color: headerBg,
         padding: EdgeInsets.symmetric(vertical: verticalPad),
@@ -391,215 +391,211 @@ class _AgendaHeaderState extends State<AgendaHeader> {
             : context.theme.colors.background;
 
         return LayoutBuilder(
-              builder: (context, constraints) {
-                final double textHeight = (TextPainter(
-                  text: TextSpan(
-                    text: "A",
-                    style: TextStyle(fontSize: fontSize),
-                  ),
-                  maxLines: 1,
-                  textDirection: TextDirection.ltr,
-                )..layout()).height;
+          builder: (context, constraints) {
+            final double textHeight = (TextPainter(
+              text: TextSpan(
+                text: "A",
+                style: TextStyle(fontSize: fontSize),
+              ),
+              maxLines: 1,
+              textDirection: TextDirection.ltr,
+            )..layout()).height;
 
-                final spacing = context.theme.spacing.md;
+            final spacing = context.theme.spacing.md;
 
-                // Gap/time headers: centered time with optional duration on right
-                if (isGapHeader || (!widget.now && centerText != null)) {
-                  final veryMuted = context.theme.plotColors.veryMuted;
-                  final contentColor = isGapHeader ? veryMuted : textColor;
-                  final timeStyle = TextStyle(
-                    color: contentColor,
-                    fontSize: fontSize,
-                  );
+            // Gap/time headers: centered time with optional duration on right
+            if (isGapHeader || (!widget.now && centerText != null)) {
+              final veryMuted = context.theme.plotColors.veryMuted;
+              final contentColor = isGapHeader ? veryMuted : textColor;
+              final timeStyle = TextStyle(
+                color: contentColor,
+                fontSize: fontSize,
+              );
 
-                  if (timeCenterLeft == null && centerText == null) {
-                    return SizedBox(height: textHeight);
-                  }
+              if (timeCenterLeft == null && centerText == null) {
+                return SizedBox(height: textHeight);
+              }
 
-                  // Width of a single space for the AM/PM gap
-                  final spaceWidth = (TextPainter(
-                    text: TextSpan(
-                      text: ' ',
-                      style: TextStyle(fontSize: fontSize),
-                    ),
-                    maxLines: 1,
-                    textDirection: TextDirection.ltr,
-                  )..layout()).width;
+              // Width of a single space for the AM/PM gap
+              final spaceWidth = (TextPainter(
+                text: TextSpan(
+                  text: ' ',
+                  style: TextStyle(fontSize: fontSize),
+                ),
+                maxLines: 1,
+                textDirection: TextDirection.ltr,
+              )..layout()).width;
 
-                  final String leftText;
-                  final String? rightText;
-                  if (timeCenterLeft != null) {
-                    leftText = timeCenterLeft.trimRight();
-                    rightText = timeCenterRight;
-                  } else {
-                    leftText = centerText!;
-                    rightText = null;
-                  }
+              final String leftText;
+              final String? rightText;
+              if (timeCenterLeft != null) {
+                leftText = timeCenterLeft.trimRight();
+                rightText = timeCenterRight;
+              } else {
+                leftText = centerText!;
+                rightText = null;
+              }
 
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          color: backgroundColor,
-                          padding: EdgeInsets.only(left: spacing),
-                          child: Text(
-                            leftText,
-                            style: timeStyle,
-                            textAlign: TextAlign.right,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: spaceWidth),
-                      Expanded(
-                        child: Container(
-                          color: backgroundColor,
-                          child: Row(
-                            children: [
-                              if (rightText != null)
-                                Text(rightText, style: timeStyle),
-                              const Spacer(),
-                              if (durationText != null)
-                                Text(
-                                  durationText,
-                                  style: TextStyle(
-                                    color: veryMuted,
-                                    fontSize: fontSize,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }
-
-                // Now header with elapsed/remaining: 3-column layout
-                if (widget.now &&
-                    (elapsedDuration != null || remainingDuration != null)) {
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // LEFT: Elapsed
-                      Flexible(
-                        flex: 2,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: elapsedDuration != null
-                              ? Container(
-                                  color: backgroundColor,
-                                  padding: EdgeInsets.only(right: spacing),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      FaIcon(
-                                        PlotIcon.up,
-                                        size: fontSize,
-                                        color: nowColor,
-                                      ),
-                                      SizedBox(
-                                        width: context.theme.spacing.xs,
-                                      ),
-                                      Text(
-                                        elapsedDuration.format(),
-                                        style: TextStyle(
-                                          color: nowColor,
-                                          fontSize: fontSize,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : SizedBox(height: textHeight),
-                        ),
-                      ),
-                      // CENTER: "Now" (or time text)
-                      Expanded(
-                        flex: 2,
-                        child: _buildCenteredTime(
-                          timeCenterLeft: timeCenterLeft,
-                          timeCenterRight: timeCenterRight,
-                          centerText: centerText,
-                          textColor: textColor,
-                          fontSize: fontSize,
-                          backgroundColor: backgroundColor,
-                          spacing: spacing,
-                          textHeight: textHeight,
-                        ),
-                      ),
-                      // RIGHT: Remaining
-                      Flexible(
-                        flex: 2,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: remainingDuration != null
-                              ? Container(
-                                  color: backgroundColor,
-                                  padding: EdgeInsets.only(left: spacing),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        remainingDuration.format(),
-                                        style: TextStyle(
-                                          color: nowColor,
-                                          fontSize: fontSize,
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: context.theme.spacing.xs,
-                                      ),
-                                      FaIcon(
-                                        PlotIcon.down,
-                                        size: fontSize,
-                                        color: nowColor,
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : SizedBox(height: textHeight),
-                        ),
-                      ),
-                    ],
-                  );
-                }
-
-                // Centered text only (e.g., "Now" without elapsed/remaining)
-                if (centerText != null) {
-                  return _buildCenteredTime(
-                    timeCenterLeft: timeCenterLeft,
-                    timeCenterRight: timeCenterRight,
-                    centerText: centerText,
-                    textColor: textColor,
-                    fontSize: fontSize,
-                    backgroundColor: backgroundColor,
-                    spacing: spacing,
-                    textHeight: textHeight,
-                  );
-                }
-
-                // Duration only: right-aligned
-                if (durationText != null) {
-                  return Align(
-                    alignment: Alignment.centerRight,
+              return Row(
+                children: [
+                  Expanded(
                     child: Container(
+                      color: backgroundColor,
                       padding: EdgeInsets.only(left: spacing),
                       child: Text(
-                        durationText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: context.theme.colors.mutedForeground,
-                          fontSize: fontSize,
-                        ),
+                        leftText,
+                        style: timeStyle,
+                        textAlign: TextAlign.right,
                       ),
                     ),
-                  );
-                }
+                  ),
+                  SizedBox(width: spaceWidth),
+                  Expanded(
+                    child: Container(
+                      color: backgroundColor,
+                      child: Row(
+                        children: [
+                          if (rightText != null)
+                            Text(rightText, style: timeStyle),
+                          const Spacer(),
+                          if (durationText != null)
+                            Text(
+                              durationText,
+                              style: TextStyle(
+                                color: veryMuted,
+                                fontSize: fontSize,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
 
-                return SizedBox(height: textHeight);
-              },
-            );
+            // Now header with elapsed/remaining: 3-column layout
+            if (widget.now &&
+                (elapsedDuration != null || remainingDuration != null)) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // LEFT: Elapsed
+                  Flexible(
+                    flex: 2,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: elapsedDuration != null
+                          ? Container(
+                              color: backgroundColor,
+                              padding: EdgeInsets.only(right: spacing),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  FaIcon(
+                                    PlotIcon.up,
+                                    size: fontSize,
+                                    color: nowColor,
+                                  ),
+                                  SizedBox(width: context.theme.spacing.xs),
+                                  Text(
+                                    elapsedDuration.format(),
+                                    style: TextStyle(
+                                      color: nowColor,
+                                      fontSize: fontSize,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : SizedBox(height: textHeight),
+                    ),
+                  ),
+                  // CENTER: "Now" (or time text)
+                  Expanded(
+                    flex: 2,
+                    child: _buildCenteredTime(
+                      timeCenterLeft: timeCenterLeft,
+                      timeCenterRight: timeCenterRight,
+                      centerText: centerText,
+                      textColor: textColor,
+                      fontSize: fontSize,
+                      backgroundColor: backgroundColor,
+                      spacing: spacing,
+                      textHeight: textHeight,
+                    ),
+                  ),
+                  // RIGHT: Remaining
+                  Flexible(
+                    flex: 2,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: remainingDuration != null
+                          ? Container(
+                              color: backgroundColor,
+                              padding: EdgeInsets.only(left: spacing),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    remainingDuration.format(),
+                                    style: TextStyle(
+                                      color: nowColor,
+                                      fontSize: fontSize,
+                                    ),
+                                  ),
+                                  SizedBox(width: context.theme.spacing.xs),
+                                  FaIcon(
+                                    PlotIcon.down,
+                                    size: fontSize,
+                                    color: nowColor,
+                                  ),
+                                ],
+                              ),
+                            )
+                          : SizedBox(height: textHeight),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            // Centered text only (e.g., "Now" without elapsed/remaining)
+            if (centerText != null) {
+              return _buildCenteredTime(
+                timeCenterLeft: timeCenterLeft,
+                timeCenterRight: timeCenterRight,
+                centerText: centerText,
+                textColor: textColor,
+                fontSize: fontSize,
+                backgroundColor: backgroundColor,
+                spacing: spacing,
+                textHeight: textHeight,
+              );
+            }
+
+            // Duration only: right-aligned
+            if (durationText != null) {
+              return Align(
+                alignment: Alignment.centerRight,
+                child: Container(
+                  padding: EdgeInsets.only(left: spacing),
+                  child: Text(
+                    durationText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.theme.colors.mutedForeground,
+                      fontSize: fontSize,
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return SizedBox(height: textHeight);
+          },
+        );
       },
     );
 
