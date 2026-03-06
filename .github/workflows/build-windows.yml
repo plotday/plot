@@ -183,16 +183,15 @@ jobs:
           cd apps/plot
           flutter pub run build_runner build --delete-conflicting-outputs
 
-      - name: Setup Shorebird
-        if: inputs.shorebird_release
-        uses: shorebirdtech/setup@v1
-        with:
-          token: ${{ secrets.SHOREBIRD_TOKEN }}
-
       - name: Build Windows app
+        shell: bash
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
         run: |
           cd apps/plot
           if [ "${{ inputs.shorebird_release }}" == "true" ]; then
+            powershell -Command "& {iwr -UseBasicParsing 'https://raw.githubusercontent.com/shorebirdtech/install/main/install.ps1' | iex}"
+            export PATH="$LOCALAPPDATA/Shorebird/bin:$PATH"
             shorebird release windows --verbose
           else
             flutter build windows --release --verbose
