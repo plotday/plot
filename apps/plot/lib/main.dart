@@ -161,6 +161,23 @@ Future<void> run(List<String> args) async {
 
     // Initialize Tracker immediately after Env so it's ready to capture startup errors
     await Tracker.init();
+
+    // Forward warning+ logs to PostHog in production
+    if (!kDebugMode) {
+      Logger.root.onRecord.listen((record) {
+        if (record.level < Level.WARNING) return;
+        // Avoid infinite loop from Tracker's own logs
+        if (record.loggerName == 'Tracker') return;
+        Tracker.track('[Log] ${record.level.name}', {
+          'logger':
+              record.loggerName.isEmpty ? 'plot' : record.loggerName,
+          'message': record.message,
+          if (record.error != null) 'error': record.error.toString(),
+          if (record.stackTrace != null)
+            'stack_trace': extractStackTrace(record.stackTrace!),
+        });
+      });
+    }
   } catch (error, stackTrace) {
     log.warning('Logging initialization failed', error, stackTrace);
     return runApp(ErrorApp(error: error.toString()));

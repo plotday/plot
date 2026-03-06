@@ -51,15 +51,27 @@ class Actor extends ActorRow {
   /// Loads only critical actors into cache: self actors and priority twists.
   /// Other actors are cached lazily when accessed via get() or getOne().
   static Future<void> pullCritical() async {
-    // Query 1: Fetch only actors with self = true (user's own actors)
-    // Typically 1-10 actors (user's email addresses across different contacts)
-    await get(self: true, archived: null);
+    try {
+      await Future(() async {
+        // Query 1: Fetch only actors with self = true (user's own actors)
+        // Typically 1-10 actors (user's email addresses across different contacts)
+        await get(self: true, archived: null);
 
-    // Query 2: Fetch only priority twist actors
-    // Typically < 50 actors (one per active twist)
-    await get(types: [ActorType.priorityTwist], archived: null);
+        // Query 2: Fetch only priority twist actors
+        // Typically < 50 actors (one per active twist)
+        await get(types: [ActorType.priorityTwist], archived: null);
 
-    // Both queries automatically populate the cache via get() (lines 84-87)
+        // Both queries automatically populate the cache via get() (lines 84-87)
+      }).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      log.warning("Actor.pullCritical timed out after 10s — continuing with local data");
+      Tracker.trackError(
+        'auth',
+        errorType: 'TimeoutException',
+        errorMessage: 'Actor.pullCritical timed out after 10s',
+        context: 'sign_in_actor_pull_timeout',
+      );
+    }
   }
 
   static Future<List<Actor>> get({

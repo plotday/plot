@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -110,7 +111,7 @@ Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
       Uri.parse(Env.apiRoot + url),
       headers: await getHeaders(),
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
@@ -123,6 +124,8 @@ Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
       );
     }
     return _parseResponse(response);
+  } on TimeoutException {
+    throw const NetworkException(message: 'Request timed out. Check your network connection and try again.');
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {
@@ -138,7 +141,7 @@ Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
       Uri.parse(Env.apiRoot + url),
       headers: await getHeaders(),
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
@@ -151,6 +154,8 @@ Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
       );
     }
     return _parseResponse(response);
+  } on TimeoutException {
+    throw const NetworkException(message: 'Request timed out. Check your network connection and try again.');
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {
@@ -166,7 +171,7 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
       Uri.parse(Env.apiRoot + url),
       headers: await getHeaders(),
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
@@ -179,6 +184,8 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
       );
     }
     return _parseResponse(response);
+  } on TimeoutException {
+    throw const NetworkException(message: 'Request timed out. Check your network connection and try again.');
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {
@@ -193,7 +200,7 @@ Future<T> get<T>(String url) async {
     final response = await http.get(
       Uri.parse(Env.apiRoot + url),
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
@@ -206,6 +213,8 @@ Future<T> get<T>(String url) async {
       );
     }
     return _parseResponse(response);
+  } on TimeoutException {
+    throw const NetworkException(message: 'Request timed out. Check your network connection and try again.');
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {
@@ -220,7 +229,7 @@ Future<T> delete<T>(String url) async {
     final response = await http.delete(
       Uri.parse(Env.apiRoot + url),
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
@@ -233,6 +242,8 @@ Future<T> delete<T>(String url) async {
       );
     }
     return _parseResponse(response);
+  } on TimeoutException {
+    throw const NetworkException(message: 'Request timed out. Check your network connection and try again.');
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {
@@ -251,7 +262,7 @@ Future<T> deleteWithBody<T>(
       Uri.parse(Env.apiRoot + url),
       headers: await getHeaders(),
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
@@ -264,6 +275,8 @@ Future<T> deleteWithBody<T>(
       );
     }
     return _parseResponse(response);
+  } on TimeoutException {
+    throw const NetworkException(message: 'Request timed out. Check your network connection and try again.');
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {
@@ -303,7 +316,7 @@ Future<Map<String, dynamic>> uploadFile({
       );
     }
 
-    final streamed = await request.send();
+    final streamed = await request.send().timeout(const Duration(seconds: 120));
     final response = await http.Response.fromStream(streamed);
 
     if (response.statusCode != 200) {
@@ -318,6 +331,8 @@ Future<Map<String, dynamic>> uploadFile({
     }
 
     return jsonDecode(response.body) as Map<String, dynamic>;
+  } on TimeoutException {
+    throw const NetworkException(message: 'Upload timed out. Check your network connection and try again.');
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {
@@ -334,7 +349,7 @@ Future<Uint8List> getFileBytes(String fileId) async {
     final response = await http.get(
       Uri.parse('${Env.apiRoot}/files/$fileId'),
       headers: headers,
-    );
+    ).timeout(const Duration(seconds: 120));
     if (response.statusCode != 200) {
       await _checkAuthError(response, '/files/$fileId');
       final errorMessage = _parseErrorMessage(response);
@@ -346,6 +361,8 @@ Future<Uint8List> getFileBytes(String fileId) async {
       );
     }
     return response.bodyBytes;
+  } on TimeoutException {
+    throw const NetworkException(message: 'Download timed out. Check your network connection and try again.');
   } on SocketException catch (e) {
     throw NetworkException(originalException: e);
   } on HttpException catch (e) {

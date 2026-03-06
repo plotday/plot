@@ -376,6 +376,9 @@ class Store extends _$Store {
     return _clientId!;
   }
 
+  /// Optional callback for reporting status during start (e.g. to show on loading page).
+  static void Function(String status)? onStartStatus;
+
   // Lock to prevent concurrent Store.start() calls
   static final Lock _startLock = Lock();
   // Track the current user to avoid unnecessary Store recreation
@@ -451,8 +454,26 @@ class Store extends _$Store {
         inst._setupConnectivityListener();
       } else {
         // New user or no local data - need to sync before app can be used
-        await inst._waitForNetworkConnectivity();
-        await inst._startSync();
+        log.info("New user sync: starting connectivity check and sync");
+        onStartStatus?.call('Connecting...');
+        try {
+          await Future(() async {
+            await inst._waitForNetworkConnectivity();
+            log.info("New user sync: connectivity confirmed, starting sync");
+            onStartStatus?.call('Syncing your data...');
+            await inst._startSync();
+            log.info("New user sync: sync complete");
+          }).timeout(const Duration(seconds: 60));
+        } on TimeoutException {
+          log.warning("New user sync timed out after 60s");
+          Tracker.trackError(
+            'auth',
+            errorType: 'TimeoutException',
+            errorMessage: 'New user sync timed out after 60s',
+            context: 'sign_in_sync_timeout',
+          );
+          rethrow;
+        }
 
         // If no default priority exists after sync, sign out the user
         if (!await Priority.hasDefault()) {
@@ -1576,14 +1597,29 @@ class Store extends _$Store {
 
     late StreamSubscription<List<ConnectivityResult>> subscription;
     subscription = Connectivity().onConnectivityChanged.listen((results) {
-      if (results.any((result) => result != ConnectivityResult.none)) {
+      if (!completer.isCompleted &&
+          results.any((result) => result != ConnectivityResult.none)) {
         log.info("Network connectivity restored");
         subscription.cancel();
         completer.complete();
       }
     });
 
-    return completer.future;
+    try {
+      await completer.future.timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      log.warning("Connectivity check timed out after 15s — proceeding anyway");
+      Tracker.trackError(
+        'auth',
+        errorType: 'TimeoutException',
+        errorMessage: 'Network connectivity check timed out after 15s',
+        context: 'sign_in_connectivity_timeout',
+      );
+      subscription.cancel();
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    }
   }
 
   Future<void> _startSync() async {
