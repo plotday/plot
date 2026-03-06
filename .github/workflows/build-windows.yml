@@ -17,6 +17,12 @@ name: Build Windows App
 on:
   # Manual trigger only - run this workflow to create a test build
   workflow_dispatch:
+    inputs:
+      shorebird_release:
+        description: 'Create a Shorebird release (registers baseline for OTA patches)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: build-windows-${{ github.ref }}
@@ -177,10 +183,20 @@ jobs:
           cd apps/plot
           flutter pub run build_runner build --delete-conflicting-outputs
 
+      - name: Setup Shorebird
+        if: inputs.shorebird_release
+        uses: shorebirdtech/setup@v1
+        with:
+          token: ${{ secrets.SHOREBIRD_TOKEN }}
+
       - name: Build Windows app
         run: |
           cd apps/plot
-          flutter build windows --release --verbose
+          if [ "${{ inputs.shorebird_release }}" == "true" ]; then
+            shorebird release windows --verbose
+          else
+            flutter build windows --release --verbose
+          fi
 
       # NOTE: MSIX package is signed with self-signed certificate
       # Users must install the public certificate (plot-codesign.cer) to their
