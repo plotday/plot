@@ -73,7 +73,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
         );
         return [SelectGroup(title: null, items: priorities)];
       },
-      itemBuilder: (priority) =>
+      itemBuilder: (priority, _) =>
           ListTile(body: PriorityLabel(priority: priority)),
       selectedValue: _selectedPriority,
       prompt: 'Priority',

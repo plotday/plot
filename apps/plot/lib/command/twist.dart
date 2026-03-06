@@ -115,7 +115,7 @@ class ManageConnections extends Command {
       await SelectModal.open<_ConnectionItem>(
         context,
         items: (search) => _fetchItems(search),
-        itemBuilder: (item) => _buildItem(item),
+        itemBuilder: (item, isLoading) => _buildItem(item, isLoading),
         prompt: 'Connections',
         onRefreshNeeded: (refresh) => refreshFn = refresh,
         onSelect: (ctx, item, _) async {
@@ -258,19 +258,20 @@ class ManageConnections extends Command {
     return count;
   }
 
-  static Widget _buildItem(_ConnectionItem item) {
+  static Widget _buildItem(_ConnectionItem item, bool isLoading) {
     switch (item) {
       case _ActiveSource():
-        return _ActiveSourceRow(item: item);
+        return _ActiveSourceRow(item: item, isLoading: isLoading);
       case _AvailableSource():
-        return _AvailableSourceRow(item: item);
+        return _AvailableSourceRow(item: item, isLoading: isLoading);
     }
   }
 }
 
 class _ActiveSourceRow extends StatelessWidget {
-  const _ActiveSourceRow({required this.item});
+  const _ActiveSourceRow({required this.item, this.isLoading = false});
   final _ActiveSource item;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -289,12 +290,18 @@ class _ActiveSourceRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          _SourceLogo(
-            logoUrl: item.logoUrl,
-            logoUrlDark: item.logoUrlDark,
-            provider: item.provider,
-            size: theme.iconSizes.base,
-          ),
+          if (isLoading)
+            Spinner(
+              size: theme.iconSizes.base,
+              color: theme.colors.mutedForeground,
+            )
+          else
+            _SourceLogo(
+              logoUrl: item.logoUrl,
+              logoUrlDark: item.logoUrlDark,
+              provider: item.provider,
+              size: theme.iconSizes.base,
+            ),
           const SizedBox(width: 12),
           Expanded(
             child: Row(
@@ -345,8 +352,9 @@ class _ActiveSourceRow extends StatelessWidget {
 }
 
 class _AvailableSourceRow extends StatelessWidget {
-  const _AvailableSourceRow({required this.item});
+  const _AvailableSourceRow({required this.item, this.isLoading = false});
   final _AvailableSource item;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -355,12 +363,18 @@ class _AvailableSourceRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          _SourceLogo(
-            logoUrl: item.twist.logoUrl,
-            logoUrlDark: item.twist.logoUrlDark,
-            provider: item.twist.providers.firstOrNull,
-            size: theme.iconSizes.base,
-          ),
+          if (isLoading)
+            Spinner(
+              size: theme.iconSizes.base,
+              color: theme.colors.mutedForeground,
+            )
+          else
+            _SourceLogo(
+              logoUrl: item.twist.logoUrl,
+              logoUrlDark: item.twist.logoUrlDark,
+              provider: item.twist.providers.firstOrNull,
+              size: theme.iconSizes.base,
+            ),
           const SizedBox(width: 12),
           Expanded(
             child: Row(

@@ -251,7 +251,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         );
         return [SelectGroup(title: null, items: priorities)];
       },
-      itemBuilder: (priority) =>
+      itemBuilder: (priority, _) =>
           ListTile(body: PriorityLabel(priority: priority)),
       selectedValue: state.draft.priority,
       prompt: 'Select Priority',
@@ -478,7 +478,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     final result = await SelectModal.open<PriorityTwist>(
       context,
       items: (_) async => [SelectGroup(title: null, items: sorted)],
-      itemBuilder: (twist) => ListTile(
+      itemBuilder: (twist, _) => ListTile(
         body: Row(
           spacing: 8,
           children: [_buildTwistLogo(context, twist), Text(twist.name)],

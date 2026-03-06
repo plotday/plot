@@ -56,7 +56,7 @@ class CommandModal {
             )
             .toList();
       },
-      itemBuilder: (command) {
+      itemBuilder: (command, _) {
         // Get or create controller for this command (reuse if it exists)
         final controller = _controllers.putIfAbsent(
           _controllerKey(command),

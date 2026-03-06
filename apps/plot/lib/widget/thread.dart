@@ -249,46 +249,63 @@ class ThreadWidget extends StatelessWidget {
                                         .toTimeOfDay()
                                         .formatShort(context);
                                     final amPmMatch =
-                                        RegExp(r'[AP]M$').firstMatch(timeStr);
+                                        RegExp(r'[ap]m$').firstMatch(timeStr);
                                     final hasDuration =
                                         activity.at!.duration != null &&
                                             activity.at!.duration!.inSeconds >
                                                 0;
-                                    if (amPmMatch == null) {
-                                      return Center(
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(timeStr, style: timingColor),
-                                            if (hasDuration)
-                                              Text(
-                                                ' · ${activity.at!.duration!.format()}',
-                                                style: timingColor,
-                                              ),
-                                          ],
+                                    // [Expanded: time] [gap] [Expanded: duration]
+                                    // Fixed gap width at sm font size to match
+                                    // agenda header alignment.
+                                    final veryMuted =
+                                        context.theme.plotColors.veryMuted;
+                                    final smFontSize =
+                                        context.theme.typography.sm.fontSize;
+                                    final gapWidth = (TextPainter(
+                                      text: TextSpan(
+                                        text: ' ',
+                                        style: TextStyle(
+                                          fontSize: smFontSize,
                                         ),
-                                      );
+                                      ),
+                                      maxLines: 1,
+                                      textDirection: TextDirection.ltr,
+                                    )..layout()).width;
+                                    final String leftText;
+                                    if (amPmMatch != null) {
+                                      final timePart = timeStr
+                                          .substring(0, amPmMatch.start)
+                                          .trimRight();
+                                      final periodPart =
+                                          timeStr.substring(amPmMatch.start);
+                                      leftText = '$timePart $periodPart';
+                                    } else {
+                                      leftText = timeStr;
                                     }
-                                    final timePart = timeStr.substring(
-                                        0, amPmMatch.start);
-                                    final periodPart =
-                                        timeStr.substring(amPmMatch.start);
                                     return Row(
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            timePart,
+                                            leftText,
                                             style: timingColor,
                                             textAlign: TextAlign.right,
                                           ),
                                         ),
-                                        Text(
-                                          hasDuration
-                                              ? '$periodPart · ${activity.at!.duration!.format()}'
-                                              : periodPart,
-                                          style: timingColor,
+                                        SizedBox(width: gapWidth),
+                                        Expanded(
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: hasDuration
+                                                ? Text(
+                                                    activity.at!.duration!
+                                                        .format(),
+                                                    style: TextStyle(
+                                                      color: veryMuted,
+                                                    ),
+                                                  )
+                                                : const SizedBox.shrink(),
+                                          ),
                                         ),
-                                        const Spacer(),
                                       ],
                                     );
                                   },

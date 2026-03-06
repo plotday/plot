@@ -302,7 +302,7 @@ class FormSelect<T> extends FormItem {
         final itemsList = await items(search);
         return [SelectGroup(title: null, items: itemsList)];
       },
-      itemBuilder: (item) {
+      itemBuilder: (item, _) {
         final leading = leadingBuilder?.call(item);
 
         // Use Widget-based label if provided

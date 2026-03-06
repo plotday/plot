@@ -95,7 +95,7 @@ class ChangeEnterBehavior extends Command {
           items: [EnterBehavior.enterSubmits, EnterBehavior.enterNewline],
         ),
       ],
-      itemBuilder: (behavior) {
+      itemBuilder: (behavior, _) {
         final title = behavior == EnterBehavior.enterSubmits
             ? 'Enter saves the note'
             : 'Enter adds a new line';

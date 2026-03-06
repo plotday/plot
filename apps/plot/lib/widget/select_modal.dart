@@ -70,7 +70,7 @@ class SelectModal<T> extends Modal {
   final Future<List<SelectGroup<T>>> Function(String? search) items;
 
   /// Function to build the widget for an item.
-  final Widget Function(T) itemBuilder;
+  final Widget Function(T, bool isLoading) itemBuilder;
 
   /// The currently selected value (will be highlighted in the list).
   final T? selectedValue;
@@ -108,7 +108,7 @@ class SelectModal<T> extends Modal {
   static Future<Value<T>> open<T>(
     BuildContext context, {
     required Future<List<SelectGroup<T>>> Function(String? search) items,
-    required Widget Function(T) itemBuilder,
+    required Widget Function(T, bool isLoading) itemBuilder,
     T? selectedValue,
     String prompt = 'Search',
     String? subtitle,
@@ -163,7 +163,7 @@ class _SelectModal<T> extends StatefulWidget {
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
-  final Widget Function(T) itemBuilder;
+  final Widget Function(T, bool isLoading) itemBuilder;
   final T? selectedValue;
   final String prompt;
   final String? subtitle;
@@ -191,6 +191,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   bool _mouseHasMoved = false;
   bool _enterHandled =
       false; // Prevents double-fire between Shortcuts and onSubmit
+  int? _loadingIndex;
 
   @override
   void initState() {
@@ -448,19 +449,23 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   }
 
   Future<void> _selectItem(T item) async {
+    if (_loadingIndex != null) return; // Already loading
     if (widget.onSelect != null) {
+      setState(() => _loadingIndex = _highlightedIndex);
       try {
         final shouldClose = await widget.onSelect!(
           context,
           item,
           _controller.text,
         );
+        if (mounted) setState(() => _loadingIndex = null);
         if (!shouldClose) {
           return;
         }
       } catch (e, t) {
         log.warning('onSelect threw', e, t);
         if (mounted) {
+          setState(() => _loadingIndex = null);
           context.showToast(message: 'Something went wrong.', isError: true);
         }
         return;
@@ -726,7 +731,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         }
 
                         // Build the item widget
-                        final itemWidget = widget.itemBuilder(item);
+                        final isItemLoading = _loadingIndex == index;
+                        final itemWidget =
+                            widget.itemBuilder(item, isItemLoading);
                         // Only skip GestureDetector for ListTiles that have a command,
                         // since they handle their own taps and spinner logic. ListTiles
                         // without a command (e.g. priority selection) need the wrapper.
@@ -737,7 +744,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             ? itemWidget
                             : GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () => _selectItem(item),
+                                onTap: isItemLoading
+                                    ? null
+                                    : () => _selectItem(item),
                                 child: itemWidget,
                               );
 

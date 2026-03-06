@@ -840,7 +840,12 @@ extension TimeOfDayExtension on TimeOfDay {
   bool get isMidnight => hour == 0 && minute == 0;
 
   String formatShort(BuildContext context) {
-    return format(context).replaceAll(':00', '');
+    return format(context)
+        .replaceAll(':00', '')
+        .replaceAllMapped(
+          RegExp(r'\s?([AP]M)$'),
+          (m) => ' ${m[1]!.toLowerCase()}',
+        );
   }
 }
 

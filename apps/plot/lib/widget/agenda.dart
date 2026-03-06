@@ -140,6 +140,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
     String? centerText = widget.text;
     // Split date into two parts for center-on-month alignment
     String? dateCenterLeft;
+    String? dateMonth;
     String? dateCenterRight;
     if (centerText == null) {
       if (widget.now) {
@@ -148,14 +149,26 @@ class _AgendaHeaderState extends State<AgendaHeader> {
         // Show time from DateTimeRange
         final timeOfDay = widget.dateTimeRange!.start?.toTimeOfDay();
         if (timeOfDay != null && timeOfDay.isMidnight != true) {
-          centerText = timeOfDay.format(context);
+          centerText = timeOfDay.formatShort(context);
         }
       } else if (widget.date != null) {
         // Show date split into day-of-week and month+day for centered layout
-        dateCenterLeft = '${widget.date!.format(format: 'EEEE')}, ';
-        dateCenterRight = widget.date!.year == Date.today().year
-            ? widget.date!.format(format: 'MMMM d')
-            : widget.date!.format(format: 'MMMM d, yyyy');
+        dateCenterLeft = widget.date!.format(format: 'EEEE');
+        dateCenterRight = widget.date!.format(format: 'd');
+        dateMonth = widget.date!.year == Date.today().year
+            ? ' ${widget.date!.format(format: 'MMMM')}'
+            : ' ${widget.date!.format(format: 'MMMM, yyyy')}';
+      }
+    }
+
+    // Split time text at AM/PM boundary for center alignment
+    String? timeCenterLeft;
+    String? timeCenterRight;
+    if (centerText != null) {
+      final amPmMatch = RegExp(r'[ap]m$').firstMatch(centerText);
+      if (amPmMatch != null) {
+        timeCenterLeft = centerText.substring(0, amPmMatch.start);
+        timeCenterRight = centerText.substring(amPmMatch.start);
       }
     }
 
@@ -286,471 +299,693 @@ class _AgendaHeaderState extends State<AgendaHeader> {
               : context.theme.spacing.md);
 
     return Padding(
-          padding: EdgeInsets.symmetric(vertical: verticalMargin),
-          child: ListTile(
-            command: command,
-            focusNode: widget.focusNode,
-            noHoverHighlight: isGapHeader || widget.date != null || widget.now,
-            padding: EdgeInsets.symmetric(
-              horizontal: context.contentPaddingH,
-              vertical: context.theme.spacing.xs,
-            ),
-            bodyBuilder: (context, isHighlighted) {
-              // Calculate background color based on date and highlighted state
-              // When highlighted, composite the semi-transparent highlight color over
-              // the background to create a solid color that blocks the line
-              // Always provide a background when there's a date or now line to cover it
-              final backgroundColor =
-                  isHighlighted &&
-                      widget.date == null &&
-                      !isGapHeader &&
-                      !widget.now
-                  ? Color.alphaBlend(
-                      context.theme.plotColors.highlight,
-                      context.theme.colors.background,
-                    )
-                  : context.theme.colors.background;
+      padding: EdgeInsets.symmetric(vertical: verticalMargin),
+      child: ListTile(
+        command: command,
+        focusNode: widget.focusNode,
+        noHoverHighlight: isGapHeader || widget.date != null || widget.now,
+        padding: EdgeInsets.symmetric(
+          horizontal: context.contentPaddingH,
+          vertical: context.theme.spacing.xs,
+        ),
+        bodyBuilder: (context, isHighlighted) {
+          // Calculate background color based on date and highlighted state
+          // When highlighted, composite the semi-transparent highlight color over
+          // the background to create a solid color that blocks the line
+          // Always provide a background when there's a date or now line to cover it
+          final backgroundColor =
+              isHighlighted &&
+                  widget.date == null &&
+                  !isGapHeader &&
+                  !widget.now
+              ? Color.alphaBlend(
+                  context.theme.plotColors.highlight,
+                  context.theme.colors.background,
+                )
+              : context.theme.colors.background;
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                spacing: 8.0,
-                children: [
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      // Calculate text height for consistent sizing
-                      final double textHeight = (TextPainter(
-                        text: TextSpan(
-                          text: "A",
-                          style: TextStyle(fontSize: fontSize),
-                        ),
-                        maxLines: 1,
-                        textDirection: TextDirection.ltr,
-                      )..layout()).height;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 8.0,
+            children: [
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Calculate text height for consistent sizing
+                  final double textHeight = (TextPainter(
+                    text: TextSpan(
+                      text: "A",
+                      style: TextStyle(fontSize: fontSize),
+                    ),
+                    maxLines: 1,
+                    textDirection: TextDirection.ltr,
+                  )..layout()).height;
 
-                      // Determine which elements are present
-                      // For now headers, elapsed goes left and remaining goes right
-                      // Priority labels are handled by ThreadWidget
-                      final hasLeft = widget.now && elapsedDuration != null;
-                      final hasCenter =
-                          centerText != null || dateCenterLeft != null;
-                      final hasRight = widget.now
-                          ? remainingDuration != null
-                          : durationText != null ||
-                                elapsedDuration != null ||
-                                remainingDuration != null;
-                      final elementCount = [
-                        hasLeft,
-                        hasCenter,
-                        hasRight,
-                      ].where((e) => e).length;
+                  // Determine which elements are present
+                  // For now headers, elapsed goes left and remaining goes right
+                  // Priority labels are handled by ThreadWidget
+                  final hasLeft = widget.now && elapsedDuration != null;
+                  final hasCenter =
+                      centerText != null || dateCenterLeft != null;
+                  final hasRight = widget.now
+                      ? remainingDuration != null
+                      : durationText != null ||
+                            elapsedDuration != null ||
+                            remainingDuration != null;
+                  final elementCount = [
+                    hasLeft,
+                    hasCenter,
+                    hasRight,
+                  ].where((e) => e).length;
 
-                      // Indent to align rule with ThreadWidget body
-                      final leadingIndent =
-                          context.theme.iconSizes.base +
-                          7.5 +
-                          context.theme.spacing.sm;
+                  // Indent to align rule with ThreadWidget body
+                  final leadingIndent =
+                      context.theme.iconSizes.base +
+                      7.5 +
+                      context.theme.spacing.sm;
 
-                      // Gap headers: left-aligned with dot separator
-                      // (matching thread time info style)
-                      if (isGapHeader) {
-                        final gapColor = widget.now
-                            ? nowColor
-                            : context.theme.plotColors.veryMuted;
+                  // Dot-centered layout for date, gap, and
+                  // standalone time headers
+                  final useDotCentered =
+                      widget.date != null ||
+                      isGapHeader ||
+                      (!widget.now && hasCenter);
 
-                        final gapRow = Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (hasCenter)
-                              Text(
-                                centerText!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: gapColor,
-                                  fontSize: fontSize,
-                                ),
-                              ),
-                            if (hasCenter && hasRight)
-                              Text(
-                                ' · ',
-                                style: TextStyle(
-                                  color: gapColor,
-                                  fontSize: fontSize,
-                                ),
-                              ),
-                            if (hasRight)
-                              widget.now
-                                  ? _buildDurationContent(
-                                      context,
-                                      fontSize: fontSize,
-                                      durationText: durationText,
-                                      elapsedDuration: elapsedDuration,
-                                      remainingDuration: remainingDuration,
-                                      nowColor: nowColor,
-                                    )
-                                  : Text(
-                                      durationText!,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: gapColor,
-                                        fontSize: fontSize,
-                                      ),
-                                    ),
-                          ],
-                        );
+                  if (useDotCentered) {
+                    final hasDuration = durationText != null;
+                    final spacing = context.theme.spacing.md;
+                    final veryMuted = context.theme.plotColors.veryMuted;
 
-                        return Center(child: gapRow);
-                      }
+                    // Gap headers use veryMuted for all text
+                    final contentColor = isGapHeader ? veryMuted : textColor;
 
-                      // If only one element is present, use full width
-                      if (elementCount == 1) {
-                        Widget content;
-                        Alignment alignment;
-                        EdgeInsets? padding;
+                    // Fixed space width: one space at sm font size, shared
+                    // across date and time headers for alignment.
+                    final smFontSize =
+                        context.theme.typography.sm.fontSize;
+                    final gapWidth = (TextPainter(
+                      text: TextSpan(
+                        text: ' ',
+                        style: TextStyle(fontSize: smFontSize),
+                      ),
+                      maxLines: 1,
+                      textDirection: TextDirection.ltr,
+                    )..layout()).width;
 
-                        if (hasCenter) {
-                          if (dateCenterLeft != null) {
-                            // Date header: split into two halves centered on month
-                            final textStyle = TextStyle(
-                              color: textColor,
-                              fontSize: fontSize,
-                            );
-                            final spacing = context.theme.spacing.md;
-                            content = Row(
-                              children: [
-                                Expanded(
-                                  child: Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Container(
-                                      color: backgroundColor,
-                                      padding: EdgeInsets.only(left: spacing),
-                                      child: Text(
-                                        dateCenterLeft,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: textStyle,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Container(
-                                      color: backgroundColor,
-                                      padding: EdgeInsets.only(right: spacing),
-                                      child: Text(
-                                        dateCenterRight!,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: textStyle,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                            // No extra alignment or padding needed; Row fills width
-                            alignment = Alignment.center;
-                            padding = null;
-                          } else {
-                            // Non-date center text (time-of-day, "Now", etc.)
-                            content = Text(
-                              centerText!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: textColor,
-                                fontSize: fontSize,
-                              ),
-                            );
-                            alignment = Alignment.center;
-                            padding = EdgeInsets.symmetric(
-                              horizontal: context.theme.spacing.md,
-                            );
-                          }
-                        } else {
-                          // Full width duration, right-aligned
-                          content = _buildDurationContent(
-                            context,
-                            fontSize: fontSize,
-                            durationText: durationText,
-                            elapsedDuration: elapsedDuration,
-                            remainingDuration: remainingDuration,
-                            nowColor: nowColor,
-                          );
-                          alignment = Alignment.centerRight;
-                          padding = EdgeInsets.only(
-                            left: context.theme.spacing.md,
-                          );
-                        }
-
-                        return Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // Background: Full-width line through header
-                            // Skip line for event headers and date headers
-                            if (widget.activity == null && widget.date == null)
-                              Container(
-                                height: 0.5,
-                                margin: EdgeInsets.only(left: leadingIndent),
-                                decoration: BoxDecoration(
-                                  color: widget.now
-                                      ? nowColor
-                                      : context.theme.colors.border,
-                                ),
-                              ),
-                            // Foreground: Single element with full width
-                            // Date headers handle their own background per-text,
-                            // so skip the outer background to keep the line visible.
-                            Align(
-                              alignment: alignment,
-                              child: dateCenterLeft != null
-                                  ? content
-                                  : Container(
-                                      decoration: BoxDecoration(
-                                        color: backgroundColor,
-                                      ),
-                                      padding: padding,
-                                      child: content,
-                                    ),
-                            ),
-                          ],
-                        );
-                      }
-
-                      // Multiple elements: use adaptive flex ratio based on header type
-                      // Date headers (1:4:1) - prioritize showing full date
-                      // "Now" headers (2:2:2) - more space overall while keeping "Now" centered
-                      // Other headers (1:2:1) - balanced layout
-                      final int leftFlex;
-                      final int centerFlex;
-                      final int rightFlex;
-
-                      if (widget.date != null) {
-                        // Date headers: give more space to center to prevent date truncation
-                        leftFlex = 1;
-                        centerFlex = 4;
-                        rightFlex = 1;
-                      } else if (widget.now) {
-                        // "Now" headers: equal flex keeps "Now" centered between
-                        // elapsed (left) and remaining (right)
-                        leftFlex = 2;
-                        centerFlex = 2;
-                        rightFlex = 2;
-                      } else {
-                        // Default: balanced layout
-                        leftFlex = 1;
-                        centerFlex = 2;
-                        rightFlex = 1;
-                      }
-
-                      return Stack(
-                        alignment: Alignment.center,
+                    // Date headers: [Expanded: day-of-week] [gap] [Expanded: day+month]
+                    if (widget.date != null) {
+                      return Row(
                         children: [
-                          // Background: Full-width line through header
-                          // Skip line for event headers and date headers
-                          if (widget.activity == null && widget.date == null)
-                            Container(
-                              height: 0.5,
-                              margin: EdgeInsets.only(left: leadingIndent),
-                              decoration: BoxDecoration(
-                                color: widget.now
-                                    ? nowColor
-                                    : context.theme.colors.border,
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: Container(
+                                color: backgroundColor,
+                                padding: EdgeInsets.only(left: spacing),
+                                child: Text(
+                                  dateCenterLeft!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: textColor,
+                                    fontSize: fontSize,
+                                  ),
+                                ),
                               ),
                             ),
-                          // Foreground: 3-column layout
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              // LEFT: Elapsed duration (now) or priority label
-                              Flexible(
-                                flex: leftFlex,
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: hasLeft
-                                      ? Container(
-                                          decoration: BoxDecoration(
-                                            color: backgroundColor,
-                                          ),
-                                          padding: EdgeInsets.only(
-                                            right: context.theme.spacing.md,
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              FaIcon(
-                                                PlotIcon.up,
-                                                size: fontSize,
-                                                color: nowColor,
-                                              ),
-                                              SizedBox(
-                                                width: context.theme.spacing.xs,
-                                              ),
-                                              Text(
-                                                elapsedDuration.format(),
-                                                style: TextStyle(
-                                                  color: nowColor,
-                                                  fontSize: fontSize,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        )
-                                      : SizedBox(height: textHeight),
-                                ),
-                              ),
-                              // CENTER: Date/time
-                              Expanded(
-                                flex: centerFlex,
-                                child: hasCenter
-                                    ? dateCenterLeft != null
-                                          // Date header: split into two halves centered on month
-                                          ? Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Align(
-                                                    alignment:
-                                                        Alignment.centerRight,
-                                                    child: Container(
-                                                      color: backgroundColor,
-                                                      padding: EdgeInsets.only(
-                                                        left: context
-                                                            .theme
-                                                            .spacing
-                                                            .md,
-                                                      ),
-                                                      child: Text(
-                                                        dateCenterLeft,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: TextStyle(
-                                                          color: textColor,
-                                                          fontSize: fontSize,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                Expanded(
-                                                  child: Align(
-                                                    alignment:
-                                                        Alignment.centerLeft,
-                                                    child: Container(
-                                                      color: backgroundColor,
-                                                      padding: EdgeInsets.only(
-                                                        right: context
-                                                            .theme
-                                                            .spacing
-                                                            .md,
-                                                      ),
-                                                      child: Text(
-                                                        dateCenterRight!,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: TextStyle(
-                                                          color: textColor,
-                                                          fontSize: fontSize,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            )
-                                          // Non-date center text
-                                          : Center(
-                                              child: Container(
-                                                decoration: BoxDecoration(
-                                                  color: backgroundColor,
-                                                ),
-                                                padding: EdgeInsets.symmetric(
-                                                  horizontal:
-                                                      context.theme.spacing.md,
-                                                ),
-                                                child: Text(
-                                                  centerText!,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: textColor,
-                                                    fontSize: fontSize,
-                                                  ),
-                                                ),
-                                              ),
-                                            )
-                                    : Center(
-                                        child: SizedBox(height: textHeight),
+                          ),
+                          SizedBox(width: gapWidth),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                color: backgroundColor,
+                                padding: EdgeInsets.only(right: spacing),
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: dateCenterRight!,
+                                        style: TextStyle(
+                                          color: textColor,
+                                          fontSize: fontSize,
+                                        ),
                                       ),
-                              ),
-                              // RIGHT: Remaining duration (now) or total duration
-                              Flexible(
-                                flex: rightFlex,
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: hasRight
-                                      ? Container(
-                                          decoration: BoxDecoration(
-                                            color: backgroundColor,
-                                          ),
-                                          padding: EdgeInsets.only(
-                                            left: context.theme.spacing.md,
-                                          ),
-                                          child: widget.now
-                                              ? Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    Text(
-                                                      remainingDuration!
-                                                          .format(),
-                                                      style: TextStyle(
-                                                        color: nowColor,
-                                                        fontSize: fontSize,
-                                                      ),
-                                                    ),
-                                                    SizedBox(
-                                                      width: context
-                                                          .theme
-                                                          .spacing
-                                                          .xs,
-                                                    ),
-                                                    FaIcon(
-                                                      PlotIcon.down,
-                                                      size: fontSize,
-                                                      color: nowColor,
-                                                    ),
-                                                  ],
-                                                )
-                                              : _buildDurationContent(
-                                                  context,
-                                                  fontSize: fontSize,
-                                                  durationText: durationText,
-                                                  elapsedDuration:
-                                                      elapsedDuration,
-                                                  remainingDuration:
-                                                      remainingDuration,
-                                                  nowColor: nowColor,
-                                                ),
-                                        )
-                                      : SizedBox(height: textHeight),
+                                      TextSpan(
+                                        text: dateMonth!,
+                                        style: TextStyle(
+                                          color: veryMuted,
+                                          fontSize: fontSize,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ],
                       );
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
+                    }
+
+                    // Time headers: [Expanded: time] [gap] [Expanded: duration]
+                    final timeStyle = TextStyle(
+                      color: contentColor,
+                      fontSize: fontSize,
+                    );
+
+                    // Build left content (time text, right-aligned)
+                    final String leftText;
+                    if (timeCenterLeft != null) {
+                      leftText =
+                          '${timeCenterLeft.trimRight()} $timeCenterRight';
+                    } else if (centerText != null) {
+                      leftText = centerText;
+                    } else {
+                      return SizedBox(height: textHeight);
+                    }
+
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Line (skip for date, gap, and event headers)
+                        if (!isGapHeader && widget.activity == null)
+                          Container(
+                            height: 0.5,
+                            margin: EdgeInsets.only(left: leadingIndent),
+                            decoration: BoxDecoration(
+                              color: context.theme.colors.border,
+                            ),
+                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                color: backgroundColor,
+                                padding: EdgeInsets.only(left: spacing),
+                                child: Text(
+                                  leftText,
+                                  style: timeStyle,
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: gapWidth,
+                              child: Container(color: backgroundColor),
+                            ),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: hasDuration
+                                    ? Container(
+                                        color: backgroundColor,
+                                        child: Text(
+                                          durationText,
+                                          style: TextStyle(
+                                            color: veryMuted,
+                                            fontSize: fontSize,
+                                          ),
+                                        ),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+
+                  // If only one element is present, use full width
+                  if (elementCount == 1) {
+                    Widget content;
+                    Alignment alignment;
+                    EdgeInsets? padding;
+
+                    if (hasCenter) {
+                      if (dateCenterLeft != null) {
+                        // Date header: split into two halves centered on month
+                        final textStyle = TextStyle(
+                          color: textColor,
+                          fontSize: fontSize,
+                        );
+                        final spacing = context.theme.spacing.md;
+                        content = Row(
+                          children: [
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Container(
+                                  color: backgroundColor,
+                                  padding: EdgeInsets.only(left: spacing),
+                                  child: Text(
+                                    dateCenterLeft,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textStyle,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  color: backgroundColor,
+                                  padding: EdgeInsets.only(right: spacing),
+                                  child: Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: dateCenterRight!,
+                                          style: textStyle,
+                                        ),
+                                        TextSpan(
+                                          text: dateMonth!,
+                                          style: TextStyle(
+                                            color: context
+                                                .theme
+                                                .plotColors
+                                                .veryMuted,
+                                            fontSize: fontSize,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                        // No extra alignment or padding needed; Row fills width
+                        alignment = Alignment.center;
+                        padding = null;
+                      } else if (timeCenterLeft != null) {
+                        // Time with AM/PM: center on AM/PM boundary
+                        final textStyle = TextStyle(
+                          color: textColor,
+                          fontSize: fontSize,
+                        );
+                        final spacing = context.theme.spacing.md;
+                        content = Row(
+                          children: [
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Container(
+                                  color: backgroundColor,
+                                  padding: EdgeInsets.only(left: spacing),
+                                  child: Text(
+                                    timeCenterLeft,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textStyle,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  color: backgroundColor,
+                                  padding: EdgeInsets.only(right: spacing),
+                                  child: Text(
+                                    timeCenterRight!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textStyle,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                        alignment = Alignment.center;
+                        padding = null;
+                      } else {
+                        // Non-date center text ("Now", 24h time, etc.)
+                        content = Text(
+                          centerText!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: fontSize,
+                          ),
+                        );
+                        alignment = Alignment.center;
+                        padding = EdgeInsets.symmetric(
+                          horizontal: context.theme.spacing.md,
+                        );
+                      }
+                    } else {
+                      // Full width duration, right-aligned
+                      content = _buildDurationContent(
+                        context,
+                        fontSize: fontSize,
+                        durationText: durationText,
+                        elapsedDuration: elapsedDuration,
+                        remainingDuration: remainingDuration,
+                        nowColor: nowColor,
+                      );
+                      alignment = Alignment.centerRight;
+                      padding = EdgeInsets.only(left: context.theme.spacing.md);
+                    }
+
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Background: Full-width line through header
+                        // Skip line for event headers and date headers
+                        if (widget.activity == null && widget.date == null)
+                          Container(
+                            height: 0.5,
+                            margin: EdgeInsets.only(left: leadingIndent),
+                            decoration: BoxDecoration(
+                              color: widget.now
+                                  ? nowColor
+                                  : context.theme.colors.border,
+                            ),
+                          ),
+                        // Foreground: Single element with full width
+                        // Date headers handle their own background per-text,
+                        // so skip the outer background to keep the line visible.
+                        Align(
+                          alignment: alignment,
+                          child:
+                              dateCenterLeft != null || timeCenterLeft != null
+                              ? content
+                              : Container(
+                                  decoration: BoxDecoration(
+                                    color: backgroundColor,
+                                  ),
+                                  padding: padding,
+                                  child: content,
+                                ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  // Multiple elements: use adaptive flex ratio based on header type
+                  // Date headers (1:4:1) - prioritize showing full date
+                  // "Now" headers (2:2:2) - more space overall while keeping "Now" centered
+                  // Other headers (1:2:1) - balanced layout
+                  final int leftFlex;
+                  final int centerFlex;
+                  final int rightFlex;
+
+                  if (widget.date != null) {
+                    // Date headers: give more space to center to prevent date truncation
+                    leftFlex = 1;
+                    centerFlex = 4;
+                    rightFlex = 1;
+                  } else if (widget.now) {
+                    // "Now" headers: equal flex keeps "Now" centered between
+                    // elapsed (left) and remaining (right)
+                    leftFlex = 2;
+                    centerFlex = 2;
+                    rightFlex = 2;
+                  } else {
+                    // Default: balanced layout
+                    leftFlex = 1;
+                    centerFlex = 2;
+                    rightFlex = 1;
+                  }
+
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Background: Full-width line through header
+                      // Skip line for event headers and date headers
+                      if (widget.activity == null && widget.date == null)
+                        Container(
+                          height: 0.5,
+                          margin: EdgeInsets.only(left: leadingIndent),
+                          decoration: BoxDecoration(
+                            color: widget.now
+                                ? nowColor
+                                : context.theme.colors.border,
+                          ),
+                        ),
+                      // Foreground: 3-column layout
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // LEFT: Elapsed duration (now) or priority label
+                          Flexible(
+                            flex: leftFlex,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: hasLeft
+                                  ? Container(
+                                      decoration: BoxDecoration(
+                                        color: backgroundColor,
+                                      ),
+                                      padding: EdgeInsets.only(
+                                        right: context.theme.spacing.md,
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          FaIcon(
+                                            PlotIcon.up,
+                                            size: fontSize,
+                                            color: nowColor,
+                                          ),
+                                          SizedBox(
+                                            width: context.theme.spacing.xs,
+                                          ),
+                                          Text(
+                                            elapsedDuration.format(),
+                                            style: TextStyle(
+                                              color: nowColor,
+                                              fontSize: fontSize,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : SizedBox(height: textHeight),
+                            ),
+                          ),
+                          // CENTER: Date/time
+                          Expanded(
+                            flex: centerFlex,
+                            child: hasCenter
+                                ? dateCenterLeft != null
+                                      // Date header: split into two halves centered on month
+                                      ? Row(
+                                          children: [
+                                            Expanded(
+                                              child: Align(
+                                                alignment:
+                                                    Alignment.centerRight,
+                                                child: Container(
+                                                  color: backgroundColor,
+                                                  padding: EdgeInsets.only(
+                                                    left: context
+                                                        .theme
+                                                        .spacing
+                                                        .md,
+                                                  ),
+                                                  child: Text(
+                                                    dateCenterLeft,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: textColor,
+                                                      fontSize: fontSize,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: Container(
+                                                  color: backgroundColor,
+                                                  padding: EdgeInsets.only(
+                                                    right: context
+                                                        .theme
+                                                        .spacing
+                                                        .md,
+                                                  ),
+                                                  child: Text.rich(
+                                                    TextSpan(
+                                                      children: [
+                                                        TextSpan(
+                                                          text:
+                                                              dateCenterRight!,
+                                                          style: TextStyle(
+                                                            color: textColor,
+                                                            fontSize: fontSize,
+                                                          ),
+                                                        ),
+                                                        TextSpan(
+                                                          text: dateMonth!,
+                                                          style: TextStyle(
+                                                            color: context
+                                                                .theme
+                                                                .plotColors
+                                                                .veryMuted,
+                                                            fontSize: fontSize,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      // Non-date center text
+                                      : timeCenterLeft != null
+                                      ? Row(
+                                          children: [
+                                            Expanded(
+                                              child: Align(
+                                                alignment:
+                                                    Alignment.centerRight,
+                                                child: Container(
+                                                  color: backgroundColor,
+                                                  padding: EdgeInsets.only(
+                                                    left: context
+                                                        .theme
+                                                        .spacing
+                                                        .md,
+                                                  ),
+                                                  child: Text(
+                                                    timeCenterLeft,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: textColor,
+                                                      fontSize: fontSize,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: Container(
+                                                  color: backgroundColor,
+                                                  padding: EdgeInsets.only(
+                                                    right: context
+                                                        .theme
+                                                        .spacing
+                                                        .md,
+                                                  ),
+                                                  child: Text(
+                                                    timeCenterRight!,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: textColor,
+                                                      fontSize: fontSize,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Center(
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: backgroundColor,
+                                            ),
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal:
+                                                  context.theme.spacing.md,
+                                            ),
+                                            child: Text(
+                                              centerText!,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: textColor,
+                                                fontSize: fontSize,
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                : Center(child: SizedBox(height: textHeight)),
+                          ),
+                          // RIGHT: Remaining duration (now) or total duration
+                          Flexible(
+                            flex: rightFlex,
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: hasRight
+                                  ? Container(
+                                      decoration: BoxDecoration(
+                                        color: backgroundColor,
+                                      ),
+                                      padding: EdgeInsets.only(
+                                        left: context.theme.spacing.md,
+                                      ),
+                                      child: widget.now
+                                          ? Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  remainingDuration!.format(),
+                                                  style: TextStyle(
+                                                    color: nowColor,
+                                                    fontSize: fontSize,
+                                                  ),
+                                                ),
+                                                SizedBox(
+                                                  width:
+                                                      context.theme.spacing.xs,
+                                                ),
+                                                FaIcon(
+                                                  PlotIcon.down,
+                                                  size: fontSize,
+                                                  color: nowColor,
+                                                ),
+                                              ],
+                                            )
+                                          : _buildDurationContent(
+                                              context,
+                                              fontSize: fontSize,
+                                              durationText: durationText,
+                                              elapsedDuration: elapsedDuration,
+                                              remainingDuration:
+                                                  remainingDuration,
+                                              nowColor: nowColor,
+                                            ),
+                                    )
+                                  : SizedBox(height: textHeight),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

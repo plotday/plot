@@ -111,7 +111,7 @@ class _TwistSelectItem extends FormItem {
           items: _choices.map((c) => c['value'] as String).toList(),
         ),
       ],
-      itemBuilder: (value) {
+      itemBuilder: (value, _) {
         final choice = _choices.firstWhere((c) => c['value'] == value);
         final isSelected = value == currentValue;
         return Padding(
