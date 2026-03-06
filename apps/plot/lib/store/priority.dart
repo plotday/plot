@@ -200,6 +200,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
           // Map priorities with computed status
           return priorities.map((p) {
+            // Find nearest shared ancestor (walk from parent to root)
+            PriorityId? ancestorId;
+            if (!sharingIds.contains(p.id)) {
+              for (final ancestor in p._ancestors.reversed) {
+                if (sharingIds.contains(ancestor.id)) {
+                  ancestorId = ancestor.id;
+                  break;
+                }
+              }
+            }
+
             return Priority.fromStore(
               p,
               parent: p.parent,
@@ -210,6 +221,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
               active: activeIds.contains(p.id),
               unreadComputed: unreadIds.contains(p.id),
               sharing: sharingIds.contains(p.id),
+              sharingAncestorId: ancestorId,
               displayColor: p.displayColor,
             );
           }).toList();
@@ -302,13 +314,30 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // Get all priority IDs
     final priorityIds = priorities.map((p) => p.id).toList();
 
+    // Collect all ancestor IDs so we can check if any are shared
+    final allAncestorIds = priorities
+        .expand((p) => p._ancestors.map((a) => a.id))
+        .toSet();
+    final sharedQueryIds = {...priorityIds, ...allAncestorIds}.toList();
+
     // Compute which priorities have active/unread/shared status
     final activeIds = await _getActivePriorityIds(priorityIds);
     final unreadIds = await _getUnreadPriorityIds(priorityIds);
-    final sharedIds = await _getSharedPriorityIds(priorityIds);
+    final sharedIds = await _getSharedPriorityIds(sharedQueryIds);
 
     // Create new Priority objects with computed status
     return priorities.map((p) {
+      // Find nearest shared ancestor (walk from parent to root)
+      PriorityId? ancestorId;
+      if (!sharedIds.contains(p.id)) {
+        for (final ancestor in p._ancestors.reversed) {
+          if (sharedIds.contains(ancestor.id)) {
+            ancestorId = ancestor.id;
+            break;
+          }
+        }
+      }
+
       return Priority.fromStore(
         p,
         parent: p.parent,
@@ -319,6 +348,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         active: activeIds.contains(p.id),
         unreadComputed: unreadIds.contains(p.id),
         sharing: sharedIds.contains(p.id),
+        sharingAncestorId: ancestorId,
         displayColor: p.displayColor,
       );
     }).toList();
@@ -727,6 +757,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
        _activeComputed = null,
        _unreadComputed = null,
        _sharingComputed = null,
+       sharingAncestorId = null,
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
@@ -755,6 +786,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? active,
     bool? unreadComputed,
     bool? sharing,
+    this.sharingAncestorId,
     ThemeColor? displayColor,
   }) : children = children ?? [],
        _ancestors =
@@ -909,6 +941,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Computed sharing status (true if priority has more than one user).
   final bool? _sharingComputed;
 
+  /// The ID of the nearest shared ancestor, if any.
+  final PriorityId? sharingAncestorId;
+
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
 
@@ -917,8 +952,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   @override
   bool get unread => _unreadComputed ?? super.unread;
 
-  /// Returns true if this priority is shared with more than one user.
-  bool get sharing => _sharingComputed ?? false;
+  /// Returns true if this priority is shared with more than one user,
+  /// or if it inherits sharing from an ancestor.
+  bool get sharing => (_sharingComputed ?? false) || sharingAncestorId != null;
 
   List<Priority> descendants() {
     List<Priority> result = [];
@@ -1001,6 +1037,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       active: _activeComputed,
       unreadComputed: _unreadComputed,
       sharing: _sharingComputed,
+      sharingAncestorId: sharingAncestorId,
     );
   }
 

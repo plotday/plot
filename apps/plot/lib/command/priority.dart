@@ -585,19 +585,26 @@ class ManagePrioritySharing extends ShowCommands {
       limit: 100,
     );
 
+    // For descendants, use the shared ancestor as the source for members
+    final sourcePriority = priority.sharingAncestorId != null
+        ? await Priority.getOne(priority.sharingAncestorId!)
+        : priority;
+
+    final groups = <CommandGroup>[
+      AcceptedMembersGroup(title: 'Members', priority: sourcePriority),
+      InvitedMembersGroup(title: 'Invited', priority: sourcePriority),
+      ContactGroup(
+        title: 'Share',
+        priority: sourcePriority,
+        excludeActorIds: {},
+        initialActors: allActors,
+      ),
+    ];
+
     return Commands(
       prompt: 'Share with',
       emptyMessage: 'Enter an email address to invite someone else',
-      groups: [
-        AcceptedMembersGroup(title: 'Members', priority: priority),
-        InvitedMembersGroup(title: 'Invited', priority: priority),
-        ContactGroup(
-          title: 'Share',
-          priority: priority,
-          excludeActorIds: {}, // Now unused, will be dynamically computed
-          initialActors: allActors, // Cache for first empty search
-        ),
-      ],
+      groups: groups,
     );
   }
 }
@@ -771,7 +778,7 @@ class EditSharingCommand extends ShowForm {
           items: [
             FormInfo(
               key: 'info',
-              text: '${actor.nameOrEmail} has access to this priority.',
+              text: '${actor.nameOrEmail} has access to ${priority.title}.',
             ),
             FormDivider(key: 'divider'),
             FormButton(
@@ -788,7 +795,7 @@ class EditSharingCommand extends ShowForm {
 class _RemoveSharingCommand extends Command {
   _RemoveSharingCommand(this.priority, this.actor)
     : super(
-        title: 'Remove Access',
+        title: 'Remove from ${priority.title}',
         icon: FontAwesomeIcons.trash,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
@@ -919,7 +926,7 @@ class EditInvitationCommand extends ShowForm {
           items: [
             FormInfo(
               key: 'info',
-              text: 'Invitation pending for ${actor.nameOrEmail}.',
+              text: 'Invitation pending for ${actor.nameOrEmail} to ${priority.title}.',
             ),
             FormDivider(key: 'divider'),
             FormButton(
@@ -936,7 +943,7 @@ class EditInvitationCommand extends ShowForm {
 class _CancelInvitationCommand extends Command {
   _CancelInvitationCommand(this.priority, this.actor)
     : super(
-        title: 'Cancel Invitation',
+        title: 'Cancel Invitation to ${priority.title}',
         icon: FontAwesomeIcons.trash,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
