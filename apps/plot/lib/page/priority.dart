@@ -91,24 +91,6 @@ class PriorityWrapper implements AutoRouteWrapper {
                   ],
                 );
 
-                // On mobile, wrap with PopScope to close search on back gesture.
-                // canPop is false only when search is expanded, so normal
-                // back navigation is unaffected when search is closed.
-                final provider =
-                    ActivityPanelControllerProvider.maybeOf(context);
-                final searchOpen = provider?._isSearchExpanded ?? false;
-                if (!layoutState.multiPanel) {
-                  body = PopScope(
-                    canPop: !searchOpen,
-                    onPopInvokedWithResult: (didPop, result) {
-                      if (!didPop) {
-                        provider?.tryCloseSearch();
-                      }
-                    },
-                    child: body,
-                  );
-                }
-
                 return body;
               },
             ),
@@ -353,9 +335,12 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
         state: this,
         child: BlocBuilder<LayoutBloc, LayoutState>(
           builder: (context, layoutState) {
-            // Always register Cmd-Up/Down for Priority list navigation
-            // These should take priority over ThreadPage shortcuts
-            return Actions(
+            // On mobile, wrap with PopScope to close search on back gesture.
+            // canPop is false only when search is expanded, so normal
+            // back navigation is unaffected when search is closed.
+            // This must live here (not in the parent) because setState on
+            // _isSearchExpanded triggers a rebuild of this widget.
+            Widget child = Actions(
               actions: {
                 MoveFocusUpIntent: CallbackAction<MoveFocusUpIntent>(
                   onInvoke: (_) {
@@ -428,6 +413,18 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                   child: widget.child,
                 ),
             );
+
+            if (!layoutState.multiPanel) {
+              child = PopScope(
+                canPop: !_isSearchExpanded,
+                onPopInvokedWithResult: (didPop, result) {
+                  if (!didPop) tryCloseSearch();
+                },
+                child: child,
+              );
+            }
+
+            return child;
           },
         ),
       ),
