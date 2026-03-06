@@ -901,6 +901,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     ).listen((result) {
       final (:threads, :rawRowCount) = result;
       _activityFeedLastRawRowCount = rawRowCount;
+
+      // Suppress rebuilds briefly after optimistic updates so stale
+      // intermediate stream events (e.g. thread saved but schedule not yet)
+      // don't overwrite the optimistic state.
+      final suppressOptimistic = _optimisticTimestamp != null &&
+          DateTime.now().difference(_optimisticTimestamp!) <
+              const Duration(milliseconds: 500);
+      if (suppressOptimistic) return;
+
       // doneEnd when sync is complete AND either:
       // - raw rows are below limit (no more data), OR
       // - thread count hasn't grown despite limit increase (JOIN multiplication)
