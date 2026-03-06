@@ -13,6 +13,7 @@ import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
 import 'logging.dart';
@@ -287,7 +288,7 @@ class NewThreadPageState extends State<NewThreadPage> {
           child: Text(
             'Start a new thread in',
             style: context.theme.typography.sm.copyWith(
-              color: context.theme.colors.mutedForeground,
+              color: context.theme.plotColors.veryMuted,
             ),
           ),
         ),
@@ -653,7 +654,13 @@ class NewThreadPageState extends State<NewThreadPage> {
         context.run(ChangeCurrentThread(thread));
       },
       onCreateLink: (url, title, favicon) {
-        context.run(AddThreadWithLink(linkUrl: url, linkTitle: title, linkFavicon: favicon));
+        context.run(
+          AddThreadWithLink(
+            linkUrl: url,
+            linkTitle: title,
+            linkFavicon: favicon,
+          ),
+        );
       },
     );
   }
@@ -676,8 +683,9 @@ class NewThreadPageState extends State<NewThreadPage> {
                 onPopInvokedWithResult: (didPop, result) {
                   if (!didPop) {
                     if (ModalProvider.tryDismissTopModal(context)) return;
-                    final provider =
-                        ActivityPanelControllerProvider.maybeOf(context);
+                    final provider = ActivityPanelControllerProvider.maybeOf(
+                      context,
+                    );
                     if (provider != null && provider.tryCloseSearch()) return;
                     if (!context.isMultiPanel) {
                       context.run(ChangeCurrentThread(null));
@@ -784,7 +792,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         hint: _editorHint,
                                         additionalMentions: _chatMentions,
                                         onSubmitted: _onChatSubmitted,
-                                        assignNote: _selectedType == NewThreadType.task,
+                                        assignNote:
+                                            _selectedType == NewThreadType.task,
                                       ),
                               ),
                             ),

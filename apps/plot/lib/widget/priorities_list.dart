@@ -493,6 +493,22 @@ class _PrioritiesListState extends State<PrioritiesList>
                     ),
                   ),
 
+                  if (allPriorities.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: context.contentPaddingH,
+                        vertical: context.theme.spacing.xl,
+                      ),
+                      child: Text(
+                        'Priorities put your work in context. Add your roles, goals, and projects.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: context.theme.plotColors.veryMuted,
+                          fontSize: context.theme.typography.sm.fontSize,
+                        ),
+                      ),
+                    ),
+
                   // Fourth group: Plot section (children of @plot priority)
                   if (widget.showPlotSection &&
                       plotPriority != null &&
@@ -645,7 +661,10 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
               SizedBox(width: 20),
               Expanded(
                 child: Padding(
-                  padding: context.theme.spacing.paddingSm.copyWith(left: 0, right: 0),
+                  padding: context.theme.spacing.paddingSm.copyWith(
+                    left: 0,
+                    right: 0,
+                  ),
                   child: Text(
                     'More\u2026',
                     style: (widget.textStyle ?? context.theme.typography.sm)

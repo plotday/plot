@@ -14,6 +14,7 @@ import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/util/shortcut.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:logging/logging.dart';
 import 'priorities.dart';
@@ -252,7 +253,8 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
     }
 
     // Already at boundary — stay on current if it's a thread
-    if (current >= 0 && current < items.length &&
+    if (current >= 0 &&
+        current < items.length &&
         items[current] is AgendaThreadItem) {
       controller.requestFocus(current);
     }
@@ -381,37 +383,38 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                 ),
                 FocusActivityListIntent:
                     CallbackAction<FocusActivityListIntent>(
-                  onInvoke: (_) {
-                    _focusListSource(
-                        context, ThreadListSource.activityFeed);
-                    return null;
-                  },
-                ),
+                      onInvoke: (_) {
+                        _focusListSource(
+                          context,
+                          ThreadListSource.activityFeed,
+                        );
+                        return null;
+                      },
+                    ),
               },
               child: Shortcuts(
-                  shortcuts: <ShortcutActivator, Intent>{
-                    platformSingleActivator(LogicalKeyboardKey.keyT):
-                        const FocusAgendaIntent(),
-                    platformSingleActivator(LogicalKeyboardKey.keyT,
-                            shift: true):
-                        const FocusActivityListIntent(),
-                    platformSingleActivator(LogicalKeyboardKey.slash):
-                        const ToggleSearchIntent(),
-                    // Global Escape handler - focus ThreadEditor when ThreadPage is open
-                    if (_activityEditorFocusCallback != null)
-                      const SingleActivator(LogicalKeyboardKey.escape):
-                          const ClearItemFocusIntent(),
-                    // When middle panel is hidden, also handle plain Up/Down at global level
-                    if (!layoutState
-                        .middlePanelVisible) ...<ShortcutActivator, Intent>{
-                      const SingleActivator(LogicalKeyboardKey.arrowUp):
-                          const MoveFocusUpIntent(),
-                      const SingleActivator(LogicalKeyboardKey.arrowDown):
-                          const MoveFocusDownIntent(),
-                    },
+                shortcuts: <ShortcutActivator, Intent>{
+                  platformSingleActivator(LogicalKeyboardKey.keyT):
+                      const FocusAgendaIntent(),
+                  platformSingleActivator(LogicalKeyboardKey.keyT, shift: true):
+                      const FocusActivityListIntent(),
+                  platformSingleActivator(LogicalKeyboardKey.slash):
+                      const ToggleSearchIntent(),
+                  // Global Escape handler - focus ThreadEditor when ThreadPage is open
+                  if (_activityEditorFocusCallback != null)
+                    const SingleActivator(LogicalKeyboardKey.escape):
+                        const ClearItemFocusIntent(),
+                  // When middle panel is hidden, also handle plain Up/Down at global level
+                  if (!layoutState
+                      .middlePanelVisible) ...<ShortcutActivator, Intent>{
+                    const SingleActivator(LogicalKeyboardKey.arrowUp):
+                        const MoveFocusUpIntent(),
+                    const SingleActivator(LogicalKeyboardKey.arrowDown):
+                        const MoveFocusDownIntent(),
                   },
-                  child: widget.child,
-                ),
+                },
+                child: widget.child,
+              ),
             );
 
             if (!layoutState.multiPanel) {
@@ -535,8 +538,7 @@ class PriorityPage extends StatefulWidget {
   State<PriorityPage> createState() => _PriorityPageState();
 }
 
-class _PriorityPageState extends State<PriorityPage>
-    {
+class _PriorityPageState extends State<PriorityPage> {
   PriorityTab _currentTab = PriorityTab.agenda;
   PriorityTabNotifier? _tabNotifier;
   bool _userSelectedAgenda = false;
@@ -763,7 +765,9 @@ class _PriorityPageState extends State<PriorityPage>
                                             context,
                                           );
                                       final controller =
-                                          provider?._resolveController(context) ??
+                                          provider?._resolveController(
+                                            context,
+                                          ) ??
                                           activeController;
                                       provider?._moveFocusOrStart(
                                         controller,
@@ -781,7 +785,9 @@ class _PriorityPageState extends State<PriorityPage>
                                             context,
                                           );
                                       final controller =
-                                          provider?._resolveController(context) ??
+                                          provider?._resolveController(
+                                            context,
+                                          ) ??
                                           activeController;
                                       provider?._moveFocusOrStart(
                                         controller,
@@ -799,22 +805,22 @@ class _PriorityPageState extends State<PriorityPage>
                                       // with (agenda or activity feed).
                                       final resolvedController =
                                           provider?._resolveController(
-                                                  context) ??
-                                              activeController;
-                                      final priorityBloc =
-                                          context.read<PriorityBloc>();
+                                            context,
+                                          ) ??
+                                          activeController;
+                                      final priorityBloc = context
+                                          .read<PriorityBloc>();
                                       final source = priorityBloc
                                           .resolveThreadListSource();
                                       final resolvedItems =
                                           source == ThreadListSource.agenda
-                                              ? items
-                                              : state.activityFeedItems;
+                                          ? items
+                                          : state.activityFeedItems;
                                       final focusedIndex =
                                           resolvedController.focusedIndex;
                                       if (focusedIndex != null &&
                                           focusedIndex >= 0 &&
-                                          focusedIndex <
-                                              resolvedItems.length) {
+                                          focusedIndex < resolvedItems.length) {
                                         context.run(
                                           OpenFocusedItemActions(
                                             resolvedController,
@@ -825,32 +831,29 @@ class _PriorityPageState extends State<PriorityPage>
                                                           resolvedItems.length
                                                   ? resolvedItems[index]
                                                   : null;
-                                              if (item == null) return <StaticCommandGroup>[];
+                                              if (item == null) {
+                                                return <StaticCommandGroup>[];
+                                              }
                                               return await item.when<
-                                                    Future<List<StaticCommandGroup>>
-                                                  >(
-                                                    activity:
-                                                        (agendaActivity) =>
-                                                            threadCommandGroups(
-                                                              agendaActivity
-                                                                  .thread,
-                                                            ),
-                                                    header: (header) async {
-                                                      if (header.priority ==
-                                                              null ||
-                                                          header.priority!.id ==
-                                                              state
-                                                                  .context
-                                                                  .id) {
-                                                        return <
-                                                          StaticCommandGroup
-                                                        >[];
-                                                      }
-                                                      return priorityCommandGroups(
-                                                        header.priority!,
-                                                      );
-                                                    },
+                                                Future<List<StaticCommandGroup>>
+                                              >(
+                                                activity: (agendaActivity) =>
+                                                    threadCommandGroups(
+                                                      agendaActivity.thread,
+                                                    ),
+                                                header: (header) async {
+                                                  if (header.priority == null ||
+                                                      header.priority!.id ==
+                                                          state.context.id) {
+                                                    return <
+                                                      StaticCommandGroup
+                                                    >[];
+                                                  }
+                                                  return priorityCommandGroups(
+                                                    header.priority!,
                                                   );
+                                                },
+                                              );
                                             },
                                           ),
                                         );
@@ -865,7 +868,9 @@ class _PriorityPageState extends State<PriorityPage>
                                       // from activeController when navigating the
                                       // activity feed on desktop)
                                       final controller =
-                                          provider?._resolveController(context) ??
+                                          provider?._resolveController(
+                                            context,
+                                          ) ??
                                           activeController;
                                       controller.clearFocus();
                                       if (controller != activeController) {
@@ -919,30 +924,34 @@ class _PriorityPageState extends State<PriorityPage>
                                         listController,
                                       )
                                     : isUpNext
-                                        ? ThreadListSourceProvider(
-                                            source: ThreadListSource.agenda,
-                                            child: _buildList(
-                                              context,
-                                              state,
-                                              items,
-                                              listController,
-                                              ScrollControllerContext.of(context),
-                                              enableReorder: true,
-                                              doneEnd: state.doneEnd,
-                                              scrollStorageKey: PageStorageKey('priority_agenda_${widget.priorityId}'),
-                                            ),
-                                          )
-                                        : ThreadListSourceProvider(
-                                            source: ThreadListSource.activityFeed,
-                                            child: _buildActivityFeed(
-                                              context,
-                                              state,
-                                              items,
-                                              listController,
-                                              ScrollControllerContext.of(context),
-                                              scrollStorageKey: PageStorageKey('priority_feed_${widget.priorityId}'),
-                                            ),
+                                    ? ThreadListSourceProvider(
+                                        source: ThreadListSource.agenda,
+                                        child: _buildList(
+                                          context,
+                                          state,
+                                          items,
+                                          listController,
+                                          ScrollControllerContext.of(context),
+                                          enableReorder: true,
+                                          doneEnd: state.doneEnd,
+                                          scrollStorageKey: PageStorageKey(
+                                            'priority_agenda_${widget.priorityId}',
                                           ),
+                                        ),
+                                      )
+                                    : ThreadListSourceProvider(
+                                        source: ThreadListSource.activityFeed,
+                                        child: _buildActivityFeed(
+                                          context,
+                                          state,
+                                          items,
+                                          listController,
+                                          ScrollControllerContext.of(context),
+                                          scrollStorageKey: PageStorageKey(
+                                            'priority_feed_${widget.priorityId}',
+                                          ),
+                                        ),
+                                      ),
                               ),
                             ),
                           ),
@@ -979,7 +988,8 @@ class _PriorityPageState extends State<PriorityPage>
 
     // Filter out the inline "Now" header — it's replaced by a fixed panel header.
     final allAgendaItems = state.agendaViewItems;
-    final agendaItems = allAgendaItems.isNotEmpty &&
+    final agendaItems =
+        allAgendaItems.isNotEmpty &&
             allAgendaItems.first is AgendaHeaderItem &&
             (allAgendaItems.first as AgendaHeaderItem).now
         ? allAgendaItems.sublist(1)
@@ -1207,15 +1217,18 @@ class _PriorityPageState extends State<PriorityPage>
     // Hover/focus (threads only): full 1px bright border
     // Skip bright style if adjacent item is being dragged
     final dragging = controller.draggingIndex;
-    final prevHighlighted = prev is AgendaThreadItem &&
+    final prevHighlighted =
+        prev is AgendaThreadItem &&
         (hovered == index - 1 || focused == index - 1) &&
         dragging != index - 1;
-    final nextHighlighted = next is AgendaThreadItem &&
+    final nextHighlighted =
+        next is AgendaThreadItem &&
         (hovered == index || focused == index) &&
         dragging != index;
     if (prevHighlighted || nextHighlighted) {
       final bright = borderColor.withValues(
-          alpha: (borderColor.a * 2).clamp(0.0, 1.0));
+        alpha: (borderColor.a * 2).clamp(0.0, 1.0),
+      );
       return Container(height: 1, color: Color.alphaBlend(bright, bg));
     }
 
@@ -1236,22 +1249,25 @@ class _PriorityPageState extends State<PriorityPage>
   }) {
     final listItems = items;
 
+    final hasThreads = listItems.any((item) => item is AgendaThreadItem);
+    final showEmptyHint = !hasThreads;
+
     final list = InfiniteList(
       controller: controller,
       scrollController: scrollController,
       scrollStorageKey: scrollStorageKey,
       count: listItems.length,
       doneEnd: doneEnd,
-      nonReorderablePrefixCount: enableReorder &&
+      nonReorderablePrefixCount:
+          enableReorder &&
               listItems.isNotEmpty &&
               listItems.first is AgendaHeaderItem
           ? 1
           : 0,
       fetcher: (first, count) =>
           context.read<PriorityBloc>().fetchMoreAgendaItems(first, count),
-      separatorBuilder: (context, index) => _buildSeparator(
-        context, listItems, index, state, controller,
-      ),
+      separatorBuilder: (context, index) =>
+          _buildSeparator(context, listItems, index, state, controller),
       builder: (context, index, focusNode, {reorderableIndex}) {
         if (index < 0 || index >= listItems.length) {
           return null;
@@ -1275,49 +1291,94 @@ class _PriorityPageState extends State<PriorityPage>
             ...current.when(
               header: (header) {
                 return [
-                AgendaHeader(
-                  key: ValueKey(
-                    header.date != null
-                        ? 'agendaheader_date_${header.date}'
-                        : header.dateTimeRange != null
-                        ? 'agendaheader_event_${header.priority?.id ?? 'null'}_${header.dateTimeRange}'
-                        : 'agendaheader_priority_${header.priority?.id ?? 'null'}',
+                  if (showEmptyHint && index == 0) ...[
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: context.contentPaddingH,
+                        vertical: context.theme.spacing.xl,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Threads you mark ',
+                            style: TextStyle(
+                              color: context.theme.plotColors.veryMuted,
+                              fontSize: context.theme.typography.sm.fontSize,
+                            ),
+                          ),
+                          FaIcon(
+                            PlotIcon.addTodo,
+                            size: context.theme.typography.sm.fontSize,
+                            color: context.theme.plotColors.veryMuted,
+                          ),
+                          Text(
+                            ' to do or ',
+                            style: TextStyle(
+                              color: context.theme.plotColors.veryMuted,
+                              fontSize: context.theme.typography.sm.fontSize,
+                            ),
+                          ),
+                          FaIcon(
+                            PlotIcon.schedule,
+                            size: context.theme.typography.sm.fontSize,
+                            color: context.theme.plotColors.veryMuted,
+                          ),
+                          Text(
+                            ' schedule will appear here.',
+                            style: TextStyle(
+                              color: context.theme.plotColors.veryMuted,
+                              fontSize: context.theme.typography.sm.fontSize,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(height: 1, color: context.theme.colors.border),
+                  ],
+                  AgendaHeader(
+                    key: ValueKey(
+                      header.date != null
+                          ? 'agendaheader_date_${header.date}'
+                          : header.dateTimeRange != null
+                          ? 'agendaheader_event_${header.priority?.id ?? 'null'}_${header.dateTimeRange}'
+                          : 'agendaheader_priority_${header.priority?.id ?? 'null'}',
+                    ),
+                    priority: header.priority,
+                    priorityContext: state.context,
+                    dateTimeRange: header.dateTimeRange,
+                    date: header.date,
+                    now: header.now,
+                    activity: header.thread,
+                    focusNode: focusNode,
+                    text: header.text,
+                    scheduleAt: header.scheduleAt,
+                    compact: header.compact,
                   ),
-                  priority: header.priority,
-                  priorityContext: state.context,
-                  dateTimeRange: header.dateTimeRange,
-                  date: header.date,
-                  now: header.now,
-                  activity: header.thread,
-                  focusNode: focusNode,
-                  text: header.text,
-                  scheduleAt: header.scheduleAt,
-                  compact: header.compact,
-                ),
-              ];
+                ];
               },
               activity: (agendaActivity) {
                 return [
-                ThreadWidget(
-                  key: ValueKey(
-                    'activitywidget_${agendaActivity.thread.id}${agendaActivity.thread.occurrence != null ? '_${agendaActivity.thread.occurrence}' : ''}${agendaActivity.thread.isLinkScheduleInstance ? '_link' : ''}',
+                  ThreadWidget(
+                    key: ValueKey(
+                      'activitywidget_${agendaActivity.thread.id}${agendaActivity.thread.occurrence != null ? '_${agendaActivity.thread.occurrence}' : ''}${agendaActivity.thread.isLinkScheduleInstance ? '_link' : ''}',
+                    ),
+                    activity: agendaActivity.thread,
+                    selected:
+                        state.thread != null &&
+                        agendaActivity.thread.id == state.thread!.id,
+                    now: agendaActivity.now,
+                    focusNode: focusNode,
+                    context: state.context,
+                    showSubPriority: true,
+                    showEventTiming: true,
+                    reorderableIndex:
+                        enableReorder &&
+                            !agendaActivity.thread.isLinkScheduleInstance
+                        ? reorderableIndex
+                        : null,
                   ),
-                  activity: agendaActivity.thread,
-                  selected:
-                      state.thread != null &&
-                      agendaActivity.thread.id == state.thread!.id,
-                  now: agendaActivity.now,
-                  focusNode: focusNode,
-                  context: state.context,
-                  showSubPriority: true,
-                  showEventTiming: true,
-                  reorderableIndex:
-                      enableReorder &&
-                          !agendaActivity.thread.isLinkScheduleInstance
-                      ? reorderableIndex
-                      : null,
-                ),
-              ];
+                ];
               },
             ),
           ],
@@ -1593,6 +1654,23 @@ class _PriorityPageState extends State<PriorityPage>
     ScrollController? scrollController, {
     PageStorageKey<String>? scrollStorageKey,
   }) {
+    if (items.isEmpty && state.activityFeedDoneEnd) {
+      return Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.contentPaddingH,
+          vertical: context.theme.spacing.xl,
+        ),
+        child: Text(
+          'Threads track your specific goals and activities, with tasks, notes, and linked documents in one place.\nCreate a thread or add a connection to add threads here.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: context.theme.plotColors.veryMuted,
+            fontSize: context.theme.typography.sm.fontSize,
+          ),
+        ),
+      );
+    }
+
     return InfiniteList(
       controller: controller,
       scrollController: scrollController,
@@ -1601,9 +1679,8 @@ class _PriorityPageState extends State<PriorityPage>
       doneEnd: state.activityFeedDoneEnd,
       fetcher: (first, count) =>
           context.read<PriorityBloc>().fetchMoreActivityFeedItems(first, count),
-      separatorBuilder: (context, index) => _buildSeparator(
-        context, items, index, state, controller,
-      ),
+      separatorBuilder: (context, index) =>
+          _buildSeparator(context, items, index, state, controller),
       builder: (context, index, focusNode, {reorderableIndex}) {
         if (index < 0 || index >= items.length) {
           return null;
@@ -1624,37 +1701,37 @@ class _PriorityPageState extends State<PriorityPage>
             ...current.when(
               header: (header) {
                 return [
-                AgendaHeader(
-                  priority: header.priority,
-                  priorityContext: state.context,
-                  dateTimeRange: header.dateTimeRange,
-                  date: header.date,
-                  now: header.now,
-                  activity: header.thread,
-                  focusNode: focusNode,
-                  text: header.text,
-                  scheduleAt: header.scheduleAt,
-                  compact: header.compact,
-                ),
-              ];
+                  AgendaHeader(
+                    priority: header.priority,
+                    priorityContext: state.context,
+                    dateTimeRange: header.dateTimeRange,
+                    date: header.date,
+                    now: header.now,
+                    activity: header.thread,
+                    focusNode: focusNode,
+                    text: header.text,
+                    scheduleAt: header.scheduleAt,
+                    compact: header.compact,
+                  ),
+                ];
               },
               activity: (agendaActivity) {
                 return [
-                ThreadWidget(
-                  key: ValueKey(
-                    'feed_activitywidget_${agendaActivity.thread.id}',
+                  ThreadWidget(
+                    key: ValueKey(
+                      'feed_activitywidget_${agendaActivity.thread.id}',
+                    ),
+                    activity: agendaActivity.thread,
+                    selected:
+                        state.thread != null &&
+                        agendaActivity.thread.id == state.thread!.id,
+                    now: agendaActivity.now,
+                    focusNode: focusNode,
+                    context: state.context,
+                    showSubPriority: true,
+                    setDoneAt: false,
                   ),
-                  activity: agendaActivity.thread,
-                  selected:
-                      state.thread != null &&
-                      agendaActivity.thread.id == state.thread!.id,
-                  now: agendaActivity.now,
-                  focusNode: focusNode,
-                  context: state.context,
-                  showSubPriority: true,
-                  setDoneAt: false,
-                ),
-              ];
+                ];
               },
             ),
           ],
@@ -1717,9 +1794,7 @@ class _SplitViewDividerState extends State<_SplitViewDivider> {
           decoration: BoxDecoration(
             color: context.theme.colors.background,
             border: Border.symmetric(
-              horizontal: BorderSide(
-                color: borderColor,
-              ),
+              horizontal: BorderSide(color: borderColor),
             ),
           ),
           padding: EdgeInsets.symmetric(
@@ -1753,11 +1828,7 @@ class _PanelHeader extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: context.theme.colors.background,
-        border: Border(
-          bottom: BorderSide(
-            color: context.theme.colors.border,
-          ),
-        ),
+        border: Border(bottom: BorderSide(color: context.theme.colors.border)),
       ),
       padding: EdgeInsets.symmetric(
         horizontal: context.contentPaddingH,

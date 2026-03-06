@@ -194,10 +194,10 @@ class MentionItem {
 
   /// Create from an Actor
   factory MentionItem.fromActor(Actor actor) => MentionItem(
-        id: actor.id.toString(),
-        name: actor.nameOrEmail,
-        isContact: actor.type == ActorType.contact,
-      );
+    id: actor.id.toString(),
+    name: actor.nameOrEmail,
+    isContact: actor.type == ActorType.contact,
+  );
 
   final String id;
   final String name;
@@ -786,8 +786,7 @@ class EditorState extends State<Editor> {
     document: _document,
     editor: _editor,
     composer: _composer,
-    documentLayoutResolver: () =>
-        _docLayoutKey.currentState as DocumentLayout,
+    documentLayoutResolver: () => _docLayoutKey.currentState as DocumentLayout,
   );
 
   void performCut() {

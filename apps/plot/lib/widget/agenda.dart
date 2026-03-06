@@ -407,7 +407,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
                                   right: spacing,
                                 ),
                                 child: Text(
-                                  dateCenterLeft!,
+                                  dateCenterLeft,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: mutedStyle,

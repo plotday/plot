@@ -169,6 +169,9 @@ class ListTile extends StatefulWidget {
     /// When true, only the icon is shown (centered) and the title appears as a tooltip.
     this.iconOnly = false,
 
+    /// When true, text and icon use muted color by default and foreground on hover.
+    this.muted = false,
+
     super.key,
   }) : subtitle = subtitle ?? command?.subtitle;
 
@@ -208,6 +211,7 @@ class ListTile extends StatefulWidget {
   final CrossAxisAlignment crossAxisAlignment;
   final bool showShortcut;
   final bool iconOnly;
+  final bool muted;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -592,6 +596,11 @@ class _ListTileState extends State<ListTile> {
                                                             .primary
                                                       : widget.style ==
                                                             ListTileStyle.header
+                                                      ? context
+                                                            .theme
+                                                            .plotColors
+                                                            .muted
+                                                      : widget.muted && !isHighlighted
                                                       ? context
                                                             .theme
                                                             .plotColors

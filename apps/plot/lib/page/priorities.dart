@@ -136,6 +136,7 @@ class PrioritiesPage extends StatelessWidget {
                                                   title: 'Getting Started',
                                                   textStyle: context.theme.typography.sm,
                                                   icon: PlotIcon.gettingStarted,
+                                                  muted: true,
                                                   selected: selected?.id == gettingStarted.id,
                                                   selectedBorder: false,
                                                   command: CommandWrapper(
@@ -158,6 +159,7 @@ class PrioritiesPage extends StatelessWidget {
                                                           .typography
                                                           .sm,
                                                       icon: PlotIcon.connection,
+                                                      muted: true,
                                                       command: CommandWrapper(
                                                         ManageConnectionsAndTwists(),
                                                         icon: Value(null),
@@ -169,6 +171,7 @@ class PrioritiesPage extends StatelessWidget {
                                                     textStyle:
                                                         context.theme.typography.sm,
                                                     icon: PlotIcon.offline,
+                                                    muted: true,
                                                     command: CommandWrapper(
                                                       ShowOfflineInfo(),
                                                       icon: Value(null),
@@ -183,6 +186,7 @@ class PrioritiesPage extends StatelessWidget {
                                                   title: 'Twist Development',
                                                   textStyle: context.theme.typography.sm,
                                                   icon: PlotIcon.code,
+                                                  muted: true,
                                                   selected: selected?.id == twistDev.id,
                                                   selectedBorder: false,
                                                   command: CommandWrapper(
@@ -198,6 +202,7 @@ class PrioritiesPage extends StatelessWidget {
                                                   title: 'Help + Feedback',
                                                   textStyle: context.theme.typography.sm,
                                                   icon: PlotIcon.help,
+                                                  muted: true,
                                                   selected: selected?.id == helpFeedback.id,
                                                   selectedBorder: false,
                                                   command: CommandWrapper(
@@ -242,6 +247,7 @@ class PrioritiesPage extends StatelessWidget {
                                                           .typography
                                                           .sm,
                                                       icon: PlotIcon.account,
+                                                      muted: true,
                                                       command: CommandWrapper(
                                                         ShowSettings(),
                                                         icon: Value(null),
