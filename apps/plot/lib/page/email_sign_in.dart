@@ -93,6 +93,13 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
     try {
       await Future(() async {
+        if (Base.auth.isSignedIn) {
+          // Already signed in (e.g. from a previous attempt that completed
+          // Clerk auth but failed during /activate). Just resolve identity.
+          await Base.resolveIdentity();
+          return;
+        }
+
         // Two-step sign-in flow:
         // 1. Identify with email
         await Base.auth.attemptSignIn(
