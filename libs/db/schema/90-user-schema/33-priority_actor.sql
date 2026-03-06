@@ -27,7 +27,7 @@ FROM (
         JOIN priority_contact pc ON pc.priority_id = upe.priority_id
         JOIN contact c ON c.id = pc.contact_id
 UNION ALL
--- Priority twists (which are actors themselves)
+-- Priority twists bound directly to a priority
 SELECT
     upe.user_id,
     upe.path AS priority_path,
@@ -37,4 +37,19 @@ SELECT
     pt.archived_at
 FROM
     "user".priority_expanded upe
-    JOIN priority_twist pt ON pt.priority_id = upe.priority_id) AS actors;
+    JOIN priority_twist pt ON pt.priority_id = upe.priority_id
+UNION ALL
+-- Account-based sources (priority_twist.priority_id IS NULL)
+-- linked to priorities via source_channel
+SELECT
+    upe.user_id,
+    upe.path AS priority_path,
+    pt.id AS actor_id,
+    pt.created_at,
+    GREATEST (pt.updated_at, sc.updated_at) AS updated_at,
+    pt.archived_at
+FROM
+    "user".priority_expanded upe
+    JOIN source_channel sc ON sc.priority_id = upe.priority_id
+    JOIN priority_twist pt ON pt.id = sc.priority_twist_id
+        AND pt.priority_id IS NULL) AS actors;

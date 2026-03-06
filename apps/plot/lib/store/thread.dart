@@ -1430,12 +1430,8 @@ class Thread extends Equatable implements Comparable<Thread> {
 
       // When the thread has no own schedule, pick the closest upcoming link
       // schedule so that Thread.at is populated for display purposes.
-      // This runs for the activity feed (range == null) and for todo threads
-      // in the agenda (range != null) so they show the event date/time.
       ScheduleRow? effectiveScheduleRow = baseScheduleRow;
-      final isTodo = userScheduleRow != null &&
-          (userScheduleRow.startOn != null || userScheduleRow.startAt != null);
-      if (baseScheduleRow == null && (range == null || isTodo)) {
+      if (baseScheduleRow == null) {
         final now = DateTime.now();
         ScheduleRow? bestFuture;
         DateTime? bestFutureStart;
@@ -2047,8 +2043,8 @@ class Thread extends Equatable implements Comparable<Thread> {
         recurrenceOn.present ||
         recurrenceDuration.present ||
         order != null) {
-      if (schedule != null) {
-        // Update existing schedule
+      if (schedule != null && schedule.linkId == null) {
+        // Update existing schedule (skip link schedules — they're owned by sources)
         Value<DateTime?> schedStartAt = const Value.absent();
         Value<DateTime?> schedEndAt = const Value.absent();
         Value<Date?> schedStartOn = const Value.absent();
@@ -2366,7 +2362,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       _thread.toCompanion(false),
       ThreadsBase(),
     );
-    if (_schedule != null) {
+    if (_schedule != null && _schedule.linkId == null) {
       await Store.get.save(
         Store.get.schedules,
         _schedule.toCompanion(false),

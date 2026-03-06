@@ -64,6 +64,25 @@ schedules.post("/sync/schedules", async (c) => {
   const schedule = body.schedule || body;
   const contacts = schedule.contacts || body.contacts;
 
+  // Reject updates to link schedules — only sources can modify those
+  const linkId = schedule.link_id || body.defaults?.link_id;
+  if (linkId) {
+    return c.json({ error: "Cannot modify link schedules via sync" }, 403);
+  }
+  if (schedule.id && !schedule.link_id && !schedule.thread_id) {
+    // Updating by ID only — check if it's a link schedule
+    const existing = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
+      return trx
+        .selectFrom("schedule" as any)
+        .select("link_id")
+        .where("id", "=", schedule.id)
+        .executeTakeFirst();
+    });
+    if (existing?.link_id) {
+      return c.json({ error: "Cannot modify link schedules via sync" }, 403);
+    }
+  }
+
   const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
     const scheduleResult = await rpcUser(trx, "upsert_schedule", {
       user_id: c.var.user.id,
