@@ -149,7 +149,6 @@ jobs:
         with:
           path: |
             ~\AppData\Local\Pub\Cache
-            apps\plot\.dart_tool
           key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-flutter-deps-

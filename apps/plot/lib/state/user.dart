@@ -28,6 +28,7 @@ class UserBloc extends Cubit<UserState> {
       }
 
       log.info('User signed in: ${user.primaryEmail}');
+      emit(const UserLoading());
       final stopwatch = Stopwatch()..start();
 
       try {
@@ -56,11 +57,20 @@ class UserBloc extends Cubit<UserState> {
           context: 'sign_in_setup_timeout',
         );
         statusNotifier.value = null;
+        try { await Base.signOut(); } catch (_) {}
         emit(const UserSignedOut());
         return;
       } catch (e, stackTrace) {
         log.warning('Store.start failed — cannot proceed', e, stackTrace);
+        Tracker.trackError(
+          'auth',
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+          stackTrace: stackTrace.toString(),
+          context: 'sign_in_store_start_failed',
+        );
         statusNotifier.value = null;
+        try { await Base.signOut(); } catch (_) {}
         emit(const UserSignedOut());
         return;
       }

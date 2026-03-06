@@ -440,12 +440,16 @@ class Store extends _$Store {
           await NoteFts.createTable(inst);
           hasDefault = false; // Schema was rebuilt, no data
         } catch (rebuildError, rebuildTrace) {
-          log.warning('In-place rebuild failed, recreating Store', rebuildError, rebuildTrace);
-          // Close broken store, create fresh one (triggers fresh beforeOpen)
-          await inst.close();
-          inst = Store._(user);
-          Injector.appInstance.registerSingleton<Store>(() => inst, override: true);
-          hasDefault = false;
+          log.warning('In-place rebuild failed', rebuildError, rebuildTrace);
+          Tracker.trackError(
+            'database',
+            errorType: rebuildError.runtimeType.toString(),
+            errorMessage: rebuildError.toString(),
+            context: 'store_start_rebuild_failed',
+          );
+          // If SQLite itself is unavailable (e.g. missing DLL on Windows),
+          // continuing is futile — rethrow so UserBloc signs out.
+          rethrow;
         }
       }
 
