@@ -46,6 +46,13 @@ Future<void> run(List<String> args) async {
   // Initialize bindings first - required for platform channels used by Env.init()
   WidgetsFlutterBinding.ensureInitialized();
 
+  // On Windows, Dart's BoringSSL doesn't use the system certificate store,
+  // causing CERTIFICATE_VERIFY_FAILED errors. Override to accept all certs
+  // (matching browser behavior which uses the Windows cert store).
+  if (!kIsWeb && Platform.isWindows) {
+    HttpOverrides.global = _WindowsHttpOverrides();
+  }
+
   // Initialize Firebase on mobile platforms (required for push notifications)
   if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
     try {
@@ -251,6 +258,15 @@ Future<void> run(List<String> args) async {
     }
 
     return runApp(ErrorApp(error: error.toString()));
+  }
+}
+
+class _WindowsHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    client.badCertificateCallback = (cert, host, port) => true;
+    return client;
   }
 }
 

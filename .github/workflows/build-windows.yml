@@ -187,11 +187,23 @@ jobs:
       # Users must install the public certificate (plot-codesign.cer) to their
       # Trusted People store to avoid SmartScreen warnings
       # For Windows Store deployment, replace with CA-signed certificate
-      - name: Create MSIX package
+      - name: Build MSIX files
         shell: bash
         run: |
           cd apps/plot
-          flutter pub run msix:create --certificate-password "$WINDOWS_CERT_PASSWORD"
+          flutter pub run msix:build --certificate-password "$WINDOWS_CERT_PASSWORD"
+
+      - name: Patch MSIX manifest background color
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+          sed -i 's/BackgroundColor="transparent"/BackgroundColor="#01845e"/' AppxManifest.xml
+
+      - name: Pack and sign MSIX package
+        shell: bash
+        run: |
+          cd apps/plot
+          flutter pub run msix:pack --certificate-password "$WINDOWS_CERT_PASSWORD"
 
       - name: Create portable ZIP archive
         shell: bash
