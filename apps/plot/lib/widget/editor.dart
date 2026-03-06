@@ -305,8 +305,15 @@ class EditorState extends State<Editor> {
   /// Resets the editor by clearing it and re-initializing with new content
   void reset(String? content) {
     setState(() {
-      // Clear the document first
-      _editor.execute([ClearDocumentRequest()]);
+      // Clear selection and document
+      _editor.execute([
+        const ChangeSelectionRequest(
+          null,
+          SelectionChangeType.clearSelection,
+          SelectionReason.contentChange,
+        ),
+        ClearDocumentRequest(),
+      ]);
 
       // If content is provided, deserialize and insert it
       if (content != null && content.isNotEmpty) {
@@ -511,6 +518,16 @@ class EditorState extends State<Editor> {
         final newDocument = _deserializeMarkdownWithMentions(
           widget.initialContent!,
         );
+
+        // Clear selection before replacing nodes to avoid stale node references
+        // that cause null check failures in SuperEditor's selection styler
+        _editor.execute([
+          const ChangeSelectionRequest(
+            null,
+            SelectionChangeType.clearSelection,
+            SelectionReason.contentChange,
+          ),
+        ]);
 
         // Replace document nodes by removing all and inserting new ones
         setState(() {
