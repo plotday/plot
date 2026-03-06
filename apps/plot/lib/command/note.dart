@@ -124,11 +124,12 @@ class SelfTaskAction extends NoteCommand {
     _SelfTaskState.done => 'Remove Done',
   };
 
-  static EventAction _eventActionForState(_SelfTaskState state) => switch (state) {
-    _SelfTaskState.unassigned => EventAction.started,
-    _SelfTaskState.todo => EventAction.finished,
-    _SelfTaskState.done => EventAction.untagged,
-  };
+  static EventAction _eventActionForState(_SelfTaskState state) =>
+      switch (state) {
+        _SelfTaskState.unassigned => EventAction.started,
+        _SelfTaskState.todo => EventAction.finished,
+        _SelfTaskState.done => EventAction.untagged,
+      };
 
   static IconData _iconForState(_SelfTaskState state) => switch (state) {
     _SelfTaskState.unassigned => PlotIcon.selfTask,
@@ -406,8 +407,7 @@ class PickNoteAssignee extends ShowCommands {
   final Note note;
 
   /// Whether there are other assignees (not the current user)
-  bool get hasOtherAssignees =>
-      note.assignees.any((id) => id != Base.actorId);
+  bool get hasOtherAssignees => note.assignees.any((id) => id != Base.actorId);
 
   static IconData _computeIcon(Note note) => PlotIcon.assignAdd;
 
@@ -438,20 +438,20 @@ class AssignNoteActor extends NoteCommand {
         eventAction: note.isCompletedBy(actor.id)
             ? EventAction.clicked
             : note.isAssignedTo(actor.id)
-                ? EventAction.untagged
-                : EventAction.tagged,
+            ? EventAction.untagged
+            : EventAction.tagged,
         icon: note.isCompletedBy(actor.id)
             ? PlotIcon.othersTaskDone
             : note.isAssignedTo(actor.id)
-                ? PlotIcon.assignRemove
-                : PlotIcon.assignAdd,
+            ? PlotIcon.assignRemove
+            : PlotIcon.assignAdd,
       );
 
   final Actor actor;
   final bool _isDone;
 
   @override
-  String? get subtitle => actor.email;
+  String? get subtitle => actor.name != null ? actor.email : null;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -590,10 +590,12 @@ List<Command> topNoteTags(
 
   // Filter out tags already on note (and archived, which is menu-only) and take maxToShow
   return tagSuggestions
-      .where((tag) =>
-          tag != Tag.archived &&
-          !note.hasTag(tag, actorId) &&
-          !(tag == Tag.done && note.hasTag(Tag.todo, actorId)))
+      .where(
+        (tag) =>
+            tag != Tag.archived &&
+            !note.hasTag(tag, actorId) &&
+            !(tag == Tag.done && note.hasTag(Tag.todo, actorId)),
+      )
       .take(maxToShow)
       .map((tag) => ToggleNoteTag(note, tag, actorId))
       .toList();
@@ -638,13 +640,13 @@ class PickDraftNoteAssignee extends ShowCommands {
     required this.priorityId,
     required this.onUpdate,
   }) : super(
-          title: 'Assign',
-          icon: _computeIcon(note),
-          commandsBuilder: (context) =>
-              _getAssigneeCommands(note, priorityId, onUpdate),
-          eventObject: EventObject.note,
-          eventAction: EventAction.updated,
-        );
+         title: 'Assign',
+         icon: _computeIcon(note),
+         commandsBuilder: (context) =>
+             _getAssigneeCommands(note, priorityId, onUpdate),
+         eventObject: EventObject.note,
+         eventAction: EventAction.updated,
+       );
 
   final Note note;
   final Uuid priorityId;
@@ -653,8 +655,7 @@ class PickDraftNoteAssignee extends ShowCommands {
   static IconData _computeIcon(Note note) {
     final otherAssignees = note.assignees.where((id) => id != Base.actorId);
     if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
-    final allOthersDone =
-        otherAssignees.every((id) => note.isCompletedBy(id));
+    final allOthersDone = otherAssignees.every((id) => note.isCompletedBy(id));
     return allOthersDone ? PlotIcon.othersTaskDone : PlotIcon.othersTask;
   }
 
@@ -678,28 +679,25 @@ class PickDraftNoteAssignee extends ShowCommands {
 }
 
 class _AssignDraftNoteActor extends NoteCommand {
-  _AssignDraftNoteActor(
-    super.note,
-    this.actor, {
-    required this.onUpdate,
-  }) : super(
-          title: actor.nameOrEmail,
-          eventObject: EventObject.note,
-          eventAction: note.isAssignedTo(actor.id)
-              ? EventAction.untagged
-              : EventAction.tagged,
-          icon: note.isCompletedBy(actor.id)
-              ? PlotIcon.othersTaskDone
-              : note.isAssignedTo(actor.id)
-                  ? PlotIcon.assignRemove
-                  : PlotIcon.assignAdd,
-        );
+  _AssignDraftNoteActor(super.note, this.actor, {required this.onUpdate})
+    : super(
+        title: actor.nameOrEmail,
+        eventObject: EventObject.note,
+        eventAction: note.isAssignedTo(actor.id)
+            ? EventAction.untagged
+            : EventAction.tagged,
+        icon: note.isCompletedBy(actor.id)
+            ? PlotIcon.othersTaskDone
+            : note.isAssignedTo(actor.id)
+            ? PlotIcon.assignRemove
+            : PlotIcon.assignAdd,
+      );
 
   final Actor actor;
   final Future<void> Function(Note note) onUpdate;
 
   @override
-  String? get subtitle => actor.email;
+  String? get subtitle => actor.name != null ? actor.email : null;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
