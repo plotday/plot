@@ -166,6 +166,9 @@ class ListTile extends StatefulWidget {
     /// Whether to show the keyboard shortcut (default: false).
     this.showShortcut = false,
 
+    /// When true, only the icon is shown (centered) and the title appears as a tooltip.
+    this.iconOnly = false,
+
     super.key,
   }) : subtitle = subtitle ?? command?.subtitle;
 
@@ -204,6 +207,7 @@ class ListTile extends StatefulWidget {
   final int? reorderableIndex;
   final CrossAxisAlignment crossAxisAlignment;
   final bool showShortcut;
+  final bool iconOnly;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -449,6 +453,16 @@ class _ListTileState extends State<ListTile> {
       ),
     );
 
+    if (widget.iconOnly) {
+      final tooltipText = widget.title ?? widget.command?.title;
+      if (tooltipText != null) {
+        return FTooltip(
+          tipBuilder: (context, controller) => Text(tooltipText),
+          child: child,
+        );
+      }
+    }
+
     return child;
   }
 
@@ -500,6 +514,14 @@ class _ListTileState extends State<ListTile> {
 
           // Only apply spacing when icon is present
           final hasIcon = iconWidget is! SizedBox;
+
+          if (widget.iconOnly) {
+            return Center(child: Padding(
+              padding: (widget.padding?.resolve(null) ?? context.theme.spacing.paddingSm)
+                  .copyWith(left: 0, right: 0),
+              child: iconWidget,
+            ));
+          }
 
           return Row(
             crossAxisAlignment: CrossAxisAlignment.center,

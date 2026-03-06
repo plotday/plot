@@ -487,6 +487,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                       title: 'Add a Priority',
                     ),
                     icon: PlotIcon.add,
+                    iconOnly: true,
                     textStyle: itemStyle.copyWith(
                       color: context.theme.colors.mutedForeground,
                     ),
