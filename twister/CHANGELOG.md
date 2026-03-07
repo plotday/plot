@@ -1,5 +1,12 @@
 # @plotday/twister
 
+## 0.38.0
+
+### Added
+
+- Semantic search tool for notes and links in the Plot tool, with configurable limit, threshold, and priority scope ([`fde9d49`](https://github.com/plotday/plot/commit/fde9d497a9480ba367bc123c8137428615b21aa0))
+- Thread reference action type for navigating to related threads ([`fde9d49`](https://github.com/plotday/plot/commit/fde9d497a9480ba367bc123c8137428615b21aa0))
+
 ## 0.37.0
 
 ### Added
