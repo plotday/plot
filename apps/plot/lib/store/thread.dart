@@ -664,6 +664,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       offset: offset,
     ).watch().asyncMap(
       (results) async {
+        if (!Store.isAvailable) return (threads: <Thread>[], rawRowCount: 0);
         final threads = await _mapResultsToThreads(results, archived: archived, range: occurrenceRange ?? range);
         return (threads: threads, rawRowCount: results.length);
       },
@@ -691,12 +692,13 @@ class Thread extends Equatable implements Comparable<Thread> {
       draft: null,
       order: ThreadOrder.sorted,
     ).watch().asyncMap((results) async {
+      if (!Store.isAvailable) return null;
       final threads = await _mapResultsToThreads(results, range: null);
       if (threads.isEmpty) {
         throw Exception('Thread not found');
       }
       return threads.first;
-    });
+    }).where((t) => t != null).cast<Thread>();
   }
 
   /// Get the most recent draft thread for a specific priority

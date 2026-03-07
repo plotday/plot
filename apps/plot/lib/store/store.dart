@@ -363,6 +363,12 @@ abstract class BaseTable {
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
 
+  /// Whether a Store instance is available and not closing.
+  /// Use this to guard database access in stream callbacks that may fire
+  /// during shutdown.
+  static bool get isAvailable =>
+      Injector.appInstance.exists<Store>() && !get._closing;
+
   // Track ongoing push operations per table to prevent concurrent pushes
   static final Map<String, Completer<bool>> _pushCompleters = {};
 
@@ -1844,6 +1850,12 @@ class Store extends _$Store {
 
     // Cancel all pending debounce timers
     _syncDebouncer.dispose();
+
+    // Allow in-flight queries to drain before closing the database connection.
+    // This prevents a race where the background isolate's SQLite update hook
+    // NativeCallable is invalidated while a write is still in progress,
+    // causing a SIGSEGV (null function pointer call from sqlite3).
+    await Future<void>.delayed(const Duration(milliseconds: 100));
 
     await super.close();
   }
