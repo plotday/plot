@@ -724,11 +724,15 @@ class ThreadCommands extends HookWidget {
           ).map((cmd) => Button.icon(cmd)).toList()
         : <Widget>[];
 
-    // Conferencing buttons (visible when showing event timing)
+    // Conferencing/RSVP buttons only for threads shown by their own event
+    // timing, not for user-scheduled todos.
+    final isTodoBase = activity.todo && !activity.isLinkScheduleInstance;
+    final showEventButtons = showEventTiming && !isTodoBase;
+
     final linksSnapshot = useStream<List<Link>>(
       useMemoized(() => Link.watchForThread(activity.id), [activity.id]),
     );
-    final conferencingActions = showEventTiming
+    final conferencingActions = showEventButtons
         ? (linksSnapshot.data ?? [])
               .expand((link) => link.actions ?? <UserAction>[])
               .whereType<ConferencingUserAction>()
@@ -736,7 +740,7 @@ class ThreadCommands extends HookWidget {
         : <ConferencingUserAction>[];
 
     // RSVP button (always visible for multi-attendee events)
-    final rsvpButton = showEventTiming && activity.hasOtherAttendees
+    final rsvpButton = showEventButtons && activity.hasOtherAttendees
         ? Button.icon(ToggleRsvp(activity))
         : null;
 
