@@ -42,6 +42,7 @@ class ExpiringStreamTransformer<T, S> extends StreamTransformerBase<T, S> {
 
     void handle(T event) {
       timer?.cancel();
+      if (controller.isClosed) return;
 
       final result = map(event);
       controller.add(result.value);

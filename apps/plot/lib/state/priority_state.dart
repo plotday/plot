@@ -1044,7 +1044,7 @@ class PriorityState extends Equatable {
   }
 }
 
-sealed class AgendaItem {
+sealed class AgendaItem extends Equatable {
   const AgendaItem();
 
   T when<T>({
@@ -1088,6 +1088,9 @@ class AgendaHeaderItem extends AgendaItem {
   final DateTime? scheduleAt;
 
   @override
+  List<Object?> get props => [dateTimeRange, date, now, thread, text, scheduleAt];
+
+  @override
   String toString() =>
       'AgendaHeaderItem(dateTimeRange: $dateTimeRange, date: $date, now: $now, text: $text, scheduleAt: $scheduleAt)';
 }
@@ -1097,6 +1100,9 @@ class AgendaThreadItem extends AgendaItem {
 
   final Thread thread;
   final bool now;
+
+  @override
+  List<Object?> get props => [thread, now];
 
   @override
   String toString() =>

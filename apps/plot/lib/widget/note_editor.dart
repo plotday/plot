@@ -829,6 +829,11 @@ class NoteEditorState extends State<NoteEditor> {
 
     widget.onSubmitted?.call();
     await context.run(AddThreadWithNote(data));
+    if (mounted) {
+      setState(() {
+        _saving = false;
+      });
+    }
   }
 
   // -- Finalize methods --
