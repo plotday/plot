@@ -405,6 +405,16 @@ class Thread extends Equatable implements Comparable<Thread> {
   static final todoNowDate = Date(1970, 1, 1);
 
   static Future<void> pullInitial() async {
+    // Pull all links FIRST so activity_at and link schedules are available
+    // when threads arrive (prevents brief misplacement in feed).
+    // Without this initial pull, links are never fetched (pull() without initial
+    // just sets pulledAt to now and skips all existing data).
+    await Store.get.pull(
+      Store.get.links,
+      LinksBase(),
+      initial: true,
+    );
+
     // Pull unread activities (no limit)
     // We do this to ensure we can reflect which priorities have unread activities.
     await Store.get.pull(
@@ -413,22 +423,14 @@ class Thread extends Equatable implements Comparable<Thread> {
       initial: true,
     );
 
-    // Pull all links so activity_at and link schedules are available from the start.
-    // Without this, links are never fetched (pull() without initial just sets pulledAt
-    // to now and skips all existing data).
-    await Store.get.pull(
-      Store.get.links,
-      LinksBase(),
-      initial: true,
-    );
-
     // We don't pull exceptions or tags mostly because we don't have a good way of pulling the related
     // ones, but also because those should come with pullTo.
   }
 
   static Future<void> pull() async {
-    await Store.get.pull(Store.get.threads, ThreadsBase());
+    // Pull links first so activity_at can be computed correctly when threads arrive.
     await Store.get.pull(Store.get.links, LinksBase());
+    await Store.get.pull(Store.get.threads, ThreadsBase());
     await Store.get.pull(Store.get.schedules, SchedulesBase());
     await Store.get.pull(Store.get.threadTags, ThreadTagsBase());
   }
@@ -441,6 +443,9 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool archived = false,
   }) async {
     final path = priorityPath?.value ?? '';
+    // Pull links first so activity_at can be computed correctly from link.sourceCreatedAt
+    await Store.get.pull(Store.get.links, LinksBase());
+
     final pulledTo = await Store.get.pullTo(
       Store.get.threads,
       ThreadsBase(
@@ -470,8 +475,6 @@ class Thread extends Equatable implements Comparable<Thread> {
       ascending: false,
       archived: archived,
     );
-    // Pull links so activity_at can be computed correctly from link.sourceCreatedAt
-    await Store.get.pull(Store.get.links, LinksBase());
   }
 
   /// Pull one page of agenda (forward from today).
@@ -482,6 +485,9 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool archived = false,
   }) async {
     final path = priorityPath?.value ?? '';
+    // Pull links first so link schedules and activity_at data are available
+    await Store.get.pull(Store.get.links, LinksBase());
+
     final pulledTo = await Store.get.pullTo(
       Store.get.threads,
       ThreadsBase(
@@ -511,8 +517,6 @@ class Thread extends Equatable implements Comparable<Thread> {
       ascending: true,
       archived: archived,
     );
-    // Pull links so link schedules and activity_at data are available
-    await Store.get.pull(Store.get.links, LinksBase());
   }
 
   static Future<bool> push() async {

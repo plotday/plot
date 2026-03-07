@@ -505,7 +505,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     }).distinct();
   }
 
-  /// Gets which priority IDs from the given list are shared (have any members).
+  /// Gets which priority IDs from the given list are shared (have other members).
   static Future<Set<PriorityId>> _getSharedPriorityIds(
     List<PriorityId> ids,
   ) async {
@@ -515,9 +515,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     final pm = db.priorityMembers;
     final idBytes = ids.map((id) => id.toBytes()).toList();
 
+    // Get current user's actor IDs to exclude from sharing check
+    final userActorIds = Actor._cache.values
+        .where((actor) => actor.self)
+        .map((actor) => actor.id.toBytes())
+        .toList();
+    if (userActorIds.isEmpty) {
+      userActorIds.add(Base.actorId.toBytes());
+    }
+
     final query = db.selectOnly(pm, distinct: true)
       ..addColumns([pm.priorityId])
-      ..where(pm.priorityId.isIn(idBytes) & pm.archivedAt.isNull());
+      ..where(pm.priorityId.isIn(idBytes) &
+          pm.archivedAt.isNull() &
+          pm.contactId.isNotIn(userActorIds));
 
     final results = await query.get();
     return results
@@ -525,14 +536,23 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .toSet();
   }
 
-  /// Watches which priorities are shared (have any members).
+  /// Watches which priorities are shared (have other members).
   static Stream<Set<PriorityId>> _watchSharedPriorityIds() {
     final db = Store.get;
     final pm = db.priorityMembers;
 
+    // Get current user's actor IDs to exclude from sharing check
+    final userActorIds = Actor._cache.values
+        .where((actor) => actor.self)
+        .map((actor) => actor.id.toBytes())
+        .toList();
+    if (userActorIds.isEmpty) {
+      userActorIds.add(Base.actorId.toBytes());
+    }
+
     final query = db.selectOnly(pm, distinct: true)
       ..addColumns([pm.priorityId])
-      ..where(pm.archivedAt.isNull());
+      ..where(pm.archivedAt.isNull() & pm.contactId.isNotIn(userActorIds));
 
     return query
         .watch()
