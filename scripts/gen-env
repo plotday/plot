@@ -220,6 +220,26 @@ if [ "$ENV" = "production" ]; then
     echo "✓ Firebase GoogleService-Info.plist already exists" >&2
   fi
 
+  # Fetch App Store Connect API key for macOS uploads
+  ASC_KEY_DIR="$HOME/.appstoreconnect/private_keys"
+  ASC_KEY_FILE="$ASC_KEY_DIR/AuthKey_$(op read 'op://Production/Apple/App Store Connect/key id' --account plotco).p8"
+  if [ ! -f "$ASC_KEY_FILE" ]; then
+    echo "Fetching App Store Connect API key from 1Password..." >&2
+    mkdir -p "$ASC_KEY_DIR"
+    op read "op://Production/Apple/App Store Connect/key.p8" \
+      --account plotco \
+      --out-file "$ASC_KEY_FILE" \
+      --file-mode 0600
+    if [ $? -eq 0 ]; then
+      echo "✓ App Store Connect API key fetched successfully" >&2
+    else
+      echo "✗ Failed to fetch App Store Connect API key" >&2
+      exit 1
+    fi
+  else
+    echo "✓ App Store Connect API key already exists" >&2
+  fi
+
   # Fetch Windows signing certificate
   WINDOWS_CERT_OUTPUT="$WORKSPACE_PATH/apps/plot/windows/plot-codesign.pfx"
   if [ ! -f "$WINDOWS_CERT_OUTPUT" ]; then

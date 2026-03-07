@@ -1,0 +1,122 @@
+#!/bin/bash
+set -euo pipefail
+
+# Release macOS app via Shorebird and upload to App Store Connect.
+#
+# Prerequisites:
+#   - Shorebird CLI installed
+#   - "3rd Party Mac Developer Application" certificate in Keychain
+#   - "3rd Party Mac Developer Installer" certificate in Keychain
+#   - App Store Connect API key in 1Password (op://Production/Apple/App Store Connect/)
+#   - Run `pnpm get-env` first to fetch the API key .p8 file
+
+TEAM_NAME="Plot Technologies Inc."
+TEAM_ID="789MAH2W6P"
+APP_CERT="3rd Party Mac Developer Application: ${TEAM_NAME} (${TEAM_ID})"
+INSTALLER_CERT="3rd Party Mac Developer Installer: ${TEAM_NAME} (${TEAM_ID})"
+APP_NAME="Plot"
+ENTITLEMENTS="macos/Runner/Release.entitlements"
+
+cd "$(dirname "$0")/../apps/plot"
+
+BUILD_DIR="build/macos/Build/Products/Release"
+APP_PATH="${BUILD_DIR}/${APP_NAME}.app"
+PKG_PATH="${BUILD_DIR}/${APP_NAME}.pkg"
+
+# --- Check prerequisites ---
+
+echo "Checking signing certificates..."
+
+if ! security find-identity -v | grep -q "${APP_CERT}"; then
+  echo ""
+  echo "ERROR: Missing certificate: ${APP_CERT}"
+  echo ""
+  echo "To install it:"
+  echo "  1. Open Xcode → Settings → Accounts → Manage Certificates"
+  echo "  2. Click + → Mac App Distribution"
+  echo "  Or download from https://developer.apple.com/account/resources/certificates"
+  exit 1
+fi
+
+if ! security find-identity -v | grep -q "${INSTALLER_CERT}"; then
+  echo ""
+  echo "ERROR: Missing certificate: ${INSTALLER_CERT}"
+  echo ""
+  echo "To install it:"
+  echo "  1. Open Xcode → Settings → Accounts → Manage Certificates"
+  echo "  2. Click + → Mac Installer Distribution"
+  echo "  Or download from https://developer.apple.com/account/resources/certificates"
+  exit 1
+fi
+
+echo "Certificates found."
+
+# Read App Store Connect API credentials from 1Password
+echo "Reading App Store Connect credentials from 1Password..."
+ASC_KEY_ID=$(op read "op://Production/Apple/App Store Connect/key id" --account plotco)
+ASC_ISSUER_ID=$(op read "op://Production/Apple/App Store Connect/issuer id" --account plotco)
+ASC_KEY_FILE="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
+if [ ! -f "${ASC_KEY_FILE}" ]; then
+  echo "ERROR: API key file not found at ${ASC_KEY_FILE}"
+  echo "Run 'pnpm get-env' first to fetch it from 1Password."
+  exit 1
+fi
+
+echo "Credentials ready."
+
+# --- Build with Shorebird ---
+
+echo ""
+echo "=== Building with Shorebird ==="
+pnpm set-env prod
+flutter pub run build_runner build --delete-conflicting-outputs
+shorebird release macos
+pnpm set-env dev
+
+if [ ! -d "${APP_PATH}" ]; then
+  echo "ERROR: Build not found at ${APP_PATH}"
+  exit 1
+fi
+
+# --- Codesign for App Store ---
+
+echo ""
+echo "=== Signing for Mac App Store ==="
+
+# Sign all nested frameworks and dylibs first
+find "${APP_PATH}/Contents/Frameworks" \( -name "*.dylib" -o -name "*.framework" \) -print0 | while IFS= read -r -d '' file; do
+  codesign --force --sign "${APP_CERT}" --entitlements "${ENTITLEMENTS}" --timestamp --options runtime "${file}" 2>/dev/null || true
+done
+
+# Sign the main app bundle
+codesign --force --sign "${APP_CERT}" --entitlements "${ENTITLEMENTS}" --timestamp --options runtime --deep "${APP_PATH}"
+
+echo "Verifying signature..."
+codesign --verify --verbose "${APP_PATH}"
+
+# --- Package as .pkg ---
+
+echo ""
+echo "=== Creating installer package ==="
+
+productbuild \
+  --sign "${INSTALLER_CERT}" \
+  --component "${APP_PATH}" /Applications \
+  "${PKG_PATH}"
+
+echo "Package created: ${PKG_PATH}"
+
+# --- Upload to App Store Connect ---
+
+echo ""
+echo "=== Uploading to App Store Connect ==="
+
+xcrun altool --upload-app \
+  --type macos \
+  -f "${PKG_PATH}" \
+  --apiKey "${ASC_KEY_ID}" \
+  --apiIssuer "${ASC_ISSUER_ID}"
+
+echo ""
+echo "Upload complete! Check App Store Connect for processing status."
