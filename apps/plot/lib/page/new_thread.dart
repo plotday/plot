@@ -65,6 +65,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     platformSingleActivator(LogicalKeyboardKey.digit4),
   ];
 
+  static final _twistShortcuts = [
+    platformSingleActivator(LogicalKeyboardKey.digit1, shift: true),
+    platformSingleActivator(LogicalKeyboardKey.digit2, shift: true),
+    platformSingleActivator(LogicalKeyboardKey.digit3, shift: true),
+  ];
+
   final GlobalKey<NoteEditorState> _threadEditorKey =
       GlobalKey<NoteEditorState>();
 
@@ -76,7 +82,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Twists for the selected draft priority (may differ from context priority)
   List<PriorityTwist>? _draftTwists;
 
-  NewThreadType _selectedType = NewThreadType.task;
+  late NewThreadType _selectedType;
   bool _hasMembers = false;
 
   // Selected twist for chat mode
@@ -107,8 +113,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Apply query parameters and default type to draft
     if (!_hasAppliedQueryParams) {
       _hasAppliedQueryParams = true;
+      _selectedType = _loadDefaultType();
       _applyQueryParametersToDraft();
-      // Default type is task, so ensure draft starts with todo on
       _applyDefaultType();
     }
 
@@ -466,8 +472,8 @@ class NewThreadPageState extends State<NewThreadPage> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final twist in visible)
-                _buildTwistChip(context, twist, chipRadius, chipPadding),
+              for (var i = 0; i < visible.length; i++)
+                _buildTwistChip(context, visible[i], chipRadius, chipPadding, shortcutIndex: i),
               if (hasMore)
                 FButton(
                   onPress: () => _openTwistPicker(context),
@@ -491,10 +497,11 @@ class NewThreadPageState extends State<NewThreadPage> {
     BuildContext context,
     PriorityTwist twist,
     BorderRadius chipRadius,
-    EdgeInsets chipPadding,
-  ) {
+    EdgeInsets chipPadding, {
+    int? shortcutIndex,
+  }) {
     final selected = _selectedTwist?.id == twist.id;
-    return FButton(
+    Widget chip = FButton(
       onPress: () => _selectTwist(twist),
       style: selected
           ? FButtonStyle.primary(
@@ -513,6 +520,27 @@ class NewThreadPageState extends State<NewThreadPage> {
       prefix: _buildTwistLogo(context, twist),
       child: Text(twist.name),
     );
+
+    if (!kIsWeb && hasPhysicalKeyboard() && shortcutIndex != null && shortcutIndex < _twistShortcuts.length) {
+      chip = FTooltip(
+        tipBuilder: (context, controller) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(twist.name),
+            Text(
+              formatShortcut(_twistShortcuts[shortcutIndex]),
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+          ],
+        ),
+        child: chip,
+      );
+    }
+
+    return chip;
   }
 
   void _selectTwist(PriorityTwist twist) {
@@ -567,19 +595,33 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  void _applyDefaultType() {
-    if (_selectedType == NewThreadType.task) {
-      final bloc = context.read<PriorityBloc>();
-      final draft = bloc.state.draft;
-      if (!draft.todo) {
-        bloc.updateDraft(draft.toggleTag(Tag.todo));
+  NewThreadType _loadDefaultType() {
+    final saved = context.read<LocalPreferencesBloc>().state.lastNewThreadType;
+    if (saved != null) {
+      for (final type in NewThreadType.values) {
+        if (type.name == saved) return type;
       }
+    }
+    return NewThreadType.task;
+  }
+
+  void _applyDefaultType() {
+    final bloc = context.read<PriorityBloc>();
+    final draft = bloc.state.draft;
+    if (_selectedType == NewThreadType.task && !draft.todo) {
+      bloc.updateDraft(draft.toggleTag(Tag.todo));
+    } else if (_selectedType != NewThreadType.task && draft.todo) {
+      bloc.updateDraft(draft.toggleTag(Tag.todo));
+    }
+    if (_selectedType == NewThreadType.chat) {
+      _resolveDefaultTwist();
     }
   }
 
   void _selectType(NewThreadType type) {
     if (type == _selectedType) return;
     setState(() => _selectedType = type);
+    context.read<LocalPreferencesBloc>().recordLastNewThreadType(type.name);
 
     final bloc = context.read<PriorityBloc>();
     final draft = bloc.state.draft;
@@ -725,6 +767,12 @@ class NewThreadPageState extends State<NewThreadPage> {
           : {
               for (var i = 0; i < _typeOrder.length; i++)
                 _typeShortcuts[i]: () => _selectType(_typeOrder[i]),
+              if (_selectedType == NewThreadType.chat)
+                for (var i = 0; i < _twistShortcuts.length; i++)
+                  _twistShortcuts[i]: () {
+                    final sorted = _sortedTwists;
+                    if (i < sorted.length) _selectTwist(sorted[i]);
+                  },
             },
       child: BlocBuilder<LayoutBloc, LayoutState>(
         builder: (context, layoutState) {

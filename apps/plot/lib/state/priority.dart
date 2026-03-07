@@ -65,7 +65,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Remembered default priority for new threads (session-only).
   /// Set when the user selects a priority in NewThreadPage; cleared when
   /// the context priority changes via [setPriority].
-  Priority? _newThreadDefaultPriority;
+  static Priority? _newThreadDefaultPriority;
 
   /// The remembered default priority for new threads, if any.
   Priority? get newThreadDefaultPriority => _newThreadDefaultPriority;

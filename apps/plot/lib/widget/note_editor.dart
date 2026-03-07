@@ -77,7 +77,9 @@ class NoteEditorState extends State<NoteEditor> {
 
   /// Request focus on the editor
   void focus() {
-    log.info('[Focus] NoteEditor.focus() called: _editableAreaKey.currentState=${_editableAreaKey.currentState != null}');
+    log.info(
+      '[Focus] NoteEditor.focus() called: _editableAreaKey.currentState=${_editableAreaKey.currentState != null}',
+    );
     _editableAreaKey.currentState?.focus();
   }
 
@@ -207,10 +209,7 @@ class NoteEditorState extends State<NoteEditor> {
       },
       child: BlocBuilder<PriorityBloc, PriorityState>(
         builder: (context, state) {
-          return _buildEditorArea(
-            twists: state.twists,
-            actors: state.actors,
-          );
+          return _buildEditorArea(twists: state.twists, actors: state.actors);
         },
       ),
     );
@@ -370,17 +369,10 @@ class NoteEditorState extends State<NoteEditor> {
     return Padding(
       padding: const EdgeInsets.only(left: 6, right: 6),
       child: Container(
-        padding: const EdgeInsets.only(
-          left: 8,
-          top: 4,
-          bottom: 4,
-        ),
+        padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(
-              color: context.colour.muted,
-              width: 2,
-            ),
+            left: BorderSide(color: context.colour.muted, width: 2),
           ),
         ),
         child: Row(
@@ -424,17 +416,10 @@ class NoteEditorState extends State<NoteEditor> {
     return Padding(
       padding: const EdgeInsets.only(left: 6, right: 6),
       child: Container(
-        padding: const EdgeInsets.only(
-          left: 8,
-          top: 4,
-          bottom: 4,
-        ),
+        padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(
-              color: context.colour.accent,
-              width: 2,
-            ),
+            left: BorderSide(color: context.colour.accent, width: 2),
           ),
         ),
         child: Row(
@@ -465,10 +450,7 @@ class NoteEditorState extends State<NoteEditor> {
             ),
             Button.icon(
               CommandWrapper(
-                EditNote(
-                  editingNote,
-                  activityBloc: activityBloc,
-                ),
+                EditNote(editingNote, activityBloc: activityBloc),
                 title: 'Cancel editing',
                 icon: Value(FontAwesomeIcons.xmark),
                 run: (action, ctx) async {
@@ -493,8 +475,7 @@ class NoteEditorState extends State<NoteEditor> {
         spacing: 6,
         runSpacing: 4,
         children: [
-          for (final twist in twists)
-            _buildTwistToggleChip(context, twist),
+          for (final twist in twists) _buildTwistToggleChip(context, twist),
         ],
       ),
     );
@@ -549,8 +530,7 @@ class NoteEditorState extends State<NoteEditor> {
     FWidgetStateMap<BoxDecoration> source,
     BorderRadius radius,
   ) {
-    BoxDecoration apply(BoxDecoration d) =>
-        d.copyWith(borderRadius: radius);
+    BoxDecoration apply(BoxDecoration d) => d.copyWith(borderRadius: radius);
 
     return FWidgetStateMap({
       WidgetState.disabled: apply(source.resolve({WidgetState.disabled})),
@@ -618,12 +598,16 @@ class NoteEditorState extends State<NoteEditor> {
                               .toString(),
                           currentLinks: widget.draft.actions ?? const [],
                           onLinksChanged: (actions) {
-                            final updatedDraft =
-                                widget.draft.copyWith(actions: actions);
-                            context.read<ThreadBloc>().updateDraft(updatedDraft);
+                            final updatedDraft = widget.draft.copyWith(
+                              actions: actions,
+                            );
+                            context.read<ThreadBloc>().updateDraft(
+                              updatedDraft,
+                            );
                           },
                         ),
-                        selected: widget.draft.actions?.any(
+                        selected:
+                            widget.draft.actions?.any(
                               (l) => l.type == UserActionType.file,
                             ) ??
                             false,
@@ -640,11 +624,12 @@ class NoteEditorState extends State<NoteEditor> {
                                 .toString(),
                             currentLinks: widget.draft.actions ?? const [],
                             onLinksChanged: (actions) {
-                              final updatedDraft =
-                                  widget.draft.copyWith(actions: actions);
-                              context
-                                  .read<ThreadBloc>()
-                                  .updateDraft(updatedDraft);
+                              final updatedDraft = widget.draft.copyWith(
+                                actions: actions,
+                              );
+                              context.read<ThreadBloc>().updateDraft(
+                                updatedDraft,
+                              );
                             },
                           ),
                         ),
@@ -664,7 +649,8 @@ class NoteEditorState extends State<NoteEditor> {
               ),
               style: ButtonStyle.primary,
               loading: _saving,
-              enabled: !_saving &&
+              enabled:
+                  !_saving &&
                   (!_isEmpty ||
                       (widget.draft.actions?.any(
                             (l) => l.type == UserActionType.file,
@@ -747,7 +733,8 @@ class NoteEditorState extends State<NoteEditor> {
                       );
                     },
                   ),
-                  selected: draftNote.actions?.any(
+                  selected:
+                      draftNote.actions?.any(
                         (l) => l.type == UserActionType.file,
                       ) ??
                       false,
@@ -840,9 +827,8 @@ class NoteEditorState extends State<NoteEditor> {
       _saving = true;
     });
 
-    await context.run(AddThreadWithNote(data));
-    if (!mounted) return;
     widget.onSubmitted?.call();
+    await context.run(AddThreadWithNote(data));
   }
 
   // -- Finalize methods --
@@ -918,8 +904,7 @@ class NoteEditorState extends State<NoteEditor> {
           ? Value(CustomDateRange(Date.today(), null))
           : const Value.absent(),
       at: shouldSchedule && hasDateTime
-          ? Value(
-              DateTimeRange(Time.now(), Time.now().add(Duration(hours: 1))))
+          ? Value(DateTimeRange(Time.now(), Time.now().add(Duration(hours: 1))))
           : const Value.absent(),
     );
     // Create note from draft note or create new one if content is provided
