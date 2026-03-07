@@ -50,10 +50,6 @@ export async function createLink(
         ? { pickPriority: link.pickPriority }
         : {}),
       ...(link.notes ? { notes: link.notes } : {}),
-      ...(link.schedules ? { schedules: link.schedules } : {}),
-      ...(link.scheduleOccurrences
-        ? { scheduleOccurrences: link.scheduleOccurrences }
-        : {}),
       // Map status to done for backward compat
       ...(link.status === "done" ? { done: new Date() } : {}),
     };

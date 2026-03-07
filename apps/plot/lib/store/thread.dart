@@ -1532,7 +1532,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         }
       }
 
-      if (!baseActivity.recurring) {
+      if (!isRecurring) {
         // Skip the base thread when link schedule instances fully represent it:
         // - link schedules exist (the instances will appear at their own dates)
         // - thread is not a todo (todos need to appear under today)
@@ -1585,44 +1585,98 @@ class Thread extends Equatable implements Comparable<Thread> {
       // Only create link schedule instances when a range is provided (agenda view).
       // Without a range (activity feed), the base thread already represents the activity.
       if (range != null && linkSchedules.isNotEmpty) {
-        for (final linkScheduleRow in linkSchedules.values) {
-          final linkThread = Thread._fromStore(
-            activity: activityRow,
-            priority: priority,
-            schedule: linkScheduleRow,
-            userSchedule: userScheduleRow,
-            tags: tagsRow,
-            active: activeIds.contains(activityRow.id),
-            unreadComputed: unreadIds.contains(activityRow.id),
-            isLinkScheduleInstance: true,
-            linkSourceCreatedAt: linkSourceCreatedAt,
-          );
+        // Group link schedules by linkId so we can merge recurring base +
+        // occurrence overrides per link (mirroring thread-level handling).
+        final byLink = <String, List<ScheduleRow>>{};
+        for (final ls in linkSchedules.values) {
+          byLink.putIfAbsent(ls.linkId!.toString(), () => []).add(ls);
+        }
 
-          if (linkThread.recurring && range.bounded == true) {
-            // Recurring link schedule: generate occurrences within range
+        for (final linkGroup in byLink.values) {
+          // Separate base recurring schedule from occurrence overrides.
+          ScheduleRow? baseRecurring;
+          final overrides = <ScheduleRow>[];
+          for (final ls in linkGroup) {
+            if (ls.recurrenceRule != null && ls.occurrence == null) {
+              baseRecurring = ls;
+            } else {
+              overrides.add(ls);
+            }
+          }
+
+          if (baseRecurring != null && range.bounded == true) {
+            // Build a recurring link thread and generate occurrences into a
+            // map keyed by occurrence string, then apply overrides.
+            final baseThread = Thread._fromStore(
+              activity: activityRow,
+              priority: priority,
+              schedule: baseRecurring,
+              userSchedule: userScheduleRow,
+              tags: tagsRow,
+              active: activeIds.contains(activityRow.id),
+              unreadComputed: unreadIds.contains(activityRow.id),
+              isLinkScheduleInstance: true,
+              linkSourceCreatedAt: linkSourceCreatedAt,
+            );
+            final occurrences = <String, Thread>{};
             try {
-              threadList.addAll(linkThread.generateOccurrences(range.toBounded()));
+              for (final occ
+                  in baseThread.generateOccurrences(range.toBounded())) {
+                occurrences[occ._schedule!.occurrence!] = occ;
+              }
             } catch (e, t) {
               log.warning(
                 "Error generating link schedule occurrences for activity ${baseActivity.id}: $e\n$t",
               );
             }
-          } else if (!linkThread.recurring) {
-            if (range.bounded == true) {
-              final r = range.toBounded();
-              final linkStart = linkScheduleRow.startAt ??
-                  linkScheduleRow.startOn?.toDateTime();
-              final linkEnd = linkScheduleRow.endAt ??
-                  linkScheduleRow.endOn?.toDateTime() ??
-                  linkStart;
-              if (linkStart != null) {
-                if (linkEnd != null && linkEnd.isBefore(r.start.toDateTime())) {
-                  continue;
-                }
-                if (linkStart.isAfter(r.end.toDateTime())) continue;
+            // Apply occurrence overrides (replace matching generated entries).
+            for (final overrideRow in overrides) {
+              if (overrideRow.occurrence != null) {
+                occurrences[overrideRow.occurrence!] = Thread._fromStore(
+                  activity: activityRow,
+                  priority: priority,
+                  schedule: overrideRow,
+                  userSchedule: userScheduleRow,
+                  tags: tagsRow,
+                  active: activeIds.contains(activityRow.id),
+                  unreadComputed: unreadIds.contains(activityRow.id),
+                  isLinkScheduleInstance: true,
+                  linkSourceCreatedAt: linkSourceCreatedAt,
+                );
               }
             }
-            threadList.add(linkThread);
+            threadList.addAll(occurrences.values);
+          } else {
+            // Non-recurring link schedules: range-check and add individually.
+            for (final linkScheduleRow in linkGroup) {
+              final linkThread = Thread._fromStore(
+                activity: activityRow,
+                priority: priority,
+                schedule: linkScheduleRow,
+                userSchedule: userScheduleRow,
+                tags: tagsRow,
+                active: activeIds.contains(activityRow.id),
+                unreadComputed: unreadIds.contains(activityRow.id),
+                isLinkScheduleInstance: true,
+                linkSourceCreatedAt: linkSourceCreatedAt,
+              );
+              if (range.bounded == true) {
+                final r = range.toBounded();
+                final linkStart = linkScheduleRow.startAt ??
+                    linkScheduleRow.startOn?.toDateTime();
+                final linkEnd = linkScheduleRow.endAt ??
+                    linkScheduleRow.endOn?.toDateTime() ??
+                    linkStart;
+                if (linkStart != null) {
+                  if (linkEnd != null &&
+                      linkEnd.isBefore(r.start.toDateTime())) {
+                    continue;
+                  }
+                  if (linkStart.isAfter(r.end.toDateTime())) continue;
+                }
+              }
+              threadList.add(linkThread);
+            }
           }
         }
       }
