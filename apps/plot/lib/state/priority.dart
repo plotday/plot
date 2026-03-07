@@ -185,6 +185,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Optimistically update a thread in the agenda for instant UI feedback.
   /// The stream-based update will confirm the same state when it catches up.
   void optimisticallyUpdateThread(Thread updatedThread) {
+    if (updatedThread.draft) return;
     _optimisticTimestamp = DateTime.now();
 
     final foundInAgenda = state.agendaItems.any((item) => item.when(
