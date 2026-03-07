@@ -220,6 +220,8 @@ importers:
 
   libs/tsconfig: {}
 
+  libs/tunnel: {}
+
   libs/tz:
     dependencies:
       date-fns:
@@ -338,16 +340,6 @@ importers:
       '@linear/sdk':
         specifier: ^72.0.0
         version: 72.0.0(graphql@15.10.1)
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  public/sources/notion:
-    dependencies:
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister

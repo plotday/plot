@@ -1,0 +1,21 @@
+{
+  "name": "@plotday/tunnel",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "start": "bash ../../scripts/tunnel start-bg",
+    "stop": "bash ../../scripts/tunnel stop"
+  },
+  "nx": {
+    "targets": {
+      "start": {
+        "dependsOn": [
+          {
+            "projects": ["@plotday/db"],
+            "target": "start"
+          }
+        ]
+      }
+    }
+  }
+}
