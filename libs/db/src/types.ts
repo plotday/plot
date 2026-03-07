@@ -375,6 +375,7 @@ export type Database = {
           created_at: string
           created_by: string
           draft: boolean
+          embedding: unknown
           id: string
           key: string | null
           mentions: string[] | null
@@ -395,6 +396,7 @@ export type Database = {
           created_at?: string
           created_by: string
           draft?: boolean
+          embedding?: unknown
           id?: string
           key?: string | null
           mentions?: string[] | null
@@ -415,6 +417,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           draft?: boolean
+          embedding?: unknown
           id?: string
           key?: string | null
           mentions?: string[] | null
@@ -3312,6 +3315,28 @@ export type Database = {
       redeem_invitation_token: {
         Args: { p_token: string; p_user_id: string }
         Returns: Json
+      }
+      search_notes_and_links: {
+        Args: {
+          exclude_created_by?: string
+          match_limit?: number
+          query_embedding: string
+          requesting_user_id: string
+          scope_priority_id: string
+          similarity_threshold?: number
+        }
+        Returns: {
+          content: string
+          priority_id: string
+          priority_title: string
+          result_id: string
+          result_type: string
+          similarity: number
+          source_url: string
+          thread_id: string
+          thread_title: string
+          title: string
+        }[]
       }
       setup_help_feedback_priority: {
         Args: { p_user_id?: string; p_user_name?: string }

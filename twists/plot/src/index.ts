@@ -1,6 +1,7 @@
 import {
   ActionType,
   type Actor,
+  type Note,
   type Priority,
   Tag,
   ThemeColor,
@@ -12,6 +13,7 @@ import {
   PriorityAccess,
   ThreadAccess,
 } from "@plotday/twister/tools/plot";
+import { AI } from "@plotday/twister/tools/ai";
 
 class PlotTwist extends Twist<PlotTwist> {
   build(build: ToolBuilder) {
@@ -20,10 +22,23 @@ class PlotTwist extends Twist<PlotTwist> {
         thread: {
           access: ThreadAccess.Create,
         },
+        note: {
+          intents: [{
+            description: "Answer questions about content, activities, notes, and links",
+            examples: [
+              "What did we discuss about the product launch?",
+              "Find notes about the marketing budget",
+              "Summarize what we know about project X",
+            ],
+            handler: this.onSearchQuery,
+          }],
+        },
         priority: {
           access: PriorityAccess.Create,
         },
+        search: true,
       }),
+      ai: build(AI),
     };
   }
 
@@ -181,6 +196,54 @@ class PlotTwist extends Twist<PlotTwist> {
       preview:
         "When you're done with the Getting Started threads and no longer need this priority, you can **archive it**. Archived priorities and their threads are always available in Plot — they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
       priority: onboardingPriority,
+    });
+  }
+
+  async onSearchQuery(note: Note): Promise<void> {
+    const query = note.content;
+    if (!query?.trim()) {
+      await this.tools.plot.createNote({
+        thread: { id: note.thread.id },
+        content: "What would you like to know? Ask me a question about your content.",
+      });
+      return;
+    }
+
+    // Search scoped to the thread's priority (not the twist's root)
+    const results = await this.tools.plot.search(query, {
+      priorityId: note.thread.priority.id,
+    });
+
+    if (results.length === 0) {
+      await this.tools.plot.createNote({
+        thread: { id: note.thread.id },
+        content: "I couldn't find any relevant content. Try rephrasing or being more specific.",
+      });
+      return;
+    }
+
+    // Build RAG context
+    const context = results.map((r, i) => {
+      const location = [r.priority.title, r.thread.title].filter(Boolean).join(" > ");
+      const body = r.type === "link"
+        ? `[${r.title}](${r.sourceUrl || ""})${r.content ? "\n" + r.content : ""}`
+        : r.content || "(no content)";
+      return `[${i + 1}] ${location}\n${body}`;
+    }).join("\n\n");
+
+    const response = await this.tools.ai.prompt({
+      model: { speed: "fast", cost: "medium" },
+      system: "You answer questions using the user's own notes and links as context. " +
+        "Answer directly — don't say things like \"based on the provided content\" or " +
+        "\"according to your notes\". Just give the answer naturally, as if you know it. " +
+        "If the context doesn't fully answer the question, say what you found and note " +
+        "what's missing. Be concise. Reference specific threads when relevant.",
+      prompt: `Question: ${query}\n\nRelevant content:\n${context}`,
+    });
+
+    await this.tools.plot.createNote({
+      thread: { id: note.thread.id },
+      content: response.text,
     });
   }
 }

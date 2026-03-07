@@ -16,7 +16,8 @@ CREATE TABLE "public"."note" (
     "key" text,
     "mentions" uuid[],
     "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL,
-    "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL
+    "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL,
+    "embedding" halfvec(384)
 );
 
 COMMENT ON COLUMN "public"."note"."source_created_at" IS 'When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot''s database.';
@@ -65,6 +66,8 @@ WHERE
 CREATE INDEX idx_note_mentions ON "public"."note" USING gin ("mentions")
 WHERE
     mentions IS NOT NULL AND archived_at IS NULL;
+
+CREATE INDEX ON note USING hnsw (embedding halfvec_cosine_ops);
 
 CREATE TRIGGER set_note_updated_at
     BEFORE INSERT OR UPDATE ON "public"."note"

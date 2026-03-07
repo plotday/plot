@@ -1,5 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
+import { sql } from "kysely";
+
 import { withDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
@@ -114,12 +116,19 @@ export class SyncNotify extends DurableObject<Bindings> {
   private async notifyTwists(logger: ReturnType<typeof createLogger>): Promise<void> {
     let twists: { id: string }[];
     try {
+      // Find all active twists on this priority AND ancestor priorities
+      // (twists installed on ancestors have access to descendant priorities)
       twists = await withDb(this.env, (db) =>
         db
           .selectFrom("priority_twist")
-          .select("id")
-          .where("priority_id", "=", this.priorityId!)
-          .where("archived_at", "is", null)
+          .innerJoin("priority as twist_priority", "twist_priority.id", "priority_twist.priority_id")
+          .innerJoin("priority as changed_priority", (join) =>
+            join.on("changed_priority.id", "=", this.priorityId!)
+          )
+          .select("priority_twist.id")
+          .where("priority_twist.archived_at", "is", null)
+          // changed_priority.path is a descendant of (or equal to) twist_priority.path
+          .where(sql<boolean>`${sql.ref("changed_priority.path")} <@ ${sql.ref("twist_priority.path")}`)
           .execute()
       );
     } catch (error) {

@@ -248,6 +248,41 @@ export async function createNote(
           .returningAll()
           .executeTakeFirstOrThrow();
 
+    // Generate embedding (best-effort, don't fail the create)
+    if (contentToStore && contentToStore.trim().length > 0) {
+      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      try {
+        logger.info("[embedding] Generating embedding for note", {
+          note_id: dbResult.id,
+          content_length: contentToStore.length,
+          content_preview: contentToStore.substring(0, 100),
+        });
+        const embedding = await plot.ai.embed(contentToStore);
+        logger.info("[embedding] Generated embedding", {
+          note_id: dbResult.id,
+          embedding_length: embedding.length,
+          embedding_sample: embedding.slice(0, 5),
+        });
+        await plot.db.updateTable("note")
+          .set({ embedding: JSON.stringify(embedding) })
+          .where("id", "=", dbResult.id)
+          .execute();
+        logger.info("[embedding] Stored embedding for note", { note_id: dbResult.id });
+      } catch (error) {
+        logger.warn("Failed to generate note embedding", {
+          note_id: dbResult.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } else {
+      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      logger.info("[embedding] Skipping embedding for note (no content)", {
+        note_id: dbResult.id,
+        has_content: !!contentToStore,
+        content_trimmed_length: contentToStore?.trim().length ?? 0,
+      });
+    }
+
     // Mark activity as read based on unread flag:
     // - false: mark read for ALL priority users (initial sync)
     // - undefined/omitted: mark read for author only if they are the twist owner
@@ -520,8 +555,8 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     // Skip priority access validation for notes - activities may have been moved
     // after creation and the twist should still be able to update notes
 
-    // Build update object
-    const dbUpdate: Database["public"]["Tables"]["note"]["Update"] = {
+    // Build update object (cast needed because @plotday/db types halfvec as unknown)
+    const dbUpdate: Omit<Database["public"]["Tables"]["note"]["Update"], "embedding"> = {
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
     };
@@ -587,6 +622,33 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
 
       if (!updatedNote) {
         throw new Error(`Note not found: ${noteId}`);
+      }
+    }
+
+    // Update embedding if content changed
+    if (note.content !== undefined && hasMeaningfulUpdates) {
+      const contentForEmbed = dbUpdate.content as string | null;
+      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      if (contentForEmbed && contentForEmbed.trim().length > 0) {
+        try {
+          logger.info("[embedding] Updating embedding for note", {
+            note_id: noteId,
+            content_length: contentForEmbed.length,
+          });
+          const embedding = await plot.ai.embed(contentForEmbed);
+          await plot.db.updateTable("note")
+            .set({ embedding: JSON.stringify(embedding) })
+            .where("id", "=", noteId)
+            .execute();
+          logger.info("[embedding] Updated embedding for note", { note_id: noteId });
+        } catch (error) {
+          logger.warn("Failed to update note embedding", {
+            note_id: noteId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      } else {
+        logger.info("[embedding] Skipping embedding update (no content)", { note_id: noteId });
       }
     }
 

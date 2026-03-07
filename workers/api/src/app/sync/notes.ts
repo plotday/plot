@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { sql, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import { assertThreadAccess } from "./authorize";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
@@ -78,6 +78,39 @@ notes.post("/sync/notes", async (c) => {
 
   const priorityId = await getPriorityForThread(c.var.db, body.thread_id);
   notifySync(c, priorityId);
+
+  // Generate embedding for search (best-effort, don't block the response)
+  const noteId = (result as any)?.id ?? body.id;
+  const content = body.content as string | null;
+  if (noteId && content && content.trim().length > 0 && !body.draft) {
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          console.log("[embedding:sync] Generating embedding for note", noteId, "content length:", content.length);
+          const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
+            text: content,
+          })) as { data: number[][] };
+          console.log("[embedding:sync] Got embedding response", noteId, "dimensions:", response?.data?.[0]?.length);
+          const embedding = response.data[0];
+          const db = createDb(c.env);
+          try {
+            await db
+              .updateTable("note")
+              .set({ embedding: JSON.stringify(embedding) })
+              .where("id", "=", noteId)
+              .execute();
+            console.log("[embedding:sync] Stored embedding for note", noteId);
+          } finally {
+            await db.destroy();
+          }
+        } catch (error) {
+          console.error("[embedding:sync] Failed to generate embedding for note", noteId, error);
+        }
+      })()
+    );
+  } else {
+    console.log("[embedding:sync] Skipping embedding", { noteId, hasContent: !!content, contentLength: content?.trim().length, draft: body.draft });
+  }
 
   return c.json(result as any);
 });

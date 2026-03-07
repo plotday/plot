@@ -325,6 +325,7 @@ export interface Note {
    */
   created_by: string;
   draft: Generated<boolean>;
+  embedding: string | null;
   id: Generated<string>;
   /**
    * External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).

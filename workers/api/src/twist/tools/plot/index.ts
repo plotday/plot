@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 
 import {
   type Thread,
@@ -29,6 +29,8 @@ import {
   ContactAccess,
   type Plot as IPlot,
   type LinkFilter,
+  type SearchResult,
+  type SearchOptions,
   PriorityAccess,
 } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
@@ -57,6 +59,7 @@ import * as contactsOps from "./contacts";
 import { fromDbLink } from "./converters";
 import { buildThreadFromDbRecord, buildNoteFromDbRecord } from "./db";
 import * as intentOps from "./intent";
+import * as searchOps from "./search";
 import * as priorityOps from "./priority";
 import { convertScheduleToDb, convertDbToSchedule } from "./schedule";
 import { processScheduleContacts } from "./schedule-contacts";
@@ -214,6 +217,10 @@ export class Plot extends Tool implements IPlot {
         entity: "contact",
         flags,
       });
+    }
+
+    if (options?.search) {
+      perms.push({ domain: "plot", entity: "search", flags: ["read"] });
     }
 
     return perms;
@@ -850,14 +857,21 @@ export class Plot extends Tool implements IPlot {
         );
       }
 
-      // 3. Notify TwistSync DOs for other twists on these priorities
+      // 3. Notify TwistSync DOs for other twists on ancestor priorities
+      //    (twists installed on ancestors have access to descendant priorities)
       //    (skip self — same echo prevention as triggers)
+      const priorityIdArray = Array.from(priorityIds);
       const twists = await this.db
         .selectFrom("priority_twist")
-        .select("id")
-        .where("priority_id", "in", Array.from(priorityIds))
-        .where("archived_at", "is", null)
-        .where("id", "!=", this.priorityTwistId)
+        .innerJoin("priority as twist_priority", "twist_priority.id", "priority_twist.priority_id")
+        .innerJoin("priority as changed_priority", (join) =>
+          join.on("changed_priority.id", "in", priorityIdArray)
+        )
+        .select("priority_twist.id")
+        .where("priority_twist.archived_at", "is", null)
+        .where("priority_twist.id", "!=", this.priorityTwistId)
+        .where(sql<boolean>`${sql.ref("changed_priority.path")} <@ ${sql.ref("twist_priority.path")}`)
+        .groupBy("priority_twist.id")
         .execute();
 
       for (const twist of twists) {
@@ -1319,5 +1333,9 @@ export class Plot extends Tool implements IPlot {
 
   async getLinks(_filter?: LinkFilter): Promise<Array<{ link: Link; notes: Note[] }>> {
     return linkOps.getLinks(this, _filter);
+  }
+
+  async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
+    return searchOps.search(this, query, options);
   }
 }
