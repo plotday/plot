@@ -7,6 +7,7 @@ import {
   ThemeColor,
   type ToolBuilder,
   Twist,
+  type Uuid,
 } from "@plotday/twister";
 import {
   Plot,
@@ -241,9 +242,30 @@ class PlotTwist extends Twist<PlotTwist> {
       prompt: `Question: ${query}\n\nRelevant content:\n${context}`,
     });
 
+    const currentThreadId = note.thread.id;
+    const otherResults = results.filter((r) => r.thread.id !== currentThreadId);
+
+    // Prefer threads with link results (original sources) over note-only
+    // matches, which are often user questions from previous Q&A threads
+    const linkThreadIds = new Set(
+      otherResults.filter((r) => r.type === "link").map((r) => r.thread.id)
+    );
+    const noteOnlyThreadIds = new Set(
+      otherResults
+        .filter((r) => r.type === "note" && !linkThreadIds.has(r.thread.id))
+        .map((r) => r.thread.id)
+    );
+    const actions = [...linkThreadIds, ...noteOnlyThreadIds]
+      .slice(0, 3)
+      .map((threadId) => ({
+        type: ActionType.thread as const,
+        threadId: threadId as Uuid,
+      }));
+
     await this.tools.plot.createNote({
       thread: { id: note.thread.id },
       content: response.text,
+      actions: actions.length > 0 ? actions : undefined,
     });
   }
 }

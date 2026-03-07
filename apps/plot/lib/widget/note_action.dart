@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:forui/forui.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/widget/icon.dart';
@@ -78,6 +79,12 @@ class NoteActionWidget extends StatelessWidget {
         }
         return FileLinkButton(
           link: fileLink,
+          style: style,
+          textStyle: textStyle,
+        );
+      case UserActionType.thread:
+        return ThreadLinkButton(
+          link: link as ThreadUserAction,
           style: style,
           textStyle: textStyle,
         );
@@ -314,6 +321,52 @@ class ConferencingLinkButton extends StatelessWidget {
     } catch (e, t) {
       log.warning('Failed to launch URL: $url', e, t);
     }
+  }
+}
+
+/// A button widget for thread reference links that navigate to the referenced thread
+class ThreadLinkButton extends StatelessWidget {
+  const ThreadLinkButton({
+    required this.link,
+    this.style,
+    this.textStyle,
+    super.key,
+  });
+
+  final ThreadUserAction link;
+  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final TextStyle? textStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return FButton(
+      style: style ?? FButtonStyle.secondary(),
+      mainAxisSize: MainAxisSize.min,
+      onPress: link.priorityId != null ? () => _handleTap(context) : null,
+      child: Flexible(
+        child: Text(
+          link.title ?? 'Thread',
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+          style: textStyle,
+        ),
+      ),
+    );
+  }
+
+  void _handleTap(BuildContext context) {
+    final priorityId = link.priorityId;
+    if (priorityId == null) return;
+
+    final route = PriorityRoute(
+      priorityIdString: Uuid.fromString(priorityId).toShortString(),
+      children: [
+        ThreadRoute(
+          threadIdString: Uuid.fromString(link.threadId).toShortString(),
+        ),
+      ],
+    );
+    context.router.root.navigate(route);
   }
 }
 

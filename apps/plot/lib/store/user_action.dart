@@ -1,6 +1,6 @@
 part of 'store.dart';
 
-enum UserActionType { external, auth, callback, conferencing, file }
+enum UserActionType { external, auth, callback, conferencing, file, thread }
 
 enum ConferencingProvider { googleMeet, zoom, microsoftTeams, webex, other }
 
@@ -26,6 +26,8 @@ abstract class UserAction extends Equatable {
         return ConferencingUserAction.fromJson(json);
       case UserActionType.file:
         return FileUserAction.fromJson(json);
+      case UserActionType.thread:
+        return ThreadUserAction.fromJson(json);
     }
   }
 
@@ -181,6 +183,39 @@ class FileUserAction extends UserAction {
 
   @override
   List<Object?> get props => [type, fileId, fileName, fileSize, mimeType];
+}
+
+class ThreadUserAction extends UserAction {
+  const ThreadUserAction({
+    required this.threadId,
+    this.title,
+    this.priorityId,
+  }) : super(type: UserActionType.thread);
+
+  final String threadId;
+  final String? title;
+  final String? priorityId;
+
+  factory ThreadUserAction.fromJson(Map<String, dynamic> json) {
+    return ThreadUserAction(
+      threadId: json['threadId'] as String,
+      title: json['title'] as String?,
+      priorityId: json['priorityId'] as String?,
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name,
+      'threadId': threadId,
+      if (title != null) 'title': title,
+      if (priorityId != null) 'priorityId': priorityId,
+    };
+  }
+
+  @override
+  List<Object?> get props => [type, threadId, title, priorityId];
 }
 
 class UserActionsConverter extends TypeConverter<List<UserAction>?, String?>

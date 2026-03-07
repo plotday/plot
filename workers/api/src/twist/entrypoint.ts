@@ -623,16 +623,17 @@ export default class extends WorkerEntrypoint {
                   const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
                   twistError.name = 'TwistError';
                   throw twistError;
-                }
-
-                if (callbackInfo.deferredTagRemoval) {
-                  const { noteId, actorId } = callbackInfo.deferredTagRemoval;
-                  try {
-                    if (typeof tool.removeTagFromNote === 'function') {
-                      await tool.removeTagFromNote(noteId, actorId);
+                } finally {
+                  // Always remove the Twisting tag, even if callback threw
+                  if (callbackInfo.deferredTagRemoval) {
+                    const { noteId, actorId } = callbackInfo.deferredTagRemoval;
+                    try {
+                      if (typeof tool.removeTagFromNote === 'function') {
+                        await tool.removeTagFromNote(noteId, actorId);
+                      }
+                    } catch (error) {
+                      console.warn('Failed to remove deferred Twisting tag:', error);
                     }
-                  } catch (error) {
-                    console.warn('Failed to remove deferred Twisting tag:', error);
                   }
                 }
               }
@@ -675,17 +676,17 @@ export default class extends WorkerEntrypoint {
                   const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
                   twistError.name = 'TwistError';
                   throw twistError;
-                }
-
-                // Remove deferred Twisting tag after callback completes
-                if (callbackInfo.deferredTagRemoval) {
-                  const { noteId, actorId } = callbackInfo.deferredTagRemoval;
-                  try {
-                    if (typeof tool.removeTagFromNote === 'function') {
-                      await tool.removeTagFromNote(noteId, actorId);
+                } finally {
+                  // Always remove the Twisting tag, even if callback threw
+                  if (callbackInfo.deferredTagRemoval) {
+                    const { noteId, actorId } = callbackInfo.deferredTagRemoval;
+                    try {
+                      if (typeof tool.removeTagFromNote === 'function') {
+                        await tool.removeTagFromNote(noteId, actorId);
+                      }
+                    } catch (error) {
+                      console.warn('Failed to remove deferred Twisting tag:', error);
                     }
-                  } catch (error) {
-                    console.warn('Failed to remove deferred Twisting tag:', error);
                   }
                 }
               }

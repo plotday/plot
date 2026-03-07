@@ -1,8 +1,11 @@
 import type { PostHog } from "posthog-node";
 import type { Kysely } from "kysely";
 
+import { Tag } from "@plotday/twister/tag";
+
 import { type DB, createDb } from "../db";
 import { type Bindings, type TwistBatchMessage } from "../env";
+import { rpcUser } from "../rpc";
 import { twistFactory } from "../twist";
 import { createLogger } from "@plotday/worker-util";
 
@@ -244,6 +247,33 @@ async function processTwistBatch(
           thread_id: note.thread_id,
           queue,
         });
+
+        // Safety net: remove Twisting tag if this note mentions the twist
+        const isMentioned = (note.mentions ?? []).includes(priorityTwistId);
+        if (isMentioned && note.author_id) {
+          try {
+            const pt = await db
+              .selectFrom("priority_twist")
+              .select("owner_id")
+              .where("id", "=", priorityTwistId)
+              .executeTakeFirst();
+
+            if (pt?.owner_id) {
+              await rpcUser(db, "update_note_tags", {
+                user_id: pt.owner_id,
+                p_note_id: noteId,
+                p_actor_id: note.author_id,
+                p_client_id: 0,
+                p_tag_updates: { [Tag.Twist]: false },
+              });
+            }
+          } catch (tagError) {
+            logger.warn("Failed to remove Twisting tag in safety net", {
+              note_id: noteId,
+              error: tagError instanceof Error ? tagError.message : String(tagError),
+            });
+          }
+        }
       }
     }
 

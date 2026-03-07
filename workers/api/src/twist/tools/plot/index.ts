@@ -452,36 +452,69 @@ export class Plot extends Tool implements IPlot {
         this.priorityTwistId
       );
       if (isMentioned && isCreate) {
-        const result = await intentOps.handleIntent(this, currentNote);
+        try {
+          const result = await intentOps.handleIntent(this, currentNote);
 
-        if (!result) {
-          // Built-in intent handled or no intent matched - notes already created
-          // Remove tag immediately
+          if (!result) {
+            // Built-in intent handled or no intent matched - notes already created
+            // Remove tag immediately
+            try {
+              const userId = await this.getUserId();
+              await rpcUser(this.db, "update_note_tags", {
+                user_id: userId,
+                p_note_id: currentNote.id,
+                p_actor_id: currentNote.author.id,
+                p_client_id: 0, // API client
+                p_tag_updates: { [Tag.Twist]: false },
+              });
+            } catch (error) {
+              // Log but don't fail - tag removal is best-effort
+              logger.warn("Failed to remove Twisting tag from note", {
+                note_id: currentNote.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          } else {
+            // Custom intent - defer tag removal until callback completes
+            callbacks.push({
+              ...result,
+              deferredTagRemoval: {
+                noteId: currentNote.id,
+                actorId: currentNote.author.id,
+              },
+            });
+          }
+        } catch (error) {
+          // Intent handling failed - remove tag and create error reply
+          logger.error("Intent handling failed for note", error as Error, {
+            note_id: currentNote.id,
+          });
           try {
             const userId = await this.getUserId();
             await rpcUser(this.db, "update_note_tags", {
               user_id: userId,
               p_note_id: currentNote.id,
               p_actor_id: currentNote.author.id,
-              p_client_id: 0, // API client
+              p_client_id: 0,
               p_tag_updates: { [Tag.Twist]: false },
             });
-          } catch (error) {
-            // Log but don't fail - tag removal is best-effort
-            logger.warn("Failed to remove Twisting tag from note", {
+          } catch (tagError) {
+            logger.warn("Failed to remove Twisting tag after error", {
               note_id: currentNote.id,
-              error: error instanceof Error ? error.message : String(error),
+              error: tagError instanceof Error ? tagError.message : String(tagError),
             });
           }
-        } else {
-          // Custom intent - defer tag removal until callback completes
-          callbacks.push({
-            ...result,
-            deferredTagRemoval: {
-              noteId: currentNote.id,
-              actorId: currentNote.author.id,
-            },
-          });
+          try {
+            await threadOps.createNote(this, {
+              thread: { id: currentNote.thread.id },
+              content: "Sorry, I ran into an issue processing your request. Please try again later.",
+            });
+          } catch (replyError) {
+            logger.warn("Failed to create error reply note", {
+              note_id: currentNote.id,
+              error: replyError instanceof Error ? replyError.message : String(replyError),
+            });
+          }
         }
       }
 

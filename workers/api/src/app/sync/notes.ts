@@ -47,6 +47,44 @@ notes.get("/sync/notes", async (c) => {
     return query.execute();
   });
 
+  // Enrich thread actions with current title and priorityId
+  const threadIds = new Set<string>();
+  for (const row of rows) {
+    if (Array.isArray((row as any).actions)) {
+      for (const action of (row as any).actions) {
+        if (action.type === "thread" && action.threadId) {
+          threadIds.add(action.threadId);
+        }
+      }
+    }
+  }
+
+  if (threadIds.size > 0) {
+    const threads = await withUserDb(c.var.db, userId, async (trx) =>
+      trx
+        .selectFrom("user.thread")
+        .select(["id", "title", "priority_id"])
+        .where("user_id", "=", userId)
+        .where("id", "in", [...threadIds])
+        .execute()
+    );
+    const threadMap = new Map(threads.map((t) => [t.id, t]));
+
+    for (const row of rows) {
+      if (Array.isArray((row as any).actions)) {
+        for (const action of (row as any).actions) {
+          if (action.type === "thread" && action.threadId) {
+            const thread = threadMap.get(action.threadId);
+            if (thread) {
+              action.title = thread.title || "Untitled";
+              action.priorityId = thread.priority_id;
+            }
+          }
+        }
+      }
+    }
+  }
+
   return c.json(rows as any);
 });
 
