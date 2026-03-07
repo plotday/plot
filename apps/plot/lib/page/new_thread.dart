@@ -281,6 +281,8 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   Widget _buildThreadTypeSelector(BuildContext context, PriorityState state) {
+    final spacing = isMobilePlatform() ? 12.0 : 8.0;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,58 +326,96 @@ class NewThreadPageState extends State<NewThreadPage> {
         ),
         SizedBox(height: 24),
 
-        Wrap(
-          spacing: isMobilePlatform() ? 12 : 8,
-          runSpacing: isMobilePlatform() ? 12 : 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Row(
-              mainAxisSize: .min,
-              spacing: 4,
-              children: [
+        Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 4,
+            children: [
+              Button.icon(
+                ToggleThreadToDo(
+                  state.draft,
+                  onUpdate: (thread) async {
+                    await context.read<PriorityBloc>().updateDraft(thread);
+                  },
+                ),
+                selected: state.draft.todo,
+              ),
+              Text(
+                'To do',
+                style: context.theme.typography.base.copyWith(
+                  height: 1,
+                  color: state.draft.todo
+                      ? context.theme.colors.primary
+                      : context.theme.colors.mutedForeground,
+                ),
+              ),
+              SizedBox(width: 4),
+              _buildScheduleButton(context, state.draft, (thread) async {
+                await context.read<PriorityBloc>().updateDraft(thread);
+              }),
+              if (_hasMembers) ...[
+                SizedBox(width: 4),
                 Button.icon(
-                  ToggleThreadToDo(
+                  ToggleThreadPrivate(
                     state.draft,
                     onUpdate: (thread) async {
                       await context.read<PriorityBloc>().updateDraft(thread);
                     },
                   ),
-                  selected: state.draft.todo,
+                  selected: state.draft.private,
                 ),
-                _buildScheduleButton(context, state.draft, (thread) async {
-                  await context.read<PriorityBloc>().updateDraft(thread);
-                }),
               ],
-            ),
-            _buildTypeChip(
-              context,
-              type: NewThreadType.task,
-              icon: PlotIcon.inbox,
-              label: 'Task',
-              shortcutIndex: 0,
-            ),
-            _buildTypeChip(
-              context,
-              type: NewThreadType.note,
-              icon: PlotIcon.note,
-              label: _hasMembers ? 'Message' : 'Note',
-              shortcutIndex: 1,
-            ),
-            _buildTypeChip(
-              context,
-              type: NewThreadType.link,
-              icon: PlotIcon.link,
-              label: 'Link',
-              shortcutIndex: 2,
-            ),
-            _buildTypeChip(
-              context,
-              type: NewThreadType.chat,
-              icon: PlotIcon.twist,
-              label: 'Twist Chat',
-              shortcutIndex: 3,
-            ),
-          ],
+            ],
+          ),
+        ),
+        SizedBox(height: spacing),
+
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // Hide labels when too narrow to fit all type chips with text
+            final showLabels = constraints.maxWidth >= 360;
+            return Center(
+              child: Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                alignment: WrapAlignment.center,
+                children: [
+                  _buildTypeChip(
+                    context,
+                    type: NewThreadType.task,
+                    icon: PlotIcon.inbox,
+                    label: 'Task',
+                    shortcutIndex: 0,
+                    showLabel: showLabels,
+                  ),
+                  _buildTypeChip(
+                    context,
+                    type: NewThreadType.note,
+                    icon: PlotIcon.note,
+                    label: _hasMembers ? 'Message' : 'Note',
+                    shortcutIndex: 1,
+                    showLabel: showLabels,
+                  ),
+                  _buildTypeChip(
+                    context,
+                    type: NewThreadType.link,
+                    icon: PlotIcon.link,
+                    label: 'Link',
+                    shortcutIndex: 2,
+                    showLabel: showLabels,
+                  ),
+                  _buildTypeChip(
+                    context,
+                    type: NewThreadType.chat,
+                    icon: PlotIcon.twist,
+                    label: 'Twist Chat',
+                    shortcutIndex: 3,
+                    showLabel: showLabels,
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ],
     );
@@ -561,11 +601,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     required IconData icon,
     required String label,
     required int shortcutIndex,
+    bool showLabel = true,
   }) {
     final selected = _selectedType == type;
     const chipRadius = BorderRadius.all(Radius.circular(24));
     final chipPadding = EdgeInsets.symmetric(
-      horizontal: 12,
+      horizontal: showLabel ? 12 : 10,
       vertical: isMobilePlatform() ? 12 : 6,
     );
     Widget chip = FButton(
@@ -584,8 +625,10 @@ class NewThreadPageState extends State<NewThreadPage> {
               ),
             ),
       mainAxisSize: MainAxisSize.min,
-      prefix: Icon(icon, size: context.theme.iconSizes.base),
-      child: Text(label),
+      prefix: showLabel ? Icon(icon, size: context.theme.iconSizes.base) : null,
+      child: showLabel
+          ? Text(label)
+          : Icon(icon, size: context.theme.iconSizes.base),
     );
 
     if (!kIsWeb && hasPhysicalKeyboard()) {
