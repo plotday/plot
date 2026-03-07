@@ -83,6 +83,42 @@ export type LinkFilter = {
   limit?: number;
 };
 
+type SearchResultBase = {
+  thread: { id: string; title: string | null };
+  priority: { id: string; title: string | null };
+  similarity: number;
+};
+
+export type NoteSearchResult = SearchResultBase & {
+  type: 'note';
+  id: string;
+  content: string | null;
+};
+
+export type LinkSearchResult = SearchResultBase & {
+  type: 'link';
+  id: string;
+  title: string | null;
+  sourceUrl: string | null;
+  content: string | null;
+};
+
+export type SearchResult = NoteSearchResult | LinkSearchResult;
+
+/** Default number of search results returned */
+export const SEARCH_DEFAULT_LIMIT = 10;
+/** Maximum number of search results allowed */
+export const SEARCH_MAX_LIMIT = 30;
+
+export type SearchOptions = {
+  /** Max results to return (default: 10, max: 30) */
+  limit?: number;
+  /** Minimum similarity score 0-1 (default: 0.3) */
+  threshold?: number;
+  /** Scope search to this priority + descendants (default: twist's installed priority). Must be within the twist's allowed scope. */
+  priorityId?: string;
+};
+
 /**
  * Built-in tool for interacting with the core Plot data layer.
  *
@@ -197,6 +233,8 @@ export abstract class Plot extends ITool {
     contact?: {
       access?: ContactAccess;
     };
+    /** Enable semantic search across notes and links in the twist's priority scope. */
+    search?: true;
   };
 
   /**
@@ -518,4 +556,16 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract getLinks(filter?: LinkFilter): Promise<Array<{ link: Link; notes: Note[] }>>;
+
+  /**
+   * Searches notes and links using semantic similarity.
+   *
+   * Requires `search: true` in Plot options.
+   *
+   * @param query - The search query text
+   * @param options - Optional search configuration
+   * @returns Promise resolving to array of search results ordered by similarity
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract search(query: string, options?: SearchOptions): Promise<SearchResult[]>;
 }

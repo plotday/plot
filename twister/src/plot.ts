@@ -180,6 +180,8 @@ export enum ActionType {
   conferencing = "conferencing",
   /** File attachment links stored in R2 */
   file = "file",
+  /** Thread reference links for navigating to related threads */
+  thread = "thread",
 }
 
 /**
@@ -288,6 +290,12 @@ export type Action =
       fileSize: number;
       /** MIME type of the file */
       mimeType: string;
+    }
+  | {
+      /** Thread reference action for navigating to a related thread */
+      type: ActionType.thread;
+      /** UUID of the referenced thread */
+      threadId: Uuid;
     };
 
 /**
