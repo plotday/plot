@@ -569,6 +569,7 @@ class Note extends Equatable implements Comparable<Note> {
         updatedAt: DateTime.now(),
         threadId: threadId,
         userId: userId,
+        startOn: Thread.todoNowDate,
         order: Order.first(),
       );
       await Store.get.save(
@@ -580,7 +581,11 @@ class Note extends Equatable implements Comparable<Note> {
       // Unarchive existing schedule (re-add to todo)
       await Store.get.save(
         Store.get.schedules,
-        existing.copyWith(archivedAt: const Value(null), updatedAt: DateTime.now()).toCompanion(false),
+        existing.copyWith(
+          archivedAt: const Value(null),
+          updatedAt: DateTime.now(),
+          startOn: existing.startOn == null ? Value(Thread.todoNowDate) : const Value.absent(),
+        ).toCompanion(false),
         SchedulesBase(),
       );
     }

@@ -1,11 +1,5 @@
--- When Tag.todo (tag_id=1) is added to a note, auto-create a per-user schedule
--- on the note's thread for the actor's user. This makes the thread appear on
--- the user's todo list.
-CREATE OR REPLACE FUNCTION propagate_note_tag_todo ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "propagate_note_tag_todo" function
+CREATE OR REPLACE FUNCTION "public"."propagate_note_tag_todo" () RETURNS trigger LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     v_thread_id uuid;
     v_user_id uuid;
@@ -46,9 +40,4 @@ BEGIN
 
     RETURN NEW;
 END;
-$function$;
-
-CREATE TRIGGER note_tag_todo_propagation
-    AFTER INSERT OR UPDATE ON note_tag
-    FOR EACH ROW
-    EXECUTE FUNCTION propagate_note_tag_todo ();
+$$;
