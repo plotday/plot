@@ -473,14 +473,42 @@ class ToggleRsvp extends _UpdateThreadCommand {
     final updated = thread.withRsvpStatus(_targetStatus);
     await saveOptimistically(context, updated);
 
-    // Fire-and-forget push to server
-    final scheduleId = thread.scheduleId;
-    if (scheduleId != null) {
-      api.post<dynamic>('/sync/schedule/status', body: {
-        'schedule_id': scheduleId.toString(),
-        'status': _targetStatus,
-      }).catchError((_) {});
-    }
+    // Determine whether this is an occurrence-level or series-level RSVP.
+    // Initial accept (no prior RSVP) always targets the series.
+    // Subsequent toggles on recurring occurrences target the occurrence.
+    final hasExistingRsvp = thread.currentUserRsvp != null;
+    final isOccurrenceLevel =
+        hasExistingRsvp && thread.occurrence != null;
+
+    api.post<dynamic>('/sync/schedule/status', body: {
+      'thread_id': thread.id.toString(),
+      if (isOccurrenceLevel) 'occurrence': thread.occurrence,
+      'status': _targetStatus,
+    }).catchError((_) {});
+
+    return const CommandDone();
+  }
+}
+
+class SkipRsvpSeries extends _UpdateThreadCommand {
+  SkipRsvpSeries(super.thread)
+    : super(
+        title: 'Decline All',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.calendarXmark,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final updated = thread.withRsvpStatus('skip');
+    await saveOptimistically(context, updated);
+
+    // Skip the entire series (no occurrence)
+    api.post<dynamic>('/sync/schedule/status', body: {
+      'thread_id': thread.id.toString(),
+      'status': 'skip',
+    }).catchError((_) {});
 
     return const CommandDone();
   }

@@ -739,10 +739,17 @@ class ThreadCommands extends HookWidget {
               .toList()
         : <ConferencingUserAction>[];
 
-    // RSVP button (always visible for multi-attendee events)
+    // RSVP buttons (always visible for multi-attendee events)
     final rsvpButton = showEventButtons && activity.hasOtherAttendees
         ? Button.icon(ToggleRsvp(activity))
         : null;
+    // Secondary skip button: appears on hover when no RSVP yet
+    final skipSeriesButton =
+        showEventButtons &&
+        activity.hasOtherAttendees &&
+        activity.currentUserRsvp == null
+            ? Button.icon(SkipRsvpSeries(activity))
+            : null;
 
     final tagSuggestionButtons = showCommands
         ? topThreadTags(
@@ -821,6 +828,7 @@ class ThreadCommands extends HookWidget {
             ...allButtons,
             for (final action in conferencingActions)
               _ConferencingIconButton(action: action),
+            if (showCommands && skipSeriesButton != null) skipSeriesButton,
             if (rsvpButton != null) rsvpButton,
           ],
         );

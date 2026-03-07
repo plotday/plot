@@ -2748,6 +2748,8 @@ class Thread extends Equatable implements Comparable<Thread> {
           endOn: occurrenceOn?.end,
           recurrenceRule: _schedule?.recurrenceRule,
           recurrenceExdates: _schedule?.recurrenceExdates,
+          contacts: _schedule?.contacts,
+          currentUserStatus: _schedule?.currentUserStatus,
         ),
         priority: priority,
         tags: _tags,

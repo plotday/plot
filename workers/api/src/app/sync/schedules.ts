@@ -109,16 +109,96 @@ schedules.post("/sync/schedules", async (c) => {
 // POST /sync/schedule/status - Update current user's RSVP status on a schedule
 schedules.post("/sync/schedule/status", async (c) => {
   const body = await c.req.json();
-  const { schedule_id, status } = body;
+  const { schedule_id, thread_id, occurrence, status } = body;
 
-  if (!schedule_id) {
-    return c.json({ error: "schedule_id is required" }, 400);
+  if (!schedule_id && !thread_id) {
+    return c.json({ error: "schedule_id or thread_id is required" }, 400);
+  }
+
+  // Resolve the target schedule_id from thread_id + optional occurrence
+  let targetScheduleId = schedule_id;
+
+  if (thread_id && !schedule_id) {
+    targetScheduleId = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
+      if (occurrence) {
+        // Per-occurrence: find existing occurrence schedule or create one
+        const existing = await trx
+          .selectFrom("schedule" as any)
+          .select("id")
+          .where("thread_id", "=", thread_id)
+          .where("occurrence", "=", occurrence)
+          .executeTakeFirst();
+
+        if (existing) return existing.id;
+
+        // Copy the base schedule and create an occurrence-specific row
+        const base = await trx
+          .selectFrom("schedule" as any)
+          .selectAll()
+          .where("thread_id", "=", thread_id)
+          .where("occurrence", "is", null)
+          .executeTakeFirst();
+
+        if (!base) return null;
+
+        const newId = crypto.randomUUID();
+        await trx
+          .insertInto("schedule" as any)
+          .values({
+            id: newId,
+            thread_id: base.thread_id,
+            link_id: base.link_id,
+            occurrence: occurrence,
+            start_at: base.start_at,
+            end_at: base.end_at,
+            start_on: base.start_on,
+            end_on: base.end_on,
+            recurrence_rule: base.recurrence_rule,
+            recurrence_exdates: base.recurrence_exdates,
+          })
+          .execute();
+
+        // Copy contacts from base schedule to the new occurrence schedule
+        const baseContacts = await trx
+          .selectFrom("schedule_contact" as any)
+          .selectAll()
+          .where("schedule_id", "=", base.id)
+          .execute();
+
+        for (const contact of baseContacts) {
+          await trx
+            .insertInto("schedule_contact" as any)
+            .values({
+              schedule_id: newId,
+              contact_id: contact.contact_id,
+              status: contact.status,
+              role: contact.role,
+            })
+            .execute();
+        }
+
+        return newId;
+      } else {
+        // Series-level: find the base schedule
+        const base = await trx
+          .selectFrom("schedule" as any)
+          .select("id")
+          .where("thread_id", "=", thread_id)
+          .where("occurrence", "is", null)
+          .executeTakeFirst();
+        return base?.id ?? null;
+      }
+    });
+  }
+
+  if (!targetScheduleId) {
+    return c.json({ error: "Schedule not found" }, 404);
   }
 
   await withUserDb(c.var.db, c.var.user.id, async (trx) => {
     await rpcUser(trx, "update_schedule_contact_status", {
       user_id: c.var.user.id,
-      p_schedule_id: schedule_id,
+      p_schedule_id: targetScheduleId,
       p_status: status ?? null,
     });
   });
@@ -127,7 +207,7 @@ schedules.post("/sync/schedule/status", async (c) => {
   const schedule = await c.var.db
     .selectFrom("schedule")
     .select(["thread_id", "link_id"])
-    .where("id", "=", schedule_id)
+    .where("id", "=", targetScheduleId)
     .executeTakeFirst();
 
   if (schedule) {
