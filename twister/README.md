@@ -122,7 +122,7 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 - **Plot** - Manage activities and priorities
 - **Store** - Persistent key-value storage
 - **AI** - Language models with structured output
-- **Integrations** - OAuth authentication
+- **Integrations** - OAuth authentication and channel lifecycle
 - **Network** - HTTP access and webhooks
 - **Tasks** - Background task execution
 - **Callbacks** - Persistent function references
@@ -243,27 +243,33 @@ export default class WelcomeTwist extends Twist<WelcomeTwist> {
 }
 ```
 
-### GitHub Integration
+### GitHub Source
 
 ```typescript
-export default class GitHubTwist extends Twist<GitHubTwist> {
-  build(build: ToolBuilder) {
+import { Source, type SourceBuilder, type Channel } from "@plotday/twister";
+import { Integrations } from "@plotday/twister/tools/integrations";
+
+export default class GitHubSource extends Source<GitHubSource> {
+  build(build: SourceBuilder) {
     return {
-      plot: build(Plot),
-      network: build(Network, {
-        urls: ["https://api.github.com/*"],
-      }),
+      integrations: build(Integrations),
     };
   }
 
-  async activate(priority: Pick<Priority, "id">) {
-    // Set up webhook for issue updates
-    const webhookUrl = await this.tools.network.createWebhook("onIssueUpdate");
-    await this.set("webhook_url", webhookUrl);
+  async getChannels(): Promise<Channel[]> {
+    // Return repositories the user can sync
+    return repos.map((repo) => ({
+      id: repo.id,
+      name: repo.full_name,
+    }));
   }
 
-  async onIssueUpdate(request: WebhookRequest) {
-    // Sync GitHub issues to Plot activities
+  async onChannelEnabled(channel: Channel) {
+    // Start syncing issues from this repository
+  }
+
+  async onChannelDisabled(channel: Channel) {
+    // Stop syncing and clean up
   }
 }
 ```
