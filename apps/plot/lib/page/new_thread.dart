@@ -14,6 +14,7 @@ import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
 import 'logging.dart';
@@ -324,11 +325,13 @@ class NewThreadPageState extends State<NewThreadPage> {
         SizedBox(height: 24),
 
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: isMobilePlatform() ? 12 : 8,
+          runSpacing: isMobilePlatform() ? 12 : 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Row(
               mainAxisSize: .min,
+              spacing: 4,
               children: [
                 Button.icon(
                   ToggleThreadToDo(
@@ -410,7 +413,10 @@ class NewThreadPageState extends State<NewThreadPage> {
     final hasMore = sorted.length > 3;
 
     const chipRadius = BorderRadius.all(Radius.circular(24));
-    const chipPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 6);
+    final chipPadding = EdgeInsets.symmetric(
+      horizontal: 12,
+      vertical: isMobilePlatform() ? 12 : 6,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -558,7 +564,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   }) {
     final selected = _selectedType == type;
     const chipRadius = BorderRadius.all(Radius.circular(24));
-    const chipPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 6);
+    final chipPadding = EdgeInsets.symmetric(
+      horizontal: 12,
+      vertical: isMobilePlatform() ? 12 : 6,
+    );
     Widget chip = FButton(
       onPress: () => _selectType(type),
       style: selected
@@ -575,7 +584,7 @@ class NewThreadPageState extends State<NewThreadPage> {
               ),
             ),
       mainAxisSize: MainAxisSize.min,
-      prefix: Icon(icon, size: 14),
+      prefix: Icon(icon, size: context.theme.iconSizes.base),
       child: Text(label),
     );
 

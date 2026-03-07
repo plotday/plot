@@ -22,6 +22,16 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   final PriorityTabNotifier _tabNotifier = PriorityTabNotifier();
 
   @override
+  void initState() {
+    super.initState();
+    _tabNotifier.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    setState(() {});
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Subscribe to route changes to rebuild bottom nav when navigating to/from NewThreadPage
@@ -34,6 +44,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   @override
   void dispose() {
     _observer?.unsubscribe(this);
+    _tabNotifier.removeListener(_onTabChanged);
     _tabNotifier.dispose();
     super.dispose();
   }

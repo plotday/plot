@@ -5,6 +5,7 @@ import 'package:prism_flutter/prism_flutter.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/util/platform.dart';
 
 FButtonStyles buildButtonStyles(
   FButtonStyles baseStyles,
@@ -240,7 +241,7 @@ FButtonStyles buildButtonStyles(
       }),
       // ignore: unused_result
       contentStyle: baseStyles.ghost.contentStyle.copyWith(
-        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: EdgeInsets.all(isMobilePlatform() ? 14 : 10),
         spacing: 6,
         textStyle: FWidgetStateMap({
           WidgetState.disabled: typography.base.copyWith(
@@ -276,6 +277,7 @@ FButtonStyles buildButtonStyles(
       ),
       // ignore: unused_result
       iconContentStyle: baseStyles.ghost.iconContentStyle.copyWith(
+        padding: EdgeInsets.all(isMobilePlatform() ? 14 : 7.5),
         iconStyle: FWidgetStateMap({
           WidgetState.disabled: IconThemeData(
             color: colourScheme.muted.withValues(alpha: 0.5),

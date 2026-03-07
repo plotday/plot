@@ -653,6 +653,10 @@ class InfiniteListState extends State<InfiniteList> {
             slivers: [
               if (_prefixCount > 0) _buildFixedPrefix(),
               _buildSliverList(),
+              if (widget.separatorBuilder != null && widget.count > 0)
+                SliverToBoxAdapter(
+                  child: widget.separatorBuilder!(context, widget.count),
+                ),
               if (!widget.doneEnd) spinner,
             ],
           ),

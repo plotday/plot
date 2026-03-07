@@ -641,14 +641,26 @@ class _PriorityPageState extends State<PriorityPage> {
                 builder: (context, layoutState) {
                   // Auto-switch to activity tab when agenda is empty
                   // in single panel mode, unless user explicitly tapped Agenda.
+                  // Require agendaItems.isNotEmpty to avoid switching before
+                  // the agenda stream has emitted real data.
                   if (!layoutState.multiPanel &&
                       !_userSelectedAgenda &&
                       _currentTab == PriorityTab.agenda &&
-                      state.doneStart &&
+                      state.agendaItems.isNotEmpty &&
                       state.agendaViewItems
                           .whereType<AgendaThreadItem>()
                           .isEmpty) {
                     _currentTab = PriorityTab.activityFeed;
+                    // Sync tab notifier after build so the bottom bar updates
+                    final notifier = _tabNotifier;
+                    if (notifier != null &&
+                        notifier.value != PriorityTab.activityFeed) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          notifier.value = PriorityTab.activityFeed;
+                        }
+                      });
+                    }
                   }
 
                   // On desktop, use expansion state; on mobile, use tab state
@@ -1172,7 +1184,8 @@ class _PriorityPageState extends State<PriorityPage> {
     final borderColor = context.theme.colors.border;
     final bg = context.colour.background;
     final AgendaItem? prev = index > 0 ? listItems[index - 1] : null;
-    final next = listItems[index];
+    final AgendaItem? next =
+        index < listItems.length ? listItems[index] : null;
 
     final selectedId = state.thread?.id;
     final hovered = controller.hoveredIndex;
@@ -1270,8 +1283,9 @@ class _PriorityPageState extends State<PriorityPage> {
                         horizontal: context.contentPaddingH,
                         vertical: context.theme.spacing.xl,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
                             'Threads you mark ',

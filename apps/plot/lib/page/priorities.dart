@@ -92,7 +92,7 @@ class PrioritiesPage extends StatelessWidget {
                                   root: state.root!,
                                   priorities: state.priorities,
                                   selected: selected,
-                                  showPlotSection: !layoutState.multiPanel,
+                                  showPlotSection: false,
                                 ),
                               ),
                               if (layoutState.multiPanel)

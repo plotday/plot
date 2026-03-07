@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'app_context.dart';
 import 'editor.dart';
@@ -177,6 +178,8 @@ class RootMenuBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isMobilePlatform()) return child;
+
     return BlocBuilder<UserBloc, UserState>(
       builder: (context, userState) {
         final showUserMenus = userState is UserReady;
