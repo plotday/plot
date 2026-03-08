@@ -7,6 +7,8 @@ import { createWorkersAI } from "workers-ai-provider";
 
 import {
   AIModel,
+  type AICapabilities,
+  type AIOptions,
   type AIRequest,
   type AIResponse,
   type AIToolSet,
@@ -17,9 +19,13 @@ import {
 
 import type { Bindings } from "../../env";
 import { Usage } from "../../state/usage";
+import type { ToolPermission } from "../permissions";
 import { Tool } from "./tool";
 
 export class AI extends Tool implements IAI {
+  static Permissions(_options?: AIOptions): ToolPermission[] {
+    return [{ domain: "ai", entity: "prompt", flags: ["use"] }];
+  }
   private openai: ReturnType<typeof createOpenAI>;
   private anthropic: ReturnType<typeof createAnthropic>;
   private google: ReturnType<typeof createGoogleGenerativeAI>;
@@ -64,6 +70,10 @@ export class AI extends Tool implements IAI {
 
     // Initialize usage tracking
     this.usage = Usage.Get(env, priorityTwistId);
+  }
+
+  available(): AICapabilities {
+    return { prompt: true, embed: true };
   }
 
   /**

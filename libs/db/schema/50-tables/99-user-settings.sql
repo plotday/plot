@@ -3,7 +3,8 @@ CREATE TABLE "public"."user_settings" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid PRIMARY KEY REFERENCES public."user" ON DELETE CASCADE,
     -- All fields added below must be nullable to support partial updates
-    "enter_behavior" enter_behavior
+    "enter_behavior" enter_behavior,
+    "ai_enabled" boolean
 );
 
 -- Index for user-based settings lookups

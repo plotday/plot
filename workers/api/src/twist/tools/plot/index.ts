@@ -154,6 +154,7 @@ export class Plot extends Tool implements IPlot {
   private _twistId?: number;
   private _userId?: string;
   private _priorityRoot?: string;
+  private _aiEnabled?: boolean;
 
   /**
    * Returns permissions required by this Plot tool instance.
@@ -307,6 +308,33 @@ export class Plot extends Tool implements IPlot {
     }
 
     return this._userId!;
+  }
+
+  /**
+   * Checks whether AI features are enabled for the owner of this priority.
+   * Queries user_settings.ai_enabled and caches the result for the request.
+   * @returns true if AI is enabled (default), false if explicitly disabled
+   */
+  async isAiEnabled(): Promise<boolean> {
+    if (this._aiEnabled !== undefined) return this._aiEnabled;
+
+    try {
+      const userId = await this.getUserId();
+
+      const settings = await this.db
+        .selectFrom("user_settings")
+        .select("ai_enabled")
+        .where("user_id", "=", userId)
+        .executeTakeFirst();
+
+      // null or true = enabled, only explicit false disables
+      this._aiEnabled = settings?.ai_enabled !== false;
+    } catch {
+      // Default to enabled if we can't determine the setting
+      this._aiEnabled = true;
+    }
+
+    return this._aiEnabled;
   }
 
   /**

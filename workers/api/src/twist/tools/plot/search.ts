@@ -17,6 +17,12 @@ export async function search(
     return [];
   }
 
+  // Skip search when AI is disabled (embeddings required for semantic search)
+  if (!(await plot.isAiEnabled())) {
+    logger.info("[search] AI disabled, returning no results");
+    return [];
+  }
+
   const scopePriorityId = options?.priorityId ?? plot.priorityId;
   await plot.validatePriorityAccess(scopePriorityId);
 

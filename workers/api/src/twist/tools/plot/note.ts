@@ -249,7 +249,7 @@ export async function createNote(
           .executeTakeFirstOrThrow();
 
     // Generate embedding (best-effort, don't fail the create)
-    if (contentToStore && contentToStore.trim().length > 0) {
+    if (contentToStore && contentToStore.trim().length > 0 && await plot.isAiEnabled()) {
       const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
       try {
         logger.info("[embedding] Generating embedding for note", {
@@ -276,7 +276,7 @@ export async function createNote(
       }
     } else {
       const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-      logger.info("[embedding] Skipping embedding for note (no content)", {
+      logger.info("[embedding] Skipping embedding for note (no content or AI disabled)", {
         note_id: dbResult.id,
         has_content: !!contentToStore,
         content_trimmed_length: contentToStore?.trim().length ?? 0,
@@ -625,8 +625,8 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       }
     }
 
-    // Update embedding if content changed
-    if (note.content !== undefined && hasMeaningfulUpdates) {
+    // Update embedding if content changed and AI is enabled
+    if (note.content !== undefined && hasMeaningfulUpdates && await plot.isAiEnabled()) {
       const contentForEmbed = dbUpdate.content as string | null;
       const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
       if (contentForEmbed && contentForEmbed.trim().length > 0) {

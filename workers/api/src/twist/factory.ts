@@ -114,6 +114,18 @@ export function twistFactory({
       }
     }
 
+    // Query user's AI preference at runtime (not during deployment)
+    let aiEnabled: boolean | undefined;
+    if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
+      const ownerSettings = await db
+        .selectFrom("priority_twist")
+        .innerJoin("user_settings", "user_settings.user_id", "priority_twist.owner_id")
+        .select("user_settings.ai_enabled")
+        .where("priority_twist.id", "=", priorityTwistId)
+        .executeTakeFirst();
+      aiEnabled = ownerSettings?.ai_enabled ?? true;
+    }
+
     // Create factory function for constructing built-in tools at runtime
     const builtInToolFactory = (
       path: string[],
@@ -138,6 +150,7 @@ export function twistFactory({
           ctx,
           config: priorityTwistConfig,
           sourceProvider,
+          aiEnabled,
         });
       }
 
@@ -204,6 +217,7 @@ export function twistFactory({
         env,
         ctx,
         sourceProvider,
+        aiEnabled,
       });
 
       // Track tool for permission collection
@@ -223,6 +237,7 @@ export function twistFactory({
     let toolPermissionsMap: Record<string, ToolPermission[]> = {};
     let providers: ProviderDeclaration[] = [];
     let integrationsMap: Record<string, string> = {};
+    let aiRequired = false;
 
     if (!checkPermissions) {
       // DEPLOYMENT: Initialize twist to build tools and collect permissions
@@ -336,6 +351,11 @@ export function twistFactory({
           }
         }
       }
+
+      // Compute whether this twist requires AI
+      // AI is required if any tool is "AI" and its options don't set required: false
+      const aiTool = toolInstances.find(({ id: toolId }) => toolId === "AI");
+      aiRequired = aiTool ? (aiTool.options?.required !== false) : false;
     } else {
       // RUNTIME: Tools are validated per-path in builtInToolFactory as they're created
       // Use stored permissions without rebuilding twist
@@ -349,6 +369,7 @@ export function twistFactory({
       integrationsMap,
       optionsSchema,
       sourceProvider,
+      aiRequired,
       activate: async (
         priority: Pick<Priority, "id">,
         context?: {

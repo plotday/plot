@@ -130,6 +130,29 @@ export async function add(
     }
     name ??= twistName;
 
+    // Check if twist requires AI and user has it disabled
+    const twistRecord = await db
+      .selectFrom("twist")
+      .select("permissions")
+      .where("id", "=", String(twist_id))
+      .executeTakeFirst();
+
+    if (twistRecord?.permissions) {
+      const perms = typeof twistRecord.permissions === 'string'
+        ? JSON.parse(twistRecord.permissions)
+        : twistRecord.permissions;
+      if (perms._ai_required === true) {
+        const userSettings = await db
+          .selectFrom("user_settings")
+          .selectAll()
+          .where("user_id", "=", userId)
+          .executeTakeFirst() as { ai_enabled?: boolean } | undefined;
+        if (userSettings?.ai_enabled === false) {
+          throw new Error("This twist requires AI features which are disabled in your settings.");
+        }
+      }
+    }
+
     const existingTwist = await db
       .selectFrom("priority_twist")
       .select(["id"])
@@ -585,6 +608,29 @@ export async function activateDraft(
 
   if (!draft) {
     throw new Error("Draft not found or already activated");
+  }
+
+  // Check if twist requires AI and user has it disabled
+  const twistRecord = await db
+    .selectFrom("twist")
+    .select("permissions")
+    .where("id", "=", String(draft.twist_id))
+    .executeTakeFirst();
+
+  if (twistRecord?.permissions) {
+    const perms = typeof twistRecord.permissions === 'string'
+      ? JSON.parse(twistRecord.permissions)
+      : twistRecord.permissions;
+    if (perms._ai_required === true) {
+      const userSettings = await db
+        .selectFrom("user_settings")
+        .selectAll()
+        .where("user_id", "=", draft.owner_id)
+        .executeTakeFirst() as { ai_enabled?: boolean } | undefined;
+      if (userSettings?.ai_enabled === false) {
+        throw new Error("This twist requires AI features which are disabled in your settings.");
+      }
+    }
   }
 
   // Check for name conflicts on the target priority (only if priorityId provided)

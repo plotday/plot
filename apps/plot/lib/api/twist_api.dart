@@ -38,6 +38,7 @@ class Twist {
   final String? logoUrl;
   final String? logoUrlDark;
   final List<AuthProvider> providers;
+  final bool aiRequired;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -57,6 +58,7 @@ class Twist {
     this.logoUrl,
     this.logoUrlDark,
     this.providers = const [],
+    this.aiRequired = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -83,9 +85,12 @@ class Twist {
     final idValue = json['id'];
     final id = idValue is int ? idValue.toString() : idValue as String;
 
-    // Extract auth providers from permissions._providers
+    // Extract metadata from permissions JSON
     final providers = <AuthProvider>[];
     final permsRaw = json['permissions'];
+    final aiRequired = permsRaw is Map<String, dynamic>
+        ? (permsRaw['_ai_required'] as bool? ?? false)
+        : false;
     if (permsRaw is Map<String, dynamic>) {
       final providersRaw = permsRaw['_providers'];
       if (providersRaw is List) {
@@ -125,6 +130,7 @@ class Twist {
       logoUrl: json['logo_url'] as String?,
       logoUrlDark: json['logo_url_dark'] as String?,
       providers: providers,
+      aiRequired: aiRequired,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,

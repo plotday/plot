@@ -39,7 +39,7 @@ class PlotTwist extends Twist<PlotTwist> {
         },
         search: true,
       }),
-      ai: build(AI),
+      ai: build(AI, { required: false }),
     };
   }
 
@@ -223,25 +223,6 @@ class PlotTwist extends Twist<PlotTwist> {
       return;
     }
 
-    // Build RAG context
-    const context = results.map((r, i) => {
-      const location = [r.priority.title, r.thread.title].filter(Boolean).join(" > ");
-      const body = r.type === "link"
-        ? `[${r.title}](${r.sourceUrl || ""})${r.content ? "\n" + r.content : ""}`
-        : r.content || "(no content)";
-      return `[${i + 1}] ${location}\n${body}`;
-    }).join("\n\n");
-
-    const response = await this.tools.ai.prompt({
-      model: { speed: "fast", cost: "medium" },
-      system: "You answer questions using the user's own notes and links as context. " +
-        "Answer directly — don't say things like \"based on the provided content\" or " +
-        "\"according to your notes\". Just give the answer naturally, as if you know it. " +
-        "If the context doesn't fully answer the question, say what you found and note " +
-        "what's missing. Be concise. Reference specific threads when relevant.",
-      prompt: `Question: ${query}\n\nRelevant content:\n${context}`,
-    });
-
     const currentThreadId = note.thread.id;
     const otherResults = results.filter((r) => r.thread.id !== currentThreadId);
 
@@ -262,11 +243,47 @@ class PlotTwist extends Twist<PlotTwist> {
         threadId: threadId as Uuid,
       }));
 
-    await this.tools.plot.createNote({
-      thread: { id: note.thread.id },
-      content: response.text,
-      actions: actions.length > 0 ? actions : undefined,
-    });
+    // Check AI availability before attempting summarization
+    const { prompt: canPrompt } = this.tools.ai.available();
+
+    if (canPrompt) {
+      // Build RAG context
+      const context = results.map((r, i) => {
+        const location = [r.priority.title, r.thread.title].filter(Boolean).join(" > ");
+        const body = r.type === "link"
+          ? `[${r.title}](${r.sourceUrl || ""})${r.content ? "\n" + r.content : ""}`
+          : r.content || "(no content)";
+        return `[${i + 1}] ${location}\n${body}`;
+      }).join("\n\n");
+
+      const response = await this.tools.ai.prompt({
+        model: { speed: "fast", cost: "medium" },
+        system: "You answer questions using the user's own notes and links as context. " +
+          "Answer directly — don't say things like \"based on the provided content\" or " +
+          "\"according to your notes\". Just give the answer naturally, as if you know it. " +
+          "If the context doesn't fully answer the question, say what you found and note " +
+          "what's missing. Be concise. Reference specific threads when relevant.",
+        prompt: `Question: ${query}\n\nRelevant content:\n${context}`,
+      });
+
+      await this.tools.plot.createNote({
+        thread: { id: note.thread.id },
+        content: response.text,
+        actions: actions.length > 0 ? actions : undefined,
+      });
+    } else {
+      // AI unavailable — show results directly
+      const resultsList = results.slice(0, 5).map(r => {
+        const location = [r.priority.title, r.thread.title].filter(Boolean).join(" > ");
+        return `- **${location}**: ${r.content?.substring(0, 200) || "(no content)"}`;
+      }).join("\n");
+
+      await this.tools.plot.createNote({
+        thread: { id: note.thread.id },
+        content: `Here's what I found:\n\n${resultsList}`,
+        actions: actions.length > 0 ? actions : undefined,
+      });
+    }
   }
 }
 

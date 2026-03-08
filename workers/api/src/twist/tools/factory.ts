@@ -1,6 +1,14 @@
 import type { Kysely } from "kysely";
 
 import type { OptionsSchema } from "@plotday/twister/options";
+import type {
+  AICapabilities,
+  AIRequest,
+  AIResponse,
+  AIToolSet,
+  AI as IAI,
+} from "@plotday/twister/tools/ai";
+import type { TSchema } from "typebox";
 
 import type { DB } from "../../db-types";
 import { type TwistEnvironment, type Bindings } from "../../env";
@@ -13,7 +21,28 @@ import { Network } from "./network";
 import { Plot } from "./plot";
 import { Store } from "./store";
 import { Tasks } from "./tasks";
-import type { Tool } from "./tool";
+import { Tool } from "./tool";
+
+/**
+ * Stub returned when a twist declares AI as optional (required: false)
+ * and the user has AI disabled. Returns unavailable capabilities and
+ * throws on actual AI calls.
+ */
+class AIDisabledStub extends Tool implements IAI {
+  available(): AICapabilities {
+    return { prompt: false, embed: false };
+  }
+
+  async prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
+    _request: AIRequest<TOOLS, SCHEMA>
+  ): Promise<AIResponse<TOOLS, SCHEMA>> {
+    throw new Error("AI features are disabled by the user.");
+  }
+
+  async embed(_text: string): Promise<number[]> {
+    throw new Error("AI features are disabled by the user.");
+  }
+}
 
 /**
  * Returns the tool class for a given tool ID.
@@ -93,6 +122,7 @@ export function createTool(
     ctx,
     config,
     sourceProvider,
+    aiEnabled,
   }: {
     twistId: string;
     environment: TwistEnvironment;
@@ -104,6 +134,8 @@ export function createTool(
     config?: Record<string, unknown>;
     /** Source metadata (provider, scopes, linkTypes) for Sources using the new API. */
     sourceProvider?: { provider: string; scopes: string[]; linkTypes?: any[] } | null;
+    /** Whether AI features are enabled for the user. Undefined during deployment. */
+    aiEnabled?: boolean;
   }
 ): Tool {
   switch (id) {
@@ -116,6 +148,10 @@ export function createTool(
         env,
       });
     case "AI":
+      // Return disabled stub when AI is off and twist declared AI as optional
+      if (aiEnabled === false && (options as any)?.required === false) {
+        return new AIDisabledStub();
+      }
       return new AI({ env, priorityTwistId });
     case "Network":
       return new Network({

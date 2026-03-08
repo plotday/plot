@@ -1094,6 +1094,7 @@ export interface UserSchedule {
 }
 
 export interface UserSettings {
+  ai_enabled: boolean | null;
   enter_behavior: EnterBehavior | null;
   updated_at: Generated<Timestamp>;
   user_id: string;

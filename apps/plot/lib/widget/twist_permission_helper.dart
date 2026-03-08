@@ -30,6 +30,8 @@ class PermissionDescriptions {
         return 'Plot Data';
       case 'network':
         return 'Internet Access';
+      case 'ai':
+        return 'AI';
       default:
         // Capitalize first letter for unknown domains
         return domain.isEmpty
@@ -47,6 +49,8 @@ class PermissionDescriptions {
       return _getPlotDescriptions(entities);
     } else if (domain == 'network') {
       return _getNetworkDescriptions(entities);
+    } else if (domain == 'ai') {
+      return ['Uses AI to process and generate content'];
     } else {
       // For unknown domains, show entity names as-is
       return entities.keys.toList();

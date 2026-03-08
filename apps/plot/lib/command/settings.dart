@@ -7,7 +7,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:collection/collection.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/twist_api.dart';
+import 'package:plot/api/twist_permission.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/modal.dart';
@@ -40,6 +43,7 @@ final settingsCommands = StaticCommandGroup(
     ManageTwists(),
     CopyPageLink(), OpenCopiedPageLink(),
     ChangeAppearance(),
+    ChangeAiPreference(),
     // Only show Enter Behavior setting on devices with physical keyboards
     if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
     CopyVersion(),
@@ -231,6 +235,159 @@ class CopyVersion extends Command {
       log.warning("Copy version failed", e, t);
       return CommandMessage('Failed to copy version', isError: true);
     }
+  }
+}
+
+class ChangeAiPreference extends ShowForm {
+  ChangeAiPreference()
+    : super(
+        title: 'AI Preferences',
+        icon: FontAwesomeIcons.robot,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+        form: _buildForm,
+      );
+
+  static Future<FormData> _buildForm(BuildContext context) async {
+    final currentValue = context.read<SettingsBloc>().state.aiEnabled;
+    final showWarning = ValueNotifier(!currentValue);
+
+    final toggle = FormToggle(
+      key: 'aiEnabled',
+      label: 'Enable AI Features',
+      details:
+          'AI is used for search, content analysis, and twist capabilities.',
+      initialValue: currentValue,
+    );
+    toggle.addListener(() {
+      showWarning.value = !toggle.getValue();
+    });
+
+    final warning = FormInfo(
+      key: 'warning',
+      builder: (context) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: showWarning,
+          builder: (context, show, _) {
+            if (!show) return const SizedBox.shrink();
+            return Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: context.theme.spacing.lg,
+              ),
+              child: Text(
+                'Twists that require AI will be archived.',
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.colors.destructive,
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    return FormData(
+      title: 'AI Preferences',
+      groups: [
+        StaticFormGroup(
+          items: [
+            toggle,
+            warning,
+            FormButton(
+              key: 'save',
+              buildCommand: (values) => _SaveAiPreference(
+                aiEnabled: values['aiEnabled'] as bool,
+                previousValue: currentValue,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _SaveAiPreference extends Command {
+  _SaveAiPreference({required this.aiEnabled, required this.previousValue})
+    : super(
+        title: 'Save',
+        eventObject: EventObject.settings,
+        eventAction: EventAction.updated,
+      );
+
+  final bool aiEnabled;
+  final bool previousValue;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await context.read<SettingsBloc>().setAiEnabled(aiEnabled);
+
+      // If toggling AI off, archive twists that require AI
+      if (previousValue && !aiEnabled) {
+        final archived = await _archiveAiRequiringTwists();
+        if (archived > 0) {
+          return CommandMessage(
+            'AI disabled. $archived twist${archived == 1 ? '' : 's'} archived.',
+          );
+        }
+      }
+
+      return const CommandDone();
+    } catch (e, t) {
+      log.warning('Failed to save AI preference', e, t);
+      return CommandMessage('Failed to save AI preference', isError: true);
+    }
+  }
+
+  /// Archive installed twists that require AI.
+  /// Returns the number of twists archived.
+  Future<int> _archiveAiRequiringTwists() async {
+    int archived = 0;
+
+    // Get all priorities to check their twists
+    final priorities = await Priority.get(order: PriorityOrder.nested);
+
+    for (final priority in priorities) {
+      try {
+        final twists = await TwistApi.getAllTwists(priority);
+        // Find twists that require AI (have _ai_required in permissions)
+        final aiTwists = twists.where((t) => t.permissions?.hasPermission(
+          'ai', 'prompt', PermissionFlag.use,
+        ) == true);
+
+        // Get active local priority_twists for this priority to find IDs
+        final localTwists = await PriorityTwist.get(
+          priorityId: priority.id,
+          includeAncestors: false,
+          archived: false,
+        );
+
+        for (final aiTwist in aiTwists) {
+          // Find matching local priority_twist
+          final localTwist = localTwists.where(
+            (lt) => lt.twistId.toString() == aiTwist.id,
+          ).firstOrNull;
+
+          if (localTwist != null) {
+            await TwistApi.archiveAndRemoveTwist(localTwist.id.toString());
+            await Store.get.save(
+              PriorityTwist.table,
+              localTwist.copyWith(
+                archivedAt: Value(DateTime.now()),
+                updatedAt: DateTime.now(),
+              ),
+              PriorityTwistsBase(),
+            );
+            archived++;
+          }
+        }
+      } catch (e) {
+        log.warning('Failed to check twists for priority ${priority.title}', e);
+      }
+    }
+
+    return archived;
   }
 }
 

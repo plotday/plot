@@ -227,6 +227,11 @@ async function buildTwist(priorityTwistId, builtInToolFactory) {
         "Twists cannot use the Integrations tool. Only Sources can use integrations."
       );
     }
+    if (isSource && id === "AI") {
+      throw new Error(
+        "Sources cannot use the AI tool. Only Twists can use AI capabilities."
+      );
+    }
     return builtInToolFactory(path, id, options);
   };
 

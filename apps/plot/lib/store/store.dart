@@ -1772,7 +1772,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 263;
+  int get schemaVersion => 264;
 
   @override
   MigrationStrategy get migration {
@@ -2019,6 +2019,9 @@ class Store extends _$Store {
     }
     if (from < 263) {
       await _safeAddColumn(m, links, links.logo);
+    }
+    if (from < 264) {
+      await _safeAddColumn(m, userSettings, userSettings.aiEnabled);
     }
   }
 

@@ -15,6 +15,11 @@ export async function matchIntent(
   plot: Plot,
   note: Note
 ): Promise<string | null> {
+  // Skip intent matching when AI is disabled
+  if (!(await plot.isAiEnabled())) {
+    return null;
+  }
+
   // Collect all intent descriptions (custom + built-in)
   const customIntents = plot.plotOptions?.note?.intents || [];
   const builtInIntentObjects = [

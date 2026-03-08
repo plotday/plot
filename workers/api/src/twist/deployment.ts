@@ -149,6 +149,12 @@ export async function deployTwist({
     version = storeResult.version;
     permissions = storeResult.permissions;
     optionsSchema = storeResult.optionsSchema;
+    const { aiRequired } = storeResult;
+
+    // Store _ai_required in permissions for Flutter app access
+    if (aiRequired) {
+      (permissions as any)._ai_required = true;
+    }
 
     // Enrich providers with linkTypes from sourceProvider
     const { sourceProvider } = storeResult;

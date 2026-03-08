@@ -38,6 +38,7 @@ class SettingsBloc extends Cubit<SettingsState> {
     emit(state.copyWith(
       enterBehavior: settings.enterBehavior ?? EnterBehavior.enterSubmits,
       hasBeenPromptedForEnterBehavior: settings.enterBehavior != null,
+      aiEnabled: settings.aiEnabled ?? true,
     ));
   }
 
@@ -51,6 +52,17 @@ class SettingsBloc extends Cubit<SettingsState> {
     await UserSettingsEntity.save(
       UserSettingsCompanion(
         enterBehavior: drift.Value(behavior),
+      ),
+    );
+  }
+
+  /// Set whether AI features are enabled
+  Future<void> setAiEnabled(bool enabled) async {
+    emit(state.copyWith(aiEnabled: enabled));
+
+    await UserSettingsEntity.save(
+      UserSettingsCompanion(
+        aiEnabled: drift.Value(enabled),
       ),
     );
   }

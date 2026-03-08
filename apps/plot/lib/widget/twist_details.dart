@@ -140,6 +140,14 @@ class TwistDetails extends StatelessWidget {
                         twist.environment.capitalize(),
                       ),
                     ],
+                    if (twist.permissions?.forDomain('ai') != null) ...[
+                      SizedBox(height: theme.spacing.sm),
+                      _buildMetadataRow(
+                        context,
+                        'AI',
+                        twist.aiRequired ? 'Required' : 'Optional',
+                      ),
+                    ],
                     if (twist.createdAt != null) ...[
                       SizedBox(height: theme.spacing.sm),
                       _buildMetadataRow(
