@@ -10,11 +10,18 @@ on:
       - ".github/workflows/deploy-workers.yml"
   workflow_dispatch:
     inputs:
-      workers:
-        description: 'Workers to deploy (comma-separated, or "all" for all workers)'
-        required: false
-        default: "all"
-        type: string
+      api:
+        description: 'Deploy API'
+        type: boolean
+        default: true
+      beat:
+        description: 'Deploy Beat'
+        type: boolean
+        default: true
+      mailer:
+        description: 'Deploy Mailer'
+        type: boolean
+        default: true
       migrate_only:
         description: "Only run migrations, skip worker deployment"
         required: false
@@ -60,36 +67,12 @@ jobs:
         run: |
           WORKERS=()
 
-          # Check if this is a manual dispatch with specific workers
+          # Check if this is a manual dispatch with checkbox inputs
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            MANUAL_INPUT="${{ github.event.inputs.workers }}"
-
-            if [ -z "$MANUAL_INPUT" ] || [ "$MANUAL_INPUT" = "all" ]; then
-              # Deploy all workers
-              echo "Manual trigger: deploying all workers"
-              for worker_dir in workers/*/; do
-                worker=$(basename "$worker_dir")
-                # Skip workers without a deploy script (e.g. dev)
-                if ! node -pe "!!require('./workers/' + '$worker' + '/package.json').scripts?.deploy" 2>/dev/null | grep -q "true"; then
-                  echo "Skipping $worker (no deploy script)"
-                  continue
-                fi
-                WORKERS+=("\"$worker\"")
-              done
-            else
-              # Deploy specific workers from comma-separated input
-              echo "Manual trigger: deploying specified workers"
-              IFS=',' read -ra WORKER_LIST <<< "$MANUAL_INPUT"
-              for worker in "${WORKER_LIST[@]}"; do
-                # Trim whitespace
-                worker=$(echo "$worker" | xargs)
-                if [ -d "workers/$worker" ]; then
-                  WORKERS+=("\"$worker\"")
-                else
-                  echo "Warning: worker '$worker' not found"
-                fi
-              done
-            fi
+            echo "Manual trigger: deploying selected workers"
+            if [ "${{ inputs.api }}" = "true" ]; then WORKERS+=("\"api\""); fi
+            if [ "${{ inputs.beat }}" = "true" ]; then WORKERS+=("\"beat\""); fi
+            if [ "${{ inputs.mailer }}" = "true" ]; then WORKERS+=("\"mailer\""); fi
           else
             # Automatic deployment: only deploy changed workers
             echo "Automatic trigger: checking for affected workers"

@@ -1,0 +1,440 @@
+name: Patch (Shorebird OTA)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ios:
+        description: 'Patch iOS'
+        type: boolean
+        default: true
+      android:
+        description: 'Patch Android'
+        type: boolean
+        default: true
+      macos:
+        description: 'Patch macOS'
+        type: boolean
+        default: true
+      windows:
+        description: 'Patch Windows'
+        type: boolean
+        default: true
+
+concurrency:
+  group: native-patch
+  cancel-in-progress: false
+
+jobs:
+  patch-ios:
+    if: inputs.ios
+    runs-on: macos-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Install Shorebird
+        run: |
+          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
+          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+
+      - name: Patch iOS
+        run: |
+          cd apps/plot
+          shorebird patch ios
+
+      - name: Build summary
+        run: |
+          {
+            echo "## iOS Patch Complete"
+            echo ""
+            echo "Shorebird OTA patch delivered."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  patch-android:
+    if: inputs.android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Install Shorebird
+        run: |
+          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
+          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+
+      - name: Patch Android
+        run: |
+          cd apps/plot
+          shorebird patch android
+
+      - name: Build summary
+        run: |
+          {
+            echo "## Android Patch Complete"
+            echo ""
+            echo "Shorebird OTA patch delivered."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  patch-macos:
+    if: inputs.macos
+    runs-on: macos-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Install Shorebird
+        run: |
+          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
+          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+
+      - name: Patch macOS
+        run: |
+          cd apps/plot
+          shorebird patch macos
+
+      - name: Build summary
+        run: |
+          {
+            echo "## macOS Patch Complete"
+            echo ""
+            echo "Shorebird OTA patch delivered."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  patch-windows:
+    if: inputs.windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        shell: bash
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
+
+      - name: Create production .env file
+        shell: bash
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\Pub\Cache
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps\plot\.dart_tool\build
+            apps\plot\**\*.g.dart
+            apps\plot\**\*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Install Shorebird
+        shell: bash
+        run: |
+          powershell -Command "& {iwr -UseBasicParsing 'https://raw.githubusercontent.com/shorebirdtech/install/main/install.ps1' | iex}"
+          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+
+      - name: Patch Windows
+        shell: bash
+        run: |
+          cd apps/plot
+          shorebird patch windows
+
+      - name: Build summary
+        shell: bash
+        run: |
+          {
+            echo "## Windows Patch Complete"
+            echo ""
+            echo "Shorebird OTA patch delivered."
+          } >> "$GITHUB_STEP_SUMMARY"

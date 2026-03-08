@@ -17,17 +17,9 @@
     "lint": "flutter analyze",
     "build:macos": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build macos --release; pnpm set-env dev",
     "build:windows": "flutter build windows --release",
-    "release:windows": "shorebird release windows",
-    "patch:windows": "shorebird patch windows",
     "build:android": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build appbundle --release; pnpm set-env dev",
     "build:android:apk": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build apk --release; pnpm set-env dev",
     "build:ios": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build ios --release; pnpm set-env dev",
-    "build:web": "flutter build web --release",
-    "release:macos": "bash ../../scripts/release-macos",
-    "release:android": "bash ../../scripts/release-android",
-    "release:ios": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && shorebird release ios; pnpm set-env dev",
-    "patch:macos": "pnpm set-env prod && shorebird patch macos; pnpm set-env dev",
-    "patch:android": "pnpm set-env prod && shorebird patch android; pnpm set-env dev",
-    "patch:ios": "pnpm set-env prod && shorebird patch ios; pnpm set-env dev"
+    "build:web": "flutter build web --release"
   }
 }

@@ -1,0 +1,1067 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ios:
+        description: 'Release iOS'
+        type: boolean
+        default: true
+      android:
+        description: 'Release Android'
+        type: boolean
+        default: true
+      macos:
+        description: 'Release macOS'
+        type: boolean
+        default: true
+      windows:
+        description: 'Release Windows'
+        type: boolean
+        default: true
+
+concurrency:
+  group: native-release
+  cancel-in-progress: false
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: version-bump
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      version_name: ${{ steps.version.outputs.version_name }}
+      build_number: ${{ steps.version.outputs.build_number }}
+      commit_sha: ${{ steps.commit.outputs.sha }}
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Get GitHub App User ID
+        id: app-user
+        run: |
+          echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Increment build number
+        id: version
+        run: |
+          cd apps/plot
+          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
+          NEW_BUILD_NUMBER=$((BUILD_NUMBER + 1))
+          NEW_VERSION="${VERSION_NAME}+${NEW_BUILD_NUMBER}"
+
+          sed -i "s/version: .*/version: ${NEW_VERSION}/" pubspec.yaml
+
+          {
+            echo "new_version=$NEW_VERSION"
+            echo "version_name=$VERSION_NAME"
+            echo "build_number=$NEW_BUILD_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Version: $CURRENT_VERSION -> $NEW_VERSION"
+
+      - name: Commit and push version bump
+        id: commit
+        run: |
+          git config user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
+          git config user.email '${{ steps.app-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
+          git add apps/plot/pubspec.yaml
+          git commit -m "Bump version to ${{ steps.version.outputs.new_version }} [skip ci]"
+          git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          {
+            echo "## Version Bump"
+            echo ""
+            echo "**Version:** ${{ steps.version.outputs.new_version }}"
+            echo "**Commit:** ${{ steps.commit.outputs.sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release-ios:
+    needs: bump-version
+    if: inputs.ios
+    runs-on: macos-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.commit_sha }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          APPLE_DIST_CERT_BASE64: op://Production/Apple/Signing/distribution p12
+          APPLE_DIST_CERT_PASSWORD: op://Production/Apple/Signing/distribution password
+
+          ASC_API_KEY_ID: op://Production/Apple/App Store Connect/key id
+          ASC_API_ISSUER_ID: op://Production/Apple/App Store Connect/issuer id
+
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Fetch signing files from 1Password
+        id: profiles
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          # App Store Connect API key
+          mkdir -p ~/.appstoreconnect/private_keys
+          op read "op://Production/Apple/App Store Connect/key.p8" \
+            --out-file "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
+            --file-mode 0600
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
+          # iOS App Store provisioning profile (day.plot.app)
+          op read "op://Production/Apple/Signing/ios.mobileprovision" \
+            --out-file "$RUNNER_TEMP/ios.mobileprovision" \
+            --file-mode 0600
+
+          APP_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
+          APP_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
+          cp "$RUNNER_TEMP/ios.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${APP_PROFILE_UUID}.mobileprovision"
+          echo "Installed app profile: $APP_PROFILE_NAME ($APP_PROFILE_UUID)"
+          echo "app_profile_name=$APP_PROFILE_NAME" >> "$GITHUB_OUTPUT"
+
+          # iOS App Store provisioning profile for ShareExtension (day.plot.app.ShareExtension)
+          op read "op://Production/Apple/Signing/ios-share-extension.mobileprovision" \
+            --out-file "$RUNNER_TEMP/ios-share-extension.mobileprovision" \
+            --file-mode 0600
+
+          EXT_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios-share-extension.mobileprovision")")
+          EXT_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios-share-extension.mobileprovision")")
+          cp "$RUNNER_TEMP/ios-share-extension.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${EXT_PROFILE_UUID}.mobileprovision"
+          echo "Installed extension profile: $EXT_PROFILE_NAME ($EXT_PROFILE_UUID)"
+          echo "ext_profile_name=$EXT_PROFILE_NAME" >> "$GITHUB_OUTPUT"
+
+          # Firebase config for iOS
+          op read "op://Production/Firebase Cloud Messaging/apple/GoogleService-Info.plist" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/ios/Runner/GoogleService-Info.plist" \
+            --file-mode 0600
+
+      - name: Import code signing certificates
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import Apple Distribution certificate
+          DIST_CERT_PATH="$RUNNER_TEMP/dist_cert.p12"
+          echo "$APPLE_DIST_CERT_BASE64" | base64 --decode > "$DIST_CERT_PATH"
+          security import "$DIST_CERT_PATH" -P "$APPLE_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm "$DIST_CERT_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning
+
+      - name: Configure manual signing for CI
+        env:
+          APP_PROFILE_NAME: ${{ steps.profiles.outputs.app_profile_name }}
+          EXT_PROFILE_NAME: ${{ steps.profiles.outputs.ext_profile_name }}
+        run: |
+          cd apps/plot/ios
+
+          PBXPROJ="Runner.xcodeproj/project.pbxproj"
+
+          # Switch from automatic to manual signing for all targets
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBXPROJ"
+
+          # Set distribution signing identity for all targets
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer"/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution"/g' "$PBXPROJ"
+
+          # Add provisioning profile specifier for Runner target
+          python3 -c "
+          import re, sys
+          content = open('$PBXPROJ').read()
+          # Runner target: day.plot.app but not .ShareExtension or .RunnerTests
+          content = re.sub(
+              r'(PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app;(?!\.))',
+              r'\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$APP_PROFILE_NAME\";',
+              content
+          )
+          # ShareExtension target
+          content = content.replace(
+              'PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.ShareExtension;',
+              'PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.ShareExtension;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$EXT_PROFILE_NAME\";'
+          )
+          open('$PBXPROJ', 'w').write(content)
+          "
+
+          # Create ExportOptions.plist for app-store distribution
+          /usr/libexec/PlistBuddy -c "Clear dict" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :method string app-store" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :teamID string 789MAH2W6P" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:day.plot.app string $APP_PROFILE_NAME" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:day.plot.app.ShareExtension string $EXT_PROFILE_NAME" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :uploadSymbols bool true" ExportOptions.plist
+
+          echo "Manual signing configured. ExportOptions.plist created."
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Install Shorebird
+        run: |
+          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
+          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+
+      - name: Build iOS app (Shorebird release)
+        run: |
+          cd apps/plot
+          shorebird release ios -- --export-options-plist=ios/ExportOptions.plist
+
+      - name: Upload to App Store Connect
+        run: |
+          IPA_PATH=$(find apps/plot/build/ios/ipa -name "*.ipa" -print -quit 2>/dev/null)
+          if [ -z "$IPA_PATH" ]; then
+            echo "ERROR: No IPA file found in apps/plot/build/ios/ipa/"
+            exit 1
+          fi
+
+          echo "Uploading $IPA_PATH..."
+          xcrun altool --upload-app \
+            --type ios \
+            -f "$IPA_PATH" \
+            --apiKey "$ASC_API_KEY_ID" \
+            --apiIssuer "$ASC_API_ISSUER_ID"
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-${{ needs.bump-version.outputs.new_version }}
+          path: apps/plot/build/ios/ipa/*.ipa
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          {
+            echo "## iOS Release Complete"
+            echo ""
+            echo "**Version:** ${{ needs.bump-version.outputs.new_version }}"
+            echo "**Uploaded to:** App Store Connect (TestFlight)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release-android:
+    needs: bump-version
+    if: inputs.android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.commit_sha }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          ANDROID_KEYSTORE_PASSWORD: op://Production/Android Signing/keystore_password
+          ANDROID_KEY_PASSWORD: op://Production/Android Signing/key_password
+
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Fetch signing files from 1Password
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          # Android signing keystore
+          op read "op://Production/Android Signing/plot-release.jks" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/plot-release.jks" \
+            --file-mode 0600
+
+          # Google Play API service key
+          mkdir -p "$GITHUB_WORKSPACE/apps/plot/android"
+          op read "op://Production/Android Signing/Play Store/play-deployer-service-key.json" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/android/play-deployer-service-key.json" \
+            --file-mode 0600
+
+      - name: Create key.properties
+        run: |
+          cat > apps/plot/android/key.properties << EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=plot-release
+          storeFile=../plot-release.jks
+          EOF
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Install Shorebird
+        run: |
+          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
+          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+
+      - name: Build Android app (Shorebird release)
+        run: |
+          cd apps/plot
+          shorebird release android
+
+      - name: Install fastlane
+        run: |
+          sudo gem install fastlane --no-document
+
+      - name: Upload to Google Play (internal testing)
+        run: |
+          cd apps/plot/android
+          fastlane beta
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-${{ needs.bump-version.outputs.new_version }}
+          path: apps/plot/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          {
+            echo "## Android Release Complete"
+            echo ""
+            echo "**Version:** ${{ needs.bump-version.outputs.new_version }}"
+            echo "**Uploaded to:** Google Play (internal testing)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release-macos:
+    needs: bump-version
+    if: inputs.macos
+    runs-on: macos-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.commit_sha }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          APPLE_DIST_CERT_BASE64: op://Production/Apple/Signing/distribution p12
+          APPLE_DIST_CERT_PASSWORD: op://Production/Apple/Signing/distribution password
+          APPLE_INSTALLER_CERT_BASE64: op://Production/Apple/Signing/installer p12
+          APPLE_INSTALLER_CERT_PASSWORD: op://Production/Apple/Signing/installer password
+
+          ASC_API_KEY_ID: op://Production/Apple/App Store Connect/key id
+          ASC_API_ISSUER_ID: op://Production/Apple/App Store Connect/issuer id
+
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Fetch signing files from 1Password
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          # App Store Connect API key
+          mkdir -p ~/.appstoreconnect/private_keys
+          op read "op://Production/Apple/App Store Connect/key.p8" \
+            --out-file "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
+            --file-mode 0600
+
+          # Distribution provisioning profile
+          op read "op://Production/Apple/Signing/macos.provisionprofile" \
+            --out-file "$RUNNER_TEMP/macos.provisionprofile" \
+            --file-mode 0600
+
+      - name: Import code signing certificates
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import Apple Distribution certificate
+          DIST_CERT_PATH="$RUNNER_TEMP/dist_cert.p12"
+          echo "$APPLE_DIST_CERT_BASE64" | base64 --decode > "$DIST_CERT_PATH"
+          security import "$DIST_CERT_PATH" -P "$APPLE_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm "$DIST_CERT_PATH"
+
+          # Import Mac Installer Distribution certificate
+          INSTALLER_CERT_PATH="$RUNNER_TEMP/installer_cert.p12"
+          echo "$APPLE_INSTALLER_CERT_BASE64" | base64 --decode > "$INSTALLER_CERT_PATH"
+          security import "$INSTALLER_CERT_PATH" -P "$APPLE_INSTALLER_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm "$INSTALLER_CERT_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Install Shorebird
+        run: |
+          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
+          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+
+      - name: Build macOS app (Shorebird release)
+        run: |
+          cd apps/plot
+          shorebird release macos
+
+      - name: Sign for App Store and create package
+        run: |
+          cd apps/plot
+          BUILD_DIR="build/macos/Build/Products/Release"
+          APP_PATH="${BUILD_DIR}/Plot.app"
+          PKG_PATH="${BUILD_DIR}/Plot.pkg"
+          APP_CERT="Apple Distribution: Plot Technologies Inc. (789MAH2W6P)"
+          INSTALLER_CERT="3rd Party Mac Developer Installer: Plot Technologies Inc. (789MAH2W6P)"
+          ENTITLEMENTS="macos/Runner/Release.entitlements"
+
+          # Embed distribution provisioning profile
+          cp "$RUNNER_TEMP/macos.provisionprofile" "${APP_PATH}/Contents/embedded.provisionprofile"
+
+          # Create processed entitlements with variables expanded
+          PROCESSED_ENTITLEMENTS="$RUNNER_TEMP/release-entitlements.plist"
+          sed "s/\$(AppIdentifierPrefix)/789MAH2W6P./" "${ENTITLEMENTS}" > "${PROCESSED_ENTITLEMENTS}"
+
+          # Add com.apple.application-identifier (Xcode injects this, needed for TestFlight)
+          /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string 789MAH2W6P.day.plot.app" "${PROCESSED_ENTITLEMENTS}" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :com.apple.application-identifier 789MAH2W6P.day.plot.app" "${PROCESSED_ENTITLEMENTS}"
+
+          # Re-sign all nested frameworks and dylibs
+          find "${APP_PATH}/Contents/Frameworks" \( -name "*.dylib" -o -name "*.framework" \) -print0 | while IFS= read -r -d '' file; do
+            codesign --force --sign "${APP_CERT}" --timestamp "$file" 2>/dev/null || true
+          done
+
+          # Re-sign the main app bundle with entitlements
+          codesign --force --sign "${APP_CERT}" \
+            --entitlements "${PROCESSED_ENTITLEMENTS}" \
+            --timestamp \
+            --options runtime \
+            "${APP_PATH}"
+
+          codesign --verify --verbose "${APP_PATH}"
+
+          # Create installer package
+          productbuild \
+            --sign "${INSTALLER_CERT}" \
+            --component "${APP_PATH}" /Applications \
+            "${PKG_PATH}"
+
+          echo "PKG_PATH=${PKG_PATH}" >> "$GITHUB_ENV"
+          echo "Package created: ${PKG_PATH}"
+
+      - name: Upload to App Store Connect
+        run: |
+          xcrun altool --upload-app \
+            --type macos \
+            -f "$PKG_PATH" \
+            --apiKey "$ASC_API_KEY_ID" \
+            --apiIssuer "$ASC_API_ISSUER_ID"
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build-${{ needs.bump-version.outputs.new_version }}
+          path: ${{ env.PKG_PATH }}
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          {
+            echo "## macOS Release Complete"
+            echo ""
+            echo "**Version:** ${{ needs.bump-version.outputs.new_version }}"
+            echo "**Uploaded to:** App Store Connect"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release-windows:
+    needs: bump-version
+    if: inputs.windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Detect branch and set prerelease flag
+        id: branch-detect
+        shell: bash
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+          if [[ "$BRANCH_NAME" == "main" ]]; then
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        shell: bash
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.commit_sha }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          SUPABASE_URL: op://Production/Supabase/API/url
+          SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
+          POSTHOG_HOST: op://Production/PostHog/hostname
+          POSTHOG_PROJECT: op://Production/PostHog/username
+          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
+          POSTHOG_API_KEY: op://Production/PostHog/credential
+          GOOGLE_URL: op://Production/Google OAuth/url
+          GOOGLE_CLIENT_ID: op://Production/Google OAuth/username
+          GOOGLE_IOS_CLIENT_ID: op://Production/Google OAuth/iOS/client ID
+          GOOGLE_ANDROID_CLIENT_ID: op://Production/Google OAuth/Android/client ID
+          MICROSOFT_CLIENT_ID: op://Production/Microsoft OAuth/username
+
+          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
+          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
+          R2_ACCESS_KEY_ID: op://Production/cloudflare/build uploads/r2 access key id
+          R2_SECRET_ACCESS_KEY: op://Production/cloudflare/build uploads/r2 secret access key
+          R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
+
+          WINDOWS_CERT_PASSWORD: op://Production/Windows Signing/password
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Update MSIX version in pubspec.yaml
+        shell: bash
+        run: |
+          cd apps/plot
+          VERSION_NAME="${{ needs.bump-version.outputs.version_name }}"
+          BUILD_NUMBER="${{ needs.bump-version.outputs.build_number }}"
+
+          # Convert semantic version to 4-part MSIX version (e.g., 1.0.0 -> 1.0.0.BUILD_NUMBER)
+          IFS='.' read -ra VERSION_PARTS <<< "$VERSION_NAME"
+          MAJOR="${VERSION_PARTS[0]}"
+          MINOR="${VERSION_PARTS[1]}"
+          PATCH="${VERSION_PARTS[2]}"
+          MSIX_VERSION="${MAJOR}.${MINOR}.${PATCH}.${BUILD_NUMBER}"
+
+          sed -i "s/msix_version: .*/msix_version: $MSIX_VERSION/" pubspec.yaml
+          echo "Updated MSIX version to $MSIX_VERSION (local only, not committed)"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
+
+      - name: Create production .env file
+        shell: bash
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\Pub\Cache
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps\plot\.dart_tool\build
+            apps\plot\**\*.g.dart
+            apps\plot\**\*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Install Shorebird
+        shell: bash
+        run: |
+          powershell -Command "& {iwr -UseBasicParsing 'https://raw.githubusercontent.com/shorebirdtech/install/main/install.ps1' | iex}"
+          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+
+      - name: Build Windows app (Shorebird release)
+        shell: bash
+        run: |
+          cd apps/plot
+          shorebird release windows --verbose
+
+      - name: Build MSIX files
+        shell: bash
+        run: |
+          cd apps/plot
+          flutter pub run msix:build --certificate-password "$WINDOWS_CERT_PASSWORD"
+
+      - name: Patch MSIX manifest background color
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+          sed -i 's/BackgroundColor="transparent"/BackgroundColor="#01845e"/' AppxManifest.xml
+
+      - name: Pack and sign MSIX package
+        shell: bash
+        run: |
+          cd apps/plot
+          flutter pub run msix:pack --certificate-password "$WINDOWS_CERT_PASSWORD"
+
+      - name: Create portable ZIP archive
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+          7z a "Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip" ./*
+          ls -lh "Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip"
+
+      - name: Rename MSIX with version
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+          mv "plot.msix" "Plot-${{ needs.bump-version.outputs.new_version }}.msix"
+
+      - name: Upload files to R2
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          export AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID
+          export AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY
+          export AWS_DEFAULT_REGION=auto
+
+          R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          BUCKET="s3://${R2_BUCKET_NAME}"
+          VERSION="${{ needs.bump-version.outputs.new_version }}"
+          MSIX_FILE="Plot-${VERSION}.msix"
+          ZIP_FILE="Plot-${VERSION}-portable.zip"
+
+          aws s3 cp "$MSIX_FILE" "${BUCKET}/releases/${VERSION}/windows/${MSIX_FILE}" \
+            --endpoint-url "$R2_ENDPOINT"
+
+          aws s3 cp "$MSIX_FILE" "${BUCKET}/windows" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/vnd.ms-appx" \
+            --content-disposition "attachment; filename=\"Plot.msix\""
+
+          aws s3 cp "$ZIP_FILE" "${BUCKET}/releases/${VERSION}/windows/${ZIP_FILE}" \
+            --endpoint-url "$R2_ENDPOINT"
+
+          aws s3 cp "$ZIP_FILE" "${BUCKET}/windows-portable" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/zip" \
+            --content-disposition "attachment; filename=\"Plot-portable.zip\""
+
+      - name: Create and upload version manifest
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          MSIX_FILE="Plot-${{ needs.bump-version.outputs.new_version }}.msix"
+          ZIP_FILE="Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip"
+
+          MSIX_SIZE=$(stat -c%s "$MSIX_FILE" 2>/dev/null || stat -f%z "$MSIX_FILE")
+          MSIX_HASH=$(sha256sum "$MSIX_FILE" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$MSIX_FILE" | awk '{print $1}')
+
+          ZIP_SIZE=$(stat -c%s "$ZIP_FILE" 2>/dev/null || stat -f%z "$ZIP_FILE")
+          ZIP_HASH=$(sha256sum "$ZIP_FILE" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$ZIP_FILE" | awk '{print $1}')
+
+          cat > latest-windows.json << EOF
+          {
+            "version": "${{ needs.bump-version.outputs.new_version }}",
+            "versionName": "${{ needs.bump-version.outputs.version_name }}",
+            "buildNumber": ${{ needs.bump-version.outputs.build_number }},
+            "platform": "windows",
+            "msix": {
+              "url": "https://download.plot.day/releases/${{ needs.bump-version.outputs.new_version }}/windows/$MSIX_FILE",
+              "size": $MSIX_SIZE,
+              "sha256": "$MSIX_HASH"
+            },
+            "portable": {
+              "url": "https://download.plot.day/releases/${{ needs.bump-version.outputs.new_version }}/windows/$ZIP_FILE",
+              "size": $ZIP_SIZE,
+              "sha256": "$ZIP_HASH"
+            },
+            "releaseDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "minWindowsVersion": "10.0.17763.0"
+          }
+          EOF
+
+          cat latest-windows.json
+
+          export AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID
+          export AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY
+          export AWS_DEFAULT_REGION=auto
+
+          R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          aws s3 cp latest-windows.json "s3://${R2_BUCKET_NAME}/latest-windows.json" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/json"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-${{ needs.bump-version.outputs.new_version }}
+          path: |
+            apps/plot/build/windows/x64/runner/Release/Plot-${{ needs.bump-version.outputs.new_version }}.msix
+            apps/plot/build/windows/x64/runner/Release/Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip
+            apps/plot/build/windows/x64/runner/Release/latest-windows.json
+          retention-days: 30
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+
+          MSIX_FILE="Plot-${{ needs.bump-version.outputs.new_version }}.msix"
+          ZIP_FILE="Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip"
+          TAG_NAME="windows@${{ needs.bump-version.outputs.new_version }}"
+          RELEASE_TITLE="Plot Windows ${{ needs.bump-version.outputs.new_version }}"
+
+          MSIX_SIZE=$(cat latest-windows.json | grep -A 3 '"msix"' | grep '"size"' | sed 's/.*: \([0-9]*\).*/\1/')
+          MSIX_HASH=$(cat latest-windows.json | grep -A 3 '"msix"' | grep '"sha256"' | sed 's/.*: "\(.*\)".*/\1/')
+          ZIP_SIZE=$(cat latest-windows.json | grep -A 3 '"portable"' | grep '"size"' | sed 's/.*: \([0-9]*\).*/\1/')
+          ZIP_HASH=$(cat latest-windows.json | grep -A 3 '"portable"' | grep '"sha256"' | sed 's/.*: "\(.*\)".*/\1/')
+          RELEASE_DATE=$(cat latest-windows.json | grep '"releaseDate"' | sed 's/.*: "\(.*\)".*/\1/')
+
+          cat > release-notes.md << EOF
+          ## Plot Windows ${{ needs.bump-version.outputs.new_version }}
+
+          **Version:** ${{ needs.bump-version.outputs.version_name }}
+          **Build Number:** ${{ needs.bump-version.outputs.build_number }}
+          **Platform:** Windows
+          **Release Date:** ${RELEASE_DATE}
+
+          ### Download
+
+          #### MSIX Installer (Recommended)
+          - **File**: [Plot-${{ needs.bump-version.outputs.new_version }}.msix](https://download.plot.day/releases/${{ needs.bump-version.outputs.new_version }}/windows/Plot-${{ needs.bump-version.outputs.new_version }}.msix)
+          - **Size**: ${MSIX_SIZE} bytes
+          - **SHA256**: \`${MSIX_HASH}\`
+
+          #### Portable ZIP
+          - **File**: [Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip](https://download.plot.day/releases/${{ needs.bump-version.outputs.new_version }}/windows/Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip)
+          - **Size**: ${ZIP_SIZE} bytes
+          - **SHA256**: \`${ZIP_HASH}\`
+
+          ### Requirements
+
+          - **Minimum Windows Version:** Windows 10 version 1809 (build 17763) or later
+
+          ### Installation
+
+          **MSIX Package**: Double-click the .msix file to install.
+
+          **Portable ZIP**: Extract the ZIP file and run \`plot.exe\`.
+
+          ### Auto-Update
+
+          For auto-update systems, see the [manifest JSON](https://download.plot.day/latest-windows.json).
+          EOF
+
+          PRERELEASE_FLAG=""
+          if [[ "${{ steps.branch-detect.outputs.is_prerelease }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          else
+            PRERELEASE_FLAG="--latest"
+          fi
+
+          gh release create "$TAG_NAME" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release-notes.md \
+            $PRERELEASE_FLAG \
+            "$MSIX_FILE" \
+            "$ZIP_FILE"
+
+      - name: Build summary
+        shell: bash
+        run: |
+          {
+            echo "## Windows Release Complete"
+            echo ""
+            echo "**Version:** ${{ needs.bump-version.outputs.new_version }}"
+            echo ""
+            echo "### Stable URLs"
+            echo "- MSIX: https://download.plot.day/windows"
+            echo "- Portable ZIP: https://download.plot.day/windows-portable"
+            echo "- Manifest: https://download.plot.day/latest-windows.json"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -8,7 +8,7 @@ on:
       - "apps/plot/**"
       - ".env"
       - ".env.production"
-      - ".github/workflows/build-*.yml"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 concurrency:
