@@ -255,6 +255,15 @@ Internal catalog of product features for marketing content generation. Direct an
 - Full-text search (FTS5-based)
 - Data portability via standard APIs
 
+## Subscription Management
+
+- Three plans: Free, Pro, Business
+- Connection-based pricing (no per-seat fees)
+- Monthly and annual billing options (20% annual discount)
+- Stripe Checkout integration for secure payments
+- Stripe Customer Portal for self-service subscription management
+- Business plan scales per 50 connections
+
 ## Performance & Scalability
 
 ### Optimization

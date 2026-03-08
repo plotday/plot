@@ -119,8 +119,11 @@ async function handleSubscriptionUpdate(
   const { start, end } = getBillingCycleDates(subscription);
   const status = mapStripeStatus(subscription.status);
 
-  // Determine plan from subscription metadata or price
-  const plan = subscription.metadata.plan as any;
+  // Determine plan from subscription metadata, validated against known values
+  const validPlans = ["free", "pro", "business"];
+  const plan = validPlans.includes(subscription.metadata.plan)
+    ? (subscription.metadata.plan as "free" | "pro" | "business")
+    : "free";
 
   // Update user_subscription record
   try {

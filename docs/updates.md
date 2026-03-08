@@ -1,3 +1,5 @@
+- New pricing page with three plans (Free, Pro, Business) and monthly/annual billing toggle
+- Subscribe and manage your subscription directly from plot.day
 ---
 - RSVP to events and join video calls — respond to calendar events directly in Plot and tap to join video meetings
 - Ask Plot questions about your notes and links — @mention Plot in any thread and it'll search your content and answer using AI

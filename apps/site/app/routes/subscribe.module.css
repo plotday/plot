@@ -1,0 +1,102 @@
+.toggleWrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+}
+
+.currentPlan {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-md);
+  padding: var(--mantine-spacing-lg);
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-md);
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.planGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-lg);
+
+  @media (min-width: $mantine-breakpoint-sm) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (min-width: $mantine-breakpoint-md) {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 700px;
+    margin: 0 auto;
+  }
+}
+
+.planCard {
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-xl);
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.planCardHighlight {
+  composes: planCard;
+  border-color: var(--mantine-color-brand-4);
+  border-width: 2px;
+  background-color: light-dark(
+    var(--mantine-color-brand-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.planName {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 700;
+  font-size: rem(20px);
+}
+
+.planPrice {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 900;
+  font-size: rem(42px);
+  line-height: 1;
+}
+
+.priceBox {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--mantine-spacing-xs);
+}
+
+.planPricePeriod {
+  font-size: rem(14px);
+  font-weight: 500;
+  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-5));
+}
+
+.priceUnit {
+  font-size: rem(12px);
+  color: light-dark(var(--mantine-color-gray-5), var(--mantine-color-gray-6));
+}
+
+.featureList {
+  flex: 1;
+}
+
+.featureItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-xs);
+  font-size: rem(14px);
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  line-height: 1.5;
+}

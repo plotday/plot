@@ -1,4 +1,16 @@
-import { Box, Button, Container, Stack, Text, Title } from "@mantine/core";
+import { useState } from "react";
+
+import {
+  Accordion,
+  Badge,
+  Box,
+  Button,
+  Container,
+  SegmentedControl,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 
 import { IconCheck } from "@tabler/icons-react";
 import { Link } from "react-router";
@@ -6,105 +18,130 @@ import { Link } from "react-router";
 import type { Route } from "./+types/pricing";
 import classes from "./pricing.module.css";
 
+type Billing = "monthly" | "annual";
+
+const PRICES = {
+  pro: { monthly: 25, annual: 20 },
+  business: { monthly: 124, annual: 99 },
+} as const;
+
 const PLANS = [
   {
-    name: "Free Forever",
-    price: "$0",
+    key: "free",
+    name: "Free",
+    price: () => "$0",
+    priceNote: "Free forever",
     period: "",
-    description: "Unlimited collaboration for any team",
+    description:
+      "Up to 3 connections. Make progress with unlimited collaborators.",
     features: [
-      "Unlimited people",
-      "Unlimited conversations",
-      "Unlimited priorities",
+      "Up to 3 connections",
+      "1 custom twist",
+      "All core features for team collaboration",
+      "Unlimited collaborators",
+      "Full history of all your work",
     ],
     cta: "Get started",
+    ctaLink: () => "/start",
     ctaVariant: "outline" as const,
     highlight: false,
+    badge: null,
+    unit: null,
   },
   {
+    key: "pro",
     name: "Pro",
-    price: "$12",
-    period: "/month",
-    description: "For individual productivity",
+    price: (billing: Billing) => `$${PRICES.pro[billing]}`,
+    priceNote: null,
+    period: "/mo",
+    description: "Unlimited connections. Bring all your tools into one place.",
     features: [
-      "Everything in Free",
-      "Access to all twists",
-      "Individual twist use only",
+      "Unlimited connections",
+      "Unlimited twists (AI usage may apply)",
+      "All core features for team collaboration",
+      "Unlimited collaborators",
+      "Full history of all your work",
+      "Automated organization and prioritization (coming soon)",
     ],
-    cta: "Start free trial",
+    cta: "Get started",
+    ctaLink: (billing: Billing) => `/subscribe?plan=pro&billing=${billing}`,
     ctaVariant: "filled" as const,
-    highlight: false,
-  },
-  {
-    name: "Team",
-    price: "$79",
-    period: "/month",
-    description: "For core teams of up 10 people",
-    features: [
-      "Everything in Pro",
-      "Up to 10 twist users",
-      "Shared twists allowing 2-way sync with team apps like Notion, Figma, and Linear",
-    ],
-    cta: "Start free trial",
-    ctaVariant: "gradient" as const,
     highlight: true,
+    badge: null,
+    unit: null,
   },
   {
+    key: "business",
     name: "Business",
-    price: "$199",
-    period: "/month",
-    description: "For organizations of up to 30 people",
+    price: (billing: Billing) => `$${PRICES.business[billing]}`,
+    priceNote: null,
+    period: "/mo",
+    description:
+      "Connections shared across your organization. Add more in groups of 50 as you grow — no per-seat fees, ever.",
     features: [
-      "Everything in Team",
-      "Up to 30 twist users",
-      "Priority support",
+      "50+ connections shared across your org",
+      "Unlimited twists (AI usage may apply)",
+      "All core features for team collaboration",
+      "Unlimited team members",
+      "Full history of all your work",
+      "Automated organization and prioritization (coming soon)",
+      "Organization-level controls (coming soon)",
     ],
-    cta: "Start free trial",
+    cta: "Get started",
+    ctaLink: (billing: Billing) =>
+      `/subscribe?plan=business&billing=${billing}`,
     ctaVariant: "filled" as const,
     highlight: false,
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For large organizations",
-    features: [
-      "Everything in Business",
-      "Cover all your organization's people and use cases",
-      "Dedicated support",
-      "Custom integrations",
-    ],
-    cta: "Contact us",
-    ctaVariant: "outline" as const,
-    highlight: false,
+    badge: null,
+    unit: "per 50 connections",
   },
 ];
 
 const FAQS = [
   {
-    question: "What is a twist?",
+    question: "Why no per-seat pricing?",
     answer:
-      "Twists are integrations and automations that bring your work from other apps into Plot. They can sync your calendar, emails, project management tools, and more—automatically organized and prioritized.",
+      "Per-seat pricing penalizes collaboration — it makes you think twice about adding a teammate. Plot is built around the idea that everyone involved should be working together, so we never charge per person. You pay for connections, which reflect the actual complexity of your business.",
   },
   {
-    question: "What does 'twist users' mean?",
+    question: "What counts as a connection?",
     answer:
-      "Twist users are people in your workspace who can use twist features. Everyone can collaborate in Plot for free, but only twist users get access to synced data from integrations.",
+      "A connection is one account linked to Plot via OAuth — for example, one Slack user in one workspace, one Google Calendar account, or one Linear account. Each sign-in counts as one connection, and you get access to everything within that account (all calendars, all projects, all channels). If two people on your team each connect their own Slack account, that's two connections.",
   },
   {
-    question: "How does the free trial work?",
+    question: "What happens if I hit my connection limit?",
     answer:
-      "All paid plans include a 30-day free trial. You can try any plan with full features, no credit card required. Downgrade to Free at any time if you don't need twists.",
+      "On the Free plan, you'll be prompted to upgrade to Pro or remove an existing connection. On Business plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle.",
   },
   {
-    question: "What is pay-what-you-want pricing?",
+    question: "Can I try Plot before committing to a paid plan?",
     answer:
-      "During our early access period, we're offering pay-what-you-want pricing. Use the suggested prices as a guide, but pay based on the value you receive. This helps us learn what Plot is worth to different teams.",
+      "Yes. Start with the Free plan — it includes unlimited collaborators and full history, so you (or your team) can experience Plot together. When you're ready for more connections or twists, upgrade anytime.",
   },
   {
-    question: "Can I switch plans later?",
+    question: "What's a twist?",
     answer:
-      "Yes, you can upgrade or downgrade your plan at any time. If you upgrade, you'll be credited for the remaining time on your current plan. If you downgrade, the change takes effect at the end of your billing period.",
+      "Twists are optional extensions that add capabilities to Plot — automations, AI agents, and custom workflows. Install twists published by others, or build your own. All twists run securely within Plot. Twists that use AI incur token costs, billed at cost or covered by your own API keys.",
+  },
+  {
+    question: "How does AI pricing work?",
+    answer:
+      "Plot's upcoming core AI features (like automated organization and prioritization) are included in paid plans at no extra cost. When you install twists that use AI, you pay for the tokens consumed — at cost, with no markup. You can also bring your own API keys and pay your provider directly. We show full usage breakdowns per model and per twist, and you can set budgets so there are never surprises. Plot never profits from your AI usage.",
+  },
+  {
+    question: "How do I add more connections on a Business plan?",
+    answer:
+      "Connections are added in groups of 50. You can add more at any time from your account settings. On annual plans, additional groups are prorated for the remainder of your billing cycle. The price updates dynamically so you can see the cost before confirming.",
+  },
+  {
+    question: "Do annual plans auto-renew?",
+    answer:
+      "Yes. Annual plans renew automatically. You can cancel anytime before renewal, and you'll keep access through the end of your billing period.",
+  },
+  {
+    question: "Is there an enterprise plan?",
+    answer:
+      "Not yet, but it's on our roadmap. If you need SSO, advanced security controls, or custom terms, reach out and we'll work with you.",
   },
 ];
 
@@ -114,52 +151,83 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Simple, transparent pricing. Free unlimited collaboration. Paid plans for twists and integrations.",
+        "Simple pricing with no per-seat fees. Free for individuals, Pro for power users, Business for teams.",
     },
     { "og:title": "Plot Pricing" },
     {
       "og:description":
-        "Simple, transparent pricing for prioritized team collaboration.",
+        "Simple pricing. No per-seat fees. Unlimited collaboration.",
     },
     { "og:image": "https://plot.day/assets/p.png" },
     { "twitter:title": "Plot Pricing" },
     {
       "twitter:description":
-        "Simple, transparent pricing for prioritized team collaboration.",
+        "Simple pricing. No per-seat fees. Unlimited collaboration.",
     },
     { "twitter:image": "https://plot.day/assets/p.png" },
   ];
 }
 
 export default function Pricing() {
+  const [billing, setBilling] = useState<Billing>("annual");
+
   return (
     <Stack gap={0}>
       {/* Hero */}
-      <Box className={classes.heroSection} pt={60} pb={60}>
+      <Box className={classes.heroSection} pt={60} pb={40}>
         <Container size="lg">
           <Stack align="center" gap="lg" ta="center">
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Free to collaborate
+                Simple pricing.
                 <br />
-                Value-based pricing
+                No per-seat fees.
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Unlimited collaboration is free forever. Add twists to supercharge
-              your productivity with integrations and automations.
+              Your whole team collaborates free. You only pay for the
+              connections that bring your work together.
             </Text>
+          </Stack>
+        </Container>
+      </Box>
+
+      {/* Billing Toggle */}
+      <Box className={classes.heroSection} pb={40}>
+        <Container size="lg">
+          <Stack align="center" gap="xs">
+            <Box className={classes.toggleWrapper}>
+              <SegmentedControl
+                value={billing}
+                onChange={(v) => setBilling(v as Billing)}
+                data={[
+                  { label: "Monthly", value: "monthly" },
+                  { label: "Annual", value: "annual" },
+                ]}
+                size="md"
+              />
+              {billing === "annual" && (
+                <Badge
+                  variant="light"
+                  color="green"
+                  size="sm"
+                  className={classes.saveBadge}
+                >
+                  Save 20%
+                </Badge>
+              )}
+            </Box>
           </Stack>
         </Container>
       </Box>
 
       {/* Pricing Cards */}
       <Box className={classes.graySection} pt={40} pb={80}>
-        <Container size="xl">
+        <Container size="lg">
           <Box className={classes.pricingGrid}>
             {PLANS.map((plan) => (
               <Stack
-                key={plan.name}
+                key={plan.key}
                 className={
                   plan.highlight
                     ? classes.pricingCardHighlight
@@ -167,16 +235,34 @@ export default function Pricing() {
                 }
                 gap="md"
               >
-                {plan.highlight && false && (
-                  <Box className={classes.popularBadge}>Most Popular</Box>
+                {plan.badge && (
+                  <Box className={classes.popularBadge}>{plan.badge}</Box>
                 )}
                 <Text className={classes.planName}>{plan.name}</Text>
                 <Box className={classes.priceBox}>
-                  <Text className={classes.price}>{plan.price}</Text>
+                  <Text className={classes.price}>
+                    {typeof plan.price === "function"
+                      ? plan.price(billing)
+                      : plan.price}
+                  </Text>
                   {plan.period && (
-                    <Text className={classes.pricePeriod}>{plan.period}</Text>
+                    <Text className={classes.pricePeriod}>
+                      {plan.period}
+                      {plan.unit && (
+                        <>
+                          <br />
+                          <span className={classes.priceUnit}>{plan.unit}</span>
+                        </>
+                      )}
+                    </Text>
                   )}
                 </Box>
+                {plan.priceNote && (
+                  <Text className={classes.annualNote}>{plan.priceNote}</Text>
+                )}
+                {billing === "annual" && plan.key !== "free" && (
+                  <Text className={classes.annualNote}>Billed annually</Text>
+                )}
                 <Text className={classes.planDescription}>
                   {plan.description}
                 </Text>
@@ -196,7 +282,7 @@ export default function Pricing() {
                   variant={plan.ctaVariant}
                   fullWidth
                   component={Link}
-                  to="/start"
+                  to={plan.ctaLink(billing)}
                 >
                   {plan.cta}
                 </Button>
@@ -206,32 +292,79 @@ export default function Pricing() {
         </Container>
       </Box>
 
-      {/* Pay What You Want Banner */}
+      {/* What's a connection? */}
       <Box className={classes.whiteSection} pt={60} pb={60}>
         <Container size="md">
-          <Stack
-            className={classes.payWhatYouWantBanner}
-            gap="md"
-            align="center"
-            ta="center"
-          >
-            <Title order={3} className={classes.bannerTitle}>
-              Early Access: Pay For Value
+          <Stack gap="lg">
+            <Title order={2} size="h3" className={classes.sectionTitle}>
+              What's a connection?
             </Title>
-            <Text className={classes.bannerText}>
-              While we grow the breadth and depth of twists, you can set your
-              price for all paid plans based on the value you receive. We're
-              confident we'll earn and grow your busienss. All paid plans
-              include a 30-day free trial with no credit card required.
+            <Text className={classes.sectionBody}>
+              A connection is a link between Plot and one account in an external
+              service. Each connected user in a service counts as one
+              connection, and each connection gives you access to everything in
+              that account (e.g. all your calendars from one Google account, all
+              your projects in Linear, all your channels in a Slack workspace).
             </Text>
-            <Button
-              variant="gradient"
-              size="lg"
-              component={Link}
-              to="/start"
-            >
-              Start your free trial
-            </Button>
+            <Box className={classes.connectionDiagram}>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Your Slack account</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">1 connection</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Your work Google Calendar</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">1 connection</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Your personal Google Calendar</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">1 connection</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>5 people using Linear and Plot</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">5 connections</Text>
+              </Box>
+              <Box className={classes.connectionTotal}>
+                <Text fw={700}>Total: 8 connections</Text>
+              </Box>
+            </Box>
+            <Text className={classes.sectionBody}>
+              Most individuals use 5–10 connections. A team of 10 typically
+              needs fewer than 50.
+            </Text>
+          </Stack>
+        </Container>
+      </Box>
+
+      {/* What's a twist? */}
+      <Box className={classes.graySection} pt={60} pb={60}>
+        <Container size="md">
+          <Stack gap="lg">
+            <Title order={2} size="h3" className={classes.sectionTitle}>
+              What's a twist?
+            </Title>
+            <Text className={classes.sectionBody}>
+              Twists are extensions that add new capabilities to Plot —
+              automations, agents, and custom workflows that make Plot work the
+              way your business works. Install twists published by others, or
+              build your own.
+            </Text>
+            <Text className={classes.sectionBody} fw={700}>
+              All twists are hosted and run securely within Plot.
+            </Text>
+            <Text className={classes.sectionBody}>
+              Some twists use AI to do their work. When they do, AI usage is
+              billed at cost — no markup, no margin. You can also bring your own
+              API keys and pay your provider directly. Set budgets to stay in
+              control.
+            </Text>
+            <Text className={classes.sectionBody}>
+              Plot never profits from your AI usage, so we'll never push you to
+              use more.
+            </Text>
           </Stack>
         </Container>
       </Box>
@@ -248,14 +381,18 @@ export default function Pricing() {
             >
               Frequently asked questions
             </Title>
-            <Stack gap={0}>
+            <Accordion variant="separated">
               {FAQS.map((faq) => (
-                <Box key={faq.question} className={classes.faqItem}>
-                  <Text className={classes.faqQuestion}>{faq.question}</Text>
-                  <Text className={classes.faqAnswer}>{faq.answer}</Text>
-                </Box>
+                <Accordion.Item key={faq.question} value={faq.question}>
+                  <Accordion.Control className={classes.faqQuestion}>
+                    {faq.question}
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Text className={classes.faqAnswer}>{faq.answer}</Text>
+                  </Accordion.Panel>
+                </Accordion.Item>
               ))}
-            </Stack>
+            </Accordion>
           </Stack>
         </Container>
       </Box>
@@ -264,20 +401,8 @@ export default function Pricing() {
       <Box className={classes.ctaSection} pt={80} pb={80}>
         <Container size="sm">
           <Stack gap="lg" align="center" ta="center">
-            <Title order={2} size="h2" className={classes.ctaTitle}>
-              Ready to prioritize progress?
-            </Title>
-            <Text c="rgba(255,255,255,0.85)" fz="lg">
-              Start free with unlimited collaboration, or try twists with a
-              30-day free trial.
-            </Text>
-            <Button
-              variant="white"
-              size="xl"
-              component={Link}
-              to="/start"
-            >
-              Get started free
+            <Button variant="white" size="xl" component={Link} to="/start">
+              Get started for free
             </Button>
           </Stack>
         </Container>

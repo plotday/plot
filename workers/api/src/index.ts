@@ -15,6 +15,7 @@ import authRoutes from "./app/authRoutes";
 import callbacks from "./app/callbacks";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import files from "./app/files";
+import subscribe from "./app/subscribe";
 import appSync from "./app/sync";
 import summary from "./app/summary";
 import updates from "./app/updates";
@@ -119,6 +120,7 @@ app.onError(async (err, c) => {
     "http://localhost:8788",
     "https://preview.plot.day",
     "https://app.plot.day",
+    "https://plot.day",
   ];
 
   if (origin && allowedOrigins.includes(origin)) {
@@ -150,6 +152,7 @@ appSection.route("/", callbacks);
 appSection.route("/", summary);
 appSection.route("/", updates);
 appSection.route("/", files);
+appSection.route("/", subscribe);
 // Note: /app/sync routes are mounted separately with appSyncRateLimiter.
 
 // App sync section - public sync endpoints (user-authenticated)

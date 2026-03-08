@@ -3256,7 +3256,7 @@ export type Database = {
     }
     Enums: {
       enter_behavior: "enter_newline" | "enter_submits"
-      subscription_plan: "free"
+      subscription_plan: "free" | "pro" | "business"
       subscription_status:
         | "active"
         | "canceled"
@@ -3939,7 +3939,7 @@ export const Constants = {
   public: {
     Enums: {
       enter_behavior: ["enter_newline", "enter_submits"],
-      subscription_plan: ["free"],
+      subscription_plan: ["free", "pro", "business"],
       subscription_status: [
         "active",
         "canceled",

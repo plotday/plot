@@ -20,6 +20,7 @@ export const corsMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = (
       "http://localhost:8788",
       "https://preview.plot.day",
       "https://app.plot.day",
+      "https://plot.day",
     ],
   })(c, next);
 };
