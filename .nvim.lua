@@ -6,6 +6,12 @@ require("flutter-tools").setup_project({
 		device = "macos",
 	},
 	{
+		name = "iOS",
+		target = "lib/main.dart",
+		cwd = "apps/plot",
+		device = "iphone",
+	},
+	{
 		name = "Android",
 		target = "lib/main.dart",
 		cwd = "apps/plot",

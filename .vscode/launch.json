@@ -48,6 +48,29 @@
       ],
       "cwd": "apps/plot",
       "flutterMode": "debug"
+    },
+    {
+      "name": "Plot iOS",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [
+        "-d",
+        "iphone"
+      ],
+      "cwd": "apps/plot"
+    },
+    {
+      "name": "Plot iOS debug",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [
+        "-d",
+        "iphone"
+      ],
+      "cwd": "apps/plot",
+      "flutterMode": "debug"
     }
   ]
 }
