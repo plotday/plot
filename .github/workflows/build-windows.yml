@@ -191,7 +191,8 @@ jobs:
           cd apps/plot
           if [ "${{ inputs.shorebird_release }}" == "true" ]; then
             powershell -Command "& {iwr -UseBasicParsing 'https://raw.githubusercontent.com/shorebirdtech/install/main/install.ps1' | iex}"
-            export PATH="$LOCALAPPDATA/Shorebird/bin:$PATH"
+            SHOREBIRD_PATH="$(cmd.exe //c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r')/Shorebird/bin"
+            export PATH="$SHOREBIRD_PATH:$PATH"
             shorebird release windows --verbose
           else
             flutter build windows --release --verbose
