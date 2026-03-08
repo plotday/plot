@@ -1,4 +1,8 @@
-- Share links to Plot from other apps — on iOS and Android, use the share sheet to send a link directly to Plot, which opens a new thread with the link pre-filled
+---
+- RSVP to events and join video calls — respond to calendar events directly in Plot and tap to join video meetings
 - Ask Plot questions about your notes and links — @mention Plot in any thread and it'll search your content and answer using AI
+- Private threads — mark a thread as private when creating it so only you can see it
+- View archived priorities — toggle to show archived priorities and their threads when you need to find old content
+- Share links to Plot from other apps — on iOS and Android, use the share sheet to send a link directly to Plot, which opens a new thread with the link pre-filled
 - Camera button on mobile: quickly snap a photo and attach it to a note directly from the editor
-- Notion integration: sync your Notion pages and comments into Plot with real-time webhook support
+---
