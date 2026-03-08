@@ -2,7 +2,7 @@ services:
   db:
     build: .
     ports:
-      - "54322:5432"
+      - "${DATABASE_PORT:-54322}:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -22,7 +22,7 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     ports:
-      - "54324:8025"
+      - "${MAILPIT_PORT:-54324}:8025"
     environment:
       MP_MAX_MESSAGES: 5000
       MP_DATABASE: /data/mailpit.db

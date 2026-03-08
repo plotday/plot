@@ -30,20 +30,22 @@ while lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do
   fi
 done
 
+# Find an available mailpit port starting from 54430
+MAILPIT_PORT=54430
+while lsof -iTCP:"$MAILPIT_PORT" -sTCP:LISTEN >/dev/null 2>&1; do
+  ((MAILPIT_PORT++))
+  if [[ $MAILPIT_PORT -gt 54499 ]]; then
+    echo "Error: No available mailpit ports in range 54430-54499"
+    exit 1
+  fi
+done
+
 echo "Using port $PORT for worktree database ($PROJECT_NAME)"
 
-# Create docker-compose.override.yml with the unique port
-# COMPOSE_PROJECT_NAME already namespaces the volumes, so only the port needs overriding
-cat > "$DB_DIR/docker-compose.override.yml" <<EOF
-services:
-  db:
-    ports:
-      - "${PORT}:5432"
-EOF
-
-# Start the container
+# Start the container with env vars for port mapping
 echo "Starting database container..."
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f "$DB_DIR/docker-compose.yml" -f "$DB_DIR/docker-compose.override.yml" up -d db
+DATABASE_PORT="$PORT" MAILPIT_PORT="$MAILPIT_PORT" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
+  docker compose -f "$DB_DIR/docker-compose.yml" up -d db
 
 # Wait for readiness
 echo "Waiting for PostgreSQL..."
@@ -76,6 +78,7 @@ DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${PORT}/postgres" \
 # Write marker file for cleanup
 cat > "$WORKTREE_DIR/.worktree-db" <<EOF
 PORT="$PORT"
+MAILPIT_PORT="$MAILPIT_PORT"
 PROJECT_NAME="$PROJECT_NAME"
 DB_DIR="$DB_DIR"
 EOF
