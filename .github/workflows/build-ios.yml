@@ -55,6 +55,7 @@ jobs:
           SHOREBIRD_TOKEN: op://Production/Shorebird/credential
 
       - name: Fetch signing files from 1Password
+        id: profiles
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
@@ -64,15 +65,29 @@ jobs:
             --out-file "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
             --file-mode 0600
 
-          # iOS distribution provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
+          # iOS App Store provisioning profile (day.plot.app)
           op read "op://Production/Apple/Signing/ios.mobileprovision" \
             --out-file "$RUNNER_TEMP/ios.mobileprovision" \
             --file-mode 0600
 
-          # Install provisioning profile
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
-          cp "$RUNNER_TEMP/ios.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
+          APP_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
+          APP_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
+          cp "$RUNNER_TEMP/ios.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${APP_PROFILE_UUID}.mobileprovision"
+          echo "Installed app profile: $APP_PROFILE_NAME ($APP_PROFILE_UUID)"
+          echo "app_profile_name=$APP_PROFILE_NAME" >> "$GITHUB_OUTPUT"
+
+          # iOS App Store provisioning profile for ShareExtension (day.plot.app.ShareExtension)
+          op read "op://Production/Apple/Signing/ios-share-extension.mobileprovision" \
+            --out-file "$RUNNER_TEMP/ios-share-extension.mobileprovision" \
+            --file-mode 0600
+
+          EXT_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios-share-extension.mobileprovision")")
+          EXT_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios-share-extension.mobileprovision")")
+          cp "$RUNNER_TEMP/ios-share-extension.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${EXT_PROFILE_UUID}.mobileprovision"
+          echo "Installed extension profile: $EXT_PROFILE_NAME ($EXT_PROFILE_UUID)"
+          echo "ext_profile_name=$EXT_PROFILE_NAME" >> "$GITHUB_OUTPUT"
 
           # Firebase config for iOS
           op read "op://Production/Firebase Cloud Messaging/apple/GoogleService-Info.plist" \
@@ -99,6 +114,65 @@ jobs:
 
           echo "Available signing identities:"
           security find-identity -v -p codesigning
+
+      - name: Configure manual signing for CI
+        env:
+          APP_PROFILE_NAME: ${{ steps.profiles.outputs.app_profile_name }}
+          EXT_PROFILE_NAME: ${{ steps.profiles.outputs.ext_profile_name }}
+        run: |
+          cd apps/plot/ios
+
+          PBXPROJ="Runner.xcodeproj/project.pbxproj"
+
+          # Switch from automatic to manual signing for all targets
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBXPROJ"
+
+          # Set distribution signing identity for all targets
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer"/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution"/g' "$PBXPROJ"
+
+          # Add provisioning profile specifier for Runner (day.plot.app)
+          # Insert after each PRODUCT_BUNDLE_IDENTIFIER = day.plot.app; (but not day.plot.app.ShareExtension or .RunnerTests)
+          sed -i '' '/PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app;/{
+            /ShareExtension/!{
+              /RunnerTests/!{
+                a\
+				PROVISIONING_PROFILE_SPECIFIER = "'"$APP_PROFILE_NAME"'";
+              }
+            }
+          }' "$PBXPROJ"
+
+          # Add provisioning profile specifier for ShareExtension (day.plot.app.ShareExtension)
+          sed -i '' '/PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app\.ShareExtension;/{
+            a\
+				PROVISIONING_PROFILE_SPECIFIER = "'"$EXT_PROFILE_NAME"'";
+          }' "$PBXPROJ"
+
+          # Create ExportOptions.plist for app-store distribution
+          cat > ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>teamID</key>
+            <string>789MAH2W6P</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>day.plot.app</key>
+              <string>${APP_PROFILE_NAME}</string>
+              <key>day.plot.app.ShareExtension</key>
+              <string>${EXT_PROFILE_NAME}</string>
+            </dict>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+          echo "Manual signing configured. ExportOptions.plist created."
 
       - name: Get version from pubspec.yaml
         id: version
@@ -170,9 +244,9 @@ jobs:
           if [ "${{ inputs.shorebird_release }}" == "true" ]; then
             curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
             export PATH="$HOME/.shorebird/bin:$PATH"
-            shorebird release ios
+            shorebird release ios -- --export-options-plist=ios/ExportOptions.plist
           else
-            flutter build ipa --release
+            flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
           fi
 
       - name: Upload to App Store Connect
