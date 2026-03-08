@@ -45,10 +45,8 @@ platform :android do
 
   desc "Upload a new beta version to the Google Play (Internal Testing)"
   lane :beta do
-    # Build the app bundle
-    build
-
-    # Upload to Google Play Internal Testing track
+    # Upload pre-built AAB to Google Play Internal Testing track
+    # (build is done externally by Shorebird or Flutter)
     upload_to_play_store(
       track: 'internal',
       aab: '../../build/app/outputs/bundle/release/app-release.aab',

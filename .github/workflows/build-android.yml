@@ -1,0 +1,183 @@
+name: Build Android App
+
+on:
+  workflow_dispatch:
+    inputs:
+      shorebird_release:
+        description: 'Create a Shorebird release (registers baseline for OTA patches)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          ANDROID_KEYSTORE_PASSWORD: op://Production/Android Signing/keystore_password
+          ANDROID_KEY_PASSWORD: op://Production/Android Signing/key_password
+
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Fetch signing files from 1Password
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          # Android signing keystore
+          op read "op://Production/Android Signing/plot-release.jks" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/plot-release.jks" \
+            --file-mode 0600
+
+          # Google Play API service key
+          mkdir -p "$GITHUB_WORKSPACE/apps/plot/android"
+          op read "op://Production/Android Signing/Play Store/play-deployer-service-key.json" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/android/play-deployer-service-key.json" \
+            --file-mode 0600
+
+      - name: Create key.properties
+        run: |
+          cat > apps/plot/android/key.properties << EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=plot-release
+          storeFile=../plot-release.jks
+          EOF
+
+      - name: Get version from pubspec.yaml
+        id: version
+        run: |
+          cd apps/plot
+          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
+
+          {
+            echo "new_version=$CURRENT_VERSION"
+            echo "version_name=$VERSION_NAME"
+            echo "build_number=$BUILD_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Building version: $CURRENT_VERSION"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build Android app
+        run: |
+          cd apps/plot
+          if [ "${{ inputs.shorebird_release }}" == "true" ]; then
+            curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
+            export PATH="$HOME/.shorebird/bin:$PATH"
+            shorebird release android
+          else
+            flutter build appbundle --release
+          fi
+
+      - name: Install fastlane
+        run: |
+          sudo gem install fastlane --no-document
+
+      - name: Upload to Google Play (internal testing)
+        run: |
+          cd apps/plot/android
+          fastlane beta
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-${{ steps.version.outputs.new_version }}
+          path: apps/plot/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          {
+            echo "## Android Build Complete"
+            echo ""
+            echo "**Version:** ${{ steps.version.outputs.new_version }}"
+            echo "**Shorebird Release:** ${{ inputs.shorebird_release }}"
+            echo "**Uploaded to:** Google Play (internal testing)"
+          } >> "$GITHUB_STEP_SUMMARY"

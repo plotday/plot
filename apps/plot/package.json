@@ -24,7 +24,7 @@
     "build:ios": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build ios --release; pnpm set-env dev",
     "build:web": "flutter build web --release",
     "release:macos": "bash ../../scripts/release-macos",
-    "release:android": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && shorebird release android; pnpm set-env dev",
+    "release:android": "bash ../../scripts/release-android",
     "release:ios": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && shorebird release ios; pnpm set-env dev",
     "patch:macos": "pnpm set-env prod && shorebird patch macos; pnpm set-env dev",
     "patch:android": "pnpm set-env prod && shorebird patch android; pnpm set-env dev",
