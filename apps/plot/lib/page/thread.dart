@@ -335,7 +335,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                               left: context.isMultiPanel ? 20.0 : 0,
                               right: context.isMultiPanel ? 20.0 : 0,
                               top: 8,
-                              bottom: context.isMultiPanel ? 20.0 : 0,
+                              bottom: context.isMultiPanel
+                                  ? 20.0
+                                  : MediaQuery.viewPaddingOf(context).bottom,
                             ),
                             child: NoteEditor(
                               key: _noteEditorKey,

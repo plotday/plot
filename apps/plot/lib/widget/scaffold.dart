@@ -65,10 +65,15 @@ class Scaffold extends StatelessWidget {
           decoration: BoxDecoration(
             color: context.theme.colors.background,
           ),
-          child: FBottomNavigationBar(
-            index: config.currentIndex,
-            onChange: config.onChange,
-            children: config.items,
+          child: SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            child: FBottomNavigationBar(
+              index: config.currentIndex,
+              onChange: config.onChange,
+              children: config.items,
+            ),
           ),
         ),
       ),
