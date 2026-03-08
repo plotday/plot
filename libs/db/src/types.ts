@@ -3344,6 +3344,18 @@ export type Database = {
         }
         Relationships: []
       }
+      note_tags: {
+        Row: {
+          archived_at: string | null
+          id: string | null
+          priority_id: string | null
+          priority_path: unknown
+          tags: Json | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       priority: {
         Row: {
           archived_at: string | null
@@ -3357,6 +3369,7 @@ export type Database = {
           path: unknown
           personal: boolean | null
           pomodoro: number | null
+          role: string | null
           root: boolean | null
           title: string | null
           top_order: number | null
@@ -3468,6 +3481,7 @@ export type Database = {
           activity_at: string | null
           agenda_at: string | null
           archived_at: string | null
+          bumped_at: string | null
           created_at: string | null
           draft: boolean | null
           id: string | null
@@ -3636,6 +3650,7 @@ export type Database = {
           path: unknown
           personal: boolean | null
           pomodoro: number | null
+          role: string | null
           root: boolean | null
           title: string | null
           top_order: number | null

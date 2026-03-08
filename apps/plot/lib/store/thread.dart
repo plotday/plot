@@ -226,16 +226,18 @@ class ThreadsBase extends BaseTable {
       )..where((t) => t.id.equals(activityRow.id.toBytes()))).getSingleOrNull();
       var merged = activityRow;
 
-      // Handle pending unread changes
+      // Handle pending unread/bumped changes
       if (local != null && local.unreadUpdated == true) {
-        if (activityRow.unread == local.unread) {
-          // Server confirms our local unread state - clear the pending flag
+        if (activityRow.unread == local.unread &&
+            activityRow.bumpedAt == local.bumpedAt) {
+          // Server confirms our local state - clear the pending flag
           merged = merged.copyWith(unreadUpdated: const Value(null));
         } else {
-          // Server still has stale data - preserve local unread state
+          // Server still has stale data - preserve local state
           merged = merged.copyWith(
             unread: local.unread,
             unreadUpdated: const Value(true),
+            bumpedAt: Value(local.bumpedAt),
           );
         }
       }

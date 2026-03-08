@@ -53,6 +53,7 @@ SELECT
     a.last_note_created_at,
     a.last_note_source_created_at,
     a.mentions,
+    ar.bumped_at,
     -- Unread: TRUE only for non-archived threads where read is missing or stale
     COALESCE(CASE WHEN a.archived_at IS NULL
             AND ((a.created_by = upe.user_id
@@ -128,6 +129,7 @@ SELECT
     a.last_note_created_at,
     a.last_note_source_created_at,
     CAST(NULL AS uuid[]) AS mentions,
+    NULL::timestamptz AS bumped_at,
     FALSE AS unread,
     a.created_at AS activity_at,
     a.created_at AS agenda_at
