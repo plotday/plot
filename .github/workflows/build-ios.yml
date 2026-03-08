@@ -130,47 +130,33 @@ jobs:
           # Set distribution signing identity for all targets
           sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer"/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution"/g' "$PBXPROJ"
 
-          # Add provisioning profile specifier for Runner (day.plot.app)
-          # Insert after each PRODUCT_BUNDLE_IDENTIFIER = day.plot.app; (but not day.plot.app.ShareExtension or .RunnerTests)
-          sed -i '' '/PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app;/{
-            /ShareExtension/!{
-              /RunnerTests/!{
-                a\
-				PROVISIONING_PROFILE_SPECIFIER = "'"$APP_PROFILE_NAME"'";
-              }
-            }
-          }' "$PBXPROJ"
-
-          # Add provisioning profile specifier for ShareExtension (day.plot.app.ShareExtension)
-          sed -i '' '/PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app\.ShareExtension;/{
-            a\
-				PROVISIONING_PROFILE_SPECIFIER = "'"$EXT_PROFILE_NAME"'";
-          }' "$PBXPROJ"
+          # Add provisioning profile specifier for Runner target
+          python3 -c "
+          import re, sys
+          content = open('$PBXPROJ').read()
+          # Runner target: day.plot.app but not .ShareExtension or .RunnerTests
+          content = re.sub(
+              r'(PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app;(?!\.))',
+              r'\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$APP_PROFILE_NAME\";',
+              content
+          )
+          # ShareExtension target
+          content = content.replace(
+              'PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.ShareExtension;',
+              'PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.ShareExtension;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$EXT_PROFILE_NAME\";'
+          )
+          open('$PBXPROJ', 'w').write(content)
+          "
 
           # Create ExportOptions.plist for app-store distribution
-          cat > ExportOptions.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store</string>
-            <key>teamID</key>
-            <string>789MAH2W6P</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>day.plot.app</key>
-              <string>${APP_PROFILE_NAME}</string>
-              <key>day.plot.app.ShareExtension</key>
-              <string>${EXT_PROFILE_NAME}</string>
-            </dict>
-            <key>uploadSymbols</key>
-            <true/>
-          </dict>
-          </plist>
-          EOF
+          /usr/libexec/PlistBuddy -c "Clear dict" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :method string app-store" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :teamID string 789MAH2W6P" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:day.plot.app string $APP_PROFILE_NAME" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:day.plot.app.ShareExtension string $EXT_PROFILE_NAME" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :uploadSymbols bool true" ExportOptions.plist
 
           echo "Manual signing configured. ExportOptions.plist created."
 
