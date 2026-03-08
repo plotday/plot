@@ -15,6 +15,7 @@ TEAM_NAME="Plot Technologies Inc."
 TEAM_ID="789MAH2W6P"
 APP_CERT="Apple Distribution: ${TEAM_NAME} (${TEAM_ID})"
 INSTALLER_CERT="3rd Party Mac Developer Installer: ${TEAM_NAME} (${TEAM_ID})"
+BUNDLE_ID="day.plot.app"
 APP_NAME="Plot"
 ENTITLEMENTS="macos/Runner/Release.entitlements"
 
@@ -114,6 +115,15 @@ echo "=== Signing for Mac App Store ==="
 # Embed the distribution provisioning profile
 cp "${PROVISION_PROFILE}" "${APP_PATH}/Contents/embedded.provisionprofile"
 
+# Create processed entitlements with variables expanded.
+# Xcode expands these during builds, but codesign does not.
+PROCESSED_ENTITLEMENTS="/tmp/plot-release-entitlements.plist"
+sed "s/\$(AppIdentifierPrefix)/${TEAM_ID}./" "${ENTITLEMENTS}" > "${PROCESSED_ENTITLEMENTS}"
+
+# Add com.apple.application-identifier (Xcode injects this, needed for TestFlight)
+/usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string ${TEAM_ID}.${BUNDLE_ID}" "${PROCESSED_ENTITLEMENTS}" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :com.apple.application-identifier ${TEAM_ID}.${BUNDLE_ID}" "${PROCESSED_ENTITLEMENTS}"
+
 # Re-sign all nested frameworks and dylibs
 find "${APP_PATH}/Contents/Frameworks" \( -name "*.dylib" -o -name "*.framework" \) -print0 | while IFS= read -r -d '' file; do
   codesign --force --sign "${APP_CERT}" --timestamp "${file}" 2>/dev/null || true
@@ -121,7 +131,7 @@ done
 
 # Re-sign the main app bundle with entitlements
 codesign --force --sign "${APP_CERT}" \
-  --entitlements "${ENTITLEMENTS}" \
+  --entitlements "${PROCESSED_ENTITLEMENTS}" \
   --timestamp \
   --options runtime \
   "${APP_PATH}"

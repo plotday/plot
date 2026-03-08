@@ -183,6 +183,14 @@ jobs:
           # Embed distribution provisioning profile
           cp "$RUNNER_TEMP/macos.provisionprofile" "${APP_PATH}/Contents/embedded.provisionprofile"
 
+          # Create processed entitlements with variables expanded
+          PROCESSED_ENTITLEMENTS="$RUNNER_TEMP/release-entitlements.plist"
+          sed "s/\$(AppIdentifierPrefix)/789MAH2W6P./" "${ENTITLEMENTS}" > "${PROCESSED_ENTITLEMENTS}"
+
+          # Add com.apple.application-identifier (Xcode injects this, needed for TestFlight)
+          /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string 789MAH2W6P.day.plot.app" "${PROCESSED_ENTITLEMENTS}" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :com.apple.application-identifier 789MAH2W6P.day.plot.app" "${PROCESSED_ENTITLEMENTS}"
+
           # Re-sign all nested frameworks and dylibs
           find "${APP_PATH}/Contents/Frameworks" \( -name "*.dylib" -o -name "*.framework" \) -print0 | while IFS= read -r -d '' file; do
             codesign --force --sign "${APP_CERT}" --timestamp "$file" 2>/dev/null || true
@@ -190,7 +198,7 @@ jobs:
 
           # Re-sign the main app bundle with entitlements
           codesign --force --sign "${APP_CERT}" \
-            --entitlements "${ENTITLEMENTS}" \
+            --entitlements "${PROCESSED_ENTITLEMENTS}" \
             --timestamp \
             --options runtime \
             "${APP_PATH}"
