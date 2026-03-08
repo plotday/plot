@@ -13,6 +13,7 @@ class LinkInput extends StatefulWidget {
     required this.priority,
     required this.onNavigateToThread,
     required this.onCreateLink,
+    this.initialUrl,
     this.flushToBottom = false,
     super.key,
   });
@@ -20,6 +21,7 @@ class LinkInput extends StatefulWidget {
   final Priority priority;
   final void Function(Thread thread) onNavigateToThread;
   final void Function(String url, String? title, String? favicon) onCreateLink;
+  final String? initialUrl;
   final bool flushToBottom;
 
   @override
@@ -43,6 +45,15 @@ class _LinkInputState extends State<LinkInput> {
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
+
+    // Pre-fill with shared URL if provided
+    if (widget.initialUrl != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _controller.text = widget.initialUrl!;
+        }
+      });
+    }
   }
 
   @override

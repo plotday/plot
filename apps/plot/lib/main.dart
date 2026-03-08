@@ -24,7 +24,9 @@ import 'util/time_service.dart' show Time;
 import 'util/profile_preferences.dart';
 import 'util/instance_lock.dart';
 import 'command/page_link.dart';
+import 'command/share.dart';
 import 'page/invite.dart';
+import 'share_intent.dart';
 
 // Global instance lock for cleanup
 InstanceLock? _instanceLock;
@@ -112,6 +114,20 @@ Future<void> run(List<String> args) async {
     } catch (error, stackTrace) {
       log.warning('Deep link initialization failed', error, stackTrace);
     }
+  }
+
+  // Initialize share intent handling (iOS/Android only)
+  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+    initShareIntent(
+      onShareReceived: (url) {
+        final context = navigatorKey?.currentContext;
+        if (context?.mounted == true) {
+          OpenSharedLink(url).run(context!);
+        } else {
+          PendingShare.url = url;
+        }
+      },
+    );
   }
 
   // On web, extract invite token from browser URL (equivalent of native getInitialLink)

@@ -37,6 +37,7 @@ Internal catalog of product features for marketing content generation. Direct an
 - Web application (full-featured)
 - Desktop: macOS, Windows (native apps)
 - Mobile: iOS, Android (native apps)
+- Share target: receive links from other apps via the share sheet (iOS, Android)
 - Consistent experience across all platforms
 - Platform-specific native UI elements
 

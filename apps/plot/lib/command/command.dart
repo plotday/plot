@@ -11,4 +11,5 @@ export 'twist.dart';
 export 'provider.dart';
 export 'settings.dart';
 export 'debug.dart';
+export 'share.dart';
 export 'package:plot/util/value.dart';

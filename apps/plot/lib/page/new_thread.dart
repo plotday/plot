@@ -39,12 +39,14 @@ class NewThreadPage extends StatefulWidget {
     @QueryParam('endTime') this.endTime,
     @QueryParam('duration') this.duration,
     @QueryParam('priorityId') this.priorityId,
+    @QueryParam('sharedUrl') this.sharedUrl,
   });
 
   final String? startTime;
   final String? endTime;
   final int? duration; // Duration in minutes
   final String? priorityId;
+  final String? sharedUrl;
 
   @override
   State<NewThreadPage> createState() => NewThreadPageState();
@@ -113,7 +115,11 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Apply query parameters and default type to draft
     if (!_hasAppliedQueryParams) {
       _hasAppliedQueryParams = true;
-      _selectedType = _loadDefaultType();
+      if (widget.sharedUrl != null) {
+        _selectedType = NewThreadType.link;
+      } else {
+        _selectedType = _loadDefaultType();
+      }
       _applyQueryParametersToDraft();
       _applyDefaultType();
     }
@@ -743,6 +749,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   }) {
     return LinkInput(
       priority: state.draft.priority,
+      initialUrl: widget.sharedUrl,
       flushToBottom: flushToBottom,
       onNavigateToThread: (thread) {
         context.run(ChangeCurrentThread(thread));

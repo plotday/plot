@@ -9,6 +9,7 @@ import 'package:plot/command/command.dart';
 import 'package:plot/command/page_link.dart';
 import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/page/invite.dart';
+import 'package:plot/share_intent.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
@@ -164,6 +165,16 @@ class RootProviderState extends State<RootProvider> {
                     log.warning('Error redeeming invitation', e);
                     PendingInvite.clear();
                   }
+                }
+                // Open pending shared link (from cold start share intent)
+                else if (context.mounted && PendingShare.url != null) {
+                  final sharedUrl = PendingShare.url!;
+                  PendingShare.url = null;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) {
+                      context.run(OpenSharedLink(sharedUrl));
+                    }
+                  });
                 }
                 // Navigate to CLI URL if provided (only once)
                 else if (context.mounted &&

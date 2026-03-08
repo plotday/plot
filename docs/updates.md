@@ -1,3 +1,4 @@
+- Share links to Plot from other apps — on iOS and Android, use the share sheet to send a link directly to Plot, which opens a new thread with the link pre-filled
 - Ask Plot questions about your notes and links — @mention Plot in any thread and it'll search your content and answer using AI
 - Camera button on mobile: quickly snap a photo and attach it to a note directly from the editor
 - Notion integration: sync your Notion pages and comments into Plot with real-time webhook support
