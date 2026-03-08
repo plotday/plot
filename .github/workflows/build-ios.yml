@@ -1,0 +1,216 @@
+name: Build iOS App
+
+on:
+  workflow_dispatch:
+    inputs:
+      shorebird_release:
+        description: 'Create a Shorebird release (registers baseline for OTA patches)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          APPLE_DIST_CERT_BASE64: op://Production/Apple/Signing/distribution p12
+          APPLE_DIST_CERT_PASSWORD: op://Production/Apple/Signing/distribution password
+
+          ASC_API_KEY_ID: op://Production/Apple/App Store Connect/key id
+          ASC_API_ISSUER_ID: op://Production/Apple/App Store Connect/issuer id
+
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Fetch signing files from 1Password
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          # App Store Connect API key
+          mkdir -p ~/.appstoreconnect/private_keys
+          op read "op://Production/Apple/App Store Connect/key.p8" \
+            --out-file "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
+            --file-mode 0600
+
+          # iOS distribution provisioning profile
+          op read "op://Production/Apple/Signing/ios.mobileprovision" \
+            --out-file "$RUNNER_TEMP/ios.mobileprovision" \
+            --file-mode 0600
+
+          # Install provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
+          cp "$RUNNER_TEMP/ios.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
+
+          # Firebase config for iOS
+          op read "op://Production/Firebase Cloud Messaging/apple/GoogleService-Info.plist" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/ios/Runner/GoogleService-Info.plist" \
+            --file-mode 0600
+
+      - name: Import code signing certificates
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import Apple Distribution certificate
+          DIST_CERT_PATH="$RUNNER_TEMP/dist_cert.p12"
+          echo "$APPLE_DIST_CERT_BASE64" | base64 --decode > "$DIST_CERT_PATH"
+          security import "$DIST_CERT_PATH" -P "$APPLE_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm "$DIST_CERT_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning
+
+      - name: Get version from pubspec.yaml
+        id: version
+        run: |
+          cd apps/plot
+          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
+
+          {
+            echo "new_version=$CURRENT_VERSION"
+            echo "version_name=$VERSION_NAME"
+            echo "build_number=$BUILD_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Building version: $CURRENT_VERSION"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
+        run: |
+          cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build iOS app
+        run: |
+          cd apps/plot
+          if [ "${{ inputs.shorebird_release }}" == "true" ]; then
+            curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
+            export PATH="$HOME/.shorebird/bin:$PATH"
+            shorebird release ios
+          else
+            flutter build ipa --release
+          fi
+
+      - name: Upload to App Store Connect
+        run: |
+          IPA_PATH=$(find apps/plot/build/ios/ipa -name "*.ipa" -print -quit 2>/dev/null)
+          if [ -z "$IPA_PATH" ]; then
+            echo "ERROR: No IPA file found in apps/plot/build/ios/ipa/"
+            exit 1
+          fi
+
+          echo "Uploading $IPA_PATH..."
+          xcrun altool --upload-app \
+            --type ios \
+            -f "$IPA_PATH" \
+            --apiKey "$ASC_API_KEY_ID" \
+            --apiIssuer "$ASC_API_ISSUER_ID"
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-${{ steps.version.outputs.new_version }}
+          path: apps/plot/build/ios/ipa/*.ipa
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          {
+            echo "## iOS Build Complete"
+            echo ""
+            echo "**Version:** ${{ steps.version.outputs.new_version }}"
+            echo "**Shorebird Release:** ${{ inputs.shorebird_release }}"
+            echo "**Uploaded to:** App Store Connect (TestFlight)"
+          } >> "$GITHUB_STEP_SUMMARY"
